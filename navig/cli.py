@@ -8,7 +8,6 @@ are deferred until actually needed to improve CLI startup time.
 """
 
 import sys
-import random
 import typer
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -862,6 +861,7 @@ def version_callback(value: bool):
     if value:
         ch.info(f"NAVIG v{__version__}")
         # Select and display a random quote
+        import random
         quote, author = random.choice(HACKER_QUOTES)
         ch.dim(f'💬 {quote} - {author}')
         raise typer.Exit()
@@ -1060,18 +1060,41 @@ def main(
 
     # Initialize debug logger if enabled (via flag OR config)
     # void: every action leaves a trace. we just choose which traces to keep.
-    global_config = _get_config_manager().get_global_config()
-    debug_log_enabled = debug_log or global_config.get('debug_log', False)
+    # Performance: read debug settings from raw YAML without full config load.
+    _debug_raw_cfg = None  # raw YAML dict when read via fast-path
+    debug_log_enabled = debug_log
+    if not debug_log_enabled:
+        try:
+            _cm = _get_config_manager()
+            # Only load config for this check if it's already loaded (cheap)
+            if _cm._global_config_loaded:
+                debug_log_enabled = _cm.global_config.get('debug_log', False)
+            else:
+                # Fast-path: read just the debug_log key from the YAML file
+                # without triggering full config load + migrations + validation
+                import yaml
+                _gc_file = _cm.global_config_dir / "config.yaml"
+                if _gc_file.exists():
+                    with open(_gc_file, 'r') as _f:
+                        _debug_raw_cfg = yaml.safe_load(_f) or {}
+                    debug_log_enabled = _debug_raw_cfg.get('debug_log', False)
+        except Exception:
+            debug_log_enabled = False
 
     if debug_log_enabled:
         try:
             from navig.debug_logger import DebugLogger
 
-            # Get config for log settings
-            log_path = global_config.get('debug_log_path')
-            max_size_mb = global_config.get('debug_log_max_size_mb', 10)
-            max_files = global_config.get('debug_log_max_files', 5)
-            truncate_kb = global_config.get('debug_log_truncate_output_kb', 10)
+            # Reuse raw YAML dict if available; fall back to full config only if needed
+            _dgc = _debug_raw_cfg or (
+                _get_config_manager().global_config
+                if _get_config_manager()._global_config_loaded
+                else {}
+            )
+            log_path = _dgc.get('debug_log_path')
+            max_size_mb = _dgc.get('debug_log_max_size_mb', 10)
+            max_files = _dgc.get('debug_log_max_files', 5)
+            truncate_kb = _dgc.get('debug_log_truncate_output_kb', 10)
 
             debug_logger = DebugLogger(
                 log_path=Path(log_path) if log_path else None,
@@ -1133,21 +1156,26 @@ def main(
 
     # Initialize proactive assistant if enabled
     # void: we built an AI to watch our systems. now who watches the AI?
-    try:
-        from navig.config import get_config_manager
-        from navig.proactive_assistant import ProactiveAssistant
+    # Performance: skip for non-interactive / scripting commands (--plain, --json, -q).
+    _skip_assistant = quiet or any(a in sys.argv for a in ('--plain', '--raw', '--json'))
+    if not _skip_assistant:
+        try:
+            from navig.config import get_config_manager
+            from navig.proactive_assistant import ProactiveAssistant
 
-        config = get_config_manager()
-        assistant = ProactiveAssistant(config)
+            config = get_config_manager()
+            assistant = ProactiveAssistant(config)
 
-        if assistant.is_enabled():
-            ctx.obj['assistant'] = assistant
-            ctx.obj['assistant_enabled'] = True
-        else:
+            if assistant.is_enabled():
+                ctx.obj['assistant'] = assistant
+                ctx.obj['assistant_enabled'] = True
+            else:
+                ctx.obj['assistant_enabled'] = False
+        except Exception:
+            # Silently disable assistant if initialization fails
+            # systems fail. we just try to fail gracefully.
             ctx.obj['assistant_enabled'] = False
-    except Exception:
-        # Silently disable assistant if initialization fails
-        # systems fail. we just try to fail gracefully.
+    else:
         ctx.obj['assistant_enabled'] = False
 
     # Show compact help if no subcommand is invoked
@@ -1274,6 +1302,7 @@ def version_command(
         ch.info(f"NAVIG v{__version__}")
         ch.dim(f"Python {sys.version.split()[0]} on {platform.system()} {platform.release()}")
         # Show a random quote
+        import random
         quote, author = random.choice(HACKER_QUOTES)
         ch.dim(f'💬 {quote} - {author}')
 
@@ -1927,38 +1956,16 @@ def init_command(
 
 
 # ============================================================================
-# TELEGRAM BOT MANAGEMENT
+# TELEGRAM BOT MANAGEMENT  (registered by _register_external_commands)
 # ============================================================================
 
-try:
-    from navig.commands.telegram import telegram_app
-    app.add_typer(telegram_app, name="telegram")
-    app.add_typer(telegram_app, name="tg", hidden=True)  # Alias
-except ImportError:
-    pass  # Telegram commands not available
-
-
 # ============================================================================
-# MATRIX MESSAGING
+# MATRIX MESSAGING  (registered by _register_external_commands)
 # ============================================================================
 
-try:
-    from navig.commands.matrix import matrix_app
-    app.add_typer(matrix_app, name="matrix")
-    app.add_typer(matrix_app, name="mx", hidden=True)  # Alias
-except ImportError:
-    pass  # Matrix commands not available
-
-
 # ============================================================================
-# STORE MANAGEMENT
+# STORE MANAGEMENT  (registered by _register_external_commands)
 # ============================================================================
-
-try:
-    from navig.commands.store import store_app
-    app.add_typer(store_app, name="store")
-except ImportError:
-    pass  # Store commands not available
 
 
 # ============================================================================
@@ -8646,15 +8653,6 @@ app.add_typer(wiki_app, name="wiki")
 
 
 # ============================================================================
-# INBOX ROUTER - CLASSIFY AND ROUTE INBOX FILES
-# ============================================================================
-
-from navig.commands.inbox import inbox_app
-
-app.add_typer(inbox_app, name="inbox")
-
-
-# ============================================================================
 # GATEWAY - AUTONOMOUS AGENT CONTROL PLANE
 # ============================================================================
 
@@ -10671,59 +10669,6 @@ app.add_typer(memory_app, name="memory")
 
 
 # ============================================================================
-# AGENT MODE
-# ============================================================================
-
-# Import agent commands from separate module
-from navig.commands.agent import agent_app
-app.add_typer(agent_app, name="agent")
-
-# Import service (daemon) commands
-from navig.commands.service import service_app
-app.add_typer(service_app, name="service")
-
-# Import stack (local Docker infrastructure) commands
-from navig.commands.stack import stack_app
-app.add_typer(stack_app, name="stack")
-
-# Import tray commands
-from navig.commands.tray import tray_app
-app.add_typer(tray_app, name="tray")
-
-# Import formation commands
-from navig.commands.formation import formation_app
-app.add_typer(formation_app, name="formation")
-
-# Import council commands
-from navig.commands.council import council_app
-app.add_typer(council_app, name="council")
-
-
-# ============================================================================
-# AUTOMATION (Cross-Platform)
-# ============================================================================
-
-# Import cross-platform automation commands
-try:
-    from navig.commands.auto import auto_app
-    app.add_typer(auto_app, name="auto")
-except ImportError:
-    pass
-
-# ============================================================================
-# AUTOHOTKEY AUTOMATION (Windows)
-# ============================================================================
-
-# Import AHK commands from separate module (Windows only)
-if sys.platform == 'win32':
-    try:
-        from navig.commands.ahk import ahk_app
-        app.add_typer(ahk_app, name="ahk")
-    except ImportError:
-        pass  # AHK adapter not available
-
-
-# ============================================================================
 # INTERACTIVE MENU
 # ============================================================================
 
@@ -10778,23 +10723,6 @@ def interactive_command(ctx: typer.Context):
         ch.error(f"Interactive menu error: {e}")
         sys.exit(1)
 
-
-
-# ============================================================================
-# EVOLUTION COMMANDS
-# ============================================================================
-
-try:
-    from navig.commands.evolution import evolution_app
-    app.add_typer(evolution_app, name="evolve")
-except ImportError:
-    pass
-
-try:
-    from navig.commands.script import script_app
-    app.add_typer(script_app, name="script")
-except ImportError:
-    pass
 
 
 # ============================================================================
@@ -11305,70 +11233,117 @@ def proactive_test():
 
 
 # ============================================================================
-# CALENDAR OPERATIONS
+# DEFERRED COMMAND MODULE REGISTRATION
+# ============================================================================
+# External command modules are NOT imported at module level.
+# They are registered lazily by _register_external_commands() which is
+# called from main.py just before app() runs (after fast-path check).
+# This avoids importing heavy transitive deps (rich, cryptography, asyncio)
+# for every CLI invocation.
+#
+# Optimisation: if the first CLI argument matches an *inline* command
+# (one that is defined in this file), we skip all external imports
+# entirely — saving ~200 ms on hot paths like ``navig host list``.
 # ============================================================================
 
-try:
-    from navig.commands.calendar import calendar_app
-    app.add_typer(calendar_app, name="calendar")
-except ImportError:
-    pass
+# Commands whose sub-app needs an external module import.
+_EXTERNAL_CMD_MAP = {
+    # name          →  (module_path,               attr_name)
+    "inbox":        ("navig.commands.inbox",        "inbox_app"),
+    "agent":        ("navig.commands.agent",        "agent_app"),
+    "service":      ("navig.commands.service",      "service_app"),
+    "stack":        ("navig.commands.stack",         "stack_app"),
+    "tray":         ("navig.commands.tray",          "tray_app"),
+    "formation":    ("navig.commands.formation",     "formation_app"),
+    "council":      ("navig.commands.council",       "council_app"),
+    "auto":         ("navig.commands.auto",          "auto_app"),
+    "evolve":       ("navig.commands.evolution",     "evolution_app"),
+    "script":       ("navig.commands.script",        "script_app"),
+    "calendar":     ("navig.commands.calendar",      "calendar_app"),
+    "mode":         ("navig.commands.mode",          "mode_app"),
+    "email":        ("navig.commands.email",         "email_app"),
+    "voice":        ("navig.commands.voice",         "voice_app"),
+    "crash":        ("navig.commands.crash",         "app"),
+    "telegram":     ("navig.commands.telegram",      "telegram_app"),
+    "tg":           ("navig.commands.telegram",      "telegram_app"),
+    "matrix":       ("navig.commands.matrix",        "matrix_app"),
+    "mx":           ("navig.commands.matrix",        "matrix_app"),
+    "store":        ("navig.commands.store",         "store_app"),
+    "cred":         ("navig.commands.vault",         "cred_app"),
+    "profile":      ("navig.commands.vault",         "profile_app"),
+}
 
 
-# ============================================================================
-# LLM MODE ROUTER
-# ============================================================================
+def _register_external_commands(*, register_all: bool = False):
+    """Register external command sub-apps.
 
-try:
-    from navig.commands.mode import mode_app
-    app.add_typer(mode_app, name="mode")
-except ImportError:
-    pass
+    Called once from main.py after fast-path check.  Uses ``sys.argv``
+    to decide *which* commands need importing:
 
+    * If argv[1] is recognised as an inline command (defined in this
+      file), **no external modules are imported at all**.
+    * If argv[1] is an external command, only *that* module is loaded.
+    * If we cannot decide (e.g. ``navig --help`` fell through), we
+      import everything so the help screen is complete.
+    
+    Args:
+        register_all: If True, skip argv heuristic and register every
+                      external command.  Useful for tests and tooling.
+    """
+    import importlib
 
-# ============================================================================
-# EMAIL OPERATIONS
-# ============================================================================
+    if register_all:
+        target = None  # triggers fallback path below
+    else:
+        target = sys.argv[1] if len(sys.argv) > 1 else None
 
-try:
-    from navig.commands.email import email_app
-    app.add_typer(email_app, name="email")
-except ImportError:
-    pass
+    # ------------------------------------------------------------------
+    # Fast path: target is a known external command → import only it
+    # ------------------------------------------------------------------
+    if target in _EXTERNAL_CMD_MAP:
+        mod_path, attr = _EXTERNAL_CMD_MAP[target]
+        try:
+            mod = importlib.import_module(mod_path)
+            app.add_typer(getattr(mod, attr), name=target,
+                          hidden=(target in ("tg", "mx")))
+        except ImportError:
+            pass
+        return
 
+    # AHK sub-app (Windows only)
+    if target == "ahk" and sys.platform == "win32":
+        try:
+            from navig.commands.ahk import ahk_app
+            app.add_typer(ahk_app, name="ahk")
+        except ImportError:
+            pass
+        return
 
-# ============================================================================
-# VOICE (Text-to-Speech)
-# ============================================================================
+    # ------------------------------------------------------------------
+    # If target is an inline command (or a flag like --debug), skip
+    # external imports entirely for maximum startup speed.
+    # ------------------------------------------------------------------
+    if target is not None and not target.startswith("-"):
+        # Likely an inline command – no external imports needed.
+        return
 
-try:
-    from navig.commands.voice import voice_app
-    app.add_typer(voice_app, name="voice")
-except ImportError:
-    pass
+    # ------------------------------------------------------------------
+    # Fallback: register everything (e.g. bare ``navig`` with no args)
+    # ------------------------------------------------------------------
+    for cmd_name, (mod_path, attr) in _EXTERNAL_CMD_MAP.items():
+        try:
+            mod = importlib.import_module(mod_path)
+            app.add_typer(getattr(mod, attr), name=cmd_name,
+                          hidden=(cmd_name in ("tg", "mx")))
+        except ImportError:
+            pass
 
-
-# ============================================================================
-# CREDENTIALS VAULT
-# ============================================================================
-
-try:
-    from navig.commands.vault import cred_app, profile_app
-    app.add_typer(cred_app, name="cred", help="Manage credentials in the vault")
-    app.add_typer(profile_app, name="profile", help="Manage credential profiles")
-except ImportError:
-    pass
-
-
-# ============================================================================
-# CRASH REPORTING
-# ============================================================================
-
-try:
-    from navig.commands.crash import app as crash_app
-    app.add_typer(crash_app, name="crash")
-except ImportError:
-    pass
+    if sys.platform == "win32":
+        try:
+            from navig.commands.ahk import ahk_app
+            app.add_typer(ahk_app, name="ahk")
+        except ImportError:
+            pass
 
 
 # ============================================================================
@@ -11376,5 +11351,6 @@ except ImportError:
 # ============================================================================
 
 if __name__ == "__main__":
+    _register_external_commands()
     app()
 

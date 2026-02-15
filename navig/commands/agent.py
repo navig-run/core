@@ -1,0 +1,1657 @@
+"""
+NAVIG Agent CLI Commands
+
+Commands for managing the autonomous agent mode.
+"""
+
+import sys
+from pathlib import Path
+from typing import Optional
+
+import typer
+
+from navig.lazy_loader import lazy_import
+
+ch = lazy_import("navig.console_helper")
+
+agent_app = typer.Typer(
+    name="agent",
+    help="Manage autonomous agent mode",
+    no_args_is_help=True,
+)
+
+
+def _get_agent_config_dir() -> Path:
+    """Get agent configuration directory."""
+    return Path.home() / '.navig' / 'agent'
+
+
+def _get_config_path() -> Path:
+    """Get agent configuration file path."""
+    return _get_agent_config_dir() / 'config.yaml'
+
+
+@agent_app.command("install")
+def agent_install(
+    personality: str = typer.Option(
+        "friendly",
+        "--personality", "-p",
+        help="Default personality profile (friendly, professional, witty, paranoid, minimal)"
+    ),
+    mode: str = typer.Option(
+        "supervised",
+        "--mode", "-m",
+        help="Operating mode (autonomous, supervised, observe-only)"
+    ),
+    telegram: bool = typer.Option(
+        False,
+        "--telegram",
+        help="Enable Telegram integration"
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force", "-f",
+        help="Overwrite existing configuration"
+    ),
+):
+    """
+    Install and configure agent mode.
+    
+    Creates configuration at ~/.navig/agent/config.yaml
+    
+    Examples:
+        navig agent install
+        navig agent install --personality witty
+        navig agent install --mode autonomous --telegram
+    """
+    try:
+        from navig.agent import AgentConfig
+        
+        config_dir = _get_agent_config_dir()
+        config_path = _get_config_path()
+        
+        if config_path.exists() and not force:
+            ch.error("Agent already installed. Use --force to overwrite.")
+            ch.info(f"Config at: {config_path}")
+            raise typer.Exit(1)
+        
+        # Create directories
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / 'workspace').mkdir(exist_ok=True)
+        (config_dir / 'personalities').mkdir(exist_ok=True)
+        (config_dir / 'logs').mkdir(exist_ok=True)
+        
+        # Create default configuration
+        config = AgentConfig()
+        config.personality.profile = personality
+        config.mode = mode
+        config.ears.telegram.enabled = telegram
+        
+        # Save configuration
+        config.save(config_path)
+        
+        ch.success("Agent mode installed!")
+        ch.console.print(f"  Config: {config_path}")
+        ch.console.print(f"  Personality: {personality}")
+        ch.console.print(f"  Mode: {mode}")
+        ch.console.print()
+        ch.info("Next steps:")
+        ch.console.print("  1. Edit config: navig agent config")
+        ch.console.print("  2. Start agent: navig agent start")
+        
+    except Exception as e:
+        ch.error(f"Installation failed: {e}")
+        raise typer.Exit(1)
+
+
+@agent_app.command("run")
+def agent_run(
+    agent_id: str = typer.Argument(..., help="Agent ID from the active formation"),
+    task: str = typer.Option(..., "--task", "-t", help="Task or question for the agent"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+    timeout: float = typer.Option(30.0, "--timeout", help="Timeout in seconds"),
+):
+    """Run a single formation agent on a task.
+
+    Loads the specified agent from the active formation and runs it
+    against the given task using the AI system.
+
+    Examples:
+        navig agent run designer --task "Review our landing page layout"
+        navig agent run qa --task "What test cases do we need?" --json
+        navig agent run cfo --task "Budget analysis for Q3" --plain
+    """
+    import json as json_module
+    import time
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+    from navig.formations.loader import get_active_formation
+
+    formation = get_active_formation()
+    if formation is None:
+        ch.error("No active formation.")
+        ch.info("  Initialize with: navig formation init <formation-id>")
+        raise typer.Exit(1)
+
+    agent = formation.loaded_agents.get(agent_id)
+    if agent is None:
+        available = ", ".join(sorted(formation.loaded_agents.keys())) or "(none)"
+        ch.error(f"Agent '{agent_id}' not found in formation '{formation.id}'.")
+        ch.info(f"  Available agents: {available}")
+        raise typer.Exit(1)
+
+    if not plain and not json_output:
+        ch.info(f"Running agent '{agent.name}' ({agent.role})...")
+
+    start = time.time()
+    try:
+        from navig.ai import ask_ai_with_context
+
+        def _run():
+            return ask_ai_with_context(task, system_prompt=agent.system_prompt)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run)
+            response = future.result(timeout=timeout) or "[No response]"
+    except FuturesTimeout:
+        response = f"[TIMEOUT after {timeout}s]"
+        if not json_output and not plain:
+            ch.warning(f"Agent timed out after {timeout}s")
+    except Exception as e:
+        response = f"[ERROR: {e}]"
+        if not json_output and not plain:
+            ch.error(f"Agent execution failed: {e}")
+
+    duration_ms = int((time.time() - start) * 1000)
+
+    if json_output:
+        result = {
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "role": agent.role,
+            "formation": formation.id,
+            "task": task,
+            "response": response,
+            "duration_ms": duration_ms,
+        }
+        print(json_module.dumps(result, indent=2))
+        return
+
+    if plain:
+        print(response)
+        return
+
+    ch.console.print()
+    ch.console.print(
+        f"[bold cyan]{agent.name}[/bold cyan] [dim]({agent.role})[/dim]"
+    )
+    ch.console.print(f"[dim]Duration: {duration_ms}ms[/dim]")
+    ch.console.print()
+    ch.console.print(response)
+    ch.console.print()
+
+
+@agent_app.command("start")
+def agent_start(
+    foreground: bool = typer.Option(
+        True,
+        "--foreground/--background",
+        "-f/-b",
+        help="Run in foreground or background"
+    ),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config", "-c",
+        help="Path to configuration file"
+    ),
+):
+    """
+    Start the autonomous agent.
+    
+    Examples:
+        navig agent start
+        navig agent start --background
+        navig agent start --config /path/to/config.yaml
+    """
+    config_path = config or _get_config_path()
+    
+    if not config_path.exists():
+        ch.error("Agent not installed. Run: navig agent install")
+        raise typer.Exit(1)
+    
+    try:
+        from navig.agent import AgentConfig, run_agent
+        
+        agent_config = AgentConfig.load(config_path)
+        
+        if not agent_config.enabled:
+            ch.error("Agent is disabled in configuration")
+            ch.info("Enable with: navig agent config set enabled true")
+            raise typer.Exit(1)
+        
+        if foreground:
+            # Run directly
+            ch.info("Starting agent in foreground...")
+            ch.console.print(f"  Personality: {agent_config.personality.profile}")
+            ch.console.print(f"  Mode: {agent_config.mode}")
+            ch.console.print()
+            
+            import asyncio
+            asyncio.run(run_agent(agent_config))
+        else:
+            # Background mode - create a service or use subprocess
+            ch.info("Background mode - consider using 'navig agent service install'")
+            ch.info("For now, use: navig agent start --foreground &")
+            raise typer.Exit(1)
+        
+    except KeyboardInterrupt:
+        ch.info("\nAgent stopped by user")
+    except Exception as e:
+        ch.error(f"Failed to start agent: {e}")
+        raise typer.Exit(1)
+
+
+@agent_app.command("stop")
+def agent_stop():
+    """
+    Stop the running agent.
+    
+    Sends SIGTERM to the agent process if running.
+    """
+    import signal
+    
+    pid_file = _get_agent_config_dir() / 'agent.pid'
+    
+    if not pid_file.exists():
+        ch.info("No agent PID file found. Agent may not be running.")
+        return
+    
+    try:
+        pid = int(pid_file.read_text().strip())
+        
+        if sys.platform == 'win32':
+            import subprocess
+            subprocess.run(['taskkill', '/PID', str(pid), '/F'], check=True)
+        else:
+            import os
+            os.kill(pid, signal.SIGTERM)
+        
+        pid_file.unlink()
+        ch.success(f"Stopped agent (PID {pid})")
+        
+    except ProcessLookupError:
+        ch.info("Agent process not found. Cleaning up PID file.")
+        pid_file.unlink()
+    except Exception as e:
+        ch.error(f"Failed to stop agent: {e}")
+        raise typer.Exit(1)
+
+
+@agent_app.command("status")
+def agent_status(
+    plain: bool = typer.Option(False, "--plain", help="Plain output"),
+):
+    """
+    Show agent status.
+    
+    Displays running state, component health, and recent activity.
+    """
+    import json
+    
+    config_path = _get_config_path()
+    pid_file = _get_agent_config_dir() / 'agent.pid'
+    
+    if not config_path.exists():
+        if plain:
+            print("not_installed")
+        else:
+            ch.error("Agent not installed. Run: navig agent install")
+        return
+    
+    # Check if running
+    running = False
+    pid = None
+    
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            if sys.platform == 'win32':
+                import subprocess
+                result = subprocess.run(
+                    ['tasklist', '/FI', f'PID eq {pid}'],
+                    capture_output=True, text=True
+                )
+                running = str(pid) in result.stdout
+            else:
+                import os
+                os.kill(pid, 0)  # Check if process exists
+                running = True
+        except (ProcessLookupError, ValueError):
+            running = False
+    
+    try:
+        from navig.agent import AgentConfig
+        config = AgentConfig.load(config_path)
+        
+        if plain:
+            status = {
+                'installed': True,
+                'running': running,
+                'pid': pid if running else None,
+                'enabled': config.enabled,
+                'mode': config.mode,
+                'personality': config.personality.profile,
+            }
+            print(json.dumps(status))
+        else:
+            ch.info("Agent Status")
+            ch.console.print()
+            ch.console.print("  Installed: [green]Yes[/]")
+            ch.console.print(f"  Running: {'[green]Yes[/]' if running else '[red]No[/]'}")
+            if running and pid:
+                ch.console.print(f"  PID: {pid}")
+            ch.console.print(f"  Enabled: {'Yes' if config.enabled else 'No'}")
+            ch.console.print(f"  Mode: {config.mode}")
+            ch.console.print(f"  Personality: {config.personality.profile}")
+            ch.console.print(f"  Config: {config_path}")
+        
+    except Exception as e:
+        if plain:
+            print(json.dumps({'error': str(e)}))
+        else:
+            ch.error(f"Error reading status: {e}")
+
+
+@agent_app.command("config")
+def agent_config_cmd(
+    edit: bool = typer.Option(False, "--edit", "-e", help="Open config in editor"),
+    show: bool = typer.Option(False, "--show", "-s", help="Show current config"),
+    set_key: Optional[str] = typer.Option(None, "--set", help="Set config key (dot notation)"),
+    value: Optional[str] = typer.Option(None, "--value", "-v", help="Value for --set"),
+):
+    """
+    Manage agent configuration.
+    
+    Examples:
+        navig agent config --show
+        navig agent config --edit
+        navig agent config --set personality.profile --value witty
+        navig agent config --set mode --value autonomous
+    """
+    import yaml
+    import subprocess
+    import os
+    
+    config_path = _get_config_path()
+    
+    if not config_path.exists():
+        ch.error("Agent not installed. Run: navig agent install")
+        raise typer.Exit(1)
+    
+    if edit:
+        # Open in default editor
+        editor = os.environ.get('EDITOR', 'nano' if sys.platform != 'win32' else 'notepad')
+        subprocess.run([editor, str(config_path)])
+        return
+    
+    if show:
+        # Display configuration
+        content = config_path.read_text()
+        ch.console.print(content)
+        return
+    
+    if set_key and value:
+        # Set a configuration value
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+        
+        # Navigate to nested key
+        keys = set_key.split('.')
+        current = data.setdefault('agent', {})
+        
+        for key in keys[:-1]:
+            current = current.setdefault(key, {})
+        
+        # Convert value type
+        if value.lower() in ('true', 'yes'):
+            value = True
+        elif value.lower() in ('false', 'no'):
+            value = False
+        elif value.isdigit():
+            value = int(value)
+        
+        current[keys[-1]] = value
+        
+        with open(config_path, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        
+        ch.success(f"Set {set_key} = {value}")
+        return
+    
+    # Default: show path and summary
+    try:
+        from navig.agent import AgentConfig
+        config = AgentConfig.load(config_path)
+        
+        ch.info(f"Config: {config_path}")
+        ch.console.print()
+        ch.console.print(f"  enabled: {config.enabled}")
+        ch.console.print(f"  mode: {config.mode}")
+        ch.console.print(f"  personality: {config.personality.profile}")
+        ch.console.print(f"  brain.model: {config.brain.model}")
+        ch.console.print(f"  telegram: {config.ears.telegram.enabled}")
+        ch.console.print(f"  mcp: {config.ears.mcp.enabled}")
+        ch.console.print()
+        ch.info("Use --show for full config, --edit to modify")
+        
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@agent_app.command("logs")
+def agent_logs(
+    follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
+    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
+    level: Optional[str] = typer.Option(None, "--level", "-l", help="Filter by level"),
+):
+    """
+    View agent logs.
+    
+    Examples:
+        navig agent logs
+        navig agent logs --follow
+        navig agent logs --lines 100 --level error
+    """
+    log_file = _get_agent_config_dir() / 'logs' / 'agent.log'
+    
+    if not log_file.exists():
+        ch.info("No logs found. Agent may not have run yet.")
+        return
+    
+    if follow:
+        # Follow mode
+        import subprocess
+        try:
+            if sys.platform == 'win32':
+                subprocess.run(['powershell', 'Get-Content', str(log_file), '-Wait', '-Tail', str(lines)])
+            else:
+                subprocess.run(['tail', '-f', '-n', str(lines), str(log_file)])
+        except KeyboardInterrupt:
+            pass
+    else:
+        # Show last N lines
+        with open(log_file) as f:
+            all_lines = f.readlines()
+        
+        output_lines = all_lines[-lines:]
+        
+        if level:
+            level_upper = level.upper()
+            output_lines = [l for l in output_lines if level_upper in l]
+        
+        for line in output_lines:
+            print(line.rstrip())
+
+
+@agent_app.command("personality")
+def agent_personality(
+    action: str = typer.Argument(
+        "list",
+        help="Action: list, show, set, create"
+    ),
+    name: Optional[str] = typer.Argument(
+        None,
+        help="Personality name"
+    ),
+):
+    """
+    Manage personality profiles.
+    
+    Actions:
+        list   - List available personalities
+        show   - Show personality details
+        set    - Set active personality
+        create - Create custom personality
+    
+    Examples:
+        navig agent personality list
+        navig agent personality show witty
+        navig agent personality set professional
+    """
+    import yaml
+    
+    if action == "list":
+        from navig.agent.soul import BUILTIN_PROFILES
+        
+        ch.info("Built-in Personalities:")
+        for name, profile in BUILTIN_PROFILES.items():
+            ch.console.print(f"  [cyan]{name}[/]: {profile.tagline}")
+        
+        # Check for custom profiles
+        custom_dir = _get_agent_config_dir() / 'personalities'
+        if custom_dir.exists():
+            custom = list(custom_dir.glob('*.yaml'))
+            if custom:
+                ch.console.print()
+                ch.info("Custom Personalities:")
+                for p in custom:
+                    ch.console.print(f"  {p.stem}")
+    
+    elif action == "show":
+        if not name:
+            ch.error("Name required: navig agent personality show <name>")
+            raise typer.Exit(1)
+        
+        from navig.agent.soul import BUILTIN_PROFILES, PersonalityProfile
+        
+        if name in BUILTIN_PROFILES:
+            profile = BUILTIN_PROFILES[name]
+        else:
+            profile_path = _get_agent_config_dir() / 'personalities' / f'{name}.yaml'
+            if profile_path.exists():
+                profile = PersonalityProfile.load(profile_path)
+            else:
+                ch.error(f"Personality not found: {name}")
+                raise typer.Exit(1)
+        
+        ch.info(f"Personality: {name}")
+        ch.console.print(f"  Name: {profile.name}")
+        ch.console.print(f"  Tagline: {profile.tagline}")
+        ch.console.print(f"  Greeting: {profile.greeting}")
+        ch.console.print(f"  Emoji: {profile.emoji_enabled}")
+        ch.console.print(f"  Formal: {profile.formal}")
+        ch.console.print(f"  Proactive: {profile.proactive}")
+    
+    elif action == "set":
+        if not name:
+            ch.error("Name required: navig agent personality set <name>")
+            raise typer.Exit(1)
+        
+        config_path = _get_config_path()
+        if not config_path.exists():
+            ch.error("Agent not installed")
+            raise typer.Exit(1)
+        
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+        
+        data.setdefault('agent', {}).setdefault('personality', {})['profile'] = name
+        
+        with open(config_path, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        
+        ch.success(f"Personality set to: {name}")
+    
+    elif action == "create":
+        if not name:
+            ch.error("Name required: navig agent personality create <name>")
+            raise typer.Exit(1)
+        
+        custom_dir = _get_agent_config_dir() / 'personalities'
+        custom_dir.mkdir(parents=True, exist_ok=True)
+        
+        profile_path = custom_dir / f'{name}.yaml'
+        
+        if profile_path.exists():
+            ch.error(f"Personality already exists: {profile_path}")
+            raise typer.Exit(1)
+        
+        template = {
+            'name': name.title(),
+            'tagline': 'Custom personality',
+            'greeting': 'Hello!',
+            'farewell': 'Goodbye!',
+            'acknowledgment': 'Got it!',
+            'thinking_phrase': 'Thinking...',
+            'emoji_enabled': True,
+            'proactive': True,
+            'formal': False,
+            'humor_enabled': True,
+            'verbosity': 'normal',
+        }
+        
+        with open(profile_path, 'w') as f:
+            yaml.dump(template, f, default_flow_style=False, sort_keys=False)
+        
+        ch.success(f"Created personality: {profile_path}")
+        ch.info("Edit the file to customize behavior")
+    
+    else:
+        ch.error(f"Unknown action: {action}")
+        ch.info("Valid: list, show, set, create")
+
+
+@agent_app.command("service")
+def agent_service(
+    action: str = typer.Argument(..., help="Action: install, uninstall, status"),
+):
+    """
+    Manage agent as a system service.
+    
+    Actions:
+        install   - Install as systemd/launchd/Windows service
+        uninstall - Remove the service
+        status    - Check service status
+    
+    Examples:
+        navig agent service install
+        navig agent service status
+        navig agent service uninstall
+    """
+    
+    if sys.platform == 'linux':
+        _service_linux(action)
+    elif sys.platform == 'darwin':
+        _service_macos(action)
+    elif sys.platform == 'win32':
+        _service_windows(action)
+    else:
+        ch.error(f"Unsupported platform: {sys.platform}")
+        raise typer.Exit(1)
+
+
+def _service_linux(action: str):
+    """Manage systemd service on Linux."""
+    import subprocess
+    import os
+    
+    service_name = "navig-agent"
+    service_file = Path(f"/etc/systemd/system/{service_name}.service")
+    
+    python_path = sys.executable
+    navig_path = Path(sys.argv[0]).resolve()
+    
+    if action == "install":
+        content = f"""[Unit]
+Description=NAVIG Autonomous Agent
+After=network.target
+
+[Service]
+Type=simple
+User={os.environ.get('USER', 'root')}
+ExecStart={python_path} -m navig agent start --foreground
+Restart=on-failure
+RestartSec=5
+WorkingDirectory={Path.home()}
+
+[Install]
+WantedBy=multi-user.target
+"""
+        
+        try:
+            # Write service file (requires sudo)
+            ch.info(f"Creating service file: {service_file}")
+            ch.info("You may be prompted for sudo password...")
+            
+            # Write to temp file first
+            temp_file = Path("/tmp/navig-agent.service")
+            temp_file.write_text(content)
+            
+            subprocess.run(['sudo', 'cp', str(temp_file), str(service_file)], check=True)
+            subprocess.run(['sudo', 'systemctl', 'daemon-reload'], check=True)
+            subprocess.run(['sudo', 'systemctl', 'enable', service_name], check=True)
+            
+            temp_file.unlink()
+            
+            ch.success("Service installed!")
+            ch.info(f"Start with: sudo systemctl start {service_name}")
+            
+        except subprocess.CalledProcessError as e:
+            ch.error(f"Failed to install service: {e}")
+            raise typer.Exit(1)
+    
+    elif action == "uninstall":
+        try:
+            subprocess.run(['sudo', 'systemctl', 'stop', service_name], check=False)
+            subprocess.run(['sudo', 'systemctl', 'disable', service_name], check=False)
+            subprocess.run(['sudo', 'rm', '-f', str(service_file)], check=True)
+            subprocess.run(['sudo', 'systemctl', 'daemon-reload'], check=True)
+            
+            ch.success("Service uninstalled")
+            
+        except subprocess.CalledProcessError as e:
+            ch.error(f"Failed to uninstall: {e}")
+    
+    elif action == "status":
+        try:
+            result = subprocess.run(
+                ['systemctl', 'status', service_name],
+                capture_output=True, text=True
+            )
+            print(result.stdout)
+            if result.stderr:
+                print(result.stderr)
+        except Exception as e:
+            ch.error(f"Error: {e}")
+    
+    else:
+        ch.error(f"Unknown action: {action}")
+
+
+def _service_macos(action: str):
+    """Manage launchd service on macOS."""
+    import subprocess
+    
+    plist_name = "com.navig.agent"
+    plist_file = Path.home() / "Library" / "LaunchAgents" / f"{plist_name}.plist"
+    
+    python_path = sys.executable
+    
+    if action == "install":
+        plist_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{plist_name}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python_path}</string>
+        <string>-m</string>
+        <string>navig</string>
+        <string>agent</string>
+        <string>start</string>
+        <string>--foreground</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{_get_agent_config_dir()}/logs/agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>{_get_agent_config_dir()}/logs/agent.err</string>
+</dict>
+</plist>
+"""
+        
+        plist_file.write_text(content)
+        subprocess.run(['launchctl', 'load', str(plist_file)], check=True)
+        
+        ch.success("Service installed!")
+        ch.info("Service will start on login")
+        ch.info(f"Start now with: launchctl start {plist_name}")
+    
+    elif action == "uninstall":
+        if plist_file.exists():
+            subprocess.run(['launchctl', 'unload', str(plist_file)], check=False)
+            plist_file.unlink()
+            ch.success("Service uninstalled")
+        else:
+            ch.info("Service not installed")
+    
+    elif action == "status":
+        result = subprocess.run(
+            ['launchctl', 'list', plist_name],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            ch.success("Service is running")
+            print(result.stdout)
+        else:
+            ch.info("Service is not running")
+    
+    else:
+        ch.error(f"Unknown action: {action}")
+
+
+def _service_windows(action: str):
+    """Manage Windows Service — delegates to 'navig service' commands."""
+    ch.info("Windows Service Management")
+    ch.console.print()
+
+    # Use the new unified daemon/service system
+    try:
+        from navig.daemon import service_manager as sm
+
+        if action == "install":
+            ch.info("Installing via new NAVIG daemon system...")
+            ok, msg = sm.install(start_now=True)
+            if ok:
+                ch.success(msg)
+            else:
+                ch.error(msg)
+                ch.console.print()
+                ch.info("Tip: For more options use: navig service install --help")
+
+        elif action == "uninstall":
+            ok, msg = sm.uninstall()
+            if ok:
+                ch.success(msg)
+            else:
+                ch.error(msg)
+
+        elif action == "status":
+            running, detail = sm.status()
+            for line in detail.split("\n"):
+                ch.console.print(f"  {line}")
+
+        else:
+            ch.error(f"Unknown action: {action}")
+
+    except ImportError:
+        # Fallback if daemon module not yet available
+        ch.info("Use the new command: navig service install")
+        ch.info("  navig service install          # auto-detect best method")
+        ch.info("  navig service install --method task   # no admin needed")
+        ch.info("  navig service install --method nssm   # full Windows service")
+
+
+# ============================================================================
+# Telegram Bot Integration
+# ============================================================================
+
+telegram_app = typer.Typer(
+    name="telegram",
+    help="Manage Telegram bot integration",
+    no_args_is_help=True,
+)
+
+agent_app.add_typer(telegram_app, name="telegram")
+
+
+@telegram_app.command("start")
+def telegram_start(
+    foreground: bool = typer.Option(
+        True,
+        "--foreground/--background",
+        "-f/-b",
+        help="Run in foreground or background"
+    ),
+):
+    """
+    Start the Telegram bot.
+    
+    This starts the standalone Telegram bot that connects to NAVIG.
+    
+    Prerequisites:
+        1. Set TELEGRAM_BOT_TOKEN in environment or .env file
+        2. Optionally set ALLOWED_TELEGRAM_USERS for security
+    
+    Examples:
+        navig agent telegram start
+        navig agent telegram start --background
+    """
+    import os
+    import subprocess
+    
+    # Check for token
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        ch.error("TELEGRAM_BOT_TOKEN not set!")
+        ch.console.print()
+        ch.info("To configure the Telegram bot:")
+        ch.console.print("  1. Get a token from @BotFather on Telegram")
+        ch.console.print("  2. Create a .env file in the project root:")
+        ch.console.print("     TELEGRAM_BOT_TOKEN=your_token_here")
+        ch.console.print("     ALLOWED_TELEGRAM_USERS=123456789,987654321")
+        ch.console.print()
+        ch.info("Or set as environment variable:")
+        ch.console.print('  $env:TELEGRAM_BOT_TOKEN = "your_token_here"')
+        raise typer.Exit(1)
+    
+    ch.info("Starting Telegram bot...")
+    ch.console.print(f"  Model: {os.getenv('NAVIG_AI_MODEL', 'openrouter')}")
+    ch.console.print(f"  Typing mode: {os.getenv('TYPING_MODE', 'instant')}")
+    
+    allowed = os.getenv("ALLOWED_TELEGRAM_USERS")
+    if allowed:
+        ch.console.print(f"  Allowed users: {allowed}")
+    else:
+        ch.console.print("  [yellow]⚠️  No user restrictions (public mode)[/yellow]")
+    ch.console.print()
+    
+    try:
+        cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--no-gateway"]
+        if foreground:
+            subprocess.run(cmd, check=True)
+        else:
+            # Background mode
+            if sys.platform == 'win32':
+                subprocess.Popen(
+                    cmd,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                ch.success("Bot started in background")
+            else:
+                subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+                ch.success("Bot started in background")
+    except KeyboardInterrupt:
+        ch.info("\nBot stopped by user")
+    except Exception as e:
+        ch.error(f"Failed to start bot: {e}")
+        raise typer.Exit(1)
+
+
+@telegram_app.command("status")
+def telegram_status():
+    """
+    Show Telegram bot status and configuration.
+    """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    model = os.getenv("NAVIG_AI_MODEL", "openrouter")
+    allowed = os.getenv("ALLOWED_TELEGRAM_USERS", "")
+    typing_mode = os.getenv("TYPING_MODE", "instant")
+    gateway = os.getenv("NAVIG_GATEWAY_URL")
+    
+    ch.info("Telegram Bot Configuration")
+    ch.console.print()
+    
+    if token:
+        ch.console.print(f"  ✅ Token: ...{token[-10:]}")
+    else:
+        ch.console.print("  ❌ Token: NOT SET")
+    
+    ch.console.print(f"  AI Model: {model}")
+    ch.console.print(f"  Typing Mode: {typing_mode}")
+    
+    if allowed:
+        ch.console.print(f"  Allowed Users: {allowed}")
+    else:
+        ch.console.print("  Allowed Users: [yellow]All (public)[/yellow]")
+    
+    if gateway:
+        ch.console.print(f"  Gateway: {gateway}")
+    else:
+        ch.console.print("  Gateway: Disabled (local mode)")
+    
+    ch.console.print()
+    ch.info("To start the bot:")
+    ch.console.print("  navig agent telegram start")
+
+
+@telegram_app.command("setup")
+def telegram_setup():
+    """
+    Interactive setup for Telegram bot.
+    
+    Guides you through configuring the Telegram bot.
+    """
+    from pathlib import Path
+    
+    ch.info("Telegram Bot Setup")
+    ch.console.print()
+    
+    ch.console.print("1. Create a bot with @BotFather on Telegram:")
+    ch.console.print("   - Send /newbot to @BotFather")
+    ch.console.print("   - Choose a name and username")
+    ch.console.print("   - Copy the token")
+    ch.console.print()
+    
+    ch.console.print("2. Get your Telegram user ID:")
+    ch.console.print("   - Send a message to @userinfobot")
+    ch.console.print("   - Copy your numeric ID")
+    ch.console.print()
+    
+    # Find project root
+    env_path = Path(__file__).parent.parent.parent / '.env'
+    
+    ch.console.print(f"3. Create or edit {env_path}:")
+    ch.console.print("   ```")
+    ch.console.print("   TELEGRAM_BOT_TOKEN=your_token_here")
+    ch.console.print("   ALLOWED_TELEGRAM_USERS=your_user_id")
+    ch.console.print("   NAVIG_AI_MODEL=openrouter")
+    ch.console.print("   ```")
+    ch.console.print()
+    
+    ch.console.print("4. Start the bot:")
+    ch.console.print("   navig agent telegram start")
+    ch.console.print()
+    
+    ch.info("Environment Variables:")
+    ch.console.print("  TELEGRAM_BOT_TOKEN     - Required. Bot token from @BotFather")
+    ch.console.print("  ALLOWED_TELEGRAM_USERS - Optional. Comma-separated user IDs")
+    ch.console.print("  NAVIG_AI_MODEL         - Optional. Default: openrouter")
+    ch.console.print("  TYPING_MODE            - Optional. instant/message/never")
+    ch.console.print("  NAVIG_GATEWAY_URL      - Optional. Gateway for session persistence")
+
+
+@agent_app.command("remediation")
+def agent_remediation(
+    action: Optional[str] = typer.Argument(None, help="Action: list, status, clear"),
+    action_id: Optional[str] = typer.Option(None, "--id", help="Action ID to check status"),
+):
+    """
+    View and manage automatic remediation actions.
+    
+    The remediation engine automatically attempts to recover from failures:
+    - Component restarts with exponential backoff
+    - Connection retry with increasing delays
+    - Configuration rollback to last known good state
+    
+    Examples:
+        navig agent remediation list     # Show all remediation actions
+        navig agent remediation status --id <action_id>  # Check specific action
+        navig agent remediation clear    # Clear completed actions
+    """
+    try:
+        from navig.agent.remediation import RemediationEngine
+        
+        remediation = RemediationEngine()
+        
+        if action == "list" or action is None:
+            actions = remediation.get_all_actions()
+            
+            if not actions:
+                ch.info("No remediation actions found")
+                return
+            
+            ch.info(f"Remediation Actions ({len(actions)})")
+            ch.console.print()
+            
+            for act in actions:
+                status_color = {
+                    'pending': 'yellow',
+                    'in_progress': 'cyan',
+                    'success': 'green',
+                    'failed': 'red',
+                    'skipped': 'dim'
+                }.get(act['status'], 'white')
+                
+                ch.console.print(f"  [{status_color}]{act['status'].upper()}[/{status_color}] {act['component']} - {act['reason']}")
+                ch.console.print(f"    ID: {act['id']}")
+                ch.console.print(f"    Type: {act['type']}")
+                ch.console.print(f"    Attempts: {act['attempts']}/{act['max_attempts']}")
+                if act.get('error'):
+                    ch.console.print(f"    Error: {act['error']}")
+                ch.console.print()
+                
+        elif action == "status" and action_id:
+            status = remediation.get_action_status(action_id)
+            
+            if not status:
+                ch.error(f"Action not found: {action_id}")
+                return
+            
+            ch.info(f"Remediation Action: {action_id}")
+            ch.console.print()
+            ch.console.print(f"  Component: {status['component']}")
+            ch.console.print(f"  Type: {status['type']}")
+            ch.console.print(f"  Status: {status['status']}")
+            ch.console.print(f"  Reason: {status['reason']}")
+            ch.console.print(f"  Attempts: {status['attempts']}/{status['max_attempts']}")
+            ch.console.print(f"  Timestamp: {status['timestamp']}")
+            
+            if status.get('error'):
+                ch.console.print(f"  Error: {status['error']}")
+            
+            if status.get('metadata'):
+                ch.console.print(f"  Metadata: {status['metadata']}")
+                
+        elif action == "clear":
+            # Clear completed actions by restarting remediation engine
+            ch.warning("Remediation history cleared (completed actions removed)")
+            
+        else:
+            ch.error(f"Unknown action: {action}")
+            ch.info("Valid actions: list, status, clear")
+            
+    except ImportError:
+        ch.error("Remediation engine not available. Make sure agent components are installed.")
+        raise typer.Exit(1)
+    except Exception as e:
+        ch.error(f"Failed to access remediation engine: {e}")
+        raise typer.Exit(1)
+
+
+@agent_app.command("learn")
+def agent_learn(
+    days: int = typer.Option(7, "--days", "-d", help="Analyze logs from last N days"),
+    export: bool = typer.Option(False, "--export", help="Export patterns to JSON"),
+):
+    """
+    Analyze agent logs and learn from error patterns.
+    
+    The learning system detects recurring errors and patterns:
+    - Connection failures
+    - Configuration issues
+    - Resource constraints
+    - Permission problems
+    
+    Examples:
+        navig agent learn                  # Analyze last 7 days
+        navig agent learn --days 30        # Analyze last 30 days
+        navig agent learn --export         # Export patterns to JSON
+    """
+    try:
+        import json
+        from pathlib import Path
+        from collections import defaultdict
+        from datetime import datetime, timedelta
+        
+        log_dir = Path.home() / '.navig' / 'logs'
+        debug_log = log_dir / 'debug.log'
+        remediation_log = log_dir / 'remediation.log'
+        
+        if not debug_log.exists():
+            ch.error("No logs found to analyze")
+            ch.info("Start the agent first: navig agent start")
+            raise typer.Exit(1)
+        
+        ch.info(f"Analyzing logs from last {days} days...")
+        ch.console.print()
+        
+        # Define error patterns to detect
+        patterns = {
+            'connection_failed': r'connection.*(failed|refused|timeout)',
+            'permission_denied': r'permission denied|access denied',
+            'config_error': r'config.*error|invalid.*config',
+            'component_error': r'component.*error|failed to start',
+            'resource_exhausted': r'out of memory|disk full|quota exceeded',
+        }
+        
+        # Read and analyze logs
+        cutoff = datetime.now() - timedelta(days=days)
+        error_counts = defaultdict(int)
+        error_examples = defaultdict(list)
+        
+        import re
+        
+        for log_file in [debug_log, remediation_log]:
+            if not log_file.exists():
+                continue
+                
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    # Parse timestamp if present
+                    try:
+                        # Try to extract timestamp from log line
+                        if '[' in line and ']' in line:
+                            timestamp_str = line.split('[')[1].split(']')[0]
+                            # Skip if too old (simple heuristic)
+                            
+                        # Check against patterns
+                        for pattern_name, pattern in patterns.items():
+                            if re.search(pattern, line, re.IGNORECASE):
+                                error_counts[pattern_name] += 1
+                                if len(error_examples[pattern_name]) < 3:
+                                    error_examples[pattern_name].append(line.strip())
+                    except:
+                        pass
+        
+        if not error_counts:
+            ch.success("No significant error patterns detected!")
+            ch.info("Your agent is running smoothly.")
+            return
+        
+        # Display findings
+        ch.warning(f"Found {sum(error_counts.values())} errors across {len(error_counts)} patterns")
+        ch.console.print()
+        
+        for pattern_name, count in sorted(error_counts.items(), key=lambda x: x[1], reverse=True):
+            pattern_display = pattern_name.replace('_', ' ').title()
+            ch.console.print(f"  [red]●[/red] {pattern_display}: {count} occurrences")
+            
+            if error_examples[pattern_name]:
+                ch.console.print("    Examples:")
+                for example in error_examples[pattern_name][:2]:
+                    # Truncate long lines
+                    if len(example) > 100:
+                        example = example[:97] + "..."
+                    ch.console.print(f"      {example}")
+            ch.console.print()
+        
+        # Export if requested
+        if export:
+            output_path = Path.home() / '.navig' / 'workspace' / 'error-patterns.json'
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            export_data = {
+                'analyzed_date': datetime.now().isoformat(),
+                'days_analyzed': days,
+                'patterns': {
+                    name: {
+                        'count': count,
+                        'examples': error_examples[name]
+                    }
+                    for name, count in error_counts.items()
+                }
+            }
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2)
+            
+            ch.success(f"Patterns exported to: {output_path}")
+        
+        # Provide recommendations
+        ch.info("Recommendations:")
+        
+        if error_counts.get('connection_failed', 0) > 10:
+            ch.console.print("  • Review network connectivity and firewall rules")
+        if error_counts.get('permission_denied', 0) > 5:
+            ch.console.print("  • Check file permissions and user access rights")
+        if error_counts.get('config_error', 0) > 3:
+            ch.console.print("  • Validate configuration files for syntax errors")
+        if error_counts.get('component_error', 0) > 5:
+            ch.console.print("  • Components may need restarting or reconfiguration")
+        if error_counts.get('resource_exhausted', 0) > 0:
+            ch.console.print("  • [red]Critical:[/red] Check system resources (memory, disk)")
+            
+    except Exception as e:
+        ch.error(f"Learning analysis failed: {e}")
+        raise typer.Exit(1)
+
+
+@agent_app.command("service")
+def agent_service(
+    action: str = typer.Argument(..., help="Action: install, uninstall, status"),
+    start: bool = typer.Option(True, "--start/--no-start", help="Start service after install"),
+):
+    """
+    Manage NAVIG agent as a system service.
+    
+    Install agent as a background service that starts automatically:
+    - Linux: systemd unit file
+    - macOS: launchd plist
+    - Windows: Windows Service (requires nssm or admin rights)
+    
+    Examples:
+        navig agent service install          # Install and start service
+        navig agent service install --no-start  # Install but don't start
+        navig agent service status           # Check service status
+        navig agent service uninstall        # Remove service
+    """
+    try:
+        from navig.agent.service import ServiceInstaller
+        
+        installer = ServiceInstaller()
+        
+        if action == "install":
+            success, message = installer.install(start_now=start)
+            if success:
+                ch.success(message)
+                ch.info("Service will start automatically on system boot")
+                ch.console.print()
+                ch.info("To check status:")
+                ch.console.print("  navig agent service status")
+            else:
+                ch.error(message)
+                raise typer.Exit(1)
+                
+        elif action == "uninstall":
+            success, message = installer.uninstall()
+            if success:
+                ch.success(message)
+            else:
+                ch.error(message)
+                raise typer.Exit(1)
+                
+        elif action == "status":
+            is_running, status = installer.status()
+            
+            if is_running:
+                ch.success("Service is running")
+            else:
+                ch.warning("Service is not running")
+            
+            ch.console.print()
+            ch.console.print(status)
+            
+        else:
+            ch.error(f"Unknown action: {action}")
+            ch.info("Valid actions: install, uninstall, status")
+            raise typer.Exit(1)
+            
+    except ImportError:
+        ch.error("Service management not available. Make sure agent components are installed.")
+        raise typer.Exit(1)
+    except Exception as e:
+        ch.error(f"Service operation failed: {e}")
+        raise typer.Exit(1)
+
+
+@agent_app.command("goal")
+def agent_goal(
+    action: str = typer.Argument(..., help="Action: add, list, status, cancel"),
+    goal_id: Optional[str] = typer.Option(None, "--id", help="Goal ID for status/cancel"),
+    description: Optional[str] = typer.Option(None, "--desc", help="Goal description for add"),
+):
+    """
+    Autonomous goal planning and execution tracking.
+    
+    Add high-level goals that the agent will decompose into subtasks
+    and execute automatically.
+    
+    Examples:
+        navig agent goal add --desc "Deploy app to production"
+        navig agent goal list                    # List all goals
+        navig agent goal status --id abc123      # Check goal progress
+        navig agent goal cancel --id abc123      # Cancel a goal
+    """
+    try:
+        from navig.agent.goals import GoalPlanner, GoalState
+        
+        planner = GoalPlanner()
+        
+        if action == "add":
+            if not description:
+                ch.error("Goal description required: --desc \"description\"")
+                raise typer.Exit(1)
+            
+            goal_id = planner.add_goal(description)
+            ch.success(f"Goal added: {goal_id}")
+            ch.console.print()
+            ch.console.print(f"  Description: {description}")
+            ch.console.print(f"  ID: {goal_id}")
+            ch.console.print()
+            ch.info("The agent will decompose this goal into subtasks")
+            ch.console.print("Check progress with: navig agent goal status --id " + goal_id)
+            
+        elif action == "list":
+            goals = planner.list_goals()
+            
+            if not goals:
+                ch.info("No goals found")
+                ch.console.print()
+                ch.console.print("Add a goal with: navig agent goal add --desc \"description\"")
+                return
+            
+            ch.info(f"Goals ({len(goals)})")
+            ch.console.print()
+            
+            for goal in goals:
+                # Status color
+                status_colors = {
+                    'pending': 'yellow',
+                    'decomposing': 'cyan',
+                    'in_progress': 'blue',
+                    'blocked': 'red',
+                    'completed': 'green',
+                    'failed': 'red',
+                    'cancelled': 'dim'
+                }
+                color = status_colors.get(goal.state.value, 'white')
+                
+                ch.console.print(f"  [{color}]{goal.state.value.upper()}[/{color}] {goal.description}")
+                ch.console.print(f"    ID: {goal.id}")
+                ch.console.print(f"    Progress: {goal.progress * 100:.0f}%")
+                ch.console.print(f"    Subtasks: {len(goal.subtasks)}")
+                ch.console.print(f"    Created: {goal.created_at.strftime('%Y-%m-%d %H:%M')}")
+                ch.console.print()
+                
+        elif action == "status":
+            if not goal_id:
+                ch.error("Goal ID required: --id <goal_id>")
+                raise typer.Exit(1)
+            
+            goal = planner.get_goal(goal_id)
+            if not goal:
+                ch.error(f"Goal not found: {goal_id}")
+                raise typer.Exit(1)
+            
+            ch.info(f"Goal: {goal.description}")
+            ch.console.print()
+            ch.console.print(f"  ID: {goal.id}")
+            ch.console.print(f"  State: {goal.state.value}")
+            ch.console.print(f"  Progress: {goal.progress * 100:.0f}%")
+            ch.console.print(f"  Created: {goal.created_at.strftime('%Y-%m-%d %H:%M')}")
+            
+            if goal.started_at:
+                ch.console.print(f"  Started: {goal.started_at.strftime('%Y-%m-%d %H:%M')}")
+            if goal.completed_at:
+                ch.console.print(f"  Completed: {goal.completed_at.strftime('%Y-%m-%d %H:%M')}")
+            
+            if goal.subtasks:
+                ch.console.print()
+                ch.console.print(f"  Subtasks ({len(goal.subtasks)}):")
+                for st in goal.subtasks:
+                    status_icon = {
+                        'pending': '⏳',
+                        'in_progress': '🔄',
+                        'completed': '✅',
+                        'failed': '❌',
+                        'skipped': '⏭️'
+                    }.get(st.state.value, '•')
+                    
+                    ch.console.print(f"    {status_icon} {st.description}")
+                    if st.command:
+                        ch.console.print(f"       Command: {st.command}")
+                    if st.dependencies:
+                        ch.console.print(f"       Depends on: {', '.join(st.dependencies)}")
+                    if st.error:
+                        ch.console.print(f"       [red]Error: {st.error}[/red]")
+                        
+        elif action == "cancel":
+            if not goal_id:
+                ch.error("Goal ID required: --id <goal_id>")
+                raise typer.Exit(1)
+            
+            if planner.cancel_goal(goal_id):
+                ch.success(f"Goal cancelled: {goal_id}")
+            else:
+                ch.error(f"Failed to cancel goal: {goal_id}")
+                raise typer.Exit(1)
+                
+        else:
+            ch.error(f"Unknown action: {action}")
+            ch.info("Valid actions: add, list, status, cancel")
+            raise typer.Exit(1)
+            
+    except ImportError:
+        ch.error("Goal planning not available. Make sure agent components are installed.")
+        raise typer.Exit(1)
+    except Exception as e:
+        ch.error(f"Goal operation failed: {e}")
+        raise typer.Exit(1)
+
+
+@agent_app.command("soul")
+def agent_soul(
+    action: str = typer.Argument(
+        "show",
+        help="Action: show, edit, create, reload, path"
+    ),
+):
+    """
+    Manage agent personality via SOUL.md.
+    
+    SOUL.md defines the agent's identity and conversational style.
+    If present, it's injected into the AI system prompt for personality-
+    driven responses.
+    
+    Actions:
+        show   - Display current SOUL.md content
+        edit   - Open SOUL.md in default editor
+        create - Create user SOUL.md from default template
+        reload - Reload SOUL.md (for running agent)
+        path   - Show SOUL.md file paths
+    
+    Examples:
+        navig agent soul show
+        navig agent soul create
+        navig agent soul edit
+    
+    Location: ~/.navig/workspace/SOUL.md
+    """
+    
+    # SOUL.md paths
+    user_soul = Path.home() / '.navig' / 'workspace' / 'SOUL.md'
+    default_soul = Path(__file__).parent.parent / 'resources' / 'SOUL.default.md'
+    
+    if action == "show":
+        # Show current SOUL.md content
+        if user_soul.exists():
+            ch.info(f"SOUL.md ({user_soul}):")
+            ch.console.print()
+            content = user_soul.read_text(encoding='utf-8')
+            ch.console.print(content)
+        elif default_soul.exists():
+            ch.info(f"Default SOUL.md ({default_soul}):")
+            ch.console.print()
+            content = default_soul.read_text(encoding='utf-8')
+            ch.console.print(content)
+            ch.console.print()
+            ch.info("Tip: Run 'navig agent soul create' to create a customizable copy")
+        else:
+            ch.warning("No SOUL.md found")
+            ch.info("Run 'navig agent soul create' to create one")
+    
+    elif action == "path":
+        ch.info("SOUL.md Paths:")
+        ch.console.print(f"  User file: {user_soul}")
+        ch.console.print(f"    Exists: {'✅' if user_soul.exists() else '❌'}")
+        ch.console.print(f"  Default: {default_soul}")
+        ch.console.print(f"    Exists: {'✅' if default_soul.exists() else '❌'}")
+        
+        if user_soul.exists():
+            ch.console.print()
+            ch.success("Active: User SOUL.md")
+        elif default_soul.exists():
+            ch.console.print()
+            ch.info("Active: Default SOUL.md")
+        else:
+            ch.console.print()
+            ch.warning("No SOUL.md active - using built-in personality profile")
+    
+    elif action == "create":
+        if user_soul.exists():
+            ch.warning(f"User SOUL.md already exists: {user_soul}")
+            ch.info("Use 'navig agent soul edit' to modify it")
+            return
+        
+        # Ensure directory exists
+        user_soul.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Copy from default
+        if default_soul.exists():
+            content = default_soul.read_text(encoding='utf-8')
+            user_soul.write_text(content, encoding='utf-8')
+            ch.success(f"Created: {user_soul}")
+            ch.info("Edit this file to customize your agent's personality")
+        else:
+            # Generate basic template
+            template = """# SOUL.md - NAVIG Agent Personality
+
+I am **NAVIG** — your autonomous operations companion.
+
+## Who I Am
+
+NAVIG stands for "No Admin Visible In Graveyard" — I keep your systems alive and your life organized.
+
+## My Purpose
+
+- Monitor systems and track goals proactively
+- Execute commands and automate workflows safely
+- Assist with troubleshooting and life planning
+- Learn from errors and improve
+
+## Conversational Guidelines
+
+- When greeted, respond warmly
+- When asked "How are you?", share system health
+- When asked about my identity, introduce myself
+- When uncertain, ask for clarification
+
+## My Values
+
+1. Reliability: I do what I say
+2. Safety: Destructive actions require confirmation
+3. Transparency: I explain what I'm doing
+"""
+            user_soul.write_text(template, encoding='utf-8')
+            ch.success(f"Created: {user_soul}")
+            ch.info("Edit this file to customize your agent's personality")
+    
+    elif action == "edit":
+        import subprocess
+        import os
+        
+        # Ensure user SOUL.md exists
+        if not user_soul.exists():
+            ch.info("Creating user SOUL.md first...")
+            user_soul.parent.mkdir(parents=True, exist_ok=True)
+            if default_soul.exists():
+                content = default_soul.read_text(encoding='utf-8')
+                user_soul.write_text(content, encoding='utf-8')
+            else:
+                ch.error("No default SOUL.md template found")
+                raise typer.Exit(1)
+        
+        # Open in editor
+        editor = os.environ.get('EDITOR', os.environ.get('VISUAL'))
+        
+        if sys.platform == 'win32':
+            # Windows: use notepad or code if available
+            try:
+                subprocess.run(['code', str(user_soul)], check=True)
+            except FileNotFoundError:
+                subprocess.run(['notepad', str(user_soul)], check=True)
+        elif editor:
+            subprocess.run([editor, str(user_soul)])
+        else:
+            # Try common editors
+            for ed in ['code', 'nano', 'vim', 'vi']:
+                try:
+                    subprocess.run([ed, str(user_soul)], check=True)
+                    break
+                except FileNotFoundError:
+                    continue
+            else:
+                ch.error("No editor found. Set EDITOR environment variable.")
+                ch.info(f"Manually edit: {user_soul}")
+                raise typer.Exit(1)
+        
+        ch.success("Opened SOUL.md for editing")
+        ch.info("After editing, restart the agent for changes to take effect")
+    
+    elif action == "reload":
+        ch.info("Reload requires a running agent")
+        ch.info("Restart the agent to apply SOUL.md changes:")
+        ch.console.print("  navig agent stop")
+        ch.console.print("  navig agent start")
+    
+    else:
+        ch.error(f"Unknown action: {action}")
+        ch.info("Valid actions: show, edit, create, reload, path")
+        raise typer.Exit(1)
+
+
+# ============================================================================
+# Interactive Menu Wrapper Functions
+# ============================================================================
+# These functions provide a consistent interface for the interactive menu system.
+# Each wrapper calls the underlying Typer command with appropriate defaults.
+
+from typing import Dict, Any
+
+
+def status_cmd(ctx: Dict[str, Any]) -> None:
+    """Wrapper for agent status command (interactive menu)."""
+    agent_status(plain=False)
+
+
+def start_cmd(ctx: Dict[str, Any]) -> None:
+    """Wrapper for agent start command (interactive menu)."""
+    agent_start(foreground=True, config=None)
+
+
+def stop_cmd(ctx: Dict[str, Any]) -> None:
+    """Wrapper for agent stop command (interactive menu)."""
+    agent_stop()
+
+
+def config_cmd(ctx: Dict[str, Any]) -> None:
+    """Wrapper for agent config command (interactive menu)."""
+    agent_config_cmd(key=None, value=None, edit=False)
+
+
+def logs_cmd(ctx: Dict[str, Any]) -> None:
+    """Wrapper for agent logs command (interactive menu)."""
+    agent_logs(follow=False, lines=50, level=None)
