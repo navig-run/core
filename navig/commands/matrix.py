@@ -1392,3 +1392,182 @@ def e2ee_import_keys(
             raise typer.Exit(1)
 
     _run_async(_import())
+
+
+# ============================================================================
+# Store subcommand group  (Phase 4)
+# ============================================================================
+
+store_app = typer.Typer(
+    name="store",
+    help="Persistent Matrix store — stats, bridges, events",
+)
+matrix_app.add_typer(store_app, name="store")
+
+
+@store_app.command("stats")
+def store_stats():
+    """Show persistent store statistics."""
+    from navig.comms.matrix_store import MatrixStore
+    import os
+
+    db_path = os.path.expanduser("~/.navig/matrix.db")
+    if not os.path.exists(db_path):
+        console.print("[yellow]⚠[/] Store not initialised yet (no matrix.db)")
+        raise typer.Exit(0)
+
+    store = MatrixStore(db_path)
+    try:
+        s = store.stats()
+    finally:
+        store.close()
+
+    table = Table(title="Matrix Store")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green", justify="right")
+    for k, v in s.items():
+        table.add_row(k, str(v))
+    console.print(table)
+
+
+@store_app.command("rooms")
+def store_rooms(
+    purpose: Annotated[Optional[str], typer.Option("--purpose", "-p", help="Filter by purpose")] = None,
+):
+    """List rooms in the persistent store."""
+    from navig.comms.matrix_store import MatrixStore
+    import os
+
+    db_path = os.path.expanduser("~/.navig/matrix.db")
+    if not os.path.exists(db_path):
+        console.print("[yellow]⚠[/] Store not initialised")
+        raise typer.Exit(0)
+
+    store = MatrixStore(db_path)
+    try:
+        rooms = store.list_rooms(purpose=purpose)
+    finally:
+        store.close()
+
+    if not rooms:
+        console.print("[dim]No rooms in store[/]")
+        return
+
+    table = Table(title="Stored Rooms")
+    table.add_column("Room ID", style="cyan", max_width=40)
+    table.add_column("Name", style="green")
+    table.add_column("Purpose", style="yellow")
+    table.add_column("Encrypted", style="magenta")
+    table.add_column("Joined", style="dim")
+    for r in rooms:
+        table.add_row(
+            r.room_id,
+            r.name or "(unnamed)",
+            r.purpose,
+            "🔒" if r.encrypted else "—",
+            r.joined_at[:10] if r.joined_at else "",
+        )
+    console.print(table)
+
+
+@store_app.command("events")
+def store_events(
+    room_id: Annotated[str, typer.Argument(help="Room ID")],
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+):
+    """Show recent events for a room from the persistent store."""
+    from navig.comms.matrix_store import MatrixStore
+    import os
+
+    db_path = os.path.expanduser("~/.navig/matrix.db")
+    if not os.path.exists(db_path):
+        console.print("[yellow]⚠[/] Store not initialised")
+        raise typer.Exit(0)
+
+    store = MatrixStore(db_path)
+    try:
+        events = store.get_events(room_id, limit=limit)
+    finally:
+        store.close()
+
+    if not events:
+        console.print("[dim]No events stored for this room[/]")
+        return
+
+    table = Table(title=f"Events: {room_id[:30]}…")
+    table.add_column("Event ID", style="dim", max_width=30)
+    table.add_column("Sender", style="cyan")
+    table.add_column("Type", style="yellow")
+    table.add_column("Body", max_width=50)
+    for e in events:
+        body = e.content.get("body", "") if e.content else ""
+        table.add_row(e.event_id[:28] + "…" if len(e.event_id) > 28 else e.event_id, e.sender, e.event_type, body[:50])
+    console.print(table)
+
+
+@store_app.command("prune")
+def store_prune(
+    max_rows: Annotated[int, typer.Option("--max", "-m", help="Max events to keep")] = 10000,
+):
+    """Prune old events from the store."""
+    from navig.comms.matrix_store import MatrixStore
+    import os
+
+    db_path = os.path.expanduser("~/.navig/matrix.db")
+    if not os.path.exists(db_path):
+        console.print("[yellow]⚠[/] Store not initialised")
+        raise typer.Exit(0)
+
+    store = MatrixStore(db_path)
+    try:
+        before = store.count_events()
+        store.prune_events(max_rows=max_rows)
+        after = store.count_events()
+    finally:
+        store.close()
+
+    pruned = before - after
+    if pruned > 0:
+        console.print(f"[green]✓[/] Pruned {pruned} events ({before} → {after})")
+    else:
+        console.print(f"[dim]No pruning needed ({after} events, max {max_rows})[/]")
+
+
+@store_app.command("bridges")
+def store_bridges(
+    room_id: Annotated[Optional[str], typer.Argument(help="Room ID (optional)")] = None,
+):
+    """List bridge configurations in the store."""
+    from navig.comms.matrix_store import MatrixStore
+    import os
+
+    db_path = os.path.expanduser("~/.navig/matrix.db")
+    if not os.path.exists(db_path):
+        console.print("[yellow]⚠[/] Store not initialised")
+        raise typer.Exit(0)
+
+    store = MatrixStore(db_path)
+    try:
+        bridges = store.get_bridges(room_id=room_id)
+    finally:
+        store.close()
+
+    if not bridges:
+        console.print("[dim]No bridges configured[/]")
+        return
+
+    table = Table(title="Bridges")
+    table.add_column("ID", style="dim")
+    table.add_column("Room ID", style="cyan", max_width=35)
+    table.add_column("Type", style="yellow")
+    table.add_column("Config", style="green", max_width=40)
+    table.add_column("Active", style="cyan")
+    for b in bridges:
+        table.add_row(
+            str(b.id),
+            b.room_id[:33] + "…" if len(b.room_id) > 33 else b.room_id,
+            b.bridge_type,
+            str(b.config),
+            "✓" if b.active else "✗",
+        )
+    console.print(table)

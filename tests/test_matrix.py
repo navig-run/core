@@ -1,5 +1,5 @@
 """
-Tests for NAVIG Matrix Integration — Phase 1 + Phase 2 + Phase 3
+Tests for NAVIG Matrix Integration — Phase 1 + Phase 2 + Phase 3 + Phase 4
 
 Covers:
   - Feature toggle system
@@ -11,6 +11,7 @@ Covers:
   - Matrix notifier
   - File sharing (upload/download)
   - E2EE: olm detection, E2EE manager, device trust, SAS flow, CLI
+  - Persistent store: rooms, events, bridges, device trust, stats
 """
 
 from __future__ import annotations
@@ -1366,3 +1367,497 @@ class TestE2EECLI:
         result = runner.invoke(matrix_app, ["e2ee", "--help"])
         assert result.exit_code == 0
         assert "e2ee" in result.output.lower() or "encryption" in result.output.lower()
+
+
+# ============================================================================
+# Phase 4 — Persistent store tests
+# ============================================================================
+
+import os
+import tempfile
+
+
+class TestMatrixStoreSchema:
+    """Schema creation and versioning."""
+
+    def test_creates_tables(self):
+        from navig.comms.matrix_store import MatrixStore
+
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "test.db")
+            store = MatrixStore(db)
+            # check tables exist by querying sqlite_master
+            conn = store._get_conn()
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()}
+            store.close()
+            assert "rooms" in tables
+            assert "events" in tables
+            assert "bridges" in tables
+            assert "device_trust" in tables
+            assert "schema_version" in tables
+
+    def test_schema_version(self):
+        from navig.comms.matrix_store import MatrixStore, SCHEMA_VERSION
+
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "test.db")
+            store = MatrixStore(db)
+            conn = store._get_conn()
+            v = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+            store.close()
+            assert v == SCHEMA_VERSION
+
+    def test_idempotent_open(self):
+        """Opening the same DB twice should not error."""
+        from navig.comms.matrix_store import MatrixStore
+
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "test.db")
+            s1 = MatrixStore(db)
+            s1.close()
+            s2 = MatrixStore(db)
+            assert s2.count_rooms() == 0
+            s2.close()
+
+
+class TestMatrixStoreRooms:
+    """Room CRUD operations."""
+
+    def _make_store(self, tmp):
+        from navig.comms.matrix_store import MatrixStore
+        return MatrixStore(os.path.join(tmp, "test.db"))
+
+    def test_upsert_and_get(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            room = MatrixRoom(
+                room_id="!abc:test",
+                name="Test Room",
+                topic="A topic",
+                purpose="notifications",
+                encrypted=True,
+            )
+            store.upsert_room(room)
+            got = store.get_room("!abc:test")
+            assert got is not None
+            assert got.name == "Test Room"
+            assert got.purpose == "notifications"
+            assert got.encrypted is True
+            store.close()
+
+    def test_upsert_updates(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t", name="V1"))
+            store.upsert_room(MatrixRoom(room_id="!r:t", name="V2"))
+            assert store.count_rooms() == 1
+            assert store.get_room("!r:t").name == "V2"
+            store.close()
+
+    def test_list_rooms_filter(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!a:t", purpose="alerts"))
+            store.upsert_room(MatrixRoom(room_id="!b:t", purpose="general"))
+            store.upsert_room(MatrixRoom(room_id="!c:t", purpose="alerts"))
+            assert len(store.list_rooms(purpose="alerts")) == 2
+            assert len(store.list_rooms(purpose="general")) == 1
+            assert len(store.list_rooms()) == 3
+            store.close()
+
+    def test_remove_room(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!rm:t"))
+            assert store.count_rooms() == 1
+            store.remove_room("!rm:t")
+            assert store.count_rooms() == 0
+            assert store.get_room("!rm:t") is None
+            store.close()
+
+    def test_room_metadata(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(
+                room_id="!meta:t",
+                metadata={"bridge": "telegram", "channel": "#main"},
+            ))
+            got = store.get_room("!meta:t")
+            assert got.metadata == {"bridge": "telegram", "channel": "#main"}
+            store.close()
+
+
+class TestMatrixStoreEvents:
+    """Event logging and querying."""
+
+    def _make_store(self, tmp):
+        from navig.comms.matrix_store import MatrixStore
+        return MatrixStore(os.path.join(tmp, "test.db"))
+
+    def test_add_and_get(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            store.add_event(MatrixEvent(
+                event_id="$ev1",
+                room_id="!r:t",
+                sender="@alice:t",
+                event_type="m.room.message",
+                content={"body": "hello"},
+                origin_ts=1000,
+            ))
+            events = store.get_events("!r:t")
+            assert len(events) == 1
+            assert events[0].sender == "@alice:t"
+            assert events[0].content["body"] == "hello"
+            store.close()
+
+    def test_duplicate_event_id_ignored(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            ev = MatrixEvent(event_id="$dup", room_id="!r:t", sender="@a:t", event_type="m.room.message")
+            store.add_event(ev)
+            store.add_event(ev)  # should not raise
+            assert store.count_events("!r:t") == 1
+            store.close()
+
+    def test_events_ordered_by_origin_ts(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            for i in range(5):
+                store.add_event(MatrixEvent(
+                    event_id=f"$e{i}", room_id="!r:t",
+                    sender="@a:t", event_type="m.room.message",
+                    origin_ts=i * 1000,
+                ))
+            events = store.get_events("!r:t")
+            # Store returns DESC order (newest first)
+            assert [e.origin_ts for e in events] == [4000, 3000, 2000, 1000, 0]
+            store.close()
+
+    def test_get_events_limit(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            for i in range(10):
+                store.add_event(MatrixEvent(
+                    event_id=f"$e{i}", room_id="!r:t",
+                    sender="@a:t", event_type="m.room.message",
+                    origin_ts=i,
+                ))
+            assert len(store.get_events("!r:t", limit=3)) == 3
+            store.close()
+
+    def test_get_events_since_ts(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            for i in range(5):
+                store.add_event(MatrixEvent(
+                    event_id=f"$e{i}", room_id="!r:t",
+                    sender="@a:t", event_type="m.room.message",
+                    origin_ts=i * 1000,
+                ))
+            # since_ts uses > (exclusive), so origin_ts > 2000 => 3000, 4000
+            events = store.get_events("!r:t", since_ts=2000)
+            assert len(events) == 2  # ts 3000, 4000
+            store.close()
+
+    def test_get_events_by_type(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            store.add_event(MatrixEvent(
+                event_id="$m1", room_id="!r:t", sender="@a:t",
+                event_type="m.room.message",
+            ))
+            store.add_event(MatrixEvent(
+                event_id="$s1", room_id="!r:t", sender="@a:t",
+                event_type="m.room.member",
+            ))
+            msgs = store.get_events("!r:t", event_type="m.room.message")
+            assert len(msgs) == 1
+            assert msgs[0].event_id == "$m1"
+            store.close()
+
+    def test_batch_insert(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            events = [
+                MatrixEvent(event_id=f"$b{i}", room_id="!r:t", sender="@a:t",
+                            event_type="m.room.message", origin_ts=i)
+                for i in range(50)
+            ]
+            store.add_events_batch(events)
+            assert store.count_events("!r:t") == 50
+            store.close()
+
+    def test_prune_events(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            for i in range(100):
+                store.add_event(MatrixEvent(
+                    event_id=f"$p{i}", room_id="!r:t",
+                    sender="@a:t", event_type="m.room.message",
+                    origin_ts=i,
+                ))
+            store.prune_events(max_rows=30)
+            remaining = store.count_events()
+            assert remaining <= 30
+            # Oldest should be pruned, newest kept
+            events = store.get_events("!r:t", limit=1)
+            assert events[0].origin_ts >= 70  # kept the newest 30
+            store.close()
+
+    def test_count_unique_senders(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            for sender in ["@a:t", "@b:t", "@a:t", "@c:t"]:
+                store.add_event(MatrixEvent(
+                    event_id=f"$u{sender}_{id(sender)}",
+                    room_id="!r:t", sender=sender,
+                    event_type="m.room.message",
+                ))
+            assert store.count_unique_senders() == 3
+            store.close()
+
+
+class TestMatrixStoreBridges:
+    """Bridge configuration CRUD."""
+
+    def _make_store(self, tmp):
+        from navig.comms.matrix_store import MatrixStore
+        return MatrixStore(os.path.join(tmp, "test.db"))
+
+    def test_add_and_get(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixBridge, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            bid = store.add_bridge(MatrixBridge(
+                room_id="!r:t",
+                bridge_type="telegram",
+                config={"channel_id": "-100123", "direction": "both"},
+            ))
+            assert bid > 0
+            bridges = store.get_bridges(room_id="!r:t")
+            assert len(bridges) == 1
+            assert bridges[0].bridge_type == "telegram"
+            assert bridges[0].config["channel_id"] == "-100123"
+            store.close()
+
+    def test_remove_bridge(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixBridge, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r:t"))
+            bid = store.add_bridge(MatrixBridge(
+                room_id="!r:t", bridge_type="slack", config={"channel_id": "C123"},
+            ))
+            store.remove_bridge(bid)
+            assert len(store.get_bridges(room_id="!r:t")) == 0
+            store.close()
+
+    def test_get_all_bridges(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixBridge, MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.upsert_room(MatrixRoom(room_id="!r1:t"))
+            store.upsert_room(MatrixRoom(room_id="!r2:t"))
+            store.add_bridge(MatrixBridge(room_id="!r1:t", bridge_type="telegram", config={"ch": "1"}))
+            store.add_bridge(MatrixBridge(room_id="!r2:t", bridge_type="slack", config={"ch": "2"}))
+            all_b = store.get_bridges()
+            assert len(all_b) == 2
+            store.close()
+
+
+class TestMatrixStoreDeviceTrust:
+    """Device trust cache."""
+
+    def _make_store(self, tmp):
+        from navig.comms.matrix_store import MatrixStore
+        return MatrixStore(os.path.join(tmp, "test.db"))
+
+    def test_set_and_get(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.set_device_trust("@alice:t", "DEV1", "verified")
+            trust = store.get_device_trust("@alice:t", "DEV1")
+            assert trust is not None
+            assert trust == "verified"
+            store.close()
+
+    def test_update_trust(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.set_device_trust("@alice:t", "DEV1", "unset")
+            store.set_device_trust("@alice:t", "DEV1", "verified")
+            trust = store.get_device_trust("@alice:t", "DEV1")
+            assert trust == "verified"
+            store.close()
+
+    def test_list_trusted_devices(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            store.set_device_trust("@alice:t", "D1", "verified")
+            store.set_device_trust("@alice:t", "D2", "blacklisted")
+            store.set_device_trust("@bob:t", "D3", "verified")
+            alice_devs = store.list_trusted_devices("@alice:t")
+            assert len(alice_devs) == 2
+            store.close()
+
+    def test_unknown_device_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            assert store.get_device_trust("@none:t", "NOPE") is None
+            store.close()
+
+
+class TestMatrixStoreStats:
+    """Aggregate stats."""
+
+    def test_stats_empty(self):
+        from navig.comms.matrix_store import MatrixStore
+
+        with tempfile.TemporaryDirectory() as d:
+            store = MatrixStore(os.path.join(d, "test.db"))
+            s = store.stats()
+            assert s["rooms"] == 0
+            assert s["events"] == 0
+            assert s["bridges"] == 0
+            assert s["unique_senders"] == 0
+            store.close()
+
+    def test_stats_populated(self):
+        from navig.comms.matrix_store import MatrixStore, MatrixRoom, MatrixEvent
+
+        with tempfile.TemporaryDirectory() as d:
+            store = MatrixStore(os.path.join(d, "test.db"))
+            store.upsert_room(MatrixRoom(room_id="!a:t"))
+            store.upsert_room(MatrixRoom(room_id="!b:t"))
+            store.add_event(MatrixEvent(
+                event_id="$1", room_id="!a:t", sender="@x:t",
+                event_type="m.room.message",
+            ))
+            s = store.stats()
+            assert s["rooms"] == 2
+            assert s["events"] == 1
+            assert s["unique_senders"] == 1
+            store.close()
+
+
+class TestMatrixStoreBotIntegration:
+    """Test that NavigMatrixBot correctly initialises and uses the store."""
+
+    def test_bot_has_store_attribute(self):
+        from navig.comms.matrix import NavigMatrixBot, MatrixConfig
+        bot = NavigMatrixBot(MatrixConfig())
+        assert hasattr(bot, "_store")
+        assert bot._store is None  # not initialised until start()
+        assert bot.store is None
+
+    def test_bot_store_property(self):
+        from navig.comms.matrix import NavigMatrixBot, MatrixConfig
+        bot = NavigMatrixBot(MatrixConfig())
+        # Set a mock store
+        bot._store = MagicMock()
+        assert bot.store is bot._store
+
+
+class TestMatrixStoreCLI:
+    """CLI smoke tests for store subcommands."""
+
+    def test_store_help(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        result = runner.invoke(matrix_app, ["store", "--help"])
+        assert result.exit_code == 0
+        assert "store" in result.output.lower()
+
+    def test_store_stats_no_db(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("os.path.exists", return_value=False):
+            result = runner.invoke(matrix_app, ["store", "stats"])
+            assert result.exit_code == 0
+            assert "not initialised" in result.output.lower() or "⚠" in result.output
+
+    def test_store_stats_with_db(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as d:
+            db_path = os.path.join(d, "matrix.db")
+            with patch("os.path.expanduser", return_value=db_path), \
+                 patch("os.path.exists", return_value=True):
+                from navig.comms.matrix_store import MatrixStore
+                MatrixStore(db_path).close()  # create empty DB
+                result = runner.invoke(matrix_app, ["store", "stats"])
+                assert result.exit_code == 0
+
+    def test_store_rooms_help(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        result = runner.invoke(matrix_app, ["store", "rooms", "--help"])
+        assert result.exit_code == 0
+
+    def test_store_prune_help(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        result = runner.invoke(matrix_app, ["store", "prune", "--help"])
+        assert result.exit_code == 0
+
+    def test_store_bridges_help(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        result = runner.invoke(matrix_app, ["store", "bridges", "--help"])
+        assert result.exit_code == 0

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
@@ -64,6 +65,7 @@ class NavigMatrixBot:
         self._message_callbacks: List[Callable] = []
         self._verification_callbacks: List[Callable] = []
         self._e2ee_enabled = False
+        self._store: Optional["MatrixStore"] = None
 
     async def start(self) -> None:
         """Login and begin background sync."""
@@ -126,6 +128,18 @@ class NavigMatrixBot:
             except (ImportError, Exception) as exc:
                 logger.warning("Matrix: could not register E2EE callbacks: %s", exc)
 
+        # Initialise persistent store
+        try:
+            from navig.comms.matrix_store import MatrixStore
+            import os
+            store_db = os.path.expanduser("~/.navig/matrix.db")
+            self._store = MatrixStore(store_db)
+            self._store.prune_events()  # keep DB tidy
+            logger.info("Matrix: persistent store at %s", store_db)
+        except Exception:
+            logger.warning("Matrix: could not initialise persistent store (non-fatal)")
+            self._store = None
+
         self._running = True
         self._sync_task = asyncio.create_task(self._sync_loop())
         _bot = self
@@ -160,12 +174,20 @@ class NavigMatrixBot:
         if self._client:
             await self._client.close()
             self._client = None
+        if self._store:
+            self._store.close()
+            self._store = None
         _bot = None
         logger.info("Matrix bot stopped")
 
     @property
     def is_running(self) -> bool:
         return self._running and self._client is not None
+
+    @property
+    def store(self) -> Optional["MatrixStore"]:
+        """Expose the persistent store (or None if not initialised)."""
+        return self._store
 
     async def send_message(self, room_id: str, message: str) -> Optional[str]:
         """Send a text message. Returns event_id or None."""
@@ -225,6 +247,19 @@ class NavigMatrixBot:
                 invite=invite_user_ids or [],
             )
             if isinstance(resp, RoomCreateResponse):
+                # Persist room in store
+                if self._store:
+                    try:
+                        from navig.comms.matrix_store import MatrixRoom as _MR
+                        self._store.upsert_room(_MR(
+                            room_id=resp.room_id,
+                            name=name,
+                            topic=topic,
+                            purpose="general",
+                            encrypted=False,
+                        ))
+                    except Exception:
+                        logger.debug("Matrix: could not persist room to store")
                 return resp.room_id
             return None
         except Exception:
@@ -384,6 +419,20 @@ class NavigMatrixBot:
                 })
         except Exception:
             logger.exception("get_rooms failed")
+
+        # Sync joined rooms to persistent store
+        if self._store and rooms:
+            try:
+                from navig.comms.matrix_store import MatrixRoom as _MR
+                for r in rooms:
+                    self._store.upsert_room(_MR(
+                        room_id=r["room_id"],
+                        name=r["name"],
+                        topic=r["topic"],
+                    ))
+            except Exception:
+                logger.debug("Matrix: room sync to store failed (non-fatal)")
+
         return rooms
 
     async def get_room_messages(
@@ -460,6 +509,22 @@ class NavigMatrixBot:
     async def _on_room_message(self, room, event) -> None:
         if event.sender == self.cfg.user_id:
             return
+
+        # Persist event to store
+        if self._store:
+            try:
+                from navig.comms.matrix_store import MatrixEvent as _ME
+                self._store.add_event(_ME(
+                    event_id=event.event_id,
+                    room_id=room.room_id,
+                    sender=event.sender,
+                    event_type="m.room.message",
+                    content={"body": getattr(event, "body", "")},
+                    origin_ts=getattr(event, "server_timestamp", 0) or int(time.time() * 1000),
+                ))
+            except Exception:
+                logger.debug("Matrix: event store failed (non-fatal)")
+
         for cb in self._message_callbacks:
             try:
                 await cb(room.room_id, event.sender, event.body)
