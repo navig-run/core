@@ -1951,6 +1951,17 @@ except ImportError:
 
 
 # ============================================================================
+# STORE MANAGEMENT
+# ============================================================================
+
+try:
+    from navig.commands.store import store_app
+    app.add_typer(store_app, name="store")
+except ImportError:
+    pass  # Store commands not available
+
+
+# ============================================================================
 # FILE OPERATIONS (Canonical 'file' group)
 # ============================================================================
 
