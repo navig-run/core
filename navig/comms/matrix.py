@@ -15,10 +15,23 @@ logger = logging.getLogger(__name__)
 
 _bot: Optional["NavigMatrixBot"] = None
 
+# E2EE capability detection
+HAS_OLM = False
+try:
+    import olm  # noqa: F401
+    HAS_OLM = True
+except ImportError:
+    pass
+
 
 def get_matrix_bot() -> Optional["NavigMatrixBot"]:
     """Return the singleton NavigMatrixBot or None."""
     return _bot
+
+
+def is_e2ee_available() -> bool:
+    """Check if E2EE is available (libolm installed)."""
+    return HAS_OLM
 
 
 @dataclass
@@ -49,21 +62,43 @@ class NavigMatrixBot:
         self._sync_task: Optional[asyncio.Task] = None
         self._running = False
         self._message_callbacks: List[Callable] = []
+        self._verification_callbacks: List[Callable] = []
+        self._e2ee_enabled = False
 
     async def start(self) -> None:
         """Login and begin background sync."""
         global _bot
         try:
-            from nio import AsyncClient, LoginResponse, RoomMessageText, InviteMemberEvent
+            from nio import AsyncClient, AsyncClientConfig, LoginResponse, RoomMessageText, InviteMemberEvent
         except ImportError:
             logger.error("matrix-nio is not installed. pip install matrix-nio[e2e]")
             raise ImportError("matrix-nio required for Matrix support. pip install matrix-nio[e2e]")
 
+        # Resolve E2EE: enabled only if config says so AND libolm is available
+        want_e2ee = self.cfg.e2ee and HAS_OLM
+        if self.cfg.e2ee and not HAS_OLM:
+            logger.warning("E2EE requested but libolm not installed. pip install matrix-nio[e2e]")
+
+        # Resolve store path for crypto persistence
+        store_dir = self.cfg.store_path or None
+        if want_e2ee and not store_dir:
+            import os
+            store_dir = os.path.expanduser("~/.navig/matrix-store")
+            os.makedirs(store_dir, exist_ok=True)
+            logger.info("Matrix: crypto store at %s", store_dir)
+
+        client_config = AsyncClientConfig(
+            encryption_enabled=want_e2ee,
+            store_sync_tokens=True,
+        )
+        self._e2ee_enabled = want_e2ee
+
         self._client = AsyncClient(
             self.cfg.homeserver_url,
             self.cfg.user_id,
-            store_path=self.cfg.store_path or None,
+            store_path=store_dir,
             device_id=self.cfg.device_name,
+            config=client_config,
         )
 
         if self.cfg.access_token:
@@ -80,6 +115,17 @@ class NavigMatrixBot:
             self._client.add_event_callback(self._on_invite, InviteMemberEvent)
         self._client.add_event_callback(self._on_room_message, RoomMessageText)
 
+        # E2EE: register key verification callbacks and upload keys
+        if self._e2ee_enabled:
+            try:
+                from nio import KeyVerificationEvent
+                self._client.add_to_device_callback(
+                    self._on_key_verification, KeyVerificationEvent,
+                )
+                logger.info("Matrix: E2EE enabled, key verification callbacks registered")
+            except (ImportError, Exception) as exc:
+                logger.warning("Matrix: could not register E2EE callbacks: %s", exc)
+
         self._running = True
         self._sync_task = asyncio.create_task(self._sync_loop())
         _bot = self
@@ -91,6 +137,15 @@ class NavigMatrixBot:
         except Exception:
             logger.warning("Matrix: initial sync incomplete, continuing anyway")
             logger.info("Matrix bot started, syncing...")
+
+        # E2EE: upload device keys after initial sync
+        if self._e2ee_enabled and self._client:
+            try:
+                if self._client.should_upload_keys:
+                    await self._client.keys_upload()
+                    logger.info("Matrix: device keys uploaded")
+            except Exception:
+                logger.warning("Matrix: key upload failed (non-fatal)")
 
     async def stop(self) -> None:
         """Stop sync and close."""
@@ -419,3 +474,193 @@ class NavigMatrixBot:
             logger.info("Matrix: auto-joined %s", room.room_id)
         except Exception:
             logger.exception("Matrix auto-join failed for %s", room.room_id)
+
+    # ── E2EE: key verification ──
+
+    @property
+    def e2ee_enabled(self) -> bool:
+        """Whether E2EE is active for this session."""
+        return self._e2ee_enabled
+
+    def on_verification(self, callback: Callable) -> None:
+        """Register a key-verification event callback:
+        ``async fn(event_type: str, transaction_id: str, data: dict)``."""
+        self._verification_callbacks.append(callback)
+
+    async def _on_key_verification(self, event) -> None:
+        """Handle incoming key verification events (SAS flow)."""
+        etype = type(event).__name__
+        txn_id = getattr(event, "transaction_id", "?")
+        logger.info("Matrix: verification event %s (txn=%s)", etype, txn_id)
+
+        for cb in self._verification_callbacks:
+            try:
+                data = {
+                    "sender": getattr(event, "sender", ""),
+                    "transaction_id": txn_id,
+                }
+                if asyncio.iscoroutinefunction(cb):
+                    await cb(etype, txn_id, data)
+                else:
+                    cb(etype, txn_id, data)
+            except Exception:
+                logger.exception("Matrix verification callback error")
+
+    async def start_verification(self, user_id: str, device_id: str) -> Optional[str]:
+        """Start a SAS key verification with a specific device.
+
+        Returns the transaction_id or None on failure.
+        """
+        if not self._client or not self._e2ee_enabled:
+            logger.warning("Cannot start verification: E2EE not enabled")
+            return None
+        try:
+            device = self._client.device_store.get(user_id, device_id)
+            if not device:
+                logger.warning("Unknown device %s/%s", user_id, device_id)
+                return None
+            resp = await self._client.start_key_verification(device)
+            txn_id = getattr(resp, "transaction_id", None) if resp else None
+            logger.info("Matrix: started verification txn=%s with %s/%s", txn_id, user_id, device_id)
+            return txn_id
+        except Exception:
+            logger.exception("start_verification failed")
+            return None
+
+    async def accept_verification(self, transaction_id: str) -> bool:
+        """Accept an incoming key verification request."""
+        if not self._client or not self._e2ee_enabled:
+            return False
+        try:
+            resp = await self._client.accept_key_verification(transaction_id)
+            return resp is not None
+        except Exception:
+            logger.exception("accept_verification failed")
+            return False
+
+    async def confirm_verification(self, transaction_id: str) -> bool:
+        """Confirm the SAS match (emoji or decimal)."""
+        if not self._client or not self._e2ee_enabled:
+            return False
+        try:
+            resp = await self._client.confirm_short_auth_string(transaction_id)
+            return resp is not None
+        except Exception:
+            logger.exception("confirm_verification failed")
+            return False
+
+    async def cancel_verification(self, transaction_id: str) -> bool:
+        """Cancel a verification session."""
+        if not self._client or not self._e2ee_enabled:
+            return False
+        try:
+            resp = await self._client.cancel_key_verification(transaction_id)
+            return resp is not None
+        except Exception:
+            logger.exception("cancel_verification failed")
+            return False
+
+    async def get_verification_emoji(self, transaction_id: str) -> Optional[List]:
+        """Get the SAS emoji for the current verification.
+
+        Returns list of (emoji, description) tuples, or None.
+        """
+        if not self._client or not self._e2ee_enabled:
+            return None
+        try:
+            sas = self._client.key_verifications.get(transaction_id)
+            if sas and hasattr(sas, "get_emoji"):
+                return sas.get_emoji()
+            return None
+        except Exception:
+            logger.exception("get_verification_emoji failed")
+            return None
+
+    async def trust_device(self, user_id: str, device_id: str) -> bool:
+        """Manually mark a device as trusted (no SAS)."""
+        if not self._client or not self._e2ee_enabled:
+            logger.warning("Cannot trust device: E2EE not enabled")
+            return False
+        try:
+            device = self._client.device_store.get(user_id, device_id)
+            if not device:
+                logger.warning("Unknown device %s/%s", user_id, device_id)
+                return False
+            self._client.verify_device(device)
+            logger.info("Matrix: trusted device %s/%s", user_id, device_id)
+            return True
+        except Exception:
+            logger.exception("trust_device failed")
+            return False
+
+    async def blacklist_device(self, user_id: str, device_id: str) -> bool:
+        """Mark a device as blacklisted (do not send keys to it)."""
+        if not self._client or not self._e2ee_enabled:
+            return False
+        try:
+            device = self._client.device_store.get(user_id, device_id)
+            if not device:
+                return False
+            self._client.blacklist_device(device)
+            logger.info("Matrix: blacklisted device %s/%s", user_id, device_id)
+            return True
+        except Exception:
+            logger.exception("blacklist_device failed")
+            return False
+
+    async def unverify_device(self, user_id: str, device_id: str) -> bool:
+        """Remove trust from a device (set to unset)."""
+        if not self._client or not self._e2ee_enabled:
+            return False
+        try:
+            device = self._client.device_store.get(user_id, device_id)
+            if not device:
+                return False
+            self._client.unverify_device(device)
+            logger.info("Matrix: unverified device %s/%s", user_id, device_id)
+            return True
+        except Exception:
+            logger.exception("unverify_device failed")
+            return False
+
+    async def get_devices(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List known devices + trust state.
+
+        If user_id is None, lists OWN devices from the server.
+        If user_id is given, lists locally-known devices from the device store.
+        """
+        if not self._client:
+            return []
+        devices = []
+        try:
+            if user_id is None:
+                # Own devices from server
+                from nio import DevicesResponse
+                resp = await self._client.devices()
+                if isinstance(resp, DevicesResponse):
+                    for d in resp.devices:
+                        devices.append({
+                            "device_id": d.id,
+                            "display_name": d.display_name or "",
+                            "last_seen_ip": getattr(d, "last_seen_ip", ""),
+                            "last_seen_ts": getattr(d, "last_seen_date", ""),
+                            "trust": "self",
+                        })
+            elif self._e2ee_enabled:
+                # Other user's devices from local store
+                user_devices = self._client.device_store.active_user_devices(user_id)
+                for d in user_devices:
+                    trust = "unset"
+                    if hasattr(d, "trust_state"):
+                        ts = d.trust_state
+                        trust = ts.name if hasattr(ts, "name") else str(ts)
+                    devices.append({
+                        "device_id": d.id if hasattr(d, "id") else d.device_id,
+                        "display_name": getattr(d, "display_name", ""),
+                        "user_id": user_id,
+                        "ed25519_key": getattr(d, "ed25519", "")[:20] + "..." if getattr(d, "ed25519", "") else "",
+                        "trust": trust,
+                    })
+        except Exception:
+            logger.exception("get_devices failed")
+        return devices

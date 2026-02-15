@@ -1086,3 +1086,309 @@ def file_download(
 
     _run_async(_download())
 
+
+# ============================================================================
+# E2EE commands  (Phase 3)
+# ============================================================================
+
+e2ee_app = typer.Typer(
+    name="e2ee",
+    help="End-to-end encryption: verify, trust, keys",
+    no_args_is_help=True,
+)
+matrix_app.add_typer(e2ee_app, name="e2ee")
+
+
+@e2ee_app.command("status")
+@require_feature("e2ee")
+def e2ee_status():
+    """Show E2EE diagnostic status."""
+    from navig.comms.matrix import is_e2ee_available
+
+    async def _status():
+        bot = await _get_bot()
+        try:
+            from navig.comms.matrix_e2ee import MatrixE2EEManager
+            mgr = MatrixE2EEManager(bot)
+            info = await mgr.e2ee_status()
+        finally:
+            await bot.stop()
+
+        table = Table(title="E2EE Status", show_header=False)
+        table.add_column("Key", style="cyan")
+        table.add_column("Value")
+        for k, v in info.items():
+            table.add_row(k, str(v))
+        console.print(table)
+
+    if not is_e2ee_available():
+        console.print("[yellow]⚠[/] libolm not installed — E2EE unavailable")
+        console.print("  Install: [cyan]pip install matrix-nio[e2e][/]")
+        return
+
+    _run_async(_status())
+
+
+@e2ee_app.command("devices")
+@require_feature("e2ee")
+def e2ee_devices(
+    user_id: Annotated[Optional[str], typer.Argument(help="User ID (omit for own devices)")] = None,
+):
+    """List devices and their trust state."""
+    async def _devices():
+        bot = await _get_bot()
+        try:
+            from navig.comms.matrix_e2ee import MatrixE2EEManager
+            mgr = MatrixE2EEManager(bot)
+            if user_id:
+                devices = await mgr.list_devices(user_id)
+            else:
+                devices = await mgr.list_own_devices()
+        finally:
+            await bot.stop()
+
+        if not devices:
+            console.print("[yellow]No devices found[/]")
+            return
+
+        table = Table(title=f"Devices: {user_id or 'self'}")
+        table.add_column("Device ID", style="cyan")
+        table.add_column("Name")
+        table.add_column("Key (ed25519)", style="dim")
+        table.add_column("Trust", style="bold")
+        for d in devices:
+            trust_color = {
+                "verified": "green",
+                "blacklisted": "red",
+                "unset": "yellow",
+            }.get(d.trust.value, "white")
+            table.add_row(
+                d.device_id,
+                d.display_name,
+                d.short_key(),
+                f"[{trust_color}]{d.trust.value}[/]",
+            )
+        console.print(table)
+
+    _run_async(_devices())
+
+
+@e2ee_app.command("trust")
+@require_feature("e2ee")
+def e2ee_trust(
+    user_id: Annotated[str, typer.Argument(help="User ID (@user:server)")],
+    device_id: Annotated[str, typer.Argument(help="Device ID")],
+):
+    """Manually trust a device (skip SAS verification)."""
+    async def _trust():
+        bot = await _get_bot()
+        try:
+            ok = await bot.trust_device(user_id, device_id)
+        finally:
+            await bot.stop()
+
+        if ok:
+            console.print(f"[green]✓[/] Trusted {device_id} ({user_id})")
+        else:
+            console.print(f"[red]✗[/] Failed to trust device")
+            raise typer.Exit(1)
+
+    _run_async(_trust())
+
+
+@e2ee_app.command("blacklist")
+@require_feature("e2ee")
+def e2ee_blacklist(
+    user_id: Annotated[str, typer.Argument(help="User ID (@user:server)")],
+    device_id: Annotated[str, typer.Argument(help="Device ID")],
+):
+    """Blacklist a device (do not send keys to it)."""
+    async def _blacklist():
+        bot = await _get_bot()
+        try:
+            ok = await bot.blacklist_device(user_id, device_id)
+        finally:
+            await bot.stop()
+
+        if ok:
+            console.print(f"[green]✓[/] Blacklisted {device_id} ({user_id})")
+        else:
+            console.print(f"[red]✗[/] Failed to blacklist device")
+            raise typer.Exit(1)
+
+    _run_async(_blacklist())
+
+
+@e2ee_app.command("unverify")
+@require_feature("e2ee")
+def e2ee_unverify(
+    user_id: Annotated[str, typer.Argument(help="User ID (@user:server)")],
+    device_id: Annotated[str, typer.Argument(help="Device ID")],
+):
+    """Remove trust from a device."""
+    async def _unverify():
+        bot = await _get_bot()
+        try:
+            ok = await bot.unverify_device(user_id, device_id)
+        finally:
+            await bot.stop()
+
+        if ok:
+            console.print(f"[green]✓[/] Unverified {device_id} ({user_id})")
+        else:
+            console.print(f"[red]✗[/] Failed to unverify device")
+            raise typer.Exit(1)
+
+    _run_async(_unverify())
+
+
+@e2ee_app.command("trust-all")
+@require_feature("e2ee")
+def e2ee_trust_all(
+    user_id: Annotated[str, typer.Argument(help="User ID to trust all devices for")],
+):
+    """Trust ALL known devices for a user."""
+    async def _trust_all():
+        bot = await _get_bot()
+        try:
+            from navig.comms.matrix_e2ee import MatrixE2EEManager
+            mgr = MatrixE2EEManager(bot)
+            count = await mgr.trust_all_devices(user_id)
+        finally:
+            await bot.stop()
+
+        console.print(f"[green]✓[/] Trusted {count} devices for {user_id}")
+
+    _run_async(_trust_all())
+
+
+@e2ee_app.command("verify")
+@require_feature("e2ee")
+def e2ee_verify(
+    user_id: Annotated[str, typer.Argument(help="User ID (@user:server)")],
+    device_id: Annotated[str, typer.Argument(help="Device ID to verify")],
+):
+    """Start interactive SAS (emoji) verification with a device."""
+    async def _verify():
+        bot = await _get_bot()
+        try:
+            from navig.comms.matrix_e2ee import MatrixE2EEManager
+            mgr = MatrixE2EEManager(bot)
+
+            console.print(f"Starting SAS verification with {user_id}/{device_id}...")
+            session = await mgr.start_verification(user_id, device_id)
+            if not session:
+                console.print("[red]✗[/] Could not start verification")
+                raise typer.Exit(1)
+
+            console.print(f"  Transaction: [dim]{session.transaction_id}[/]")
+            console.print("[yellow]Waiting for other side to accept...[/]")
+
+            # Poll for emoji (simplified — in a real interactive flow
+            # the to-device callback would deliver them)
+            import time
+            for _ in range(30):  # 30s timeout
+                emoji = await mgr.get_emoji(session.transaction_id)
+                if emoji:
+                    console.print("\n[bold]Verify these emoji match on both devices:[/]\n")
+                    emoji_line = "  ".join(f"{e} ({d})" for e, d in emoji)
+                    console.print(f"  {emoji_line}\n")
+
+                    confirm = typer.confirm("Do the emoji match?")
+                    if confirm:
+                        ok = await mgr.confirm_verification(session.transaction_id)
+                        if ok:
+                            console.print("[green]✓[/] Verification confirmed!")
+                        else:
+                            console.print("[red]✗[/] Confirmation failed")
+                    else:
+                        await mgr.cancel_verification(session.transaction_id)
+                        console.print("[yellow]Verification cancelled[/]")
+                    return
+
+                await asyncio.sleep(1)
+
+            console.print("[yellow]⚠[/] Timeout waiting for verification response")
+            await mgr.cancel_verification(session.transaction_id)
+        finally:
+            await bot.stop()
+
+    _run_async(_verify())
+
+
+@e2ee_app.command("keys")
+@require_feature("e2ee")
+def e2ee_keys():
+    """Show the bot's own device keys (for cross-verification)."""
+    async def _keys():
+        bot = await _get_bot()
+        try:
+            from navig.comms.matrix_e2ee import MatrixE2EEManager
+            mgr = MatrixE2EEManager(bot)
+            info = await mgr.e2ee_status()
+        finally:
+            await bot.stop()
+
+        console.print("[bold]Bot Device Keys[/]\n")
+        console.print(f"  Device ID:  [cyan]{info.get('device_id', '?')}[/]")
+        console.print(f"  User:       {info.get('user_id', '?')}")
+        console.print(f"  Ed25519:    [green]{info.get('ed25519', 'N/A')}[/]")
+        console.print(f"  Curve25519: [green]{info.get('curve25519', 'N/A')}[/]")
+        console.print(f"\n  Share these keys with other users for manual verification.")
+
+    _run_async(_keys())
+
+
+@e2ee_app.command("export-keys")
+@require_feature("e2ee")
+def e2ee_export_keys(
+    path: Annotated[str, typer.Argument(help="Output file path")],
+    passphrase: Annotated[str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)],
+):
+    """Export E2EE room keys to a file (encrypted)."""
+    async def _export():
+        bot = await _get_bot()
+        try:
+            from navig.comms.matrix_e2ee import MatrixE2EEManager
+            mgr = MatrixE2EEManager(bot)
+            ok = await mgr.export_keys(path, passphrase)
+        finally:
+            await bot.stop()
+
+        if ok:
+            console.print(f"[green]✓[/] Keys exported to {path}")
+        else:
+            console.print("[red]✗[/] Export failed")
+            raise typer.Exit(1)
+
+    _run_async(_export())
+
+
+@e2ee_app.command("import-keys")
+@require_feature("e2ee")
+def e2ee_import_keys(
+    path: Annotated[str, typer.Argument(help="Key file path")],
+    passphrase: Annotated[str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)],
+):
+    """Import E2EE room keys from a file."""
+    from pathlib import Path as _P
+    if not _P(path).exists():
+        console.print(f"[red]✗[/] File not found: {path}")
+        raise typer.Exit(1)
+
+    async def _import():
+        bot = await _get_bot()
+        try:
+            from navig.comms.matrix_e2ee import MatrixE2EEManager
+            mgr = MatrixE2EEManager(bot)
+            ok = await mgr.import_keys(path, passphrase)
+        finally:
+            await bot.stop()
+
+        if ok:
+            console.print(f"[green]✓[/] Keys imported from {path}")
+        else:
+            console.print("[red]✗[/] Import failed")
+            raise typer.Exit(1)
+
+    _run_async(_import())
