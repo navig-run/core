@@ -145,29 +145,42 @@ class ConversationStore(BaseStore):
         now = datetime.utcnow().isoformat()
         
         with self._lock:
-            # Ensure session exists
-            conn.execute('''
-                INSERT INTO sessions (session_key, created_at, updated_at, metadata)
-                VALUES (?, ?, ?, '{}')
-                ON CONFLICT(session_key) DO UPDATE SET updated_at = excluded.updated_at
-            ''', (message.session_key, now, now))
-            
-            # Insert message
-            data = message.to_dict()
-            conn.execute('''
-                INSERT INTO messages (id, session_key, role, content, timestamp, metadata, token_count)
-                VALUES (:id, :session_key, :role, :content, :timestamp, :metadata, :token_count)
-            ''', data)
-            
-            # Update session token count
-            conn.execute('''
-                UPDATE sessions 
-                SET total_tokens = total_tokens + ?,
-                    updated_at = ?
-                WHERE session_key = ?
-            ''', (message.token_count, now, message.session_key))
-            
-            conn.commit()
+            old_iso = conn.isolation_level
+            try:
+                conn.isolation_level = None
+                conn.execute("BEGIN IMMEDIATE")
+
+                # Ensure session exists
+                conn.execute('''
+                    INSERT INTO sessions (session_key, created_at, updated_at, metadata)
+                    VALUES (?, ?, ?, '{}')
+                    ON CONFLICT(session_key) DO UPDATE SET updated_at = excluded.updated_at
+                ''', (message.session_key, now, now))
+                
+                # Insert message
+                data = message.to_dict()
+                conn.execute('''
+                    INSERT INTO messages (id, session_key, role, content, timestamp, metadata, token_count)
+                    VALUES (:id, :session_key, :role, :content, :timestamp, :metadata, :token_count)
+                ''', data)
+                
+                # Update session token count
+                conn.execute('''
+                    UPDATE sessions 
+                    SET total_tokens = total_tokens + ?,
+                        updated_at = ?
+                    WHERE session_key = ?
+                ''', (message.token_count, now, message.session_key))
+                
+                conn.execute("COMMIT")
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
+            finally:
+                conn.isolation_level = old_iso
         
         _debug_log(f"Added message {message.id} to session {message.session_key}")
         return message

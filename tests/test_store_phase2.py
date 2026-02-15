@@ -241,7 +241,7 @@ class TestMatrixStoreBaseStore:
         from navig.comms.matrix_store import MatrixStore
 
         store = MatrixStore(tmp_path / "matrix.db")
-        assert store.get_schema_version() == 2
+        assert store.get_schema_version() == 3
         store.close()
 
     def test_maintenance_inherited(self, tmp_path):

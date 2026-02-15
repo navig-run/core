@@ -23,7 +23,7 @@ from navig.store.base import BaseStore
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2  # kept for backward compat
+SCHEMA_VERSION = 3
 
 
 # ── Data classes ──────────────────────────────────────────────
@@ -153,7 +153,7 @@ class MatrixStore(BaseStore):
         events = store.get_events("!abc:server", limit=50)
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
@@ -187,11 +187,17 @@ class MatrixStore(BaseStore):
                 FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_events_room_ts
-                ON events(room_id, origin_ts);
+                ON events(room_id, origin_ts DESC);
             CREATE INDEX IF NOT EXISTS idx_events_sender
                 ON events(sender);
             CREATE INDEX IF NOT EXISTS idx_events_type
                 ON events(event_type);
+            -- Per-room sender counting (v3)
+            CREATE INDEX IF NOT EXISTS idx_events_room_sender
+                ON events(room_id, sender);
+            -- Time-based pruning (v3)
+            CREATE INDEX IF NOT EXISTS idx_events_origin_ts
+                ON events(origin_ts);
 
             -- Bridge mappings (Matrix <-> Telegram, Deck, webhook)
             CREATE TABLE IF NOT EXISTS bridges (
@@ -217,6 +223,18 @@ class MatrixStore(BaseStore):
             );
         """
         )
+
+    def _migrate(
+        self, conn: sqlite3.Connection, from_version: int, to_version: int
+    ) -> None:
+        """Incremental schema migrations."""
+        if from_version < 3:
+            conn.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_events_room_sender
+                    ON events(room_id, sender);
+                CREATE INDEX IF NOT EXISTS idx_events_origin_ts
+                    ON events(origin_ts);
+            """)
 
     # ── Rooms ─────────────────────────────────────────────────
 
