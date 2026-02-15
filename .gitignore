@@ -1,0 +1,241 @@
+# ===============================================
+# NAVIG CLI — Git Ignore Configuration
+# ===============================================
+# This file specifies intentionally untracked files that Git should ignore.
+# See: https://git-scm.com/docs/gitignore
+
+# ===============================================
+# IDE and Editor Files
+# ===============================================
+.vscode/                    # VS Code settings
+.idea/                      # JetBrains IDEs (PyCharm, IntelliJ)
+*.swp                       # Vim swap files
+*.swo                       # Vim swap files
+*~                          # Backup files
+.DS_Store                   # macOS Finder metadata
+Thumbs.db                   # Windows thumbnail cache
+desktop.ini                 # Windows folder settings
+nul                         # Windows NUL device artifact
+
+# ===============================================
+# Python
+# ===============================================
+__pycache__/                # Python bytecode cache
+*.py[cod]                   # Compiled Python files
+*$py.class                  # Python class files
+*.so                        # Shared objects
+.Python                     # Python environment
+build/                      # Build directory
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ===============================================
+# PowerShell
+# ===============================================
+*.ps1xml                    # PowerShell XML files (unless explicitly needed)
+*.psd1                      # PowerShell data files (config-dependent)
+
+# ===============================================
+# PHP and Composer
+# ===============================================
+vendor/                     # Composer dependencies
+composer.phar               # Composer executable
+composer.lock               # Lock file (uncomment if not needed for your workflow)
+*.cache                     # PHP cache files
+
+# ===============================================
+# Node.js (if used)
+# ===============================================
+node_modules/               # npm dependencies
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json           # npm lock file (uncomment if not needed)
+
+# ===============================================
+# Database Files
+# ===============================================
+*.sql                       # SQL dump files (except migrations)
+!migrations/*.sql           # Keep migration files
+*.sqlite
+*.sqlite3
+*.db
+*.dump                      # Database dumps
+
+# ===============================================
+# Logs and Temporary Files
+# ===============================================
+*.log                       # All log files
+*.tmp                       # Temporary files
+*.temp                      # Temporary files
+*.cache                     # Cache files
+logs/                       # Log directories
+*.pid                       # Process ID files
+
+# ===============================================
+# Sensitive Data and Credentials
+# ===============================================
+.env                        # Environment variables
+.env.*                      # Environment-specific files
+!.env.example               # Keep example env file
+!.env.*.example             # Keep example env files (e.g. .env.telegram.example)
+
+# ===============================================
+# Experimental and Lab Projects
+# ===============================================
+.lab/                       # Experimental projects and prototypes
+*.key                       # Private keys
+*.pem                       # SSL/TLS certificates
+*.crt                       # Certificate files
+*.p12                       # PKCS12 files
+*.pfx                       # Certificate files
+secrets.yaml
+credentials.json
+config/secrets.*
+*_credentials.*
+
+# Discord Credentials (NEVER commit these)
+discord-webhooks.json       # Webhook URLs
+*.token                     # Bot tokens
+discord-*.json              # Discord config with secrets
+
+# NAVIG Configuration (contains server credentials)
+~/.navig/                   # User NAVIG config (shouldn't be in repo anyway)
+
+# ===============================================
+# Backups and Archives
+# ===============================================
+.backups/                   # Backup directory
+*.backup                    # Backup files
+*.bak                       # Backup files
+*.INSECURE.bak              # Security-removed code backups
+*.zip                       # Archives
+*.tar.gz                    # Compressed archives
+*.tgz                       # Compressed archives
+*.rar                       # Archives
+*-upload.tgz                # Upload artifacts
+
+# ===============================================
+# Testing and Coverage
+# ===============================================
+.pytest_cache/              # Pytest cache
+.coverage                   # Coverage data
+htmlcov/                    # HTML coverage reports
+.tox/                       # Tox testing
+.nox/                       # Nox sessions
+coverage.xml                # Coverage XML report
+*.cover                     # Coverage files
+.hypothesis/                # Hypothesis test data
+
+# ===============================================
+# Documentation Build Artifacts
+# ===============================================
+docs/_build/                # Sphinx build directory
+site/                       # MkDocs build directory
+
+# ===============================================
+# App-Specific
+# ===============================================
+
+# Documentation and Tests (tracked — essential to the project)
+# docs/
+# tests/
+
+# ===============================================
+# OS-Specific
+# ===============================================
+# macOS
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+
+# ===============================================
+# Miscellaneous
+# ===============================================
+*.orig                      # Merge conflict originals
+.mypy_cache/                # mypy type checker cache
+.dmypy.json                 # dmypy metadata
+dmypy.json
+.pyre/                      # Pyre type checker
+.pytype/                    # Pytype static analyzer
+cython_debug/               # Cython debug symbols
+
+# ===============================================
+# END OF .gitignore
+# ===============================================
+
+# NAVIG Configuration
+# .navig/ is tracked — contains plans, agents, and project config
+.navig/config.yaml
+.navig/profile.json
+.navig/ai_system_prompt.txt
+.navig/debug.log
+.navig/navig.log
+.navig/cache/
+.navig/history/
+.navig/logs/
+.navig/backups/
+.navig/hosts/
+.navig/tests/
+.navig/schemas/
+.navig/workspace/USER.md
+.backups/
+node_modules
+
+# AI IDE Configuration (per-developer, not committed)
+.augment
+.clinerules
+.cursorrules
+.windsurfrules
+.agent/
+.gemini/
+.ruff_cache/
+
+# Archive (cleanup staging — never commit)
+.archive/
+
+# Bot stack (separate private repo)
+navig_ai.py
+navig_bot.py
+run_navig.py
+navig_harness.py
+requirements-bot.txt
+
+# Private files
+knowledge/
+.env.remote

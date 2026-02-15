@@ -1,0 +1,857 @@
+"""
+NAVIG Matrix CLI Commands
+
+Provides the ``navig matrix`` command group for Matrix messaging operations:
+  - login / logout / status / accounts / use
+  - send / notice / read / tail
+  - room create / join / leave / invite / members / topic
+  - registration --enable / --disable / token CRUD
+  - admin users / user
+  - features
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+import logging
+from datetime import datetime, timezone
+from typing import Annotated, Optional
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from navig.comms.matrix_features import (
+    FEATURE_DESCRIPTIONS,
+    get_all_features,
+    is_matrix_enabled,
+    require_feature,
+    require_matrix,
+)
+
+logger = logging.getLogger(__name__)
+console = Console()
+
+# ============================================================================
+# App scaffold
+# ============================================================================
+
+matrix_app = typer.Typer(
+    name="matrix",
+    help="Matrix messaging operations (login, send, rooms, admin)",
+    invoke_without_command=True,
+    no_args_is_help=True,
+)
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+def _get_config() -> dict:
+    """Load comms.matrix config block."""
+    try:
+        from navig.core.config import get_global_config
+        cfg = get_global_config()
+        return cfg.get("comms", {}).get("matrix", {})
+    except Exception:
+        return {}
+
+
+def _get_credential(profile: str = "default") -> dict:
+    """Pull Matrix credential from the vault (if available)."""
+    try:
+        from navig.vault.core import CredentialsVault
+        vault = CredentialsVault()
+        creds = vault.list_by_provider("matrix")
+        for c in creds:
+            if c.profile_id == profile:
+                full = vault.get(c.id)
+                if full:
+                    return full.data
+        return {}
+    except Exception:
+        return {}
+
+
+def _run_async(coro):
+    """Helper to run an async function from sync Typer commands."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+    return asyncio.run(coro)
+
+
+async def _get_bot(config: Optional[dict] = None):
+    """Get or create a NavigMatrixBot instance."""
+    from navig.comms.matrix import NavigMatrixBot, get_matrix_bot
+
+    existing = get_matrix_bot()
+    if existing and existing.is_running:
+        return existing
+
+    cfg = config or _get_config()
+    if not cfg.get("user_id"):
+        console.print("[red]✗[/] No Matrix user_id configured.")
+        console.print("  Set: [cyan]navig config set comms.matrix.user_id @bot:server[/]")
+        raise typer.Exit(1)
+
+    bot = NavigMatrixBot(cfg)
+    await bot.start()
+    return bot
+
+
+# ============================================================================
+# Authentication commands
+# ============================================================================
+
+@matrix_app.command("login")
+@require_matrix()
+def login(
+    profile: Annotated[str, typer.Option("--profile", "-p", help="Credential profile")] = "default",
+    token: Annotated[str, typer.Option("--token", "-t", help="Use access token instead of password")] = "",
+):
+    """Authenticate with a Matrix homeserver."""
+    cfg = _get_config()
+
+    # Merge vault credential if available
+    cred = _get_credential(profile)
+    if cred:
+        for k, v in cred.items():
+            if v and k in ("homeserver_url", "homeserver", "user_id", "password", "access_token"):
+                mapped = k if k != "homeserver" else "homeserver_url"
+                cfg.setdefault(mapped, v)
+
+    if token:
+        cfg["access_token"] = token
+
+    async def _login():
+        bot = await _get_bot(cfg)
+        console.print(f"[green]✓[/] Logged in as [bold]{bot.cfg.user_id}[/]")
+        console.print(f"  Homeserver: {bot.cfg.homeserver_url}")
+        if bot._client and bot._client.access_token:
+            console.print(f"  Token: {bot._client.access_token[:12]}...")
+            # Persist token back to vault
+            try:
+                from navig.vault.core import CredentialsVault
+                vault = CredentialsVault()
+                creds = vault.list_by_provider("matrix")
+                for c in creds:
+                    if c.profile_id == profile:
+                        full = vault.get(c.id)
+                        if full:
+                            full.data["access_token"] = bot._client.access_token
+                            vault.update(full)
+                            console.print("  [dim]Token saved to vault[/]")
+                            break
+            except Exception:
+                pass
+
+    _run_async(_login())
+
+
+@matrix_app.command("logout")
+@require_matrix()
+def logout():
+    """End the current Matrix session."""
+    async def _logout():
+        from navig.comms.matrix import get_matrix_bot
+        bot = get_matrix_bot()
+        if bot and bot.is_running:
+            await bot.stop()
+            console.print("[green]✓[/] Logged out of Matrix")
+        else:
+            console.print("[yellow]![/] No active Matrix session")
+
+    _run_async(_logout())
+
+
+@matrix_app.command("status")
+def status():
+    """Show Matrix connection status and account info."""
+    cfg = _get_config()
+    enabled = cfg.get("enabled", False)
+
+    table = Table(title="Matrix Status", show_header=False, border_style="dim")
+    table.add_column("Key", style="bold")
+    table.add_column("Value")
+
+    table.add_row("Enabled", "[green]yes[/]" if enabled else "[red]no[/]")
+    table.add_row("Homeserver", cfg.get("homeserver_url", "[dim]not set[/]"))
+    table.add_row("User ID", cfg.get("user_id", "[dim]not set[/]"))
+    table.add_row("Default Room", cfg.get("default_room_id", "[dim]not set[/]"))
+    table.add_row("Auto Join", "yes" if cfg.get("auto_join", True) else "no")
+    table.add_row("E2EE", "yes" if cfg.get("e2ee", False) else "no")
+
+    # Check live connection
+    from navig.comms.matrix import get_matrix_bot
+    bot = get_matrix_bot()
+    if bot and bot.is_running:
+        table.add_row("Connection", "[green]connected[/]")
+    else:
+        table.add_row("Connection", "[yellow]disconnected[/]")
+
+    console.print(table)
+
+
+@matrix_app.command("accounts")
+def accounts():
+    """List configured Matrix accounts from the vault."""
+    try:
+        from navig.vault.core import CredentialsVault
+        vault = CredentialsVault()
+        creds = vault.list_by_provider("matrix")
+    except Exception:
+        console.print("[yellow]![/] Vault not available or no Matrix credentials stored")
+        return
+
+    if not creds:
+        console.print("[yellow]![/] No Matrix accounts in vault")
+        console.print("  Add one: [cyan]navig cred add --provider matrix[/]")
+        return
+
+    # Determine "active" profile from config
+    cfg = _get_config()
+    active_id = cfg.get("credential_id", "")
+
+    table = Table(title="Matrix Accounts")
+    table.add_column("Profile", style="bold")
+    table.add_column("User ID")
+    table.add_column("Homeserver")
+    table.add_column("Active", justify="center")
+
+    for c in creds:
+        is_active = "★" if (c.id == active_id or c.profile_id == active_id) else ""
+        user_id = c.metadata.get("user_id", "[dim]—[/]")
+        hs = c.metadata.get("homeserver_url", c.metadata.get("homeserver", "[dim]—[/]"))
+        table.add_row(c.profile_id, user_id, hs, is_active)
+
+    console.print(table)
+
+
+@matrix_app.command("use")
+def use_profile(
+    profile: Annotated[str, typer.Argument(help="Credential profile name to activate")],
+):
+    """Switch the active Matrix account."""
+    try:
+        from navig.vault.core import CredentialsVault
+        vault = CredentialsVault()
+        creds = vault.list_by_provider("matrix")
+        found = any(c.profile_id == profile for c in creds)
+        if not found:
+            console.print(f"[red]✗[/] Profile '{profile}' not found in vault")
+            console.print("  Available: " + ", ".join(c.profile_id for c in creds))
+            raise typer.Exit(1)
+    except ImportError:
+        pass
+
+    try:
+        from navig.core.config import set_config_value
+        set_config_value("comms.matrix.credential_id", profile)
+        console.print(f"[green]✓[/] Active Matrix profile → [bold]{profile}[/]")
+    except Exception as e:
+        console.print(f"[red]✗[/] Failed to set profile: {e}")
+        raise typer.Exit(1)
+
+
+# ============================================================================
+# Messaging commands
+# ============================================================================
+
+@matrix_app.command("send")
+@require_matrix()
+@require_feature("messaging")
+def send(
+    room: Annotated[str, typer.Argument(help="Room ID or alias (omit for default)")] = "",
+    message: Annotated[str, typer.Argument(help="Message text")] = "",
+    stdin: Annotated[bool, typer.Option("--stdin", "-s", help="Read message from stdin")] = False,
+    format: Annotated[str, typer.Option("--format", "-f", help="text | markdown | html")] = "text",
+):
+    """Send a text message to a Matrix room."""
+    if stdin:
+        message = sys.stdin.read().strip()
+    if not message:
+        console.print("[red]✗[/] No message provided")
+        raise typer.Exit(1)
+
+    cfg = _get_config()
+    if not room:
+        room = cfg.get("default_room_id", "")
+    if not room:
+        console.print("[red]✗[/] No room specified and no default_room_id configured")
+        raise typer.Exit(1)
+
+    async def _send():
+        bot = await _get_bot()
+        # Format conversion
+        if format == "markdown":
+            try:
+                import re
+                # Basic markdown → HTML (bold, italic, code)
+                html = message
+                html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+                html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
+                html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
+                result = await bot.send_message(room, message)
+            except Exception:
+                result = await bot.send_message(room, message)
+        else:
+            result = await bot.send_message(room, message)
+
+        if result:
+            console.print(f"[green]✓[/] Sent → {room}")
+        else:
+            console.print("[red]✗[/] Failed to send message")
+            raise typer.Exit(1)
+
+    _run_async(_send())
+
+
+@matrix_app.command("notice")
+@require_matrix()
+@require_feature("messaging")
+def notice(
+    room: Annotated[str, typer.Argument(help="Room ID or alias")],
+    message: Annotated[str, typer.Argument(help="Notice text")],
+):
+    """Send a notice (bot-style, no notification highlight)."""
+    async def _notice():
+        bot = await _get_bot()
+        result = await bot.send_notice(room, message)
+        if result:
+            console.print(f"[green]✓[/] Notice sent → {room}")
+        else:
+            console.print("[red]✗[/] Failed to send notice")
+            raise typer.Exit(1)
+
+    _run_async(_notice())
+
+
+@matrix_app.command("read")
+@require_matrix()
+@require_feature("messaging")
+def read_messages(
+    room: Annotated[str, typer.Argument(help="Room ID or alias")],
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Number of messages")] = 20,
+    json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
+):
+    """Read recent messages from a room."""
+    async def _read():
+        bot = await _get_bot()
+        messages = await bot.get_room_messages(room, limit=limit)
+
+        if json_output:
+            console.print_json(data=messages)
+            return
+
+        if not messages:
+            console.print("[yellow]![/] No messages found")
+            return
+
+        table = Table(title=f"Messages — {room}")
+        table.add_column("Time", style="dim", width=16)
+        table.add_column("Sender", style="bold", width=24)
+        table.add_column("Message")
+
+        for msg in messages:
+            ts = msg.get("timestamp", "")
+            if isinstance(ts, (int, float)):
+                ts = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%H:%M %b %d")
+            table.add_row(str(ts), msg.get("sender", "?"), msg.get("body", ""))
+
+        console.print(table)
+
+    _run_async(_read())
+
+
+@matrix_app.command("tail")
+@require_matrix()
+@require_feature("messaging")
+def tail(
+    room: Annotated[str, typer.Argument(help="Room ID or alias to live-tail")] = "",
+):
+    """Live-tail messages from a room (Ctrl+C to stop)."""
+    cfg = _get_config()
+    if not room:
+        room = cfg.get("default_room_id", "")
+    if not room:
+        console.print("[red]✗[/] No room specified")
+        raise typer.Exit(1)
+
+    async def _tail():
+        bot = await _get_bot()
+
+        async def _on_msg(room_id: str, sender: str, body: str):
+            if room and room_id != room:
+                return
+            now = datetime.now(timezone.utc).strftime("%H:%M")
+            console.print(f"[dim][{now}][/] [bold]{sender}[/]: {body}")
+
+        bot.on_message(_on_msg)
+        console.print(f"[dim]Tailing {room} — Ctrl+C to stop...[/]")
+
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            console.print("\n[dim]Stopped tailing[/]")
+
+    try:
+        _run_async(_tail())
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped[/]")
+
+
+# ============================================================================
+# Room management commands
+# ============================================================================
+
+room_app = typer.Typer(name="room", help="Room management (create, join, leave, invite)")
+matrix_app.add_typer(room_app)
+
+
+@matrix_app.command("rooms")
+@require_matrix()
+@require_feature("room_management")
+def list_rooms(
+    json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
+):
+    """List joined Matrix rooms."""
+    async def _rooms():
+        bot = await _get_bot()
+        rooms = await bot.get_rooms()
+
+        if json_output:
+            console.print_json(data=rooms)
+            return
+
+        if not rooms:
+            console.print("[yellow]![/] No joined rooms")
+            return
+
+        table = Table(title="Joined Rooms")
+        table.add_column("Room ID", style="bold")
+        table.add_column("Name")
+        table.add_column("Members", justify="right")
+        table.add_column("Topic")
+
+        for r in rooms:
+            table.add_row(
+                r.get("room_id", "?"),
+                r.get("name", "[dim]—[/]"),
+                str(r.get("member_count", "?")),
+                r.get("topic", "[dim]—[/]"),
+            )
+
+        console.print(table)
+
+    _run_async(_rooms())
+
+
+@room_app.command("create")
+@require_matrix()
+@require_feature("room_management")
+def room_create(
+    name: Annotated[str, typer.Argument(help="Room name")],
+    topic: Annotated[str, typer.Option("--topic", "-t", help="Room topic")] = "",
+    public: Annotated[bool, typer.Option("--public", help="Create as public room")] = False,
+):
+    """Create a new Matrix room."""
+    async def _create():
+        bot = await _get_bot()
+        room_id = await bot.create_room(name, topic=topic, is_public=public)
+        if room_id:
+            console.print(f"[green]✓[/] Room created: [bold]{room_id}[/]")
+        else:
+            console.print("[red]✗[/] Failed to create room")
+            raise typer.Exit(1)
+
+    _run_async(_create())
+
+
+@room_app.command("join")
+@require_matrix()
+@require_feature("room_management")
+def room_join(
+    room_id: Annotated[str, typer.Argument(help="Room ID or alias to join")],
+):
+    """Join a Matrix room."""
+    async def _join():
+        bot = await _get_bot()
+        if not bot._client:
+            console.print("[red]✗[/] Not connected")
+            raise typer.Exit(1)
+        try:
+            resp = await bot._client.join(room_id)
+            console.print(f"[green]✓[/] Joined {room_id}")
+        except Exception as e:
+            console.print(f"[red]✗[/] Failed to join: {e}")
+            raise typer.Exit(1)
+
+    _run_async(_join())
+
+
+@room_app.command("leave")
+@require_matrix()
+@require_feature("room_management")
+def room_leave(
+    room_id: Annotated[str, typer.Argument(help="Room ID to leave")],
+):
+    """Leave a Matrix room."""
+    async def _leave():
+        bot = await _get_bot()
+        if not bot._client:
+            console.print("[red]✗[/] Not connected")
+            raise typer.Exit(1)
+        try:
+            await bot._client.room_leave(room_id)
+            console.print(f"[green]✓[/] Left {room_id}")
+        except Exception as e:
+            console.print(f"[red]✗[/] Failed to leave: {e}")
+            raise typer.Exit(1)
+
+    _run_async(_leave())
+
+
+@room_app.command("invite")
+@require_matrix()
+@require_feature("room_management")
+def room_invite(
+    room_id: Annotated[str, typer.Argument(help="Room ID")],
+    user_id: Annotated[str, typer.Argument(help="User Matrix ID (e.g. @alice:server)")],
+):
+    """Invite a user to a Matrix room."""
+    async def _invite():
+        bot = await _get_bot()
+        ok = await bot.invite_user(room_id, user_id)
+        if ok:
+            console.print(f"[green]✓[/] Invited {user_id} → {room_id}")
+        else:
+            console.print("[red]✗[/] Failed to invite")
+            raise typer.Exit(1)
+
+    _run_async(_invite())
+
+
+@room_app.command("members")
+@require_matrix()
+@require_feature("room_management")
+def room_members(
+    room_id: Annotated[str, typer.Argument(help="Room ID")],
+):
+    """List members of a Matrix room."""
+    async def _members():
+        bot = await _get_bot()
+        members = await bot.get_room_members(room_id)
+
+        if not members:
+            console.print("[yellow]![/] No members found or not joined")
+            return
+
+        table = Table(title=f"Members — {room_id}")
+        table.add_column("User ID", style="bold")
+        table.add_column("Display Name")
+        table.add_column("Power Level", justify="right")
+
+        for m in members:
+            table.add_row(
+                m.get("user_id", "?"),
+                m.get("display_name", "[dim]—[/]"),
+                str(m.get("power_level", 0)),
+            )
+
+        console.print(table)
+
+    _run_async(_members())
+
+
+@room_app.command("topic")
+@require_matrix()
+@require_feature("room_management")
+def room_topic(
+    room_id: Annotated[str, typer.Argument(help="Room ID")],
+    topic: Annotated[str, typer.Argument(help="New topic text")],
+):
+    """Set the topic for a Matrix room."""
+    async def _topic():
+        bot = await _get_bot()
+        if not bot._client:
+            console.print("[red]✗[/] Not connected")
+            raise typer.Exit(1)
+        try:
+            await bot._client.room_put_state(
+                room_id,
+                "m.room.topic",
+                {"topic": topic},
+            )
+            console.print(f"[green]✓[/] Topic set for {room_id}")
+        except Exception as e:
+            console.print(f"[red]✗[/] Failed: {e}")
+            raise typer.Exit(1)
+
+    _run_async(_topic())
+
+
+# ============================================================================
+# Registration commands (admin)
+# ============================================================================
+
+registration_app = typer.Typer(
+    name="registration",
+    help="Homeserver registration controls (admin)",
+    invoke_without_command=True,
+)
+matrix_app.add_typer(registration_app)
+
+token_app = typer.Typer(name="token", help="Invite token management")
+registration_app.add_typer(token_app)
+
+
+@registration_app.callback(invoke_without_command=True)
+@require_matrix()
+@require_feature("registration_control")
+def registration_callback(
+    ctx: typer.Context,
+    enable: Annotated[bool, typer.Option("--enable", help="Enable open registration")] = False,
+    disable: Annotated[bool, typer.Option("--disable", help="Disable open registration")] = False,
+):
+    """Check or toggle homeserver registration state."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if not enable and not disable:
+        # Display current status
+        async def _check():
+            from navig.comms.matrix_admin import get_admin_client
+            admin = get_admin_client()
+            reg_status = await admin.get_registration_status()
+            state = "[green]OPEN[/]" if reg_status else "[yellow]CLOSED (invite-only)[/]"
+            console.print(f"Registration: {state}")
+
+        _run_async(_check())
+        return
+
+    if enable and disable:
+        console.print("[red]✗[/] Cannot use --enable and --disable together")
+        raise typer.Exit(1)
+
+    async def _toggle():
+        from navig.comms.matrix_admin import get_admin_client
+        admin = get_admin_client()
+        if enable:
+            ok = await admin.set_registration(True)
+            if ok:
+                console.print("[green]✓[/] Registration enabled — anyone can create accounts")
+            else:
+                console.print("[red]✗[/] Failed to enable registration")
+        else:
+            ok = await admin.set_registration(False)
+            if ok:
+                console.print("[green]✓[/] Registration disabled — invite-only mode")
+            else:
+                console.print("[red]✗[/] Failed to disable registration")
+
+    _run_async(_toggle())
+
+
+@token_app.command("create")
+@require_matrix()
+@require_feature("registration_control")
+def token_create(
+    uses: Annotated[int, typer.Option("--uses", "-n", help="Max uses (0 = unlimited)")] = 1,
+    expiry: Annotated[str, typer.Option("--expiry", "-e", help="Expiry duration (e.g. 7d, 30d)")] = "7d",
+):
+    """Create an invite registration token."""
+    async def _create():
+        from navig.comms.matrix_admin import get_admin_client
+        admin = get_admin_client()
+        token = await admin.create_registration_token(uses_allowed=uses, expiry=expiry)
+        if token:
+            console.print(f"[green]✓[/] Token: [bold]{token}[/]")
+            console.print(f"  Uses: {uses if uses else 'unlimited'}, Expiry: {expiry}")
+        else:
+            console.print("[red]✗[/] Failed to create token")
+
+    _run_async(_create())
+
+
+@token_app.command("list")
+@require_matrix()
+@require_feature("registration_control")
+def token_list():
+    """List active registration tokens."""
+    async def _list():
+        from navig.comms.matrix_admin import get_admin_client
+        admin = get_admin_client()
+        tokens = await admin.list_registration_tokens()
+
+        if not tokens:
+            console.print("[yellow]![/] No active tokens")
+            return
+
+        table = Table(title="Registration Tokens")
+        table.add_column("Token", style="bold")
+        table.add_column("Uses", justify="right")
+        table.add_column("Remaining", justify="right")
+        table.add_column("Expires")
+
+        for t in tokens:
+            table.add_row(
+                t.get("token", "?"),
+                str(t.get("uses", 0)),
+                str(t.get("remaining", "∞")),
+                t.get("expires", "[dim]never[/]"),
+            )
+
+        console.print(table)
+
+    _run_async(_list())
+
+
+@token_app.command("revoke")
+@require_matrix()
+@require_feature("registration_control")
+def token_revoke(
+    token: Annotated[str, typer.Argument(help="Token to revoke")],
+):
+    """Revoke a registration token."""
+    async def _revoke():
+        from navig.comms.matrix_admin import get_admin_client
+        admin = get_admin_client()
+        ok = await admin.revoke_registration_token(token)
+        if ok:
+            console.print(f"[green]✓[/] Token revoked: {token}")
+        else:
+            console.print("[red]✗[/] Failed to revoke token")
+
+    _run_async(_revoke())
+
+
+# ============================================================================
+# Admin commands
+# ============================================================================
+
+admin_app = typer.Typer(name="admin", help="Matrix server administration")
+matrix_app.add_typer(admin_app)
+
+
+@admin_app.command("users")
+@require_matrix()
+@require_feature("admin_ops")
+def admin_users():
+    """List registered users on the homeserver."""
+    async def _users():
+        from navig.comms.matrix_admin import get_admin_client
+        admin = get_admin_client()
+        users = await admin.list_users()
+
+        if not users:
+            console.print("[yellow]![/] No users found")
+            return
+
+        table = Table(title="Matrix Users")
+        table.add_column("User ID", style="bold")
+        table.add_column("Admin", justify="center")
+        table.add_column("Created")
+
+        for u in users:
+            is_admin = "[green]yes[/]" if u.get("admin", False) else "no"
+            table.add_row(
+                u.get("user_id", "?"),
+                is_admin,
+                u.get("created_at", "[dim]—[/]"),
+            )
+
+        console.print(table)
+
+    _run_async(_users())
+
+
+@admin_app.command("user")
+@require_matrix()
+@require_feature("admin_ops")
+def admin_user(
+    mxid: Annotated[str, typer.Argument(help="Matrix user ID (e.g. @alice:server)")],
+    deactivate: Annotated[bool, typer.Option("--deactivate", help="Deactivate user")] = False,
+    reset_password: Annotated[bool, typer.Option("--reset-password", help="Reset password")] = False,
+):
+    """Manage a specific user on the homeserver."""
+    if not deactivate and not reset_password:
+        # Show user info
+        async def _info():
+            from navig.comms.matrix_admin import get_admin_client
+            admin = get_admin_client()
+            info = await admin.get_user(mxid)
+            if info:
+                table = Table(title=f"User: {mxid}", show_header=False)
+                table.add_column("Key", style="bold")
+                table.add_column("Value")
+                for k, v in info.items():
+                    table.add_row(str(k), str(v))
+                console.print(table)
+            else:
+                console.print(f"[red]✗[/] User not found: {mxid}")
+
+        _run_async(_info())
+        return
+
+    if deactivate:
+        if not typer.confirm(f"Deactivate {mxid}? This cannot be undone."):
+            raise typer.Abort()
+
+        async def _deactivate():
+            from navig.comms.matrix_admin import get_admin_client
+            admin = get_admin_client()
+            ok = await admin.deactivate_user(mxid)
+            if ok:
+                console.print(f"[green]✓[/] User deactivated: {mxid}")
+            else:
+                console.print("[red]✗[/] Failed to deactivate")
+
+        _run_async(_deactivate())
+
+    if reset_password:
+        import secrets
+        new_pass = secrets.token_urlsafe(16)
+
+        async def _reset():
+            from navig.comms.matrix_admin import get_admin_client
+            admin = get_admin_client()
+            ok = await admin.reset_password(mxid, new_pass)
+            if ok:
+                console.print(f"[green]✓[/] Password reset for {mxid}")
+                console.print(f"  New password: [bold]{new_pass}[/]")
+            else:
+                console.print("[red]✗[/] Failed to reset password")
+
+        _run_async(_reset())
+
+
+# ============================================================================
+# Features command
+# ============================================================================
+
+@matrix_app.command("features")
+def features():
+    """Show Matrix feature toggle states."""
+    table = Table(title="Matrix Features")
+    table.add_column("Feature", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Description")
+
+    for name, enabled in get_all_features().items():
+        status = "[green]✓ ON[/]" if enabled else "[red]✗ OFF[/]"
+        desc = FEATURE_DESCRIPTIONS.get(name, "")
+        table.add_row(name, status, desc)
+
+    console.print(table)
+    console.print("\n[dim]Toggle: navig config set comms.matrix.features.<name> true|false[/]")
