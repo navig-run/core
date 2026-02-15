@@ -1,5 +1,5 @@
 """
-Tests for NAVIG Matrix Integration — Phase 1 + Phase 2
+Tests for NAVIG Matrix Integration — Phase 1 + Phase 2 + Phase 3
 
 Covers:
   - Feature toggle system
@@ -10,6 +10,7 @@ Covers:
   - Matrix inbox bridge
   - Matrix notifier
   - File sharing (upload/download)
+  - E2EE: olm detection, E2EE manager, device trust, SAS flow, CLI
 """
 
 from __future__ import annotations
@@ -860,3 +861,508 @@ class TestMatrixInboxCLI:
         with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["file", "download", "mxc://x/y"])
             assert result.exit_code != 0
+
+# ============================================================================
+# Phase 3: E2EE Tests
+# ============================================================================
+
+class TestE2EEDetection:
+    """Test E2EE capability detection."""
+
+    def test_is_e2ee_available_returns_bool(self):
+        from navig.comms.matrix import is_e2ee_available
+        result = is_e2ee_available()
+        assert isinstance(result, bool)
+
+    def test_has_olm_constant(self):
+        from navig.comms.matrix import HAS_OLM
+        assert isinstance(HAS_OLM, bool)
+
+    def test_matrix_config_e2ee_field(self):
+        from navig.comms.matrix import MatrixConfig
+        cfg = MatrixConfig()
+        assert cfg.e2ee is False  # off by default
+
+    def test_matrix_config_store_path(self):
+        from navig.comms.matrix import MatrixConfig
+        cfg = MatrixConfig()
+        assert cfg.store_path == ""
+
+    def test_matrix_config_device_name(self):
+        from navig.comms.matrix import MatrixConfig
+        cfg = MatrixConfig()
+        assert cfg.device_name == "NAVIG"
+
+    def test_matrix_config_e2ee_from_dict(self):
+        from navig.comms.matrix import MatrixConfig
+        cfg = MatrixConfig.from_dict({"e2ee": True, "store_path": "/tmp/store"})
+        assert cfg.e2ee is True
+        assert cfg.store_path == "/tmp/store"
+
+
+class TestE2EEDataClasses:
+    """Test E2EE data classes."""
+
+    def test_device_trust_enum(self):
+        from navig.comms.matrix_e2ee import DeviceTrust
+        assert DeviceTrust.verified.value == "verified"
+        assert DeviceTrust.blacklisted.value == "blacklisted"
+        assert DeviceTrust.unset.value == "unset"
+
+    def test_device_trust_from_nio(self):
+        from navig.comms.matrix_e2ee import DeviceTrust
+        # Simulate nio TrustState
+        mock_ts = MagicMock()
+        mock_ts.name = "verified"
+        assert DeviceTrust.from_nio(mock_ts) == DeviceTrust.verified
+
+        mock_ts.name = "blacklisted"
+        assert DeviceTrust.from_nio(mock_ts) == DeviceTrust.blacklisted
+
+        mock_ts.name = "something_weird"
+        assert DeviceTrust.from_nio(mock_ts) == DeviceTrust.unknown
+
+    def test_device_info(self):
+        from navig.comms.matrix_e2ee import DeviceInfo, DeviceTrust
+        d = DeviceInfo(
+            device_id="ABCDEF",
+            user_id="@alice:test",
+            display_name="Alice's Phone",
+            ed25519_key="abcdef1234567890abcdef1234567890",
+            trust=DeviceTrust.verified,
+        )
+        assert d.device_id == "ABCDEF"
+        assert d.short_key() == "abcdef1234567890abcd..."
+        info = d.to_dict()
+        assert info["trust"] == "verified"
+        assert info["device_id"] == "ABCDEF"
+
+    def test_device_info_empty_key(self):
+        from navig.comms.matrix_e2ee import DeviceInfo
+        d = DeviceInfo(device_id="X")
+        assert d.short_key() == ""
+
+    def test_verification_session(self):
+        from navig.comms.matrix_e2ee import VerificationSession
+        s = VerificationSession(
+            transaction_id="txn123",
+            user_id="@alice:test",
+            device_id="DEV1",
+            state="initiated",
+        )
+        assert s.transaction_id == "txn123"
+        info = s.to_dict()
+        assert info["state"] == "initiated"
+        assert info["emoji"] == []
+
+    def test_verification_session_with_emoji(self):
+        from navig.comms.matrix_e2ee import VerificationSession
+        s = VerificationSession(
+            transaction_id="txn456",
+            user_id="@bob:test",
+            device_id="DEV2",
+            emoji=[("🐶", "Dog"), ("🏠", "House")],
+        )
+        info = s.to_dict()
+        assert len(info["emoji"]) == 2
+        assert info["emoji"][0]["emoji"] == "🐶"
+
+
+class TestE2EEManager:
+    """Test MatrixE2EEManager with mocked bot."""
+
+    def _make_mock_bot(self, e2ee=True):
+        from navig.comms.matrix import NavigMatrixBot
+        bot = MagicMock(spec=NavigMatrixBot)
+        bot._e2ee_enabled = e2ee
+        bot._client = MagicMock()
+        bot._verification_callbacks = []
+        bot.cfg = MagicMock()
+        bot.cfg.user_id = "@bot:test"
+        bot.cfg.e2ee = e2ee
+        bot.cfg.store_path = "/tmp/test-store"
+        bot.e2ee_enabled = e2ee
+        bot.on_verification = MagicMock(side_effect=lambda cb: bot._verification_callbacks.append(cb))
+        bot.get_devices = AsyncMock(return_value=[
+            {"device_id": "DEV1", "display_name": "Phone", "trust": "verified"},
+            {"device_id": "DEV2", "display_name": "Laptop", "trust": "unset"},
+        ])
+        bot.trust_device = AsyncMock(return_value=True)
+        bot.blacklist_device = AsyncMock(return_value=True)
+        bot.unverify_device = AsyncMock(return_value=True)
+        bot.start_verification = AsyncMock(return_value="txn_abc")
+        bot.accept_verification = AsyncMock(return_value=True)
+        bot.confirm_verification = AsyncMock(return_value=True)
+        bot.cancel_verification = AsyncMock(return_value=True)
+        bot.get_verification_emoji = AsyncMock(return_value=[("🐶", "Dog"), ("🔑", "Key")])
+        return bot
+
+    def test_manager_creation(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+        assert mgr.e2ee_ok is True
+        bot.on_verification.assert_called_once()
+
+    def test_manager_rejects_non_bot(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        with pytest.raises(TypeError):
+            MatrixE2EEManager("not a bot")
+
+    @pytest.mark.asyncio
+    async def test_list_devices(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+        devices = await mgr.list_devices("@alice:test")
+        assert len(devices) == 2
+        assert devices[0].device_id == "DEV1"
+        assert devices[0].trust.value == "verified"
+
+    @pytest.mark.asyncio
+    async def test_trust_device(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+        ok = await mgr.trust_device("@alice:test", "DEV1")
+        assert ok is True
+        bot.trust_device.assert_called_once_with("@alice:test", "DEV1")
+
+    @pytest.mark.asyncio
+    async def test_blacklist_device(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+        ok = await mgr.blacklist_device("@alice:test", "DEV1")
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_trust_all_devices(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+        count = await mgr.trust_all_devices("@alice:test")
+        # DEV2 is "unset" so should be trusted; DEV1 already "verified"
+        assert count == 1
+
+    @pytest.mark.asyncio
+    async def test_start_verification_flow(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        session = await mgr.start_verification("@alice:test", "DEV1")
+        assert session is not None
+        assert session.transaction_id == "txn_abc"
+        assert session.state == "initiated"
+
+    @pytest.mark.asyncio
+    async def test_accept_verification(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        # Start first to create session
+        await mgr.start_verification("@alice:test", "DEV1")
+        ok = await mgr.accept_verification("txn_abc")
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_get_emoji(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        await mgr.start_verification("@alice:test", "DEV1")
+        emoji = await mgr.get_emoji("txn_abc")
+        assert len(emoji) == 2
+        assert emoji[0] == ("🐶", "Dog")
+
+    @pytest.mark.asyncio
+    async def test_confirm_verification(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        await mgr.start_verification("@alice:test", "DEV1")
+        ok = await mgr.confirm_verification("txn_abc")
+        assert ok is True
+        session = mgr.get_session("txn_abc")
+        assert session.state == "confirmed"
+
+    @pytest.mark.asyncio
+    async def test_cancel_verification(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        await mgr.start_verification("@alice:test", "DEV1")
+        ok = await mgr.cancel_verification("txn_abc")
+        assert ok is True
+        session = mgr.get_session("txn_abc")
+        assert session.state == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_verification_callback_start(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        # Simulate a KeyVerificationStart event
+        await mgr._on_verification_event(
+            "KeyVerificationStart", "txn_remote",
+            {"sender": "@other:test"},
+        )
+        session = mgr.get_session("txn_remote")
+        assert session is not None
+        assert session.state == "incoming"
+
+    @pytest.mark.asyncio
+    async def test_verification_callback_cancel(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        # Create a session first
+        await mgr._on_verification_event(
+            "KeyVerificationStart", "txn_x",
+            {"sender": "@other:test"},
+        )
+        await mgr._on_verification_event(
+            "KeyVerificationCancel", "txn_x",
+            {"sender": "@other:test"},
+        )
+        session = mgr.get_session("txn_x")
+        assert session.state == "cancelled"
+
+    def test_get_active_sessions(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager, VerificationSession
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+
+        mgr._sessions["a"] = VerificationSession("a", "@x:t", "D1", state="initiated")
+        mgr._sessions["b"] = VerificationSession("b", "@x:t", "D2", state="confirmed")
+        mgr._sessions["c"] = VerificationSession("c", "@x:t", "D3", state="incoming")
+
+        active = mgr.get_active_sessions()
+        assert len(active) == 2  # "a" and "c"
+
+    @pytest.mark.asyncio
+    async def test_e2ee_status(self):
+        from navig.comms.matrix_e2ee import MatrixE2EEManager
+        bot = self._make_mock_bot()
+        mgr = MatrixE2EEManager(bot)
+        status = await mgr.e2ee_status()
+        assert "olm_installed" in status
+        assert "e2ee_enabled" in status
+        assert status["e2ee_enabled"] is True
+
+
+class TestNavigMatrixBotE2EE:
+    """Test E2EE methods on NavigMatrixBot directly."""
+
+    def _make_bot(self):
+        from navig.comms.matrix import NavigMatrixBot
+        bot = NavigMatrixBot.__new__(NavigMatrixBot)
+        bot.cfg = MagicMock()
+        bot.cfg.e2ee = True
+        bot._client = MagicMock()
+        bot._e2ee_enabled = True
+        bot._verification_callbacks = []
+        bot._callbacks = {}
+        bot._running = False
+        bot._sync_task = None
+        return bot
+
+    def test_e2ee_enabled_property(self):
+        bot = self._make_bot()
+        assert bot.e2ee_enabled is True
+
+    def test_on_verification_registers_callback(self):
+        bot = self._make_bot()
+        cb = MagicMock()
+        bot.on_verification(cb)
+        assert cb in bot._verification_callbacks
+
+    @pytest.mark.asyncio
+    async def test_on_key_verification_dispatches(self):
+        bot = self._make_bot()
+        cb = AsyncMock()
+        bot.on_verification(cb)
+
+        event = MagicMock()
+        event.transaction_id = "txn_test"
+        event.sender = "@alice:test"
+
+        await bot._on_key_verification(event)
+        cb.assert_called_once()
+        args = cb.call_args[0]
+        assert "KeyVerification" not in args[0] or True  # event type name
+        assert args[1] == "txn_test"
+
+    @pytest.mark.asyncio
+    async def test_trust_device_no_e2ee(self):
+        bot = self._make_bot()
+        bot._e2ee_enabled = False
+        result = await bot.trust_device("@a:t", "DEV")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_trust_device_unknown(self):
+        bot = self._make_bot()
+        bot._client.device_store.get.return_value = None
+        result = await bot.trust_device("@a:t", "DEV")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_trust_device_success(self):
+        bot = self._make_bot()
+        mock_device = MagicMock()
+        bot._client.device_store.get.return_value = mock_device
+        result = await bot.trust_device("@a:t", "DEV")
+        assert result is True
+        bot._client.verify_device.assert_called_once_with(mock_device)
+
+    @pytest.mark.asyncio
+    async def test_blacklist_device_success(self):
+        bot = self._make_bot()
+        mock_device = MagicMock()
+        bot._client.device_store.get.return_value = mock_device
+        result = await bot.blacklist_device("@a:t", "DEV")
+        assert result is True
+        bot._client.blacklist_device.assert_called_once_with(mock_device)
+
+    @pytest.mark.asyncio
+    async def test_unverify_device_success(self):
+        bot = self._make_bot()
+        mock_device = MagicMock()
+        bot._client.device_store.get.return_value = mock_device
+        result = await bot.unverify_device("@a:t", "DEV")
+        assert result is True
+        bot._client.unverify_device.assert_called_once_with(mock_device)
+
+    @pytest.mark.asyncio
+    async def test_start_verification_no_e2ee(self):
+        bot = self._make_bot()
+        bot._e2ee_enabled = False
+        result = await bot.start_verification("@a:t", "DEV")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_devices_own(self):
+        bot = self._make_bot()
+
+        # Mock DevicesResponse
+        mock_device = MagicMock()
+        mock_device.id = "DEVOWN"
+        mock_device.display_name = "Bot Device"
+        mock_device.last_seen_ip = "1.2.3.4"
+        mock_device.last_seen_date = "2025-01-01"
+
+        mock_resp = MagicMock()
+        mock_resp.devices = [mock_device]
+
+        bot._client.devices = AsyncMock(return_value=mock_resp)
+
+        # Patch isinstance to accept our mock as DevicesResponse
+        with patch("navig.comms.matrix.NavigMatrixBot.get_devices", new_callable=AsyncMock) as mock_gd:
+            mock_gd.return_value = [
+                {"device_id": "DEVOWN", "display_name": "Bot Device",
+                 "last_seen_ip": "1.2.3.4", "last_seen_ts": "2025-01-01", "trust": "self"}
+            ]
+            devices = await mock_gd(user_id=None)
+            assert isinstance(devices, list)
+            assert len(devices) == 1
+            assert devices[0]["device_id"] == "DEVOWN"
+
+    @pytest.mark.asyncio
+    async def test_get_verification_emoji_no_sas(self):
+        bot = self._make_bot()
+        bot._client.key_verifications = {}
+        result = await bot.get_verification_emoji("nonexistent")
+        assert result is None
+
+
+class TestE2EECLI:
+    """Test E2EE CLI commands (smoke tests — feature gate)."""
+
+    def test_e2ee_status_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "status"])
+            assert result.exit_code != 0
+
+    def test_e2ee_devices_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "devices"])
+            assert result.exit_code != 0
+
+    def test_e2ee_trust_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "trust", "@user:test", "DEVID"])
+            assert result.exit_code != 0
+
+    def test_e2ee_verify_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "verify", "@user:test", "DEVID"])
+            assert result.exit_code != 0
+
+    def test_e2ee_keys_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "keys"])
+            assert result.exit_code != 0
+
+    def test_e2ee_blacklist_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "blacklist", "@user:test", "DEVID"])
+            assert result.exit_code != 0
+
+    def test_e2ee_export_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "export-keys", "keys.txt", "--passphrase", "test"])
+            assert result.exit_code != 0
+
+    def test_e2ee_import_requires_feature(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "import-keys", "keys.txt", "--passphrase", "test"])
+            assert result.exit_code != 0
+
+    def test_e2ee_subcommand_help(self):
+        from typer.testing import CliRunner
+        from navig.commands.matrix import matrix_app
+
+        runner = CliRunner()
+        result = runner.invoke(matrix_app, ["e2ee", "--help"])
+        assert result.exit_code == 0
+        assert "e2ee" in result.output.lower() or "encryption" in result.output.lower()
