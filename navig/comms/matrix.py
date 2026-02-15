@@ -83,7 +83,14 @@ class NavigMatrixBot:
         self._running = True
         self._sync_task = asyncio.create_task(self._sync_loop())
         _bot = self
-        logger.info("Matrix bot started, syncing...")
+
+        # Wait for initial sync to complete so we have a valid next_batch token
+        try:
+            await self._client.sync(timeout=10000, full_state=True)
+            logger.info("Matrix bot started, initial sync done")
+        except Exception:
+            logger.warning("Matrix: initial sync incomplete, continuing anyway")
+            logger.info("Matrix bot started, syncing...")
 
     async def stop(self) -> None:
         """Stop sync and close."""
@@ -156,10 +163,10 @@ class NavigMatrixBot:
         if not self._client:
             return None
         try:
-            from nio import RoomCreateResponse
+            from nio import RoomCreateResponse, RoomVisibility
             resp = await self._client.room_create(
                 name=name, topic=topic,
-                visibility="public" if is_public else "private",
+                visibility=RoomVisibility.public if is_public else RoomVisibility.private,
                 invite=invite_user_ids or [],
             )
             if isinstance(resp, RoomCreateResponse):
@@ -183,6 +190,127 @@ class NavigMatrixBot:
     def on_message(self, callback: Callable) -> None:
         """Register incoming-message callback: async fn(room_id, sender, body)."""
         self._message_callbacks.append(callback)
+
+    # ── File sharing ──
+
+    async def upload_file(
+        self,
+        room_id: str,
+        file_path: str,
+        *,
+        body: Optional[str] = None,
+        mime_type: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Upload a file to a Matrix room. Returns event_id or None.
+
+        file_path : local path to the file
+        body      : display name (defaults to filename)
+        mime_type : MIME type (auto-detected if omitted)
+        """
+        if not self._client:
+            logger.warning("Matrix client not initialised")
+            return None
+        import os
+        import mimetypes
+        from pathlib import Path as _P
+
+        fp = _P(file_path)
+        if not fp.exists():
+            logger.error("File not found: %s", file_path)
+            return None
+
+        if body is None:
+            body = fp.name
+        if mime_type is None:
+            mime_type = mimetypes.guess_type(str(fp))[0] or "application/octet-stream"
+
+        file_size = fp.stat().st_size
+        if file_size == 0:
+            logger.warning("Empty file, skipping upload: %s", file_path)
+            return None
+
+        try:
+            from nio import UploadResponse, RoomSendResponse
+
+            with open(fp, "rb") as f:
+                resp, _keys = await self._client.upload(
+                    f,
+                    content_type=mime_type,
+                    filename=body,
+                    filesize=file_size,
+                )
+            if not isinstance(resp, UploadResponse):
+                logger.warning("Matrix upload unexpected response: %s", resp)
+                return None
+
+            content_uri = resp.content_uri
+
+            # Determine msgtype
+            if mime_type.startswith("image/"):
+                msgtype = "m.image"
+            elif mime_type.startswith("audio/"):
+                msgtype = "m.audio"
+            elif mime_type.startswith("video/"):
+                msgtype = "m.video"
+            else:
+                msgtype = "m.file"
+
+            content = {
+                "msgtype": msgtype,
+                "body": body,
+                "url": content_uri,
+                "info": {
+                    "mimetype": mime_type,
+                    "size": file_size,
+                },
+            }
+
+            target_room = room_id or self.cfg.default_room_id
+            send_resp = await self._client.room_send(
+                room_id=target_room,
+                message_type="m.room.message",
+                content=content,
+            )
+            if isinstance(send_resp, RoomSendResponse):
+                logger.info("Matrix: uploaded %s to %s", body, target_room)
+                return send_resp.event_id
+            return None
+        except Exception:
+            logger.exception("Matrix upload_file failed")
+            return None
+
+    async def download_file(
+        self,
+        mxc_uri: str,
+        dest_path: str,
+    ) -> bool:
+        """
+        Download a file from a Matrix content URI (mxc://...).
+
+        Returns True on success.
+        """
+        if not self._client:
+            logger.warning("Matrix client not initialised")
+            return False
+        from pathlib import Path as _P
+
+        try:
+            from nio import DownloadResponse
+
+            resp = await self._client.download(mxc_uri)
+            if not isinstance(resp, DownloadResponse):
+                logger.warning("Matrix download unexpected response: %s", resp)
+                return False
+
+            dest = _P(dest_path)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(resp.body)
+            logger.info("Matrix: downloaded %s -> %s", mxc_uri, dest_path)
+            return True
+        except Exception:
+            logger.exception("Matrix download_file failed")
+            return False
 
     # ── Query helpers (used by CLI / channel adapter) ──
 
