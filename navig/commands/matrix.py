@@ -17,6 +17,7 @@ import json
 import sys
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -855,3 +856,233 @@ def features():
 
     console.print(table)
     console.print("\n[dim]Toggle: navig config set comms.matrix.features.<name> true|false[/]")
+
+
+# ============================================================================
+# Inbox bridge commands
+# ============================================================================
+
+inbox_bridge_app = typer.Typer(
+    name="inbox",
+    help="Matrix inbox bridge — persist and manage Matrix messages as inbox files",
+)
+matrix_app.add_typer(inbox_bridge_app, name="inbox")
+
+
+@inbox_bridge_app.command("list")
+@require_feature("notifications")
+def inbox_list(
+    status: Annotated[Optional[str], typer.Option("--status", "-s", help="Filter: unread|read")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Max messages")] = 30,
+    json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
+):
+    """List persisted Matrix inbox messages."""
+    from navig.comms.matrix_inbox import get_inbox_bridge
+
+    bridge = get_inbox_bridge()
+    msgs = bridge.list_messages(status=status, limit=limit)
+
+    if json_output:
+        import json as _json
+        typer.echo(_json.dumps(msgs, indent=2, default=str))
+        return
+
+    if not msgs:
+        console.print("[dim]No Matrix inbox messages[/]")
+        return
+
+    table = Table(title=f"Matrix Inbox ({len(msgs)} messages)")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Status", width=7)
+    table.add_column("Sender", style="cyan", width=24)
+    table.add_column("Room", width=20)
+    table.add_column("Preview", no_wrap=False)
+    table.add_column("Time", style="dim", width=19)
+
+    for i, m in enumerate(msgs, 1):
+        st = "[green]●[/]" if m["status"] == "unread" else "[dim]○[/]"
+        table.add_row(str(i), st, m["sender"], m["room_name"], m["preview"], m["created"])
+
+    console.print(table)
+
+
+@inbox_bridge_app.command("unread")
+@require_feature("notifications")
+def inbox_unread():
+    """Show unread count."""
+    from navig.comms.matrix_inbox import get_inbox_bridge
+
+    bridge = get_inbox_bridge()
+    count = bridge.get_unread_count()
+    if count == 0:
+        console.print("[green]✓[/] No unread Matrix messages")
+    else:
+        console.print(f"[yellow]{count}[/] unread Matrix message(s)")
+
+
+@inbox_bridge_app.command("mark-read")
+@require_feature("notifications")
+def inbox_mark_read(
+    filename: Annotated[Optional[str], typer.Argument(help="Specific file, or omit for all")] = None,
+):
+    """Mark messages as read (one or all)."""
+    from navig.comms.matrix_inbox import get_inbox_bridge
+
+    bridge = get_inbox_bridge()
+    if filename:
+        ok = bridge.mark_read(filename)
+        if ok:
+            console.print(f"[green]✓[/] Marked {filename} as read")
+        else:
+            console.print(f"[red]✗[/] File not found: {filename}")
+    else:
+        count = bridge.mark_all_read()
+        console.print(f"[green]✓[/] Marked {count} message(s) as read")
+
+
+@inbox_bridge_app.command("purge")
+@require_feature("notifications")
+def inbox_purge(
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
+):
+    """Delete all read messages from inbox."""
+    from navig.comms.matrix_inbox import get_inbox_bridge
+
+    bridge = get_inbox_bridge()
+    if not yes:
+        count = len(bridge.list_messages(status="read"))
+        if count == 0:
+            console.print("[dim]No read messages to purge[/]")
+            return
+        confirm = typer.confirm(f"Delete {count} read message(s)?")
+        if not confirm:
+            raise typer.Abort()
+
+    deleted = bridge.purge_read()
+    console.print(f"[green]✓[/] Deleted {deleted} read message(s)")
+
+
+@inbox_bridge_app.command("process")
+@require_feature("notifications")
+def inbox_process(
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview routing")] = False,
+    no_llm: Annotated[bool, typer.Option("--no-llm", help="Heuristic only")] = False,
+):
+    """Route unread Matrix messages through InboxRouterAgent."""
+    from navig.comms.matrix_inbox import get_inbox_bridge
+
+    bridge = get_inbox_bridge()
+    msgs = bridge.list_messages(status="unread")
+    if not msgs:
+        console.print("[dim]No unread messages to process[/]")
+        return
+
+    try:
+        from navig.agents.inbox_router import InboxRouterAgent, execute_plan
+    except ImportError:
+        console.print("[red]✗[/] InboxRouterAgent not available")
+        raise typer.Exit(1)
+
+    agent = InboxRouterAgent(bridge.project_root, use_llm=not no_llm)
+    console.print(f"Processing {len(msgs)} unread message(s)...\n")
+
+    for m in msgs:
+        fp = Path(m["path"])
+        if not fp.exists():
+            continue
+        plan = agent.process_single(fp, dry_run=dry_run)
+        ctype = plan.get("content_type", "?")
+        target = plan.get("target_path") or "(stays in inbox)"
+        console.print(f"  [{ctype}] {fp.name} -> {target}")
+        if not dry_run and not plan.get("error"):
+            execute_plan(bridge.project_root, plan, dry_run=False, move_source=True)
+
+    console.print(f"\n[green]✓[/] Done")
+
+
+# ============================================================================
+# File sharing commands
+# ============================================================================
+
+file_app = typer.Typer(
+    name="file",
+    help="Matrix file sharing — upload and download files",
+)
+matrix_app.add_typer(file_app, name="file")
+
+
+@file_app.command("upload")
+@require_feature("file_sharing")
+def file_upload(
+    path: Annotated[str, typer.Argument(help="Local file to upload")],
+    room: Annotated[Optional[str], typer.Option("--room", "-r", help="Target room ID")] = None,
+    name: Annotated[Optional[str], typer.Option("--name", help="Display name")] = None,
+):
+    """Upload a file to a Matrix room."""
+    from pathlib import Path as _P
+
+    fp = _P(path)
+    if not fp.exists():
+        console.print(f"[red]✗[/] File not found: {path}")
+        raise typer.Exit(1)
+
+    room_id = room or _get_config().get("default_room_id", "")
+    if not room_id:
+        console.print("[red]✗[/] No room specified (pass --room or set default_room_id)")
+        raise typer.Exit(1)
+
+    async def _upload():
+        bot = await _get_bot()
+        if not bot:
+            console.print("[red]✗[/] Could not connect to Matrix")
+            raise typer.Exit(1)
+        try:
+            eid = await bot.upload_file(room_id, str(fp), body=name)
+            if eid:
+                console.print(f"[green]✓[/] Uploaded {fp.name} → {room_id}")
+                console.print(f"  Event: [dim]{eid}[/]")
+            else:
+                console.print("[red]✗[/] Upload failed")
+        finally:
+            await bot.stop()
+
+    _run_async(_upload())
+
+
+@file_app.command("download")
+@require_feature("file_sharing")
+def file_download(
+    mxc_uri: Annotated[str, typer.Argument(help="Matrix content URI (mxc://...)")],
+    dest: Annotated[str, typer.Option("--output", "-o", help="Destination path")] = ".",
+):
+    """Download a file from a Matrix content URI."""
+    from pathlib import Path as _P
+
+    if not mxc_uri.startswith("mxc://"):
+        console.print("[red]✗[/] Invalid MXC URI (must start with mxc://)")
+        raise typer.Exit(1)
+
+    # If dest is a directory, use it; otherwise treat as file
+    dest_path = _P(dest)
+    if dest_path.is_dir():
+        # Extract filename from URI
+        parts = mxc_uri.split("/")
+        fname = parts[-1] if len(parts) > 1 else "download"
+        dest_path = dest_path / fname
+
+    async def _download():
+        bot = await _get_bot()
+        if not bot:
+            console.print("[red]✗[/] Could not connect to Matrix")
+            raise typer.Exit(1)
+        try:
+            ok = await bot.download_file(mxc_uri, str(dest_path))
+            if ok:
+                console.print(f"[green]✓[/] Downloaded → {dest_path}")
+            else:
+                console.print("[red]✗[/] Download failed")
+        finally:
+            await bot.stop()
+
+    _run_async(_download())
+
