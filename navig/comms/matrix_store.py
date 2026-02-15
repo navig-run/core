@@ -19,9 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from navig.store.base import BaseStore
+
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 2  # kept for backward compat
 
 
 # ── Data classes ──────────────────────────────────────────────
@@ -136,12 +138,11 @@ class MatrixBridge:
 # ── Store ─────────────────────────────────────────────────────
 
 
-class MatrixStore:
+class MatrixStore(BaseStore):
     """
     SQLite-backed storage for Matrix rooms, events, and bridge state.
 
-    Thread-safe with WAL mode. Follows the same pattern as
-    ``MemoryStorage`` and ``ConversationStore``.
+    Thread-safe with WAL mode via ``BaseStore``.
 
     Usage::
 
@@ -152,50 +153,16 @@ class MatrixStore:
         events = store.get_events("!abc:server", limit=50)
     """
 
+    SCHEMA_VERSION = 2
+
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
             db_path = Path.home() / ".navig" / "matrix.db"
-        self.db_path = Path(db_path)
-        self._local = threading.local()
-        self._lock = threading.Lock()
+        super().__init__(Path(db_path))
 
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_schema()
-
-    # ── Connection ────────────────────────────────────────────
-
-    def _get_conn(self) -> sqlite3.Connection:
-        if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(
-                str(self.db_path),
-                check_same_thread=False,
-            )
-            self._local.conn.row_factory = sqlite3.Row
-            self._local.conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn.execute("PRAGMA synchronous=NORMAL")
-            self._local.conn.execute("PRAGMA foreign_keys=ON")
-        return self._local.conn
-
-    def close(self) -> None:
-        if hasattr(self._local, "conn") and self._local.conn:
-            try:
-                # Checkpoint WAL to prevent file locks on Windows
-                self._local.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            except Exception:
-                pass
-            self._local.conn.close()
-            self._local.conn = None
-
-    # ── Schema ────────────────────────────────────────────────
-
-    def _init_schema(self) -> None:
-        conn = self._get_conn()
+    def _create_schema(self, conn: sqlite3.Connection) -> None:
         conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS schema_version (
-                version INTEGER PRIMARY KEY
-            );
-
             -- Rooms the bot knows about
             CREATE TABLE IF NOT EXISTS rooms (
                 room_id     TEXT PRIMARY KEY,
@@ -248,8 +215,6 @@ class MatrixStore:
                 updated_at  TEXT NOT NULL,
                 PRIMARY KEY (user_id, device_id)
             );
-
-            INSERT OR IGNORE INTO schema_version (version) VALUES (2);
         """
         )
 
