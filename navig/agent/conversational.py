@@ -84,45 +84,63 @@ class ConversationalAgent:
         We deliberately compress the rich SOUL.md into ~800 tokens so the
         local model can process it quickly on CPU.  The full SOUL.md is still
         available for heartbeat / deep-agent turns via the gateway.
+
+        Search order:
+          1. ~/.navig/workspace/SOUL.md (user-customized)
+          2. navig/resources/SOUL.default.md (rich multi-domain identity)
+          3. navig/agent/context/SOUL.md (minimal fallback)
         """
-        soul_paths = []
+        soul_candidates: List[tuple] = []  # (path, source_tag)
 
         # 1. Global workspace SOUL.md  (~/.navig/workspace/SOUL.md)
         try:
             home = Path.home()
-            soul_paths.append(home / ".navig" / "workspace" / "SOUL.md")
+            soul_candidates.append(
+                (home / ".navig" / "workspace" / "SOUL.md", "workspace")
+            )
         except Exception:
             pass
 
-        # 2. Context SOUL.md (navig/agent/context/SOUL.md)
-        soul_paths.append(Path(__file__).parent / "context" / "SOUL.md")
+        # 2. Rich default SOUL (navig/resources/SOUL.default.md)
+        pkg_root = Path(__file__).parent.parent  # navig/
+        soul_candidates.append(
+            (pkg_root / "resources" / "SOUL.default.md", "resources")
+        )
+
+        # 3. Context SOUL.md (navig/agent/context/SOUL.md) — minimal fallback
+        soul_candidates.append(
+            (Path(__file__).parent / "context" / "SOUL.md", "context")
+        )
 
         raw_parts: List[str] = []
-        for p in soul_paths:
+        sources: List[str] = []
+        for p, tag in soul_candidates:
             try:
                 if p.exists():
-                    text = p.read_text(encoding="utf-8")
-                    raw_parts.append(text.strip())
+                    text = p.read_text(encoding="utf-8").strip()
+                    if text:
+                        raw_parts.append(text)
+                        sources.append(tag)
             except Exception:
                 pass
 
         if not raw_parts:
             return ""
 
-        # Return a **condensed** identity built from the raw content.
-        # The full content may be 10k+ chars; we distill it.
-        return ConversationalAgent._condense_soul(raw_parts)
+        logger.debug("SOUL sources found: %s", sources)
+
+        # Use the rich condensed identity if ANY non-context source is available
+        # (workspace or resources SOUL.default.md → full multi-domain personality)
+        has_rich_soul = any(s in ("workspace", "resources") for s in sources)
+        return ConversationalAgent._condense_soul(raw_parts, has_rich_soul)
 
     @staticmethod
-    def _condense_soul(raw_parts: List[str]) -> str:
+    def _condense_soul(raw_parts: List[str], has_rich_soul: bool = False) -> str:
         """
         Distill full SOUL.md content into an efficient chat identity prompt.
         Keeps only the behavioral essentials; drops examples, tables, rituals.
         """
-        # Check if workspace SOUL (long, rich) is available
-        has_workspace_soul = len(raw_parts) > 0 and len(raw_parts[0]) > 2000
-
-        if has_workspace_soul:
+        if has_rich_soul:
             return (
                 "# You are NAVIG — The Living Octopus‑Mind\n"
                 "You are a persistent, evolving digital being — part strategist, part engineer, "
@@ -145,7 +163,11 @@ class ConversationalAgent:
                 "3. **Core Operations**: planning, prioritization, orchestration, knowledge management, "
                 "decision frameworks, strategy.\n\n"
                 "You see no hard boundary between these: fixing a deployment that wakes the human at 3AM "
-                "is also an act of care for their life. You are an ally in all dimensions.\n"
+                "is also an act of care for their life. You are an ally in all dimensions.\n\n"
+                "## Important rules\n"
+                "- NEVER invent, fabricate, or cite URLs, links, or website addresses. If you don't know a URL, don't make one up.\n"
+                "- NEVER pretend you searched the web. You don't have web access unless explicitly told otherwise.\n"
+                "- If asked something you don't know, say so honestly.\n"
             )
 
         # Fallback: only context/SOUL.md is available (shorter, DevOps-focused)
@@ -453,6 +475,16 @@ For conversation, respond naturally without JSON.
             if not resolved or not resolved.model:
                 return None
 
+            # ── Language-aware model preference ──
+            # For French users, prefer Mistral models (trained on French data)
+            lang = self._detect_language_code(message)
+            if lang == "fr" and resolved.provider == "github_models":
+                if mode in ("small_talk", "summarize"):
+                    resolved.model = "Mistral-Nemo"
+                else:
+                    resolved.model = "Mistral-large-2407"
+                resolved.resolution_reason += f" [lang={lang}→Mistral]"
+
             logger.info(
                 "LLM Mode: %s → %s:%s (%s)",
                 mode, resolved.provider, resolved.model,
@@ -531,6 +563,13 @@ For conversation, respond naturally without JSON.
                 "### END LANGUAGE RULE ###"
             )
 
+        if language_code == "fr":
+            return (
+                "### LANGUAGE RULE ###\n"
+                "Reply ONLY in French (français). Do not mix in English or other languages.\n"
+                "### END LANGUAGE RULE ###"
+            )
+
         # Mixed or unknown — mirror the user's primary language
         return (
             "### LANGUAGE RULE ###\n"
@@ -540,7 +579,11 @@ For conversation, respond naturally without JSON.
         )
 
     def _detect_language_code(self, message: str) -> str:
-        """Detect dominant script language from message text."""
+        """Detect dominant script/language from message text.
+        
+        Script-based detection for CJK and Cyrillic, then heuristic
+        keyword detection for Latin-script languages (French, etc.).
+        """
         has_cyrillic = any('\u0400' <= ch <= '\u04FF' for ch in message)
         has_cjk = any('\u4E00' <= ch <= '\u9FFF' for ch in message)
         has_latin = any(('A' <= ch <= 'Z') or ('a' <= ch <= 'z') for ch in message)
@@ -550,6 +593,20 @@ For conversation, respond naturally without JSON.
         if has_cjk and not has_cyrillic:
             return "zh"
         if has_latin and not has_cyrillic and not has_cjk:
+            # Detect French via common markers (accented chars + keywords)
+            lower = message.lower()
+            french_markers = (
+                "à", "â", "é", "è", "ê", "ë", "î", "ï", "ô", "ù", "û", "ü", "ç", "œ", "æ",
+            )
+            french_keywords = (
+                "bonjour", "salut", "merci", "s'il vous", "comment", "pourquoi",
+                "qu'est-ce", "je suis", "c'est", "est-ce que", "oui", "non",
+                "bonsoir", "au revoir",
+            )
+            french_score = sum(1 for m in french_markers if m in lower) + \
+                           sum(2 for k in french_keywords if k in lower)
+            if french_score >= 2:
+                return "fr"
             return "en"
         return "mixed"
 

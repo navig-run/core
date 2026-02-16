@@ -2,7 +2,7 @@
 NAVIG Unified LLM Provider Layer
 
 Pluggable provider interface that abstracts Ollama, OpenRouter, OpenAI,
-and llama.cpp behind a single async ``chat()`` method.
+GitHub Models, and llama.cpp behind a single async ``chat()`` method.
 
 Each provider is instantiated from config and used by the model router
 to send requests to the correct backend regardless of where the model
@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -535,11 +536,21 @@ class GitHubModelsProvider(LLMProvider):
     OpenAI-compatible so the wire format is identical to OpenAIProvider,
     but the base URL and default model differ.
 
+    **Multi-model fallback**: When a model returns 429 (rate limit) or
+    a server error (5xx), the provider automatically tries the next model
+    in a configurable fallback chain.  This maximizes throughput across
+    GitHub's free tier limits.
+
+    Rate limit tiers (Copilot Free, per-model):
+      High (10 rpm / 50 rpd): gpt-4o, Meta-Llama-3.1-405B, Mistral-large-2407
+      Low  (15 rpm / 150 rpd): gpt-4o-mini, Meta-Llama-3.1-70B, Meta-Llama-3.1-8B,
+                                 Mistral-Nemo, AI21-Jamba-1.5-Large
+
     Config in ``~/.navig/config.yaml``::
 
         github_models:
           token: ghp_xxxx   # GitHub PAT with "models" scope
-          model: gpt-4o     # or any model from github.com/marketplace/models
+          model: gpt-4o     # primary model
 
     Or via environment variable::
 
@@ -551,12 +562,73 @@ class GitHubModelsProvider(LLMProvider):
     BASE_URL = "https://models.inference.ai.azure.com"
     DEFAULT_MODEL = "gpt-4o"
 
+    # ── Fallback chains per "quality tier" ──
+    # high_quality: best reasoning models (High rate-limit tier = 50 rpd each)
+    # fast_cheap: fast/cheap models (Low rate-limit tier = 150 rpd each)
+    # These are tried in order when the requested model hits a rate limit.
+    FALLBACK_CHAINS = {
+        # For "big" quality requests (reasoning, planning, complex)
+        "high_quality": [
+            "gpt-4o",
+            "Meta-Llama-3.1-405B-Instruct",
+            "Mistral-large-2407",
+        ],
+        # For "small" quality requests (chat, greetings, simple Q&A)
+        "fast_cheap": [
+            "gpt-4o-mini",
+            "Meta-Llama-3.1-70B-Instruct",
+            "Mistral-Nemo",
+            "AI21-Jamba-1.5-Large",
+            "Meta-Llama-3.1-8B-Instruct",
+        ],
+    }
+
+    # Map from any requested model → which fallback chain to use
+    MODEL_TO_CHAIN = {
+        "gpt-4o": "high_quality",
+        "Meta-Llama-3.1-405B-Instruct": "high_quality",
+        "Mistral-large-2407": "high_quality",
+        "gpt-4o-mini": "fast_cheap",
+        "Meta-Llama-3.1-70B-Instruct": "fast_cheap",
+        "Mistral-Nemo": "fast_cheap",
+        "AI21-Jamba-1.5-Large": "fast_cheap",
+        "Meta-Llama-3.1-8B-Instruct": "fast_cheap",
+    }
+
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super().__init__(
             base_url=base_url or self.BASE_URL,
             api_key=api_key or os.getenv("GITHUB_TOKEN", ""),
             **kwargs,
         )
+        # Track rate limit state per model: model → timestamp when limit was hit
+        self._rate_limited: Dict[str, float] = {}
+        # Track consecutive failures per model
+        self._fail_counts: Dict[str, int] = defaultdict(int)
+
+    def _get_fallback_chain(self, model: str) -> List[str]:
+        """Get the ordered fallback chain for a model, starting with the model itself."""
+        chain_name = self.MODEL_TO_CHAIN.get(model, "high_quality")
+        chain = list(self.FALLBACK_CHAINS.get(chain_name, []))
+
+        # Ensure requested model is first
+        if model in chain:
+            chain.remove(model)
+        chain.insert(0, model)
+
+        # Filter out models that were rate-limited less than 60s ago
+        now = time.monotonic()
+        available = []
+        rate_limited = []
+        for m in chain:
+            limit_time = self._rate_limited.get(m, 0)
+            if now - limit_time > 60:  # 60s cooldown
+                available.append(m)
+            else:
+                rate_limited.append(m)
+
+        # Put rate-limited models at the end (they might have recovered)
+        return available + rate_limited
 
     async def chat(self, model, messages, temperature=0.7, max_tokens=4096, **kw):
         if not self.api_key:
@@ -565,6 +637,52 @@ class GitHubModelsProvider(LLMProvider):
                 "Set GITHUB_TOKEN env var or github_models.token in ~/.navig/config.yaml"
             )
 
+        chain = self._get_fallback_chain(model or self.DEFAULT_MODEL)
+        last_error = None
+
+        for attempt_model in chain:
+            try:
+                result = await self._chat_single(
+                    attempt_model, messages, temperature, max_tokens, **kw
+                )
+                # Success — clear any failure state
+                self._fail_counts[attempt_model] = 0
+                if attempt_model != (model or self.DEFAULT_MODEL):
+                    logger.info(
+                        "GitHub Models fallback: %s → %s (success)",
+                        model, attempt_model,
+                    )
+                return result
+
+            except _RateLimitError as e:
+                self._rate_limited[attempt_model] = time.monotonic()
+                self._fail_counts[attempt_model] += 1
+                logger.warning(
+                    "GitHub Models rate limited on %s, trying next in chain...",
+                    attempt_model,
+                )
+                last_error = e
+                continue
+
+            except _ServerError as e:
+                self._fail_counts[attempt_model] += 1
+                logger.warning(
+                    "GitHub Models server error on %s: %s, trying next...",
+                    attempt_model, e,
+                )
+                last_error = e
+                continue
+
+        # All models in chain exhausted
+        raise RuntimeError(
+            f"All GitHub Models exhausted for chain starting at {model}. "
+            f"Last error: {last_error}"
+        )
+
+    async def _chat_single(
+        self, model: str, messages, temperature=0.7, max_tokens=4096, **kw
+    ):
+        """Make a single chat request to one specific model."""
         session = await self._get_session()
         url = f"{self.base_url}/chat/completions"
         headers = {
@@ -572,7 +690,7 @@ class GitHubModelsProvider(LLMProvider):
             "Content-Type": "application/json",
         }
         payload = {
-            "model": model or self.DEFAULT_MODEL,
+            "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -589,6 +707,16 @@ class GitHubModelsProvider(LLMProvider):
                     "GitHub Models returned 401 — check your GITHUB_TOKEN or "
                     "github_models.token in ~/.navig/config.yaml"
                 )
+            if resp.status == 429:
+                text = await resp.text()
+                raise _RateLimitError(
+                    f"Rate limited on {model}: {text}"
+                )
+            if resp.status >= 500:
+                text = await resp.text()
+                raise _ServerError(
+                    f"Server error {resp.status} on {model}: {text}"
+                )
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"GitHub Models error ({resp.status}): {text}")
@@ -599,7 +727,7 @@ class GitHubModelsProvider(LLMProvider):
         usage = data.get("usage", {})
         return LLMResponse(
             content=choice["message"]["content"],
-            model=data.get("model", model or self.DEFAULT_MODEL),
+            model=data.get("model", model),
             provider=self.name,
             latency_ms=latency,
             prompt_tokens=usage.get("prompt_tokens", 0),
@@ -623,6 +751,16 @@ class GitHubModelsProvider(LLMProvider):
                 pass
             return False
         return True
+
+
+class _RateLimitError(Exception):
+    """Raised when GitHub Models returns 429."""
+    pass
+
+
+class _ServerError(Exception):
+    """Raised when GitHub Models returns 5xx."""
+    pass
 
 
 # ── Factory ─────────────────────────────────────────────────────────
