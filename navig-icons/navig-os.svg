@@ -1,0 +1,152 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    NAVIG OS - The Platform Guardian
+    A kraken in command of an entire system
+  -->
+  
+  <defs>
+    <radialGradient id="osBg" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#141b2d"/>
+      <stop offset="100%" stop-color="#080c14"/>
+    </radialGradient>
+    
+    <linearGradient id="osEnergy" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0099cc"/>
+    </linearGradient>
+    
+    <linearGradient id="osLife" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ffaa"/>
+      <stop offset="100%" stop-color="#00cc77"/>
+    </linearGradient>
+    
+    <linearGradient id="osWisdom" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    
+    <linearGradient id="osFrame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d4ff"/>
+      <stop offset="50%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#00ffaa"/>
+    </linearGradient>
+    
+    <radialGradient id="osEye" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="30%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#006688" stop-opacity="0"/>
+    </radialGradient>
+    
+    <filter id="osGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+    <filter id="osStrong" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#osBg)"/>
+  
+  <!-- System Window Frame -->
+  <rect x="32" y="32" width="448" height="448" rx="28" fill="none" stroke="url(#osFrame)" stroke-width="2" opacity="0.6"/>
+  
+  <!-- Title Bar -->
+  <rect x="32" y="32" width="448" height="48" rx="28" fill="#0d1321"/>
+  <rect x="32" y="56" width="448" height="24" fill="#0d1321"/>
+  
+  <!-- Window Controls -->
+  <circle cx="62" cy="56" r="8" fill="#ff5f57"/>
+  <circle cx="88" cy="56" r="8" fill="#febc2e"/>
+  <circle cx="114" cy="56" r="8" fill="#28c840"/>
+  
+  <!-- Title -->
+  <text x="256" y="62" font-family="SF Pro Display, -apple-system, sans-serif" font-size="15" font-weight="600" fill="#00d4ff" text-anchor="middle" opacity="0.9">NAVIG OS</text>
+  
+  <!-- Grid Background -->
+  <g opacity="0.06">
+    <line x1="40" y1="130" x2="472" y2="130" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="40" y1="180" x2="472" y2="180" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="40" y1="230" x2="472" y2="230" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="40" y1="280" x2="472" y2="280" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="40" y1="330" x2="472" y2="330" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="40" y1="380" x2="472" y2="380" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="40" y1="430" x2="472" y2="430" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="130" y1="80" x2="130" y2="480" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="256" y1="80" x2="256" y2="480" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="382" y1="80" x2="382" y2="480" stroke="#00d4ff" stroke-width="1"/>
+  </g>
+  
+  <!-- Kraken in Window -->
+  <g filter="url(#osGlow)">
+    <!-- Head -->
+    <ellipse cx="256" cy="200" rx="90" ry="70" fill="#0a0f18" stroke="url(#osEnergy)" stroke-width="3.5"/>
+    
+    <!-- Mantle -->
+    <path d="M 166 215 Q 166 290, 220 315 Q 256 330, 292 315 Q 346 290, 346 215"
+          fill="#0a0f18" stroke="url(#osEnergy)" stroke-width="3"/>
+  </g>
+  
+  <!-- Eyes -->
+  <g filter="url(#osStrong)">
+    <ellipse cx="215" cy="198" rx="28" ry="32" fill="#050810"/>
+    <ellipse cx="215" cy="198" rx="28" ry="32" fill="none" stroke="#00d4ff" stroke-width="2"/>
+    <ellipse cx="215" cy="198" rx="16" ry="20" fill="url(#osEye)"/>
+    <ellipse cx="209" cy="190" rx="5" ry="7" fill="#ffffff"/>
+    
+    <ellipse cx="297" cy="198" rx="28" ry="32" fill="#050810"/>
+    <ellipse cx="297" cy="198" rx="28" ry="32" fill="none" stroke="#00d4ff" stroke-width="2"/>
+    <ellipse cx="297" cy="198" rx="16" ry="20" fill="url(#osEye)"/>
+    <ellipse cx="291" cy="190" rx="5" ry="7" fill="#ffffff"/>
+  </g>
+  
+  <!-- Neural Crown -->
+  <g filter="url(#osGlow)" opacity="0.9">
+    <circle cx="256" cy="145" r="7" fill="#00ffaa"/>
+    <line x1="256" y1="152" x2="256" y2="170" stroke="#00ffaa" stroke-width="2.5"/>
+    <path d="M 245 145 L 225 135 L 205 145" fill="none" stroke="url(#osWisdom)" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M 267 145 L 287 135 L 307 145" fill="none" stroke="url(#osWisdom)" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="205" cy="145" r="5" fill="#a855f7"/>
+    <circle cx="307" cy="145" r="5" fill="#a855f7"/>
+  </g>
+  
+  <!-- Tentacles -->
+  <g filter="url(#osGlow)">
+    <!-- Left -->
+    <path d="M 175 295 C 130 320, 85 365, 65 415 C 50 455, 60 480, 90 485"
+          fill="none" stroke="url(#osWisdom)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M 160 305 C 120 335, 80 385, 60 435"
+          fill="none" stroke="url(#osWisdom)" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+    
+    <!-- Right -->
+    <path d="M 337 295 C 382 320, 427 365, 447 415 C 462 455, 452 480, 422 485"
+          fill="none" stroke="url(#osLife)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M 352 305 C 392 335, 432 385, 452 435"
+          fill="none" stroke="url(#osLife)" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+    
+    <!-- Center -->
+    <path d="M 220 320 C 200 370, 180 420, 165 465"
+          fill="none" stroke="url(#osEnergy)" stroke-width="7" stroke-linecap="round"/>
+    <path d="M 256 328 C 256 380, 256 435, 256 475"
+          fill="none" stroke="url(#osEnergy)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M 292 320 C 312 370, 332 420, 347 465"
+          fill="none" stroke="url(#osEnergy)" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Status indicators -->
+  <g opacity="0.9">
+    <circle cx="440" cy="100" r="6" fill="#28c840"/>
+    <text x="423" y="118" font-family="SF Mono, monospace" font-size="9" fill="#28c840">ACTIVE</text>
+  </g>
+  
+  <!-- Data nodes -->
+  <g filter="url(#osGlow)" opacity="0.7">
+    <circle cx="80" cy="380" r="3" fill="#a855f7"/>
+    <circle cx="432" cy="380" r="3" fill="#00ffaa"/>
+    <circle cx="180" cy="450" r="3" fill="#00d4ff"/>
+    <circle cx="332" cy="450" r="3" fill="#00d4ff"/>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+# ─────────────────────────────────────────────────────────────
+# NAVIG fail2ban — Local overrides
+# Deploy to: /etc/fail2ban/jail.local
+# Apply:     sudo systemctl restart fail2ban
+# ─────────────────────────────────────────────────────────────
+[DEFAULT]
+# Ban for 1 hour after 5 failures within 10 minutes
+bantime  = 3600
+findtime = 600
+maxretry = 5
+
+# Use systemd backend (recommended for Ubuntu 22.04+)
+backend = systemd
+
+# Ignore localhost
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled  = true
+port     = ssh
+filter   = sshd
+maxretry = 3
+bantime  = 3600

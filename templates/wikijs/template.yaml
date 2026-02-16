@@ -1,0 +1,70 @@
+# Wiki.js Addon Template for NAVIG
+# Modern, powerful and extensible open source Wiki software
+
+name: wikijs
+version: "1.0.0"
+description: "Modern wiki engine with Markdown support, Git sync, and beautiful UI"
+author: navig-run
+enabled: false
+dependencies:
+  - nginx
+  - postgresql
+
+paths:
+  install_dir: /opt/wikijs
+  config_file: /opt/wikijs/config.yml
+  data_dir: /opt/wikijs/data
+  log_dir: /var/log/wikijs
+  backup_dir: /var/backups/wikijs
+
+services:
+  wikijs: wiki
+
+commands:
+  - name: status
+    description: "Check Wiki.js service status"
+    command: "systemctl status wiki"
+  - name: restart
+    description: "Restart Wiki.js service"
+    command: "systemctl restart wiki"
+  - name: logs
+    description: "View Wiki.js logs"
+    command: "journalctl -u wiki -f"
+  - name: backup
+    description: "Export content backup"
+    command: "curl -X POST http://localhost:3000/graphql -H 'Authorization: Bearer $WIKI_API_TOKEN' -d '{\"query\":\"mutation{system{exportAssets}}\"}'"
+  - name: update
+    description: "Update Wiki.js to latest version"
+    command: "cd /opt/wikijs && wget https://github.com/Requarks/wiki/releases/latest/download/wiki-js.tar.gz && tar xzf wiki-js.tar.gz && systemctl restart wiki"
+  - name: migrate
+    description: "Run database migrations"
+    command: "cd /opt/wikijs && node server migrations:up"
+
+env_vars:
+  NODE_ENV: production
+  DB_TYPE: postgres
+  DB_HOST: localhost
+  DB_PORT: "5432"
+  DB_USER: wikijs
+  DB_PASS: ""
+  DB_NAME: wikijs
+  HA_ACTIVE: "false"
+
+api:
+  endpoint: "http://localhost:3000/graphql"
+  auth_method: bearer_token
+  doc_url: "https://docs.requarks.io/dev/api"
+
+default_port: 3000
+
+systemd_service: wiki
+
+database:
+  supported:
+    - postgresql
+    - mysql
+    - mariadb
+    - mssql
+    - sqlite
+  default_type: postgresql
+  default_name: wikijs

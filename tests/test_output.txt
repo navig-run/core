@@ -1,0 +1,117 @@
+
+================================================================================
+Test directory: C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm
+================================================================================
+
+TEST 1: Initialize App
+--------------------------------------------------------------------------------
+
+=== Initializing NAVIG App ===
+
+тД╣ Location: C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm
+
+тЬУ тЬУ Created .navig/ directory structure
+
+
+=== Directory Structure ===
+
+тД╣   C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig/
+тД╣   тФЬтФАтФА config.yaml       (app metadata)
+тД╣   тФЬтФАтФА hosts/            (app-specific host configs)
+тД╣   тФЬтФАтФА apps/         (app-specific app configs)
+тД╣   тФЬтФАтФА cache/            (runtime state)
+тД╣   тФФтФАтФА backups/          (database backups)
+
+тЬУ тЬУ App initialized successfully!
+
+
+=== Next Steps ===
+
+тД╣   1. Add app-specific hosts: navig host add <name>
+тД╣   2. Add apps to hosts: navig app add <name>
+тД╣   3. All configs will be stored in .navig/ (not ~/.navig/)
+тД╣   4. Add .navig/ to .gitignore if it contains sensitive data
+
+Note: App-specific configs take precedence over global configs
+тЬУ тЬУ App initialized successfully
+
+TEST 2: Create app-specific host config
+--------------------------------------------------------------------------------
+тД╣ Created app host config: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig\hosts\
+test-server.yaml
+
+TEST 3: Create global host config
+--------------------------------------------------------------------------------
+тД╣ Created global host config: C:\Users\subdose\.navig\hosts\test-server.yaml
+
+TEST 4: Load config from app directory
+--------------------------------------------------------------------------------
+тЬУ тЬУ App root: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm
+тД╣ тЬУ Using app config: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig
+тД╣ тЬУ Database: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig\navig.
+db
+тЬУ Loaded host 'test-server' from app config
+тЬУ тЬУ App config takes precedence (correct)
+тД╣   Host: 10.0.0.1 (app)
+тД╣   Port: 2222
+тД╣   User: app-user
+
+TEST 5: Load config from subdirectory
+--------------------------------------------------------------------------------
+тЬУ тЬУ App root: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm
+тД╣ тЬУ Using app config: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig
+тД╣ тЬУ Database: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig\navig.
+db
+тЬУ Loaded host 'test-server' from app config
+тЬУ тЬУ App root detected from subdirectory (correct)
+тД╣   Current dir: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\src\component
+s
+тД╣   App root: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm
+тД╣   Host: 10.0.0.1
+
+TEST 6: Load config from outside app directory
+--------------------------------------------------------------------------------
+тЬУ тЬУ App root: C:\Users\subdose\AppData\Local\Temp
+тД╣ тЬУ Using app config: C:\Users\subdose\AppData\Local\Temp\.navig
+тД╣ тЬУ Database: C:\Users\subdose\AppData\Local\Temp\.navig\navig.db
+тЬУ Loaded host 'test-server' from global config
+тЬУ тЬУ Global config used outside app (correct)
+тД╣   Host: 10.0.0.10 (global)
+тД╣   User: global-user
+
+TEST 7: List hosts from app directory
+--------------------------------------------------------------------------------
+тЬУ тЬУ App root: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm
+тД╣ тЬУ Using app config: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig
+тД╣ тЬУ Database: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig\navig.
+db
+тЬУ тЬУ Host 'test-server' found in list
+тД╣   Total hosts: 3
+
+TEST 8: Database path separation
+--------------------------------------------------------------------------------
+тЬУ тЬУ Database paths are separated
+тД╣   App DB: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm\.navig\navig.
+db
+тД╣   Global DB:  C:\Users\subdose\AppData\Local\Temp\.navig\navig.db
+
+================================================================================
+тЬУ All hierarchical configuration tests completed!
+================================================================================
+
+Cleaned up test directory: 
+C:\Users\subdose\AppData\Local\Temp\navig-hierarchy-test-tj97jumm
+Cleaned up global test config: C:\Users\subdose\.navig\hosts\test-server.yaml

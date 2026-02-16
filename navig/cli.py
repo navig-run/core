@@ -8912,6 +8912,20 @@ def gateway_session(
 
 app.add_typer(gateway_app, name="gateway")
 
+# ============================================================================
+# FORGE - VS Code extension ↔ daemon connection
+# ============================================================================
+
+from navig.commands.forge import forge_app
+app.add_typer(forge_app, name="forge")
+
+# ============================================================================
+# COPILOT - Direct VS Code Copilot access via Forge LLM bridge
+# ============================================================================
+
+from navig.commands.copilot import copilot_app
+app.add_typer(copilot_app, name="copilot")
+
 
 # ============================================================================
 # BOT - TELEGRAM BOT LAUNCHER

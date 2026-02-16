@@ -1,0 +1,16 @@
+name: backup-essential
+description: "Perform a quick backup of essential config files."
+version: "1.0.0"
+type: runbook
+steps:
+  - name: list-config
+    description: "List configuration files to verify existence"
+    command: navig fs list /etc/navig
+    
+  - name: read-config
+    description: "Read the main config file"
+    command: navig fs read /etc/navig/config.yaml
+    
+  - name: check-git
+    description: "Check git status before backup"
+    command: navig git status

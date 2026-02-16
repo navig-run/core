@@ -1,0 +1,168 @@
+name: navig-operational-factory
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - of_pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    networks: [of_internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - of_redis:/data
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks: [of_internal]
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+      OLLAMA_KEEP_ALIVE: 5m
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - of_ollama:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT}:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 120s
+    networks: [of_internal]
+
+  tool-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn app.gateway:app --host 0.0.0.0 --port 8090
+    env_file: .env
+    environment:
+      SERVICE_NAME: tool-gateway
+      SANDBOX_URL: http://sandbox-runner:8092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      sandbox-runner:
+        condition: service_started
+    volumes:
+      - ./:/srv/app_ro:ro
+      - ../../:/workspace/repo:ro
+    networks: [of_internal]
+
+  sandbox-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn app.sandbox_runner:app --host 0.0.0.0 --port 8092
+    env_file: .env
+    environment:
+      SERVICE_NAME: sandbox-runner
+    volumes:
+      - ../../:/workspace/repo:rw
+    networks: [of_internal]
+
+  navig-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn app.runtime:app --host 0.0.0.0 --port 8091
+    env_file: .env
+    environment:
+      SERVICE_NAME: navig-runtime
+      TOOL_GATEWAY_URL: http://tool-gateway:8090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      tool-gateway:
+        condition: service_started
+    volumes:
+      - ../../:/workspace/repo:ro
+    networks: [of_internal]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m app.worker
+    env_file: .env
+    environment:
+      SERVICE_NAME: worker
+      TOOL_GATEWAY_URL: http://tool-gateway:8090
+      RUNTIME_URL: http://navig-runtime:8091
+    depends_on:
+      redis:
+        condition: service_healthy
+      tool-gateway:
+        condition: service_started
+      navig-runtime:
+        condition: service_started
+    volumes:
+      - ../../:/workspace/repo:ro
+    networks: [of_internal]
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn app.dashboard:app --host 0.0.0.0 --port 8088
+    env_file: .env
+    environment:
+      SERVICE_NAME: dashboard
+      TOOL_GATEWAY_URL: http://tool-gateway:8090
+      RUNTIME_URL: http://navig-runtime:8091
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tool-gateway:
+        condition: service_started
+      navig-runtime:
+        condition: service_started
+    ports:
+      - "${DASHBOARD_PORT}:8088"
+    networks: [of_internal]
+
+volumes:
+  of_pgdata:
+  of_redis:
+  of_ollama:
+
+networks:
+  of_internal:
+    driver: bridge

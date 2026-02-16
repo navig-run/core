@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NAVIG Approval Inbox</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background: #0b1020; color: #e8ecf2; }
+    h1,h2 { margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background: #111a33; border: 1px solid #263357; border-radius: 10px; padding: 12px; }
+    .meta { color: #9eb0db; font-size: 12px; }
+    .preview { background: #0a132a; border: 1px solid #1d2e57; border-radius: 8px; padding: 10px; margin: 8px 0; white-space: pre-wrap; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    input, textarea, button { border-radius: 6px; border: 1px solid #35508c; padding: 6px 8px; background: #0a132a; color: #dbe7ff; }
+    button.approve { background: #184d2f; border-color: #2c8f54; }
+    button.reject { background: #5a1f2a; border-color: #a33a52; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>NAVIG Operational Factory — Approval Inbox</h1>
+  <p class="meta">Everything is auditable. Restricted actions cannot execute without explicit approval.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Pending Proposed Actions</h2>
+      {% if actions %}
+        {% for item in actions %}
+          <article class="card" style="margin:8px 0;">
+            <strong>{{ item.action_name }}</strong>
+            <div class="meta">ID: {{ item.id }} | Agent: {{ item.requested_by_agent }} | {{ item.created_at }}</div>
+            <div class="preview">Reason: {{ item.reason }}
+Payload:
+{{ item.action_payload }}</div>
+            {% if item.action_payload and item.action_payload.preview %}
+              <div class="preview"><strong>Diff Summary</strong>
+{{ item.action_payload.preview.diff_summary }}</div>
+              <div class="preview"><strong>Changed Files</strong>
+{{ item.action_payload.preview.changed_files }}</div>
+              <div class="preview"><strong>Commands</strong>
+{{ item.action_payload.preview.commands }}</div>
+              <div class="preview"><strong>Test Result</strong>
+Exit: {{ item.action_payload.preview.test_exit_code }}
+{{ item.action_payload.preview.test_stdout }}</div>
+            {% endif %}
+            <div class="row">
+              <form method="post" action="/approve/{{ item.id }}">
+                <input name="decided_by" placeholder="approver" value="owner" />
+                <input name="notes" placeholder="notes" />
+                <button class="approve" type="submit">Approve</button>
+              </form>
+              <form method="post" action="/reject/{{ item.id }}">
+                <input name="decided_by" placeholder="approver" value="owner" />
+                <input name="notes" placeholder="notes" />
+                <button class="reject" type="submit">Reject</button>
+              </form>
+            </div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <p class="meta">No pending actions.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Drafts (Email / PR / Briefings)</h2>
+      {% if drafts %}
+        {% for d in drafts %}
+          <article class="card" style="margin:8px 0;">
+            <strong>[{{ d.draft_type }}] {{ d.subject }}</strong>
+            <div class="meta">Draft ID: {{ d.id }} | Agent: {{ d.created_by_agent }} | Status: {{ d.status }}</div>
+            <div class="preview">{{ d.body }}</div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <p class="meta">No drafts yet.</p>
+      {% endif %}
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,46 @@
+# Database Snapshot Workflow
+# Pull production database for local analysis
+
+name: Database Snapshot & Analysis
+description: Export production database for local development or backup
+version: "1.0"
+author: NAVIG Team
+
+variables:
+  host: production
+  db_name: main_db
+  output_file: prod_backup.sql
+  local_dir: ./local_dumps
+
+steps:
+  - name: Set active host
+    command: host use ${host}
+    description: Connect to database server
+
+  - name: List databases
+    command: db list
+    description: Show available databases for confirmation
+
+  - name: Check database size
+    command: db size ${db_name}
+    description: Verify database size before dumping
+    continue_on_error: true
+
+  - name: Create database dump
+    command: db dump ${db_name} -o ${output_file} --compress
+    description: Export database with compression
+    prompt: "Start database export? This may take a while."
+
+  - name: Download dump file
+    command: download ${output_file}.gz ${local_dir}/
+    description: Transfer dump to local machine
+
+  - name: Verify download
+    command: run "ls -lh ${output_file}.gz"
+    description: Confirm file exists and check size
+    continue_on_error: true
+
+  - name: Clean remote file
+    command: run "rm -f ${output_file}.gz"
+    description: Remove temporary dump from server
+    prompt: "Delete dump file from server?"

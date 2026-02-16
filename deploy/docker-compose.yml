@@ -1,0 +1,100 @@
+# ─────────────────────────────────────────────────────────────
+# NAVIG Stack — Docker Compose
+# Services: PostgreSQL (pgvector) + Redis + Ollama
+#
+# Usage:
+#   cp .env.example .env   # Edit credentials
+#   docker compose up -d
+#   docker compose ps
+#   docker compose logs -f
+# ─────────────────────────────────────────────────────────────
+name: navig-stack
+
+services:
+  # ── PostgreSQL with pgvector extension ────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: navig-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-navig}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-navig}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - navig-pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-127.0.0.1:5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-navig} -d ${POSTGRES_DB:-navig}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - navig-net
+
+  # ── Redis ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: navig-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - navig-redis:/data
+    ports:
+      - "${REDIS_PORT:-127.0.0.1:6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - navig-net
+
+  # ── Ollama (LLM inference) ───────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: navig-ollama
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: "0.0.0.0"
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+    volumes:
+      - navig-ollama:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-127.0.0.1:11434}:11434"
+    # Uncomment for NVIDIA GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - navig-net
+
+volumes:
+  navig-pgdata:
+    driver: local
+  navig-redis:
+    driver: local
+  navig-ollama:
+    driver: local
+
+networks:
+  navig-net:
+    driver: bridge
