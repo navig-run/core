@@ -6,6 +6,7 @@ Supports adding, listing, editing, deleting, testing, and cloning credentials.
 """
 
 import json
+import sys
 from datetime import datetime
 from typing import Optional
 
@@ -20,6 +21,24 @@ _validators_mod = lazy_import("navig.vault.validators")
 
 cred_app = typer.Typer(name="cred", help="Manage credentials in the vault")
 profile_app = typer.Typer(name="profile", help="Manage credential profiles")
+
+# ── Provider shortcuts: auto-detect type, data key, and label ─────────────
+# Maps provider aliases → (canonical_provider, credential_type, data_key, default_label)
+PROVIDER_DEFAULTS = {
+    # AI providers
+    "openai":        ("openai",        "api_key", "api_key", "OpenAI"),
+    "openrouter":    ("openrouter",    "api_key", "api_key", "OpenRouter"),
+    "anthropic":     ("anthropic",     "api_key", "api_key", "Anthropic"),
+    "groq":          ("groq",          "api_key", "api_key", "Groq"),
+    "github_models": ("github_models", "token",   "token",   "GitHub Models"),
+    "github-models": ("github_models", "token",   "token",   "GitHub Models"),
+    "copilot":       ("github_models", "token",   "token",   "GitHub Copilot Models"),
+    # VCS
+    "github":        ("github",        "token",   "token",   "GitHub"),
+    "gitlab":        ("gitlab",        "token",   "token",   "GitLab"),
+    # Generic
+    "telegram":      ("telegram",      "token",   "token",   "Telegram Bot"),
+}
 
 
 def _console():
@@ -103,24 +122,68 @@ def list_credentials(
 
 @cred_app.command("add")
 def add_credential(
-    provider: str = typer.Argument(..., help="Provider name (openai, github, etc.)"),
-    credential_type: str = typer.Option("api_key", "--type", "-t", help="Credential type (api_key, token, email, etc.)"),
+    provider: str = typer.Argument(..., help="Provider name (openai, github_models, openrouter, etc.)"),
+    credential_type: str = typer.Option(None, "--type", "-t", help="Credential type (auto-detected if omitted)"),
     profile: str = typer.Option("default", "--profile", "-P", help="Profile namespace"),
     label: str = typer.Option(None, "--label", "-l", help="Human-readable label"),
     api_key: str = typer.Option(None, "--key", help="API key value"),
     token: str = typer.Option(None, "--token", help="Token value"),
     password: str = typer.Option(None, "--password", help="Password value"),
     email: str = typer.Option(None, "--email", help="Email address (for metadata)"),
+    from_stdin: bool = typer.Option(False, "--stdin", help="Read secret from stdin (pipe-friendly, no history)"),
     interactive: bool = typer.Option(True, "--interactive/--no-interactive", "-i/-I", help="Prompt for secrets"),
 ):
-    """Add a new credential to the vault."""
+    """Add a new credential to the vault.
+
+    \b
+    Smart defaults — just provide the provider name:
+      navig cred add github_models   # prompts securely for token
+      navig cred add openrouter      # prompts securely for API key
+      navig cred add copilot         # alias for github_models
+
+    \b
+    Pipe-friendly (no shell history):
+      cat ~/token.txt | navig cred add github_models --stdin
+      echo $TOKEN | navig cred add openai --stdin
+    """
     vault = _vault_mod.get_vault()
+
+    # ── Resolve provider defaults ─────────────────────────────
+    defaults = PROVIDER_DEFAULTS.get(provider.lower())
+    if defaults:
+        canonical, default_type, default_key, default_label = defaults
+        provider = canonical
+        if credential_type is None:
+            credential_type = default_type
+        if label is None:
+            label = default_label
+    else:
+        if credential_type is None:
+            credential_type = "api_key"
+
+    # ── Read from stdin if requested ──────────────────────────
+    if from_stdin:
+        if not sys.stdin.isatty():
+            secret = sys.stdin.read().strip()
+        else:
+            _ch.error("--stdin requires piped input (e.g. echo TOKEN | navig cred add provider --stdin)")
+            raise typer.Exit(1)
+        if not secret:
+            _ch.error("No data received from stdin.")
+            raise typer.Exit(1)
+        # Assign to the correct key based on type
+        if credential_type == "token":
+            token = secret
+        elif credential_type == "api_key":
+            api_key = secret
+        else:
+            password = secret
 
     # Determine data payload based on type
     data = {}
     
-    if interactive and not (api_key or token or password):
-        # Prompt for secret if not provided
+    if interactive and not from_stdin and not (api_key or token or password):
+        # Prompt for secret if not provided — hidden input, no shell history
         if credential_type == "api_key":
             api_key = typer.prompt("Enter API Key", hide_input=True)
         elif credential_type == "token":
@@ -138,7 +201,7 @@ def add_credential(
         data["password"] = password
         
     if not data:
-        _ch.error("No secret data provided. Use --key, --token, --password or interactive mode.")
+        _ch.error("No secret data provided. Use --key, --token, --password, --stdin, or interactive mode.")
         raise typer.Exit(1)
 
     # Metadata
@@ -157,8 +220,8 @@ def add_credential(
         )
         _ch.success(f"Credential added successfully! ID: {cred_id}")
         
-        # Ask to test immediately
-        if interactive and _ch.confirm_action("Test this credential now?"):
+        # Ask to test immediately (skip in non-interactive / stdin mode)
+        if interactive and not from_stdin and _ch.confirm_action("Test this credential now?"):
             test_credential(cred_id)
             
     except Exception as e:

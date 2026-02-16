@@ -246,10 +246,23 @@ class AIClient:
             return ""
 
     def _get_github_models_token(self) -> str:
-        """Read GitHub Models token from config or env."""
+        """Read GitHub Models token from vault, config, or env."""
+        # ① Environment variable
         token = os.getenv("GITHUB_TOKEN", "")
         if token:
             return token
+        # ② Vault
+        try:
+            from navig.vault import get_vault
+            vault = get_vault()
+            secret = vault.get_secret("github_models", "token", caller="ai_client")
+            if secret:
+                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
+                if val:
+                    return val
+        except Exception:
+            pass
+        # ③ Config file
         try:
             from navig.config import get_config_manager
             cfg = get_config_manager().global_config or {}
@@ -451,7 +464,7 @@ class AIClient:
         Execute a routed LLM call.
 
         If the router has a provider pool (HybridRouter.call), use it.
-        Otherwise fall back to the legacy _chat_local path.
+        Otherwise fall back to the appropriate provider via self.chat().
         """
         router = self._model_router
 
@@ -462,7 +475,30 @@ class AIClient:
         except Exception as e:
             logger.debug("HybridRouter.call failed (%s), trying legacy path", e)
 
-        # Legacy fallback: direct local call
+        # Legacy fallback: route to appropriate provider-specific method
+        provider = decision.provider or self.provider
+        if provider == "github_models":
+            return await self._chat_github_models(
+                messages,
+                temperature=decision.temperature,
+                max_tokens=decision.max_tokens,
+                model=decision.model,
+            )
+        elif provider in ("openrouter", "openai"):
+            return await self._chat_api(
+                messages,
+                temperature=decision.temperature,
+                max_tokens=decision.max_tokens,
+            )
+        elif provider == "forge":
+            return await self._chat_forge(
+                messages,
+                temperature=decision.temperature,
+                max_tokens=decision.max_tokens,
+                model=decision.model,
+            )
+
+        # Default: try local (Ollama)
         return await self._chat_local(
             messages,
             temperature=decision.temperature,

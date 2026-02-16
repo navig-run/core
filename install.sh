@@ -327,6 +327,41 @@ check_ssh() {
     echo -e "${SUCCESS}✓${NC} SSH client installed"
 }
 
+# ── autossh (persistent SSH tunnels for Forge) ────────────────
+check_autossh() {
+    if command -v autossh &>/dev/null; then
+        echo -e "${SUCCESS}✓${NC} autossh available"
+        return 0
+    fi
+    echo -e "${WARN}→${NC} Installing autossh (required for persistent Forge tunnels)..."
+    if [[ "$OS" == "macos" ]]; then
+        if command -v brew &>/dev/null; then
+            brew install autossh
+        else
+            echo -e "${WARN}!${NC} Install autossh manually: brew install autossh"
+            return 0
+        fi
+    elif [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
+        require_sudo
+        if command -v apt-get &>/dev/null; then
+            maybe_sudo apt-get install -y autossh
+        elif command -v dnf &>/dev/null; then
+            maybe_sudo dnf install -y autossh
+        elif command -v yum &>/dev/null; then
+            maybe_sudo yum install -y autossh
+        elif command -v pacman &>/dev/null; then
+            maybe_sudo pacman -S --noconfirm autossh
+        elif command -v apk &>/dev/null; then
+            maybe_sudo apk add autossh
+        fi
+    fi
+    if command -v autossh &>/dev/null; then
+        echo -e "${SUCCESS}✓${NC} autossh installed"
+    else
+        echo -e "${WARN}!${NC} autossh install failed — Forge tunnel auto-reconnect won't work"
+    fi
+}
+
 # ── pip install helpers ───────────────────────────────────────
 ensure_pip_user_bin_on_path() {
     local user_base
@@ -576,6 +611,9 @@ main() {
 
     # Step 5: SSH client
     check_ssh
+
+    # Step 5.5: autossh (for persistent Forge tunnels)
+    check_autossh
 
     # Step 6: Install NAVIG
     if [[ "$INSTALL_METHOD" == "git" ]]; then
