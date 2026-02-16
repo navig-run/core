@@ -1,0 +1,84 @@
+# Traefik Template Configuration
+# Modern reverse proxy and load balancer for microservices
+
+name: traefik
+version: 1.0.0
+description: Cloud-native reverse proxy and load balancer with automatic HTTPS
+author: navig-run
+enabled: false
+dependencies:
+  - docker
+
+paths:
+  config_dir: /etc/traefik
+  static_config: /etc/traefik/traefik.yml
+  dynamic_config: /etc/traefik/dynamic
+  acme_storage: /etc/traefik/acme.json
+  log_file: /var/log/traefik/traefik.log
+  access_log: /var/log/traefik/access.log
+  docker_compose: /opt/traefik/docker-compose.yml
+
+services:
+  traefik: traefik
+  traefik_container: traefik
+
+commands:
+  - name: start
+    description: Start Traefik container
+    command: cd /opt/traefik && docker compose up -d
+
+  - name: stop
+    description: Stop Traefik container
+    command: cd /opt/traefik && docker compose down
+
+  - name: restart
+    description: Restart Traefik container
+    command: cd /opt/traefik && docker compose restart
+
+  - name: logs
+    description: View Traefik logs
+    command: cd /opt/traefik && docker compose logs -f traefik
+
+  - name: status
+    description: Check Traefik container status
+    command: docker ps -f name=traefik
+
+  - name: reload
+    description: Reload Traefik configuration (touch file providers)
+    command: touch /etc/traefik/dynamic/*.yml
+
+  - name: validate
+    description: Validate Traefik configuration
+    command: docker run --rm -v /etc/traefik:/etc/traefik traefik traefik validate --configFile=/etc/traefik/traefik.yml
+
+  - name: api
+    description: Access Traefik API
+    command: curl -s http://localhost:8080/api/rawdata | jq
+
+  - name: routers
+    description: List all routers
+    command: curl -s http://localhost:8080/api/http/routers | jq
+
+  - name: services
+    description: List all services
+    command: curl -s http://localhost:8080/api/http/services | jq
+
+  - name: middlewares
+    description: List all middlewares
+    command: curl -s http://localhost:8080/api/http/middlewares | jq
+
+env_vars:
+  TRAEFIK_CERTIFICATESRESOLVERS_LE_ACME_EMAIL: admin@example.com
+  TRAEFIK_API_DASHBOARD: "true"
+  TRAEFIK_PROVIDERS_DOCKER: "true"
+  TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT: "false"
+
+api:
+  endpoint: http://localhost:8080/api
+  auth_method: basic
+  doc_url: https://doc.traefik.io/traefik/
+
+default_port: 80
+dashboard_port: 8080
+https_port: 443
+systemd_service: null

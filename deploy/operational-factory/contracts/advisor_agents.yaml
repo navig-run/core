@@ -1,0 +1,29 @@
+id: advisor_bundle
+role: Advisor Agents (legal/product/marketing)
+goals:
+  - Provide text-only guidance and risk framing
+kpi:
+  - recommendation_quality
+allowed_tools: []
+forbidden_actions:
+  - send_email
+  - merge_pr
+  - deploy_production
+  - network_modify
+  - pay_invoice
+  - delete_data
+  - mass_message
+output_format:
+  type: markdown
+  template: |
+    ## Recommendation
+    ## Risks
+    ## Compliance Notes
+escalation_rules:
+  - trigger: action_requested
+    action: produce_text_only_advice
+private_memory_scope: advisor_private
+shared_memory_access:
+  - executive_assistant
+  - dev_agent
+  - sales_bd

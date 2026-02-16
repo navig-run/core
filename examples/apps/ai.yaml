@@ -1,0 +1,47 @@
+# NAVIG App Configuration - AI Platform Production
+# File: ~/.navig/apps/ai.yaml
+
+# App identification (REQUIRED)
+name: ai
+host: myhost
+
+# App metadata
+metadata:
+  description: "AI platform production"
+  type: "nodejs"
+  environment: "production"
+  version: "2.0.0"
+  repository: "https://github.com/user/ai-platform"
+  domain: "ai.example.host"
+
+# App paths
+paths:
+  web_root: /var/www/ai
+  logs: /var/log/ai
+  nginx_config: /etc/nginx/sites-available/ai.conf
+
+# Database configuration
+database:
+  type: postgresql
+  host: localhost
+  port: 5432
+  name: ai_db
+  user: ai_user
+  password: "ENCRYPTED_PASSWORD_HERE"
+  remote_port: 5432
+  local_tunnel_port: 5433
+
+# Services
+services:
+  web: nginx
+  database: postgresql
+  cache: redis-server
+
+# Webserver configuration (REQUIRED)
+webserver:
+  type: nginx
+  service_name: nginx
+  config_test_command: "nginx -t"
+  reload_command: "systemctl reload nginx"
+  restart_command: "systemctl restart nginx"
+

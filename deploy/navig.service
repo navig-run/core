@@ -1,0 +1,38 @@
+[Unit]
+Description=NAVIG Server Agent — Keep your servers alive. Forever.
+Documentation=https://github.com/navig-run/core
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=navig
+Group=navig
+WorkingDirectory=/opt/navig
+Environment=NAVIG_CONFIG_DIR=/etc/navig
+Environment=NAVIG_LOG_DIR=/var/log/navig
+Environment=NAVIG_DATA_DIR=/var/lib/navig
+ExecStart=/usr/local/bin/navig daemon start --foreground
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=navig
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/navig /var/log/navig /opt/navig
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

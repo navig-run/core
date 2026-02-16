@@ -1,0 +1,47 @@
+# NAVIG App Configuration - Blog Production
+# File: ~/.navig/apps/blog.yaml
+
+# App identification (REQUIRED)
+name: blog
+host: example-vps
+
+# App metadata
+metadata:
+  description: "Personal blog"
+  type: "wordpress"
+  environment: "production"
+  version: "6.4.0"
+  domain: "blog.example.com"
+
+# App paths
+paths:
+  web_root: /var/www/blog
+  logs: /var/log/blog
+  nginx_config: /etc/nginx/sites-available/blog.conf
+  php_config: /etc/php/8.2/fpm/pool.d/blog.conf
+
+# Database configuration
+database:
+  type: mysql
+  host: localhost
+  port: 3306
+  name: blog_db
+  user: blog_user
+  password: "ENCRYPTED_PASSWORD_HERE"
+  remote_port: 3306
+  local_tunnel_port: 3310
+
+# Services
+services:
+  web: nginx
+  php: php8.2-fpm
+  database: mysql
+
+# Webserver configuration (REQUIRED)
+webserver:
+  type: nginx
+  service_name: nginx
+  config_test_command: "nginx -t"
+  reload_command: "systemctl reload nginx"
+  restart_command: "systemctl restart nginx"
+

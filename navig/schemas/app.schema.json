@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://navig.local/schemas/app.schema.json",
+  "title": "NAVIG App Configuration",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["name", "host"],
+  "properties": {
+    "name": {"type": "string", "minLength": 1},
+    "host": {"type": "string", "minLength": 1},
+    "metadata": {"type": "object", "additionalProperties": true},
+    "paths": {"type": "object", "additionalProperties": true},
+    "env": {"type": "object", "additionalProperties": true},
+    "services": {"type": "object", "additionalProperties": true},
+    "database": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {"type": "string"},
+        "host": {"type": "string"},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "name": {"type": "string"},
+        "user": {"type": "string"},
+        "password": {"type": "string"},
+        "remote_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "local_tunnel_port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      }
+    },
+    "webserver": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {"type": "string", "enum": ["nginx", "apache2", "apache"]},
+        "service_name": {"type": "string"},
+        "config_test_command": {"type": "string"},
+        "config_file": {"type": "string"},
+        "ssl_enabled": {"type": "boolean"}
+      }
+    }
+  }
+}

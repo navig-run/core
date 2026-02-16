@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://navig.local/schemas/host.schema.json",
+  "title": "NAVIG Host Configuration",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["name", "host", "user"],
+  "properties": {
+    "name": {"type": "string", "minLength": 1},
+    "host": {"type": "string", "minLength": 1},
+    "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 22},
+    "user": {"type": "string", "minLength": 1},
+    "ssh_key": {"type": "string"},
+    "ssh_password": {"type": "string"},
+    "default_app": {"type": "string"},
+    "database": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "root_user": {"type": "string"},
+        "root_password": {"type": "string"}
+      }
+    },
+    "metadata": {"type": "object", "additionalProperties": true},
+    "services": {"type": "object", "additionalProperties": true},
+    "apps": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "app.schema.json"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {"required": ["ssh_key"]},
+        {"required": ["ssh_password"]}
+      ]
+    }
+  ]
+}
