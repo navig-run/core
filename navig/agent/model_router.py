@@ -175,6 +175,27 @@ class RoutingConfig:
                 elif slot.provider == "openai":
                     slot.api_key = os.environ.get("OPENAI_API_KEY", "") or default_api_key
 
+            # GitHub Models — resolve token from vault → config → env
+            if slot.provider == "github_models" and not slot.api_key:
+                gh_token = ""
+                # 1. Vault
+                try:
+                    from navig.vault import get_vault
+                    vault = get_vault()
+                    secret = vault.get_secret("github_models", "token", caller="model_router")
+                    if secret:
+                        gh_token = secret
+                except Exception:
+                    pass
+                # 2. Config
+                if not gh_token:
+                    gh_token = global_cfg.get("github_models", {}).get("token", "")
+                # 3. Environment
+                if not gh_token:
+                    gh_token = os.environ.get("GITHUB_TOKEN", "")
+                if gh_token:
+                    slot.api_key = gh_token
+
         # Validate
         if cfg.enabled and cfg.mode != "single":
             if not cfg.small.model:
