@@ -50,6 +50,14 @@ env/
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Linting and Type Checking
+.ruff_cache/                # Ruff linter cache
+.mypy_cache/                # mypy type checker cache
+.dmypy.json                 # dmypy metadata
+dmypy.json
+.pyre/                      # Pyre type checker
+.pytype/                    # Pytype static analyzer
+
 # ===============================================
 # PowerShell
 # ===============================================
@@ -122,6 +130,9 @@ discord-*.json              # Discord config with secrets
 
 # NAVIG Configuration (contains server credentials)
 ~/.navig/                   # User NAVIG config (shouldn't be in repo anyway)
+.navig/                     # Local project NAVIG runtime config
+.archive/                   # Local archive folder
+nohup.out                   # Background process output
 
 # ===============================================
 # Backups and Archives
@@ -188,11 +199,6 @@ $RECYCLE.BIN/
 # Miscellaneous
 # ===============================================
 *.orig                      # Merge conflict originals
-.mypy_cache/                # mypy type checker cache
-.dmypy.json                 # dmypy metadata
-dmypy.json
-.pyre/                      # Pyre type checker
-.pytype/                    # Pytype static analyzer
 cython_debug/               # Cython debug symbols
 
 # ===============================================
