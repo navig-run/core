@@ -596,15 +596,44 @@ class GitHubModelsProvider(LLMProvider):
     }
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        # Resolve token: explicit param → env var → vault → config
+        resolved_key = api_key or os.getenv("GITHUB_TOKEN", "")
+        if not resolved_key:
+            resolved_key = self._resolve_token()
         super().__init__(
             base_url=base_url or self.BASE_URL,
-            api_key=api_key or os.getenv("GITHUB_TOKEN", ""),
+            api_key=resolved_key,
             **kwargs,
         )
         # Track rate limit state per model: model → timestamp when limit was hit
         self._rate_limited: Dict[str, float] = {}
         # Track consecutive failures per model
         self._fail_counts: Dict[str, int] = defaultdict(int)
+
+    @staticmethod
+    def _resolve_token() -> str:
+        """Resolve GitHub Models token from vault or config."""
+        # Vault
+        try:
+            from navig.vault import get_vault
+            vault = get_vault()
+            secret = vault.get_secret("github_models", "token", caller="github_models_provider")
+            if secret:
+                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
+                if val:
+                    return val
+        except Exception:
+            pass
+        # Config file
+        try:
+            from navig.config import get_config_manager
+            cfg = get_config_manager().global_config or {}
+            token = cfg.get("github_models", {}).get("token", "")
+            if token:
+                return token
+        except Exception:
+            pass
+        return ""
 
     def _get_fallback_chain(self, model: str) -> List[str]:
         """Get the ordered fallback chain for a model, starting with the model itself."""
