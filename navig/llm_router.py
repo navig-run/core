@@ -78,36 +78,38 @@ CENSORED_PROVIDERS: Set[str] = {"openai", "anthropic", "deepseek", "google"}
 
 # Provider → env var(s) for API key resolution
 PROVIDER_ENV_KEYS: Dict[str, List[str]] = {
-    "openai":      ["OPENAI_API_KEY"],
-    "anthropic":   ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
-    "deepseek":    ["DEEPSEEK_API_KEY"],
-    "grok":        ["GROK_API_KEY", "XAI_API_KEY"],
-    "xai":         ["XAI_API_KEY", "GROK_API_KEY"],
-    "openrouter":  ["OPENROUTER_API_KEY"],
-    "groq":        ["GROQ_API_KEY"],
-    "google":      ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    "siliconflow": ["SILICONFLOW_API_KEY"],
-    "mistral":     ["MISTRAL_API_KEY"],
-    "cohere":      ["COHERE_API_KEY"],
-    "together":    ["TOGETHER_API_KEY"],
-    "ollama":      [],  # local, no key needed
+    "openai":        ["OPENAI_API_KEY"],
+    "anthropic":     ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
+    "deepseek":      ["DEEPSEEK_API_KEY"],
+    "grok":          ["GROK_API_KEY", "XAI_API_KEY"],
+    "xai":           ["XAI_API_KEY", "GROK_API_KEY"],
+    "openrouter":    ["OPENROUTER_API_KEY"],
+    "groq":          ["GROQ_API_KEY"],
+    "google":        ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "siliconflow":   ["SILICONFLOW_API_KEY"],
+    "mistral":       ["MISTRAL_API_KEY"],
+    "cohere":        ["COHERE_API_KEY"],
+    "together":      ["TOGETHER_API_KEY"],
+    "github_models": ["GITHUB_TOKEN"],  # free via GitHub PAT
+    "ollama":        [],  # local, no key needed
 }
 
 # Provider → base URL
 PROVIDER_BASE_URLS: Dict[str, str] = {
-    "openai":      "https://api.openai.com/v1",
-    "anthropic":   "https://api.anthropic.com",
-    "deepseek":    "https://api.deepseek.com/v1",
-    "grok":        "https://api.x.ai/v1",
-    "xai":         "https://api.x.ai/v1",
-    "openrouter":  "https://openrouter.ai/api/v1",
-    "groq":        "https://api.groq.com/openai/v1",
-    "google":      "https://generativelanguage.googleapis.com/v1beta",
-    "siliconflow": "https://api.siliconflow.cn/v1",
-    "mistral":     "https://api.mistral.ai/v1",
-    "cohere":      "https://api.cohere.ai/v1",
-    "together":    "https://api.together.xyz/v1",
-    "ollama":      "http://127.0.0.1:11434/v1",
+    "openai":        "https://api.openai.com/v1",
+    "anthropic":     "https://api.anthropic.com",
+    "deepseek":      "https://api.deepseek.com/v1",
+    "grok":          "https://api.x.ai/v1",
+    "xai":           "https://api.x.ai/v1",
+    "openrouter":    "https://openrouter.ai/api/v1",
+    "groq":          "https://api.groq.com/openai/v1",
+    "google":        "https://generativelanguage.googleapis.com/v1beta",
+    "siliconflow":   "https://api.siliconflow.cn/v1",
+    "mistral":       "https://api.mistral.ai/v1",
+    "cohere":        "https://api.cohere.ai/v1",
+    "together":      "https://api.together.xyz/v1",
+    "github_models": "https://models.inference.ai.azure.com",
+    "ollama":        "http://127.0.0.1:11434/v1",
 }
 
 SUPPORTED_PROVIDERS = set(PROVIDER_BASE_URLS.keys())
@@ -160,8 +162,8 @@ if PYDANTIC_OK:
         """Top-level llm_modes configuration block."""
         small_talk: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Fast, conversational, personality-driven chat",
-            provider="ollama",
-            model="qwen2.5:3b-instruct",
+            provider="github_models",
+            model="gpt-4o-mini",
             fallback_model="qwen2.5:3b-instruct",
             fallback_provider="ollama",
             temperature=0.8,
@@ -170,8 +172,8 @@ if PYDANTIC_OK:
         ))
         big_tasks: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Complex reasoning, planning, multi-step tasks",
-            provider="openai",
-            model="gpt-4o-mini",
+            provider="github_models",
+            model="gpt-4o",
             fallback_model="qwen2.5:7b-instruct",
             fallback_provider="ollama",
             temperature=0.5,
@@ -180,18 +182,18 @@ if PYDANTIC_OK:
         ))
         coding: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Code generation, review, debugging",
-            provider="deepseek",
-            model="deepseek-coder",
+            provider="github_models",
+            model="gpt-4o",
             fallback_model="qwen2.5:7b-instruct",
             fallback_provider="ollama",
             temperature=0.2,
-            max_tokens=8192,
+            max_tokens=4096,
             use_uncensored=False,
         ))
         summarize: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Cheap, fast summarization of long text and logs",
-            provider="ollama",
-            model="qwen2.5:3b-instruct",
+            provider="github_models",
+            model="gpt-4o-mini",
             fallback_model="qwen2.5:3b-instruct",
             fallback_provider="ollama",
             temperature=0.3,
@@ -200,12 +202,12 @@ if PYDANTIC_OK:
         ))
         research: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Long-context, tool-using research and document analysis",
-            provider="deepseek",
-            model="deepseek-chat",
+            provider="github_models",
+            model="gpt-4o",
             fallback_model="qwen2.5:7b-instruct",
             fallback_provider="ollama",
             temperature=0.4,
-            max_tokens=8192,
+            max_tokens=4096,
             use_uncensored=False,
         ))
 
@@ -422,7 +424,7 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> Dict[str, 
 
 
 def _resolve_api_key(provider: str) -> Optional[str]:
-    """Resolve API key from environment variables."""
+    """Resolve API key from environment variables, vault, or config."""
     env_vars = PROVIDER_ENV_KEYS.get(provider, [])
     for var in env_vars:
         val = os.environ.get(var)
@@ -437,6 +439,16 @@ def _resolve_api_key(provider: str) -> Optional[str]:
             return key
     except Exception:
         pass
+    # For github_models, also check config.yaml
+    if provider == "github_models":
+        try:
+            from navig.config import get_config_manager
+            cfg = get_config_manager().global_config or {}
+            token = cfg.get("github_models", {}).get("token", "")
+            if token:
+                return token
+        except Exception:
+            pass
     return None
 
 

@@ -430,6 +430,56 @@ class GenericValidator(CredentialValidator):
         return TestResult(success=False, message="Credential data is empty")
 
 
+class GitHubModelsValidator(CredentialValidator):
+    """Validate GitHub Models (Copilot) tokens via Azure AI inference endpoint."""
+
+    def validate(self, credential: Credential) -> TestResult:
+        token = credential.data.get("token") or credential.data.get("api_key", "")
+        if not token:
+            return TestResult(success=False, message="Token is empty")
+
+        try:
+            import httpx
+
+            response = httpx.post(
+                "https://models.inference.ai.azure.com/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
+                },
+                timeout=15,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                model = data.get("model", "unknown")
+                return TestResult(
+                    success=True,
+                    message=f"GitHub Models token is valid (model: {model})",
+                    details={"model": model},
+                )
+            elif response.status_code == 401:
+                return TestResult(success=False, message="Invalid or expired token")
+            elif response.status_code == 429:
+                return TestResult(
+                    success=False, message="Rate limited — token may be valid but quota exhausted"
+                )
+            else:
+                return TestResult(
+                    success=False, message=f"API error: {response.status_code}"
+                )
+        except ImportError:
+            return TestResult(
+                success=False, message="httpx not available for validation"
+            )
+        except Exception as e:
+            return TestResult(success=False, message=f"Connection error: {e}")
+
+
 # Validator registry
 VALIDATORS: Dict[str, Type[CredentialValidator]] = {
     # AI Providers
@@ -437,6 +487,8 @@ VALIDATORS: Dict[str, Type[CredentialValidator]] = {
     "anthropic": AnthropicValidator,
     "openrouter": OpenRouterValidator,
     "groq": GroqValidator,
+    "github_models": GitHubModelsValidator,
+    "copilot": GitHubModelsValidator,
     # Version Control
     "github": GitHubValidator,
     "gitlab": GitLabValidator,
