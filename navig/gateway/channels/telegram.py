@@ -530,7 +530,7 @@ class TelegramChannel:
 
                 # ── Slash command routing ──
                 cmd = text.strip().lower()
-                if cmd in ("/models", "/status"):
+                if cmd in ("/models", "/model", "/status"):
                     await self._handle_models_command(chat_id, user_id)
                     return
                 if cmd == "/start":
@@ -660,45 +660,73 @@ class TelegramChannel:
             client = get_ai_client()
             router = client.model_router
 
-            if not router or not router.is_active:
-                await self.send_message(chat_id, "ℹ️ Routing disabled — single-model mode.")
-                return
+            lines = ["🧠 *Model Routing*\n"]
 
-            cfg = router.cfg
-            # Current user preference
-            user_pref = self._user_model_prefs.get(user_id, "")
-            pref_label = {
-                "small": "⚡ Small/Fast",
-                "big": "🧠 Large/Smart",
-                "coder_big": "💻 Coding",
-            }.get(user_pref, "🔄 Auto (heuristic)")
+            # ── Section 1: Detected provider ──
+            best = client._detect_best_provider() if hasattr(client, '_detect_best_provider') else "unknown"
+            lines.append(f"🏷 Best provider: `{best}`")
 
-            # Build status message
-            lines = [
-                "🧠 *Model Configuration*\n",
-                f"Mode: `{cfg.mode}`",
-                f"Your preset: *{pref_label}*\n",
-                "*Available tiers:*",
-            ]
-            tier_info = [
-                ("⚡ small", cfg.small),
-                ("🧠 big", cfg.big),
-                ("💻 coder", cfg.coder_big),
-            ]
-            for label, slot in tier_info:
-                model_name = slot.model or "—"
-                provider = slot.provider or "—"
-                lines.append(f"  {label}: `{model_name}` ({provider})")
+            # ── Section 2: LLM Mode Router ──
+            try:
+                from navig.llm_router import get_llm_router
+                llm_router = get_llm_router()
+                if llm_router:
+                    lines.append("\n*LLM Mode Router* (primary):")
+                    mode_icons = {
+                        "small_talk": "💬", "big_tasks": "🧠",
+                        "coding": "💻", "summarize": "📝", "research": "🔍",
+                    }
+                    for mode_name in ("small_talk", "big_tasks", "coding", "summarize", "research"):
+                        mc = llm_router.modes.get_mode(mode_name)
+                        if mc:
+                            icon = mode_icons.get(mode_name, "•")
+                            display_name = mode_name.replace("_", " ")
+                            lines.append(
+                                f"  {icon} {display_name}: `{mc.provider}:{mc.model}`"
+                            )
+                            if mc.fallback_provider:
+                                lines.append(
+                                    f"      ↳ fb: `{mc.fallback_provider}:{mc.fallback_model}`"
+                                )
+                else:
+                    lines.append("\n_LLM Mode Router: not active_")
+            except Exception:
+                lines.append("\n_LLM Mode Router: unavailable_")
+
+            # ── Section 3: Hybrid Router (tier-based fallback) ──
+            if router and router.is_active:
+                cfg = router.cfg
+                lines.append(f"\n*Hybrid Router* (fallback, mode=`{cfg.mode}`):")
+                user_pref = self._user_model_prefs.get(user_id, "")
+                pref_label = {
+                    "small": "⚡ Small", "big": "🧠 Big", "coder_big": "💻 Coder",
+                }.get(user_pref, "🔄 Auto")
+                lines.append(f"  Your preset: *{pref_label}*")
+                for label, slot in [("⚡ small", cfg.small), ("🧠 big", cfg.big), ("💻 coder", cfg.coder_big)]:
+                    lines.append(f"  {label}: `{slot.provider or '—'}:{slot.model or '—'}`")
+            else:
+                lines.append("\n_Hybrid Router: disabled_")
+
+            # ── Section 4: GitHub Models fallback chains ──
+            try:
+                from navig.agent.llm_providers import GitHubModelsProvider
+                lines.append("\n*GitHub Models chains:*")
+                for chain_name, models in GitHubModelsProvider.FALLBACK_CHAINS.items():
+                    model_list = " → ".join(m.split(":")[-1] for m in models)
+                    lines.append(f"  {chain_name.replace('_', ' ')}: {model_list}")
+            except Exception:
+                pass
 
             text = "\n".join(lines)
 
             # Build inline keyboard
+            user_pref = self._user_model_prefs.get(user_id, "")
             check = lambda t: " ✓" if user_pref == t else ""
             keyboard = [
                 [
-                    {"text": f"⚡ Small/Fast{check('small')}", "callback_data": "ms_tier_small"},
-                    {"text": f"🧠 Large/Smart{check('big')}", "callback_data": "ms_tier_big"},
-                    {"text": f"💻 Coding{check('coder_big')}", "callback_data": "ms_tier_coder"},
+                    {"text": f"⚡ Small{check('small')}", "callback_data": "ms_tier_small"},
+                    {"text": f"🧠 Big{check('big')}", "callback_data": "ms_tier_big"},
+                    {"text": f"💻 Code{check('coder_big')}", "callback_data": "ms_tier_coder"},
                 ],
                 [
                     {"text": f"🔄 Auto{check('')}", "callback_data": "ms_tier_auto"},
@@ -957,6 +985,7 @@ class TelegramChannel:
             {"command": "help", "description": "Command reference"},
             {"command": "status", "description": "System health check"},
             {"command": "models", "description": "Active model routing table"},
+            {"command": "model", "description": "Active model routing table"},
             {"command": "mode", "description": "Set focus mode (work, deep-focus, etc.)"},
             {"command": "briefing", "description": "Today's summary"},
             {"command": "deck", "description": "Open the command deck"},
