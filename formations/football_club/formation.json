@@ -1,0 +1,40 @@
+{
+  "id": "football_club",
+  "name": "Football Club",
+  "version": "1.0.0",
+  "description": "Transforms NAVIG into a football management system with coaching, scouting, fitness, and analytics agents",
+  "agents": [
+    "head_coach",
+    "assistant_coach",
+    "fitness_trainer",
+    "scout",
+    "financial_manager",
+    "data_analyst"
+  ],
+  "default_agent": "head_coach",
+  "aliases": [
+    "football",
+    "soccer",
+    "club"
+  ],
+  "api_connectors": [
+    {
+      "name": "player_data",
+      "type": "rest_api",
+      "url_pattern": "{base_url}/players",
+      "auth_type": "bearer",
+      "description": "External player database API (Phase 2)"
+    },
+    {
+      "name": "match_stats",
+      "type": "rest_api",
+      "url_pattern": "{base_url}/matches",
+      "auth_type": "api_key",
+      "description": "Match statistics API (Phase 2)"
+    }
+  ],
+  "brief_templates": [
+    "match_report.md",
+    "scouting_report.md"
+  ]
+}

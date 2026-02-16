@@ -1,0 +1,64 @@
+# Caddy Addon Template for NAVIG
+# Fast, multi-platform web server with automatic HTTPS
+
+name: caddy
+version: "1.0.0"
+description: "Modern web server with automatic HTTPS, HTTP/3, and easy configuration"
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  install_dir: /usr/bin
+  config_dir: /etc/caddy
+  config_file: /etc/caddy/Caddyfile
+  data_dir: /var/lib/caddy
+  log_dir: /var/log/caddy
+  log_file: /var/log/caddy/access.log
+  ssl_dir: /var/lib/caddy/.local/share/caddy/certificates
+
+services:
+  caddy: caddy
+
+commands:
+  - name: reload
+    description: "Reload Caddy configuration"
+    command: "systemctl reload caddy"
+  - name: validate
+    description: "Validate Caddyfile configuration"
+    command: "caddy validate --config /etc/caddy/Caddyfile"
+  - name: fmt
+    description: "Format Caddyfile"
+    command: "caddy fmt --overwrite /etc/caddy/Caddyfile"
+  - name: adapt
+    description: "Convert Caddyfile to JSON"
+    command: "caddy adapt --config /etc/caddy/Caddyfile"
+  - name: list_modules
+    description: "List installed Caddy modules"
+    command: "caddy list-modules"
+  - name: version
+    description: "Show Caddy version"
+    command: "caddy version"
+  - name: trust
+    description: "Install Caddy CA certificate to trust store"
+    command: "caddy trust"
+  - name: reverse_proxy_add
+    description: "Add a reverse proxy entry"
+    command: "echo 'Edit /etc/caddy/Caddyfile to add reverse proxy'"
+
+env_vars:
+  XDG_DATA_HOME: /var/lib/caddy
+  XDG_CONFIG_HOME: /etc/caddy
+  CADDY_ADMIN: "localhost:2019"
+
+api:
+  endpoint: "http://localhost:2019"
+  auth_method: none
+  doc_url: "https://caddyserver.com/docs/api"
+
+default_port: 80
+alt_ports:
+  - 443
+  - 2019
+
+systemd_service: caddy

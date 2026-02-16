@@ -1,0 +1,85 @@
+# Redis Template Configuration
+# In-memory data structure store, cache, and message broker
+
+name: redis
+version: 1.0.0
+description: In-memory data structure store used as database, cache, and message broker
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  config_file: /etc/redis/redis.conf
+  data_dir: /var/lib/redis
+  log_file: /var/log/redis/redis-server.log
+  pid_file: /run/redis/redis-server.pid
+  socket: /run/redis/redis-server.sock
+  dump_file: /var/lib/redis/dump.rdb
+  aof_file: /var/lib/redis/appendonly.aof
+
+services:
+  cache: redis-server
+  redis_service: redis-server.service
+
+commands:
+  - name: start
+    description: Start Redis service
+    command: systemctl start redis-server
+
+  - name: stop
+    description: Stop Redis service
+    command: systemctl stop redis-server
+
+  - name: restart
+    description: Restart Redis service
+    command: systemctl restart redis-server
+
+  - name: status
+    description: Check Redis service status
+    command: systemctl status redis-server
+
+  - name: logs
+    description: View Redis logs
+    command: tail -f /var/log/redis/redis-server.log
+
+  - name: cli
+    description: Open Redis CLI
+    command: redis-cli
+
+  - name: ping
+    description: Test Redis connection
+    command: redis-cli ping
+
+  - name: info
+    description: Get Redis server info
+    command: redis-cli info
+
+  - name: monitor
+    description: Monitor all Redis commands in real-time
+    command: redis-cli monitor
+
+  - name: flush_all
+    description: Delete all keys from all databases (DANGEROUS)
+    command: redis-cli FLUSHALL
+
+  - name: save
+    description: Force RDB snapshot save
+    command: redis-cli BGSAVE
+
+  - name: memory
+    description: Show memory usage statistics
+    command: redis-cli INFO memory
+
+env_vars:
+  REDIS_PORT: "6379"
+  REDIS_BIND: 127.0.0.1
+  REDIS_MAXMEMORY: 256mb
+  REDIS_MAXMEMORY_POLICY: allkeys-lru
+
+api:
+  endpoint: null
+  auth_method: password
+  doc_url: https://redis.io/docs/
+
+default_port: 6379
+systemd_service: /lib/systemd/system/redis-server.service

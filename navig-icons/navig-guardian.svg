@@ -1,0 +1,294 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    NAVIG - The Guardian Kraken
+    "I exist to reduce pain and increase progress"
+    
+    Design Philosophy:
+    - Ancient wisdom meets modern technology
+    - Protective yet approachable
+    - Organic intelligence with digital precision
+    - The kraken that guards, not destroys
+  -->
+  
+  <defs>
+    <!-- Deep space background -->
+    <radialGradient id="cosmos" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#141b2d"/>
+      <stop offset="50%" stop-color="#0d1321"/>
+      <stop offset="100%" stop-color="#080c14"/>
+    </radialGradient>
+    
+    <!-- Primary energy - Cyan (Clarity, Trust, Technology) -->
+    <linearGradient id="energy" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff"/>
+      <stop offset="50%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#0099cc"/>
+    </linearGradient>
+    
+    <!-- Life force - Green (Growth, Healing, LifeOps) -->
+    <linearGradient id="life" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ffaa"/>
+      <stop offset="50%" stop-color="#00e890"/>
+      <stop offset="100%" stop-color="#00cc77"/>
+    </linearGradient>
+    
+    <!-- Wisdom - Purple (Intelligence, Depth, DevOps) -->
+    <linearGradient id="wisdom" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="50%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    
+    <!-- Soul glow - for the eyes -->
+    <radialGradient id="soulGlow" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#80ffff"/>
+      <stop offset="50%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#006688" stop-opacity="0"/>
+    </radialGradient>
+    
+    <!-- Ethereal outer glow -->
+    <radialGradient id="aura" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#00d4ff" stop-opacity="0"/>
+    </radialGradient>
+    
+    <!-- Glow effects -->
+    <filter id="ethereal" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="intense" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="subtle" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="2" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- === BACKGROUND === -->
+  <rect width="512" height="512" rx="96" fill="url(#cosmos)"/>
+  
+  <!-- Ethereal aura around the kraken -->
+  <ellipse cx="256" cy="260" rx="200" ry="180" fill="url(#aura)"/>
+  
+  <!-- === ELEGANT TENTACLES === -->
+  <!-- Flowing like rivers, reaching like roots of a great tree -->
+  
+  <g filter="url(#ethereal)">
+    <!-- LEFT: Purple tentacles (DevOps/Infrastructure) -->
+    <!-- These reach into the depths - managing systems -->
+    
+    <!-- Primary left tentacle - strong, protective -->
+    <path d="M 165 275
+             C 120 290, 75 330, 50 385
+             C 30 430, 40 470, 70 490
+             C 95 505, 125 495, 140 470
+             C 150 450, 140 425, 115 415
+             C 95 408, 80 420, 85 440"
+          fill="none" stroke="url(#wisdom)" stroke-width="11" stroke-linecap="round"/>
+    
+    <!-- Secondary left - inner detail -->
+    <path d="M 165 275
+             C 130 288, 95 318, 75 360
+             C 58 398, 62 435, 85 460
+             C 100 477, 120 475, 130 458"
+          fill="none" stroke="url(#wisdom)" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+    
+    <!-- Tertiary left - outer reach -->
+    <path d="M 150 255
+             C 100 260, 50 290, 30 345
+             C 15 390, 25 425, 55 445
+             C 75 458, 100 448, 108 425"
+          fill="none" stroke="url(#energy)" stroke-width="7" stroke-linecap="round"/>
+    
+    <!-- Small left accent -->
+    <path d="M 108 425 C 118 408, 105 392, 85 400 C 68 408, 65 428, 80 440"
+          fill="none" stroke="url(#energy)" stroke-width="4" stroke-linecap="round"/>
+    
+    
+    <!-- RIGHT: Green tentacles (LifeOps/Growth) -->
+    <!-- These nurture and support - managing life -->
+    
+    <!-- Primary right tentacle -->
+    <path d="M 347 275
+             C 392 290, 437 330, 462 385
+             C 482 430, 472 470, 442 490
+             C 417 505, 387 495, 372 470
+             C 362 450, 372 425, 397 415
+             C 417 408, 432 420, 427 440"
+          fill="none" stroke="url(#life)" stroke-width="11" stroke-linecap="round"/>
+    
+    <!-- Secondary right -->
+    <path d="M 347 275
+             C 382 288, 417 318, 437 360
+             C 454 398, 450 435, 427 460
+             C 412 477, 392 475, 382 458"
+          fill="none" stroke="url(#life)" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+    
+    <!-- Tertiary right -->
+    <path d="M 362 255
+             C 412 260, 462 290, 482 345
+             C 497 390, 487 425, 457 445
+             C 437 458, 412 448, 404 425"
+          fill="none" stroke="url(#energy)" stroke-width="7" stroke-linecap="round"/>
+    
+    <!-- Small right accent -->
+    <path d="M 404 425 C 394 408, 407 392, 427 400 C 444 408, 447 428, 432 440"
+          fill="none" stroke="url(#energy)" stroke-width="4" stroke-linecap="round"/>
+    
+    
+    <!-- CENTER: Cyan tentacles (Core operations) -->
+    <!-- The main channels of action -->
+    
+    <!-- Center-left -->
+    <path d="M 205 325
+             C 185 375, 165 430, 150 480
+             C 142 505, 155 520, 175 515
+             C 192 510, 195 488, 185 465"
+          fill="none" stroke="url(#energy)" stroke-width="9" stroke-linecap="round"/>
+    
+    <!-- Center main - the strongest -->
+    <path d="M 256 335
+             C 256 390, 256 450, 258 505
+             C 260 525, 278 530, 292 520
+             C 302 512, 298 490, 285 470"
+          fill="none" stroke="url(#energy)" stroke-width="12" stroke-linecap="round"/>
+    
+    <!-- Center-right -->
+    <path d="M 307 325
+             C 327 375, 347 430, 362 480
+             C 370 505, 357 520, 337 515
+             C 320 510, 317 488, 327 465"
+          fill="none" stroke="url(#energy)" stroke-width="9" stroke-linecap="round"/>
+  </g>
+  
+  <!-- === KRAKEN HEAD === -->
+  <!-- The seat of wisdom and watchfulness -->
+  
+  <g filter="url(#ethereal)">
+    <!-- Main dome - organic, powerful -->
+    <ellipse cx="256" cy="185" rx="115" ry="90" 
+             fill="#0a0f18" stroke="url(#energy)" stroke-width="4"/>
+    
+    <!-- Inner dome shimmer -->
+    <ellipse cx="256" cy="165" rx="75" ry="45" 
+             fill="none" stroke="#00d4ff" stroke-width="1" opacity="0.2"/>
+    
+    <!-- Mantle - flowing downward -->
+    <path d="M 141 205
+             Q 141 300, 210 330
+             Q 256 345, 302 330
+             Q 371 300, 371 205"
+          fill="#0a0f18" stroke="url(#energy)" stroke-width="3"/>
+  </g>
+  
+  <!-- === THE EYES === -->
+  <!-- "The void watches" - but with warmth and wisdom -->
+  
+  <g filter="url(#intense)">
+    <!-- Left eye -->
+    <ellipse cx="198" cy="190" rx="36" ry="40" fill="#050810"/>
+    <ellipse cx="198" cy="190" rx="36" ry="40" fill="none" stroke="#00d4ff" stroke-width="2.5"/>
+    <ellipse cx="198" cy="190" rx="22" ry="26" fill="url(#soulGlow)"/>
+    <!-- Life in the eyes - reflections -->
+    <ellipse cx="190" cy="180" rx="7" ry="9" fill="#ffffff"/>
+    <circle cx="208" cy="198" r="4" fill="#ffffff" opacity="0.6"/>
+    
+    <!-- Right eye -->
+    <ellipse cx="314" cy="190" rx="36" ry="40" fill="#050810"/>
+    <ellipse cx="314" cy="190" rx="36" ry="40" fill="none" stroke="#00d4ff" stroke-width="2.5"/>
+    <ellipse cx="314" cy="190" rx="22" ry="26" fill="url(#soulGlow)"/>
+    <!-- Life in the eyes -->
+    <ellipse cx="306" cy="180" rx="7" ry="9" fill="#ffffff"/>
+    <circle cx="324" cy="198" r="4" fill="#ffffff" opacity="0.6"/>
+  </g>
+  
+  <!-- === NEURAL CROWN === -->
+  <!-- The circuit-brain - where AI meets intuition -->
+  
+  <g filter="url(#subtle)">
+    <!-- Central node - the core processor -->
+    <circle cx="256" cy="110" r="9" fill="#00ffaa"/>
+    
+    <!-- Main neural stem -->
+    <line x1="256" y1="119" x2="256" y2="142" stroke="#00ffaa" stroke-width="3.5"/>
+    <line x1="238" y1="128" x2="274" y2="128" stroke="#00ffaa" stroke-width="2.5"/>
+    
+    <!-- Left neural branch -->
+    <path d="M 247 110 L 218 95 L 188 108"
+          fill="none" stroke="url(#wisdom)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="188" cy="108" r="6" fill="#a855f7"/>
+    
+    <!-- Right neural branch -->
+    <path d="M 265 110 L 294 95 L 324 108"
+          fill="none" stroke="url(#wisdom)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="324" cy="108" r="6" fill="#a855f7"/>
+    
+    <!-- Upper synapses -->
+    <path d="M 256 101 L 256 82 L 232 65"
+          fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 256 82 L 280 65"
+          fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="232" cy="65" r="4" fill="#00d4ff"/>
+    <circle cx="280" cy="65" r="4" fill="#00d4ff"/>
+    
+    <!-- Extended connections -->
+    <path d="M 188 108 L 168 122" fill="none" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/>
+    <path d="M 324 108 L 344 122" fill="none" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/>
+    <circle cx="168" cy="122" r="3" fill="#8b5cf6" opacity="0.7"/>
+    <circle cx="344" cy="122" r="3" fill="#8b5cf6" opacity="0.7"/>
+  </g>
+  
+  <!-- === DATA NODES === -->
+  <!-- Points of connection along the tentacles -->
+  
+  <g filter="url(#subtle)" opacity="0.85">
+    <!-- Left system nodes -->
+    <circle cx="75" cy="345" r="4" fill="#00d4ff"/>
+    <circle cx="55" cy="400" r="3" fill="#a855f7"/>
+    <circle cx="90" cy="455" r="4" fill="#a855f7"/>
+    <circle cx="45" cy="430" r="3" fill="#00d4ff"/>
+    
+    <!-- Right system nodes -->
+    <circle cx="437" cy="345" r="4" fill="#00d4ff"/>
+    <circle cx="457" cy="400" r="3" fill="#00ffaa"/>
+    <circle cx="422" cy="455" r="4" fill="#00ffaa"/>
+    <circle cx="467" cy="430" r="3" fill="#00d4ff"/>
+    
+    <!-- Center nodes -->
+    <circle cx="175" cy="455" r="3" fill="#00d4ff"/>
+    <circle cx="256" cy="475" r="4" fill="#00d4ff"/>
+    <circle cx="337" cy="455" r="3" fill="#00d4ff"/>
+  </g>
+  
+  <!-- Subtle connecting lines -->
+  <g opacity="0.25" stroke-width="1">
+    <line x1="75" y1="345" x2="55" y2="400" stroke="#00d4ff"/>
+    <line x1="55" y1="400" x2="90" y2="455" stroke="#a855f7"/>
+    <line x1="437" y1="345" x2="457" y2="400" stroke="#00d4ff"/>
+    <line x1="457" y1="400" x2="422" y2="455" stroke="#00ffaa"/>
+  </g>
+  
+  <!-- === CORNER BEACONS === -->
+  <!-- Always watching, always present -->
+  <g filter="url(#subtle)">
+    <circle cx="45" cy="45" r="5" fill="#00d4ff" opacity="0.7"/>
+    <circle cx="467" cy="45" r="5" fill="#00ffaa" opacity="0.7"/>
+    <circle cx="45" cy="467" r="5" fill="#a855f7" opacity="0.7"/>
+    <circle cx="467" cy="467" r="5" fill="#00d4ff" opacity="0.7"/>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+# Test fixture: Old format configuration with apache2
+name: staging
+host: staging.example.com
+port: 2222
+user: deploy
+ssh_key: ~/.ssh/staging
+
+database:
+  type: postgresql
+  host: localhost
+  port: 5432
+  name: staging_db
+  user: staging_user
+  password: staging_pass
+
+paths:
+  web_root: /var/www/staging/public
+  logs: /var/log/staging
+
+services:
+  web: apache2
+  php: php8.1-fpm
+  database: postgresql
+
+metadata:
+  description: "Staging server"
+  type: "django"
+

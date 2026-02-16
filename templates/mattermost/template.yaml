@@ -1,0 +1,70 @@
+# Mattermost Addon Template for NAVIG
+# Open-source team communication platform
+
+name: mattermost
+version: "1.0.0"
+description: "Self-hosted Slack alternative for team messaging and collaboration"
+author: navig-run
+enabled: false
+dependencies:
+  - postgresql
+
+paths:
+  install_dir: /opt/mattermost
+  data_dir: /opt/mattermost/data
+  config_dir: /opt/mattermost/config
+  config_file: /opt/mattermost/config/config.json
+  log_dir: /opt/mattermost/logs
+  plugins_dir: /opt/mattermost/plugins
+  client_plugins_dir: /opt/mattermost/client/plugins
+
+services:
+  main: mattermost.service
+
+commands:
+  - name: start
+    description: "Start Mattermost service"
+    command: "systemctl start mattermost"
+  - name: stop
+    description: "Stop Mattermost service"
+    command: "systemctl stop mattermost"
+  - name: restart
+    description: "Restart Mattermost service"
+    command: "systemctl restart mattermost"
+  - name: status
+    description: "Check Mattermost status"
+    command: "systemctl status mattermost"
+  - name: logs
+    description: "View Mattermost logs"
+    command: "journalctl -u mattermost -f"
+  - name: version
+    description: "Check Mattermost version"
+    command: "/opt/mattermost/bin/mattermost version"
+  - name: reset_password
+    description: "Reset user password"
+    command: "/opt/mattermost/bin/mattermost user password"
+  - name: create_admin
+    description: "Assign system admin role"
+    command: "/opt/mattermost/bin/mattermost roles system_admin"
+
+env_vars:
+  MM_SERVICESETTINGS_SITEURL: "https://mattermost.example.com"
+  MM_SQLSETTINGS_DRIVERNAME: postgres
+  MM_SQLSETTINGS_DATASOURCE: "postgres://mmuser:password@localhost:5432/mattermost?sslmode=disable"
+  MM_FILESETTINGS_DIRECTORY: /opt/mattermost/data
+  MM_LOGSETTINGS_FILELOCATION: /opt/mattermost/logs
+
+api:
+  endpoint: "http://localhost:8065/api/v4"
+  auth_method: bearer_token
+  doc_url: "https://api.mattermost.com/"
+
+default_port: 8065
+systemd_service: /etc/systemd/system/mattermost.service
+
+database:
+  supported:
+    - postgresql
+    - mysql
+  default_type: postgresql
+  default_name: mattermost

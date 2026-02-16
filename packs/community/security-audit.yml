@@ -1,0 +1,51 @@
+name: "Security Audit"
+description: "Basic security audit checklist for server hardening"
+author: "NAVIG Core Team"
+type: checklist
+version: "1.0.0"
+tags:
+  - security
+  - audit
+  - hardening
+
+steps:
+  - description: "Check for system updates"
+    command: "navig exec apt list --upgradable 2>/dev/null || yum check-update"
+    continue_on_error: true
+  
+  - description: "Review SSH configuration"
+    notes: "Verify: PasswordAuthentication no, PermitRootLogin prohibit-password"
+    command: "navig exec cat /etc/ssh/sshd_config | grep -E '(PasswordAuth|PermitRoot|Port)'"
+  
+  - description: "Check open ports"
+    command: "navig exec ss -tulpn"
+  
+  - description: "Review running services"
+    command: "navig exec systemctl list-units --type=service --state=running"
+  
+  - description: "Check failed login attempts"
+    command: "navig exec grep 'Failed password' /var/log/auth.log | tail -20"
+    continue_on_error: true
+  
+  - description: "Review sudo users"
+    command: "navig exec getent group sudo wheel"
+    continue_on_error: true
+  
+  - description: "Check firewall status"
+    command: "navig exec ufw status || firewall-cmd --state"
+    continue_on_error: true
+  
+  - description: "Verify SSL certificates"
+    notes: "Check certificate expiration dates"
+    command: "navig exec find /etc/ssl -name '*.pem' -exec openssl x509 -in {} -noout -enddate \\;"
+    continue_on_error: true
+  
+  - description: "Check file permissions on sensitive files"
+    command: "navig exec ls -la /etc/passwd /etc/shadow /etc/ssh/sshd_config"
+
+notes: |
+  This is a basic security audit. For production systems, consider:
+  - Running automated vulnerability scanners
+  - Reviewing application-specific security
+  - Checking for rootkits with rkhunter/chkrootkit
+  - Analyzing log aggregation for anomalies

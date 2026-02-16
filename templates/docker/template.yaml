@@ -1,0 +1,95 @@
+# Docker Template Configuration
+# Container platform for building, shipping, and running applications
+
+name: docker
+version: 1.0.0
+description: Container platform for building, shipping, and running distributed applications
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  config_dir: /etc/docker
+  daemon_config: /etc/docker/daemon.json
+  data_dir: /var/lib/docker
+  compose_config: /usr/local/bin/docker-compose
+  systemd_override: /etc/systemd/system/docker.service.d/override.conf
+  containerd_config: /etc/containerd/config.toml
+
+services:
+  docker: docker
+  containerd: containerd
+  docker_socket: docker.socket
+
+commands:
+  - name: start
+    description: Start Docker service
+    command: systemctl start docker
+
+  - name: stop
+    description: Stop Docker service
+    command: systemctl stop docker
+
+  - name: restart
+    description: Restart Docker service
+    command: systemctl restart docker
+
+  - name: status
+    description: Check Docker service status
+    command: systemctl status docker
+
+  - name: info
+    description: Display Docker system info
+    command: docker info
+
+  - name: version
+    description: Show Docker version
+    command: docker version
+
+  - name: ps
+    description: List running containers
+    command: docker ps
+
+  - name: ps_all
+    description: List all containers
+    command: docker ps -a
+
+  - name: images
+    description: List Docker images
+    command: docker images
+
+  - name: volumes
+    description: List Docker volumes
+    command: docker volume ls
+
+  - name: networks
+    description: List Docker networks
+    command: docker network ls
+
+  - name: system_df
+    description: Show Docker disk usage
+    command: docker system df
+
+  - name: prune
+    description: Remove unused data (containers, images, networks)
+    command: docker system prune -f
+
+  - name: prune_all
+    description: Remove ALL unused data including volumes
+    command: docker system prune -a --volumes -f
+
+  - name: logs
+    description: View Docker daemon logs
+    command: journalctl -u docker -f
+
+env_vars:
+  DOCKER_HOST: unix:///var/run/docker.sock
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+
+api:
+  endpoint: unix:///var/run/docker.sock
+  auth_method: socket
+  doc_url: https://docs.docker.com/engine/api/
+
+systemd_service: /lib/systemd/system/docker.service

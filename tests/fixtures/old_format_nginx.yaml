@@ -1,0 +1,28 @@
+# Test fixture: Old format configuration with nginx
+name: production
+host: srv.example.com
+port: 22
+user: root
+ssh_key: ~/.ssh/production
+
+database:
+  type: mysql
+  host: localhost
+  port: 3306
+  name: myapp_db
+  user: myapp_user
+  password: secret123
+
+paths:
+  web_root: /var/www/myapp/public
+  logs: /var/log/myapp
+
+services:
+  web: nginx
+  php: php8.2-fpm
+  database: mysql
+
+metadata:
+  description: "Production server"
+  type: "laravel"
+

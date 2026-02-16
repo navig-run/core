@@ -1,0 +1,65 @@
+# Emergency Debugging Workflow
+# Quick diagnostics for failing services
+
+name: Emergency Debugging
+description: Rapidly diagnose failing services and system issues
+version: "1.0"
+author: NAVIG Team
+
+variables:
+  host: production
+  service: nginx
+  container: app-container
+  log_lines: "100"
+
+steps:
+  - name: Set active host
+    command: host use ${host}
+    description: Connect to problematic server
+
+  - name: Check system resources
+    command: monitor resources
+    description: Look for CPU/RAM/disk issues
+    continue_on_error: true
+
+  - name: View system load
+    command: run "uptime && free -h && df -h"
+    description: Quick system overview
+    continue_on_error: true
+
+  - name: Check service status
+    command: run "systemctl status ${service}"
+    description: View service state and recent logs
+    continue_on_error: true
+
+  - name: View recent logs
+    command: logs ${service} -n ${log_lines}
+    description: Check recent service logs for errors
+    continue_on_error: true
+
+  - name: Check listening ports
+    command: run "ss -tlnp | head -20"
+    description: Verify services are listening
+    continue_on_error: true
+
+  - name: Docker container status
+    command: docker ps -a
+    description: List all containers and their states
+    continue_on_error: true
+
+  - name: Inspect container
+    command: docker inspect ${container}
+    description: Get detailed container information
+    continue_on_error: true
+    skip_on_error: true
+
+  - name: Container logs
+    command: docker logs ${container} --tail ${log_lines}
+    description: View container logs
+    continue_on_error: true
+    skip_on_error: true
+
+  - name: Check recent errors
+    command: run "journalctl -p err --since '1 hour ago' --no-pager | tail -50"
+    description: System-wide error log
+    continue_on_error: true

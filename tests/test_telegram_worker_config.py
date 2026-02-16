@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+
+def test_load_env_prefers_cwd_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    from navig.daemon import telegram_worker as tw
+
+    env_path = tmp_path / ".env"
+    env_path.write_text("X=1")
+
+    loaded = []
+    dotenv_mod = SimpleNamespace(load_dotenv=lambda path: loaded.append(Path(path)))
+    monkeypatch.setitem(sys.modules, "dotenv", dotenv_mod)
+    monkeypatch.setattr(tw.Path, "cwd", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(tw, "NAVIG_HOME", tmp_path / "navig-home")
+
+    tw._load_env()
+    assert loaded
+    assert loaded[0] == env_path
+
+
+def test_telegram_and_deck_config(monkeypatch: pytest.MonkeyPatch):
+    from navig.daemon import telegram_worker as tw
+
+    cfg = {
+        "telegram": {"bot_token": "cfg-token", "allowed_users": [1], "allowed_groups": [10], "require_auth": False},
+        "deck": {"enabled": False, "port": 3000, "bind": "0.0.0.0", "dev_mode": True, "auth_max_age": 120},
+    }
+    monkeypatch.setattr(tw, "get_config_manager", lambda: SimpleNamespace(global_config=cfg))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env-token")
+
+    tg = tw._telegram_config()
+    dk = tw._deck_config()
+
+    assert tg["bot_token"] == "env-token"
+    assert tg["allowed_users"] == [1]
+    assert tg["require_auth"] is False
+    assert dk["enabled"] is False
+    assert dk["port"] == 3000
+    assert dk["bind"] == "0.0.0.0"
+    assert dk["dev_mode"] is True
+    assert dk["auth_max_age"] == 120
+
+
+def test_main_parses_args_and_runs(monkeypatch: pytest.MonkeyPatch):
+    from navig.daemon import telegram_worker as tw
+
+    captured = {}
+
+    def _run(coro):
+        captured["coro"] = coro
+        coro.close()
+
+    monkeypatch.setattr(tw.asyncio, "run", _run)
+    monkeypatch.setattr(sys, "argv", ["telegram_worker.py", "--port", "9999", "--no-gateway"])
+
+    tw.main()
+    assert captured["coro"] is not None
+
+
+def test_telegram_config_without_env(monkeypatch: pytest.MonkeyPatch):
+    from navig.daemon import telegram_worker as tw
+
+    monkeypatch.setattr(
+        tw,
+        "get_config_manager",
+        lambda: SimpleNamespace(global_config={"telegram": {"bot_token": "cfg-only"}}),
+    )
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    result = tw._telegram_config()
+    assert result["bot_token"] == "cfg-only"

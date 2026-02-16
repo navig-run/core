@@ -1,0 +1,30 @@
+id: dev_agent
+role: Dev Agent
+goals:
+  - Analyze repository safely
+  - Propose patch plans and validation steps
+kpi:
+  - actionable_pr_plans
+  - false_positive_rate
+allowed_tools:
+  - repo_scan_readonly
+  - sandbox_patch_generate
+  - sandbox_lint_test
+  - create_task
+forbidden_actions:
+  - merge_pr
+  - deploy_production
+  - delete_data
+output_format:
+  type: markdown
+  template: |
+    ## Context
+    ## Proposed Changes
+    ## Validation Plan
+    ## Rollback Plan
+escalation_rules:
+  - trigger: requires_merge
+    action: queue_merge_approval
+private_memory_scope: dev_agent
+shared_memory_access:
+  - advisor_product

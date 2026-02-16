@@ -1,0 +1,131 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- NAVIG OS Icon - Operating System/Platform Version -->
+  <!-- Design: Kraken within a "system window" frame, emphasizing platform/infrastructure -->
+  
+  <defs>
+    <linearGradient id="osBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="100%" style="stop-color:#161b22"/>
+    </linearGradient>
+    
+    <linearGradient id="osFrame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d4ff"/>
+      <stop offset="50%" style="stop-color:#7b2fff"/>
+      <stop offset="100%" style="stop-color:#00d4ff"/>
+    </linearGradient>
+    
+    <linearGradient id="osAccent" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#00a0c0"/>
+    </linearGradient>
+    
+    <radialGradient id="osEyeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="40%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#00d4ff;stop-opacity:0"/>
+    </radialGradient>
+    
+    <filter id="osGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="osStrongGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#osBg)"/>
+  
+  <!-- "Window/System" Frame - represents OS/Platform -->
+  <rect x="40" y="40" width="432" height="432" rx="24" fill="none" stroke="url(#osFrame)" stroke-width="3" opacity="0.6"/>
+  
+  <!-- Title bar (like an OS window) -->
+  <rect x="40" y="40" width="432" height="50" rx="24" fill="#1a1f26"/>
+  <rect x="40" y="66" width="432" height="24" fill="#1a1f26"/>
+  
+  <!-- Window control dots -->
+  <circle cx="72" cy="66" r="8" fill="#ff5f56"/>
+  <circle cx="100" cy="66" r="8" fill="#ffbd2e"/>
+  <circle cx="128" cy="66" r="8" fill="#27ca40"/>
+  
+  <!-- Window title -->
+  <text x="256" y="72" font-family="SF Mono, Monaco, monospace" font-size="16" font-weight="500" fill="#00d4ff" text-anchor="middle" opacity="0.8">NAVIG OS</text>
+  
+  <!-- Inner content area -->
+  <rect x="52" y="100" width="408" height="360" rx="12" fill="#0a0d12" opacity="0.5"/>
+  
+  <!-- Grid pattern (system/infrastructure feel) -->
+  <g opacity="0.08">
+    <line x1="60" y1="150" x2="452" y2="150" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="60" y1="200" x2="452" y2="200" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="60" y1="250" x2="452" y2="250" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="60" y1="300" x2="452" y2="300" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="60" y1="350" x2="452" y2="350" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="60" y1="400" x2="452" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="150" y1="100" x2="150" y2="460" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="256" y1="100" x2="256" y2="460" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="362" y1="100" x2="362" y2="460" stroke="#00d4ff" stroke-width="1"/>
+  </g>
+  
+  <!-- Simplified Kraken in center -->
+  <g filter="url(#osGlow)">
+    <!-- Kraken head -->
+    <ellipse cx="256" cy="230" rx="80" ry="65" fill="#0d1117" stroke="url(#osAccent)" stroke-width="4"/>
+    
+    <!-- Lower face -->
+    <path d="M 176 250 Q 176 320, 256 340 Q 336 320, 336 250" 
+          fill="#0d1117" stroke="url(#osAccent)" stroke-width="3"/>
+  </g>
+  
+  <!-- Eyes -->
+  <g filter="url(#osStrongGlow)">
+    <ellipse cx="220" cy="225" rx="24" ry="28" fill="#0a0d12" stroke="#00d4ff" stroke-width="2"/>
+    <ellipse cx="220" cy="225" rx="12" ry="16" fill="url(#osEyeGlow)"/>
+    <ellipse cx="216" cy="220" rx="5" ry="6" fill="#ffffff"/>
+    
+    <ellipse cx="292" cy="225" rx="24" ry="28" fill="#0a0d12" stroke="#00d4ff" stroke-width="2"/>
+    <ellipse cx="292" cy="225" rx="12" ry="16" fill="url(#osEyeGlow)"/>
+    <ellipse cx="288" cy="220" rx="5" ry="6" fill="#ffffff"/>
+  </g>
+  
+  <!-- Forehead circuit -->
+  <g filter="url(#osGlow)" opacity="0.9">
+    <circle cx="256" cy="180" r="6" fill="#00ff88"/>
+    <line x1="256" y1="186" x2="256" y2="200" stroke="#00ff88" stroke-width="2"/>
+    <path d="M 240 178 L 225 172 L 215 180" fill="none" stroke="#7b2fff" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 272 178 L 287 172 L 297 180" fill="none" stroke="#7b2fff" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="215" cy="180" r="3" fill="#7b2fff"/>
+    <circle cx="297" cy="180" r="3" fill="#7b2fff"/>
+  </g>
+  
+  <!-- Tentacles (simplified, system-like) -->
+  <g filter="url(#osGlow)">
+    <!-- Left tentacles -->
+    <path d="M 190 310 Q 140 350, 100 390" fill="none" stroke="#7b2fff" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 170 320 Q 120 370, 80 420" fill="none" stroke="#7b2fff" stroke-width="6" stroke-linecap="round"/>
+    
+    <!-- Right tentacles -->
+    <path d="M 322 310 Q 372 350, 412 390" fill="none" stroke="#00ff88" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 342 320 Q 392 370, 432 420" fill="none" stroke="#00ff88" stroke-width="6" stroke-linecap="round"/>
+    
+    <!-- Center tentacles -->
+    <path d="M 226 340 Q 210 390, 190 440" fill="none" stroke="#00d4ff" stroke-width="6" stroke-linecap="round"/>
+    <path d="M 256 345 Q 256 395, 256 450" fill="none" stroke="#00d4ff" stroke-width="7" stroke-linecap="round"/>
+    <path d="M 286 340 Q 302 390, 322 440" fill="none" stroke="#00d4ff" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Status indicators (OS-like) -->
+  <g opacity="0.7">
+    <circle cx="420" cy="120" r="6" fill="#27ca40"/>
+    <text x="405" y="140" font-family="SF Mono, Monaco, monospace" font-size="10" fill="#27ca40">ACTIVE</text>
+  </g>
+</svg>

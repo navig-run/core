@@ -1,0 +1,61 @@
+# Server Health Check Workflow
+# Comprehensive health check for remote servers
+
+name: Server Health Check
+description: Run comprehensive diagnostics on a remote server
+version: "1.0"
+author: NAVIG Team
+
+variables:
+  host: production
+
+steps:
+  - name: Set active host
+    command: host use ${host}
+    description: Connect to target server
+
+  - name: Connection test
+    command: run "echo 'Connection OK'"
+    description: Verify SSH connectivity
+
+  - name: System information
+    command: run "uname -a && cat /etc/os-release | head -5"
+    description: Get OS and kernel info
+    continue_on_error: true
+
+  - name: Uptime and load
+    command: run "uptime"
+    description: Check system uptime and load averages
+
+  - name: Memory usage
+    command: run "free -h"
+    description: Check RAM and swap usage
+
+  - name: Disk usage
+    command: run "df -h"
+    description: Check disk space on all mounts
+
+  - name: Running services
+    command: run "systemctl list-units --type=service --state=running | head -20"
+    description: List active services
+    continue_on_error: true
+
+  - name: Failed services
+    command: run "systemctl list-units --type=service --state=failed"
+    description: Check for any failed services
+    continue_on_error: true
+
+  - name: Network connectivity
+    command: run "ping -c 3 8.8.8.8"
+    description: Test outbound network
+    continue_on_error: true
+
+  - name: Docker status
+    command: docker ps
+    description: List running containers
+    continue_on_error: true
+
+  - name: Recent security events
+    command: run "lastlog | head -10"
+    description: Check recent login activity
+    continue_on_error: true

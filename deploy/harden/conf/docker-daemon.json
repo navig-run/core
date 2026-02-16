@@ -1,0 +1,22 @@
+{
+    "_comment": "NAVIG Docker daemon configuration",
+    "_deploy_to": "/etc/docker/daemon.json",
+    "_apply": "sudo systemctl restart docker",
+
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "10m",
+        "max-file": "3"
+    },
+    "default-address-pools": [
+        {
+            "base": "172.17.0.0/16",
+            "size": 24
+        }
+    ],
+    "storage-driver": "overlay2",
+    "live-restore": true,
+    "iptables": true,
+    "userland-proxy": false,
+    "no-new-privileges": true
+}

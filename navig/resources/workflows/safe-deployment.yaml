@@ -1,0 +1,48 @@
+# Safe Application Deployment Workflow
+# Deploys application with verification steps and rollback safety
+
+name: Safe Application Deployment
+description: Deploy application with health checks and confirmation prompts
+version: "1.0"
+author: NAVIG Team
+
+variables:
+  host: production
+  app_path: /var/www/app
+  service: nginx
+
+steps:
+  - name: Set active host
+    command: host use ${host}
+    description: Switch to target deployment host
+
+  - name: Check current status
+    command: health
+    description: Verify server is healthy before deployment
+    continue_on_error: true
+
+  - name: Backup current state
+    command: run "cp -r ${app_path} ${app_path}.backup.$(date +%Y%m%d_%H%M%S)"
+    description: Create backup before deploying
+    prompt: "Create backup of current deployment?"
+
+  - name: Upload build artifacts
+    command: upload ./build ${app_path}/
+    description: Transfer new build files to server
+
+  - name: Set permissions
+    command: run "chown -R www-data:www-data ${app_path}"
+    description: Ensure correct file ownership
+
+  - name: Validate configuration
+    command: run "${service} -t"
+    description: Test configuration before restart
+    
+  - name: Restart service
+    command: run "systemctl restart ${service}"
+    description: Apply changes by restarting the service
+    prompt: "Proceed with service restart?"
+
+  - name: Verify deployment
+    command: health
+    description: Confirm deployment succeeded

@@ -1,0 +1,288 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- NAVIG - Premium Kraken Logo v2 -->
+  <!-- Inspired by intricate line art with flowing organic tentacles -->
+  
+  <defs>
+    <!-- Rich dark gradient background -->
+    <radialGradient id="bgRadial" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" style="stop-color:#1a1f2e"/>
+      <stop offset="100%" style="stop-color:#0a0d14"/>
+    </radialGradient>
+    
+    <!-- Cyan glow gradient -->
+    <linearGradient id="cyanGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00f0ff"/>
+      <stop offset="50%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#00a8cc"/>
+    </linearGradient>
+    
+    <!-- Purple glow gradient -->
+    <linearGradient id="purpleGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a855f7"/>
+      <stop offset="50%" style="stop-color:#7c3aed"/>
+      <stop offset="100%" style="stop-color:#6366f1"/>
+    </linearGradient>
+    
+    <!-- Green glow gradient -->
+    <linearGradient id="greenGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10ffc8"/>
+      <stop offset="50%" style="stop-color:#00ff88"/>
+      <stop offset="100%" style="stop-color:#00cc6a"/>
+    </linearGradient>
+    
+    <!-- Eye inner glow -->
+    <radialGradient id="eyeInner" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="30%" style="stop-color:#00f0ff"/>
+      <stop offset="60%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#006080"/>
+    </radialGradient>
+    
+    <!-- Filters -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="strongGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#bgRadial)"/>
+  
+  <!-- Outer ring decoration -->
+  <circle cx="256" cy="256" r="235" fill="none" stroke="#00d4ff" stroke-width="1" opacity="0.15"/>
+  <circle cx="256" cy="256" r="225" fill="none" stroke="#7c3aed" stroke-width="0.5" opacity="0.1"/>
+  
+  <!-- ========== TENTACLES - Intricate flowing design ========== -->
+  <g filter="url(#glow)">
+    
+    <!-- LEFT SIDE TENTACLES (Purple - Infrastructure/DevOps) -->
+    <!-- Main left tentacle - large flowing curve -->
+    <path d="M 180 260 
+             C 140 270, 100 290, 70 340 
+             C 45 385, 40 420, 55 450 
+             C 65 470, 90 475, 110 460
+             C 125 448, 120 420, 100 400" 
+          fill="none" stroke="url(#purpleGlow)" stroke-width="10" stroke-linecap="round"/>
+    
+    <!-- Left tentacle inner line -->
+    <path d="M 180 260 
+             C 150 268, 115 285, 90 325 
+             C 70 360, 68 395, 80 425
+             C 88 445, 105 450, 118 440" 
+          fill="none" stroke="url(#purpleGlow)" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+    
+    <!-- Second left tentacle - curling -->
+    <path d="M 160 280 
+             C 120 295, 75 330, 50 380 
+             C 30 420, 35 465, 60 485
+             C 80 500, 110 490, 125 465
+             C 135 445, 125 420, 105 410" 
+          fill="none" stroke="url(#purpleGlow)" stroke-width="8" stroke-linecap="round"/>
+    
+    <!-- Third left - outer reach -->
+    <path d="M 145 245
+             C 100 250, 55 275, 35 320
+             C 20 355, 25 385, 45 400
+             C 60 412, 80 405, 88 385" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="6" stroke-linecap="round"/>
+    
+    <!-- LEFT spiral decoration -->
+    <path d="M 88 385 C 95 370, 85 355, 70 360 C 55 365, 50 380, 60 392" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="4" stroke-linecap="round"/>
+    
+    <!-- RIGHT SIDE TENTACLES (Green - Life/Growth) -->
+    <!-- Main right tentacle -->
+    <path d="M 332 260 
+             C 372 270, 412 290, 442 340 
+             C 467 385, 472 420, 457 450 
+             C 447 470, 422 475, 402 460
+             C 387 448, 392 420, 412 400" 
+          fill="none" stroke="url(#greenGlow)" stroke-width="10" stroke-linecap="round"/>
+    
+    <!-- Right tentacle inner -->
+    <path d="M 332 260 
+             C 362 268, 397 285, 422 325 
+             C 442 360, 444 395, 432 425
+             C 424 445, 407 450, 394 440" 
+          fill="none" stroke="url(#greenGlow)" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+    
+    <!-- Second right tentacle -->
+    <path d="M 352 280 
+             C 392 295, 437 330, 462 380 
+             C 482 420, 477 465, 452 485
+             C 432 500, 402 490, 387 465
+             C 377 445, 387 420, 407 410" 
+          fill="none" stroke="url(#greenGlow)" stroke-width="8" stroke-linecap="round"/>
+    
+    <!-- Third right - outer -->
+    <path d="M 367 245
+             C 412 250, 457 275, 477 320
+             C 492 355, 487 385, 467 400
+             C 452 412, 432 405, 424 385" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="6" stroke-linecap="round"/>
+    
+    <!-- RIGHT spiral decoration -->
+    <path d="M 424 385 C 417 370, 427 355, 442 360 C 457 365, 462 380, 452 392" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="4" stroke-linecap="round"/>
+    
+    <!-- CENTER TENTACLES (Cyan - Core operations) -->
+    <!-- Center-left -->
+    <path d="M 210 310
+             C 195 360, 175 410, 160 465
+             C 150 495, 160 510, 180 505
+             C 195 500, 200 480, 195 455" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="8" stroke-linecap="round"/>
+    
+    <!-- Center main -->
+    <path d="M 256 320
+             C 256 375, 256 430, 256 485
+             C 256 505, 270 515, 280 505
+             C 288 495, 285 475, 275 455" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="10" stroke-linecap="round"/>
+    
+    <!-- Center-right -->
+    <path d="M 302 310
+             C 317 360, 337 410, 352 465
+             C 362 495, 352 510, 332 505
+             C 317 500, 312 480, 317 455" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="8" stroke-linecap="round"/>
+    
+    <!-- Small decorative tentacle curves -->
+    <path d="M 230 305 C 215 340, 200 375, 190 410" 
+          fill="none" stroke="url(#purpleGlow)" stroke-width="5" stroke-linecap="round" opacity="0.7"/>
+    <path d="M 282 305 C 297 340, 312 375, 322 410" 
+          fill="none" stroke="url(#greenGlow)" stroke-width="5" stroke-linecap="round" opacity="0.7"/>
+  </g>
+  
+  <!-- ========== KRAKEN HEAD - Sleek design ========== -->
+  <g filter="url(#glow)">
+    <!-- Main head dome -->
+    <ellipse cx="256" cy="185" rx="120" ry="95" fill="#0d1117" stroke="url(#cyanGlow)" stroke-width="4"/>
+    
+    <!-- Head inner highlight -->
+    <ellipse cx="256" cy="165" rx="80" ry="50" fill="none" stroke="#00d4ff" stroke-width="1" opacity="0.2"/>
+    
+    <!-- Lower mantle -->
+    <path d="M 136 200 
+             Q 136 290, 200 320
+             Q 256 340, 312 320
+             Q 376 290, 376 200" 
+          fill="#0d1117" stroke="url(#cyanGlow)" stroke-width="3"/>
+  </g>
+  
+  <!-- ========== EYES - Glowing intelligence ========== -->
+  <g filter="url(#strongGlow)">
+    <!-- Left eye socket -->
+    <ellipse cx="200" cy="190" rx="38" ry="42" fill="#050608"/>
+    <ellipse cx="200" cy="190" rx="38" ry="42" fill="none" stroke="#00d4ff" stroke-width="2"/>
+    
+    <!-- Left eye glow -->
+    <ellipse cx="200" cy="190" rx="24" ry="28" fill="url(#eyeInner)"/>
+    
+    <!-- Left eye reflections -->
+    <ellipse cx="193" cy="180" rx="8" ry="10" fill="#ffffff"/>
+    <circle cx="210" cy="200" r="4" fill="#ffffff" opacity="0.5"/>
+    
+    <!-- Right eye socket -->
+    <ellipse cx="312" cy="190" rx="38" ry="42" fill="#050608"/>
+    <ellipse cx="312" cy="190" rx="38" ry="42" fill="none" stroke="#00d4ff" stroke-width="2"/>
+    
+    <!-- Right eye glow -->
+    <ellipse cx="312" cy="190" rx="24" ry="28" fill="url(#eyeInner)"/>
+    
+    <!-- Right eye reflections -->
+    <ellipse cx="305" cy="180" rx="8" ry="10" fill="#ffffff"/>
+    <circle cx="322" cy="200" r="4" fill="#ffffff" opacity="0.5"/>
+  </g>
+  
+  <!-- ========== CIRCUIT BRAIN - Neural pattern ========== -->
+  <g filter="url(#softGlow)">
+    <!-- Central node -->
+    <circle cx="256" cy="115" r="8" fill="#10ffc8"/>
+    
+    <!-- Main stem -->
+    <line x1="256" y1="123" x2="256" y2="145" stroke="#10ffc8" stroke-width="3"/>
+    
+    <!-- Cross connection -->
+    <line x1="235" y1="130" x2="277" y2="130" stroke="#10ffc8" stroke-width="2"/>
+    
+    <!-- Left branch -->
+    <path d="M 248 115 L 220 100 L 195 110" 
+          fill="none" stroke="url(#purpleGlow)" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="195" cy="110" r="5" fill="#a855f7"/>
+    
+    <!-- Right branch -->
+    <path d="M 264 115 L 292 100 L 317 110" 
+          fill="none" stroke="url(#purpleGlow)" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="317" cy="110" r="5" fill="#a855f7"/>
+    
+    <!-- Upper branches -->
+    <path d="M 256 107 L 256 90 L 235 75" 
+          fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 256 90 L 277 75" 
+          fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="235" cy="75" r="4" fill="#00d4ff"/>
+    <circle cx="277" cy="75" r="4" fill="#00d4ff"/>
+    
+    <!-- Extra neural connections -->
+    <path d="M 195 110 L 175 125" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+    <path d="M 317 110 L 337 125" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+    <circle cx="175" cy="125" r="3" fill="#7c3aed" opacity="0.6"/>
+    <circle cx="337" cy="125" r="3" fill="#7c3aed" opacity="0.6"/>
+  </g>
+  
+  <!-- ========== DECORATIVE ELEMENTS ========== -->
+  
+  <!-- Circuit nodes on tentacles -->
+  <g filter="url(#softGlow)" opacity="0.8">
+    <!-- Left side nodes -->
+    <circle cx="90" cy="325" r="4" fill="#00d4ff"/>
+    <circle cx="70" cy="370" r="3" fill="#a855f7"/>
+    <circle cx="95" cy="430" r="4" fill="#a855f7"/>
+    <circle cx="55" cy="400" r="3" fill="#00d4ff"/>
+    
+    <!-- Right side nodes -->  
+    <circle cx="422" cy="325" r="4" fill="#00d4ff"/>
+    <circle cx="442" cy="370" r="3" fill="#10ffc8"/>
+    <circle cx="417" cy="430" r="4" fill="#10ffc8"/>
+    <circle cx="457" cy="400" r="3" fill="#00d4ff"/>
+    
+    <!-- Center nodes -->
+    <circle cx="185" cy="440" r="3" fill="#00d4ff"/>
+    <circle cx="256" cy="460" r="4" fill="#00d4ff"/>
+    <circle cx="327" cy="440" r="3" fill="#00d4ff"/>
+  </g>
+  
+  <!-- Connecting lines between nodes -->
+  <g opacity="0.3" stroke-width="1">
+    <line x1="90" y1="325" x2="70" y2="370" stroke="#00d4ff"/>
+    <line x1="70" y1="370" x2="95" y2="430" stroke="#a855f7"/>
+    <line x1="422" y1="325" x2="442" y2="370" stroke="#00d4ff"/>
+    <line x1="442" y1="370" x2="417" y2="430" stroke="#10ffc8"/>
+  </g>
+  
+  <!-- Corner accents -->
+  <circle cx="50" cy="50" r="6" fill="#00d4ff" opacity="0.6" filter="url(#softGlow)"/>
+  <circle cx="462" cy="50" r="6" fill="#10ffc8" opacity="0.6" filter="url(#softGlow)"/>
+  <circle cx="50" cy="462" r="6" fill="#a855f7" opacity="0.6" filter="url(#softGlow)"/>
+  <circle cx="462" cy="462" r="6" fill="#00d4ff" opacity="0.6" filter="url(#softGlow)"/>
+</svg>
