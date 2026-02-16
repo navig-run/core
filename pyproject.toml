@@ -81,7 +81,8 @@ include = ["navig*"]
 
 [tool.setuptools.package-data]
 navig = ["*.txt", "*.md", "help/*.md", "schemas/*.json"]
-"navig.resources" = ["workflows/*.yaml"]
+"navig.resources" = ["workflows/*.yaml", "*.md"]
+"navig.agent.context" = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
