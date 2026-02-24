@@ -42,6 +42,7 @@ def _fast_help_text(version: str) -> str:
             "  docker      Docker containers",
             "  web         Web server operations",
             "  service     Manage NAVIG daemon (persistent background service)",
+            "  profile     Operating profile (node | builder | operator | architect)",
             "  mcp         MCP tools and integrations",
             "  help        In-app help topics",
             "",
@@ -75,6 +76,13 @@ def _maybe_handle_fast_path(argv: List[str]) -> bool:
         return True
 
     if len(args) == 1 and args[0] in {"--help"}:
+        from navig import __version__
+
+        sys.stdout.write(_fast_help_text(__version__) + "\n")
+        return True
+
+    # `navig help` with no topic → same as `navig --help`
+    if len(args) == 1 and args[0] == "help":
         from navig import __version__
 
         sys.stdout.write(_fast_help_text(__version__) + "\n")
@@ -199,12 +207,37 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
         "host", "h", "app", "a", "run", "r", "db", "database",
         "file", "f", "docker", "tunnel", "t", "web", "backup",
         "config", "status", "version", "log", "local", "mcp",
-        "security", "monitor", "index", "skills", "skill",
+        "profile", "security", "monitor", "index", "skills", "skill",
         "flow", "workflow", "wiki", "scaffold", "migrate",
         "server-template", "template", "hestia",
     }
     if args[0] in _PLUGIN_FREE:
         return True
+
+    if args[0] == "plugin":
+        return False
+
+    # Check the plugin cache to short-circuit invalid commands or fast paths
+    try:
+        import json
+        from pathlib import Path
+        # We can't easily import Config here without overhead, so we construct the default path
+        cache_file = Path.home() / ".navig" / "data" / "plugins_cache.json"
+        if cache_file.exists():
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cached_data = json.load(f)
+            plugins = cached_data.get("plugins", {})
+            if args[0] not in plugins:
+                return True
+    except json.JSONDecodeError:
+        # P1-6: Corrupted plugin cache — log a warning instead of silently ignoring
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "Plugin cache corrupted at %s — skipping cache check",
+            Path.home() / ".navig" / "data" / "plugins_cache.json",
+        )
+    except Exception:
+        pass
 
     return False
 
@@ -378,6 +411,16 @@ def add_plugin_commands(app) -> None:
                 raise typer.Exit(1)
             
             plugin_name = source_path.name
+
+            # P1-9: Validate plugin name — prevent path traversal via crafted names
+            import re as _re
+            if not _re.match(r'^[a-zA-Z0-9_-]+$', plugin_name):
+                ch.error(
+                    f"Invalid plugin name: '{plugin_name}'",
+                    "Plugin names must contain only letters, digits, underscores, or hyphens.",
+                )
+                raise typer.Exit(1)
+
             dest_path = config.plugins_dir / plugin_name
             
             if dest_path.exists():
@@ -463,6 +506,13 @@ def main() -> None:
 
         # Register all external command sub-apps (deferred from module load)
         _register_external_commands()
+
+        # Register operating profile command (node/builder/operator/architect)
+        try:
+            from navig.commands.profile import profile_app
+            app.add_typer(profile_app, name="profile")
+        except Exception as _e:  # never break startup
+            pass
 
         skip_plugins = _should_skip_plugin_loading(sys.argv)
 

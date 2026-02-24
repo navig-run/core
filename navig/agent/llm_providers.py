@@ -331,77 +331,136 @@ class LlamaCppProvider(LLMProvider):
             return False
 
 
-# ── Forge (VS Code Copilot Bridge) ─────────────────────────────────
+# ── MCP Forge (VS Code Copilot via MCP WebSocket) ──────────────────
 
-class ForgeProvider(LLMProvider):
+class McpForgeProvider(LLMProvider):
     """
-    Bridge to a VS Code Copilot LLM server exposed by navig-bridge.
+    LLM provider that calls VS Code Copilot via MCP protocol (WebSocket).
 
-    The Forge extension runs an HTTP server (default :43821) that proxies
-    requests through ``vscode.lm`` to GitHub Copilot models.  On Ubuntu
-    the daemon reaches it via an SSH reverse-tunnel.
+    The navig-bridge VS Code extension runs an MCP server on port 42070
+    that exposes ``vscode_llm_chat`` as a standard MCP tool.  This provider
+    connects as an MCP client and invokes that tool for inference.
 
-    Config in ``~/.navig/config.yaml``::
+    Config in ~/.navig/config.yaml::
 
         forge:
-          url: http://127.0.0.1:43821
+          mcp_url: ws://127.0.0.1:42070
           token: <shared-secret>
-
-    The server speaks its own ChatRequest/ChatResponse protocol, so this
-    provider translates between the standard ``messages`` list and the
-    Forge wire format.
     """
 
-    name = "forge"
-
-    # Default port mirrors navig-bridge chatVscodeLlmPort setting
-    DEFAULT_URL = "http://127.0.0.1:43821"
+    name = "mcp_forge"
+    DEFAULT_URL = "ws://127.0.0.1:42070"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
-        super().__init__(
-            base_url=base_url or self.DEFAULT_URL,
-            api_key=api_key,
-            **kwargs,
-        )
+        super().__init__(base_url=base_url or self.DEFAULT_URL, api_key=api_key, **kwargs)
+        self._ws = None
+        self._request_id = 0
+        self._initialized = False
 
-    # ── helpers ──
-
-    def _auth_headers(self) -> Dict[str, str]:
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+    def _ws_url(self) -> str:
+        """Build WebSocket URL with token as query param."""
+        url = self.base_url
         if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        return headers
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}token={self.api_key}"
+        return url
 
-    @staticmethod
-    def _messages_to_forge(messages: List[Dict[str, str]]) -> dict:
-        """
-        Convert a standard ``[{role, content}, ...]`` messages list into
-        the Forge ``ChatRequest`` shape: ``{text, conversation, scope}``.
+    async def _ensure_connection(self):
+        """Connect and perform MCP initialize handshake if not already done."""
+        aio = await _get_aiohttp()
+        if self._ws is not None and not self._ws.closed:
+            return
 
-        The *last user message* becomes ``text``; the full history
-        (including that message) is sent as ``conversation``.
-        """
-        conversation = [
-            {"role": m["role"], "content": m["content"]}
-            for m in messages
-        ]
+        # Fast pre-check: if the forge daemon port is not reachable, fail
+        # immediately instead of waiting for TCP/WebSocket timeout (~10 s).
+        import socket as _socket
+        from urllib.parse import urlparse as _urlparse
+        _parsed = _urlparse(
+            self.base_url.replace("ws://", "http://").replace("wss://", "https://")
+        )
+        _forge_host = _parsed.hostname or "127.0.0.1"
+        _forge_port = _parsed.port or 42070
+        try:
+            _sock = _socket.create_connection((_forge_host, _forge_port), timeout=0.5)
+            _sock.close()
+        except OSError:
+            raise ConnectionError(
+                f"Forge daemon not reachable at {_forge_host}:{_forge_port} "
+                "(start the NAVIG Forge extension in VS Code)"
+            )
 
-        # Extract the last user message as the primary text
-        text = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                text = m["content"]
-                break
-        if not text and messages:
-            text = messages[-1]["content"]
+        session = await self._get_session()
+        self._ws = await session.ws_connect(
+            self._ws_url(),
+            timeout=aio.ClientTimeout(total=10),
+            heartbeat=30,
+        )
+        self._initialized = False
 
-        return {
-            "text": text,
-            "conversation": conversation,
-            "scope": "personal",
+        # MCP initialize handshake
+        if not self._initialized:
+            self._request_id += 1
+            init_req = {
+                "jsonrpc": "2.0",
+                "id": self._request_id,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "navig-daemon", "version": "1.0.0"},
+                },
+            }
+            await self._ws.send_json(init_req)
+            resp = await self._ws.receive_json(timeout=10)
+            if resp.get("error"):
+                raise RuntimeError(f"MCP initialize failed: {resp['error']}")
+
+            # Send initialized notification
+            self._request_id += 1
+            await self._ws.send_json({
+                "jsonrpc": "2.0",
+                "id": self._request_id,
+                "method": "initialized",
+                "params": {},
+            })
+            # Read ack (initialized response)
+            await self._ws.receive_json(timeout=5)
+            self._initialized = True
+
+    async def _call_tool(self, tool_name: str, arguments: dict) -> dict:
+        """Send MCP tools/call and return parsed result."""
+        import json as _json
+
+        await self._ensure_connection()
+        self._request_id += 1
+        req = {
+            "jsonrpc": "2.0",
+            "id": self._request_id,
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments},
         }
+        await self._ws.send_json(req)
+        resp = await self._ws.receive_json(timeout=120)
 
-    # ── core API ──
+        if resp.get("error"):
+            raise RuntimeError(f"MCP tool error: {resp['error'].get('message', resp['error'])}")
+
+        result = resp.get("result", {})
+        if result.get("isError"):
+            content_text = ""
+            for c in result.get("content", []):
+                if c.get("type") == "text":
+                    content_text += c.get("text", "")
+            raise RuntimeError(f"MCP tool '{tool_name}' failed: {content_text}")
+
+        # Parse text content
+        for c in result.get("content", []):
+            if c.get("type") == "text":
+                try:
+                    return _json.loads(c["text"])
+                except (_json.JSONDecodeError, KeyError):
+                    return {"text": c.get("text", "")}
+        return {}
 
     async def chat(
         self,
@@ -411,60 +470,59 @@ class ForgeProvider(LLMProvider):
         max_tokens: int = 4096,
         **kwargs,
     ) -> LLMResponse:
-        session = await self._get_session()
-        url = f"{self.base_url}/vscode-llm/chat"
-        payload = self._messages_to_forge(messages)
-        if model:
-            payload["model"] = model
-
         t0 = time.monotonic()
-        aio = await _get_aiohttp()
-        async with session.post(
-            url,
-            json=payload,
-            headers=self._auth_headers(),
-            timeout=aio.ClientTimeout(total=120),
-        ) as resp:
-            if resp.status == 401:
-                raise RuntimeError(
-                    "Forge LLM server returned 401 Unauthorized — "
-                    "check forge.token in ~/.navig/config.yaml"
-                )
-            if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"Forge LLM error ({resp.status}): {text}")
-            data = await resp.json()
-        latency = int((time.monotonic() - t0) * 1000)
 
-        # Forge ChatResponse: {text, metadata?: {model, provider, latencyMs, tokenUsage?}}
-        meta = data.get("metadata") or {}
-        token_usage = meta.get("tokenUsage") or {}
+        tool_args: dict = {
+            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+            "max_tokens": max_tokens,
+        }
+        if model:
+            tool_args["model"] = model
+        # Forward purpose hint so navig-bridge picks the optimal Copilot model
+        purpose = kwargs.get("purpose")
+        if purpose:
+            tool_args["purpose"] = purpose
+
+        result = await self._call_tool("vscode_llm_chat", tool_args)
+
+        latency = int((time.monotonic() - t0) * 1000)
+        text = result.get("text", "")
+        model_used = result.get("model_used", model or "copilot-mcp")
+        model_name = result.get("model_name", "")
 
         return LLMResponse(
-            content=data.get("text", ""),
-            model=meta.get("model", model or "copilot"),
+            content=text,
+            model=model_used,
             provider=self.name,
             latency_ms=latency,
-            prompt_tokens=token_usage.get("prompt", 0),
-            completion_tokens=token_usage.get("completion", 0),
             finish_reason="stop",
-            raw=data,
+            raw={"model_name": model_name, "via": "mcp_websocket"},
         )
 
     async def is_available(self) -> bool:
-        """Probe the /vscode-llm/health endpoint."""
+        """Probe via MCP ping."""
         try:
-            session = await self._get_session()
-            async with session.get(
-                f"{self.base_url}/vscode-llm/health",
-                timeout=_timeout(3),
-            ) as r:
-                if r.status != 200:
-                    return False
-                body = await r.json()
-                return body.get("status") == "ready"
+            await self._ensure_connection()
+            self._request_id += 1
+            await self._ws.send_json({
+                "jsonrpc": "2.0",
+                "id": self._request_id,
+                "method": "ping",
+                "params": {},
+            })
+            resp = await self._ws.receive_json(timeout=5)
+            return not resp.get("error")
         except Exception:
+            self._ws = None
+            self._initialized = False
             return False
+
+    async def close(self):
+        if self._ws and not self._ws.closed:
+            await self._ws.close()
+        self._ws = None
+        self._initialized = False
+        await super().close()
 
     async def chat_stream(
         self,
@@ -475,55 +533,11 @@ class ForgeProvider(LLMProvider):
         **kwargs,
     ):
         """
-        Stream text chunks from the Forge LLM bridge via SSE.
-
-        Uses ``POST /vscode-llm/chat/stream`` which returns Server-Sent
-        Events.  Each event carries ``{text, done, metadata?}``.
+        MCP tools/call is not streaming, so fall back to buffered chat
+        and yield the full response as a single chunk.
         """
-        import json as _json
-
-        session = await self._get_session()
-        url = f"{self.base_url}/vscode-llm/chat/stream"
-        payload = self._messages_to_forge(messages)
-        if model:
-            payload["model"] = model
-
-        aio = await _get_aiohttp()
-        async with session.post(
-            url,
-            json=payload,
-            headers=self._auth_headers(),
-            timeout=aio.ClientTimeout(total=120),
-        ) as resp:
-            if resp.status == 401:
-                raise RuntimeError(
-                    "Forge LLM server returned 401 Unauthorized — "
-                    "check forge.token in ~/.navig/config.yaml"
-                )
-            if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"Forge LLM stream error ({resp.status}): {text}")
-
-            # Parse SSE: lines starting with "data: "
-            async for line in resp.content:
-                decoded = line.decode("utf-8", errors="replace").strip()
-                if not decoded.startswith("data: "):
-                    continue
-                raw = decoded[6:]  # strip "data: " prefix
-                try:
-                    event = _json.loads(raw)
-                except _json.JSONDecodeError:
-                    continue
-
-                if event.get("error"):
-                    raise RuntimeError(f"Forge stream error: {event['error']}")
-
-                text_chunk = event.get("text", "")
-                if text_chunk:
-                    yield text_chunk
-
-                if event.get("done"):
-                    break
+        resp = await self.chat(model, messages, temperature, max_tokens, **kwargs)
+        yield resp.content
 
 
 # ── GitHub Models (Azure AI Inference) ──────────────────────────────
@@ -795,7 +809,6 @@ class _ServerError(Exception):
 # ── Factory ─────────────────────────────────────────────────────────
 
 _PROVIDER_MAP = {
-    "forge": ForgeProvider,
     "github_models": GitHubModelsProvider,
     "github": GitHubModelsProvider,
     "ollama": OllamaProvider,
