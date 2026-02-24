@@ -21,6 +21,7 @@ param(
     [string]$TelegramToken = $(if ($env:NAVIG_TELEGRAM_BOT_TOKEN) { $env:NAVIG_TELEGRAM_BOT_TOKEN } else { $env:TELEGRAM_BOT_TOKEN }),
     [string]$GitDir = "$HOME\navig-core",
     [switch]$Dev,
+    [switch]$Production,
     [switch]$DryRun,
     [switch]$NoConfirm,
     [switch]$Verbose,
@@ -32,7 +33,7 @@ $ErrorActionPreference = "Stop"
 # ── Constants ─────────────────────────────────────────────────
 $REPO_URL = "https://github.com/navig-run/core.git"
 $MIN_PYTHON_MAJOR = 3
-$MIN_PYTHON_MINOR = 8
+$MIN_PYTHON_MINOR = 10
 
 # ── Taglines ──────────────────────────────────────────────────
 $TAGLINES = @(
@@ -104,6 +105,29 @@ Environment variables:
 
 # ── Python Detection ──────────────────────────────────────────
 function Find-Python {
+    # Prefer known-good user-installed Python paths over system/server paths
+    $preferredPaths = @(
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python314-32\python.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python314\python.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python313-32\python.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python313\python.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python312\python.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python311\python.exe")
+    )
+    foreach ($p in $preferredPaths) {
+        if (Test-Path $p) {
+            try {
+                $verOutput = & $p --version 2>&1
+                if ($verOutput -match '(\d+)\.(\d+)\.(\d+)') {
+                    $major = [int]$Matches[1]; $minor = [int]$Matches[2]
+                    if ($major -ge $MIN_PYTHON_MAJOR -and $minor -ge $MIN_PYTHON_MINOR) {
+                        Write-Ok "Python $verOutput found at $p"
+                        return $p
+                    }
+                }
+            } catch {}
+        }
+    }
     $candidates = @("python", "python3", "py -3")
 
     foreach ($cmd in $candidates) {
@@ -296,13 +320,24 @@ function Install-NavigGit {
         }
     }
 
-    Write-Step "Installing NAVIG in editable mode..."
+if ($Production) {
+        Write-Step "Installing NAVIG from source (production mode — no editable install)..."
+    } else {
+        Write-Step "Installing NAVIG in editable mode..."
+    }
     $pipParts = $PipCmd -split ' '
     $exe = $pipParts[0]
     $pipArgs = @()
     if ($pipParts.Length -gt 1) { $pipArgs += $pipParts[1..($pipParts.Length-1)] }
 
-    if ($Extras) {
+    if ($Production) {
+        # Non-editable: no __editable__ finder overhead (~20ms startup savings)
+        if ($Extras) {
+            $pipArgs += @("install", "${repoDir}[$Extras]")
+        } else {
+            $pipArgs += @("install", $repoDir)
+        }
+    } elseif ($Extras) {
         $pipArgs += @("install", "-e", "${repoDir}[$Extras]")
     } else {
         $pipArgs += @("install", "-e", $repoDir)
@@ -396,12 +431,16 @@ function Test-NavigInstall {
 
     # Check common pip install locations
     $pipPaths = @(
-        (Join-Path $HOME "AppData\Roaming\Python\Python312\Scripts"),
-        (Join-Path $HOME "AppData\Roaming\Python\Python311\Scripts"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python314-32\Scripts"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python314\Scripts"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python313-32\Scripts"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python313\Scripts"),
         (Join-Path $HOME "AppData\Local\Programs\Python\Python312\Scripts"),
         (Join-Path $HOME "AppData\Local\Programs\Python\Python311\Scripts"),
-        "C:\Python312\Scripts",
-        "C:\Python311\Scripts"
+        (Join-Path $HOME "AppData\Roaming\Python\Python313\Scripts"),
+        (Join-Path $HOME "AppData\Roaming\Python\Python312\Scripts"),
+        (Join-Path $HOME "AppData\Roaming\Python\Python311\Scripts"),
+        "C:\Python313\Scripts",
     )
 
     foreach ($p in $pipPaths) {

@@ -16,16 +16,42 @@ import re
 from datetime import datetime
 from typing import Dict, Any
 
-from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from navig.config import get_config_manager
 from navig.remote import RemoteOperations
+from navig.console_helper import console, _safe_symbol
 
 
-console = Console()
+def _traffic_light(val: float, high: int = 80, med: int = 60) -> str:
+    """Return a safe terminal status string for a percentage metric."""
+    if val > high:
+        return _safe_symbol("\U0001f534", "[!]") + " HIGH"
+    if val > med:
+        return _safe_symbol("\U0001f7e1", "[~]") + " MEDIUM"
+    return _safe_symbol("\U0001f7e2", "[+]") + " OK"
+
+
+def _disk_status(usage: float, threshold: int) -> str:
+    """Return a safe terminal status string for disk usage against a threshold."""
+    if usage > threshold:
+        return _safe_symbol("\U0001f534", "[!]") + " ALERT"
+    if usage > threshold - 10:
+        return _safe_symbol("\U0001f7e1", "[~]") + " WARNING"
+    return _safe_symbol("\U0001f7e2", "[+]") + " OK"
+
+
+def _health_icon(health: str) -> str:
+    """Return Rich-markup health icon with ASCII fallback for narrow terminals."""
+    if health == "healthy":
+        return f"[green]{_safe_symbol(chr(0x1f7e2), 'OK')} healthy[/green]"
+    if health == "stopped":
+        return f"[red]{_safe_symbol(chr(0x1f534), '!!')} stopped[/red]"
+    if health == "not-installed":
+        return f"[dim]{_safe_symbol(chr(0x26aa), '--')} N/A[/dim]"
+    return f"[yellow]{_safe_symbol(chr(0x1f7e1), '?')} unknown[/yellow]"
 
 
 def monitor_resources(options: Dict[str, Any]) -> None:
@@ -56,83 +82,92 @@ def monitor_resources(options: Dict[str, Any]) -> None:
         console.print("[yellow]DRY RUN:[/yellow] Would monitor resources on", app_name)
         return
     
-    console.print(f"\n[cyan]📊 Monitoring Resources:[/cyan] {app_name}\n")
+    console.print(f"\n[cyan]{_safe_symbol(chr(0x1f4ca), '>>')} Monitoring Resources:[/cyan] {app_name}\n")
     
     metrics = {}
     alerts = []
     
+    # ── QUANTUM VELOCITY E1: all 6 metrics in ONE SSH round-trip ─────────────
+    # Previously: 6 separate SSH calls (~6× round-trip latency).
+    # Now: 1 batched command with delimited sections (~1× round-trip).
+    _BATCH = (
+        "echo '===CPU==='; top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1; "
+        "echo '===MEM==='; free | grep Mem | awk '{print ($3/$2) * 100.0, $3, $2}'; "
+        "echo '===DISK==='; df -h / | tail -1 | awk '{print $5, $3, $2, $4}' | sed 's/%//'; "
+        "echo '===LOAD==='; uptime | awk -F'load average:' '{print $2}' | xargs; "
+        "echo '===CONN==='; ss -s 2>/dev/null | grep 'TCP:' | awk '{print $2}'; "
+        "echo '===UPTIME==='; uptime -p"
+    )
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
-        transient=True
+        transient=True,
     ) as progress:
-        task = progress.add_task("Collecting metrics...", total=None)
-        
-        # CPU usage
-        cpu_cmd = "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1"
-        cpu_result = remote.execute_command(cpu_cmd, server_config)
-        if cpu_result.returncode == 0:
-            cpu_usage = float(cpu_result.stdout.strip())
-            metrics['cpu'] = round(cpu_usage, 1)
-            
+        progress.add_task("Collecting metrics\u2026", total=None)
+        batch_result = remote.execute_command(_BATCH, server_config)
+
+    # ── Parse delimited output ──────────────────────────────────────────────
+    if batch_result.returncode == 0:
+        _sections: dict = {}
+        _cur_key = None
+        for _line in batch_result.stdout.splitlines():
+            if _line.startswith("===") and _line.endswith("==="):
+                _cur_key = _line.strip("=").strip()
+                _sections[_cur_key] = []
+            elif _cur_key is not None:
+                _sections[_cur_key].append(_line)
+
+        # CPU
+        try:
+            cpu_usage = float(_sections.get("CPU", ["0"])[0].strip())
+            metrics["cpu"] = round(cpu_usage, 1)
             if cpu_usage > 80:
                 alerts.append(f"High CPU usage: {cpu_usage}%")
-        
-        # Memory usage
-        mem_cmd = "free | grep Mem | awk '{print ($3/$2) * 100.0, $3, $2}'"
-        mem_result = remote.execute_command(mem_cmd, server_config)
-        if mem_result.returncode == 0:
-            parts = mem_result.stdout.strip().split()
-            mem_usage = float(parts[0])
-            mem_used = int(parts[1])
-            mem_total = int(parts[2])
-            
-            metrics['memory'] = {
-                'usage_percent': round(mem_usage, 1),
-                'used_kb': mem_used,
-                'total_kb': mem_total,
-                'used_mb': round(mem_used / 1024, 1),
-                'total_mb': round(mem_total / 1024, 1)
+        except (ValueError, IndexError):
+            pass
+
+        # Memory
+        try:
+            _p = _sections.get("MEM", ["0 0 0"])[0].strip().split()
+            mem_usage = float(_p[0])
+            mem_used  = int(_p[1])
+            mem_total = int(_p[2])
+            metrics["memory"] = {
+                "usage_percent": round(mem_usage, 1),
+                "used_kb":       mem_used,
+                "total_kb":      mem_total,
+                "used_mb":       round(mem_used  / 1024, 1),
+                "total_mb":      round(mem_total / 1024, 1),
             }
-            
             if mem_usage > 80:
                 alerts.append(f"High memory usage: {mem_usage}%")
-        
-        # Disk usage (root partition)
-        disk_cmd = "df -h / | tail -1 | awk '{print $5, $3, $2, $4}' | sed 's/%//'"
-        disk_result = remote.execute_command(disk_cmd, server_config)
-        if disk_result.returncode == 0:
-            parts = disk_result.stdout.strip().split()
-            disk_usage = int(parts[0])
-            
-            metrics['disk'] = {
-                'usage_percent': disk_usage,
-                'used': parts[1],
-                'total': parts[2],
-                'available': parts[3]
+        except (ValueError, IndexError):
+            pass
+
+        # Disk
+        try:
+            _p = _sections.get("DISK", ["0 0 0 0"])[0].strip().split()
+            disk_usage = int(_p[0])
+            metrics["disk"] = {
+                "usage_percent": disk_usage,
+                "used":          _p[1],
+                "total":         _p[2],
+                "available":     _p[3],
             }
-            
             if disk_usage > 80:
                 alerts.append(f"High disk usage: {disk_usage}%")
-        
-        # Load average
-        load_cmd = "uptime | awk -F'load average:' '{print $2}' | xargs"
-        load_result = remote.execute_command(load_cmd, server_config)
-        if load_result.returncode == 0:
-            metrics['load_average'] = load_result.stdout.strip()
-        
-        # Network connections
-        conn_cmd = "ss -s | grep 'TCP:' | awk '{print $2}'"
-        conn_result = remote.execute_command(conn_cmd, server_config)
-        if conn_result.returncode == 0:
-            metrics['tcp_connections'] = conn_result.stdout.strip()
-        
-        # Uptime
-        uptime_cmd = "uptime -p"
-        uptime_result = remote.execute_command(uptime_cmd, server_config)
-        if uptime_result.returncode == 0:
-            metrics['uptime'] = uptime_result.stdout.strip()
+        except (ValueError, IndexError):
+            pass
+
+        # Scalar metrics
+        if _sections.get("LOAD"):
+            metrics["load_average"]    = _sections["LOAD"][0].strip()
+        if _sections.get("CONN"):
+            metrics["tcp_connections"] = _sections["CONN"][0].strip()
+        if _sections.get("UPTIME"):
+            metrics["uptime"]          = _sections["UPTIME"][0].strip()
     
     # Display results
     if options.get('json_output'):
@@ -152,13 +187,13 @@ def monitor_resources(options: Dict[str, Any]) -> None:
         
         # CPU row
         cpu_val = metrics.get('cpu', 0)
-        cpu_status = "🔴 HIGH" if cpu_val > 80 else ("🟡 MEDIUM" if cpu_val > 60 else "🟢 OK")
+        cpu_status = _traffic_light(cpu_val)
         table.add_row("CPU Usage", f"{cpu_val}%", cpu_status)
         
         # Memory row
         mem = metrics.get('memory', {})
         mem_val = mem.get('usage_percent', 0)
-        mem_status = "🔴 HIGH" if mem_val > 80 else ("🟡 MEDIUM" if mem_val > 60 else "🟢 OK")
+        mem_status = _traffic_light(mem_val)
         table.add_row(
             "Memory Usage",
             f"{mem_val}% ({mem.get('used_mb', 0)} MB / {mem.get('total_mb', 0)} MB)",
@@ -168,7 +203,7 @@ def monitor_resources(options: Dict[str, Any]) -> None:
         # Disk row
         disk = metrics.get('disk', {})
         disk_val = disk.get('usage_percent', 0)
-        disk_status = "🔴 HIGH" if disk_val > 80 else ("🟡 MEDIUM" if disk_val > 60 else "🟢 OK")
+        disk_status = _traffic_light(disk_val)
         table.add_row(
             "Disk Usage",
             f"{disk_val}% ({disk.get('used', '0')} / {disk.get('total', '0')})",
@@ -176,19 +211,20 @@ def monitor_resources(options: Dict[str, Any]) -> None:
         )
         
         # Load average
-        table.add_row("Load Average", metrics.get('load_average', 'N/A'), "ℹ️ INFO")
+        _info = _safe_symbol("\u2139", "[i]") + " INFO"
+        table.add_row("Load Average", metrics.get('load_average', 'N/A'), _info)
         
         # Connections
-        table.add_row("TCP Connections", metrics.get('tcp_connections', 'N/A'), "ℹ️ INFO")
+        table.add_row("TCP Connections", metrics.get('tcp_connections', 'N/A'), _info)
         
         # Uptime
-        table.add_row("Uptime", metrics.get('uptime', 'N/A'), "ℹ️ INFO")
+        table.add_row("Uptime", metrics.get('uptime', 'N/A'), _info)
         
         console.print(table)
         
         # Display alerts
         if alerts:
-            console.print(f"\n[yellow]⚠ Alerts ({len(alerts)}):[/yellow]")
+            console.print(f"\n[yellow]{_safe_symbol(chr(0x26a0), '!')} Alerts ({len(alerts)}):[/yellow]")
             for alert in alerts:
                 console.print(f"  [yellow]•[/yellow] {alert}")
         else:
@@ -217,7 +253,7 @@ def monitor_disk(threshold: int, options: Dict[str, Any]) -> None:
         console.print(f"[yellow]DRY RUN:[/yellow] Would check disk space on {app_name} (threshold: {threshold}%)")
         return
     
-    console.print(f"\n[cyan]💾 Disk Space Monitoring:[/cyan] {app_name}\n")
+    console.print(f"\n[cyan]{_safe_symbol(chr(0x1f4be), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n")
     
     # Get all disk partitions
     disk_cmd = "df -h | grep -E '^/dev/'"
@@ -272,7 +308,7 @@ def monitor_disk(threshold: int, options: Dict[str, Any]) -> None:
         
         for disk in disks:
             usage = disk['usage_percent']
-            status = "🔴 ALERT" if usage > threshold else ("🟡 WARNING" if usage > threshold - 10 else "🟢 OK")
+            status = _disk_status(usage, threshold)
             
             table.add_row(
                 disk['mount'],
@@ -287,7 +323,7 @@ def monitor_disk(threshold: int, options: Dict[str, Any]) -> None:
         console.print(table)
         
         if alerts:
-            console.print(f"\n[red]⚠ {len(alerts)} Alert(s):[/red]")
+            console.print(f"\n[red]{_safe_symbol(chr(0x26a0), '!')} {len(alerts)} Alert(s):[/red]")
             for alert in alerts:
                 console.print(f"  [red]•[/red] {alert}")
         else:
@@ -317,7 +353,7 @@ def monitor_services(options: Dict[str, Any]) -> None:
         console.print(f"[yellow]DRY RUN:[/yellow] Would check services on {app_name}")
         return
     
-    console.print(f"\n[cyan]🔧 Service Health Check:[/cyan] {app_name}\n")
+    console.print(f"\n[cyan]{_safe_symbol(chr(0x1f527), '>>')} Service Health Check:[/cyan] {app_name}\n")
     
     # Critical services to monitor
     services = [
@@ -342,37 +378,47 @@ def monitor_services(options: Dict[str, Any]) -> None:
     service_status = []
     inactive_services = []
     
+    # ── QUANTUM VELOCITY E2: all service checks in ONE SSH round-trip ─────────
+    # Previously: 1 SSH call per service × 16 services = 16 round-trips.
+    # Now: 1 batched command → parse delimited output.
+    _BATCH_SVC = "; ".join(
+        f"echo '===SVC:{s}==='; systemctl is-active {s} 2>/dev/null || echo 'not-installed'"
+        for s in services
+    )
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
-        transient=True
+        transient=True,
     ) as progress:
-        task = progress.add_task("Checking services...", total=len(services))
-        
-        for service in services:
-            status_cmd = f"systemctl is-active {service} 2>/dev/null || echo 'not-installed'"
-            result = remote.execute_command(status_cmd, server_config)
-            
-            status = result.stdout.strip() if result.returncode == 0 else 'unknown'
-            
-            service_info = {
-                'name': service,
-                'status': status
-            }
-            
-            if status == 'active':
-                service_info['health'] = 'healthy'
-            elif status == 'inactive':
-                service_info['health'] = 'stopped'
-                inactive_services.append(service)
-            elif status == 'not-installed':
-                service_info['health'] = 'not-installed'
-            else:
-                service_info['health'] = 'unknown'
-            
-            service_status.append(service_info)
-            progress.update(task, advance=1)
+        progress.add_task("Checking services\u2026", total=None)
+        svc_batch = remote.execute_command(_BATCH_SVC, server_config)
+
+    # ── Parse delimited output ──────────────────────────────────────────────
+    _svc_map: dict = {}
+    if svc_batch.returncode == 0:
+        _cur_svc = None
+        for _line in svc_batch.stdout.splitlines():
+            if _line.startswith("===SVC:") and _line.endswith("==="):
+                _cur_svc = _line[7:-3].strip()
+                _svc_map[_cur_svc] = []
+            elif _cur_svc is not None and _line.strip():
+                _svc_map[_cur_svc].append(_line.strip())
+
+    for service in services:
+        status = (_svc_map.get(service, ["unknown"])[0] or "unknown").strip()
+        service_info = {"name": service, "status": status}
+        if status == "active":
+            service_info["health"] = "healthy"
+        elif status == "inactive":
+            service_info["health"] = "stopped"
+            inactive_services.append(service)
+        elif status == "not-installed":
+            service_info["health"] = "not-installed"
+        else:
+            service_info["health"] = "unknown"
+        service_status.append(service_info)
     
     # Display results
     if options.get('json_output'):
@@ -394,23 +440,23 @@ def monitor_services(options: Dict[str, Any]) -> None:
             
             if status == 'active':
                 status_icon = "[green]✓ active[/green]"
-                health_icon = "[green]🟢 healthy[/green]"
+                health_icon = _health_icon("healthy")
             elif status == 'inactive':
                 status_icon = "[red]✗ inactive[/red]"
-                health_icon = "[red]🔴 stopped[/red]"
+                health_icon = _health_icon("stopped")
             elif status == 'not-installed':
                 status_icon = "[dim]- not installed[/dim]"
-                health_icon = "[dim]⚪ N/A[/dim]"
+                health_icon = _health_icon("not-installed")
             else:
                 status_icon = f"[yellow]? {status}[/yellow]"
-                health_icon = "[yellow]🟡 unknown[/yellow]"
+                health_icon = _health_icon("unknown")
             
             table.add_row(svc['name'], status_icon, health_icon)
         
         console.print(table)
         
         if inactive_services:
-            console.print(f"\n[yellow]⚠ {len(inactive_services)} service(s) inactive:[/yellow]")
+            console.print(f"\n[yellow]{_safe_symbol(chr(0x26a0), '!')} {len(inactive_services)} service(s) inactive:[/yellow]")
             for svc in inactive_services:
                 console.print(f"  [yellow]•[/yellow] {svc}")
         else:
@@ -444,41 +490,50 @@ def monitor_network(options: Dict[str, Any]) -> None:
         console.print(f"[yellow]DRY RUN:[/yellow] Would check network stats on {app_name}")
         return
     
-    console.print(f"\n[cyan]🌐 Network Statistics:[/cyan] {app_name}\n")
+    console.print(f"\n[cyan]{_safe_symbol(chr(0x1f310), '>>')} Network Statistics:[/cyan] {app_name}\n")
     
     metrics = {}
     
+    # ── QUANTUM VELOCITY E3: all network metrics in ONE SSH round-trip ─────────
+    _BATCH_NET = (
+        "echo '===CONN==='; ss -s; "
+        "echo '===LISTEN==='; ss -tuln 2>/dev/null | grep -c LISTEN || echo 0; "
+        "echo '===ESTAB==='; ss -tn 2>/dev/null | grep -c ESTAB || echo 0; "
+        "echo '===IFACE==='; ip -s link show | grep -E '^[0-9]+:' | awk '{print $2}' | sed 's/:$//' | head -5"
+    )
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
-        transient=True
+        transient=True,
     ) as progress:
-        task = progress.add_task("Collecting network stats...", total=None)
-        
-        # Connection summary
-        conn_cmd = "ss -s"
-        conn_result = remote.execute_command(conn_cmd, server_config)
-        if conn_result.returncode == 0:
-            metrics['connection_summary'] = conn_result.stdout.strip()
-        
-        # Listening ports
-        listen_cmd = "ss -tuln | grep LISTEN | wc -l"
-        listen_result = remote.execute_command(listen_cmd, server_config)
-        if listen_result.returncode == 0:
-            metrics['listening_ports'] = int(listen_result.stdout.strip())
-        
-        # Established connections
-        estab_cmd = "ss -tn | grep ESTAB | wc -l"
-        estab_result = remote.execute_command(estab_cmd, server_config)
-        if estab_result.returncode == 0:
-            metrics['established_connections'] = int(estab_result.stdout.strip())
-        
-        # Network interfaces
-        iface_cmd = "ip -s link show | grep -E '^[0-9]+:' | awk '{print $2}' | sed 's/:$//' | head -5"
-        iface_result = remote.execute_command(iface_cmd, server_config)
-        if iface_result.returncode == 0:
-            metrics['interfaces'] = iface_result.stdout.strip().split('\n')
+        progress.add_task("Collecting network stats\u2026", total=None)
+        net_batch = remote.execute_command(_BATCH_NET, server_config)
+
+    # ── Parse delimited output ──────────────────────────────────────────────
+    if net_batch.returncode == 0:
+        _net_sections: dict = {}
+        _cur_net = None
+        for _line in net_batch.stdout.splitlines():
+            if _line.startswith("===") and _line.endswith("==="):
+                _cur_net = _line.strip("=").strip()
+                _net_sections[_cur_net] = []
+            elif _cur_net is not None:
+                _net_sections[_cur_net].append(_line)
+
+        if _net_sections.get("CONN"):
+            metrics["connection_summary"] = "\n".join(_net_sections["CONN"]).strip()
+        try:
+            metrics["listening_ports"] = int((_net_sections.get("LISTEN", ["0"])[0] or "0").strip())
+        except ValueError:
+            pass
+        try:
+            metrics["established_connections"] = int((_net_sections.get("ESTAB", ["0"])[0] or "0").strip())
+        except ValueError:
+            pass
+        if _net_sections.get("IFACE"):
+            metrics["interfaces"] = [l for l in _net_sections["IFACE"] if l.strip()]
     
     # Display results
     if options.get('json_output'):
@@ -532,7 +587,7 @@ def health_check(options: Dict[str, Any]) -> None:
         console.print(f"[yellow]DRY RUN:[/yellow] Would run comprehensive health check on {app_name}")
         return
     
-    console.print(f"\n[bold cyan]🏥 Comprehensive Health Check:[/bold cyan] {app_name}\n")
+    console.print(f"\n[bold cyan]{_safe_symbol(chr(0x1f3e5), '>>')} Comprehensive Health Check:[/bold cyan] {app_name}\n")
     
     # Run all monitoring checks
     console.print("[cyan]→[/cyan] Checking resources...")
@@ -697,7 +752,7 @@ def generate_report(options: Dict[str, Any]) -> None:
     console.print(f"  • Alerts: {len(report['alerts'])}")
     
     if report['alerts']:
-        console.print("\n[yellow]⚠ Alerts:[/yellow]")
+        console.print(f"\n[yellow]{_safe_symbol(chr(0x26a0), '!')} Alerts:[/yellow]")
         for alert in report['alerts']:
             console.print(f"  [yellow]•[/yellow] {alert}")
     else:
