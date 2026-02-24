@@ -438,12 +438,23 @@ install_navig_git() {
         fi
     fi
 
-    echo -e "${WARN}→${NC} Installing NAVIG in editable mode..."
-    local pip_args=("install" "-e")
-    if [[ -n "$EXTRAS" ]]; then
-        pip_args+=("${repo_dir}[${EXTRAS}]")
+    if [[ "${PRODUCTION:-0}" == "1" ]]; then
+        echo -e "${WARN}→${NC} Installing NAVIG from source (production — no editable install)..."
+        # Non-editable: no __editable__ finder overhead (~20ms startup savings)
+        local pip_args=("install")
+        if [[ -n "$EXTRAS" ]]; then
+            pip_args+=("${repo_dir}[${EXTRAS}]")
+        else
+            pip_args+=("$repo_dir")
+        fi
     else
-        pip_args+=("$repo_dir")
+        echo -e "${WARN}→${NC} Installing NAVIG in editable mode..."
+        local pip_args=("install" "-e")
+        if [[ -n "$EXTRAS" ]]; then
+            pip_args+=("${repo_dir}[${EXTRAS}]")
+        else
+            pip_args+=("$repo_dir")
+        fi
     fi
 
     $PIP_CMD "${pip_args[@]}"
