@@ -32,6 +32,13 @@ except ImportError:
     aiohttp = None
     AIOHTTP_AVAILABLE = False
 
+# Safe no-op fallback for @web.middleware when aiohttp is not installed.
+# Prevents AttributeError at class parse time during unit tests / imports.
+def _noop_deco(fn):  # pragma: no cover
+    return fn
+
+_web_middleware = web.middleware if AIOHTTP_AVAILABLE else _noop_deco
+
 from navig.config import get_config_manager
 from navig.debug_logger import get_debug_logger
 from navig.gateway.session_manager import SessionManager, Session
@@ -40,6 +47,10 @@ from navig.gateway.system_events import SystemEventQueue
 from navig.gateway.config_watcher import ConfigWatcher
 from navig.agent.proactive.engine import get_proactive_engine
 from navig.workspace_ownership import USER_WORKSPACE_DIR
+from navig.gateway.policy_gate import PolicyGate
+from navig.gateway.audit_log import AuditLog
+from navig.gateway.billing_emitter import BillingEmitter
+from navig.gateway.cooldown import CooldownTracker
 
 # Lazy imports for optional modules
 _approval_manager = None
@@ -61,7 +72,7 @@ class GatewayConfig:
         
         self.enabled = gateway_cfg.get('enabled', True)
         self.port = gateway_cfg.get('port', 8789)
-        self.host = gateway_cfg.get('host', '0.0.0.0')
+        self.host = gateway_cfg.get('host', '127.0.0.1')
         self.auth_token = gateway_cfg.get('auth', {}).get('token')
         
         # Storage directory
@@ -141,7 +152,8 @@ class NavigGateway:
         self.channels: Dict[str, Any] = {}
         
         # Queue for pending messages
-        self._message_queue: asyncio.Queue = asyncio.Queue()
+        # Bounded queue — prevents OOM on message floods (P1-2)
+        self._message_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
         self._queue_task: Optional[asyncio.Task] = None
         
         # New autonomous modules (lazy initialized)
@@ -156,6 +168,14 @@ class NavigGateway:
         self._auth_attempts: Dict[str, list] = defaultdict(list)
         self._rate_limit_window = 60  # seconds
         self._rate_limit_max_failures = 5
+
+        # ── Safety & Audit ─────────────────────────────────────────────────
+        raw_cfg = self.config_manager.global_config or {}
+        raw_gateway_cfg: Dict[str, Any] = raw_cfg.get("gateway", {}) if isinstance(raw_cfg, dict) else {}
+        self.policy_gate      = PolicyGate.from_config(raw_gateway_cfg)
+        self.audit_log        = AuditLog()
+        self.billing_emitter  = BillingEmitter()
+        self.cooldown         = CooldownTracker(default_cooldown_seconds=30.0)
         
         logger.info("NavigGateway initialized", extra={
             "port": self.config.port,
@@ -177,6 +197,13 @@ class NavigGateway:
         # Initialize config watcher
         self.config_watcher = ConfigWatcher(self)
         
+        # Initialize formation registry (loaded once at gateway start)
+        try:
+            from navig.formations.registry import get_registry
+            get_registry().initialize(self.storage_dir / 'workspace')
+        except Exception as e:
+            logger.error(f"Failed to initialize formation registry: {e}")
+        
         # Start HTTP server
         await self._start_http_server()
         
@@ -192,6 +219,9 @@ class NavigGateway:
         # Start message queue processor
         self._queue_task = asyncio.create_task(self._process_message_queue())
         
+        # Ensure mesh_token exists (auto-generate if missing)
+        await self._ensure_mesh_token()
+
         # Initialize autonomous modules
         await self._init_autonomous_modules()
         
@@ -239,7 +269,30 @@ class NavigGateway:
         
         # Stop config watcher
         await self.config_watcher.stop()
-        
+
+        # Stop Flux mesh discovery
+        mesh_discovery = getattr(self, "_mesh_discovery", None)
+        if mesh_discovery is not None:
+            try:
+                await mesh_discovery.stop()
+            except Exception as e:
+                logger.warning("[mesh] Stop error: %s", e)
+
+        # Stop autonomous modules (comms_router, task_worker, etc.) — P1-11
+        comms_router = getattr(self, "comms_router", None)
+        if comms_router is not None:
+            try:
+                await comms_router.stop()
+            except Exception:
+                logger.exception("[comms] Stop error")
+
+        task_worker = getattr(self, "task_worker", None)
+        if task_worker is not None:
+            try:
+                await task_worker.stop()
+            except Exception:
+                logger.exception("[task_worker] Stop error")
+
         # Stop HTTP server
         if self._runner:
             await self._runner.cleanup()
@@ -248,7 +301,7 @@ class NavigGateway:
         await self.sessions.save_all()
         
         logger.info("Gateway stopped")
-        print("\n👋 Gateway stopped")
+        print("\n Gateway stopped")
     
     def _load_config(self) -> None:
         """Reload gateway config from config manager (called by ConfigWatcher)."""
@@ -279,7 +332,7 @@ class NavigGateway:
         
         # Deck (Telegram Mini App) routes — pass auth config
         try:
-            from navig.gateway.deck_api import register_deck_routes
+            from navig.gateway.deck import register_deck_routes
             raw_cfg = self.config_manager.global_config or {}
             tg_cfg = raw_cfg.get("telegram", {}) if isinstance(raw_cfg, dict) else {}
             deck_cfg = raw_cfg.get("deck", {}) if isinstance(raw_cfg, dict) else {}
@@ -369,32 +422,42 @@ class NavigGateway:
                 continue
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"Error processing message: {e}")
+            except Exception:
+                logger.exception("Error processing message from queue")  # P1-5
     
     async def _process_message(self, message: Dict[str, Any]):
-        """Process a single message."""
+        """Process a single message (with 60 s timeout — P1-1)."""
         try:
-            response = await self.router.route_message(
-                channel=message['channel'],
-                user_id=message['user_id'],
-                message=message['message'],
-                metadata=message.get('metadata', {})
+            response = await asyncio.wait_for(
+                self.router.route_message(
+                    channel=message['channel'],
+                    user_id=message['user_id'],
+                    message=message['message'],
+                    metadata=message.get('metadata', {})
+                ),
+                timeout=60.0,
             )
             
             # Store response callback if provided
             if 'callback' in message:
                 message['callback'](response)
-                
-        except Exception as e:
-            logger.error(f"Failed to process message: {e}")
+
+        except asyncio.TimeoutError:
+            logger.error(
+                "route_message timed out after 60 s for channel=%s user=%s",
+                message.get('channel'), message.get('user_id'),
+            )
+            if 'callback' in message:
+                message['callback']({"error": "Request timed out"})
+        except Exception:
+            logger.exception("Failed to process message")  # P1-5
     
     # ==================
     # Rate Limiting Middleware
     # ==================
 
-    @web.middleware
-    async def _rate_limit_middleware(self, request: web.Request, handler):
+    @_web_middleware
+    async def _rate_limit_middleware(self, request, handler):
         """Block IPs with too many failed auth attempts."""
         peer = request.remote or '127.0.0.1'
         now = time.monotonic()
@@ -428,9 +491,9 @@ class NavigGateway:
     # ==================
     # CORS Middleware
     # ==================
-    
-    @web.middleware
-    async def _cors_middleware(self, request: web.Request, handler):
+
+    @_web_middleware
+    async def _cors_middleware(self, request, handler):
         """Allow cross-origin requests for Deck API (Telegram WebApp iframe)."""
         if request.method == "OPTIONS":
             resp = web.Response(status=200)
@@ -549,25 +612,44 @@ class NavigGateway:
                     status=400
                 )
         
-        # Route message
+        # Check queue capacity before enqueuing (P1-2 backpressure)
+        if self._message_queue.full():
+            return web.json_response(
+                {"error": "Server is busy. Message queue full.", "error_code": "queue_full"},
+                status=503,
+            )
+
+        # Route message (60 s timeout — P1-1)
         try:
-            response = await self.router.route_message(
-                channel=data['channel'],
-                user_id=data['user_id'],
-                message=data['message'],
-                metadata=data.get('metadata', {})
+            response = await asyncio.wait_for(
+                self.router.route_message(
+                    channel=data['channel'],
+                    user_id=data['user_id'],
+                    message=data['message'],
+                    metadata=data.get('metadata', {})
+                ),
+                timeout=60.0,
             )
             
             return web.json_response({
                 "success": True,
                 "response": response
             })
-            
-        except Exception as e:
-            logger.error(f"Error handling message: {e}")
+
+        except asyncio.TimeoutError:
+            logger.error(
+                "route_message HTTP timed out for channel=%s user=%s",
+                data.get('channel'), data.get('user_id'),
+            )
             return web.json_response(
-                {"error": str(e)},
-                status=500
+                {"error": "Request timed out", "error_code": "timeout"},
+                status=504,
+            )
+        except Exception:
+            logger.exception("Error handling message")  # P1-5
+            return web.json_response(
+                {"error": "Internal server error"},
+                status=500,
             )
     
     async def _handle_event(self, request: web.Request) -> web.Response:
@@ -679,17 +761,20 @@ class NavigGateway:
                 await ws.send_json({"error": "Missing required field: message"})
                 return
 
-            # Route message
-            response = await self.router.route_message(
-                channel=data.get('channel', 'ws'),
-                user_id=data.get('user_id', 'anonymous'),
-                message=data.get('message', ''),
-                metadata=data.get('metadata', {})
-            )
-            await ws.send_json({
-                "action": "response",
-                "response": response
-            })
+            # Route message (60 s timeout — P1-1)
+            try:
+                response = await asyncio.wait_for(
+                    self.router.route_message(
+                        channel=data.get('channel', 'ws'),
+                        user_id=data.get('user_id', 'anonymous'),
+                        message=data.get('message', ''),
+                        metadata=data.get('metadata', {})
+                    ),
+                    timeout=60.0,
+                )
+                await ws.send_json({"action": "response", "response": response})
+            except asyncio.TimeoutError:
+                await ws.send_json({"action": "error", "error": "Request timed out"})
         else:
             await ws.send_json({"error": "Unsupported websocket action"})
     
@@ -723,13 +808,13 @@ class NavigGateway:
             return web.json_response({"error": "Heartbeat not enabled"}, status=503)
         
         try:
-            limit = int(request.query.get('limit', 10))
+            limit = min(int(request.query.get('limit', 10)), 1000)  # P1-8: cap at 1000
             history = self.heartbeat_runner.get_history(limit=limit)
             
             return web.json_response({"history": history})
-        except Exception as e:
-            logger.exception("Failed to get heartbeat history")
-            return web.json_response({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to get heartbeat history")  # P1-5
+            return web.json_response({"error": "Failed to get heartbeat history"}, status=500)
     
     async def _handle_heartbeat_status(self, request: web.Request) -> web.Response:
         """Handle GET /heartbeat/status - get heartbeat status."""
@@ -863,6 +948,109 @@ class NavigGateway:
     # Autonomous Modules Setup
     # ==================
     
+    async def _ensure_mesh_token(self) -> None:
+        """Auto-generate mesh_token if not already set in global config."""
+        import secrets
+        gw_cfg = dict(self.config_manager.global_config.get("gateway", {}))
+        if not gw_cfg.get("mesh_token"):
+            token = secrets.token_hex(32)
+            gw_cfg["mesh_token"] = token
+            updater = getattr(self.config_manager, "update_global_config", None)
+            if callable(updater):
+                updater({"gateway": gw_cfg})
+                logger.info("[Gateway] mesh_token auto-generated and saved to persistent config")
+            else:
+                self.config_manager.global_config["gateway"] = gw_cfg
+                logger.info("[Gateway] mesh_token auto-generated and updated in-memory config")
+
+    # ------------------------------------------------------------------
+    # Policy / Audit helpers
+    # ------------------------------------------------------------------
+
+    async def policy_check(
+        self,
+        action: str,
+        actor: str,
+        raw_input: str = "",
+    ) -> "Optional[web.Response]":
+        """
+        Run PolicyGate + CooldownTracker for a privileged action.
+
+        Returns ``None`` when the request is allowed (caller proceeds normally).
+        Returns a 403/429 ``web.Response`` when the request must be blocked.
+
+        Always writes an audit record.
+
+        Usage in a route handler::
+
+            block = await gw.policy_check("mission.create", actor, raw_input=str(body))
+            if block is not None:
+                return block
+        """
+        from navig.gateway.policy_gate import PolicyDecision
+
+        result = self.policy_gate.check(action, actor=actor)
+
+        if result.is_denied:
+            self.audit_log.record(
+                actor=actor,
+                action=action,
+                policy=result.decision.value,
+                status="denied",
+                raw_input=raw_input,
+                metadata={"matched_rule": result.matched_rule},
+            )
+            return web.json_response(
+                {"ok": False, "error": f"Action '{action}' is denied by policy", "error_code": "policy_denied"},
+                status=403,
+            )
+
+        if result.needs_approval:
+            # Check cooldown first — approval-required actions also get a cooldown
+            allowed, wait_s = self.cooldown.check_and_consume(action, actor=actor)
+            if not allowed:
+                self.audit_log.record(
+                    actor=actor,
+                    action=action,
+                    policy=result.decision.value,
+                    status="denied",
+                    raw_input=raw_input,
+                    metadata={"reason": "cooldown", "wait_s": round(wait_s, 1)},
+                )
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": f"Cooldown active for '{action}' — retry in {wait_s:.0f}s",
+                        "error_code": "cooldown",
+                        "retry_after": round(wait_s, 1),
+                    },
+                    status=429,
+                )
+            self.audit_log.record(
+                actor=actor,
+                action=action,
+                policy=result.decision.value,
+                status="pending_approval",
+                raw_input=raw_input,
+                metadata={"matched_rule": result.matched_rule},
+            )
+            # Currently: log + allow. Future: queue for human approval UI.
+            logger.warning(
+                "[PolicyGate] Action '%s' by %s requires approval (logged, proceeding)", action, actor
+            )
+            return None
+
+        # ALLOW — audit + emit billing event
+        self.audit_log.record(
+            actor=actor,
+            action=action,
+            policy=result.decision.value,
+            status="success",
+            raw_input=raw_input,
+        )
+        self.billing_emitter.emit(actor=actor, action=action)
+        return None
+
     async def _init_autonomous_modules(self):
         """Initialize autonomous agent modules."""
         try:
@@ -947,7 +1135,26 @@ class NavigGateway:
             logger.info("Task queue and worker initialized")
         except ImportError as e:
             logger.warning(f"Tasks module not available: {e}")
-    
+
+        # ── Flux Mesh: LAN-local peer discovery ──────────────────────
+        try:
+            mesh_cfg = self.config_manager.global_config.get("mesh", {})
+            if mesh_cfg.get("enabled", True):
+                from navig.mesh.registry import get_registry
+                from navig.mesh.discovery import MeshDiscovery
+                from navig.mesh.auth import load_secret as _load_mesh_secret
+                self._mesh_registry = get_registry(self.storage_dir)
+                _mesh_secret = _load_mesh_secret(mesh_cfg.get("secret"))
+                if _mesh_secret:
+                    logger.info("[mesh] BLAKE2b HMAC authentication active")
+                self._mesh_discovery = MeshDiscovery(self._mesh_registry, secret=_mesh_secret)
+                await self._mesh_discovery.start()
+                logger.info("[mesh] Flux mesh discovery started")
+            else:
+                logger.info("[mesh] Mesh discovery disabled by config (mesh.enabled=false)")
+        except Exception as e:
+            logger.warning(f"[mesh] Mesh discovery init failed — node runs isolated: {e}")
+
     def _register_task_handlers(self):
         """Register built-in task handlers."""
         if not self.task_worker:
@@ -1717,7 +1924,7 @@ class NavigGateway:
         await self.sessions.add_message(session_key, 'user', message)
         
         # Build context
-        context = await self._build_agent_context(agent_id, session, is_heartbeat)
+        context = await self._build_agent_context(agent_id, session, is_heartbeat, message=message)
         
         # Run AI
         response = await self._call_ai(
@@ -1733,10 +1940,11 @@ class NavigGateway:
         return response
     
     async def _build_agent_context(
-        self, 
-        agent_id: str, 
+        self,
+        agent_id: str,
         session: 'Session',
-        is_heartbeat: bool
+        is_heartbeat: bool,
+        message: str = "",
     ) -> Dict[str, Any]:
         """Build agent context from workspace files."""
         workspace_dir = self.storage_dir / 'workspace'
@@ -1777,7 +1985,30 @@ class NavigGateway:
                     break
                 except Exception:
                     pass
-        
+
+        # ── Memory enrichment (best-effort, never blocks the turn) ──────────
+        try:
+            query = (message or "").strip()[:300]
+            kb = self._get_knowledge_base()
+            if query and kb:
+                kb_results = kb.text_search(query, limit=5)
+                if kb_results:
+                    context['memory_context'] = "\n".join(
+                        f"- {e.key}: {e.content[:150]}"
+                        for e in kb_results
+                    )
+        except Exception as _mem_err:
+            logger.debug("[memory] KB search skipped: %s", _mem_err)
+
+        try:
+            from navig.memory.manager import get_memory_manager
+            mgr = get_memory_manager()
+            profile_ctx = mgr.get_user_context() if hasattr(mgr, 'get_user_context') else None
+            if profile_ctx:
+                context['user_profile'] = profile_ctx
+        except Exception as _profile_err:
+            logger.debug("[memory] User profile skipped: %s", _profile_err)
+
         return context
     
     async def _call_ai(
@@ -1843,7 +2074,15 @@ class NavigGateway:
         for key, value in context.get('files', {}).items():
             if key.startswith('memory/'):
                 parts.append(f"# Today's Log\n{value}")
-        
+
+        # Add persistent memory context (knowledge base search results)
+        if context.get('memory_context'):
+            parts.append(f"# Relevant Memory\n{context['memory_context']}")
+
+        # Add user profile
+        if context.get('user_profile'):
+            parts.append(f"# User Profile\n{context['user_profile']}")
+
         return "\n\n---\n\n".join(parts)
     
     # ==================
