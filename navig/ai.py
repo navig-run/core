@@ -77,7 +77,29 @@ class AIAssistant:
         """
         # Get system prompt
         system_prompt = self.config.get_ai_system_prompt()
-        
+
+        # ── Memory enrichment (best-effort) ────────────────────────────────
+        try:
+            from navig.memory.manager import get_memory_manager
+            _mgr = get_memory_manager()
+            _mem_ctx: str = ""
+            # Relevant KB snippets for this query
+            if hasattr(_mgr, 'get_context_for_query'):
+                _mem_ctx = _mgr.get_context_for_query(question, limit=5) or ""
+            elif hasattr(_mgr, 'knowledge_base') and _mgr.knowledge_base:
+                _results = _mgr.knowledge_base.text_search(question[:200], limit=5)
+                if _results:
+                    _mem_ctx = "\n".join(f"- {e.key}: {e.content[:150]}" for e in _results)
+            if _mem_ctx:
+                system_prompt = system_prompt + "\n\n## What I Know\n" + _mem_ctx
+            # User profile
+            if hasattr(_mgr, 'get_user_context'):
+                _profile = _mgr.get_user_context() or ""
+                if _profile:
+                    system_prompt = system_prompt + "\n\n## User Profile\n" + _profile
+        except Exception:
+            pass  # Never block a user question on memory failures
+
         # Build context string
         context_str = self._build_context_string(context)
         
