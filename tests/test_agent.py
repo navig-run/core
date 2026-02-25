@@ -58,7 +58,7 @@ class TestAgentConfig:
         assert config.enabled is True
         assert config.mode == "autonomous"
         assert config.personality.profile == "friendly"
-        assert config.brain.model == "openrouter:anthropic/claude-3.5-sonnet"
+        assert config.brain.model == "openrouter:google/gemini-2.5-flash"
         assert config.eyes.monitoring_interval == 60
         assert config.hands.safe_mode is True
     

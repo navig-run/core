@@ -11,6 +11,7 @@ Usage:
 
 from navig.formations.types import AgentSpec, ApiConnector, Formation, ProfileConfig
 from navig.formations.schema import FormationValidationError
+from navig.formations.registry import FormationRegistry, get_registry
 
 __all__ = [
     "AgentSpec",

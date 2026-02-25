@@ -16,6 +16,19 @@ Config lives in ``~/.navig/config.yaml`` under ``ai.routing``.
 
 When ``routing.enabled = false``, the entire module is a no-op and
 NAVIG behaves exactly as its pre-router single-provider mode.
+
+──────────────────────────────────────────────────────────────────────────────
+ARCHITECTURE NOTE: Two-Layer LLM Routing
+──────────────────────────────────────────────────────────────────────────────
+THIS MODULE (Layer 2 — TIER routing) works alongside navig.llm_router
+(Layer 1 — MODE routing). They are complementary, not competing:
+
+  navig.llm_router            Layer 1: picks WHAT TO DO (mode: coding/chat/...)
+  navig.agent.model_router ←  Layer 2: picks WHICH MODEL SIZE (small/big/coder)
+
+agent/conversational.py is the correct orchestration point for both layers.
+DO NOT merge these two modules.
+──────────────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -241,13 +254,17 @@ _FILE_PATH_RE = re.compile(r"[/\\][\w.\-]+(?:[/\\][\w.\-]+){1,}")
 _CODER_KEYWORDS = re.compile(
     r"\b("
     r"refactor|PR\b|pull\s*request|review\s+(this\s+)?code|"
-    r"bug|patch|fix\s+(this\s+)?(code|error|bug|issue)|"
-    r"write\s+(?:\w+\s+){0,3}(function|class|module|script|test|endpoint|api)|"
+    r"bug|patch|fix\s*(?:this\s+)?(?:code|error|bug|issue)?|"
+    r"write\s+(?:\w+\s+){0,3}(function|class|module|script|test|endpoint|api|query|css|html|ui)|"
     r"implement|unit\s*test|integration\s*test|lint|format|"
     r"compile|runtime\s+error|syntax\s+error|type\s+error|"
-    r"debug|traceback|exception|stack\s*trace|"
-    r"code|coding|programming|algorithm|"
-    r"исправь|код|функци|тест|ошибк"
+    r"debug|traceback|exception|stack\s*trace|panic|sigsegv|segfault|"
+    r"code|coding|programming|algorithm|snippet|"
+    r"python|golang|java|rust|typescript|javascript|react|vue|svelte|node\.js|next\.js|sql|postgres|bash|shell|"
+    r"git\s+(commit|push|pull|rebase|merge|status|log)|"
+    r"docker|dockerfile|k8s|kubernetes|aws|gcp|azure|"
+    r"regex|regular\s+expression|"
+    r"исправь|код|функци|тест|ошибк|баг|скрипт"
     r")\b",
     re.IGNORECASE,
 )
@@ -255,12 +272,15 @@ _CODER_KEYWORDS = re.compile(
 # ── Big-model (reasoning/planning) patterns ──
 _BIG_KEYWORDS = re.compile(
     r"\b("
-    r"plan|architect|design|strategy|compare|deep|comprehensive|"
+    r"plan|architect(?:ure)?|design|strategy|compare|deep|comprehensive|"
     r"analyze|analyse|step[\s-]by[\s-]step|detailed|complete|"
-    r"explain\s+in\s+detail|elaborate|summarize|specification|"
-    r"multi[\s-]?step|orchestrat|deploy\s+plan|migration\s+plan|"
-    r"подробно|пошагов|объясни|стратеги|спроектируй|"
-    r"详细|一步步|设计|分析|策略"
+    r"explain|elaborate|summarize|summary|specification|spec|"
+    r"multi[\s-]?step|orchestrat(?:e|ion)|deploy(?:ment)?\s+plan|migration\s+plan|"
+    r"brainstorm|suggest|idea|outline|draft|evaluate|audit|optimize|optimization|"
+    r"tutorial|guide|overview|pros\s+and\s+cons|trade-off|tradeoffs?|breakdown|"
+    r"why|how\s+to|what\s+is\s+the\s+difference|"
+    r"подробно|пошагов|объясни|стратеги|спроектируй|сравни|"
+    r"详细|一步步|设计|分析|策略|为什么"
     r")\b",
     re.IGNORECASE,
 )

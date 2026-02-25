@@ -417,7 +417,7 @@ For conversation, respond naturally without JSON.
         return _re.sub(r'[\u4E00-\u9FFF\u3400-\u4DBF\u3000-\u303F]+', '', text).strip()
             
     async def _get_ai_response(self, message: str) -> str:
-        """Query AI for response, using LLM mode routing → tier routing → plain chat."""
+        """Query AI for response via the unified router (all entrypoints)."""
         if not self.ai_client:
             return await self._simple_response(message)
 
@@ -435,17 +435,37 @@ For conversation, respond naturally without JSON.
 
             tier_override = getattr(self, '_tier_override', '')
 
-            # ── LLM Mode Router (primary — routes by task type) ──
+            # ── Unified Router (primary — all entrypoints) ──
+            try:
+                from navig.routing.router import get_router, RouteRequest
+                router = get_router()
+                entrypoint = getattr(self, '_entrypoint', '') or 'channel'
+                req = RouteRequest(
+                    messages=messages,
+                    text=message,
+                    tier_override=tier_override,
+                    entrypoint=entrypoint,
+                )
+                response_text, trace = await router.run(req)
+                if response_text:
+                    return response_text
+            except Exception as e:
+                logger.warning("Unified router failed (%s), falling back to legacy", e)
+
+            # ── Legacy fallback (LLM Mode Router → Tier Router) ──
+            # When mode routing can't dispatch (no provider for the detected
+            # mode), it returns the L1 tier hint so chat_routed() doesn't
+            # have to re-run mode detection from scratch (TR fix).
+            mode_tier_hint: str | None = None
             if not tier_override:
-                llm_response = await self._try_llm_mode_routing(message, messages)
+                llm_response, mode_tier_hint = await self._try_llm_mode_routing(message, messages)
                 if llm_response is not None:
                     return llm_response
 
-            # ── Tier Router (fallback — hybrid 3-tier) ──
             if hasattr(self.ai_client, 'chat_routed'):
                 response = await self.ai_client.chat_routed(
                     messages, user_message=message,
-                    tier_override=tier_override,
+                    tier_override=tier_override or mode_tier_hint,
                 )
             else:
                 response = await self.ai_client.chat(messages)
@@ -455,25 +475,49 @@ For conversation, respond naturally without JSON.
             logger.error(f"AI response error: {e}")
             return f"I'm having trouble thinking right now: {e}"
 
+    # Maps LLM mode names to HybridRouter tier names for the TR pass-through.
+    _MODE_TIER_MAP: dict[str, str] = {
+        "code":       "coder_big",
+        "debug":      "coder_big",
+        "explain":    "coder_big",
+        "reasoning":  "big",
+        "planning":   "big",
+        "complex":    "big",
+        "analysis":   "big",
+        "summarize":  "small",
+        "small_talk": "small",
+        "quick":      "small",
+    }
+
     async def _try_llm_mode_routing(
         self, message: str, messages: list
-    ) -> str | None:
+    ) -> tuple[str | None, str | None]:
         """
         Attempt to route through the LLM Mode Router.
 
-        Returns the AI response string on success, or None to fall through
-        to the tier-based router.
+        Returns ``(response, tier_hint)``:
+        - On success: ``(content_str, None)``
+        - On failure before tier detection: ``(None, None)``
+        - On failure after tier detection: ``(None, tier_hint)`` so the
+          caller can pass the detected tier directly to ``chat_routed()``
+          without re-running mode detection (TR fix).
         """
+        tier_hint: str | None = None
         try:
             from navig.llm_router import get_llm_router
             llm_router = get_llm_router()
             if not llm_router:
-                return None
+                return None, None
 
+            import asyncio as _asyncio
             mode = llm_router.detect_mode(message)
-            resolved = llm_router.get_config(mode)
+            tier_hint = self._MODE_TIER_MAP.get(mode)
+
+            # get_config may call httpx.get() (Ollama model check) — run in
+            # thread pool to avoid blocking the async event loop (CV-4 fix).
+            resolved = await _asyncio.to_thread(llm_router.get_config, mode)
             if not resolved or not resolved.model:
-                return None
+                return None, tier_hint
 
             # ── Language-aware model preference ──
             # For French users, prefer Mistral models (trained on French data)
@@ -494,7 +538,7 @@ For conversation, respond naturally without JSON.
             # Dispatch via the HybridRouter's cached provider pool
             router = getattr(self.ai_client, 'model_router', None)
             if not router:
-                return None
+                return None, tier_hint
 
             from navig.agent.model_router import ModelSlot
             slot = ModelSlot(
@@ -505,8 +549,11 @@ For conversation, respond naturally without JSON.
             )
             provider_instance = router._get_provider(slot)
             if not provider_instance:
-                logger.debug("No provider for %s, falling back", resolved.provider)
-                return None
+                logger.debug(
+                    "No provider for %s, passing tier_hint='%s' to chat_routed",
+                    resolved.provider, tier_hint,
+                )
+                return None, tier_hint
 
             kwargs = {}
             if resolved.provider == "ollama":
@@ -519,11 +566,11 @@ For conversation, respond naturally without JSON.
                 max_tokens=resolved.max_tokens,
                 **kwargs,
             )
-            return resp.content
+            return resp.content, None
 
         except Exception as e:
             logger.debug("LLM Mode routing failed (%s), falling back to tier router", e)
-            return None
+            return None, tier_hint
 
     def _build_language_instruction(self, message: str) -> str:
         """
@@ -964,8 +1011,8 @@ For conversation, respond naturally without JSON.
             return f"Created workflow: {result}"
             
         elif action == 'wait':
-            import time
-            time.sleep(params.get('seconds', 1))
+            import asyncio
+            await asyncio.sleep(params.get('seconds', 1))
             return "Waited"
             
         else:

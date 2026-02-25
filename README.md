@@ -262,3 +262,11 @@ Apache-2.0 — see [`LICENSE`](LICENSE).
 
 Brand usage, official build identity, and the hosted ecosystem are governed separately:
 [`TRADEMARK.md`](TRADEMARK.md) · [`OFFICIAL_BUILDS.md`](OFFICIAL_BUILDS.md) · [`GOVERNANCE.md`](GOVERNANCE.md)
+
+
+---
+
+> **2026-02-18 — Monorepo consolidation:**
+> `navig-core/host/_rust_legacy/` has been consolidated into `navig-core/host/_rust_legacy/`.
+> The host supervisor is being rewritten in Go under `navig-core/host/`.
+

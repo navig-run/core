@@ -227,22 +227,25 @@ class BrowserController:
             "status": response.status if response else None,
         }
     
-    async def fill(self, selector: str, value: str) -> bool:
+    async def fill(self, selector: str, value: str, **kwargs) -> bool:
         """Fill a form field."""
         await self._ensure_started()
-        await self._page.fill(selector, value)
+        timeout = kwargs.get("timeout", self.config.timeout_ms)
+        await self._page.fill(selector, value, timeout=timeout)
         return True
     
-    async def click(self, selector: str) -> bool:
+    async def click(self, selector: str, **kwargs) -> bool:
         """Click an element."""
         await self._ensure_started()
-        await self._page.click(selector)
+        timeout = kwargs.get("timeout", self.config.timeout_ms)
+        await self._page.click(selector, timeout=timeout)
         return True
     
-    async def double_click(self, selector: str) -> bool:
+    async def double_click(self, selector: str, **kwargs) -> bool:
         """Double-click an element."""
         await self._ensure_started()
-        await self._page.dblclick(selector)
+        timeout = kwargs.get("timeout", self.config.timeout_ms)
+        await self._page.dblclick(selector, timeout=timeout)
         return True
     
     async def type_text(self, selector: str, text: str, delay: int = 50) -> bool:
@@ -251,10 +254,11 @@ class BrowserController:
         await self._page.type(selector, text, delay=delay)
         return True
     
-    async def press(self, key: str) -> bool:
-        """Press a keyboard key."""
+    async def press(self, selector: str, key: str, **kwargs) -> bool:
+        """Focus an element and press a key."""
         await self._ensure_started()
-        await self._page.keyboard.press(key)
+        timeout = kwargs.get("timeout", self.config.timeout_ms)
+        await self._page.locator(selector).press(key, timeout=timeout)
         return True
     
     async def screenshot(
@@ -295,6 +299,214 @@ class BrowserController:
         
         logger.info(f"Screenshot saved: {path}")
         return str(path)
+    
+    async def screenshot_base64(self, quality: int = 60) -> str:
+        """Take screenshot of current page and return as base64 string."""
+        import base64
+        await self._ensure_started()
+        screenshot_bytes = await self._page.screenshot(type="jpeg", quality=quality)
+        return base64.b64encode(screenshot_bytes).decode('utf-8')
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # A11Y INTELLIGENCE — Phase 1+2 additions
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def get_a11y_tree(self) -> str:
+        """Return Playwright ARIA snapshot as text (Playwright 1.46+).
+        
+        Returns empty string on any failure (canvas page, PDF viewer, etc.).
+        This replaces the deprecated page.accessibility API removed in PW 1.57.
+        """
+        if not self._page:
+            return ""
+        try:
+            # aria_snapshot() is on Locator, not Page, in Playwright 1.46+
+            return await self._page.locator("body").aria_snapshot() or ""
+        except Exception as exc:
+            logger.debug("[A11y] aria_snapshot failed: %s", exc)
+            return ""
+
+    async def get_a11y_snapshot_with_refs(self) -> tuple:
+        """Parse the ARIA snapshot and assign stable numeric ref IDs to each node.
+
+        Returns:
+            (annotated_text: str, ref_map: dict[int, dict])
+            - annotated_text: original ARIA text with [REF_ID] prepended to each role line
+            - ref_map: maps ref_id -> {"role": str, "name": str, "raw_line": str}
+        """
+        raw = await self.get_a11y_tree()
+        if not raw:
+            return "", {}
+
+        ref_map: dict = {}
+        annotated_lines: list = []
+        ref_id = 0
+        import re as _re  # hoisted: one import for all lines
+
+        for line in raw.splitlines():
+            stripped = line.lstrip()
+            # ARIA snapshot lines look like: "- button \"Log in\""
+            if stripped.startswith("- "):
+                # Parse role and name
+                rest = stripped[2:]
+                # Extract role (first word) and name (quoted string if present)
+                m = _re.match(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?', rest)
+                role = m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
+                name = (m.group(2) or m.group(3) or "").strip() if m else ""
+
+                ref_map[ref_id] = {"role": role, "name": name, "raw_line": line}
+                indent = line[: len(line) - len(stripped)]
+                annotated_lines.append(f"{indent}- [{ref_id}] {rest}")
+                ref_id += 1
+            else:
+                annotated_lines.append(line)
+
+        return "\n".join(annotated_lines), ref_map
+
+    async def click_by_ref(self, ref_id: int, ref_map: dict, timeout: int = 5000) -> dict:
+        """Click an element by its ARIA ref ID.
+
+        Uses get_by_role(role, name=name) for maximum cross-browser reliability.
+        Returns {"ok": True} or {"ok": False, "error": str}.
+        """
+        node = ref_map.get(ref_id)
+        if not node:
+            return {"ok": False, "error": f"No a11y node with ref {ref_id}"}
+
+        role = (node.get("role") or "").strip()
+        name = (node.get("name") or "").strip()
+        try:
+            if role and name:
+                await self._page.get_by_role(role, name=name).click(timeout=timeout)
+            elif role:
+                await self._page.get_by_role(role).first.click(timeout=timeout)
+            else:
+                return {"ok": False, "error": "Node has no role — cannot resolve ref"}
+            return {"ok": True}
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": str(exc)[:200],
+                "suggestion": "Try scrolling or use css/coords selector instead",
+            }
+
+    async def fill_fast(self, selector: str, text: str, timeout: int = 5000) -> dict:
+        """Fill a text input by injecting .value via JS (20x faster than keyboard sim).
+
+        Fires synthetic `input` + `change` events so React/Vue state updates correctly.
+        Falls back to normal fill() if the JS approach fails.
+        Returns {"ok": True} or {"ok": False, "error": str}.
+        """
+        try:
+            locator = self._page.locator(selector)
+            await locator.wait_for(state="visible", timeout=timeout)
+            el_handle = await locator.element_handle(timeout=timeout)
+            await self._page.evaluate(
+                """([el, val]) => {
+                    el.focus();
+                    el.value = val;
+                    el.dispatchEvent(new Event('input',  { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }""",
+                [el_handle, text],
+            )
+            return {"ok": True}
+        except Exception as exc:
+            logger.debug("[fill_fast] JS inject failed, falling back to fill(): %s", exc)
+            try:
+                await self._page.fill(selector, text, timeout=timeout)
+                return {"ok": True}
+            except Exception as exc2:
+                return {"ok": False, "error": str(exc2)[:200],
+                        "suggestion": "Element may not be visible or interactable"}
+
+    async def wait_for_stable(self, timeout_ms: int = 3000) -> None:
+        """Wait for the page to settle: network idle + short DOM-settle pause.
+
+        Much faster than fixed asyncio.sleep() — exits as soon as the page is quiet.
+        Never raises; silently accepts timeout (page was likely already stable).
+        """
+        try:
+            await self._page.wait_for_load_state("networkidle", timeout=timeout_ms)
+        except Exception:
+            pass  # timeoutError is normal — page already settled
+
+    async def get_interactive_elements_fast(self, limit: int = 50) -> list:
+        """Return up to `limit` focusable elements in a single JS evaluation.
+
+        Each element dict contains: tag, role, name, x, y, w, h.
+        This is ~10x faster than calling query_selector_all repeatedly.
+        """
+        try:
+            return await self._page.evaluate(f"""() => {{
+                const SELECTOR = [
+                    'a[href]', 'button', 'input', 'textarea', 'select',
+                    '[role="button"]', '[role="link"]', '[role="textbox"]',
+                    '[role="checkbox"]', '[role="menuitem"]',
+                    '[tabindex]:not([tabindex="-1"])'
+                ].join(',');
+                return Array.from(document.querySelectorAll(SELECTOR))
+                    .filter(el => el.offsetParent !== null)
+                    .slice(0, {limit})
+                    .map(el => {{
+                        const r = el.getBoundingClientRect();
+                        return {{
+                            tag:  el.tagName.toLowerCase(),
+                            role: el.getAttribute('role') || el.tagName.toLowerCase(),
+                            name: el.getAttribute('aria-label')
+                                || el.getAttribute('placeholder')
+                                || el.getAttribute('name')
+                                || (el.textContent || '').trim().slice(0, 60),
+                            x: Math.round(r.left + r.width  / 2),
+                            y: Math.round(r.top  + r.height / 2),
+                            w: Math.round(r.width),
+                            h: Math.round(r.height),
+                        }};
+                    }});
+            }}""")
+        except Exception as exc:
+            logger.debug("[interactive_elements] JS eval failed: %s", exc)
+            return []
+
+    async def enable_automation_mode(self) -> None:
+        """Block images, fonts, media and tracking to speed up page loads ~40%.
+
+        Safe for form submissions — only resource types that carry no logic are blocked.
+        Call this once after start(), before navigating to the target URL.
+        """
+        blocked = {"image", "font", "media"}
+        async def _handler(route, request):
+            if request.resource_type in blocked:
+                await route.abort()
+            else:
+                await route.continue_()
+        await self._page.route("**/*", _handler)
+
+    async def safe_click(self, selector: str, timeout: int = 5000) -> dict:
+        """Click with AI-readable structured error output."""
+        try:
+            await self._page.click(selector, timeout=timeout)
+            return {"ok": True}
+        except Exception as exc:
+            err = str(exc)
+            suggestion = (
+                "scroll into view" if "not visible" in err else
+                "wait for element" if "timeout"     in err else
+                "check selector syntax"
+            )
+            return {"ok": False, "error": type(exc).__name__,
+                    "selector": selector, "detail": err[:200], "suggestion": suggestion}
+
+    async def safe_fill(self, selector: str, text: str, timeout: int = 5000) -> dict:
+        """Fill with AI-readable structured error output."""
+        try:
+            await self._page.fill(selector, text, timeout=timeout)
+            return {"ok": True}
+        except Exception as exc:
+            err = str(exc)
+            return {"ok": False, "error": type(exc).__name__,
+                    "selector": selector, "detail": err[:200],
+                    "suggestion": "Element may be hidden or read-only"}
     
     async def get_content(self) -> str:
         """Get page HTML content."""

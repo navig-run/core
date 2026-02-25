@@ -68,7 +68,8 @@ def is_admin() -> bool:
     if sys.platform != "win32":
         return os.geteuid() == 0 if hasattr(os, "geteuid") else False
     try:
-        import ctypes
+        if ctypes is None:
+            return False
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except Exception:
         return False

@@ -1,0 +1,17 @@
+name: navig-synapse
+
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: navig-synapse
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    ports:
+      - "127.0.0.1:${SYNAPSE_PORT:-8008}:8008"
+    volumes:
+      - ./data:/data
+
+volumes: {}

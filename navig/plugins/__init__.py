@@ -75,6 +75,34 @@ class PluginManager:
         """
         self._plugins = {}
         
+        cache_file = self.config.cache_dir / "plugins_cache.json"
+        current_mtime = 0
+        try:
+            current_mtime = max(p.stat().st_mtime for p in self.plugin_dirs if p.exists())
+        except Exception:
+            pass
+
+        if cache_file.exists():
+            try:
+                import json
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    cached_data = json.load(f)
+                if cached_data.get("mtime") == current_mtime:
+                    for name, data in cached_data.get("plugins", {}).items():
+                        info = PluginInfo(
+                            name=data["name"],
+                            path=Path(data["path"]),
+                            source=data["source"],
+                        )
+                        info.version = data.get("version", "1.0.0")
+                        info.description = data.get("description", "")
+                        info.dependencies = data.get("dependencies", [])
+                        info.enabled = data.get("enabled", True)
+                        self._plugins[name] = info
+                    return self._plugins
+            except Exception:
+                pass
+        
         sources = ['builtin', 'user', 'project']
         
         for plugin_dir, source in zip(self.plugin_dirs, sources):
@@ -102,6 +130,30 @@ class PluginManager:
                 
                 # Later sources override earlier (same name)
                 self._plugins[info.name] = info
+                
+        # Save cache
+        try:
+            import json
+            cache_data = {
+                "mtime": current_mtime,
+                "plugins": {}
+            }
+            for name, info in self._plugins.items():
+                cache_data["plugins"][name] = {
+                    "name": info.name,
+                    "path": str(info.path),
+                    "source": info.source,
+                    "version": info.version,
+                    "description": info.description,
+                    "dependencies": info.dependencies,
+                    "enabled": info.enabled
+                }
+            
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f)
+        except Exception:
+            pass
         
         return self._plugins
     

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "navig"
-version = "2.1.0"
+version = "2.3.0"
 description = "NAVIG CLI - autonomous infrastructure runtime and control plane"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -95,6 +95,7 @@ include = ["navig*"]
 navig = ["*.txt", "*.md", "help/*.md", "schemas/*.json"]
 "navig.resources" = ["workflows/*.yaml", "*.md"]
 "navig.agent.context" = ["*.md"]
+"navig.browser" = ["templates/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

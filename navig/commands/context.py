@@ -40,13 +40,7 @@ def show_context(opts: Dict[str, Any]) -> None:
     
     # Check for project-local context
     local_context_file = Path.cwd() / ".navig" / "config.yaml"
-    local_context = None
-    if local_context_file.exists():
-        try:
-            with open(local_context_file, 'r', encoding='utf-8') as f:
-                local_context = yaml.safe_load(f) or {}
-        except Exception:
-            pass
+    local_context = config.get_local_config() if local_context_file.exists() else None
     
     # Check for legacy .navig file
     legacy_file = Path.cwd() / ".navig"
@@ -186,13 +180,7 @@ def set_context(
     
     # Load or create config.yaml
     config_file = navig_dir / "config.yaml"
-    local_config = {}
-    if config_file.exists():
-        try:
-            with open(config_file, 'r', encoding='utf-8') as f:
-                local_config = yaml.safe_load(f) or {}
-        except Exception:
-            pass
+    local_config = config.get_local_config()
     
     # Update config
     if host:
@@ -201,8 +189,7 @@ def set_context(
         local_config['active_app'] = app
     
     # Save config
-    with open(config_file, 'w', encoding='utf-8') as f:
-        yaml.dump(local_config, f, default_flow_style=False, sort_keys=False)
+    config.set_local_config(local_config)
     
     ch.success(f"Project context set in {config_file}")
     if host:
@@ -218,16 +205,13 @@ def clear_context(opts: Dict[str, Any] = None) -> None:
     opts = opts or {}
     
     config_file = Path.cwd() / ".navig" / "config.yaml"
+    config = get_config_manager()
     
     if not config_file.exists():
         ch.info("No project context to clear")
         return
     
-    try:
-        with open(config_file, 'r', encoding='utf-8') as f:
-            local_config = yaml.safe_load(f) or {}
-    except Exception:
-        local_config = {}
+    local_config = config.get_local_config()
     
     # Remove context keys
     changed = False
@@ -244,8 +228,7 @@ def clear_context(opts: Dict[str, Any] = None) -> None:
     
     # Save updated config (or delete if empty)
     if local_config:
-        with open(config_file, 'w', encoding='utf-8') as f:
-            yaml.dump(local_config, f, default_flow_style=False, sort_keys=False)
+        config.set_local_config(local_config)
         ch.success("Project context cleared")
     else:
         config_file.unlink()
@@ -326,8 +309,7 @@ def init_context(opts: Dict[str, Any] = None) -> None:
             ch.info(f"Using current active host: {host}")
     
     # Save config
-    with open(config_file, 'w', encoding='utf-8') as f:
-        yaml.dump(local_config, f, default_flow_style=False, sort_keys=False)
+    config.set_local_config(local_config)
     
     ch.success(f"Initialized project context at {navig_dir}")
     

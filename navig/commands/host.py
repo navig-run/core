@@ -260,18 +260,11 @@ def use_host(name: str, options: Dict[str, Any]):
         # Check if there's a local override that would take precedence
         local_navig_dir = Path.cwd() / ".navig"
         if local_navig_dir.exists() and local_navig_dir.is_dir():
-            local_config_file = local_navig_dir / "config.yaml"
-            if local_config_file.exists():
-                try:
-                    import yaml
-                    with open(local_config_file, 'r', encoding='utf-8') as f:
-                        local_config = yaml.safe_load(f) or {}
-                    local_host = local_config.get('active_host')
-                    if local_host and local_host != name:
-                        ch.dim("💡 Note: This directory has a local override (.navig/config.yaml)")
-                        ch.dim(f"   Local active_host: {local_host} (takes precedence here)")
-                except Exception:
-                    pass
+            local_config = config_manager.get_local_config()
+            local_host = local_config.get('active_host')
+            if local_host and local_host != name:
+                ch.dim("💡 Note: This directory has a local override (.navig/config.yaml)")
+                ch.dim(f"   Local active_host: {local_host} (takes precedence here)")
 
 
 def show_current_host(options: Dict[str, Any]):
@@ -903,9 +896,27 @@ def test_host(options: Dict[str, Any]) -> None:
         ch.dim(f"User: {host_config.get('user')}")
         ch.dim(f"Port: {host_config.get('port', 22)}")
 
-    # Build SSH command
+    # Build SSH command — resolve full path on Windows to avoid FileNotFoundError
+    # Note: 32-bit Python on 64-bit Windows has System32→SysWOW64 redirection,
+    # so ssh.exe (64-bit) must be found via SysNative alias.
+    import shutil, pathlib
+    ssh_binary = shutil.which('ssh') or shutil.which('ssh.exe')
+    if ssh_binary is None:
+        _sysroot = os.environ.get('SystemRoot', 'C:/Windows')
+        for _candidate in [
+            pathlib.Path(_sysroot) / 'SysNative' / 'OpenSSH' / 'ssh.exe',   # 32-bit process on 64-bit OS
+            pathlib.Path(_sysroot) / 'System32' / 'OpenSSH' / 'ssh.exe',    # native path
+            pathlib.Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'OpenSSH' / 'ssh.exe',
+            pathlib.Path(os.environ.get('ProgramFiles(x86)', '')) / 'OpenSSH' / 'ssh.exe',
+        ]:
+            if _candidate.exists():
+                ssh_binary = str(_candidate)
+                break
+    if ssh_binary is None:
+        ch.error("SSH client not found", "Please install OpenSSH client.")
+        raise RuntimeError("SSH client not found")
     ssh_cmd = [
-        'ssh',
+        ssh_binary,
         '-o', 'ConnectTimeout=10',
         '-o', 'BatchMode=yes',
         '-p', str(host_config.get('port', 22)),
@@ -1116,5 +1127,435 @@ def info_host(options: Dict[str, Any]) -> None:
 
         ch.dim(f"Configuration: {host_file}")
 
+
+
+
+
+import typer
+from navig.cli import show_subcommand_help, deprecation_warning
+from typing import Optional, List, Dict, Any, Tuple
+from pathlib import Path
+from navig import console_helper as ch
+
+# ============================================================================
+# HOST MANAGEMENT COMMANDS
+# ============================================================================
+
+host_app = typer.Typer(
+    help="Manage remote hosts",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@host_app.callback()
+def host_callback(ctx: typer.Context):
+    """Host management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("host", ctx)
+        raise typer.Exit()
+
+
+@host_app.command("list")
+def host_list(
+    ctx: typer.Context,
+    all: bool = typer.Option(False, "--all", "-a", help="Show detailed information"),
+    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, yaml"),
+    plain: bool = typer.Option(False, "--plain", help="Output plain text (one host per line) for scripting"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """List all configured hosts."""
+    from navig.commands.host import list_hosts
+    ctx.obj['all'] = all
+    ctx.obj['format'] = "json" if json else format
+    ctx.obj['plain'] = plain
+    if json:
+        ctx.obj["json"] = True
+    list_hosts(ctx.obj)
+
+
+@host_app.command("use")
+def host_use(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Host name to activate"),
+    default: bool = typer.Option(False, "--default", "-d", help="Also set as default host"),
+):
+    """Switch active host context (global)."""
+    from navig.commands.host import use_host, set_default_host
+    use_host(name, ctx.obj)
+    if default:
+        set_default_host(name, ctx.obj)
+
+
+@host_app.command("current", hidden=True)
+def host_current(ctx: typer.Context):
+    """[DEPRECATED: Use 'navig host show --current'] Show currently active host."""
+    deprecation_warning("navig host current", "navig host show --current")
+    from navig.commands.host import show_current_host
+    show_current_host(ctx.obj)
+
+
+@host_app.command("default", hidden=True)
+def host_default(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Host name to set as default"),
+):
+    """[DEPRECATED: Use 'navig host use --default'] Set default host."""
+    deprecation_warning("navig host default", "navig host use <name> --default")
+    from navig.commands.host import set_default_host
+    set_default_host(name, ctx.obj)
+
+
+@host_app.command("add")
+def host_add(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Host name"),
+    from_host: Optional[str] = typer.Option(None, "--from", help="Clone from existing host"),
+):
+    """Add new host configuration (interactive wizard or clone)."""
+    if from_host:
+        from navig.commands.host import clone_host
+        ctx.obj['source_name'] = from_host
+        ctx.obj['new_name'] = name
+        clone_host(ctx.obj)
+    else:
+        from navig.commands.host import add_host
+        add_host(name, ctx.obj)
+
+
+@host_app.command("clone", hidden=True)
+def host_clone(
+    ctx: typer.Context,
+    source: str = typer.Argument(..., help="Source host name to clone"),
+    new_name: str = typer.Argument(..., help="New host name"),
+):
+    """[DEPRECATED: Use 'navig host add <name> --from <source>'] Clone host."""
+    deprecation_warning("navig host clone", "navig host add <name> --from <source>")
+    from navig.commands.host import clone_host
+    ctx.obj['source_name'] = source
+    ctx.obj['new_name'] = new_name
+    clone_host(ctx.obj)
+
+
+@host_app.command("discover-local")
+def host_discover_local(
+    ctx: typer.Context,
+    name: str = typer.Option("localhost", "--name", "-n", help="Name for the local host configuration"),
+    auto_confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
+    no_active: bool = typer.Option(False, "--no-active", help="Don't set as active host"),
+):
+    """
+    Discover and configure local development environment.
+    
+    Automatically detects OS, databases, web servers, PHP, Node.js, 
+    Docker, and other tools installed on your local machine.
+    
+    Creates a 'localhost' host configuration that can be used for
+    local development without SSH.
+    
+    Examples:
+        navig host discover-local
+        navig host discover-local --name my-dev
+        navig host discover-local --yes --no-active
+    """
+    from navig.commands.local_discovery import discover_local_host
+    discover_local_host(
+        name=name,
+        auto_confirm=auto_confirm or ctx.obj.get('yes', False),
+        set_active=not no_active,
+        progress=True,
+        no_cache=bool(ctx.obj.get('no_cache')),
+    )
+
+
+@host_app.command("inspect", hidden=True)
+def host_inspect(ctx: typer.Context):
+    """[DEPRECATED: Use 'navig host show --inspect'] Auto-discover host details."""
+    deprecation_warning("navig host inspect", "navig host show --inspect")
+    from navig.commands.host import inspect_host
+    inspect_host(ctx.obj)
+
+
+@host_app.command("test")
+def host_test(
+    ctx: typer.Context,
+    name: Optional[str] = typer.Argument(None, help="Host name to test (uses active host if not specified)"),
+):
+    """Test SSH connection to host."""
+    from navig.commands.host import test_host
+    if name:
+        ctx.obj['host_name'] = name
+    test_host(ctx.obj)
+
+
+@host_app.command("show")
+def host_show(
+    ctx: typer.Context,
+    name: Optional[str] = typer.Argument(None, help="Host name (uses active if omitted)"),
+    current: bool = typer.Option(False, "--current", help="Show currently active host"),
+    inspect: bool = typer.Option(False, "--inspect", help="Auto-discover host details"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Show host information (canonical command)."""
+    if json:
+        ctx.obj["json"] = True
+    if current:
+        from navig.commands.host import show_current_host
+        show_current_host(ctx.obj)
+    elif inspect:
+        from navig.commands.host import inspect_host
+        inspect_host(ctx.obj)
+    else:
+        from navig.commands.host import info_host
+        if name:
+            ctx.obj['host_name'] = name
+        info_host(ctx.obj)
+
+
+@host_app.command("info", hidden=True)
+def host_info(
+    ctx: typer.Context,
+    name: Optional[str] = typer.Argument(None, help="Host name to show info for (uses active host if not specified)"),
+):
+    """[DEPRECATED: Use 'navig host show'] Show detailed host information."""
+    deprecation_warning("navig host info", "navig host show")
+    from navig.commands.host import info_host
+    if name:
+        ctx.obj['host_name'] = name
+    info_host(ctx.obj)
+
+
+# ============================================================================
+# HOST NESTED SUBCOMMANDS (Pillar 1: Infrastructure)
+# ============================================================================
+
+# Create nested sub-apps for host
+host_monitor_app = typer.Typer(
+    help="Server monitoring (resources, disk, services, network, health)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+host_app.add_typer(host_monitor_app, name="monitor")
+
+
+@host_monitor_app.callback()
+def host_monitor_callback(ctx: typer.Context):
+    """Host monitoring - run without subcommand for health overview."""
+    if ctx.invoked_subcommand is None:
+        from navig.commands.monitoring import health_check
+        health_check(ctx.obj)
+        raise typer.Exit()
+
+
+@host_monitor_app.command("show")
+def host_monitor_show(
+    ctx: typer.Context,
+    resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
+    disk: bool = typer.Option(False, "--disk", "-d", help="Show disk space"),
+    services: bool = typer.Option(False, "--services", "-s", help="Show service status"),
+    network: bool = typer.Option(False, "--network", "-n", help="Show network stats"),
+    threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
+):
+    """Show monitoring information."""
+    if resources:
+        from navig.commands.monitoring import monitor_resources
+        monitor_resources(ctx.obj)
+    elif disk:
+        from navig.commands.monitoring import monitor_disk
+        monitor_disk(threshold, ctx.obj)
+    elif services:
+        from navig.commands.monitoring import monitor_services
+        monitor_services(ctx.obj)
+    elif network:
+        from navig.commands.monitoring import monitor_network
+        monitor_network(ctx.obj)
+    else:
+        from navig.commands.monitoring import health_check
+        health_check(ctx.obj)
+
+
+@host_monitor_app.command("report")
+def host_monitor_report(ctx: typer.Context):
+    """Generate comprehensive monitoring report."""
+    from navig.commands.monitoring import generate_report
+    generate_report(ctx.obj)
+
+
+# Host security subcommand
+host_security_app = typer.Typer(
+    help="Security management (firewall, fail2ban, SSH, updates)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+host_app.add_typer(host_security_app, name="security")
+
+
+@host_security_app.callback()
+def host_security_callback(ctx: typer.Context):
+    """Host security - run without subcommand for security scan."""
+    if ctx.invoked_subcommand is None:
+        from navig.commands.security import security_scan
+        security_scan(ctx.obj)
+        raise typer.Exit()
+
+
+@host_security_app.command("show")
+def host_security_show(
+    ctx: typer.Context,
+    firewall: bool = typer.Option(False, "--firewall", "-f", help="Show firewall status"),
+    fail2ban: bool = typer.Option(False, "--fail2ban", "-b", help="Show fail2ban status"),
+    ssh: bool = typer.Option(False, "--ssh", "-s", help="Show SSH audit"),
+    updates: bool = typer.Option(False, "--updates", "-u", help="Show security updates"),
+    connections: bool = typer.Option(False, "--connections", "-c", help="Show network connections"),
+):
+    """Show security information."""
+    if firewall:
+        from navig.commands.security import firewall_status
+        firewall_status(ctx.obj)
+    elif fail2ban:
+        from navig.commands.security import fail2ban_status
+        fail2ban_status(ctx.obj)
+    elif ssh:
+        from navig.commands.security import ssh_audit
+        ssh_audit(ctx.obj)
+    elif updates:
+        from navig.commands.security import check_security_updates
+        check_security_updates(ctx.obj)
+    elif connections:
+        from navig.commands.security import audit_connections
+        audit_connections(ctx.obj)
+    else:
+        from navig.commands.security import security_scan
+        security_scan(ctx.obj)
+
+
+@host_security_app.command("edit")
+def host_security_edit(
+    ctx: typer.Context,
+    firewall: bool = typer.Option(False, "--firewall", "-f", help="Edit firewall rules"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Port number"),
+    protocol: str = typer.Option("tcp", "--protocol", help="Protocol (tcp/udp)"),
+    allow_from: str = typer.Option("any", "--from", help="IP address or subnet"),
+    add: bool = typer.Option(False, "--add", help="Add a rule"),
+    remove: bool = typer.Option(False, "--remove", "-r", help="Remove a rule"),
+    enable: bool = typer.Option(False, "--enable", help="Enable firewall"),
+    disable: bool = typer.Option(False, "--disable", help="Disable firewall"),
+    unban: Optional[str] = typer.Option(None, "--unban", help="Unban IP address from fail2ban"),
+    jail: Optional[str] = typer.Option(None, "--jail", "-j", help="Jail name for fail2ban"),
+):
+    """Edit security settings."""
+    if firewall:
+        if enable:
+            from navig.commands.security import firewall_enable
+            firewall_enable(ctx.obj)
+        elif disable:
+            from navig.commands.security import firewall_disable
+            firewall_disable(ctx.obj)
+        elif add and port:
+            from navig.commands.security import firewall_add_rule
+            firewall_add_rule(port, protocol, allow_from, ctx.obj)
+        elif remove and port:
+            from navig.commands.security import firewall_remove_rule
+            firewall_remove_rule(port, protocol, ctx.obj)
+    elif unban:
+        from navig.commands.security import fail2ban_unban
+        fail2ban_unban(unban, jail, ctx.obj)
+    else:
+        ch.error("Specify what to edit: --firewall or --unban")
+
+
+# Host maintenance subcommand
+host_maintenance_app = typer.Typer(
+    help="System maintenance (updates, cleaning, log rotation)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+host_app.add_typer(host_maintenance_app, name="maintenance")
+
+
+@host_maintenance_app.callback()
+def host_maintenance_callback(ctx: typer.Context):
+    """Host maintenance - run without subcommand for system info."""
+    if ctx.invoked_subcommand is None:
+        from navig.commands.maintenance import system_info
+        system_info(ctx.obj)
+        raise typer.Exit()
+
+
+@host_maintenance_app.command("show")
+def host_maintenance_show(
+    ctx: typer.Context,
+    info: bool = typer.Option(False, "--info", "-i", help="Show system information"),
+    disk: bool = typer.Option(False, "--disk", "-d", help="Show disk usage"),
+    memory: bool = typer.Option(False, "--memory", "-m", help="Show memory usage"),
+):
+    """Show system maintenance information."""
+    if disk:
+        from navig.commands.monitoring import monitor_disk
+        monitor_disk(80, ctx.obj)
+    elif memory:
+        from navig.commands.monitoring import monitor_resources
+        monitor_resources(ctx.obj)
+    else:
+        from navig.commands.maintenance import system_info
+        system_info(ctx.obj)
+
+
+@host_maintenance_app.command("run")
+def host_maintenance_run(
+    ctx: typer.Context,
+    update: bool = typer.Option(False, "--update", "-u", help="Update system packages"),
+    clean: bool = typer.Option(False, "--clean", "-c", help="Clean package cache"),
+    rotate_logs: bool = typer.Option(False, "--rotate-logs", "-r", help="Rotate log files"),
+    cleanup_temp: bool = typer.Option(False, "--cleanup-temp", "-t", help="Clean temp files"),
+    all: bool = typer.Option(False, "--all", "-a", help="Full maintenance"),
+    reboot: bool = typer.Option(False, "--reboot", help="Reboot server"),
+):
+    """Run system maintenance operations."""
+    if update:
+        from navig.commands.maintenance import update_packages
+        update_packages(ctx.obj)
+    elif clean:
+        from navig.commands.maintenance import clean_packages
+        clean_packages(ctx.obj)
+    elif rotate_logs:
+        from navig.commands.maintenance import rotate_logs as rotate_logs_func
+        rotate_logs_func(ctx.obj)
+    elif cleanup_temp:
+        from navig.commands.maintenance import cleanup_temp as cleanup_temp_func
+        cleanup_temp_func(ctx.obj)
+    elif all:
+        from navig.commands.maintenance import system_maintenance
+        system_maintenance(ctx.obj)
+    elif reboot:
+        from navig.commands.remote import run_remote_command
+        if ctx.obj.get('yes') or typer.confirm("Are you sure you want to reboot the server?"):
+            run_remote_command("sudo reboot", ctx.obj)
+    else:
+        ch.error("Specify an action: --update, --clean, --rotate-logs, --cleanup-temp, --all, --reboot")
+
+
+@host_maintenance_app.command("update")
+def host_maintenance_update(ctx: typer.Context):
+    """Update system packages."""
+    from navig.commands.maintenance import update_packages
+    update_packages(ctx.obj)
+
+
+@host_maintenance_app.command("clean")
+def host_maintenance_clean(ctx: typer.Context):
+    """Clean package cache and orphans."""
+    from navig.commands.maintenance import clean_packages
+    clean_packages(ctx.obj)
+
+
+@host_maintenance_app.command("install")
+def host_maintenance_install(
+    ctx: typer.Context,
+    package: str = typer.Argument(..., help="Package or command to install"),
+):
+    """Install a package on the remote host."""
+    from navig.commands.remote import install_remote_package
+    install_remote_package(package, ctx.obj)
 
 

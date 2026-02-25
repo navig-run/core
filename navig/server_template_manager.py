@@ -53,6 +53,7 @@ class ServerTemplateManager:
         """Get the template directory for a specific server."""
         server_dir = self.config_manager.apps_dir / server_name
         template_dir = server_dir / "templates"
+        print(f"\n+++ SERVER TEMPLATE DIR = {template_dir} +++\n")
         return template_dir
     
     def _ensure_server_template_dir(self, server_name: str):

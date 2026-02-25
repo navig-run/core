@@ -8,6 +8,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+import typer
 from navig import console_helper as ch
 
 
@@ -186,9 +188,22 @@ def run_remote_command(
 
     host_config = config_manager.load_host_config(host_name)
 
+    # Warn early if host uses mDNS — unreliable and slow on Windows
+    _host_addr = host_config.get("host", "")
+    if _host_addr.endswith(".local") and sys.platform == "win32":
+        ch.warning(
+            f"Host uses mDNS ({_host_addr}) — can be slow or unreliable on "
+            "Windows. Consider setting the host to an IP address instead.",
+        )
+
     if options.get('json'):
         # JSON mode: capture output and emit a single JSON object.
-        result = remote_ops.execute_command(final_command, host_config, capture_output=True)
+        try:
+            result = remote_ops.execute_command(final_command, host_config, capture_output=True)
+        except RuntimeError as e:
+            import json as _json
+            ch.raw_print(_json.dumps({"error": str(e), "success": False}, indent=2))
+            raise typer.Exit(1)
         import json as _json
 
         ch.raw_print(
@@ -215,12 +230,16 @@ def run_remote_command(
     is_interactive = sys.stdout.isatty()
     is_raw_mode = options.get('raw', False)
 
-    if is_interactive and not is_raw_mode:
-        # Show progress indicator for interactive sessions
-        result = _execute_with_progress(remote_ops, final_command, host_config)
-    else:
-        # Direct execution for piped/raw output
-        result = remote_ops.execute_command(final_command, host_config, capture_output=False)
+    try:
+        if is_interactive and not is_raw_mode:
+            # Show progress indicator for interactive sessions
+            result = _execute_with_progress(remote_ops, final_command, host_config)
+        else:
+            # Direct execution for piped/raw output
+            result = remote_ops.execute_command(final_command, host_config, capture_output=False)
+    except RuntimeError as e:
+        ch.error(str(e))
+        raise typer.Exit(1)
 
     # Print newline after command output for clean separation
     ch.console.print()
@@ -235,10 +254,19 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
     Shows elapsed time after 3 seconds of waiting. The indicator updates
     in the terminal line above the command output area.
     """
-    import subprocess
+    import subprocess, shutil, pathlib as _pl
+
+    # Resolve ssh binary — 32-bit Python on 64-bit Windows cannot find System32\OpenSSH via PATH
+    def _find_ssh():
+        b = shutil.which('ssh') or shutil.which('ssh.exe')
+        if b: return b
+        _sr = os.environ.get('SystemRoot', 'C:/Windows')
+        for _c in [_pl.Path(_sr)/'SysNative'/'OpenSSH'/'ssh.exe', _pl.Path(_sr)/'System32'/'OpenSSH'/'ssh.exe']:
+            if _c.exists(): return str(_c)
+        raise FileNotFoundError('ssh.exe not found')
 
     # Build SSH command (same logic as RemoteOperations.execute_command)
-    ssh_args = ['ssh']
+    ssh_args = [_find_ssh()]
     ssh_args.extend(['-o', 'StrictHostKeyChecking=yes'])
     ssh_args.extend(['-o', 'ConnectTimeout=10'])
 
@@ -286,8 +314,16 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
     progress_thread.start()
 
     try:
-        # Execute command - output streams directly to terminal
-        result = subprocess.run(ssh_args)
+        # Execute command — output streams directly to terminal
+        _timeout = int(os.environ.get("NAVIG_SSH_TIMEOUT", "30"))
+        try:
+            result = subprocess.run(ssh_args, timeout=_timeout)
+        except subprocess.TimeoutExpired:
+            _host = host_config.get("host", "?")
+            raise RuntimeError(
+                f"SSH connection timed out after {_timeout}s — "
+                f"'{_host}' is unreachable or not responding."
+            )
         return result
     finally:
         # Signal progress thread to stop

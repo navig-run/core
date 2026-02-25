@@ -459,3 +459,152 @@ def inspect_server(options: Dict[str, Any]):
         ch.info(f"Templates: {', '.join(detected_templates.keys())}", style="cyan")
 
 
+
+
+import typer
+from navig.cli import show_subcommand_help, deprecation_warning
+from typing import Optional, List, Dict, Any, Tuple
+from pathlib import Path
+from navig import console_helper as ch
+
+
+server_app = typer.Typer(
+    help="[DEPRECATED: Use 'navig host'] Server operations",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@server_app.callback()
+def server_callback(ctx: typer.Context):
+    """Server management - DEPRECATED, use 'navig host'."""
+    deprecation_warning("navig server", "navig host")
+    if ctx.invoked_subcommand is None:
+        from navig.commands.interactive import launch_web_menu
+        launch_web_menu()
+        raise typer.Exit()
+
+
+@server_app.command("list")
+def server_list(
+    ctx: typer.Context,
+    vhosts: bool = typer.Option(False, "--vhosts", help="List virtual hosts"),
+    containers: bool = typer.Option(False, "--containers", help="List Docker containers"),
+    all: bool = typer.Option(False, "--all", "-a", help="Show all (including stopped)"),
+    filter: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter by name"),
+    hestia_users: bool = typer.Option(False, "--hestia-users", help="List HestiaCP users"),
+    hestia_domains: bool = typer.Option(False, "--hestia-domains", help="List HestiaCP domains"),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+):
+    """List server resources (vhosts, containers, etc.)."""
+    if vhosts:
+        from navig.commands.webserver import list_vhosts
+        list_vhosts(ctx.obj)
+    elif containers:
+        from navig.commands.docker import docker_ps
+        docker_ps(ctx.obj, all=all, filter=filter, format="table")
+    elif hestia_users:
+        from navig.commands.hestia import list_users_cmd
+        ctx.obj['plain'] = plain
+        list_users_cmd(ctx.obj)
+    elif hestia_domains:
+        from navig.commands.hestia import list_domains_cmd
+        ctx.obj['plain'] = plain
+        list_domains_cmd(None, ctx.obj)
+    else:
+        # Default: show containers
+        from navig.commands.docker import docker_ps
+        docker_ps(ctx.obj, all=all, filter=filter, format="table")
+
+
+@server_app.command("show")
+def server_show(
+    ctx: typer.Context,
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Container to inspect"),
+    stats: bool = typer.Option(False, "--stats", help="Show container stats"),
+):
+    """Show server details."""
+    if container:
+        if stats:
+            from navig.commands.docker import docker_stats
+            docker_stats(ctx.obj, container=container, no_stream=True)
+        else:
+            from navig.commands.docker import docker_inspect
+            docker_inspect(container, ctx.obj, format=None)
+    else:
+        ch.error("Specify --container <name>")
+
+
+@server_app.command("test")
+def server_test(
+    ctx: typer.Context,
+    filesystem: bool = typer.Option(False, "--filesystem", help="Check filesystem"),
+):
+    """Test server configuration."""
+    if filesystem:
+        from navig.commands.maintenance import check_filesystem
+        check_filesystem(ctx.obj)
+    else:
+        from navig.commands.webserver import test_config
+        test_config(ctx.obj)
+
+
+@server_app.command("run")
+def server_run(
+    ctx: typer.Context,
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Container name"),
+    command: Optional[str] = typer.Option(None, "--command", "--cmd", help="Command to execute"),
+    enable: Optional[str] = typer.Option(None, "--enable", help="Enable site/container"),
+    disable: Optional[str] = typer.Option(None, "--disable", help="Disable site/container"),
+    restart: Optional[str] = typer.Option(None, "--restart", help="Restart service/container"),
+    stop: Optional[str] = typer.Option(None, "--stop", help="Stop container"),
+    start: Optional[str] = typer.Option(None, "--start", help="Start container"),
+    reload: bool = typer.Option(False, "--reload", help="Reload web server"),
+    update_packages: bool = typer.Option(False, "--update-packages", help="Update system packages"),
+    clean_packages: bool = typer.Option(False, "--clean-packages", help="Clean package cache"),
+    cleanup_temp: bool = typer.Option(False, "--cleanup-temp", help="Clean temp files"),
+    maintenance: bool = typer.Option(False, "--maintenance", help="Full maintenance"),
+):
+    """Run server operations."""
+    if container and command:
+        from navig.commands.docker import docker_exec
+        docker_exec(container, command, ctx.obj, interactive=False, user=None, workdir=None)
+    elif enable:
+        from navig.commands.webserver import enable_site
+        ctx.obj['site_name'] = enable
+        enable_site(ctx.obj)
+    elif disable:
+        from navig.commands.webserver import disable_site
+        ctx.obj['site_name'] = disable
+        disable_site(ctx.obj)
+    elif restart:
+        from navig.commands.docker import docker_restart
+        docker_restart(restart, ctx.obj, timeout=10)
+    elif stop:
+        from navig.commands.docker import docker_stop
+        docker_stop(stop, ctx.obj, timeout=10)
+    elif start:
+        from navig.commands.docker import docker_start
+        docker_start(start, ctx.obj)
+    elif reload:
+        from navig.commands.webserver import reload_server
+        reload_server(ctx.obj)
+    elif update_packages:
+        from navig.commands.maintenance import update_packages
+        update_packages(ctx.obj)
+    elif clean_packages:
+        from navig.commands.maintenance import clean_packages
+        clean_packages(ctx.obj)
+    elif cleanup_temp:
+        from navig.commands.maintenance import cleanup_temp
+        cleanup_temp(ctx.obj)
+    elif maintenance:
+        from navig.commands.maintenance import system_maintenance
+        system_maintenance(ctx.obj)
+    else:
+        ch.error("Specify an action (--restart, --enable, --disable, etc.)")
+
+
+# ============================================================================
+# TASK/WORKFLOW (Canonical 'task' group - alias for workflow)
+# ============================================================================

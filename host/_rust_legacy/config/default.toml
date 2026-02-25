@@ -1,0 +1,24 @@
+# NAVIG Core Host — default configuration
+# Override per-key with environment variables: NAVIG__SERVER__BIND, etc.
+# Or drop a core.toml in %APPDATA%/Navig/Core/config/
+
+[server]
+bind     = "127.0.0.1:42424"
+log_reqs = true
+
+[log]
+level  = "info"
+# format: "json" | "pretty" | "compact"
+format = "json"
+# Uncomment to log to rolling files (LOCALAPPDATA/Navig/Core/logs/ on Windows)
+# dir = ""
+
+[auth]
+# MUST be overridden via NAVIG__AUTH__JWT_SECRET env var in production
+jwt_secret     = "CHANGEME-generate-with-openssl-rand-hex-32"
+token_ttl_secs = 3600
+
+[plugins]
+python_bin    = "python"
+router_cmd    = ["navig-core", "rpc-serve"]
+timeout_secs  = 30

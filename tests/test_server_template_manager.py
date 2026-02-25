@@ -22,10 +22,12 @@ from navig.template_manager import TemplateManager
 from navig.discovery import ServerDiscovery
 
 
+import uuid
+
 @pytest.fixture
 def temp_navig_dir():
     """Create temporary .navig directory."""
-    temp_dir = Path(tempfile.gettempdir()) / f"navig_test_{datetime.now().timestamp()}"
+    temp_dir = Path(tempfile.gettempdir()) / f"navig_test_{uuid.uuid4().hex}"
     temp_dir.mkdir(parents=True, exist_ok=True)
     yield temp_dir
     if temp_dir.exists():
@@ -35,7 +37,7 @@ def temp_navig_dir():
 @pytest.fixture
 def temp_templates_dir():
     """Create temporary templates directory with test template templates."""
-    temp_dir = Path(tempfile.gettempdir()) / f"templates_test_{datetime.now().timestamp()}"
+    temp_dir = Path(tempfile.gettempdir()) / f"templates_test_{uuid.uuid4().hex}"
     temp_dir.mkdir(parents=True, exist_ok=True)
     
     # Create test template: n8n
@@ -89,19 +91,21 @@ def temp_templates_dir():
 @pytest.fixture
 def config_manager(temp_navig_dir, monkeypatch):
     """Create ConfigManager with temporary directory."""
+    import navig.config
+    navig.config.ConfigManager._instance = None
+    
     monkeypatch.setattr('navig.config.Path.home', lambda: temp_navig_dir.parent)
     monkeypatch.setenv('HOME', str(temp_navig_dir.parent))
     
-    # Override base_dir
-    cm = ConfigManager()
-    cm.base_dir = temp_navig_dir
-    cm.config_file = temp_navig_dir / "config.yaml"
-    cm.apps_dir = temp_navig_dir / "apps"
-    cm.cache_dir = temp_navig_dir / "cache"
-    cm.backups_dir = temp_navig_dir / "backups"
-    cm._ensure_directories()
+    # Override base_dir properly using explicit_config_dir
+    cm = navig.config.ConfigManager(config_dir=temp_navig_dir)
+    cm._resolve_paths()  # Force path resolution so everything is set
     
-    return cm
+    navig.config.ConfigManager._instance = cm
+    
+    yield cm
+    
+    navig.config.ConfigManager._instance = None
 
 
 @pytest.fixture
@@ -307,13 +311,19 @@ class TestTemplateConfigMerging:
         server_template_manager.initialize_template_manually(test_server, 'n8n', enabled=True)
         
         # Get config
+        print(f"\n[DEBUG] apps_dir inside test = {server_template_manager.config_manager.apps_dir}\n")
         config = server_template_manager.get_template_config(test_server, 'n8n', include_template=True)
+        print("====== CONFIG ======")
+        print(config)
+        print("====== TEMPLATE ======")
+        print(server_template_manager.template_manager.get_template('n8n').metadata)
+        print("====================")
         
         assert config is not None
         assert config['paths']['n8n_home'] == '/root/.n8n'
         assert config['services']['automation'] == 'n8n.service'
         assert config['env_vars']['N8N_PORT'] == '5678'
-    
+        
     def test_get_config_with_detection_override(self, server_template_manager, test_server):
         """Test config merging with detection info override."""
         # Initialize from detection

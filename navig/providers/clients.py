@@ -187,9 +187,15 @@ class BaseProviderClient(ABC):
         """Parse error response into ProviderError."""
         try:
             data = json.loads(response_body)
-            message = data.get("error", {}).get("message", response_body)
-            error_type = data.get("error", {}).get("type")
-        except json.JSONDecodeError:
+            if isinstance(data, list) and len(data) > 0:
+                data = data[0]
+            if isinstance(data, dict):
+                message = data.get("error", {}).get("message", response_body)
+                error_type = data.get("error", {}).get("type")
+            else:
+                message = response_body
+                error_type = None
+        except (json.JSONDecodeError, AttributeError, TypeError):
             message = response_body
             error_type = None
         

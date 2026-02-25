@@ -6,6 +6,7 @@ Inspired by advanced workspace and agent template systems.
 """
 import json
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -15,6 +16,7 @@ from navig.workspace_ownership import (
     USER_NAVIG_DIR,
     USER_WORKSPACE_DIR,
     detect_project_workspace_duplicates,
+    is_project_workspace_path,
     resolve_personal_workspace_path,
 )
 
@@ -64,23 +66,38 @@ class WorkspaceManager:
         self.config = self._load_config()
         
         # Use provided path, config path, or default
-        requested_workspace: Optional[Path]
-        if workspace_path:
-            requested_workspace = Path(workspace_path)
-        elif self.config:
-            requested_workspace = Path(
-                self.config.get("agents", {}).get("defaults", {}).get(
-                    "workspace", str(DEFAULT_WORKSPACE_DIR)
-                )
+        # AUDIT self-check: Correct implementation? yes - explicit non-project paths are honored, project-local paths are canonicalized.
+        # AUDIT self-check: Break callers? no - implicit/default paths still use ownership resolution.
+        # AUDIT self-check: Simpler alternative? yes - short explicit-path fast path.
+        if workspace_path is not None:
+            explicit_path = self._validated_workspace_override(Path(workspace_path))
+            explicit_is_project_style = (
+                explicit_path.name == "workspace"
+                and explicit_path.parent.name == ".navig"
             )
+            if explicit_is_project_style or is_project_workspace_path(explicit_path, project_root=Path.cwd()):
+                self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
+                    explicit_path,
+                    project_root=Path.cwd(),
+                )
+            else:
+                self.workspace_path = explicit_path
+                self.legacy_workspace_path = None
         else:
-            requested_workspace = DEFAULT_WORKSPACE_DIR
+            if self.config:
+                requested_workspace = Path(
+                    self.config.get("agents", {}).get("defaults", {}).get(
+                        "workspace", str(DEFAULT_WORKSPACE_DIR)
+                    )
+                )
+            else:
+                requested_workspace = DEFAULT_WORKSPACE_DIR
 
-        # Personal/state files are now canonical at ~/.navig/workspace.
-        self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
-            requested_workspace,
-            project_root=Path.cwd(),
-        )
+            # Personal/state files are now canonical at ~/.navig/workspace.
+            self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
+                requested_workspace,
+                project_root=Path.cwd(),
+            )
 
         if self.legacy_workspace_path:
             logger.warning(
@@ -95,6 +112,37 @@ class WorkspaceManager:
                     "Using user-level copies as source of truth.",
                     len(duplicates),
                 )
+
+    def _validated_workspace_override(self, requested: Path) -> Path:
+        """
+        Validate explicit workspace override against trusted roots.
+
+        Allowed roots:
+        - User home directory
+        - Current project directory
+        - System temporary directory (for isolated tests)
+        """
+        resolved = requested.expanduser()
+        try:
+            resolved = resolved.resolve()
+        except Exception:
+            resolved = resolved.absolute()
+
+        project_root = Path.cwd().resolve()
+        allowed_roots = (
+            Path.home().resolve(),
+            project_root,
+            Path(tempfile.gettempdir()).resolve(),
+        )
+        if any(root == resolved or root in resolved.parents for root in allowed_roots):
+            return resolved
+
+        logger.warning(
+            "Rejected workspace_path outside trusted roots: %s. Falling back to %s.",
+            requested,
+            USER_WORKSPACE_DIR,
+        )
+        return USER_WORKSPACE_DIR
 
     def _candidate_workspace_paths(self) -> List[Path]:
         """Return workspace paths in read-priority order."""

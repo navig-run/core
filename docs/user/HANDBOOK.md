@@ -4081,11 +4081,16 @@ Add to `.vscode/mcp.json` or VS Code settings:
     "navig": {
       "command": "python",
       "args": ["-m", "navig.mcp_server"],
-      "env": {}
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
     }
   }
 }
 ```
+
+**Windows Note (Encoding):** NAVIG emits Unicode (emoji, checkmarks) in help/status output. Setting the UTF-8 env vars above avoids `UnicodeEncodeError` on Windows consoles and VS Code subprocesses.
 
 **Available MCP Tools:**
 

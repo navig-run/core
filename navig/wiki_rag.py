@@ -14,12 +14,15 @@ This module provides a lightweight fallback that works without extra dependencie
 import re
 import math
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Tuple
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 import json
 
 from navig import console_helper as ch
+
+if TYPE_CHECKING:
+    from navig.memory.project_indexer import ProjectIndexer
 
 
 @dataclass
@@ -206,21 +209,44 @@ class BM25Index:
 
 class WikiRAG:
     """RAG system for wiki knowledge base.
-    
+
     Provides semantic search and context retrieval for AI assistants.
+
+    When *project_indexer* is supplied the in-memory BM25 logic is bypassed
+    entirely — all search/context calls are delegated to the SQLite FTS5
+    engine in ProjectIndexer, filtered to ``content_type='wiki'``.
+    This is the preferred path when a project context exists.
+
+    The legacy in-memory path remains as a standalone fallback (e.g. for
+    ``navig wiki`` commands run outside a project that has been indexed).
     """
-    
-    def __init__(self, wiki_path: Path):
+
+    def __init__(
+        self,
+        wiki_path: Path,
+        project_indexer: Optional["ProjectIndexer"] = None,
+    ):
         """Initialize Wiki RAG.
-        
+
         Args:
-            wiki_path: Path to wiki directory
+            wiki_path: Path to wiki directory.
+            project_indexer: Optional unified ProjectIndexer instance.  When
+                provided, search/context are delegated to it (wiki type filter).
         """
         self.wiki_path = Path(wiki_path)
+        self._project_indexer = project_indexer
+
+        if project_indexer is not None:
+            # Unified path — no in-memory index needed
+            self.index = None
+            self.documents = []
+            self.index_file = self.wiki_path / '.meta' / 'rag_index.json'
+            return
+
         self.index = BM25Index()
         self.documents: List[WikiDocument] = []
         self.index_file = self.wiki_path / '.meta' / 'rag_index.json'
-        
+
         self._load_or_build_index()
     
     def _load_or_build_index(self):
@@ -273,9 +299,16 @@ class WikiRAG:
             json.dump(data, f, indent=2)
     
     def rebuild_index(self):
-        """Rebuild the search index from wiki pages."""
+        """Rebuild the search index from wiki pages.
+
+        No-op when using the unified ProjectIndexer backend — call
+        ``project_indexer.scan()`` or ``update_incremental()`` instead.
+        """
+        if self._project_indexer is not None:
+            return  # unified backend — caller should use project_indexer.scan()
+
         self.documents = []
-        
+
         if not self.wiki_path.exists():
             return
         
@@ -314,55 +347,80 @@ class WikiRAG:
     
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Search wiki for relevant content.
-        
+
         Args:
             query: Natural language search query
             top_k: Maximum results to return
-            
+
         Returns:
             List of relevant documents with scores and snippets
         """
+        if self._project_indexer is not None:
+            results = self._project_indexer.search(
+                query, top_k=top_k, content_type_filter="wiki"
+            )
+            return [
+                {
+                    "path": r.file_path,
+                    "title": r.section_title or Path(r.file_path).stem,
+                    "folder": str(Path(r.file_path).parent).replace("\\", "/"),
+                    "score": r.score,
+                    "chunk": r.content[:300] + "..." if len(r.content) > 300 else r.content,
+                    "chunk_index": 0,
+                    "total_chunks": 1,
+                }
+                for r in results
+            ]
         return self.index.search(query, top_k)
     
     def get_context(self, query: str, max_tokens: int = 2000) -> str:
         """Get relevant context for an AI query.
-        
+
         Retrieves and concatenates the most relevant wiki content
         for use as context in AI prompts.
-        
+
         Args:
             query: The question or topic to find context for
             max_tokens: Approximate maximum tokens to return
-            
+
         Returns:
             Formatted context string for AI consumption
         """
+        char_limit = max_tokens * 4  # ~4 chars per token
+
+        if self._project_indexer is not None:
+            ctx = self._project_indexer.get_context(
+                query,
+                max_chars=char_limit,
+                content_type_filter="wiki",
+            )
+            return ctx if ctx else "No relevant wiki content found."
+
         results = self.search(query, top_k=5)
-        
+
         if not results:
             return "No relevant wiki content found."
-        
+
         context_parts = []
         total_chars = 0
-        char_limit = max_tokens * 4  # Rough estimate: 4 chars per token
-        
+
         for result in results:
             if total_chars >= char_limit:
                 break
-            
+
             # Find full document
             doc = next((d for d in self.documents if d.path == result['path']), None)
             if not doc:
                 continue
-            
+
             # Add document content
             content = doc.content
             if total_chars + len(content) > char_limit:
                 content = content[:char_limit - total_chars]
-            
+
             context_parts.append(f"## {doc.title}\n*Source: {doc.path}*\n\n{content}")
             total_chars += len(content)
-        
+
         return "\n\n---\n\n".join(context_parts)
     
     def add_document(self, path: str, content: str, title: Optional[str] = None):
@@ -410,25 +468,52 @@ class WikiRAG:
     
     def get_stats(self) -> Dict[str, Any]:
         """Get index statistics."""
+        if self._project_indexer is not None:
+            s = self._project_indexer.stats()
+            return {
+                'backend': 'unified',
+                'total_documents': s.get('file_count', 0),
+                'total_chunks': s.get('chunk_count', 0),
+                'total_words': 0,  # not tracked in FTS5 path
+                'unique_terms': 0,
+                'avg_doc_length': 0,
+                'db_path': s.get('db_path', ''),
+            }
         total_chunks = sum(len(d.chunks) for d in self.documents)
         total_words = sum(len(TextTokenizer.tokenize(d.content)) for d in self.documents)
-        
+
         return {
+            'backend': 'in_memory',
             'total_documents': len(self.documents),
             'total_chunks': total_chunks,
             'total_words': total_words,
             'unique_terms': len(self.index.doc_freqs),
-            'avg_doc_length': round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0
+            'avg_doc_length': round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0,
         }
 
 
-def get_wiki_rag(wiki_path: Path) -> WikiRAG:
+def get_wiki_rag(
+    wiki_path: Path,
+    project_root: Optional[Path] = None,
+    use_unified: bool = False,
+) -> WikiRAG:
     """Get or create WikiRAG instance.
-    
+
     Args:
-        wiki_path: Path to wiki directory
-        
+        wiki_path: Path to wiki directory.
+        project_root: Project root for unified indexer (optional).
+        use_unified: When True and *project_root* is given, delegates to
+            ``ProjectIndexer`` (SQLite FTS5) instead of the in-memory BM25.
+            Equivalent to the ``navig.context.useUnifiedIndexer`` config flag.
+
     Returns:
-        WikiRAG instance
+        WikiRAG instance.
     """
+    if use_unified and project_root is not None:
+        try:
+            from navig.memory.project_indexer import ProjectIndexer
+            indexer = ProjectIndexer(Path(project_root))
+            return WikiRAG(wiki_path, project_indexer=indexer)
+        except Exception as e:
+            ch.dim(f"[WikiRAG] Unified indexer unavailable ({e}), falling back to in-memory.")
     return WikiRAG(wiki_path)

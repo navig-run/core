@@ -135,3 +135,146 @@ def list_remote_directory(remote_path: str, options: Dict[str, Any]):
         ch.error(f"Error: {result.stderr}")
 
 
+
+
+import typer
+from navig.cli import show_subcommand_help, deprecation_warning
+from typing import Optional, List, Dict, Any, Tuple
+from pathlib import Path
+from navig import console_helper as ch
+
+
+file_app = typer.Typer(
+    help="File operations (upload, download, list, edit, remove)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@file_app.callback()
+def file_callback(ctx: typer.Context):
+    """File operations - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("file", ctx)
+        raise typer.Exit()
+
+
+@file_app.command("add")
+def file_add(
+    ctx: typer.Context,
+    local: Path = typer.Argument(..., help="Local file/directory path"),
+    remote: Optional[str] = typer.Argument(None, help="Remote path (auto-detected if omitted)"),
+    dir: bool = typer.Option(False, "--dir", "-d", help="Create directory instead of upload"),
+    mode: str = typer.Option("755", "--mode", "-m", help="Permission mode for directories"),
+    parents: bool = typer.Option(True, "--parents", "-p", help="Create parent directories"),
+):
+    """Add file/directory to remote (upload or mkdir)."""
+    if dir:
+        from navig.commands.files_advanced import mkdir_cmd
+        ctx.obj['parents'] = parents
+        ctx.obj['mode'] = mode
+        mkdir_cmd(str(local), ctx.obj)
+    else:
+        from navig.commands.files import upload_file_cmd
+        upload_file_cmd(local, remote, ctx.obj)
+
+
+@file_app.command("list")
+def file_list(
+    ctx: typer.Context,
+    remote_path: str = typer.Argument(..., help="Remote directory path"),
+    all: bool = typer.Option(False, "--all", "-a", help="Show hidden files"),
+    tree: bool = typer.Option(False, "--tree", "-t", help="Show tree structure"),
+    depth: int = typer.Option(2, "--depth", "-d", help="Tree depth (with --tree)"),
+    tables: bool = typer.Option(False, "--tables", help="Show database tables (for db list)"),
+    containers: bool = typer.Option(False, "--containers", help="Show containers"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """List remote directory contents."""
+    if json:
+        ctx.obj["json"] = True
+    if tree:
+        from navig.commands.files_advanced import tree_cmd
+        tree_cmd(remote_path, ctx.obj, depth=depth, dirs_only=False)
+    else:
+        from navig.commands.files_advanced import list_dir_cmd
+        list_dir_cmd(remote_path, ctx.obj, all=all, long=True, human=True)
+
+
+@file_app.command("show")
+def file_show(
+    ctx: typer.Context,
+    remote: str = typer.Argument(..., help="Remote file path"),
+    download: Optional[Path] = typer.Option(None, "--download", "-d", help="Download to local path"),
+    lines: Optional[str] = typer.Option(None, "--lines", "-n", help="Number of lines or range (e.g., 50 or 100-200)"),
+    head: bool = typer.Option(False, "--head", help="Show first N lines"),
+    tail: bool = typer.Option(False, "--tail", "-t", help="Show last N lines"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Show remote file contents or download."""
+    if json:
+        ctx.obj["json"] = True
+    if download:
+        from navig.commands.files import download_file_cmd
+        download_file_cmd(remote, download, ctx.obj)
+    else:
+        from navig.commands.files_advanced import cat_file_cmd
+        cat_file_cmd(remote, ctx.obj, lines=lines, head=head, tail=tail)
+
+
+@file_app.command("edit")
+def file_edit(
+    ctx: typer.Context,
+    remote: str = typer.Argument(..., help="Remote file path"),
+    content: Optional[str] = typer.Option(None, "--content", "-c", help="Content to write"),
+    mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Set permissions"),
+    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Set ownership"),
+    append: bool = typer.Option(False, "--append", "-a", help="Append instead of overwrite"),
+    stdin: bool = typer.Option(False, "--stdin", "-s", help="Read from stdin"),
+    from_file: Optional[Path] = typer.Option(None, "--from-file", "-f", help="Read from local file"),
+):
+    """Edit remote file (write content, change permissions/owner)."""
+    if content or stdin or from_file:
+        from navig.commands.files_advanced import write_file_cmd
+        write_file_cmd(remote, content, ctx.obj, stdin=stdin, local_file=from_file, 
+                       append=append, mode=mode, owner=owner)
+    elif mode:
+        from navig.commands.files_advanced import chmod_cmd
+        ctx.obj['recursive'] = False
+        chmod_cmd(remote, mode, ctx.obj)
+    elif owner:
+        from navig.commands.files_advanced import chown_cmd
+        ctx.obj['recursive'] = False
+        chown_cmd(remote, owner, ctx.obj)
+    else:
+        ch.error("Specify --content, --mode, or --owner")
+
+
+@file_app.command("get")
+def file_get(
+    ctx: typer.Context,
+    remote: str = typer.Argument(..., help="Remote file path"),
+    local: Optional[Path] = typer.Argument(None, help="Local destination path"),
+):
+    """Download file from remote."""
+    from navig.commands.files import download_file_cmd
+    download_file_cmd(remote, local, ctx.obj)
+
+
+@file_app.command("remove")
+def file_remove(
+    ctx: typer.Context,
+    remote: str = typer.Argument(..., help="Remote path to delete"),
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Delete directories recursively"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Remove remote file or directory."""
+    from navig.commands.files_advanced import delete_file_cmd
+    ctx.obj['recursive'] = recursive
+    ctx.obj['force'] = force
+    delete_file_cmd(remote, ctx.obj)
+
+
+# ============================================================================
+# LOG OPERATIONS (Canonical 'log' group)
+# ============================================================================

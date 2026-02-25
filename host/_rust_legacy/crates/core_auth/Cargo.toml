@@ -1,0 +1,19 @@
+[package]
+name    = "core_auth"
+version = "0.1.0"
+edition = "2021"
+description = "JWT token management + scope enforcement for NAVIG Core Host"
+
+[dependencies]
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+once_cell    = { workspace = true }
+chrono       = { workspace = true }
+jsonwebtoken = { workspace = true }
+argon2       = { workspace = true }
+rand         = { workspace = true }
+
+core_config = { path = "../core_config" }
+core_os     = { path = "../core_os" }

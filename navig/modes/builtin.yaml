@@ -1,0 +1,86 @@
+##
+## NAVIG Built-in Mode Profiles
+##
+## Modes are named presets that define:
+##   - model_preference  → which model tier to prefer (fast | strong | reasoning)
+##   - tool_tier         → permission level for the policy gate
+##   - output_style      → how the CLI and agents format responses
+##   - require_auth      → whether switching to this mode requires PIN confirmation
+##   - gated_commands    → dot-notation command patterns that are additionally gated
+##   - formations_default → formations auto-activated on mode switch
+##
+## Active mode is set via: navig mode set <name>
+## Stored in: ~/.navig/config.yaml  (key: active_mode)
+##
+
+modes:
+
+  node:
+    label: "NODE"
+    icon: "⬡"
+    description: "Default user — safe, simple, read-only preferred"
+    model_preference: fast
+    tool_tier: safe
+    output_style: simple
+    require_auth: false
+    color: "#6B7280"
+    gated_commands: []
+    formations_default:
+      - personal
+
+  builder:
+    label: "BUILDER"
+    icon: "🔨"
+    description: "Developer — code tools, snippets, local and remote dev ops allowed"
+    model_preference: strong
+    tool_tier: dev
+    output_style: snippets
+    require_auth: false
+    color: "#3B82F6"
+    gated_commands:
+      - "db.drop"
+      - "db.truncate"
+      - "docker.prune"
+    formations_default:
+      - forge
+      - devops
+
+  operator:
+    label: "OPERATOR"
+    icon: "🎛️"
+    description: "Ops engineer — server tools enabled, destructive ops are gated + PIN-protected"
+    model_preference: reasoning
+    tool_tier: ops
+    output_style: step_by_step
+    require_auth: true
+    color: "#F59E0B"
+    gated_commands:
+      - "db.drop"
+      - "db.truncate"
+      - "service.uninstall"
+      - "security.*"
+      - "host.remove"
+    formations_default:
+      - devops
+      - infra
+
+  architect:
+    label: "ARCHITECT"
+    icon: "🏛️"
+    description: "Full access — all tools, config editors, system design, council enabled"
+    model_preference: reasoning
+    tool_tier: all
+    output_style: diffs_with_rationale
+    require_auth: true
+    color: "#8B5CF6"
+    gated_commands: []
+    formations_default:
+      - architect
+      - council
+
+
+## Tool Tier Definitions (reference for PolicyGate)
+## safe  → read-only, no remote execution, no db writes
+## dev   → local dev tools, remote read, db read, docker read
+## ops   → remote execution, db write, docker manage, service control (gated list above still applies)
+## all   → unrestricted (architect bypass)

@@ -229,6 +229,8 @@ node_modules
 .cursorrules
 .windsurfrules
 .agent/
+.claude/
+.codex/
 .gemini/
 .ruff_cache/
 
@@ -245,3 +247,39 @@ requirements-bot.txt
 # Private files
 knowledge/
 .env.remote
+
+# NAVIG reports (security scans, secret scans — never commit)
+.navig/reports/
+
+# Dev scratch / test output files in repo root (never commit)
+out*.txt
+exec_res.txt
+vault_res.txt
+debug.txt
+dev.log
+profile.txt
+cprof.log
+cumtime_profile.txt
+version_prof*.txt
+import_times.log
+test_out*.txt
+test_results*.txt
+test_failures*.txt
+test_run.log
+test_vault.log
+failed_test*.txt
+raw_out.txt
+cli_analysis.txt
+
+# Root-level dev scratch scripts (one-off, not part of package)
+analyze_cli.py
+clean_mcp.py
+fix_db_aliases.py
+fix_imports.py
+move_apps.py
+move_host.py
+run_test.py
+test_google.py
+test_json.py
+test_parse*.py
+test_vision.py

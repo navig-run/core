@@ -297,10 +297,18 @@ class EventBridge:
         debounce_seconds: float = 0.5,
         max_payload_bytes: int = 131_072,
         broadcast_timeout: float = 0.25,
+        enable_ipc_offload: bool = False,
+        ipc_socket_path: Optional[str] = None,
     ):
         self.debounce_seconds = debounce_seconds
         self.max_payload_bytes = max_payload_bytes
         self.broadcast_timeout = broadcast_timeout
+        self.enable_ipc_offload = enable_ipc_offload
+        import sys
+        self.ipc_socket_path = ipc_socket_path or (
+            r"\\.\pipe\navig-sysd.sock" if sys.platform == "win32" 
+            else "/tmp/navig-sysd.sock"
+        )
 
         # Client registry: ws → filter
         self._clients: Dict[int, tuple[WebSocketLike, SubscriptionFilter]] = {}
@@ -446,19 +454,32 @@ class EventBridge:
         if not self._clients:
             return 0
 
-        # Debounce: suppress rapid-fire duplicates of same topic
+        # Rate limit: suppress rapid-fire duplicates of same topic 
+        # dynamically based on serverity to protect UI from freezing
+        if envelope.severity in (Severity.DEBUG, Severity.INFO):
+            window = self.debounce_seconds
+        elif envelope.severity == Severity.WARNING:
+            window = 0.2
+        else:  # ERROR, CRITICAL
+            window = 0.0
+
         now = time.monotonic()
         last = self._recent.get(envelope.topic)
-        if last is not None and (now - last) < self._dedup_window:
+        if last is not None and (now - last) < window:
             self._stats["events_filtered"] += 1
-            # Update but don't broadcast yet — rely on next event after window
-            self._recent[envelope.topic] = now
+            # Return early without updating last_time, creating a rate limit 
+            # instead of a trailing debounce that would indefinitely silence streams.
             return 0
+            
         self._recent[envelope.topic] = now
 
         # Build JSON-RPC payload once
         payload_obj = envelope.to_jsonrpc_notification()
         payload_str = json.dumps(payload_obj, default=str)
+        
+        # Fast-path: offload to Go daemon via IPC
+        if self.enable_ipc_offload:
+            asyncio.create_task(self._forward_to_ipc(payload_str))
 
         # Truncate oversized payloads
         if len(payload_str.encode("utf-8", errors="replace")) > self.max_payload_bytes:
@@ -513,6 +534,32 @@ class EventBridge:
             origin="direct",
         )
         return await self.push(envelope)
+
+    async def _forward_to_ipc(self, payload: str) -> None:
+        """
+        Forward event payload directly to the Go IPC daemon over domain sockets
+        or named pipes, bypassing the heavier Python asyncio broadcast loop.
+        """
+        if not self.ipc_socket_path:
+            return
+            
+        import sys
+        try:
+            if sys.platform == "win32":
+                # Named pipe connection
+                reader, writer = await asyncio.open_connection(self.ipc_socket_path)
+            else:
+                # Unix domain socket connection 
+                reader, writer = await asyncio.open_unix_connection(self.ipc_socket_path)
+                
+            writer.write(payload.encode("utf-8") + b"\n")
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            # Silently fail if native daemon isn't running yet
+            _logger = logging.getLogger("navig.event_bridge.ipc")
+            _logger.debug(f"IPC offload skipped: {e}")
 
     # ------------------------------------------------------------------
     # Normalisation helpers

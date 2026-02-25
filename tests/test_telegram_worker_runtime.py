@@ -95,7 +95,7 @@ async def test_start_gateway_http_registers_full_routes(monkeypatch):
 
     register_all_routes = MagicMock()
     monkeypatch.setattr("navig.gateway.routes.register_all_routes", register_all_routes)
-    monkeypatch.setattr("navig.gateway.deck_api.register_deck_routes", MagicMock())
+    monkeypatch.setattr("navig.gateway.deck.register_deck_routes", MagicMock())
 
     await tw._start_gateway_http(
         gateway,

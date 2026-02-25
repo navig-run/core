@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://navig.local/schemas/execution_receipt.schema.json",
+  "title": "NAVIG ExecutionReceipt",
+  "description": "Immutable audit record produced by every Mission execution",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receipt_id", "mission_id", "node_id", "outcome", "completed_at"],
+  "properties": {
+    "receipt_id":      { "type": "string", "format": "uuid" },
+    "mission_id":      { "type": "string", "format": "uuid" },
+    "node_id":         { "type": "string", "format": "uuid" },
+    "title":           { "type": "string" },
+    "capability":      { "type": "string" },
+    "outcome": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "cancelled", "timed_out"]
+    },
+    "started_at":      { "type": ["string", "null"], "format": "date-time" },
+    "completed_at":    { "type": "string", "format": "date-time" },
+    "duration_secs":   { "type": ["number", "null"], "minimum": 0 },
+    "error":           { "type": ["string", "null"] },
+    "artifacts":       { "type": "object" },
+    "metadata":        { "type": "object" },
+    "recorded_at":     { "type": "string", "format": "date-time" }
+  }
+}

@@ -12,6 +12,7 @@ Provides a unified interface for AI/LLM calls with:
 
 import logging
 import os
+import threading
 import time
 from typing import Dict, List, Optional
 from dataclasses import dataclass
@@ -108,7 +109,7 @@ class AIClient:
     def _load_navig_config(self):
         """Load API keys and model preferences from NAVIG config."""
         self._navig_api_key = None
-        self._navig_model = "anthropic/claude-3.5-sonnet"
+        self._navig_model = "google/gemini-2.5-flash"
         self._airllm_config = None
         
         try:
@@ -162,27 +163,27 @@ class AIClient:
     def _detect_best_provider(self) -> str:
         """Detect the best available provider.
         
-        Priority: forge → github_models → openrouter → airllm → local → none
+        Priority: mcp_forge → github_models → openrouter → airllm → local → none
         """
-        # ① Forge — VS Code Copilot bridge via SSH tunnel
-        forge_url = self._get_forge_url()
-        if forge_url:
+        # ⓪ MCP Forge — VS Code Copilot via MCP WebSocket (preferred)
+        mcp_forge_url = self._get_forge_mcp_url()
+        if mcp_forge_url:
             try:
                 import socket
                 from urllib.parse import urlparse
-                parsed = urlparse(forge_url)
+                parsed = urlparse(mcp_forge_url.replace("ws://", "http://").replace("wss://", "https://"))
                 host = parsed.hostname or "127.0.0.1"
-                port = parsed.port or 43821
+                port = parsed.port or 42070
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(1.0)
                 result = sock.connect_ex((host, port))
                 sock.close()
                 if result == 0:
-                    return "forge"
+                    return "mcp_forge"
             except Exception:
                 pass
 
-        # ② GitHub Models — free tier, needs GITHUB_TOKEN
+        # ① GitHub Models — free tier, needs GITHUB_TOKEN
         gh_token = self._get_github_models_token()
         if gh_token:
             return "github_models"
@@ -214,24 +215,41 @@ class AIClient:
         # Default to pattern matching (no LLM available)
         return "none"
 
-    def _get_forge_url(self) -> str:
-        """Read Forge LLM bridge URL from config, env, or default."""
-        # Check env var first (useful for testing / overrides)
-        env_url = os.getenv("NAVIG_FORGE_LLM_URL")
+    def _get_forge_mcp_url(self) -> str:
+        """Read Forge MCP WebSocket URL from bridge-grid.json, config, env, or default.
+
+        Priority:
+        1. bridge-grid.json live llm_port  (written by navig-bridge heartbeat)
+        2. NAVIG_FORGE_MCP_URL env var
+        3. forge.mcp_url in ~/.navig/config.yaml
+        4. Hardcoded default ws://127.0.0.1:42070
+        """
+        # ① Live port from navig-bridge heartbeat file (most reliable)
+        try:
+            from navig.providers.bridge_grid_reader import get_llm_port
+            live_port = get_llm_port()
+            if live_port:
+                return f"ws://127.0.0.1:{live_port}"
+        except Exception:
+            pass
+
+        # ② Explicit env override
+        env_url = os.getenv("NAVIG_FORGE_MCP_URL")
         if env_url:
             return env_url
-        # Check config.yaml  forge.url
+
+        # ③ Config file
         try:
             from navig.config import get_config_manager
             cfg = get_config_manager().global_config or {}
             forge_cfg = cfg.get("forge", {})
-            url = forge_cfg.get("url") or forge_cfg.get("llm_url")
+            url = forge_cfg.get("mcp_url")
             if url:
                 return url
         except Exception:
             pass
-        # Default: only if the port is likely tunnelled
-        return "http://127.0.0.1:43821"
+
+        return "ws://127.0.0.1:42070"
 
     def _get_forge_token(self) -> str:
         """Read Forge LLM bearer token from config or env."""
@@ -313,7 +331,7 @@ class AIClient:
         """
         
         # Try using the full provider system first
-        if self.provider in ("openrouter", "openai", "airllm", "forge", "github_models"):
+        if self.provider in ("openrouter", "openai", "airllm", "mcp_forge", "github_models"):
             fallback_mgr = self._get_fallback_manager()
             if fallback_mgr:
                 try:
@@ -339,9 +357,9 @@ class AIClient:
                 messages, temperature, max_tokens, model=model
             )
 
-        # Forge — VS Code Copilot bridge
-        if self.provider == "forge":
-            return await self._chat_forge(messages, temperature, max_tokens, model=model)
+        # MCP Forge — VS Code Copilot via MCP WebSocket (preferred)
+        if self.provider == "mcp_forge":
+            return await self._chat_mcp_forge(messages, temperature, max_tokens, model=model)
 
         # GitHub Models — free tier via GitHub PAT
         if self.provider == "github_models":
@@ -490,14 +508,18 @@ class AIClient:
                 temperature=decision.temperature,
                 max_tokens=decision.max_tokens,
             )
-        elif provider == "forge":
-            return await self._chat_forge(
+        elif provider == "mcp_forge":
+            # Map routing tier to purpose hint for navig-bridge model selection
+            tier = getattr(decision, 'tier', '')
+            purpose_map = {'small': 'small_talk', 'big': 'big_tasks', 'coder_big': 'coding'}
+            purpose = purpose_map.get(tier, '')
+            return await self._chat_mcp_forge(
                 messages,
                 temperature=decision.temperature,
                 max_tokens=decision.max_tokens,
                 model=decision.model,
+                purpose=purpose or None,
             )
-
         # Default: try local (Ollama)
         return await self._chat_local(
             messages,
@@ -588,6 +610,7 @@ class AIClient:
                 f"{base_url}/chat/completions",
                 headers=headers,
                 json=payload,
+                timeout=aiohttp.ClientTimeout(total=120, connect=10),
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -637,26 +660,33 @@ class AIClient:
         except Exception as e:
             raise RuntimeError(f"AirLLM inference failed: {e}")
             
-    async def _chat_forge(
+    async def _chat_mcp_forge(
         self,
         messages: List[Dict[str, str]],
         temperature: float,
         max_tokens: int,
         model: Optional[str] = None,
+        purpose: Optional[str] = None,
     ) -> str:
-        """Route through the Forge LLM bridge (VS Code Copilot)."""
-        from navig.agent.llm_providers import ForgeProvider
+        """Route through the MCP Forge bridge (VS Code Copilot via MCP WebSocket).
 
-        forge_url = self._get_forge_url()
-        forge_token = self._get_forge_token()
+        Args:
+            purpose: Task purpose hint (coding/small_talk/big_tasks/summarize/research).
+                     When set, navig-bridge picks the optimal Copilot model automatically.
+        """
+        from navig.agent.llm_providers import McpForgeProvider
 
-        provider = ForgeProvider(base_url=forge_url, api_key=forge_token)
+        mcp_url = self._get_forge_mcp_url()
+        mcp_token = self._get_forge_token()
+
+        provider = McpForgeProvider(base_url=mcp_url, api_key=mcp_token)
         try:
             resp = await provider.chat(
                 model=model or "",
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                purpose=purpose,
             )
             return resp.content
         finally:
@@ -709,6 +739,7 @@ class AIClient:
                 f"{base_url}/chat/completions",
                 headers={"Content-Type": "application/json"},
                 json=payload,
+                timeout=aiohttp.ClientTimeout(total=120, connect=10),
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -740,16 +771,31 @@ class AIClient:
         """Check if any AI provider is available."""
         return self.provider != "none"
 
+    def re_detect_provider(self) -> str:
+        """
+        Re-run provider detection.  Called when network conditions change
+        (e.g. reverse SSH tunnel established, VS Code opened).
+        Returns the newly selected provider name.
+        """
+        old = self.provider
+        self.provider = self._detect_best_provider()
+        if self.provider != old:
+            logger.info("Provider re-detected: %s → %s", old, self.provider)
+        return self.provider
+
 
 # Singleton instance
 _default_client: Optional[AIClient] = None
+_default_client_lock = threading.Lock()
 
 
 def get_ai_client() -> AIClient:
-    """Get or create default AI client."""
+    """Get or create default AI client (thread-safe)."""
     global _default_client
     if _default_client is None:
-        _default_client = AIClient()
+        with _default_client_lock:
+            if _default_client is None:
+                _default_client = AIClient()
     return _default_client
 
 

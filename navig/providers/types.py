@@ -195,6 +195,29 @@ class AuthProfileStore:
 # ============================================================================
 
 BUILTIN_PROVIDERS: Dict[str, ProviderConfig] = {
+    "google": ProviderConfig(
+        name="google",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api=ModelApi.OPENAI_COMPLETIONS,
+        auth_header="Authorization",
+        models=[
+            ModelDefinition(
+                id="gemini-2.5-flash",
+                name="Gemini 2.5 Flash",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=1000000,
+                max_tokens=8192,
+            ),
+            ModelDefinition(
+                id="gemini-2.5-pro",
+                name="Gemini 2.5 Pro",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=2000000,
+                max_tokens=8192,
+            ),
+        ],
+        priority=30,
+    ),
     "openai": ProviderConfig(
         name="openai",
         base_url="https://api.openai.com/v1",
