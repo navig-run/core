@@ -1,0 +1,17 @@
+[package]
+name    = "core_events"
+version = "0.1.0"
+edition = "2021"
+description = "Typed async event bus for NAVIG Core Host"
+
+[dependencies]
+tokio      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+chrono     = { workspace = true }
+ulid       = { workspace = true }
+once_cell  = { workspace = true }
+
+core_config = { path = "../core_config" }

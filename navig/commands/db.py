@@ -917,8 +917,16 @@ def db_shell_cmd(
     if container:
         db_cmd = f"docker exec -it {_escape_for_shell(container)} sh -c {_escape_for_shell(db_cmd)}"
 
-    # Build SSH command for interactive session
-    ssh_cmd = ['ssh', '-t', '-p', str(ssh_port)]
+    # Build SSH command for interactive session — resolve full path for 32-bit Python on Windows
+    import shutil as _shutil, pathlib as _pl
+    def _find_ssh_db():
+        b = _shutil.which('ssh') or _shutil.which('ssh.exe')
+        if b: return b
+        _sr = __import__('os').environ.get('SystemRoot', 'C:/Windows')
+        for _c in [_pl.Path(_sr)/'SysNative'/'OpenSSH'/'ssh.exe', _pl.Path(_sr)/'System32'/'OpenSSH'/'ssh.exe']:
+            if _c.exists(): return str(_c)
+        raise FileNotFoundError('ssh.exe not found')
+    ssh_cmd = [_find_ssh_db(), '-t', '-p', str(ssh_port)]
     if ssh_key:
         ssh_cmd.extend(['-i', str(Path(ssh_key).expanduser())])
     ssh_cmd.append(f'{ssh_user}@{ssh_host}')
@@ -930,4 +938,274 @@ def db_shell_cmd(
 
     # Run interactively
     subprocess.run(ssh_cmd)
+
+
+
+import typer
+from navig.cli import show_subcommand_help, deprecation_warning
+from typing import Optional, List, Dict, Any, Tuple
+from pathlib import Path
+from navig import console_helper as ch
+
+
+db_app = typer.Typer(
+    help="Database operations (query, backup, restore, list, shell)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@db_app.callback()
+def db_callback(ctx: typer.Context):
+    """Database management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("db", ctx)
+        raise typer.Exit()
+
+
+@db_app.command("show")
+def db_show(
+    ctx: typer.Context,
+    database: Optional[str] = typer.Argument(None, help="Database name"),
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    user: str = typer.Option("root", "--user", "-u", help="Database user"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
+    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    tables: bool = typer.Option(False, "--tables", help="Show tables in database"),
+    containers: bool = typer.Option(False, "--containers", help="Show database containers"),
+    users: bool = typer.Option(False, "--users", help="Show database users"),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+):
+    """Show database information (canonical command)."""
+    ctx.obj['plain'] = plain
+    if containers:
+        from navig.commands.db import db_containers_cmd
+        db_containers_cmd(ctx.obj)
+    elif users:
+        from navig.commands.database_advanced import list_users_cmd
+        list_users_cmd(ctx.obj)
+    elif tables and database:
+        from navig.commands.db import db_tables_cmd
+        db_tables_cmd(database, container, user, password, db_type, ctx.obj)
+    elif database:
+        from navig.commands.db import db_tables_cmd
+        db_tables_cmd(database, container, user, password, db_type, ctx.obj)
+    else:
+        from navig.commands.db import db_list_cmd
+        db_list_cmd(container, user, password, db_type, ctx.obj)
+
+
+@db_app.command("run")
+def db_run(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Argument(None, help="SQL query to execute"),
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    user: str = typer.Option("root", "--user", "-u", help="Database user"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
+    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
+    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="SQL file to execute"),
+    shell: bool = typer.Option(False, "--shell", "-s", help="Open interactive shell"),
+):
+    """Run SQL query/file or open shell (canonical command)."""
+    if shell:
+        from navig.commands.db import db_shell_cmd
+        db_shell_cmd(container, user, password, database, db_type, ctx.obj)
+    elif file:
+        from navig.commands.database import execute_sql_file
+        execute_sql_file(file, ctx.obj)
+    elif query:
+        from navig.commands.db import db_query_cmd
+        db_query_cmd(query, container, user, password, database, db_type, ctx.obj)
+    else:
+        # Default to shell if no query provided
+        from navig.commands.db import db_shell_cmd
+        db_shell_cmd(container, user, password, database, db_type, ctx.obj)
+
+
+def _is_base64_encoded(s: str) -> bool:
+    """Check if string looks like base64 (for auto-detection)."""
+    import base64
+    import re
+    # Base64 pattern: only A-Za-z0-9+/= and length multiple of 4
+    if not re.match(r'^[A-Za-z0-9+/]+=*$', s):
+        return False
+    if len(s) % 4 != 0:
+        return False
+    # Must be reasonably long (short strings could be false positives)
+    if len(s) < 20:
+        return False
+    # Try to decode - valid base64 should decode cleanly
+    try:
+        decoded = base64.b64decode(s).decode('utf-8')
+        # Check if decoded looks like SQL (common keywords)
+        sql_keywords = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'SHOW', 'DESCRIBE']
+        return any(kw in decoded.upper() for kw in sql_keywords)
+    except Exception:
+        return False
+
+
+@db_app.command("query")
+def db_query_new(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="SQL query to execute (auto-detects base64)"),
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    user: str = typer.Option("root", "--user", "-u", help="Database user"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
+    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
+    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    plain: bool = typer.Option(False, "--plain", "--raw", help="Output plain text (no formatting) for scripting"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+    b64: bool = typer.Option(False, "--b64", "-b", help="Force base64 decode (usually auto-detected)"),
+):
+    """Execute SQL query on remote database.
+    
+    Base64 encoding is AUTO-DETECTED. Just pass the query:
+        navig db query "SELECT * FROM users" -d mydb
+        navig db query "U0VMRUNUICogRlJPTSB1c2Vycw==" -d mydb  # Auto-detected as base64
+    
+    Use --b64 to force base64 decoding if auto-detection fails.
+    """
+    from navig.commands.db import db_query_cmd
+    import base64
+    
+    # Auto-detect base64 or use explicit flag
+    if b64 or _is_base64_encoded(query):
+        try:
+            decoded = base64.b64decode(query).decode('utf-8').strip()
+            if not b64:
+                ch.info(f"Auto-detected base64 query ({len(query)} chars → {len(decoded)} chars)")
+            query = decoded
+        except Exception as e:
+            if b64:
+                ch.error(f"Failed to decode base64 query: {e}")
+                raise typer.Exit(1)
+            # If auto-detect failed, just use original query
+            pass
+    
+    ctx.obj['plain'] = plain
+    if json:
+        ctx.obj["json"] = True
+    db_query_cmd(query, container, user, password, database, db_type, ctx.obj)
+
+
+@db_app.command("file")
+def db_file_new(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., help="SQL file to execute"),
+):
+    """Execute SQL file through tunnel."""
+    from navig.commands.database import execute_sql_file
+    execute_sql_file(file, ctx.obj)
+
+
+@db_app.command("list")
+def db_list_new(
+    ctx: typer.Context,
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    user: str = typer.Option("root", "--user", "-u", help="Database user"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
+    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    plain: bool = typer.Option(False, "--plain", help="Output plain text (one database per line) for scripting"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """List all databases on remote server."""
+    from navig.commands.db import db_list_cmd
+    ctx.obj['plain'] = plain
+    if json:
+        ctx.obj["json"] = True
+    db_list_cmd(container, user, password, db_type, ctx.obj)
+
+
+@db_app.command("tables")
+def db_tables_new(
+    ctx: typer.Context,
+    database: str = typer.Argument(..., help="Database name"),
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    user: str = typer.Option("root", "--user", "-u", help="Database user"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
+    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    plain: bool = typer.Option(False, "--plain", help="Output plain text (one table per line) for scripting"),
+):
+    """List tables in a database."""
+    from navig.commands.db import db_tables_cmd
+    ctx.obj['plain'] = plain
+    db_tables_cmd(database, container, user, password, db_type, ctx.obj)
+
+
+@db_app.command("dump")
+def db_dump_new(
+    ctx: typer.Context,
+    database: str = typer.Argument(..., help="Database name to dump"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path"),
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    user: str = typer.Option("root", "--user", "-u", help="Database user"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
+    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+):
+    """Dump/backup a database from remote server."""
+    from navig.commands.db import db_dump_cmd
+    db_dump_cmd(database, output, container, user, password, db_type, ctx.obj)
+
+
+@db_app.command("restore")
+def db_restore_new(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., help="Backup file to restore from"),
+):
+    """Restore database from backup file."""
+    from navig.commands.database import restore_database
+    restore_database(file, ctx.obj)
+
+
+@db_app.command("shell", hidden=True)
+def db_shell_new(
+    ctx: typer.Context,
+    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    user: str = typer.Option("root", "--user", "-u", help="Database user"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
+    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
+    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+):
+    """[DEPRECATED: Use 'navig db run --shell'] Open interactive database shell."""
+    deprecation_warning("navig db shell", "navig db run --shell")
+    from navig.commands.db import db_shell_cmd
+    db_shell_cmd(container, user, password, database, db_type, ctx.obj)
+
+
+@db_app.command("containers", hidden=True)
+def db_containers_new(ctx: typer.Context):
+    """[DEPRECATED: Use 'navig db show --containers'] List database containers."""
+    deprecation_warning("navig db containers", "navig db show --containers")
+    from navig.commands.db import db_containers_cmd
+    db_containers_cmd(ctx.obj)
+
+
+@db_app.command("users", hidden=True)
+def db_users_new(ctx: typer.Context):
+    """[DEPRECATED: Use 'navig db show --users'] List database users."""
+    deprecation_warning("navig db users", "navig db show --users")
+    from navig.commands.database_advanced import list_users_cmd
+    list_users_cmd(ctx.obj)
+
+
+@db_app.command("optimize")
+def db_optimize_new(
+    ctx: typer.Context,
+    table: str = typer.Argument(..., help="Table name to optimize"),
+):
+    """Optimize database table."""
+    from navig.commands.database_advanced import optimize_table_cmd
+    optimize_table_cmd(table, ctx.obj)
+
+
+@db_app.command("repair")
+def db_repair_new(
+    ctx: typer.Context,
+    table: str = typer.Argument(..., help="Table name to repair"),
+):
+    """Repair database table."""
+    from navig.commands.database_advanced import repair_table_cmd
+    repair_table_cmd(table, ctx.obj)
+
 

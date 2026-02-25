@@ -120,3 +120,105 @@ def evolve_fix(
         ch.success("File update successful!")
     else:
         ch.error(f"Fix failed: {result.error}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QUANTUM VELOCITY K6 — Auto-Evolutive Profiler Commands
+# ─────────────────────────────────────────────────────────────────────────────
+
+@evolution_app.command("status")
+def evolve_status(
+    days: int = typer.Option(7, "--days", "-d", help="Number of days of history to analyze"),
+    json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
+):
+    """Show performance trends and regression alerts from the auto-profiler."""
+    from navig.perf.profiler import load_recent_samples, detect_regressions, suggest_optimizations, PERF_DIR
+
+    samples = load_recent_samples(days=days)
+
+    if json_out:
+        import json as _json
+        regressions = detect_regressions(samples)
+        suggestions = suggest_optimizations(samples)
+        ch.raw_print(_json.dumps({
+            "samples_loaded": len(samples),
+            "days": days,
+            "regressions": regressions,
+            "suggestions": suggestions,
+        }, indent=2))
+        return
+
+    ch.header("🧬 NAVIG Auto-Evolutive Profiler Status")
+    ch.dim(f"  Perf data dir : {PERF_DIR}")
+    ch.dim(f"  Samples loaded: {len(samples)} (last {days} days)")
+    ch.dim("")
+
+    if not samples:
+        ch.warning("No profile data yet. NAVIG samples 1-in-100 CLI calls automatically.")
+        ch.dim("Run a few commands and come back. The system is watching.")
+        return
+
+    regressions = detect_regressions(samples)
+    if regressions:
+        ch.warning(f"\n⚠️  {len(regressions)} regression(s) detected:")
+        for r in regressions:
+            ch.error(
+                f"  • `navig {r['cmd']}` is [bold]{r['delta_pct']}%[/bold] slower "
+                f"({r['old_ms']}ms → {r['new_ms']}ms)"
+            )
+            if r.get("fn"):
+                ch.dim(f"    Top culprit: {r['fn']}")
+    else:
+        ch.success("\n✓ No regressions detected in the last {} days".format(days))
+
+    suggestions = suggest_optimizations(samples)
+    if suggestions:
+        ch.dim("\n🔥 Hottest call paths (next Shadow Execution candidates):")
+        for s in suggestions[:5]:
+            ch.dim(f"  {s}")
+
+    ch.dim("\nRun `navig evolve optimize` to get detailed recommendations.")
+
+
+@evolution_app.command("optimize")
+def evolve_optimize(
+    days: int = typer.Option(7, "--days", "-d", help="Number of days of history to analyze"),
+):
+    """Analyze profile data and propose the next optimization target."""
+    from navig.perf.profiler import load_recent_samples, suggest_optimizations, detect_regressions, PERF_DIR
+    from navig.ipc_pipe import get_pipe_status
+
+    samples = load_recent_samples(days=days)
+    suggestions = suggest_optimizations(samples)
+    regressions = detect_regressions(samples)
+    pipe_status = get_pipe_status()
+
+    ch.header("⚡ NAVIG Quantum Velocity — Optimization Report")
+    ch.dim("")
+
+    # ── IPC Pipe Status ──────────────────────────────────────────────────────
+    ch.dim("📡 IPC Fast-Path:")
+    if pipe_status["promoted"]:
+        ch.success(f"  ✓ Named Pipe promoted (pipe address: {pipe_status['address']})")
+    else:
+        ch.warning(
+            f"  ○ Pipe not yet promoted ({pipe_status['shadow_matches_this_session']} / "
+            f"{pipe_status['promote_after']} shadow matches this session)"
+        )
+
+    ch.dim("")
+    ch.dim("🔥 Top optimization candidates (by cumulative CPU time):")
+    for s in suggestions:
+        if s:
+            ch.dim(f"  {s}")
+        else:
+            ch.dim("")
+
+    if not suggestions or all(not s for s in suggestions):
+        ch.success("  ✓ No significant hotspots found in recent profile data")
+
+    if regressions:
+        ch.dim("")
+        ch.warning(f"⚠️  {len(regressions)} regression(s) require immediate attention.")
+        ch.dim("Run `navig evolve status` for details.")
+

@@ -65,6 +65,24 @@ from navig.memory.project_indexer import (
     ProjectIndexConfig,
     ProjectSearchResult,
 )
+from navig.memory.key_facts import (
+    KeyFact,
+    KeyFactStore,
+    get_key_fact_store,
+    reset_key_fact_store,
+    VALID_CATEGORIES,
+)
+from navig.memory.fact_extractor import (
+    FactExtractor,
+    ExtractionResult,
+    extract_rules,
+)
+from navig.memory.fact_retriever import (
+    FactRetriever,
+    FactRetrievalResult,
+    RankedFact,
+    RetrievalConfig,
+)
 
 __all__ = [
     # Conversation
@@ -111,4 +129,19 @@ __all__ = [
     # File Watcher
     'MemoryWatcher',
     'WatcherContext',
+    # Key Facts (Conversational Memory)
+    'KeyFact',
+    'KeyFactStore',
+    'get_key_fact_store',
+    'reset_key_fact_store',
+    'VALID_CATEGORIES',
+    # Fact Extraction
+    'FactExtractor',
+    'ExtractionResult',
+    'extract_rules',
+    # Fact Retrieval
+    'FactRetriever',
+    'FactRetrievalResult',
+    'RankedFact',
+    'RetrievalConfig',
 ]

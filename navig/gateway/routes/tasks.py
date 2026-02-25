@@ -53,6 +53,10 @@ def _add(gw):
         try:
             from navig.tasks import Task
             data = await r.json()
+            actor = r.headers.get("X-Actor", r.remote or "unknown")
+            block = await gw.policy_check("task.add", actor, raw_input=str(data))
+            if block is not None:
+                return block
             task = Task(
                 name=data["name"],
                 handler=data["handler"],

@@ -238,7 +238,8 @@ class ResponseKeyboardBuilder:
             user_message: The original user message.
             message_id: Telegram message ID.
             profile_override: Force a profile ("action"/"expand"/"feedback"/"none").
-            approval_actions: For action profile — list of {"label": ..., "action": ...}.
+            approval_actions: For action profile — list of {"label": ..., "action": ...}
+                with optional "request_id" to bind callback responses to an approval request.
 
         Returns:
             List of button rows, or None.
@@ -308,8 +309,15 @@ class ResponseKeyboardBuilder:
         if approval_actions:
             row = []
             for item in approval_actions[:MAX_BUTTONS_PER_ROW]:
+                request_id = str(item.get("request_id", "")).strip()
+                extra = {"request_id": request_id} if request_id else None
                 row.append(self._make_button(
-                    item["label"], item["action"], msg_hash, user_message, ai_response
+                    item["label"],
+                    item["action"],
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                    extra=extra,
                 ))
             return [row]
 
@@ -476,14 +484,29 @@ class CallbackHandler:
 
         # ── Approval actions ──
         if action == "approve":
-            await self._answer(cb_id, "✅ Approved")
-            # TODO: route approval to gateway approval manager
+            # AUDIT DECISION:
+            # Is this the correct implementation? Yes — delegate to channel-level approval
+            # responder that enforces request ownership and channel checks.
+            # Does it break any existing callers? No — if no responder is configured, we
+            # return a clear unavailability message instead of silently succeeding.
+            # Is there a simpler alternative? Yes, but acknowledging without routing is unsafe.
+            _, message = await self._handle_approval_action(
+                entry=entry,
+                user_id=user_id,
+                approved=True,
+            )
+            await self._answer(cb_id, message)
             return
         if action == "alternative":
             await self._answer(cb_id, "🔀 Using alternative")
             return
         if action == "cancel":
-            await self._answer(cb_id, "❌ Cancelled")
+            _, message = await self._handle_approval_action(
+                entry=entry,
+                user_id=user_id,
+                approved=False,
+            )
+            await self._answer(cb_id, message)
             return
 
         # ── Copy code ──
@@ -539,6 +562,42 @@ class CallbackHandler:
             "text": text,
             "show_alert": False,
         })
+
+    async def _handle_approval_action(
+        self,
+        entry: CallbackEntry,
+        user_id: Optional[int],
+        approved: bool,
+    ) -> tuple[bool, str]:
+        """Route Telegram approval callbacks through channel-level approval responder."""
+        if not user_id:
+            return False, "⚠️ Missing user context."
+
+        responder = getattr(self.channel, "on_approval_response", None)
+        if not responder:
+            return False, "⚠️ Approval system unavailable."
+
+        request_id = ""
+        if isinstance(entry.extra, dict):
+            request_id = str(entry.extra.get("request_id", "")).strip()
+
+        try:
+            success, message = await responder(
+                int(user_id),
+                approved,
+                request_id or None,
+            )
+            if success:
+                return True, message
+            if approved:
+                return False, message or "⚠️ Approval request could not be completed."
+            # Deny/cancel should stay user-friendly when there is no pending request.
+            return False, message or "❌ Cancelled"
+        except Exception as e:
+            logger.error("Approval callback failed: %s", e)
+            if approved:
+                return False, "⚠️ Approval system unavailable."
+            return False, "❌ Cancelled"
 
     async def _handle_model_switch(
         self,

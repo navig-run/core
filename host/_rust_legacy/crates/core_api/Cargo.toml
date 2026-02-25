@@ -1,0 +1,26 @@
+[package]
+name    = "core_api"
+version = "0.1.0"
+edition = "2021"
+description = "Axum HTTP server, all routes and middleware for NAVIG Core Host"
+
+[dependencies]
+tokio      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+axum       = { workspace = true }
+tower      = { workspace = true }
+tower-http = { workspace = true }
+utoipa     = { workspace = true }
+chrono     = { workspace = true }
+once_cell  = { workspace = true }
+
+core_config = { path = "../core_config" }
+core_auth   = { path = "../core_auth" }
+core_events = { path = "../core_events" }
+
+[features]
+default           = []
+debug-endpoints   = []

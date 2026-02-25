@@ -90,6 +90,14 @@ class _LazyConsole:
 
     def _load(self):
         _ensure_rich()
+        # On Windows, stdout may use a legacy encoding (cp1252/charmap) that
+        # cannot encode emoji and many Unicode symbols. Reconfigure to UTF-8
+        # before Rich wraps stdout so all terminal output is safe.
+        if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+            try:
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
         real = _Console()
         object.__setattr__(self, "_real", real)
         return real

@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core_host",
+    "crates/core_config",
+    "crates/core_auth",
+    "crates/core_api",
+    "crates/core_events",
+    "crates/core_plugins",
+    "crates/core_os",
+    "crates/core_tray",
+]
+
+[workspace.dependencies]
+# ── Async runtime ─────────────────────────────────────────────────────────────
+tokio          = { version = "1.38",  features = ["full"] }
+tokio-util     = { version = "0.7",   features = ["codec"] }
+
+# ── Serialisation ─────────────────────────────────────────────────────────────
+serde          = { version = "1.0",   features = ["derive"] }
+serde_json     = "1.0"
+
+# ── Error handling ────────────────────────────────────────────────────────────
+thiserror      = "1.0"
+anyhow         = "1.0"
+eyre           = "0.6"
+
+# ── Logging / tracing ─────────────────────────────────────────────────────────
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender   = "0.2"
+
+# ── Config ────────────────────────────────────────────────────────────────────
+config  = "0.14"
+clap    = { version = "4.5", features = ["derive", "env"] }
+toml    = "0.8"
+
+# ── HTTP / networking ─────────────────────────────────────────────────────────
+axum        = { version = "0.7", features = ["macros"] }
+tower       = "0.4"
+tower-http  = { version = "0.5", features = ["cors", "trace", "compression-gzip", "limit"] }
+reqwest     = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+utoipa      = { version = "5.0", features = ["axum_extras"] }
+
+# ── Auth / crypto ─────────────────────────────────────────────────────────────
+jsonwebtoken = "9.3"
+argon2       = "0.5"
+rand         = "0.8"
+
+# ── IPC / subprocess ──────────────────────────────────────────────────────────
+tempfile   = "3.10"
+
+# ── Tray / UI ─────────────────────────────────────────────────────────────────
+tray-icon  = "0.14"
+muda       = "0.13"
+image      = { version = "0.25", default-features = false, features = ["png"] }
+
+# ── OS utilities ─────────────────────────────────────────────────────────────
+keyring    = "3.0"
+dirs       = "5.0"
+ulid       = "1.1"
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+once_cell  = "1.19"
+chrono     = { version = "0.4", features = ["serde"] }

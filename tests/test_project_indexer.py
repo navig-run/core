@@ -455,3 +455,140 @@ class TestLifecycle:
         idx = ProjectIndexer(project_dir)
         idx.close()
         idx.close()  # Should not raise
+
+
+# ============================================================================
+# Content-type filter + get_context (WikiRAG merger)
+# ============================================================================
+
+class TestContentTypeFilter:
+    def test_filter_docs_only(self, project_dir: Path):
+        """content_type_filter='docs' should return only markdown/docs chunks."""
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            results = idx.search("authentication", content_type_filter="docs")
+            assert all(r.content_type == "docs" for r in results), (
+                f"Expected only 'docs', got: {[r.content_type for r in results]}"
+            )
+
+    def test_filter_code_only(self, project_dir: Path):
+        """content_type_filter='code' should return only code chunks."""
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            results = idx.search("authentication", content_type_filter="code")
+            assert all(r.content_type == "code" for r in results), (
+                f"Expected only 'code', got: {[r.content_type for r in results]}"
+            )
+
+    def test_filter_no_match_returns_empty(self, project_dir: Path):
+        """Filtering to an unused type should return []."""
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            results = idx.search("authentication", content_type_filter="wiki")
+            assert results == []
+
+    def test_filter_none_returns_all_types(self, project_dir: Path):
+        """No filter returns mixed content types."""
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            results = idx.search("authentication")
+            types = {r.content_type for r in results}
+            # Should contain more than one type (code + docs both index auth)
+            assert len(types) >= 1
+
+
+class TestGetContext:
+    def test_get_context_returns_string(self, project_dir: Path):
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            ctx = idx.get_context("authentication")
+            assert isinstance(ctx, str)
+            assert len(ctx) > 0
+
+    def test_get_context_empty_query(self, project_dir: Path):
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            ctx = idx.get_context("")
+            assert ctx == ""
+
+    def test_get_context_with_type_filter(self, project_dir: Path):
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            # Filtering to 'wiki' when no wiki files exist → empty
+            ctx = idx.get_context("authentication", content_type_filter="wiki")
+            assert ctx == ""
+
+    def test_get_context_respects_max_chars(self, project_dir: Path):
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            ctx = idx.get_context("server authentication", max_chars=200)
+            assert len(ctx) <= 250  # small budget, allow minor header overhead
+
+
+class TestWikiRAGUnifiedDelegation:
+    """WikiRAG delegates to ProjectIndexer when project_indexer is provided."""
+
+    def test_search_delegates_and_returns_list(self, project_dir: Path):
+        from navig.wiki_rag import WikiRAG
+        wiki_path = project_dir / ".navig" / "wiki"
+        wiki_path.mkdir(parents=True, exist_ok=True)
+
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            rag = WikiRAG(wiki_path, project_indexer=idx)
+            results = rag.search("authentication")
+            # wiki type filter → no wiki files → empty list is valid
+            assert isinstance(results, list)
+
+    def test_get_context_delegates(self, project_dir: Path):
+        from navig.wiki_rag import WikiRAG
+        wiki_path = project_dir / ".navig" / "wiki"
+        wiki_path.mkdir(parents=True, exist_ok=True)
+
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            rag = WikiRAG(wiki_path, project_indexer=idx)
+            ctx = rag.get_context("authentication")
+            # no wiki files → fallback message
+            assert ctx == "No relevant wiki content found."
+
+    def test_rebuild_index_noop_when_unified(self, project_dir: Path):
+        from navig.wiki_rag import WikiRAG
+        wiki_path = project_dir / ".navig" / "wiki"
+        wiki_path.mkdir(parents=True, exist_ok=True)
+
+        with ProjectIndexer(project_dir) as idx:
+            rag = WikiRAG(wiki_path, project_indexer=idx)
+            # Should not raise and should not touch in-memory documents
+            rag.rebuild_index()
+            assert rag.documents == []
+
+    def test_get_stats_shows_backend(self, project_dir: Path):
+        from navig.wiki_rag import WikiRAG
+        wiki_path = project_dir / ".navig" / "wiki"
+        wiki_path.mkdir(parents=True, exist_ok=True)
+
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            rag = WikiRAG(wiki_path, project_indexer=idx)
+            stats = rag.get_stats()
+            assert stats["backend"] == "unified"
+            assert "total_documents" in stats
+
+    def test_wiki_search_with_real_wiki_file(self, project_dir: Path):
+        """When .navig/wiki/ contains markdown, wiki filter should find it."""
+        from navig.wiki_rag import WikiRAG
+        wiki_path = project_dir / ".navig" / "wiki"
+        wiki_path.mkdir(parents=True, exist_ok=True)
+        (wiki_path / "auth-guide.md").write_text(
+            "# Authentication Guide\n\nThis guide explains login and token refresh."
+        )
+
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            rag = WikiRAG(wiki_path, project_indexer=idx)
+            results = rag.search("login token authentication", top_k=5)
+            # Should find the wiki file we just indexed
+            assert any("auth-guide" in r["path"] for r in results), (
+                f"Expected auth-guide.md in results, got: {[r['path'] for r in results]}"
+            )

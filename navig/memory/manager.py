@@ -10,8 +10,12 @@ Provides a unified interface to:
 
 from __future__ import annotations
 
+import copy
+import math
+import os
+import time
 from pathlib import Path
-from typing import Optional, List, TYPE_CHECKING
+from typing import Dict, Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.memory.storage import MemoryStorage
@@ -32,7 +36,8 @@ def _debug_log(message: str) -> None:
 
 def _get_memory_dir() -> Path:
     """Get the default memory directory."""
-    return Path.home() / '.navig' / 'memory'
+    from navig.memory.paths import memory_dir
+    return memory_dir()
 
 
 # Module-level singleton
@@ -120,6 +125,13 @@ class MemoryManager:
         self._embedding_provider: Optional['EmbeddingProvider'] = None
         self._indexer: Optional['MemoryIndexer'] = None
         self._search: Optional['HybridSearch'] = None
+        
+        # Predictive context cache
+        self._prewarm_cache: Dict[str, 'SearchResponse'] = {}
+
+        # mtime cache: file_path → (mtime_float, cached_age_days_at_capture)
+        # Avoids repeated stat() syscalls for the same files within a session.
+        self._mtime_cache: Dict[str, float] = {}
         
         _debug_log(f"MemoryManager initialized: {self.memory_dir}")
     
@@ -209,6 +221,27 @@ class MemoryManager:
             _debug_log(f"Removed {removed} deleted files from index")
         
         return result
+        
+    async def index_async(
+        self,
+        force: bool = False,
+        embed: bool = True,
+        progress_callback: Optional[callable] = None,
+    ) -> 'IndexResult':
+        """
+        Non-blocking async wrapper that pushes indexing into a TaskGroup/ThreadPoolExecutor
+        to completely avoid stalling the primary agent context thread.
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.index(
+                force=force,
+                embed=embed,
+                progress_callback=progress_callback
+            )
+        )
     
     def index_file(
         self,
@@ -250,6 +283,19 @@ class MemoryManager:
         Returns:
             SearchResponse with results
         """
+        # 1. Check predictive prewarm cache to avoid re-running heavy vector search
+        if not file_filter and query in self._prewarm_cache:
+            response = self._prewarm_cache.pop(query)
+            
+            # Truncate if strict limit is requested
+            if len(response.results) > limit:
+                import copy
+                response = copy.copy(response)
+                response.results = response.results[:limit]
+                
+            _debug_log(f"Memory Cache Hit: Prewarmed context used for '{query[:20]}...'")
+            return response
+            
         return self.search_engine.search(
             query=query,
             limit=limit,
@@ -272,6 +318,33 @@ class MemoryManager:
             SearchResponse with similar chunks
         """
         return self.search_engine.search_similar(chunk_id, limit)
+        
+    def prewarm(self, query: str, limit: int = 10) -> None:
+        """
+        Predictively cache the vector search results for a query.
+        Call this concurrently with LLM routing to hide search latency.
+        """
+        try:
+            # Bound caching results to what will logically be used
+            response = self.search_engine.search(query=query, limit=limit)
+            
+            # Simple eviction to prevent RAM exhaustion (OOM)
+            if len(self._prewarm_cache) > 20:
+                self._prewarm_cache.clear()
+                
+            self._prewarm_cache[query] = response
+            _debug_log(f"Prewarmed memory context for '{query[:20]}...'")
+        except Exception as e:
+            _debug_log(f"Memory prewarm failed: {e}")
+
+    async def prewarm_async(self, query: str, limit: int = 10) -> None:
+        """Async wrapper for predictive context prefetching utilizing thread pool."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, 
+            lambda: self.prewarm(query=query, limit=limit)
+        )
     
     # ---------- Context Injection ----------
     
@@ -297,6 +370,9 @@ class MemoryManager:
         if not response.results:
             return ""
         
+        # Re-rank by recency decay before formatting context
+        response.results = self._apply_decay(response.results)
+
         return response.as_context(max_tokens=max_tokens)
     
     def get_context_with_sources(
@@ -317,10 +393,134 @@ class MemoryManager:
             Tuple of (context_string, list_of_results)
         """
         response = self.search(query, limit=limit)
+        # Apply decay for consistency with get_context()
+        response.results = self._apply_decay(response.results)
         context = response.as_context(max_tokens=max_tokens)
-        
         return context, response.results
-    
+
+    # ---------- Decay Re-ranking ----------
+
+    def _apply_decay(
+        self,
+        results: List['SearchResult'],
+        lambda_: float = 0.05,
+    ) -> List['SearchResult']:
+        """
+        Re-rank search results using a recency decay multiplier.
+
+        final_score = combined_score × exp(−λ × age_days)
+
+        Uses Path.stat().st_mtime directly (no datetime objects) and caches
+        mtime lookups on the manager instance to avoid repeated syscalls.
+        lambda_=0.05 ⇒ a 14-day-old file scores ~50% of a same-day file.
+        """
+        now_ts = time.time()
+        decayed = []
+        for r in results:
+            age_days = 0.0
+            try:
+                fp_str = r.file_path
+                if fp_str not in self._mtime_cache:
+                    fpath = self.memory_dir / fp_str
+                    if fpath.exists():
+                        self._mtime_cache[fp_str] = fpath.stat().st_mtime
+                mtime_ts = self._mtime_cache.get(fp_str)
+                if mtime_ts is not None:
+                    age_days = max(0.0, (now_ts - mtime_ts) / 86400.0)
+            except Exception:
+                pass
+
+            r_copy = copy.copy(r)
+            r_copy.combined_score = r.combined_score * math.exp(-lambda_ * age_days)
+            decayed.append(r_copy)
+
+        decayed.sort(key=lambda x: x.combined_score, reverse=True)
+        return decayed
+
+    # ---------- Conversation Summarization ----------
+
+    def check_and_summarize(
+        self,
+        messages: List[dict],
+        llm_fn,
+        threshold: int = 20,
+        keep_recent: int = 5,
+    ) -> List[dict]:
+        """
+        Rolling summary compression: when the message list exceeds ``threshold``,
+        summarize the oldest chunk via LLM and replace with a single system
+        summary message, keeping the ``keep_recent`` tail verbatim.
+
+        Call this from the gateway before each agent turn::
+
+            messages = memory_manager.check_and_summarize(messages, llm_fn)
+
+        Args:
+            messages: List of {"role": str, "content": str} dicts
+            llm_fn: callable(prompt: str) -> str  — any LLM call function
+            threshold: Message count that triggers summarization (default 20)
+            keep_recent: How many tail messages to keep verbatim (default 5)
+
+        Returns:
+            Compressed message list (or original if below threshold / LLM failed)
+        """
+        if len(messages) < threshold:
+            return messages
+
+        to_summarize = messages[:-keep_recent]
+        to_keep = messages[-keep_recent:]
+
+        summary_text = self._summarize_via_llm(to_summarize, llm_fn)
+        if not summary_text:
+            return messages  # LLM failed — return unmodified, no data loss
+
+        summary_message = {
+            "role": "system",
+            "content": (
+                f"[Conversation Summary — {len(to_summarize)} earlier messages]\n"
+                + summary_text
+            ),
+        }
+
+        compressed = [summary_message] + to_keep
+        _debug_log(
+            f"check_and_summarize: compressed {len(to_summarize)} messages into 1 block "
+            f"({len(messages)} → {len(compressed)} total)"
+        )
+        return compressed
+
+    def _summarize_via_llm(self, messages: List[dict], llm_fn) -> str:
+        """
+        Summarize a list of messages into a concise narrative.
+
+        Calls ``llm_fn`` with a structured summarization prompt. Returns empty
+        string on failure so callers can fall back gracefully.
+        """
+        if not messages or not callable(llm_fn):
+            return ""
+
+        transcript = "\n".join(
+            f"{m.get('role', 'user').upper()}: {m.get('content', '')[:600]}"
+            for m in messages
+            if m.get("role") in ("user", "assistant")
+        )
+        if not transcript.strip():
+            return ""
+
+        prompt = (
+            "Summarize the following conversation into a concise paragraph. "
+            "Capture all key decisions, facts learned, tasks completed, server names, "
+            "file paths, config values, and unresolved questions. "
+            "Be specific — preserve exact names and numbers. No greetings or filler.\n\n"
+            f"CONVERSATION:\n{transcript}\n\nSUMMARY:"
+        )
+
+        try:
+            return llm_fn(prompt).strip()
+        except Exception as e:
+            _debug_log(f"_summarize_via_llm failed: {e}")
+            return ""
+
     # ---------- File Management ----------
     
     def add_file(

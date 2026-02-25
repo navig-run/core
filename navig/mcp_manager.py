@@ -189,6 +189,7 @@ class MCPManager:
         
         try:
             # Known MCP servers from the official Model Context Protocol ecosystem
+            # AUDIT: MANUAL REVIEW REQUIRED — official registry integration needs versioning, trust, and signature verification policy.
             # TODO: Integrate with official MCP registry when available
             # Reference: https://github.com/modelcontextprotocol/servers
             common_servers = [

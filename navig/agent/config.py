@@ -40,7 +40,7 @@ def _substitute_env_vars(value: Any) -> Any:
 class BrainConfig:
     """Brain (AI) configuration."""
     
-    model: str = "openrouter:anthropic/claude-3.5-sonnet"
+    model: str = "openrouter:google/gemini-2.5-flash"
     temperature: float = 0.7
     max_tokens: int = 4096
     reasoning_enabled: bool = True
@@ -371,30 +371,22 @@ class AgentConfig:
     
     @classmethod
     def load(cls, config_path: Optional[Path] = None) -> 'AgentConfig':
-        """Load configuration from file."""
-        if config_path is None:
-            config_path = Path.home() / '.navig' / 'agent' / 'config.yaml'
+        """Load configuration from ConfigManager."""
+        from navig.config import get_config_manager
         
-        if not config_path.exists():
-            return cls()
+        # Use ConfigManager to get the 'agent' section from global config
+        manager = get_config_manager()
+        agent_data = manager.global_config.get('agent', {})
         
-        with open(config_path) as f:
-            data = yaml.safe_load(f) or {}
-        
-        return cls.from_dict(data)
+        return cls.from_dict(agent_data)
     
     def save(self, config_path: Optional[Path] = None) -> None:
-        """Save configuration to file."""
-        if config_path is None:
-            config_path = Path.home() / '.navig' / 'agent' / 'config.yaml'
+        """Save configuration to ConfigManager."""
+        from navig.config import get_config_manager
         
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Convert to dictionary
+        manager = get_config_manager()
         data = self.to_dict()
-        
-        with open(config_path, 'w') as f:
-            yaml.dump({'agent': data}, f, default_flow_style=False, sort_keys=False)
+        manager.update_global_config({'agent': data})
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""

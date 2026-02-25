@@ -13,6 +13,9 @@ from .server import NavigGateway, GatewayConfig
 from .session_manager import SessionManager, Session, NavigSessionKey
 from .channel_router import ChannelRouter
 from .config_watcher import ConfigWatcher, WorkspaceManager
+from .policy_gate import PolicyGate, PolicyDecision, PolicyResult, PolicyConfig, PolicyRule
+from .audit_log import AuditLog
+from .cooldown import CooldownTracker
 from .system_events import (
     SystemEventQueue, 
     SystemEvent, 
@@ -24,12 +27,19 @@ from .system_events import (
 __all__ = [
     'NavigGateway',
     'GatewayConfig',
-    'SessionManager', 
+    'SessionManager',
     'Session',
     'NavigSessionKey',
     'ChannelRouter',
     'ConfigWatcher',
     'WorkspaceManager',
+    'PolicyGate',
+    'PolicyDecision',
+    'PolicyResult',
+    'PolicyConfig',
+    'PolicyRule',
+    'AuditLog',
+    'CooldownTracker',
     'SystemEventQueue',
     'SystemEvent',
     'EventPriority',

@@ -1,4 +1,5 @@
-"""Approval routes: /approval/pending, /approval/request, /approval/{id}/respond."""
+"""Approval routes: /approval/pending, /approval/request, /approval/{id}/respond,
+/approval/auto-evolve (GET status, POST toggle)."""
 from __future__ import annotations
 import asyncio
 try:
@@ -15,6 +16,8 @@ def register(app, gateway):
     app.router.add_get("/approval/pending", _pending(gateway))
     app.router.add_post("/approval/request", _request(gateway))
     app.router.add_post("/approval/{request_id}/respond", _respond(gateway))
+    app.router.add_get("/approval/auto-evolve", _auto_evolve_status(gateway))
+    app.router.add_post("/approval/auto-evolve", _auto_evolve_toggle(gateway))
 
 
 def _pending(gw):
@@ -99,6 +102,54 @@ def _respond(gw):
         except Exception as e:
             return json_error_response(
                 "Approval response failed",
+                status=500,
+                code="internal_error",
+                details={"error": str(e)},
+            )
+    return h
+
+
+def _auto_evolve_status(gw):
+    """GET /approval/auto-evolve — return current auto-evolve state."""
+    async def h(r):
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
+        if not gw.approval_manager:
+            return json_error_response("Approval module not available", status=503, code="module_unavailable")
+        mgr = gw.approval_manager
+        audit_live = mgr.is_audit_log_live()
+        return json_ok({
+            "auto_evolve_enabled": mgr.policy.auto_evolve_enabled,
+            "audit_log_live": audit_live,
+            "whitelist": mgr.policy.auto_evolve_whitelist,
+            "can_enable": audit_live,
+        })
+    return h
+
+
+def _auto_evolve_toggle(gw):
+    """POST /approval/auto-evolve  body: {"enabled": true|false}"""
+    async def h(r):
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
+        if not gw.approval_manager:
+            return json_error_response("Approval module not available", status=503, code="module_unavailable")
+        try:
+            data = await r.json()
+            enabled = bool(data.get("enabled", False))
+            gw.approval_manager.set_auto_evolve(enabled)
+            return json_ok({
+                "auto_evolve_enabled": gw.approval_manager.policy.auto_evolve_enabled,
+                "audit_log_live": gw.approval_manager.is_audit_log_live(),
+            })
+        except RuntimeError as e:
+            # audit log not live — refuse to enable
+            return json_error_response(str(e), status=409, code="audit_log_required")
+        except Exception as e:
+            return json_error_response(
+                "Auto-evolve toggle failed",
                 status=500,
                 code="internal_error",
                 details={"error": str(e)},

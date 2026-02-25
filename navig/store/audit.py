@@ -93,8 +93,23 @@ class AuditStore(BaseStore):
     def _migrate(
         self, conn: sqlite3.Connection, from_version: int, to_version: int
     ) -> None:
-        # Future migrations go here
-        pass
+        # AUDIT DECISION:
+        # Is this the correct implementation? Yes — explicit step dispatch performs
+        # incremental migrations and fails fast when a required step is undefined.
+        # Does it break any existing callers? No — current schema versions are equal in normal flows.
+        # Is there a simpler alternative? Yes, but silent no-op migration masks data risks.
+        if from_version >= to_version:
+            return
+
+        for version in range(from_version, to_version):
+            step_name = f"_migrate_v{version}_to_v{version + 1}"
+            step = getattr(self, step_name, None)
+            if not callable(step):
+                raise RuntimeError(
+                    f"AuditStore migration path missing: {version} -> {version + 1}. "
+                    f"Implement {step_name}() before upgrading schema version."
+                )
+            step(conn)
 
     # ── Write ─────────────────────────────────────────────────
 

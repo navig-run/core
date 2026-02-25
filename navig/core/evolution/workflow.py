@@ -1,21 +1,23 @@
-
-from typing import Any, Optional
-import yaml
 from pathlib import Path
+from typing import Any, Optional
 import os
-import sys
+import re
 
-from navig.core.evolution.base import BaseEvolver, EvolutionResult
+import yaml
+
+from navig.core.evolution.base import BaseEvolver
 from navig.ai import ask_ai_with_context
-from navig.console_helper import console, info, error, warning, success
+from navig.console_helper import error, success
 
 class WorkflowEvolver(BaseEvolver):
     """Evolves cross-platform YAML workflows."""
     
     def __init__(self):
         super().__init__()
-        self._system_prompt = 
-You are a workflow automation expert.
+        # AUDIT self-check: Correct implementation? yes - restores valid prompt string syntax.
+        # AUDIT self-check: Break callers? no - keeps the same prompt contract and class API.
+        # AUDIT self-check: Simpler alternative? yes - single triple-quoted literal is simplest.
+        self._system_prompt = """You are a workflow automation expert.
 Your task is to generate a VALID YAML workflow file for the Navig Automation Engine.
 
 Output Format:
@@ -61,6 +63,7 @@ Constraints:
 - In 'if' conditions, use variable names DIRECTLY (e.g. `success == True`, not `{{success}}`).
 - Ensure unique workflow name based on goal.
 - Use 'capture' to store step output into variables.
+"""
         self._workflows_dir = Path(__file__).parent.parent.parent.parent / "workflows"
 
     def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
@@ -85,7 +88,6 @@ steps:
         response = ask_ai_with_context(prompt, system_prompt=self._system_prompt)
         
         # Extract YAML
-        import re
         match = re.search(r"```yaml\n(.*?)\n```", response, re.DOTALL)
         if match:
             return match.group(1).strip()

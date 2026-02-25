@@ -295,9 +295,9 @@ class ChannelRouter:
                             'session': session_key,
                             'message': message,
                         })
-                    except:
+                    except Exception:
                         pass
-        except:
+        except Exception:
             pass
 
     
@@ -320,25 +320,29 @@ class ChannelRouter:
         
         try:
             import shlex
-            result = subprocess.run(
-                shlex.split(f"navig {command}"),
-                shell=False,
-                capture_output=True,
-                text=True,
-                timeout=60
+            import asyncio as _asyncio
+            proc = await _asyncio.create_subprocess_exec(
+                "navig", *shlex.split(command),
+                stdout=_asyncio.subprocess.PIPE,
+                stderr=_asyncio.subprocess.PIPE,
             )
-            
-            output = result.stdout
-            if result.stderr:
-                output += f"\n{result.stderr}"
-            
-            if result.returncode != 0:
-                return f"❌ Command failed (exit {result.returncode}):\n```\n{output}\n```"
-            
+            try:
+                stdout_bytes, stderr_bytes = await _asyncio.wait_for(
+                    proc.communicate(), timeout=60
+                )
+            except _asyncio.TimeoutError:
+                proc.kill()
+                return "❌ Command timed out (60s limit)"
+
+            output = stdout_bytes.decode()
+            if stderr_bytes:
+                output += f"\n{stderr_bytes.decode()}"
+
+            if proc.returncode != 0:
+                return f"❌ Command failed (exit {proc.returncode}):\n```\n{output}\n```"
+
             return f"✅ Output:\n```\n{output}\n```"
-            
-        except subprocess.TimeoutExpired:
-            return "❌ Command timed out (60s limit)"
+
         except Exception as e:
             return f"❌ Error: {e}"
     

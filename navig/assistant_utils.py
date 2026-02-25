@@ -4,68 +4,83 @@ Proactive Assistant Utilities
 Cross-platform directory management and helper functions for the AI assistant system.
 """
 
+import functools
 import os
-import platform
+import sys
 from pathlib import Path
 import json
 from navig import console_helper as ch
 
+# ─────────────────────────────────────────────────────────────────────────────
+# QUANTUM VELOCITY K1: Eliminate Windows WMI bottleneck
+#
+# BEFORE: platform.system() → platform.uname() → _wmi.exec_query(~73ms on Win)
+# AFTER:  sys.platform is a string constant set at interpreter init time → 0ms
+#
+# sys.platform values: 'win32' (Windows), 'darwin' (macOS), 'linux' (Linux)
+# ─────────────────────────────────────────────────────────────────────────────
+_IS_WINDOWS: bool = sys.platform == "win32"
 
+
+@functools.lru_cache(maxsize=1)
 def get_navig_directory() -> Path:
     """
     Get the NAVIG configuration directory based on platform.
-    
+
     Returns:
         Path to .navig directory:
         - Linux/macOS: ~/.navig/
         - Windows: ~/Documents/.navig/
+
+    Performance: @lru_cache ensures Path.home() is only resolved once per
+    process. The result is constant within a single invocation.
     """
     home = Path.home()
-    
-    if platform.system() == 'Windows':
-        navig_dir = home / 'Documents' / '.navig'
+
+    if _IS_WINDOWS:
+        navig_dir = home / "Documents" / ".navig"
     else:
-        navig_dir = home / '.navig'
-    
+        navig_dir = home / ".navig"
+
     return navig_dir
 
 
 def ensure_navig_directory() -> Path:
     """
     Ensure NAVIG directory structure exists with proper permissions.
-    
+
     Creates:
     - Main directory: ~/.navig/ or ~/Documents/.navig/
     - Subdirectories: ai_context/, baselines/
     - Initial JSON files with proper schemas
-    
+
     Returns:
         Path to .navig directory
     """
     navig_dir = get_navig_directory()
-    
+
     # Create main directory
     try:
         navig_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Set permissions on Unix-like systems
-        if platform.system() != 'Windows':
+        if not _IS_WINDOWS:
             os.chmod(navig_dir, 0o755)
-        
+
         # Create subdirectories
-        subdirs = ['ai_context', 'baselines']
+        subdirs = ["ai_context", "baselines"]
         for subdir in subdirs:
             subdir_path = navig_dir / subdir
             subdir_path.mkdir(parents=True, exist_ok=True)
-            
-            if platform.system() != 'Windows':
+
+            if not _IS_WINDOWS:
                 os.chmod(subdir_path, 0o755)
-        
+
         # Initialize JSON files if they don't exist
         _initialize_json_files(navig_dir)
-        
+
         return navig_dir
-        
+
     except Exception as e:
         ch.error(f"Failed to create NAVIG directory: {e}")
         raise
@@ -102,9 +117,9 @@ def _initialize_json_files(navig_dir: Path):
                     with open(file_path, 'w') as f:
                         json.dump(default_content, f, indent=2)
                 
-                if platform.system() != 'Windows':
+                if not _IS_WINDOWS:
                     os.chmod(file_path, 0o644)
-                    
+
             except Exception as e:
                 ch.dim(f"Could not initialize {filename}: {e}")
 

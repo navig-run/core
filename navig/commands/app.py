@@ -1026,3 +1026,224 @@ def migrate_apps(options: Dict[str, Any]) -> None:
 
 
 
+
+
+import typer
+from navig.cli import show_subcommand_help, deprecation_warning
+from typing import Optional, List, Dict, Any, Tuple
+from pathlib import Path
+from navig import console_helper as ch
+
+
+app_app = typer.Typer(
+    help="Manage apps on hosts",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@app_app.callback()
+def app_callback(ctx: typer.Context):
+    """App management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("app", ctx)
+        raise typer.Exit()
+
+
+@app_app.command("list")
+def app_list(
+    ctx: typer.Context,
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to list apps from"),
+    all: bool = typer.Option(False, "--all", "-a", help="Show all apps from all hosts with detailed information"),
+    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, yaml"),
+    plain: bool = typer.Option(False, "--plain", help="Output plain text (one app per line) for scripting"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """List all apps on a host."""
+    from navig.commands.app import list_apps
+    if host:
+        ctx.obj['host'] = host
+    ctx.obj['all'] = all
+    ctx.obj['format'] = "json" if json else format
+    ctx.obj['plain'] = plain
+    if json:
+        ctx.obj["json"] = True
+    list_apps(ctx.obj)
+
+
+@app_app.command("use")
+def app_use(
+    ctx: typer.Context,
+    app_name: Optional[str] = typer.Argument(None, help="App name to activate"),
+    local: bool = typer.Option(False, "--local", "-l", help="Set as local active app (current directory only)"),
+    clear_local: bool = typer.Option(False, "--clear-local", help="Clear local active app setting"),
+):
+    """
+    Set active app (global or local scope).
+
+    Examples:
+        navig app use myapp          # Set global active app
+        navig app use myapp --local  # Set local active app (current dir)
+        navig app use --clear-local     # Remove local active app setting
+    """
+    from navig.commands.app import use_app
+    if app_name:
+        ctx.obj['app_name'] = app_name
+    ctx.obj['local'] = local
+    ctx.obj['clear_local'] = clear_local
+    use_app(ctx.obj)
+
+
+@app_app.command("current", hidden=True)
+def app_current(ctx: typer.Context):
+    """[DEPRECATED: Use 'navig app show --current'] Show currently active app."""
+    deprecation_warning("navig app current", "navig app show --current")
+    from navig.commands.app import current_app
+    current_app(ctx.obj)
+
+
+@app_app.command("add")
+def app_add(
+    ctx: typer.Context,
+    app_name: str = typer.Argument(..., help="App name to add"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to add app to"),
+    from_app: Optional[str] = typer.Option(None, "--from", help="Clone from existing app"),
+):
+    """Add new app to a host (or clone from existing)."""
+    if from_app:
+        from navig.commands.app import clone_app
+        ctx.obj['source_name'] = from_app
+        ctx.obj['new_name'] = app_name
+        if host:
+            ctx.obj['host'] = host
+        clone_app(ctx.obj)
+    else:
+        from navig.commands.app import add_app
+        ctx.obj['app_name'] = app_name
+        if host:
+            ctx.obj['host'] = host
+        add_app(ctx.obj)
+
+
+@app_app.command("remove")
+def app_remove(
+    ctx: typer.Context,
+    app_name: str = typer.Argument(..., help="App name to remove"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to remove app from"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """Remove app from a host."""
+    from navig.commands.app import remove_app
+    ctx.obj['app_name'] = app_name
+    ctx.obj['force'] = force
+    if host:
+        ctx.obj['host'] = host
+    remove_app(ctx.obj)
+
+
+@app_app.command("show")
+def app_show(
+    ctx: typer.Context,
+    app_name: Optional[str] = typer.Argument(None, help="App name to show"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+    current: bool = typer.Option(False, "--current", help="Show currently active app"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Show detailed app configuration (canonical command)."""
+    if json:
+        ctx.obj["json"] = True
+    if current:
+        from navig.commands.app import current_app
+        current_app(ctx.obj)
+    else:
+        from navig.commands.app import show_app
+        if app_name:
+            ctx.obj['app_name'] = app_name
+        if host:
+            ctx.obj['host'] = host
+        show_app(ctx.obj)
+
+
+@app_app.command("edit")
+def app_edit(
+    ctx: typer.Context,
+    app_name: str = typer.Argument(..., help="App name to edit"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+):
+    """Edit app configuration in default editor."""
+    from navig.commands.app import edit_app
+    ctx.obj['app_name'] = app_name
+    if host:
+        ctx.obj['host'] = host
+    edit_app(ctx.obj)
+
+
+@app_app.command("clone", hidden=True)
+def app_clone(
+    ctx: typer.Context,
+    source: str = typer.Argument(..., help="Source app name to clone"),
+    new_name: str = typer.Argument(..., help="New app name"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+):
+    """[DEPRECATED: Use 'navig app add <name> --from <source>'] Clone app."""
+    deprecation_warning("navig app clone", "navig app add <name> --from <source>")
+    from navig.commands.app import clone_app
+    ctx.obj['source_name'] = source
+    ctx.obj['new_name'] = new_name
+    if host:
+        ctx.obj['host'] = host
+    clone_app(ctx.obj)
+
+
+@app_app.command("info", hidden=True)
+def app_info(
+    ctx: typer.Context,
+    app_name: str = typer.Argument(..., help="App name to show info for"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+):
+    """[DEPRECATED: Use 'navig app show'] Show detailed app information."""
+    deprecation_warning("navig app info", "navig app show")
+    from navig.commands.app import info_app
+    ctx.obj['app_name'] = app_name
+    if host:
+        ctx.obj['host'] = host
+    info_app(ctx.obj)
+
+
+@app_app.command("search")
+def app_search(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="Search query (app name)"),
+):
+    """Search for apps across all hosts by name or configuration."""
+    from navig.commands.app import search_apps
+    ctx.obj['query'] = query
+    search_apps(ctx.obj)
+
+
+@app_app.command("migrate")
+def app_migrate(
+    ctx: typer.Context,
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to migrate apps from"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be migrated without making changes"),
+):
+    """
+    Migrate apps from legacy embedded format to individual files.
+
+    Converts apps stored in hosts/<host>.yaml under 'apps:' field
+    to individual .navig/apps/<app>.yaml files.
+
+    Examples:
+        navig app migrate --host vultr          # Migrate all apps from vultr
+        navig app migrate --dry-run             # Preview migration without changes
+    """
+    from navig.commands.app import migrate_apps
+    if host:
+        ctx.obj['host'] = host
+    ctx.obj['dry_run'] = dry_run
+    migrate_apps(ctx.obj)
+
+
+# ============================================================================
+# SSH TUNNEL COMMANDS
+# ============================================================================

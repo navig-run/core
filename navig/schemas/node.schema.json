@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://navig.local/schemas/node.schema.json",
+  "title": "NAVIG Node",
+  "description": "Autonomous agent identity contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["node_id", "hostname", "os", "status"],
+  "properties": {
+    "node_id":      { "type": "string", "format": "uuid" },
+    "hostname":     { "type": "string", "minLength": 1 },
+    "os":           { "type": "string", "enum": ["linux", "windows", "macos", "unknown"] },
+    "formation":    { "type": "string" },
+    "version":      { "type": "string" },
+    "capabilities": { "type": "array", "items": { "type": "string" } },
+    "status": {
+      "type": "string",
+      "enum": ["provisioning", "online", "offline", "suspended", "decommissioned"]
+    },
+    "trust_score":  { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "gateway_url":  { "type": "string" },
+    "metadata":     { "type": "object" },
+    "created_at":   { "type": "string", "format": "date-time" },
+    "last_seen":    { "type": "string", "format": "date-time" }
+  }
+}

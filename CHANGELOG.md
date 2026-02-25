@@ -7,6 +7,14 @@ and this app adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Workspace
+- **Rename NAVIG Bar → NAVIG Dock** (no functional changes) — `@navig/bar` v0.1.0 → `@navig/dock` v0.1.1
+  - Folder `navig-bar/` → `navig-dock/`; package name `@navig/bar` → `@navig/dock`
+  - All internal imports, DOM IDs, manifest command keys, and build artifact names updated
+  - Root `package.json` scripts updated (`dev:bar` → `dev:dock`, etc.)
+  - `pnpm-workspace.yaml` deduped: single `navig-dock` entry, `navig-bar` removed
+  - See [`docs/navig-dock/audit.md`](../docs/navig-dock/audit.md) and [`docs/navig-dock/README.md`](../docs/navig-dock/README.md)
+
 ### Open-Source Readiness
 - Switched license posture to **Apache-2.0** for ecosystem and enterprise adoption.
 - Raised Python support floor to **3.10+** and aligned packaging metadata.
@@ -20,6 +28,18 @@ and this app adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Updated governance/security/release policy docs for OSS publication.
 
 ### Added
+- **Flux Mesh — LAN-local multi-node discovery** (`navig/mesh/`):
+  - `NodeRegistry` — singleton peer store with health states (`online` / `degraded` / `offline`) and automatic eviction after 30 min of silence.
+  - `MeshDiscovery` — async UDP multicast broadcaster/listener on `224.0.0.251:5354`. Sends HELLO on startup, heartbeats every 30 s, GOODBYE on shutdown.
+  - `router.py` — HTTP proxy that forwards requests to the best available peer (lowest load) with `mesh_token` auth and 10 s timeout.
+  - Gateway routes: `GET /mesh/peers`, `POST /mesh/ping`, `POST /mesh/route` — registered automatically via `register_all_routes()`.
+  - `_ensure_mesh_token()` — auto-generates `secrets.token_hex(32)` on first gateway start; persists to `~/.navig/config.yaml`.
+  - **`navig flux` CLI command group** (`navig/commands/flux.py`): `status`, `peers`, `ping <url>`, `route <message>` (also accessible as `navig fx`).
+  - **BackendRegistry priority chain** rewritten: local daemon → best mesh peer → Copilot (last).
+  - **VS Code Forge nodes panel** (`navig.nodesPanel`): live peer tree with health icons, set/clear target, add node, scan LAN commands.
+  - 11 unit tests (`tests/mesh/test_registry.py`) — all passing.
+  - Feature doc: `docs/features/flux-mesh.md`.
+
 - **Multi-channel architecture design** — `.navig/plans/CHANNEL_ARCHITECTURE.md` with ChannelAdapter base class, ChannelRouter, ChannelCapabilities, config schema, security rules per channel, and phased implementation plan (Telegram, Discord, Web UI, CLI, Email).
 - **Conversational pre-filter** in intent parser — Detects greetings, identity questions, general questions, and casual chat; routes them directly to AI instead of NLP command matching.
 

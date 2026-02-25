@@ -1,0 +1,11 @@
+name  = "info"
+level = "debug"
+format = "pretty"
+
+[server]
+bind     = "127.0.0.1:42424"
+log_reqs = true
+
+[auth]
+jwt_secret     = "dev-secret-do-not-use-in-prod"
+token_ttl_secs = 86400

@@ -1,5 +1,9 @@
 # NAVIG Roadmap
 
+> ⚡ **The canonical strategy document is [`ROADMAP_MASTER.md`](ROADMAP_MASTER.md).**
+> It contains the complete 2026–2027+ execution plan with monthly deadlines, every checkbox wired to a Mission in `schemas/mission.schema.json`, and the full NavigOS Ecosphere gap register.
+> This file is a community-facing summary.
+
 This roadmap outlines current development priorities and planned features. Timelines are estimates and may change based on community feedback and maintainer availability.
 
 ## Now (Current Focus)
@@ -40,6 +44,6 @@ Prioritization is influenced by:
 
 ---
 
-**Last Updated**: February 2026
+**Last Updated**: February 2026 — see [ROADMAP_MASTER.md](ROADMAP_MASTER.md) for full detail
 
 

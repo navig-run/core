@@ -185,6 +185,7 @@ class TaskQueue:
         self._tasks: Dict[str, Task] = {}  # id -> Task
         self._completed: Set[str] = set()  # Completed task IDs
         self._lock = asyncio.Lock()
+        self._task_added_event = asyncio.Event()
         
         self._persist_path = Path(persist_path).expanduser() if persist_path else None
         if self._persist_path:
@@ -239,45 +240,61 @@ class TaskQueue:
             # Add to heap if ready
             if task.status == TaskStatus.QUEUED:
                 heapq.heappush(self._heap, task)
+                self._task_added_event.set()
             
             logger.debug(f"Task added: {task.id} ({task.name})")
             self._persist()
             
             return task
     
-    async def get_next(self) -> Optional[Task]:
+    async def get_next(self, wait: bool = False, timeout: Optional[float] = None) -> Optional[Task]:
         """
         Get next ready task from queue.
         
-        Returns highest priority task with all dependencies satisfied.
-        Returns None if no tasks are ready.
+        If wait=True, waits until a task is available or timeout occurs.
         """
-        async with self._lock:
-            while self._heap:
-                task = heapq.heappop(self._heap)
-                
-                # Skip cancelled tasks
-                if task.status == TaskStatus.CANCELLED:
-                    continue
-                
-                # Check dependencies again
-                deps_met = all(
-                    dep_id in self._completed
-                    for dep_id in task.dependencies
-                )
-                
-                if deps_met:
-                    task.status = TaskStatus.RUNNING
-                    task.started_at = datetime.now()
-                    self._persist()
-                    return task
-                else:
-                    # Put back with waiting status
-                    task.status = TaskStatus.WAITING
-                    heapq.heappush(self._heap, task)
-                    continue
+        start_time = datetime.now()
+        while True:
+            async with self._lock:
+                while self._heap:
+                    task = heapq.heappop(self._heap)
+                    
+                    # Skip cancelled tasks
+                    if task.status == TaskStatus.CANCELLED:
+                        continue
+                    
+                    # Check dependencies again
+                    deps_met = all(
+                        dep_id in self._completed
+                        for dep_id in task.dependencies
+                    )
+                    
+                    if deps_met:
+                        task.status = TaskStatus.RUNNING
+                        task.started_at = datetime.now()
+                        self._persist()
+                        return task
+                    else:
+                        # Put back with waiting status
+                        task.status = TaskStatus.WAITING
+                        heapq.heappush(self._heap, task)
+                        continue
+                self._task_added_event.clear()
             
-            return None
+            if not wait:
+                return None
+            
+            elapsed = (datetime.now() - start_time).total_seconds()
+            if timeout and elapsed >= timeout:
+                return None
+                
+            try:
+                if timeout:
+                    await asyncio.wait_for(self._task_added_event.wait(), timeout - elapsed)
+                else:
+                    await self._task_added_event.wait()
+            except asyncio.TimeoutError:
+                return None
     
     async def complete(
         self,
@@ -456,6 +473,7 @@ class TaskQueue:
                 if deps_met:
                     task.status = TaskStatus.QUEUED
                     heapq.heappush(self._heap, task)
+                    self._task_added_event.set()
     
     def _persist(self):
         """Persist queue state to disk."""

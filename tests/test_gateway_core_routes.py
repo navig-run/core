@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -88,23 +89,27 @@ async def test_core_websocket_flow():
         ws = await client.ws_connect("/ws")
 
         await ws.send_json({"action": "ping"})
-        pong = await ws.receive_json()
+        msg = await ws.receive()
+        pong = json.loads(msg.data)
         assert pong["action"] == "pong"
 
         await ws.send_json({"action": "subscribe", "topic": "events.system"})
-        subscribed = await ws.receive_json()
+        msg = await ws.receive()
+        subscribed = json.loads(msg.data)
         assert subscribed["action"] == "subscribed"
         assert subscribed["topic"] == "events.system"
         assert "events.system" in subscribed["subscriptions"]
 
         await ws.send_json({"action": "message", "message": "status"})
-        routed = await ws.receive_json()
+        msg = await ws.receive()
+        routed = json.loads(msg.data)
         assert routed["action"] == "response"
         assert routed["ok"] is True
         assert routed["data"]["response"] == "ok"
 
         await ws.send_json({"action": "unsupported"})
-        unsupported = await ws.receive_json()
+        msg = await ws.receive()
+        unsupported = json.loads(msg.data)
         assert unsupported["error_code"] == "unsupported_action"
 
         await ws.close()
@@ -136,7 +141,7 @@ async def test_deck_auth_middleware_allows_dev_header_user():
     pytest.importorskip("aiohttp")
     from aiohttp import web
     from aiohttp.test_utils import TestClient, TestServer
-    from navig.gateway.deck_api import register_deck_routes
+    from navig.gateway.deck import register_deck_routes
 
     app = web.Application()
     register_deck_routes(
@@ -162,7 +167,7 @@ async def test_deck_auth_middleware_forbidden_user():
     pytest.importorskip("aiohttp")
     from aiohttp import web
     from aiohttp.test_utils import TestClient, TestServer
-    from navig.gateway.deck_api import register_deck_routes
+    from navig.gateway.deck import register_deck_routes
 
     app = web.Application()
     register_deck_routes(

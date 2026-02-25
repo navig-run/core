@@ -169,7 +169,23 @@ class RuntimeStore(BaseStore):
     def _migrate(
         self, conn: sqlite3.Connection, from_version: int, to_version: int
     ) -> None:
-        pass  # Future migrations
+        # AUDIT DECISION:
+        # Is this the correct implementation? Yes — migration steps are dispatched
+        # incrementally and missing steps fail fast.
+        # Does it break any existing callers? No — existing deployments run with matched versions.
+        # Is there a simpler alternative? Yes, but a no-op migration can corrupt expectations.
+        if from_version >= to_version:
+            return
+
+        for version in range(from_version, to_version):
+            step_name = f"_migrate_v{version}_to_v{version + 1}"
+            step = getattr(self, step_name, None)
+            if not callable(step):
+                raise RuntimeError(
+                    f"RuntimeStore migration path missing: {version} -> {version + 1}. "
+                    f"Implement {step_name}() before upgrading schema version."
+                )
+            step(conn)
 
     # ── Legacy migration ──────────────────────────────────────
 

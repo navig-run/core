@@ -63,9 +63,6 @@ def llm_generate(
     Returns:
         Generated text content.
     """
-    # Check if llm_modes is configured
-    has_router = _has_llm_modes_config()
-
     if model_override:
         # Direct model specification — skip router
         provider, model = _parse_model_spec(model_override, provider_override)
@@ -78,36 +75,31 @@ def llm_generate(
             timeout=timeout,
         )
 
-    if has_router:
-        from navig.llm_router import resolve_llm
+    from navig.llm_router import resolve_llm
+    resolved = resolve_llm(
+        mode=mode,
+        user_input=user_input,
+        prefer_uncensored=prefer_uncensored,
+    )
+    logger.debug(
+        "Router resolved: %s → %s:%s (reason: %s)",
+        resolved.mode, resolved.provider, resolved.model,
+        resolved.resolution_reason,
+    )
 
-        resolved = resolve_llm(
-            mode=mode,
-            user_input=user_input,
-            prefer_uncensored=prefer_uncensored,
-        )
-        logger.debug(
-            "Router resolved: %s → %s:%s (reason: %s)",
-            resolved.mode, resolved.provider, resolved.model,
-            resolved.resolution_reason,
-        )
+    # Allow temperature/max_tokens overrides
+    temp = temperature if temperature is not None else resolved.temperature
+    mt = max_tokens if max_tokens is not None else resolved.max_tokens
 
-        # Allow temperature/max_tokens overrides
-        temp = temperature if temperature is not None else resolved.temperature
-        mt = max_tokens if max_tokens is not None else resolved.max_tokens
-
-        return _call_provider(
-            provider=resolved.provider,
-            model=resolved.model,
-            messages=messages,
-            temperature=temp,
-            max_tokens=mt,
-            timeout=timeout,
-            base_url=resolved.base_url,
-        )
-
-    # Legacy path — use existing AIAssistant / FallbackManager
-    return _call_legacy(messages, model_override, timeout)
+    return _call_provider(
+        provider=resolved.provider,
+        model=resolved.model,
+        messages=messages,
+        temperature=temp,
+        max_tokens=mt,
+        timeout=timeout,
+        base_url=resolved.base_url,
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -176,8 +168,6 @@ def run_llm(
     )
 
     # --- Step 1: Resolve routing ---
-    has_router = _has_llm_modes_config()
-
     if model_override:
         provider, model = _parse_model_spec(model_override, provider_override)
         selection = ModelSelection(
@@ -186,7 +176,7 @@ def run_llm(
             max_tokens=max_tokens or 4096,
             strategy_name="model_override",
         )
-    elif has_router:
+    else:
         from navig.llm_router import resolve_llm
         resolved = resolve_llm(
             mode=mode, user_input=user_input,
@@ -203,26 +193,6 @@ def run_llm(
             strategy_name="llm_router",
             metadata={"mode": resolved.mode, "reason": resolved.resolution_reason},
         )
-    else:
-        # Legacy path — wrap in LLMResult
-        try:
-            content = _call_legacy(messages, model_override, timeout)
-            latency = int((time.monotonic() - t0) * 1000)
-            return LLMResult(
-                content=content, model=model_override or "legacy",
-                provider="legacy", latency_ms=latency,
-                selection=ModelSelection(
-                    provider_name="legacy", model_name=model_override or "unknown",
-                    strategy_name="legacy_fallback",
-                ),
-            )
-        except Exception as e:
-            latency = int((time.monotonic() - t0) * 1000)
-            logger.error("Legacy LLM call failed: %s", e)
-            return LLMResult(
-                content="", model="", provider="legacy",
-                latency_ms=latency, finish_reason=f"error:{e}",
-            )
 
     logger.debug(
         "run_llm routing: %s -> %s:%s (strategy: %s)",
@@ -308,7 +278,7 @@ def _call_with_fallback(
         from navig.providers.fallback import complete_with_fallback
         from navig.providers.clients import Message
 
-        result = asyncio.run(complete_with_fallback(
+        result = _safe_run_async(lambda: complete_with_fallback(
             messages=messages,
             model=f"{selection.provider_name}:{selection.model_name}",
             fallback_models=fallback_models,
@@ -578,6 +548,17 @@ def _parse_model_spec(
     return "openrouter", spec
 
 
+def _safe_run_async(func):
+    """Run an async function cleanly, even if we are already in an event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(func())
+    
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(lambda: asyncio.run(func())).result()
+
 def _call_provider(
     provider: str,
     model: str,
@@ -613,7 +594,7 @@ def _call_via_providers_system(
         Message, CompletionRequest, create_client,
         get_builtin_provider,
     )
-    from navig.providers.auth import resolve_auth
+    from navig.providers.auth import AuthProfileManager
 
     # Get provider config
     provider_cfg = get_builtin_provider(provider)
@@ -631,7 +612,8 @@ def _call_via_providers_system(
         provider_cfg.base_url = base_url
 
     # Resolve auth
-    api_key, auth_source = resolve_auth(provider)
+    auth_manager = AuthProfileManager()
+    api_key, auth_source = auth_manager.resolve_auth(provider)
 
     # Build messages
     msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
@@ -648,7 +630,7 @@ def _call_via_providers_system(
     async def _run():
         return await client.complete(request)
 
-    result = asyncio.run(_run())
+    result = _safe_run_async(_run)
     return result.content or ""
 
 

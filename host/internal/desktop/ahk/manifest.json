@@ -1,0 +1,74 @@
+{
+  "scripts": [
+    {
+      "name": "click.ahk",
+      "description": "Click at an absolute screen coordinate. Accepts x, y, optional button (Left/Right/Middle), and click count.",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": "desktop_click (by handle) or find_element + click",
+      "is_fallback_only": false
+    },
+    {
+      "name": "type.ahk",
+      "description": "Type a string of text at the current focus point using SendText (verbatim, no hot-key interpretation).",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": "desktop_set_value (ValuePattern or SendKeys via agent.py set_value)",
+      "is_fallback_only": false
+    },
+    {
+      "name": "send.ahk",
+      "description": "Send an AHK key expression to the active window (e.g. '{Ctrl down}c{Ctrl up}'). Supports modifier keys and special keys that SendText does not.",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": null,
+      "is_fallback_only": true
+    },
+    {
+      "name": "window_close.ahk",
+      "description": "Close a window matching a given title string. Uses AHK WinClose().",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": "uiautomation ClosePattern via custom agent.py extension",
+      "is_fallback_only": false
+    },
+    {
+      "name": "window_move.ahk",
+      "description": "Move and/or resize a window identified by title to given x, y, width, height coordinates.",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": "uiautomation TransformPattern (move/resize) — not yet implemented in agent.py",
+      "is_fallback_only": true
+    },
+    {
+      "name": "media_control.ahk",
+      "description": "Send media key commands: playpause, next, prev, volup, voldown, mute.",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": null,
+      "is_fallback_only": true
+    },
+    {
+      "name": "hotkey_daemon.ahk",
+      "description": "Persistent global hotkey daemon. Registers Ctrl+Alt+N → Notepad and Ctrl+Alt+C → Calculator as example hotkeys.",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": null,
+      "is_fallback_only": true
+    },
+    {
+      "name": "clipboard_monitor.ahk",
+      "description": "Monitor clipboard changes and append text content to clipboard_history.txt in the working directory.",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": null,
+      "is_fallback_only": true
+    },
+    {
+      "name": "app_launcher.ahk",
+      "description": "Launch an application or document by file path using AHK Run().",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": null,
+      "is_fallback_only": false
+    },
+    {
+      "name": "window_tiler.ahk",
+      "description": "Tile all visible, non-minimised windows in an evenly-spaced grid layout across the primary monitor.",
+      "trigger_method": "ahk_run | desktop_ahk CLI | desktop_ahk MCP",
+      "uiautomation_replacement": null,
+      "is_fallback_only": true
+    }
+  ]
+}

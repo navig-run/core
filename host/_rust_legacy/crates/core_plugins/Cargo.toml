@@ -1,0 +1,17 @@
+[package]
+name    = "core_plugins"
+version = "0.1.0"
+edition = "2021"
+description = "Python subprocess manager (stdin/stdout JSON-RPC) for NAVIG Core Host"
+
+[dependencies]
+tokio      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+tokio-util = { workspace = true }
+tempfile   = { workspace = true }
+
+core_config = { path = "../core_config" }
+core_events = { path = "../core_events" }

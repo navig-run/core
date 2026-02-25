@@ -3,11 +3,20 @@
 Cross-Platform Automation Workflow Engine
 """
 import yaml
+import time
+import subprocess
+import os
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import sys
 
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
+
+from navig.core.safe_eval import safe_eval
 from navig.console_helper import info, error, warning
 
 @dataclass
@@ -30,6 +39,7 @@ class WorkflowEngine:
         self._navig_root = Path(__file__).parent.parent.parent
         self._workflows_dir = self._navig_root / "workflows"
         self._workflows_dir.mkdir(exist_ok=True)
+        self._workflow_cache: Dict[str, Tuple[float, Workflow]] = {}
         
         # Lazy load adapters
         self._ahk = None
@@ -87,8 +97,14 @@ class WorkflowEngine:
             return None
             
         try:
+            mtime = os.stat(target_path).st_mtime
+            if name in self._workflow_cache:
+                cached_mtime, cached_wf = self._workflow_cache[name]
+                if mtime == cached_mtime:
+                    return cached_wf
+
             with open(target_path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
+                data = yaml.load(f, Loader=SafeLoader)
                 
             steps = []
             for s in data.get('steps', []):
@@ -100,12 +116,14 @@ class WorkflowEngine:
                     if_condition=s.get('if', None)
                 ))
                 
-            return Workflow(
+            wf = Workflow(
                 name=data.get('name',name),
                 description=data.get('description', ''),
                 variables=data.get('variables', {}),
                 steps=steps
             )
+            self._workflow_cache[name] = (mtime, wf)
+            return wf
         except Exception as e:
             error(f"Failed to load workflow {name}: {e}")
             return None
@@ -135,7 +153,6 @@ class WorkflowEngine:
                 cond = step.if_condition
                 
                 # Use safe evaluation with variables map
-                from navig.core.safe_eval import safe_eval
                 
                 # Prepare variables for eval (convert all to appropriate types if possible, otherwise strings)
                 eval_vars = current_vars.copy()
@@ -183,12 +200,10 @@ class WorkflowEngine:
         """Dispatch action to appropriate adapter."""
         # Platform-independent actions
         if action == "wait":
-            import time
             time.sleep(float(args.get('seconds', 1.0)))
             return True
             
         if action == "run_command":
-            import subprocess
             cmd = args.get('command')
             if cmd:
                 res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -250,7 +265,6 @@ class WorkflowEngine:
             check_type = args.get('type', 'window')
             target = args.get('target', '')
             timeout = float(args.get('timeout', 30.0))
-            import time
             start = time.time()
             
             if check_type == 'window':

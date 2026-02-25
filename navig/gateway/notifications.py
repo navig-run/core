@@ -401,23 +401,59 @@ class TelegramNotifier(ChannelNotifier):
         )
         
     async def _evening_summary(self) -> Optional[Notification]:
-        """Generate evening summary."""
+        """Generate evening summary — NAVIG lore-flavored, day/hour-aware."""
+        import random
         now = datetime.now()
+        hour = now.hour
+        weekday = now.weekday()   # 0 = Monday, 6 = Sunday
+        day_name = now.strftime('%A')
+
+        # --- Dynamic opening line ---
+        if hour < 19:
+            shift_label = "evening shift begins"
+        elif hour < 22:
+            shift_label = "graveyard watch is close"
+        else:
+            shift_label = "deep cycle approaching"
+
+        day_context = {
+            0: "Week 1 of 5 complete. Momentum counts.",
+            1: "Tuesday through. Keep the streak.",
+            2: "Midweek. The servers don't sleep — you can.",
+            3: "Thursday hold. One more push before the weekend.",
+            4: "Friday wind-down. Let the daemons run overnight.",
+            5: "Saturday ops. Respect the craft, even on weekends.",
+            6: "Sunday. Systems quiet. Mind should be too.",
+        }.get(weekday, "Another day logged in the graveyard.")
+
+        # --- Dynamic closing line ---
+        closings = [
+            "The graveyard is quiet. Keep it that way. 🪦",
+            "No admin visible. Systems nominal. Sleep well. 🌑",
+            "Daemons running. You're allowed to rest. 🫀",
+            "The watch is handed off. Go dark. 🔦",
+            "Servers alive. Admin invisible. Mission holding. 🕹️",
+            "Stack's green. Logs can wait until morning. 📋",
+        ]
+        closing = random.choice(closings)
 
         lines = [
-            f"Good evening! Here's your {now.strftime('%A')} summary.",
+            f"📊 **{day_name} Evening — {shift_label.title()}**",
             "",
-            "**Evening Checklist:**",
-            "• Review completed tasks",
-            "• Note tomorrow's priorities",
-            "• Ensure backups ran",
+            f"_{day_context}_",
             "",
-            "Rest well! 🌙",
+            "**Shutdown Checklist:**",
+            "• Review what shipped today",
+            "• Lock in tomorrow's top priority",
+            "• Confirm backups completed",
+            "• Close what can be closed",
+            "",
+            closing,
         ]
-        
+
         return Notification(
             type='briefing',
-            title='Evening Summary',
+            title=f'{day_name} Evening Summary',
             message='\n'.join(lines),
             priority=NotificationPriority.LOW,
         )

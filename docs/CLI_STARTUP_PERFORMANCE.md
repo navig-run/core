@@ -677,3 +677,63 @@ import asyncio
 - Typer dispatch overhead: ~65ms
 
 Getting below 200ms would require replacing Typer with a lighter framework (e.g., raw `argparse` or `click` without rich integration), which is a larger architectural change.
+
+---
+
+## Quantum Velocity Protocol — 2026-02-24
+
+> **Mission:** Eliminate all confirmed hotspots found in `cumtime_profile.txt` (668ms baseline for `navig host list`).
+
+### New Baseline After Quantum Velocity
+
+| Command | Before | After | Improvement |
+|---|---|---|---|
+| `navig host list --plain` | **668ms** | **268ms** | **60% faster (-400ms)** |
+| Config cold-load | **106ms** | **<1ms** (cache hit) | **>99% faster** |
+| `ProactiveAssistant.__init__` (CLI path) | **181ms** | **0ms** | **100% off critical path** |
+| WMI platform detection | **73ms** | **0ms** | **100% eliminated** |
+
+### The 6 Killshots
+
+| # | Killshot | File(s) | Saved | Technique |
+|---|---|---|---|---|
+| **K1** | WMI elimination (`platform.system()` → `sys.platform` + `@lru_cache`) | `assistant_utils.py` | **~73ms** | `sys.platform` is a compile-time constant; `@lru_cache(maxsize=1)` on `get_navig_directory()` |
+| **K2** | Config YAML → pickle binary cache | `config.py` | **~106ms** (cache hit) | `~/.navig/.config_cache.pkl`, mtime-invalidated, atomic-rename write, Shadow Execution guard |
+| **K3** | ProactiveAssistant async init | `cli/__init__.py` | **~181ms** off critical path | Background `threading.Thread`; `ctx.obj['get_assistant'](timeout)` replaces `ctx.obj['assistant']` |
+| **K4** | Lazy forge/farmore/copilot registration | `cli/__init__.py` | **~30-60ms** | Moved from eager module-level to `_EXTERNAL_CMD_MAP` in `main.py` |
+| **K5** | Named Pipe / UDS IPC fast-path | `navig/ipc_pipe.py` *(NEW)* | **~20-80ms** (local IPC) | `multiprocessing.connection` / Unix sockets; Shadow Execution auto-promote after 100 matches |
+| **K6** | Auto-Evolutive Profiler | `navig/perf/profiler.py` *(NEW)* | *(monitoring)* | 1-in-100 `cProfile` sampling, regression detection; `navig evolve status/optimize` |
+
+### Shadow Execution Guards (Aegis Protocol)
+
+K2 (config cache) and K5 (IPC pipe) both apply the Shadow Execution pattern:
+
+1. **Fast path** executes and returns the result immediately.
+2. **Safe path** (original YAML parse / WebSocket) runs asynchronously in a background thread.
+3. Results compared — mismatches logged to `~/.navig/perf/shadow_config.jsonl` or `shadow_ipc.jsonl`.
+4. After `SHADOW_PROMOTE_AFTER=100` consecutive clean matches, the fast path is auto-promoted (flag file `~/.navig/.ipc_promoted`).
+5. Any fast-path exception → instant silent fallback to safe path; no user-visible error.
+
+### New Commands Added
+
+| Command | Description |
+|---|---|
+| `navig evolve status` | Show perf trends from the auto-profiler (last N days, flag: `--days`) |
+| `navig evolve optimize` | List top hot functions + IPC pipe promotion status |
+
+### Critical Invariants (must not be broken)
+
+- **Never call `platform.system()` in a hot path** — use `_IS_WINDOWS = sys.platform == "win32"` constant.
+- **`_save_global_config()` MUST refresh the pickle cache** after every write — or call `_invalidate_config_cache()` first.
+- **`ctx.obj['assistant']` is GONE** — all commands that need the assistant must use `ctx.obj['get_assistant'](timeout=0.5)`.
+- **All external Typer sub-apps go through `_EXTERNAL_CMD_MAP`** — never eager-import at module level in `cli/__init__.py`.
+
+### Remaining Bottlenecks (Next Sprint)
+
+| Bottleneck | Estimated Cost | Proposed Solution |
+|---|---|---|
+| `cli/__init__.py` module execution (446 command decorators) | ~114ms | Split into per-group files; all routed via `_EXTERNAL_CMD_MAP` |
+| `rich_utils.py`, `markdown.py` Typer internals | ~100ms | Unavoidable without framework change |
+| Python process startup | ~100ms | Frozen binary (Nuitka / PyInstaller) — future investigation |
+| SSH key loading on each host command | ~30ms | Persist loaded keys in named-pipe daemon session |
+| Pre-warm `.pyc` bytecode cache | ~20ms | `navig warm` command: pre-import all submodules once |

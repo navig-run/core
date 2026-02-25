@@ -125,7 +125,9 @@ def _get_console():
         from rich.console import Console
 
         return Console(stderr=True)
-    except Exception:
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Failed to initialize rich console: %s", e, exc_info=True)
         return None
 
 
@@ -236,7 +238,9 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
             "Plugin cache corrupted at %s — skipping cache check",
             Path.home() / ".navig" / "data" / "plugins_cache.json",
         )
-    except Exception:
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).debug("Plugin check exception: %s", e, exc_info=True)
         pass
 
     return False
@@ -511,7 +515,9 @@ def main() -> None:
         try:
             from navig.commands.profile import profile_app
             app.add_typer(profile_app, name="profile")
-        except Exception as _e:  # never break startup
+        except Exception as e:  # never break startup
+            import logging as _logging
+            _logging.getLogger(__name__).warning("Failed to load profile sub-app: %s", e, exc_info=True)
             pass
 
         skip_plugins = _should_skip_plugin_loading(sys.argv)

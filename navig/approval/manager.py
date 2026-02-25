@@ -4,6 +4,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
@@ -11,6 +12,7 @@ from .policies import ApprovalLevel, ApprovalPolicy, ApprovalStatus
 
 if TYPE_CHECKING:
     from navig.gateway.server import NavigGateway
+    from navig.gateway.audit_log import AuditLog
 
 logger = get_debug_logger()
 
@@ -56,9 +58,11 @@ class ApprovalManager:
         self,
         gateway: Optional['NavigGateway'] = None,
         policy: Optional[ApprovalPolicy] = None,
+        audit_log: Optional['AuditLog'] = None,
     ):
         self.gateway = gateway
         self.policy = policy or ApprovalPolicy()
+        self._audit_log: Optional['AuditLog'] = audit_log
         
         # Pending approvals by ID
         self._pending: Dict[str, ApprovalRequest] = {}
@@ -75,6 +79,45 @@ class ApprovalManager:
         # Registered handlers by name (e.g., 'gateway', 'telegram')
         self._handlers: Dict[str, Any] = {}
     
+    def set_audit_log(self, audit_log: 'AuditLog') -> None:
+        """Wire in the audit log (called from gateway after both are initialised)."""
+        self._audit_log = audit_log
+
+    def is_audit_log_live(self) -> bool:
+        """Return True when the audit log is wired and its file is writable."""
+        if self._audit_log is None:
+            return False
+        # Probe by checking the parent dir can be created / used
+        try:
+            path: Path = self._audit_log._path  # type: ignore[attr-defined]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return True
+        except OSError:
+            return False
+
+    def set_auto_evolve(self, enabled: bool) -> None:
+        """
+        Toggle auto-evolve mode at runtime (called from the VS Code toggle).
+
+        Refuses to enable when the audit log is not live — silent approvals
+        without a trace are architecturally forbidden.
+        """
+        if enabled and not self.is_audit_log_live():
+            raise RuntimeError(
+                "Cannot enable auto-evolve: audit log is not live. "
+                "Ensure ~/.navig/runtime/ is writable and audit_log is wired."
+            )
+        self.policy.auto_evolve_enabled = enabled
+        logger.info("Auto-evolve %s", "ENABLED" if enabled else "DISABLED")
+        if self._audit_log:
+            self._audit_log.record(
+                actor="navig-bridge:toggle",
+                action="approval.auto_evolve.toggle",
+                policy="allow",
+                status="success",
+                metadata={"enabled": enabled},
+            )
+
     def register_handler(self, name: str, handler: Any) -> None:
         """Register an approval handler.
         
@@ -143,7 +186,21 @@ class ApprovalManager:
         if self.policy.is_user_auto_approved(user_id):
             logger.debug(f"Auto-approved (trusted user): {command}")
             return True
-        
+
+        # Check auto-evolve (VS Code-side toggle) — gate: audit log must be live
+        if self.policy.is_auto_evolve_allowed(command, self.is_audit_log_live()):
+            logger.info("Auto-evolve approved: %s", command)
+            if self._audit_log:
+                self._audit_log.record(
+                    actor=f"{channel}:{user_id}",
+                    action="approval.auto_evolve",
+                    policy="allow",
+                    status="success",
+                    raw_input=command,
+                    metadata={"auto_evolve": True},
+                )
+            return True
+
         # Classify command
         level = self.policy.classify_command(command)
         

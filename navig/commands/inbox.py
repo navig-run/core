@@ -211,3 +211,140 @@ def dry_run(
     typer.echo("\nClassification summary:")
     for ct, count in sorted(types_count.items()):
         typer.echo(f"  {ct}: {count}")
+
+
+@inbox_app.command("filter")
+def filter_cmd(
+    path: Optional[str] = typer.Option(
+        None, "--path", "-p",
+        help="Project root (default: auto-detected from cwd)",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview only — no files written"),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Keep running and re-filter on changes"),
+    interval: float = typer.Option(5.0, "--interval", "-i", help="Watch interval in seconds"),
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Filter and normalize all .navig/**/*.md files in-place.
+
+    Adds missing YAML frontmatter, normalizes heading structure, and writes
+    each file back.  Files inside .navig/plans/inbox/ are always skipped —
+    they are router inputs, not processed documents.
+
+    \b
+    Examples:
+      navig inbox filter
+      navig inbox filter --dry-run
+      navig inbox filter --watch --interval 10
+    """
+    from navig.agents.filtering_engine import FilteringEngine
+
+    project_root = Path(path).resolve() if path else _find_project_root()
+
+    if not (project_root / ".navig").is_dir():
+        typer.secho(
+            f"No .navig/ directory found at {project_root}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    engine = FilteringEngine(project_root)
+
+    if watch:
+        typer.secho(
+            f"Watching .navig/ under {project_root} (interval={interval}s) — Ctrl+C to stop",
+            fg=typer.colors.CYAN,
+        )
+        try:
+            engine.start_watch(interval_secs=interval, dry_run=dry_run)
+        except KeyboardInterrupt:
+            typer.echo("\nWatch stopped.")
+        return
+
+    # Single-pass scan
+    typer.echo(f"Filtering .navig/ under {project_root} {'[dry-run]' if dry_run else ''}\n")
+    results = engine.scan_and_filter(dry_run=dry_run)
+
+    if json_output:
+        import dataclasses
+        typer.echo(
+            __import__("json").dumps(
+                [
+                    {
+                        "path": str(r.path),
+                        "changed": r.changed,
+                        "would_change": r.would_change,
+                        "skipped": r.skipped,
+                        "error": r.error,
+                        "rules_applied": r.rules_applied,
+                    }
+                    for r in results
+                ],
+                indent=2,
+            )
+        )
+        return
+
+    if not results:
+        typer.secho("All files are already clean — nothing to do.", fg=typer.colors.GREEN)
+        return
+
+    changed = 0
+    would_change = 0
+    errors = 0
+
+    for r in results:
+        name = r.path.name
+        if r.error:
+            typer.secho(f"  [ERROR] {name}: {r.error}", fg=typer.colors.RED)
+            errors += 1
+        elif r.changed:
+            typer.secho(f"  [UPDATED] {name}  rules={r.rules_applied}", fg=typer.colors.GREEN)
+            changed += 1
+        elif r.would_change:
+            typer.secho(f"  [WOULD UPDATE] {name}  rules={r.rules_applied}", fg=typer.colors.YELLOW)
+            would_change += 1
+
+    if dry_run:
+        typer.echo(f"\nDry-run: {would_change} would be updated, {errors} errors.")
+    else:
+        typer.echo(f"\nDone: {changed} updated, {errors} errors.")
+
+
+@inbox_app.command("watch")
+def watch_cmd(
+    path: Optional[str] = typer.Option(
+        None, "--path", "-p",
+        help="Project root (default: auto-detected from cwd)",
+    ),
+    interval: float = typer.Option(5.0, "--interval", "-i", help="Poll interval in seconds"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Detect and report changes only"),
+) -> None:
+    """Watch .navig/**/*.md for changes and re-filter automatically.
+
+    Alias for: navig inbox filter --watch
+
+    \b
+    Examples:
+      navig inbox watch
+      navig inbox watch --interval 10 --dry-run
+    """
+    from navig.agents.filtering_engine import FilteringEngine
+
+    project_root = Path(path).resolve() if path else _find_project_root()
+
+    if not (project_root / ".navig").is_dir():
+        typer.secho(
+            f"No .navig/ directory found at {project_root}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    engine = FilteringEngine(project_root)
+    typer.secho(
+        f"Watching .navig/ under {project_root} (interval={interval}s) — Ctrl+C to stop",
+        fg=typer.colors.CYAN,
+    )
+    try:
+        engine.start_watch(interval_secs=interval, dry_run=dry_run)
+    except KeyboardInterrupt:
+        typer.echo("\nWatch stopped.")
