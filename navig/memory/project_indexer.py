@@ -636,6 +636,7 @@ class ProjectIndexer:
         query: str,
         top_k: Optional[int] = None,
         max_chars: Optional[int] = None,
+        content_type_filter: Optional[str] = None,
     ) -> List[ProjectSearchResult]:
         """
         BM25 search over the project index.
@@ -647,6 +648,8 @@ class ProjectIndexer:
             query: Natural language search query.
             top_k: Max results (defaults to config.max_results).
             max_chars: Max total characters (defaults to config.max_chars).
+            content_type_filter: Restrict results to a single content type
+                (e.g. 'wiki', 'code', 'docs', 'plans'). None = all types.
 
         Returns:
             List of ProjectSearchResult sorted by score descending.
@@ -664,17 +667,31 @@ class ProjectIndexer:
             return []
 
         try:
-            rows = conn.execute(
-                """
-                SELECT file_path, content, start_line, end_line, content_type,
-                       section_title, bm25(chunks) AS score
-                FROM chunks
-                WHERE chunks MATCH ?
-                ORDER BY bm25(chunks)
-                LIMIT ?
-                """,
-                (safe_query, top_k * 3),  # fetch extra for per-file dedup
-            ).fetchall()
+            if content_type_filter:
+                rows = conn.execute(
+                    """
+                    SELECT file_path, content, start_line, end_line, content_type,
+                           section_title, bm25(chunks) AS score
+                    FROM chunks
+                    WHERE chunks MATCH ?
+                      AND content_type = ?
+                    ORDER BY bm25(chunks)
+                    LIMIT ?
+                    """,
+                    (safe_query, content_type_filter, top_k * 3),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT file_path, content, start_line, end_line, content_type,
+                           section_title, bm25(chunks) AS score
+                    FROM chunks
+                    WHERE chunks MATCH ?
+                    ORDER BY bm25(chunks)
+                    LIMIT ?
+                    """,
+                    (safe_query, top_k * 3),  # fetch extra for per-file dedup
+                ).fetchall()
         except sqlite3.OperationalError as e:
             logger.debug("[ProjectIndexer] FTS5 query error: %s", e)
             return []
@@ -730,6 +747,39 @@ class ProjectIndexer:
             return ""
         # Join with OR for broader matching
         return " OR ".join(tokens)
+
+    # ----------------------------------------------------------------
+    # Context assembly (for LLM injection)
+    # ----------------------------------------------------------------
+
+    def get_context(
+        self,
+        query: str,
+        max_chars: int = 8_000,
+        content_type_filter: Optional[str] = None,
+        top_k: int = 8,
+    ) -> str:
+        """
+        Retrieve and format the most relevant chunks as an LLM context string.
+
+        Args:
+            query: Natural language query.
+            max_chars: Budget for total context characters.
+            content_type_filter: Restrict to a content type (e.g. 'wiki').
+            top_k: Maximum chunks to include.
+
+        Returns:
+            Formatted multi-block context string, or empty string if nothing found.
+        """
+        results = self.search(
+            query,
+            top_k=top_k,
+            max_chars=max_chars,
+            content_type_filter=content_type_filter,
+        )
+        if not results:
+            return ""
+        return "\n\n".join(r.to_context_string() for r in results)
 
     # ----------------------------------------------------------------
     # Stats

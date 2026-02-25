@@ -12,7 +12,7 @@ import os
 from unittest.mock import patch, MagicMock
 
 from navig.config import ConfigManager
-from navig.commands import navig_backup
+from navig.commands import config_backup as navig_backup
 
 
 @pytest.fixture

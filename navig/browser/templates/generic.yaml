@@ -1,0 +1,44 @@
+site: generic
+match: "*"
+description: "Generic login flow — works on most standard login forms"
+priority: 0
+
+flows:
+  login:
+    description: "Generic email + password login"
+    variables: [email, password]
+    steps:
+      - action: fill_fast
+        selector: { kind: css, value: "input[type='email'], input[name='email'], input[name='username'], input[name='login'], input[id*='email'], input[id*='user']" }
+        input: "{{email}}"
+        wait_after: none
+
+      - action: fill_fast
+        selector: { kind: css, value: "input[type='password']" }
+        input: "{{password}}"
+        wait_after: none
+
+      - action: click
+        selector: { kind: role, value: "button[name*='Log in']" }
+        fallbacks:
+          - { kind: role, value: "button[name*='Sign in']" }
+          - { kind: role, value: "button[name*='Login']" }
+          - { kind: css, value: "button[type='submit'], input[type='submit'], form button" }
+        wait_after: navigate
+
+  post:
+    description: "Generic post/comment to a textarea"
+    variables: [text]
+    steps:
+      - action: fill_fast
+        selector: { kind: css, value: "textarea:not([readonly]), [contenteditable='true']" }
+        input: "{{text}}"
+        wait_after: none
+
+      - action: click
+        selector: { kind: role, value: "button[name*='Post']" }
+        fallbacks:
+          - { kind: role, value: "button[name*='Submit']" }
+          - { kind: role, value: "button[name*='Send']" }
+          - { kind: css, value: "form button[type='submit']" }
+        wait_after: stable

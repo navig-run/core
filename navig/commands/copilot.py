@@ -1,7 +1,7 @@
 """
 NAVIG Copilot CLI Commands
 
-Direct access to the Forge LLM bridge (VS Code Copilot) from the command line.
+Direct access to VS Code Copilot via the MCP Forge bridge from the command line.
 Works over the SSH tunnel — requires an active Forge connection.
 
 Usage:
@@ -22,7 +22,7 @@ ch = lazy_import("navig.console_helper")
 
 copilot_app = typer.Typer(
     name="copilot",
-    help="Chat with VS Code Copilot via the Forge LLM bridge",
+    help="Chat with VS Code Copilot via the MCP Forge bridge",
     no_args_is_help=True,
 )
 
@@ -43,11 +43,11 @@ def _run(coro):
 
 
 async def _get_forge_provider():
-    """Build a ForgeProvider from config."""
-    from navig.agent.llm_providers import ForgeProvider
+    """Build a McpForgeProvider from config."""
+    from navig.agent.llm_providers import McpForgeProvider
 
     url, token = _read_forge_config()
-    provider = ForgeProvider(base_url=url, api_key=token)
+    provider = McpForgeProvider(base_url=url, api_key=token)
 
     if not await provider.is_available():
         await provider.close()
@@ -56,31 +56,31 @@ async def _get_forge_provider():
 
 
 def _read_forge_config():
-    """Read forge URL and token from config / env."""
+    """Read MCP Forge URL and token from config / env."""
     import os
-    url = os.getenv("NAVIG_FORGE_LLM_URL", "")
+    url = os.getenv("NAVIG_FORGE_MCP_URL", "")
     token = os.getenv("NAVIG_FORGE_LLM_TOKEN", "")
     if not url:
         try:
             from navig.config import get_config_manager
             cfg = get_config_manager().global_config or {}
             forge = cfg.get("forge", {})
-            url = forge.get("url") or forge.get("llm_url") or ""
+            url = forge.get("mcp_url") or ""
             token = token or forge.get("token", "")
         except Exception:
             pass
-    return url or "http://127.0.0.1:43821", token
+    return url or "ws://127.0.0.1:42070", token
 
 
 async def _chat(messages: list, model: str = "") -> str:
     """Send messages through the Forge bridge and return the response."""
     provider = await _get_forge_provider()
     if provider is None:
-        ch.error("Forge LLM bridge is not reachable.")
+        ch.error("MCP Forge bridge is not reachable.")
         ch.info("  Check that:")
         ch.info("    1. VS Code is running with the Forge extension active")
         ch.info("    2. The SSH tunnel is up (systemctl status forge-tunnel)")
-        ch.info("    3. forge.url / forge.token in ~/.navig/config.yaml are correct")
+        ch.info("    3. forge.mcp_url / forge.token in ~/.navig/config.yaml are correct")
         raise typer.Exit(1)
     try:
         resp = await provider.chat(model=model, messages=messages, max_tokens=4096)
@@ -253,12 +253,24 @@ def copilot_review(
     ch.print_markdown(result)
 
 
+# ── Session History sub-app ──────────────────────────────────────────────────
+# Lazy-register to avoid import cost on unrelated commands.
+def _register_sessions_subapp():
+    try:
+        from navig.commands.sessions import sessions_app
+        copilot_app.add_typer(sessions_app, name="sessions")
+    except Exception:
+        pass
+
+_register_sessions_subapp()
+
+
 @copilot_app.command("status")
 def copilot_status(
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """
-    Check Forge LLM bridge connectivity and status.
+    Check MCP Forge bridge connectivity and status.
 
     Examples:
         navig copilot status
@@ -269,28 +281,13 @@ def copilot_status(
     url, token = _read_forge_config()
 
     async def _check():
-        from navig.agent.llm_providers import ForgeProvider
-        provider = ForgeProvider(base_url=url, api_key=token)
+        from navig.agent.llm_providers import McpForgeProvider
+        provider = McpForgeProvider(base_url=url, api_key=token)
         t0 = time.monotonic()
         available = await provider.is_available()
         latency = int((time.monotonic() - t0) * 1000)
 
         info = {"available": available, "url": url, "latency_ms": latency, "auth": bool(token)}
-
-        if available:
-            try:
-                aio = await provider._get_session()
-                async with aio.get(
-                    f"{url}/vscode-llm/health",
-                    timeout=provider.__class__.__dict__.get("_timeout", __import__("aiohttp").ClientTimeout(total=5)),
-                ) as r:
-                    body = await r.json()
-                    info["model"] = body.get("model", "unknown")
-                    info["uptime"] = body.get("uptime", 0)
-                    info["backends"] = body.get("backends", [])
-            except Exception:
-                pass
-
         await provider.close()
         return info
 
@@ -301,17 +298,12 @@ def copilot_status(
         print(json.dumps(info, indent=2))
     else:
         if info["available"]:
-            ch.success("Forge LLM bridge is online")
+            ch.success("MCP Forge bridge is online")
             ch.info(f"  URL:     {info['url']}")
-            ch.info(f"  Model:   {info.get('model', 'unknown')}")
             ch.info(f"  Latency: {info['latency_ms']}ms")
-            ch.info(f"  Uptime:  {info.get('uptime', '?')}s")
             ch.info(f"  Auth:    {'configured' if info['auth'] else 'NONE'}")
-            backends = info.get("backends", [])
-            if backends:
-                ch.info(f"  Backends: {', '.join(backends)}")
         else:
-            ch.error("Forge LLM bridge is OFFLINE")
+            ch.error("MCP Forge bridge is OFFLINE")
             ch.info(f"  URL:  {info['url']}")
             ch.info(f"  Auth: {'configured' if info['auth'] else 'NONE'}")
             ch.info("")

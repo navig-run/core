@@ -1,0 +1,4 @@
+# navig-core/host/internal/browseragent/playwrightdriver
+internal\browseragent\playwrightdriver\playwrightdriver.go:181:12: config.TimeoutMs undefined (type browser.GotoConfig has no field or method TimeoutMs)
+internal\browseragent\playwrightdriver\playwrightdriver.go:182:30: config.TimeoutMs undefined (type browser.GotoConfig has no field or method TimeoutMs)
+internal\browseragent\playwrightdriver\playwrightdriver.go:186:14: cannot use &waitUntil (value of type **playwright.WaitUntilState) as *playwright.WaitUntilState value in struct literal

@@ -35,6 +35,7 @@ class TestMemoryBatching(unittest.TestCase):
     def test_batch_processing(self):
         # Create dummy directory structure
         with patch('pathlib.Path.rglob') as mock_rglob, \
+             patch('pathlib.Path.exists', return_value=True), \
              patch('pathlib.Path.read_text'), \
              patch('pathlib.Path.stat'):
             

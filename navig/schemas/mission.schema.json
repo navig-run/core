@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://navig.local/schemas/mission.schema.json",
+  "title": "NAVIG Mission",
+  "description": "Discrete unit of autonomous work with enforced state machine",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mission_id", "title", "status"],
+  "properties": {
+    "mission_id":    { "type": "string", "format": "uuid" },
+    "title":         { "type": "string", "minLength": 1 },
+    "node_id":       { "type": ["string", "null"] },
+    "capability":    { "type": "string" },
+    "payload":       { "type": "object" },
+    "priority":      { "type": "integer", "minimum": 0 },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "succeeded", "failed", "cancelled", "timed_out"]
+    },
+    "result":        {},
+    "error":         { "type": ["string", "null"] },
+    "created_at":    { "type": "string", "format": "date-time" },
+    "queued_at":     { "type": ["string", "null"], "format": "date-time" },
+    "started_at":    { "type": ["string", "null"], "format": "date-time" },
+    "completed_at":  { "type": ["string", "null"], "format": "date-time" },
+    "timeout_secs":  { "type": ["number", "null"], "minimum": 0 },
+    "tags":          { "type": "array", "items": { "type": "string" } },
+    "metadata":      { "type": "object" }
+  }
+}

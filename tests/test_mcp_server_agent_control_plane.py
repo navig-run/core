@@ -124,8 +124,7 @@ def test_agent_service_status_includes_capability_flags(monkeypatch):
 
     handler = MCPProtocolHandler()
     monkeypatch.setattr(
-        handler,
-        "_get_service_capabilities",
+        "navig.mcp.tools.agent._get_service_capabilities",
         lambda: {
             "can_install": True,
             "can_uninstall": True,
@@ -148,31 +147,20 @@ def test_agent_resource_aliases_read(monkeypatch):
     """Both navig://agent/* and agent://* URIs should resolve."""
     handler = MCPProtocolHandler()
 
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_status_get",
-        lambda _args: {"installed": True, "running": False},
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_goal_list",
-        lambda _args: {"count": 1, "goals": [{"id": "g1"}]},
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_remediation_list",
-        lambda _args: {"count": 0, "actions": []},
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_learning_run",
-        lambda _args: {"total_errors": 0, "patterns": {}},
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_service_status",
-        lambda _args: {"running": False, "platform": "linux", "status": "inactive"},
-    )
+    def _fake_execute(tool_name, args):
+        if tool_name == "navig_agent_status_get":
+            return {"installed": True, "running": False}
+        if tool_name == "navig_agent_goal_list":
+            return {"count": 1, "goals": [{"id": "g1"}]}
+        if tool_name == "navig_agent_remediation_list":
+            return {"count": 0, "actions": []}
+        if tool_name == "navig_agent_learning_run":
+            return {"total_errors": 0, "patterns": {}}
+        if tool_name == "navig_agent_service_status":
+            return {"running": False, "platform": "linux", "status": "inactive"}
+        raise ValueError(f"Unexpected tool: {tool_name}")
+
+    monkeypatch.setattr(handler, "_execute_tool", _fake_execute)
 
     status = json.loads(handler._read_resource("agent://status"))
     goals = json.loads(handler._read_resource("navig://agent/goals"))

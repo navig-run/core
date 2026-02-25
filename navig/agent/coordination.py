@@ -490,6 +490,36 @@ class AgentCoordinator:
             return self._shared_context.get(key, {}).get("value")
         return {k: v["value"] for k, v in self._shared_context.items()}
     
+    def gather_context_speculatively(
+        self,
+        query: str,
+        limit: int = 5,
+        max_tokens: int = 2000,
+    ) -> asyncio.Task:
+        """
+        Speculatively kick off a vector search for memory context.
+        This task can run concurrently while the model router is deciding the tier,
+        ensuring context is ready exactly when the LLM begins generation.
+        """
+        async def _fetch_context():
+            try:
+                # Memory search is synchronous, so push to thread pool 
+                # to avoid blocking the event loop during route selection
+                from navig.memory.manager import get_memory_manager
+                manager = get_memory_manager()
+                
+                loop = asyncio.get_running_loop()
+                return await loop.run_in_executor(
+                    None,
+                    lambda: manager.get_context(query, max_tokens=max_tokens, limit=limit)
+                )
+            except Exception as e:
+                logger.error(f"Speculative context gather failed: {e}")
+                return ""
+                
+        # Return the un-awaited task so the caller can gather it later
+        return asyncio.create_task(_fetch_context())
+
     async def broadcast_context_update(self, from_agent: str):
         """Broadcast context update to all agents."""
         message = AgentMessage(

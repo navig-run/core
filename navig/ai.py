@@ -22,9 +22,10 @@ Migration::
 """
 
 import asyncio
+import concurrent.futures as _cf
 import requests
 import json
-from typing import Dict, Any, List, Optional
+from typing import ClassVar, Dict, Any, List, Optional
 from navig import console_helper as ch
 from navig.ai_context import get_ai_context_manager
 
@@ -45,6 +46,20 @@ class AIAssistant:
         self.config = config_manager
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
         self._fallback_manager = None
+
+    # Class-level singleton for ConversationStore — opened once, reused across calls
+    _conv_store: ClassVar[Optional[Any]] = None
+
+    def _get_conv_store(self):
+        """Return a cached ConversationStore singleton (opens DB once per process)."""
+        if AIAssistant._conv_store is None:
+            try:
+                from navig.memory.conversation import ConversationStore
+                from pathlib import Path
+                AIAssistant._conv_store = ConversationStore(Path.home() / '.navig' / 'memory.db')
+            except Exception:
+                pass
+        return AIAssistant._conv_store
     
     def _get_fallback_manager(self):
         """Lazy-load the fallback manager for multi-provider support."""
@@ -78,27 +93,82 @@ class AIAssistant:
         # Get system prompt
         system_prompt = self.config.get_ai_system_prompt()
 
-        # ── Memory enrichment (best-effort) ────────────────────────────────
-        try:
-            from navig.memory.manager import get_memory_manager
-            _mgr = get_memory_manager()
-            _mem_ctx: str = ""
-            # Relevant KB snippets for this query
-            if hasattr(_mgr, 'get_context_for_query'):
-                _mem_ctx = _mgr.get_context_for_query(question, limit=5) or ""
-            elif hasattr(_mgr, 'knowledge_base') and _mgr.knowledge_base:
-                _results = _mgr.knowledge_base.text_search(question[:200], limit=5)
-                if _results:
-                    _mem_ctx = "\n".join(f"- {e.key}: {e.content[:150]}" for e in _results)
-            if _mem_ctx:
-                system_prompt = system_prompt + "\n\n## What I Know\n" + _mem_ctx
-            # User profile
-            if hasattr(_mgr, 'get_user_context'):
-                _profile = _mgr.get_user_context() or ""
-                if _profile:
-                    system_prompt = system_prompt + "\n\n## User Profile\n" + _profile
-        except Exception:
-            pass  # Never block a user question on memory failures
+        # ── Memory enrichment: all 3 sources run in parallel ─────────────────
+        # Each block is independent (different DBs/singletons) — no reason to sequence.
+        # Total latency = max(T_kb, T_kg, T_episodic) instead of sum.
+        _q = question[:200]  # consistent truncation for all three
+
+        def _fetch_kb() -> str:
+            try:
+                from navig.memory.manager import get_memory_manager
+                _mgr = get_memory_manager()
+                _parts: list = []
+                _mem_ctx = ""
+                if hasattr(_mgr, 'get_context_for_query'):
+                    _mem_ctx = _mgr.get_context_for_query(question, limit=5) or ""
+                elif hasattr(_mgr, 'knowledge_base') and _mgr.knowledge_base:
+                    _results = _mgr.knowledge_base.text_search(_q, limit=5)
+                    if _results:
+                        _mem_ctx = "\n".join(f"- {e.key}: {e.content[:150]}" for e in _results)
+                if _mem_ctx:
+                    _parts.append("\n\n## What I Know\n" + _mem_ctx)
+                if hasattr(_mgr, 'get_user_context'):
+                    _profile = _mgr.get_user_context() or ""
+                    if _profile:
+                        _parts.append("\n\n## User Profile\n" + _profile)
+                return "".join(_parts)
+            except Exception:
+                return ""
+
+        def _fetch_kg() -> str:
+            try:
+                from navig.memory.knowledge_graph import get_knowledge_graph
+                _kg = get_knowledge_graph()
+                _parts: list = []
+                _kg_facts = _kg.search_facts(_q, limit=10)
+                if _kg_facts:
+                    _lines = [
+                        f"- {f.subject} {f.predicate.replace('_', ' ')} {f.object}"
+                        for f in _kg_facts[:8]
+                    ]
+                    _parts.append("\n\n## Known Facts (Graph)\n" + "\n".join(_lines))
+                _routines = _kg.get_routines(enabled_only=True)
+                if _routines:
+                    _rlines = [f"- {r.name}: {r.description or r.schedule}" for r in _routines[:5]]
+                    _parts.append("\n\n## Active Routines\n" + "\n".join(_rlines))
+                return "".join(_parts)
+            except Exception:
+                return ""
+
+        def _fetch_episodic() -> str:
+            try:
+                _cs = self._get_conv_store()
+                if not _cs:
+                    return ""
+                _past = _cs.search_content(_q, limit=6)
+                if not _past:
+                    return ""
+                _pairs: list = []
+                _seen: set = set()
+                for _m in _past:
+                    if _m.role in ('user', 'assistant') and _m.session_key not in _seen:
+                        _seen.add(_m.session_key)
+                        _pairs.append(
+                            f"[past session {_m.session_key[:8]}] {_m.role}: {_m.content[:200]}"
+                        )
+                        if len(_pairs) >= 3:
+                            break
+                return ("\n\n## Relevant Past Sessions\n" + "\n".join(_pairs)) if _pairs else ""
+            except Exception:
+                return ""
+
+        with _cf.ThreadPoolExecutor(max_workers=3, thread_name_prefix="navig_mem") as _pool:
+            _f_kb, _f_kg, _f_ep = (
+                _pool.submit(_fetch_kb),
+                _pool.submit(_fetch_kg),
+                _pool.submit(_fetch_episodic),
+            )
+            system_prompt += _f_kb.result() + _f_kg.result() + _f_ep.result()
 
         # Build context string
         context_str = self._build_context_string(context)
@@ -428,7 +498,7 @@ def ask_ai_with_context(
     # Determine model
     if not model:
         models = config_mgr.global_config.get('ai_model_preference', [])
-        model = models[0] if models else "anthropic/claude-3.5-sonnet"
+        model = models[0] if models else "google/gemini-2.5-flash"
     
     # Call OpenRouter API
     try:

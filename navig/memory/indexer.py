@@ -118,6 +118,7 @@ class MemoryIndexer:
             IndexResult with statistics
         """
         import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         start_time = time.time()
         result = IndexResult()
         
@@ -131,6 +132,7 @@ class MemoryIndexer:
         chunks_to_embed: List['MemoryChunk'] = []
         batch_size = getattr(self.embedding_provider, 'batch_size', 32) if self.embedding_provider else 32
         
+        # Phase 1: Pure parsing and chunking. Decoupled from embedding mathematically heavy steps.
         for file_path in files:
             try:
                 rel_path = file_path.relative_to(directory).as_posix()
@@ -143,23 +145,16 @@ class MemoryIndexer:
                         progress_callback(rel_path, "skipped")
                     continue
                 
-                # Index the file
+                # Index the file (parsing, sqlite storing chunks)
                 file_result = self._index_file(file_path, directory, file_hash, embed=False)
                 
                 result.files_processed += 1
                 result.chunks_created += file_result['chunks']
                 result.total_tokens += file_result['tokens']
                 
-                # Queue chunks for embedding
+                # Queue chunks for batch-embedding later
                 if embed and self.embedding_provider:
                     chunks_to_embed.extend(file_result.get('chunks_obj', []))
-                    
-                    # Process batch if full
-                    if len(chunks_to_embed) >= batch_size:
-                        batch = chunks_to_embed[:batch_size]
-                        chunks_to_embed = chunks_to_embed[batch_size:]
-                        embedded_count = self._process_embedding_batch(batch)
-                        result.chunks_embedded += embedded_count
                 
                 if progress_callback:
                     progress_callback(rel_path, "indexed")
@@ -172,10 +167,19 @@ class MemoryIndexer:
                 if progress_callback:
                     progress_callback(str(file_path), "failed")
         
-        # Process remaining chunks
-        if chunks_to_embed:
-            embedded_count = self._process_embedding_batch(chunks_to_embed)
-            result.chunks_embedded += embedded_count
+        # Phase 2: Parallel Batch Embedding Processing
+        if chunks_to_embed and embed and self.embedding_provider:
+            batches = [chunks_to_embed[i:i + batch_size] for i in range(0, len(chunks_to_embed), batch_size)]
+            
+            # Bound threads to 4 to prevent out-of-memory or system starvation
+            with ThreadPoolExecutor(max_workers=min(4, max(1, len(batches)))) as executor:
+                futures = [executor.submit(self._process_embedding_batch, batch) for batch in batches]
+                
+                for future in as_completed(futures):
+                    try:
+                        result.chunks_embedded += future.result()
+                    except Exception as e:
+                        _debug_log(f"Batch embedding failed: {e}")
         
         result.duration_seconds = time.time() - start_time
         _debug_log(

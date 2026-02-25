@@ -167,7 +167,7 @@ class TaskWorker:
                 # Wait for available slot
                 async with self._semaphore:
                     # Get next task
-                    task = await self.queue.get_next()
+                    task = await self.queue.get_next(wait=True, timeout=self.config.poll_interval)
                     
                     if task:
                         # Start execution
@@ -175,9 +175,6 @@ class TaskWorker:
                             self._execute_task(task)
                         )
                         self._tasks[task.id] = asyncio_task
-                    else:
-                        # No tasks, wait before polling again
-                        await asyncio.sleep(self.config.poll_interval)
             
             except asyncio.CancelledError:
                 break

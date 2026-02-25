@@ -27,7 +27,14 @@ def register_all_routes(app: "web.Application", gateway: "NavigGateway") -> None
         memory,
         proactive,
         telegram_webhook,
+        router_status,
+        mesh,
+        runtime,
+        daemon,
+        install,
+        audit,
+        billing,
     )
 
-    for mod in (core, heartbeat, cron, approval, browser, llm, mcp, tasks, memory, proactive, telegram_webhook):
+    for mod in (core, heartbeat, cron, approval, browser, llm, mcp, tasks, memory, proactive, telegram_webhook, router_status, mesh, runtime, daemon, install, audit, billing):
         mod.register(app, gateway)

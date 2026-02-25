@@ -52,12 +52,20 @@ psutil>=5.9.0  # For cross-platform process management
 pyperclip>=1.8.2
 Jinja2>=3.1.0
 
+# Network speed testing (for navig net speedtest)
+speedtest-cli>=2.1.3
+
 # Optional: Browser Automation (for navig browser commands)
 # playwright>=1.40.0  # Install separately: pip install playwright && playwright install chromium
 
 # Optional: Desktop Automation (for navig desktop commands)
 # pyautogui>=0.9.54  # Requires display, may not work on headless servers
 # Pillow>=10.0.0     # Image processing for desktop automation
+
+# Windows Desktop Agent dependencies (navig-desktop-agent, Windows only)
+# Install on Windows: pip install uiautomation comtypes
+uiautomation>=2.0.18 ; sys_platform == "win32"
+comtypes>=1.2.0      ; sys_platform == "win32"
 
 # Optional: File System Watching (for reactive automation)
 # watchdog>=3.0.0    # Cross-platform file system events

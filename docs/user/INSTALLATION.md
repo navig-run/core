@@ -86,6 +86,33 @@ bash scripts/install_navig_macos.sh
 powershell -ExecutionPolicy Bypass -File .\scripts\install_navig_windows.ps1
 ```
 
+### Windows Matrix Synapse (recommended: Docker Desktop)
+
+If you want Matrix support on Windows, run Synapse in Docker Desktop (Linux containers).
+This is more reliable and easier to maintain than a native WSL-only install.
+
+From `navig-core/`:
+
+```powershell
+# 1) Bootstrap Synapse files, generate config, start container
+powershell -ExecutionPolicy Bypass -File .\scripts\install_matrix_synapse_windows.ps1 -ServerName navig.local -Port 8008
+
+# 2) Create an admin user
+powershell -ExecutionPolicy Bypass -File .\scripts\create_synapse_admin_windows.ps1 -Username navigadmin -Password "ChangeMe!123" -Admin
+
+# 3) Configure NAVIG to use the local homeserver
+navig config set comms.matrix.enabled true
+navig config set comms.matrix.homeserver_url http://127.0.0.1:8008
+navig config set comms.matrix.user_id @navigadmin:navig.local
+```
+
+Operational helpers:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\synapse_windows_up.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\synapse_windows_down.ps1
+```
+
 ### Automatic Telegram setup during install
 
 If you provide a token, installers now auto-configure Telegram and attempt to start the NAVIG daemon with bot + gateway.

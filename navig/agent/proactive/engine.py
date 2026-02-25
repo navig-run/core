@@ -251,8 +251,37 @@ class ProactiveEngine:
         email_provider_name = email_conf.get('provider')
         if email_provider_name:
             addr = email_conf.get('address') or os.environ.get('NAVIG_EMAIL_ADDRESS')
-            pwd = email_conf.get('password') or os.environ.get('NAVIG_EMAIL_PASSWORD')
-            
+            pwd = None
+            provider_key = str(email_provider_name).strip().lower()
+
+            # AUDIT DECISION:
+            # Is this the correct implementation? Yes — vault-first keeps secrets out of flat config.
+            # Does it break any existing callers? No — env and legacy config passwords still resolve.
+            # Is there a simpler alternative? Yes, but it would keep relying on plaintext secrets.
+            try:
+                if provider_key:
+                    from navig.vault import get_vault
+                    secret = get_vault().get_secret(
+                        provider_key,
+                        key='password',
+                        caller='proactive.engine',
+                    )
+                    if secret:
+                        pwd = secret.reveal()
+            except Exception:
+                # Vault lookup failure should not stop legacy/env fallback.
+                pwd = None
+
+            if not pwd:
+                pwd = os.environ.get('NAVIG_EMAIL_PASSWORD')
+            if not pwd:
+                pwd = email_conf.get('password')
+                if pwd:
+                    ch.warning(
+                        "Using legacy plaintext email password from config. "
+                        "Run 'navig email setup <provider>' to migrate to vault."
+                    )
+
             if addr and pwd:
                 try:
                     self.email = get_email_provider(

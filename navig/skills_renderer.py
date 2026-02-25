@@ -287,9 +287,9 @@ def _load_template() -> Optional[str]:
         p = parent / "templates" / "skills_prompt.txt"
         if p.exists():
             return p.read_text(encoding="utf-8")
-    # Also check navig/templates/
-    pkg = Path(__file__).parent / "templates"
-    p = pkg / "skills_prompt.txt"
+    # Also check navig/scaffold-templates/
+    built_in = Path(__file__).parent / "scaffold-templates"
+    p = built_in / "skills_prompt.txt"
     if p.exists():
         return p.read_text(encoding="utf-8")
     return None

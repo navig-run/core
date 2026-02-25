@@ -48,6 +48,11 @@ def _shutdown(gw):
         if auth is not None:
             return auth
 
+        actor = r.headers.get("X-Actor", r.remote or "unknown")
+        block = await gw.policy_check("system.shutdown", actor)
+        if block is not None:
+            return block
+
         logger.info("Shutdown requested via API")
 
         resp = json_ok({"status": "shutting_down", "message": "Gateway shutdown initiated"})

@@ -11,99 +11,88 @@ from navig.mcp_server import MCPProtocolHandler
 
 
 def _mock_agent_resource_payloads(handler: MCPProtocolHandler, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_status_get",
-        lambda _args: {
-            "installed": True,
-            "running": True,
-            "pid": 1234,
-            "config_path": "/tmp/agent/config.yaml",
-            "mode": "supervised",
-            "personality": "friendly",
-            "workspace": "/tmp/workspace",
-            "timestamp": "2026-02-15T00:00:00",
-        },
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_goal_list",
-        lambda _args: {
-            "storage_dir": "/tmp/workspace",
-            "count": 1,
-            "goals": [
-                {
-                    "id": "goal-1",
-                    "description": "Test goal",
-                    "state": "pending",
-                    "progress": 0.0,
-                    "subtasks": 0,
-                    "created_at": "2026-02-15T00:00:00",
-                    "started_at": None,
-                    "completed_at": None,
-                    "metadata": {},
-                }
-            ],
-        },
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_remediation_list",
-        lambda _args: {
-            "source": "actions_file",
-            "count": 1,
-            "actions": [
-                {
-                    "id": "action-1",
-                    "type": "component_restart",
-                    "component": "brain",
-                    "reason": "test",
-                    "timestamp": "2026-02-15T00:00:00",
-                    "status": "pending",
-                    "attempts": 0,
-                    "max_attempts": 5,
-                    "error": None,
-                    "metadata": {},
-                }
-            ],
-            "recent_log_entries": [
-                {
-                    "timestamp": "2026-02-15 00:00:00",
-                    "level": "info",
-                    "message": "Scheduled restart",
-                }
-            ],
-        },
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_learning_run",
-        lambda _args: {
-            "analyzed_at": "2026-02-15T00:00:00",
-            "days": 7,
-            "total_errors": 2,
-            "patterns": {
-                "component_error": {
-                    "count": 2,
-                    "examples": ["[2026-02-14 00:00:00] failed to start"],
-                }
-            },
-            "recommendations": ["Investigate recurring component lifecycle failures."],
-        },
-    )
-    monkeypatch.setattr(
-        handler,
-        "_tool_agent_service_status",
-        lambda _args: {
-            "running": False,
-            "platform": "linux",
-            "status": "inactive",
-            "can_install": True,
-            "can_uninstall": True,
-            "requires_elevation": False,
-            "is_elevated": False,
-        },
-    )
+    def _fake_execute(tool_name, args):
+        if tool_name == "navig_agent_status_get":
+            return {
+                "installed": True,
+                "running": True,
+                "pid": 1234,
+                "config_path": "/tmp/agent/config.yaml",
+                "mode": "supervised",
+                "personality": "friendly",
+                "workspace": "/tmp/workspace",
+                "timestamp": "2026-02-15T00:00:00",
+            }
+        if tool_name == "navig_agent_goal_list":
+            return {
+                "storage_dir": "/tmp/workspace",
+                "count": 1,
+                "goals": [
+                    {
+                        "id": "goal-1",
+                        "description": "Test goal",
+                        "state": "pending",
+                        "progress": 0.0,
+                        "subtasks": 0,
+                        "created_at": "2026-02-15T00:00:00",
+                        "started_at": None,
+                        "completed_at": None,
+                        "metadata": {},
+                    }
+                ],
+            }
+        if tool_name == "navig_agent_remediation_list":
+            return {
+                "source": "actions_file",
+                "count": 1,
+                "actions": [
+                    {
+                        "id": "action-1",
+                        "type": "component_restart",
+                        "component": "brain",
+                        "reason": "test",
+                        "timestamp": "2026-02-15T00:00:00",
+                        "status": "pending",
+                        "attempts": 0,
+                        "max_attempts": 5,
+                        "error": None,
+                        "metadata": {},
+                    }
+                ],
+                "recent_log_entries": [
+                    {
+                        "timestamp": "2026-02-15 00:00:00",
+                        "level": "info",
+                        "message": "Scheduled restart",
+                    }
+                ],
+            }
+        if tool_name == "navig_agent_learning_run":
+            return {
+                "analyzed_at": "2026-02-15T00:00:00",
+                "days": 7,
+                "total_errors": 2,
+                "patterns": {
+                    "component_error": {
+                        "count": 2,
+                        "examples": ["[2026-02-14 00:00:00] failed to start"],
+                    }
+                },
+                "recommendations": ["Investigate recurring component lifecycle failures."],
+            }
+        if tool_name == "navig_agent_service_status":
+            return {
+                "running": False,
+                "platform": "linux",
+                "status": "inactive",
+                "can_install": True,
+                "can_uninstall": True,
+                "requires_elevation": False,
+                "is_elevated": False,
+            }
+        raise ValueError(f"Unknown tool_name in mock: {tool_name}")
+
+    monkeypatch.setattr(handler, "_execute_tool", _fake_execute)
 
 
 def _read_json_resource(handler: MCPProtocolHandler, uri: str) -> dict:

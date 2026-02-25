@@ -59,404 +59,11 @@ class MCPProtocolHandler:
     
     def _setup_navig_tools(self):
         """Register NAVIG tools for MCP."""
-        self.tools = {
-            "navig_list_hosts": {
-                "name": "navig_list_hosts",
-                "description": "List all configured SSH hosts in NAVIG. Returns host names, addresses, and connection details.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "filter": {
-                            "type": "string",
-                            "description": "Optional filter pattern for host names"
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_list_apps": {
-                "name": "navig_list_apps",
-                "description": "List all configured applications in NAVIG. Returns app names, types, and associated hosts.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "host": {
-                            "type": "string",
-                            "description": "Filter apps by host name"
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_host_info": {
-                "name": "navig_host_info",
-                "description": "Get detailed information about a specific SSH host including connection settings, paths, and apps.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "Host name to get info for"
-                        }
-                    },
-                    "required": ["name"]
-                }
-            },
-            "navig_app_info": {
-                "name": "navig_app_info",
-                "description": "Get detailed information about a specific application including config, paths, and status.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "Application name to get info for"
-                        }
-                    },
-                    "required": ["name"]
-                }
-            },
-            "navig_search_wiki": {
-                "name": "navig_search_wiki",
-                "description": "Search the NAVIG wiki knowledge base for relevant documentation, guides, and notes.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum results to return",
-                            "default": 10
-                        }
-                    },
-                    "required": ["query"]
-                }
-            },
-            "navig_list_wiki_pages": {
-                "name": "navig_list_wiki_pages",
-                "description": "List all pages in the NAVIG wiki knowledge base.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "folder": {
-                            "type": "string",
-                            "description": "Filter by folder (knowledge, technical, hub, external)"
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_read_wiki_page": {
-                "name": "navig_read_wiki_page",
-                "description": "Read the content of a specific wiki page.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Wiki page path (e.g., 'knowledge/concepts/overview')"
-                        }
-                    },
-                    "required": ["path"]
-                }
-            },
-            "navig_list_databases": {
-                "name": "navig_list_databases",
-                "description": "List configured database connections in NAVIG.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            },
-            "navig_get_context": {
-                "name": "navig_get_context",
-                "description": "Get full NAVIG context including recent errors, active hosts, and system state for AI debugging.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "include_errors": {
-                            "type": "boolean",
-                            "description": "Include recent error logs",
-                            "default": True
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_run_command": {
-                "name": "navig_run_command",
-                "description": "Execute a NAVIG CLI command and return the result. Use for any navig operation.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "command": {
-                            "type": "string",
-                            "description": "NAVIG command to run (without 'navig' prefix)"
-                        },
-                        "args": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Command arguments"
-                        }
-                    },
-                    "required": ["command"]
-                }
-            },
-            "navig_web_fetch": {
-                "name": "navig_web_fetch",
-                "description": "Fetch a URL and extract readable content. Converts HTML to markdown or plain text for analysis.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "HTTP or HTTPS URL to fetch"
-                        },
-                        "extract_mode": {
-                            "type": "string",
-                            "enum": ["markdown", "text"],
-                            "description": "Extraction mode: 'markdown' (default) or 'text'",
-                            "default": "markdown"
-                        },
-                        "max_chars": {
-                            "type": "integer",
-                            "description": "Maximum characters to return (truncates when exceeded)",
-                            "default": 50000
-                        }
-                    },
-                    "required": ["url"]
-                }
-            },
-            "navig_web_search": {
-                "name": "navig_web_search",
-                "description": "Search the web for information. Uses Brave Search API (if configured) or DuckDuckGo as fallback.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query string"
-                        },
-                        "count": {
-                            "type": "integer",
-                            "description": "Number of results to return (1-10)",
-                            "default": 5,
-                            "minimum": 1,
-                            "maximum": 10
-                        }
-                    },
-                    "required": ["query"]
-                }
-            },
-            "navig_search_docs": {
-                "name": "navig_search_docs",
-                "description": "Search NAVIG's local documentation for commands, guides, and configuration help.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query for documentation"
-                        },
-                        "max_results": {
-                            "type": "integer",
-                            "description": "Maximum results to return",
-                            "default": 5
-                        }
-                    },
-                    "required": ["query"]
-                }
-            },
-            "navig_agent_status_get": {
-                "name": "navig_agent_status_get",
-                "description": "Get autonomous agent runtime/config status including mode, personality, workspace, PID, and running state.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            },
-            "navig_agent_goal_list": {
-                "name": "navig_agent_goal_list",
-                "description": "List autonomous agent goals with state/progress summary.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "state": {
-                            "type": "string",
-                            "description": "Optional state filter: pending, in_progress, blocked, completed, failed, cancelled"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum goals to return",
-                            "default": 50
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_agent_goal_add": {
-                "name": "navig_agent_goal_add",
-                "description": "Create a new autonomous agent goal.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "description": {
-                            "type": "string",
-                            "description": "Goal description"
-                        },
-                        "metadata": {
-                            "type": "object",
-                            "description": "Optional metadata object"
-                        }
-                    },
-                    "required": ["description"]
-                }
-            },
-            "navig_agent_goal_start": {
-                "name": "navig_agent_goal_start",
-                "description": "Start execution for a pending/blocked autonomous agent goal.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "Goal ID"
-                        }
-                    },
-                    "required": ["id"]
-                }
-            },
-            "navig_agent_goal_cancel": {
-                "name": "navig_agent_goal_cancel",
-                "description": "Cancel an autonomous agent goal by ID.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "Goal ID"
-                        }
-                    },
-                    "required": ["id"]
-                }
-            },
-            "navig_agent_remediation_list": {
-                "name": "navig_agent_remediation_list",
-                "description": "List persisted remediation actions and recent remediation log entries.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum remediation actions to return",
-                            "default": 100
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_agent_learning_run": {
-                "name": "navig_agent_learning_run",
-                "description": "Analyze recent agent debug/remediation logs and return recurring error patterns with recommendations.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "days": {
-                            "type": "integer",
-                            "description": "Analyze logs from the last N days",
-                            "default": 7
-                        },
-                        "export": {
-                            "type": "boolean",
-                            "description": "Export pattern report to ~/.navig/workspace/error-patterns.json",
-                            "default": False
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_agent_service_status": {
-                "name": "navig_agent_service_status",
-                "description": "Get OS-level service status for NAVIG agent (systemd/launchd/windows service).",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            },
-            "navig_agent_component_restart": {
-                "name": "navig_agent_component_restart",
-                "description": "Queue a remediation restart action for an agent component.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "component": {
-                            "type": "string",
-                            "description": "Component name (brain, eyes, ears, hands, soul, heart, nervous_system)"
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "Why restart is requested",
-                            "default": "requested_via_mcp"
-                        },
-                        "metadata": {
-                            "type": "object",
-                            "description": "Optional metadata"
-                        }
-                    },
-                    "required": ["component"]
-                }
-            },
-            "navig_agent_remediation_retry": {
-                "name": "navig_agent_remediation_retry",
-                "description": "Retry a remediation action by ID.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "Remediation action ID"
-                        },
-                        "reset_attempts": {
-                            "type": "boolean",
-                            "description": "Reset attempt counter before retrying",
-                            "default": True
-                        }
-                    },
-                    "required": ["id"]
-                }
-            },
-            "navig_agent_service_install": {
-                "name": "navig_agent_service_install",
-                "description": "Install NAVIG agent as an OS service.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "start_now": {
-                            "type": "boolean",
-                            "description": "Start service immediately after install",
-                            "default": True
-                        }
-                    },
-                    "required": []
-                }
-            },
-            "navig_agent_service_uninstall": {
-                "name": "navig_agent_service_uninstall",
-                "description": "Uninstall NAVIG agent OS service.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            }
-        }
-    
+        self.tools = {}
+        self._tool_handlers = {}
+        from navig.mcp.tools import register_all_tools
+        register_all_tools(self)
+
     def _setup_navig_resources(self):
         """Register NAVIG resources for MCP."""
         self.resources = {
@@ -542,6 +149,25 @@ class MCPProtocolHandler:
                 "uri": "agent://service",
                 "name": "Agent Service",
                 "description": "Alias for service status",
+                "mimeType": "application/json"
+            },
+            # ── Runtime Contracts ──────────────────────────────────────
+            "navig://runtime/nodes": {
+                "uri": "navig://runtime/nodes",
+                "name": "NAVIG Runtime Nodes",
+                "description": "All registered Node identities",
+                "mimeType": "application/json"
+            },
+            "navig://runtime/missions": {
+                "uri": "navig://runtime/missions",
+                "name": "NAVIG Runtime Missions",
+                "description": "Recent Missions with lifecycle state",
+                "mimeType": "application/json"
+            },
+            "navig://runtime/receipts": {
+                "uri": "navig://runtime/receipts",
+                "name": "NAVIG Execution Receipts",
+                "description": "Audit trail of completed Mission executions",
                 "mimeType": "application/json"
             }
         }
@@ -646,854 +272,51 @@ class MCPProtocolHandler:
     
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute a tool and return result."""
-        if tool_name == "navig_list_hosts":
-            return self._tool_list_hosts(arguments)
-        elif tool_name == "navig_list_apps":
-            return self._tool_list_apps(arguments)
-        elif tool_name == "navig_host_info":
-            return self._tool_host_info(arguments)
-        elif tool_name == "navig_app_info":
-            return self._tool_app_info(arguments)
-        elif tool_name == "navig_search_wiki":
-            return self._tool_search_wiki(arguments)
-        elif tool_name == "navig_list_wiki_pages":
-            return self._tool_list_wiki_pages(arguments)
-        elif tool_name == "navig_read_wiki_page":
-            return self._tool_read_wiki_page(arguments)
-        elif tool_name == "navig_list_databases":
-            return self._tool_list_databases(arguments)
-        elif tool_name == "navig_get_context":
-            return self._tool_get_context(arguments)
-        elif tool_name == "navig_run_command":
-            return self._tool_run_command(arguments)
-        elif tool_name == "navig_web_fetch":
-            return self._tool_web_fetch(arguments)
-        elif tool_name == "navig_web_search":
-            return self._tool_web_search(arguments)
-        elif tool_name == "navig_search_docs":
-            return self._tool_search_docs(arguments)
-        elif tool_name == "navig_agent_status_get":
-            return self._tool_agent_status_get(arguments)
-        elif tool_name == "navig_agent_goal_list":
-            return self._tool_agent_goal_list(arguments)
-        elif tool_name == "navig_agent_goal_add":
-            return self._tool_agent_goal_add(arguments)
-        elif tool_name == "navig_agent_goal_start":
-            return self._tool_agent_goal_start(arguments)
-        elif tool_name == "navig_agent_goal_cancel":
-            return self._tool_agent_goal_cancel(arguments)
-        elif tool_name == "navig_agent_remediation_list":
-            return self._tool_agent_remediation_list(arguments)
-        elif tool_name == "navig_agent_learning_run":
-            return self._tool_agent_learning_run(arguments)
-        elif tool_name == "navig_agent_service_status":
-            return self._tool_agent_service_status(arguments)
-        elif tool_name == "navig_agent_component_restart":
-            return self._tool_agent_component_restart(arguments)
-        elif tool_name == "navig_agent_remediation_retry":
-            return self._tool_agent_remediation_retry(arguments)
-        elif tool_name == "navig_agent_service_install":
-            return self._tool_agent_service_install(arguments)
-        elif tool_name == "navig_agent_service_uninstall":
-            return self._tool_agent_service_uninstall(arguments)
-        else:
-            raise ValueError(f"Unknown tool: {tool_name}")
-    
-    def _tool_list_hosts(self, args: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """List all configured hosts."""
-        hosts = self._config.get_hosts()
-        filter_pattern = args.get("filter", "").lower()
-        
-        result = []
-        for name, config in hosts.items():
-            if filter_pattern and filter_pattern not in name.lower():
-                continue
-            result.append({
-                "name": name,
-                "host": config.get("host"),
-                "user": config.get("user"),
-                "port": config.get("port", 22),
-                "key": config.get("key"),
-                "apps": list(config.get("apps", {}).keys()) if config.get("apps") else []
-            })
-        
-        return result
-    
-    def _tool_list_apps(self, args: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """List all configured apps."""
-        host_filter = args.get("host")
-        apps = self._config.get_apps()
-        hosts = self._config.get_hosts()
-        
-        result = []
-        
-        # Apps from global apps config
-        for name, config in apps.items():
-            app_host = config.get("host")
-            if host_filter and app_host != host_filter:
-                continue
-            result.append({
-                "name": name,
-                "type": config.get("type"),
-                "host": app_host,
-                "path": config.get("path"),
-                "url": config.get("url")
-            })
-        
-        # Apps embedded in hosts
-        for host_name, host_config in hosts.items():
-            if host_filter and host_name != host_filter:
-                continue
-            for app_name, app_config in host_config.get("apps", {}).items():
-                result.append({
-                    "name": app_name,
-                    "type": app_config.get("type"),
-                    "host": host_name,
-                    "path": app_config.get("path"),
-                    "url": app_config.get("url")
-                })
-        
-        return result
-    
-    def _tool_host_info(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Get detailed host information."""
-        name = args.get("name")
-        hosts = self._config.get_hosts()
-        
-        if name not in hosts:
-            return {"error": f"Host not found: {name}"}
-        
-        return {
-            "name": name,
-            **hosts[name]
-        }
-    
-    def _tool_app_info(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Get detailed app information."""
-        name = args.get("name")
-        apps = self._config.get_apps()
-        
-        if name in apps:
-            return {"name": name, **apps[name]}
-        
-        # Search in host apps
-        hosts = self._config.get_hosts()
-        for host_name, host_config in hosts.items():
-            if name in host_config.get("apps", {}):
-                return {
-                    "name": name,
-                    "host": host_name,
-                    **host_config["apps"][name]
-                }
-        
-        return {"error": f"App not found: {name}"}
-    
-    def _tool_search_wiki(self, args: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Search wiki pages."""
-        from navig.commands.wiki import search_wiki, get_wiki_path
-        
-        wiki_path = get_wiki_path(self._config)
-        if not wiki_path.exists():
-            return {"error": "Wiki not initialized"}
-        
-        query = args.get("query", "")
-        limit = args.get("limit", 10)
-        
-        results = search_wiki(wiki_path, query)
-        return results[:limit]
-    
-    def _tool_list_wiki_pages(self, args: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """List wiki pages."""
-        from navig.commands.wiki import list_wiki_pages, get_wiki_path
-        
-        wiki_path = get_wiki_path(self._config)
-        if not wiki_path.exists():
-            return {"error": "Wiki not initialized"}
-        
-        folder = args.get("folder")
-        pages = list_wiki_pages(wiki_path, folder)
-        
-        return [
-            {
-                "path": p["path"],
-                "title": p["title"],
-                "folder": p["folder"],
-                "modified": p["modified"].isoformat() if hasattr(p["modified"], "isoformat") else str(p["modified"])
-            }
-            for p in pages
-        ]
-    
-    def _tool_read_wiki_page(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Read a wiki page."""
-        from navig.commands.wiki import get_wiki_path, resolve_wiki_link
-        
-        wiki_path = get_wiki_path(self._config)
-        if not wiki_path.exists():
-            return {"error": "Wiki not initialized"}
-        
-        page_path = args.get("path", "")
-        resolved = resolve_wiki_link(wiki_path, page_path)
-        
-        if not resolved:
-            return {"error": f"Page not found: {page_path}"}
-        
-        content = resolved.read_text(encoding="utf-8")
-        return {
-            "path": str(resolved.relative_to(wiki_path)),
-            "content": content
-        }
-    
-    def _tool_list_databases(self, args: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """List database connections."""
-        databases = self._config.get_databases()
-        return [
-            {"name": name, **{k: v for k, v in config.items() if k != "password"}}
-            for name, config in databases.items()
-        ]
-    
-    def _tool_get_context(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Get full NAVIG context."""
-        from navig.ai_context import get_ai_context_manager
-        
-        context_mgr = get_ai_context_manager()
-        include_errors = args.get("include_errors", True)
-        
-        context = {
-            "hosts": self._tool_list_hosts({}),
-            "apps": self._tool_list_apps({}),
-            "databases": self._tool_list_databases({}),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        if include_errors:
-            context["recent_errors"] = context_mgr.get_recent_errors_for_ai(limit=10)
-        
-        return context
-    
-    def _tool_run_command(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a NAVIG command."""
-        import subprocess
-        
-        command = args.get("command", "")
-        cmd_args = args.get("args", [])
-        
-        # Safety: only allow read operations by default
-        safe_commands = [
-            "host list", "host show", "host info",
-            "app list", "app show", "app info",
-            "db list", "db show", "db tables",
-            "wiki list", "wiki show", "wiki search",
-            "tunnel list", "backup list",
-            "status", "version", "help"
-        ]
-        
-        full_cmd = command + " " + " ".join(cmd_args)
-        is_safe = any(full_cmd.startswith(safe) for safe in safe_commands)
-        
-        if not is_safe:
-            return {
-                "error": f"Command not allowed: {full_cmd}",
-                "hint": "Only read-only commands are allowed via MCP for safety"
-            }
-        
-        try:
-            result = subprocess.run(
-                ["python", "-m", "navig.cli", command] + cmd_args,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return {
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode
-            }
-        except subprocess.TimeoutExpired:
-            return {"error": "Command timed out"}
-        except Exception as e:
-            return {"error": str(e)}
-    
-    def _tool_web_fetch(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Fetch a URL and extract readable content."""
-        try:
-            from navig.tools.web import web_fetch, get_web_config
-            
-            url = args.get("url")
-            if not url:
-                return {"error": "URL is required"}
-            
-            # Get config
-            config = get_web_config(self._config)
-            fetch_config = config.get('fetch', {})
-            
-            if not fetch_config.get('enabled', True):
-                return {"error": "Web fetch is disabled in configuration"}
-            
-            # Execute fetch
-            result = web_fetch(
-                url=url,
-                extract_mode=args.get("extract_mode", "markdown"),
-                max_chars=args.get("max_chars", fetch_config.get('max_chars', 50000)),
-                timeout_seconds=fetch_config.get('timeout_seconds', 30)
-            )
-            
-            if not result.success:
-                return {"error": result.error}
-            
-            return {
-                "success": True,
-                "text": result.text,
-                "title": result.title,
-                "final_url": result.final_url,
-                "status_code": result.status_code,
-                "truncated": result.truncated,
-                "cached": result.cached
-            }
-            
-        except ImportError as e:
-            return {"error": f"Web tools not available: {e}"}
-        except Exception as e:
-            return {"error": f"Fetch failed: {str(e)}"}
-    
-    def _tool_web_search(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Search the web for information."""
-        try:
-            from navig.tools.web import web_search, get_web_config
-            
-            query = args.get("query")
-            if not query:
-                return {"error": "Search query is required"}
-            
-            # Get config
-            config = get_web_config(self._config)
-            search_config = config.get('search', {})
-            
-            if not search_config.get('enabled', True):
-                return {"error": "Web search is disabled in configuration"}
-            
-            # Execute search
-            result = web_search(
-                query=query,
-                count=args.get("count", 5),
-                provider=search_config.get('provider', 'auto'),
-                api_key=search_config.get('api_key')
-            )
-            
-            if not result.success:
-                return {"error": result.error}
-            
-            return {
-                "success": True,
-                "query": result.query,
-                "provider": result.provider,
-                "results": [
-                    {
-                        "title": r.title,
-                        "url": r.url,
-                        "snippet": r.snippet,
-                        "age": r.age
-                    }
-                    for r in result.results
-                ],
-                "cached": result.cached
-            }
-            
-        except ImportError as e:
-            return {"error": f"Web tools not available: {e}"}
-        except Exception as e:
-            return {"error": f"Search failed: {str(e)}"}
-    
-    def _tool_search_docs(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Search NAVIG's local documentation."""
-        try:
-            from navig.tools.web import search_docs
-            from pathlib import Path
-            
-            query = args.get("query")
-            if not query:
-                return {"error": "Search query is required"}
-            
-            max_results = args.get("max_results", 5)
-            
-            # Find docs path
-            navig_root = Path(__file__).parent.parent
-            docs_path = navig_root / 'docs'
-            
-            results = search_docs(query, docs_path, max_results)
-            
-            if not results:
-                return {
-                    "success": True,
-                    "message": f"No documentation found for '{query}'",
-                    "results": [],
-                    "suggestion": "Try the web search tool for broader results"
-                }
-            
-            return {
-                "success": True,
-                "query": query,
-                "results": results
-            }
-            
-        except Exception as e:
-            return {"error": f"Doc search failed: {str(e)}"}
+        handler = getattr(self, "_tool_handlers", {}).get(tool_name)
+        if handler:
+            return handler(self, arguments)
+        raise ValueError(f"Unknown tool: {tool_name}")
 
-    def _tool_agent_status_get(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Return agent install/runtime status for control plane clients."""
-        import os
-        import platform
-        import subprocess
-
-        config_path = Path.home() / '.navig' / 'agent' / 'config.yaml'
-        pid_path = Path.home() / '.navig' / 'agent' / 'agent.pid'
-        installed = config_path.exists()
-        running = False
-        pid: Optional[int] = None
-
-        if pid_path.exists():
-            try:
-                pid = int(pid_path.read_text(encoding='utf-8').strip())
-                if platform.system().lower().startswith('win'):
-                    result = subprocess.run(
-                        ['tasklist', '/FI', f'PID eq {pid}'],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                    )
-                    running = str(pid) in result.stdout
-                else:
-                    os.kill(pid, 0)
-                    running = True
-            except Exception:
-                running = False
-
-        mode = None
-        personality = None
-        workspace = None
-        if installed:
-            try:
-                from navig.agent.config import AgentConfig
-                cfg = AgentConfig.load(config_path)
-                mode = cfg.mode
-                personality = cfg.personality.profile
-                workspace = str(cfg.workspace)
-            except Exception:
-                mode = "unknown"
-                personality = "unknown"
-
-        return {
-            "installed": installed,
-            "running": running,
-            "pid": pid if running else None,
-            "config_path": str(config_path),
-            "mode": mode,
-            "personality": personality,
-            "workspace": workspace,
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    def _resolve_goal_storage_dir(self) -> Path:
-        """Resolve the most likely goal storage directory."""
-        candidates: List[Path] = []
-        try:
-            from navig.agent.config import AgentConfig
-            cfg_path = Path.home() / '.navig' / 'agent' / 'config.yaml'
-            if cfg_path.exists():
-                cfg = AgentConfig.load(cfg_path)
-                candidates.append(cfg.workspace)
-        except Exception:
-            pass
-
-        candidates.append(Path.home() / '.navig' / 'workspace')
-        if not candidates:
-            return Path.home() / '.navig' / 'workspace'
-
-        for candidate in candidates:
-            if (candidate / 'goals.json').exists():
-                return candidate
-        return candidates[0]
-
-    def _get_goal_planner(self):
-        """Create a GoalPlanner against resolved storage."""
-        from navig.agent.goals import GoalPlanner
-        storage_dir = self._resolve_goal_storage_dir()
-        return GoalPlanner(storage_dir=storage_dir)
-
-    def _tool_agent_goal_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """List goals with summary fields for dashboard clients."""
-        from navig.agent.goals import GoalState
-
-        planner = self._get_goal_planner()
-        limit = max(1, int(args.get("limit", 50)))
-        state_name = args.get("state")
-        state_filter = None
-        if state_name:
-            try:
-                state_filter = GoalState(state_name)
-            except ValueError:
-                return {"error": f"Invalid state: {state_name}"}
-
-        goals = planner.list_goals(state_filter)[:limit]
-        return {
-            "storage_dir": str(planner.storage_dir),
-            "count": len(goals),
-            "goals": [
-                {
-                    "id": g.id,
-                    "description": g.description,
-                    "state": g.state.value,
-                    "progress": g.progress,
-                    "subtasks": len(g.subtasks),
-                    "created_at": g.created_at.isoformat(),
-                    "started_at": g.started_at.isoformat() if g.started_at else None,
-                    "completed_at": g.completed_at.isoformat() if g.completed_at else None,
-                    "metadata": g.metadata,
-                }
-                for g in goals
-            ],
-        }
-
-    def _tool_agent_goal_add(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Add a new agent goal."""
-        planner = self._get_goal_planner()
-        description = args.get("description", "").strip()
-        if not description:
-            return {"error": "description is required"}
-
-        metadata = args.get("metadata", {})
-        if metadata is None or not isinstance(metadata, dict):
-            metadata = {}
-
-        goal_id = planner.add_goal(description, metadata=metadata)
-        return {
-            "ok": True,
-            "goal_id": goal_id,
-            "storage_dir": str(planner.storage_dir),
-        }
-
-    def _tool_agent_goal_start(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Start an existing goal."""
-        planner = self._get_goal_planner()
-        goal_id = str(args.get("id", "")).strip()
-        if not goal_id:
-            return {"error": "id is required"}
-
-        success = planner.start_goal(goal_id)
-        goal = planner.get_goal(goal_id)
-        return {
-            "ok": success,
-            "goal_id": goal_id,
-            "state": goal.state.value if goal else None,
-        }
-
-    def _tool_agent_goal_cancel(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Cancel an existing goal."""
-        planner = self._get_goal_planner()
-        goal_id = str(args.get("id", "")).strip()
-        if not goal_id:
-            return {"error": "id is required"}
-
-        success = planner.cancel_goal(goal_id)
-        goal = planner.get_goal(goal_id)
-        return {
-            "ok": success,
-            "goal_id": goal_id,
-            "state": goal.state.value if goal else None,
-        }
-
-    def _read_recent_remediation_log(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Parse recent remediation log lines into structured entries."""
-        import re
-
-        log_path = Path.home() / '.navig' / 'logs' / 'remediation.log'
-        if not log_path.exists():
-            return []
-
-        lines = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
-        entries: List[Dict[str, Any]] = []
-        regex = re.compile(r'^\[(?P<ts>[^\]]+)\] \[(?P<level>[^\]]+)\] (?P<msg>.*)$')
-        for line in lines[-limit:]:
-            m = regex.match(line)
-            if not m:
-                continue
-            entries.append(
-                {
-                    "timestamp": m.group('ts'),
-                    "level": m.group('level').lower(),
-                    "message": m.group('msg'),
-                }
-            )
-        return entries
-
-    def _tool_agent_remediation_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """List remediation actions and recent remediation log lines."""
-        limit = max(1, int(args.get("limit", 100)))
-        actions: List[Dict[str, Any]] = []
-        source = "none"
-
-        try:
-            from navig.agent.remediation import RemediationEngine
-            engine = RemediationEngine()
-            actions = engine.get_all_actions()
-            if actions:
-                source = "actions_file"
-        except Exception:
-            actions = []
-
-        log_entries = self._read_recent_remediation_log(limit=limit)
-        if source == "none" and log_entries:
-            source = "log_only"
-
-        return {
-            "source": source,
-            "count": len(actions),
-            "actions": actions[:limit],
-            "recent_log_entries": log_entries,
-        }
-
-    def _tool_agent_learning_run(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze agent logs and return pattern counts plus recommendations."""
-        import re
-        from collections import defaultdict
-
-        days = max(1, int(args.get("days", 7)))
-        export = bool(args.get("export", False))
-        cutoff = datetime.now() - timedelta(days=days)
-        log_dir = Path.home() / '.navig' / 'logs'
-        debug_log = log_dir / 'debug.log'
-        remediation_log = log_dir / 'remediation.log'
-
-        patterns = {
-            'connection_failed': r'connection.*(failed|refused|timeout)',
-            'permission_denied': r'permission denied|access denied',
-            'config_error': r'config.*error|invalid.*config',
-            'component_error': r'component.*error|failed to start',
-            'resource_exhausted': r'out of memory|disk full|quota exceeded',
-        }
-
-        counts = defaultdict(int)
-        examples = defaultdict(list)
-        ts_regex = re.compile(r'^\[(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]')
-
-        for log_file in (debug_log, remediation_log):
-            if not log_file.exists():
-                continue
-            with open(log_file, 'r', encoding='utf-8', errors='ignore') as handle:
-                for line in handle:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    ts_match = ts_regex.match(line)
-                    if ts_match:
-                        try:
-                            line_ts = datetime.strptime(ts_match.group('ts'), '%Y-%m-%d %H:%M:%S')
-                            if line_ts < cutoff:
-                                continue
-                        except ValueError:
-                            pass
-
-                    for pattern_name, pattern in patterns.items():
-                        if re.search(pattern, line, re.IGNORECASE):
-                            counts[pattern_name] += 1
-                            if len(examples[pattern_name]) < 3:
-                                examples[pattern_name].append(line)
-
-        recommendations: List[str] = []
-        if counts.get('connection_failed', 0) > 10:
-            recommendations.append('Review network connectivity and firewall rules.')
-        if counts.get('permission_denied', 0) > 5:
-            recommendations.append('Check file permissions and user access rights.')
-        if counts.get('config_error', 0) > 3:
-            recommendations.append('Validate configuration files for syntax/structure errors.')
-        if counts.get('component_error', 0) > 5:
-            recommendations.append('Investigate recurring component lifecycle failures.')
-        if counts.get('resource_exhausted', 0) > 0:
-            recommendations.append('Critical: check host memory/disk pressure immediately.')
-
-        result = {
-            'analyzed_at': datetime.now().isoformat(),
-            'days': days,
-            'total_errors': int(sum(counts.values())),
-            'patterns': {
-                name: {'count': count, 'examples': examples[name]}
-                for name, count in counts.items()
-            },
-            'recommendations': recommendations,
-        }
-
-        if export:
-            output_path = Path.home() / '.navig' / 'workspace' / 'error-patterns.json'
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(json.dumps(result, indent=2), encoding='utf-8')
-            result['exported_to'] = str(output_path)
-
-        return result
-
-    def _tool_agent_service_status(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Return OS service status for NAVIG agent."""
-        capabilities = self._get_service_capabilities()
-        try:
-            from navig.agent.service import ServiceInstaller
-            installer = ServiceInstaller()
-            is_running, status_text = installer.status()
-            return {
-                "running": bool(is_running),
-                "platform": installer.system,
-                "status": status_text,
-                **capabilities,
-            }
-        except Exception as e:
-            return {
-                "error": f"service status failed: {e}",
-                **capabilities,
-            }
-
-    def _get_service_capabilities(self) -> Dict[str, Any]:
-        """Return platform/elevation capability flags for service operations."""
-        import os
-        import platform
-
-        system = platform.system().lower()
-        is_elevated = False
-        if system == "windows":
-            try:
-                import ctypes
-                is_elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
-            except Exception:
-                is_elevated = False
-            return {
-                "can_install": is_elevated,
-                "can_uninstall": is_elevated,
-                "requires_elevation": not is_elevated,
-                "is_elevated": is_elevated,
-            }
-
-        if system in ("linux", "darwin"):
-            if hasattr(os, "geteuid"):
-                try:
-                    is_elevated = os.geteuid() == 0
-                except Exception:
-                    is_elevated = False
-            return {
-                "can_install": True,
-                "can_uninstall": True,
-                "requires_elevation": False,
-                "is_elevated": is_elevated,
-            }
-
-        return {
-            "can_install": False,
-            "can_uninstall": False,
-            "requires_elevation": False,
-            "is_elevated": False,
-        }
-
-    def _tool_agent_component_restart(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Queue a component restart through remediation engine."""
-        from navig.agent.remediation import RemediationEngine
-
-        component = str(args.get("component", "")).strip()
-        if not component:
-            return {"error": "component is required"}
-
-        reason = str(args.get("reason", "requested_via_mcp")).strip() or "requested_via_mcp"
-        metadata = args.get("metadata")
-        if metadata is None or not isinstance(metadata, dict):
-            metadata = {}
-
-        engine = RemediationEngine()
-        action_id = engine.schedule_restart_sync(
-            component=component,
-            reason=reason,
-            metadata=metadata,
-        )
-        return {
-            "ok": True,
-            "action_id": action_id,
-            "action": engine.get_action_status(action_id),
-        }
-
-    def _tool_agent_remediation_retry(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Retry a remediation action by ID."""
-        from navig.agent.remediation import RemediationEngine
-
-        action_id = str(args.get("id", "")).strip()
-        if not action_id:
-            return {"error": "id is required"}
-
-        reset_attempts = bool(args.get("reset_attempts", True))
-        engine = RemediationEngine()
-        ok = engine.retry_action(action_id, reset_attempts=reset_attempts)
-        if not ok:
-            return {"ok": False, "error": f"action not found: {action_id}", "action_id": action_id}
-
-        return {
-            "ok": True,
-            "action_id": action_id,
-            "action": engine.get_action_status(action_id),
-        }
-
-    def _tool_agent_service_install(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Install NAVIG agent as service."""
-        try:
-            from navig.agent.service import ServiceInstaller
-            installer = ServiceInstaller()
-            start_now = bool(args.get("start_now", True))
-            success, message = installer.install(start_now=start_now)
-            return {
-                "ok": bool(success),
-                "platform": installer.system,
-                "message": message,
-            }
-        except Exception as e:
-            return {"error": f"service install failed: {e}"}
-
-    def _tool_agent_service_uninstall(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Uninstall NAVIG agent service."""
-        try:
-            from navig.agent.service import ServiceInstaller
-            installer = ServiceInstaller()
-            success, message = installer.uninstall()
-            return {
-                "ok": bool(success),
-                "platform": installer.system,
-                "message": message,
-            }
-        except Exception as e:
-            return {"error": f"service uninstall failed: {e}"}
-    
-    # =========================================================================
-    # Resource Implementations
-    # =========================================================================
-    
     def _read_resource(self, uri: str) -> str:
         """Read resource content."""
         if uri == "navig://config/hosts":
-            return json.dumps(self._tool_list_hosts({}), indent=2)
+            return json.dumps(self._execute_tool("navig_list_hosts", {}), indent=2)
         elif uri == "navig://config/apps":
-            return json.dumps(self._tool_list_apps({}), indent=2)
+            return json.dumps(self._execute_tool("navig_list_apps", {}), indent=2)
         elif uri == "navig://wiki":
-            pages = self._tool_list_wiki_pages({})
+            pages = self._execute_tool("navig_wiki_list", {})
             if isinstance(pages, dict) and "error" in pages:
                 return f"# Wiki\n\n{pages['error']}"
             return "# Wiki Index\n\n" + "\n".join(
                 f"- [{p['title']}]({p['path']})" for p in pages
             )
         elif uri == "navig://context":
-            return json.dumps(self._tool_get_context({}), indent=2)
+            return json.dumps(self._execute_tool("navig_get_context", {}), indent=2)
         elif uri in ("navig://agent/status", "agent://status"):
-            return json.dumps(self._tool_agent_status_get({}), indent=2)
+            return json.dumps(self._execute_tool("navig_agent_status_get", {}), indent=2)
         elif uri in ("navig://agent/goals", "agent://goals"):
-            return json.dumps(self._tool_agent_goal_list({"limit": 100}), indent=2)
+            return json.dumps(self._execute_tool("navig_agent_goal_list", {"limit": 100}), indent=2)
         elif uri in ("navig://agent/remediation", "agent://remediation"):
-            return json.dumps(self._tool_agent_remediation_list({"limit": 100}), indent=2)
+            return json.dumps(self._execute_tool("navig_agent_remediation_list", {"limit": 100}), indent=2)
         elif uri in ("navig://agent/learning", "agent://learning/patterns"):
             report_path = Path.home() / ".navig" / "workspace" / "error-patterns.json"
             if report_path.exists():
                 return report_path.read_text(encoding="utf-8", errors="replace")
-            return json.dumps(self._tool_agent_learning_run({"days": 7, "export": False}), indent=2)
+            return json.dumps(self._execute_tool("navig_agent_learning_run", {"days": 7, "export": False}), indent=2)
         elif uri in ("navig://agent/service", "agent://service"):
-            return json.dumps(self._tool_agent_service_status({}), indent=2)
+            return json.dumps(self._execute_tool("navig_agent_service_status", {}), indent=2)
+        elif uri == "navig://runtime/nodes":
+            from navig.contracts.store import get_runtime_store
+            store = get_runtime_store()
+            return json.dumps([n.to_dict() for n in store.list_nodes()], indent=2)
+        elif uri == "navig://runtime/missions":
+            from navig.contracts.store import get_runtime_store
+            store = get_runtime_store()
+            return json.dumps([m.to_dict() for m in store.list_missions(limit=50)], indent=2)
+        elif uri == "navig://runtime/receipts":
+            from navig.contracts.store import get_runtime_store
+            store = get_runtime_store()
+            return json.dumps([r.to_dict() for r in store.list_receipts(limit=50)], indent=2)
         else:
             raise ValueError(f"Unknown resource: {uri}")
     
@@ -1865,6 +688,49 @@ def generate_claude_mcp_config() -> Dict[str, Any]:
             }
         }
     }
+
+
+# =============================================================================
+# Memory MCP Tool Handlers (module-level, importable for testing)
+# =============================================================================
+
+from navig.memory.paths import KEY_FACTS_DB_PATH as _KEY_FACTS_DB_PATH
+
+
+def _memory_store():
+    """Return a fresh KeyFactStore backed by the canonical DB path."""
+    from navig.memory.key_facts import KeyFactStore
+    return KeyFactStore(db_path=_KEY_FACTS_DB_PATH)
+
+
+async def memory_retrieve(query: str, limit: int = 10, token_budget: int = 2000) -> dict:
+    """Retrieve ranked key facts matching query within token budget."""
+    from navig.memory.fact_retriever import FactRetriever
+    retriever = FactRetriever(_memory_store())
+    facts = retriever.retrieve(query=query, limit=limit, token_budget=token_budget)
+    return {"facts": [f.model_dump() if hasattr(f, "model_dump") else vars(f) for f in facts]}
+
+
+async def memory_remember(text: str, source: str = "mcp") -> dict:
+    """Extract and persist key facts from text."""
+    from navig.memory.fact_extractor import FactExtractor
+    store = _memory_store()
+    extractor = FactExtractor(store)
+    added = extractor.extract_and_store(text=text, source=source)
+    return {"added": added}
+
+
+async def memory_forget(fact_id: str) -> dict:
+    """Soft-delete a key fact by ID."""
+    store = _memory_store()
+    ok = store.soft_delete(fact_id)
+    return {"deleted": ok, "id": fact_id}
+
+
+async def memory_stats() -> dict:
+    """Return key fact store statistics."""
+    store = _memory_store()
+    return store.stats()
 
 
 # Allow running as module: python -m navig.mcp_server

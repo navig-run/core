@@ -30,15 +30,15 @@ console = Console()
 
 # Mr. Robot color scheme
 COLORS = {
-    'primary': 'bright_green',      # Active/selected
+    'primary': 'bright_cyan',        # Active/selected  — ocean primary
     'secondary': 'cyan',             # Normal text and borders
-    'accent': 'bright_yellow',       # Default items
+    'accent': 'bright_blue',         # Accent items      — deep ocean
     'success': 'bright_green',       # Success status
     'error': 'bright_red',           # Errors
     'warning': 'yellow',             # Warnings
     'dim': 'dim white',              # Help text
     'info': 'bright_cyan',           # Information
-    'action': 'bright_cyan',         # Action prompts
+    'action': 'bright_blue',         # Action prompts    — deep ocean
 }
 
 # Questionary - lazy import to avoid Windows resource issues
@@ -59,12 +59,12 @@ def _init_questionary():
         QUESTIONARY_AVAILABLE = True
         # Questionary uses ANSI color names, not Rich color names
         MENU_STYLE = Style([
-            ('qmark', 'fg:green bold'),           # Question mark
+            ('qmark', 'fg:cyan bold'),             # Question mark
             ('question', 'fg:cyan bold'),          # Question text
-            ('answer', 'fg:green bold'),           # Selected answer
-            ('pointer', 'fg:green bold'),          # Pointer arrow
-            ('highlighted', 'fg:green bold'),      # Highlighted choice
-            ('selected', 'fg:yellow'),             # Selected text
+            ('answer', 'fg:cyan bold'),            # Selected answer
+            ('pointer', 'fg:ansiblue bold'),       # Pointer arrow
+            ('highlighted', 'fg:cyan bold'),       # Highlighted choice
+            ('selected', 'fg:ansiblue'),           # Selected text
             ('separator', 'fg:white'),             # Separator
             ('instruction', 'fg:white'),           # Instructions
             ('text', 'fg:cyan'),                   # Normal text
@@ -459,6 +459,14 @@ def show_main_menu(state: MenuState) -> Optional[str]:
         ("B", "Backup & Config         (export, import, settings)"),
     ]
     
+    # DEV INTELLIGENCE section
+    console.print(f"\n[{COLORS['secondary']}]━━━ DEV INTELLIGENCE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['secondary']}]")
+
+    intel_options = [
+        ("S", "Copilot Sessions        (browse, search, export VS Code chats)"),
+        ("N", "Memory & Knowledge      (key facts, profile, AI memory)"),
+    ]
+
     # System options
     console.print(f"\n[{COLORS['dim']}]━━━ System ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['dim']}]")
     
@@ -474,7 +482,7 @@ def show_main_menu(state: MenuState) -> Optional[str]:
     system_options.append(("0", "Exit"))
     
     # Combine all options
-    options = sysops_options + devops_options + lifeops_options + system_options
+    options = sysops_options + devops_options + lifeops_options + intel_options + system_options
     
     # Map display labels to internal action names
     action_map = {
@@ -495,6 +503,8 @@ def show_main_menu(state: MenuState) -> Optional[str]:
         "AI Assistant": "AI Assistant",
         "Wiki & Knowledge": "Wiki & Documentation",
         "Backup & Config": "Backup & Restore",
+        "Copilot Sessions": "Copilot Sessions",
+        "Memory & Knowledge": "Memory & Knowledge",
         "Configuration": "Configuration",
         "Command History": "Command History",
         "Quick Help": "Quick Help",
@@ -2983,7 +2993,13 @@ def launch_menu(options: Dict[str, Any]):
                         execute_wiki_menu(state)
                     elif selection == "Backup & Restore":
                         show_backup_menu(state)
-                    
+
+                    # ===== DEV INTELLIGENCE =====
+                    elif selection == "Copilot Sessions":
+                        _launch_copilot_sessions(state)
+                    elif selection == "Memory & Knowledge":
+                        _launch_memory_menu(state)
+
                     # ===== System =====
                     elif selection == "Configuration":
                         show_configuration_menu(state)
@@ -3010,6 +3026,107 @@ def launch_menu(options: Dict[str, Any]):
         console.print(f"\n[{COLORS['error']}][x] Fatal error: {e}[/{COLORS['error']}]")
         console.print(f"[{COLORS['dim']}]Check ~/.navig/navig.log for details.[/{COLORS['dim']}]\n")
         sys.exit(1)
+
+
+# ============================================================================
+# DEV INTELLIGENCE HANDLERS
+# ============================================================================
+
+def _run_navig_cmd(state: MenuState, cmd_parts: list, label: str) -> None:
+    """Run a navig sub-command in the terminal and show output."""
+    import subprocess
+    state.history.add(" ".join(cmd_parts), label, True)
+    try:
+        result = subprocess.run(["navig"] + cmd_parts, check=False)
+        if result.returncode != 0:
+            state.history.add(" ".join(cmd_parts), label, False)
+    except FileNotFoundError:
+        # navig not on PATH — try python -m navig
+        try:
+            subprocess.run([sys.executable, "-m", "navig"] + cmd_parts, check=False)
+        except Exception as exc:
+            show_status(f"Error: {exc}", 'error')
+    except Exception as exc:
+        show_status(f"Error: {exc}", 'error')
+    console.input(f"\n[{COLORS['dim']}]  Press Enter to continue…[/]")
+
+
+def _launch_copilot_sessions(state: MenuState) -> None:
+    """Launch the Copilot Sessions browser from the main menu."""
+    clear_screen()
+    console.print(f"[{COLORS['primary']}]━━━ Copilot Sessions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['primary']}]")
+    console.print()
+    console.print(f"[{COLORS['dim']}]  Commands:[/]")
+    console.print(f"  [bright_cyan]navig copilot sessions[/]          — list all sessions")
+    console.print(f"  [bright_cyan]navig copilot sessions stats[/]    — storage statistics")
+    console.print(f"  [bright_cyan]navig copilot sessions search Q[/] — full-text search")
+    console.print(f"  [bright_cyan]navig copilot sessions view ID[/]  — inspect a session")
+    console.print(f"  [bright_cyan]navig copilot sessions export[/]   — export to JSON/MD/CSV")
+    console.print(f"  [bright_cyan]navig copilot sessions delete ID[/]— delete a session")
+    console.print()
+
+    options = [
+        ("1", "List all sessions"),
+        ("2", "Show statistics"),
+        ("3", "Search sessions"),
+        ("0", "Back to main menu"),
+    ]
+    selection = prompt_menu_choice(options, "Copilot Sessions")
+
+    if selection in (None, "Back to main menu"):
+        return
+
+    if selection == "List all sessions":
+        clear_screen()
+        _run_navig_cmd(state, ["copilot", "sessions", "list", "--limit", "50"], "List Copilot sessions")
+    elif selection == "Show statistics":
+        clear_screen()
+        _run_navig_cmd(state, ["copilot", "sessions", "stats"], "Copilot session stats")
+    elif selection == "Search sessions":
+        query = console.input(f"[{COLORS['accent']}]Search query: [/]").strip()
+        if query:
+            clear_screen()
+            _run_navig_cmd(state, ["copilot", "sessions", "search", query], f"Search: {query}")
+
+
+def _launch_memory_menu(state: MenuState) -> None:
+    """Launch the Memory & Knowledge menu."""
+    clear_screen()
+    console.print(f"[{COLORS['primary']}]━━━ Memory & Knowledge ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['primary']}]")
+    console.print()
+
+    options = [
+        ("1", "Show memory profile"),
+        ("2", "Search memory"),
+        ("3", "List key facts"),
+        ("4", "Remember something"),
+        ("5", "Memory statistics"),
+        ("0", "Back to main menu"),
+    ]
+    selection = prompt_menu_choice(options, "Memory & Knowledge")
+
+    if selection in (None, "Back to main menu"):
+        return
+
+    if selection == "Show memory profile":
+        clear_screen()
+        _run_navig_cmd(state, ["memory", "show"], "Show memory profile")
+    elif selection == "Search memory":
+        query = console.input(f"[{COLORS['accent']}]Search: [/]").strip()
+        if query:
+            clear_screen()
+            _run_navig_cmd(state, ["memory", "search", query], f"Memory search: {query}")
+    elif selection == "List key facts":
+        clear_screen()
+        _run_navig_cmd(state, ["memory", "facts"], "List key facts")
+    elif selection == "Remember something":
+        note = console.input(f"[{COLORS['accent']}]Note to remember: [/]").strip()
+        if note:
+            clear_screen()
+            _run_navig_cmd(state, ["memory", "remember", note], "Remember fact")
+    elif selection == "Memory statistics":
+        clear_screen()
+        _run_navig_cmd(state, ["memory", "stats"], "Memory statistics")
 
 
 # ============================================================================

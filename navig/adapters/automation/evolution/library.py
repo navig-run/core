@@ -82,6 +82,7 @@ class ScriptLibrary:
 
     def find_script(self, goal: str) -> Optional[ScriptEntry]:
         """Find a script matching the goal (exact match for now)."""
+        # AUDIT: MANUAL REVIEW REQUIRED — fuzzy retrieval strategy requires benchmarked ranking design and corpus migration.
         # TODO: Fuzzy match or embeddings
         import hashlib
         script_id = hashlib.md5(goal.lower().encode()).hexdigest()[:8]

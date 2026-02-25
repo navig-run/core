@@ -4,9 +4,13 @@ Remote Operations
 Execute commands through secure encrypted channels.
 """
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, Any
+
+# Default SSH/SCP timeout in seconds.  Override via NAVIG_SSH_TIMEOUT env var.
+_SSH_TIMEOUT = int(os.environ.get("NAVIG_SSH_TIMEOUT", "30"))
 
 
 class RemoteOperations:
@@ -70,16 +74,35 @@ class RemoteOperations:
         # Add the command
         ssh_args.append(command)
         
+        # Pre-flight: warn on mDNS .local hosts (unreliable on Windows)
+        host = server_config.get("host", "")
+        if host.endswith(".local") and os.name == "nt":
+            import warnings
+            warnings.warn(
+                f"Host '{host}' uses mDNS (.local) which can be slow or "
+                "unreliable on Windows. Consider using the IP address directly.",
+                stacklevel=3,
+            )
+
         # Execute
         # void: every command leaves a trace. in logs. in memory. in bash_history.
-        if capture_output:
-            result = subprocess.run(
-                ssh_args,
-                capture_output=True,
-                text=True,
+        try:
+            if capture_output:
+                result = subprocess.run(
+                    ssh_args,
+                    capture_output=True,
+                    text=True,
+                    timeout=_SSH_TIMEOUT,
+                )
+            else:
+                result = subprocess.run(ssh_args, timeout=_SSH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"SSH connection timed out after {_SSH_TIMEOUT}s — "
+                f"'{host}' is unreachable or not responding.\n"
+                f"Tip: set NAVIG_SSH_TIMEOUT=<seconds> to change the limit, "
+                f"or use the IP address instead of a hostname."
             )
-        else:
-            result = subprocess.run(ssh_args)
 
         return result
     
@@ -102,8 +125,14 @@ class RemoteOperations:
         # Source and destination
         scp_args.append(str(local_path))
         scp_args.append(f"{server_config['user']}@{server_config['host']}:{remote_path}")
-        
-        result = subprocess.run(scp_args)
+
+        try:
+            result = subprocess.run(scp_args, timeout=_SSH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"SCP upload timed out after {_SSH_TIMEOUT}s — "
+                f"host '{server_config.get('host')}' is unreachable."
+            )
         return result.returncode == 0
     
     def download_file(
@@ -125,6 +154,12 @@ class RemoteOperations:
         # Source and destination
         scp_args.append(f"{server_config['user']}@{server_config['host']}:{remote_path}")
         scp_args.append(str(local_path))
-        
-        result = subprocess.run(scp_args)
+
+        try:
+            result = subprocess.run(scp_args, timeout=_SSH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"SCP download timed out after {_SSH_TIMEOUT}s — "
+                f"host '{server_config.get('host')}' is unreachable."
+            )
         return result.returncode == 0

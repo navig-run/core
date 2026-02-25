@@ -1,0 +1,26 @@
+[package]
+name    = "core_tray"
+version = "0.1.0"
+edition = "2021"
+description = "System tray icon + menu for NAVIG Core Host (Windows / macOS)"
+
+[dependencies]
+serde      = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+
+core_config = { path = "../core_config" }
+core_events = { path = "../core_events" }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tray-icon = { workspace = true }
+muda      = { workspace = true }
+image     = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# tray-icon requires gtk3 on Linux; add gtk feature or skip
+# Kept empty for headless Linux builds
+
+[features]
+default = ["tray"]
+tray    = []

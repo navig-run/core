@@ -1,0 +1,57 @@
+# navig-core-host configuration
+# Copy this file to one of the platform-specific default locations and adjust
+# values as needed.
+#
+# Default config paths (in search order):
+#   Windows : %APPDATA%\navig\config.yaml
+#   macOS   : ~/Library/Application Support/navig/config.yaml
+#   Linux   : $XDG_CONFIG_HOME/navig/config.yaml  (fallback: ~/.config/navig/config.yaml)
+#
+# All keys can also be set via environment variables by uppercasing and
+# replacing dots with underscores, e.g.:
+#   server.addr  →  NAVIG_SERVER_ADDR
+
+# ─── HTTP API ────────────────────────────────────────────────────────────────
+server:
+  # Address and port to listen on.  Set to 0.0.0.0 to expose on LAN.
+  # If the port is already taken at startup, the host will automatically pick
+  # the next available ephemeral port.
+  addr: "127.0.0.1:9371"
+
+# ─── Python Gateway ──────────────────────────────────────────────────────────
+python:
+  # Absolute path to the Python interpreter that has the `navig` package
+  # installed.  Leave blank to let the host auto-discover python3 / python.
+  path: ""
+
+  # Extra environment variables forwarded into the python subprocess.
+  # env:
+  #   PYTHONPATH: "/home/user/navig-packages"
+
+  # Health-poll interval (seconds).
+  health_interval: 5
+
+  # Crash-recovery back-off ceiling (seconds).
+  max_backoff: 30
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+log:
+  # One of: debug | info | warn | error
+  level: "info"
+
+# ─── Health Checks ───────────────────────────────────────────────────────────
+health:
+  # How often to run the full self-check loop (seconds).
+  poll_interval: 30
+
+  # Disk free-space warning threshold (bytes).  Default = 500 MB.
+  disk_min_free: 524288000
+
+  # Memory usage warning threshold (percentage, 0–100).
+  memory_max_pct: 90
+
+# ─── Autostart ───────────────────────────────────────────────────────────────
+autostart:
+  # Set to true to register on OS startup when the host first runs.
+  # You can also manage this with:  navig-host autostart install/uninstall/status
+  enabled: false

@@ -134,7 +134,7 @@ async def test_start_http_server_registers_routes_and_deck(gateway, monkeypatch:
     register_all_routes = MagicMock()
     register_deck_routes = MagicMock()
     monkeypatch.setattr("navig.gateway.routes.register_all_routes", register_all_routes)
-    monkeypatch.setattr("navig.gateway.deck_api.register_deck_routes", register_deck_routes)
+    monkeypatch.setattr("navig.gateway.deck.register_deck_routes", register_deck_routes)
     monkeypatch.setattr(gw, "_setup_webhook_routes", MagicMock())
 
     class DummyRunner:

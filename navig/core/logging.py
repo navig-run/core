@@ -98,6 +98,9 @@ def _configure_root_logger(log_file: Optional[Path] = None, level: int = logging
     
     # 1. Console Handler — use stderr so JSON on stdout stays clean
     try:
+        import sys
+        if 'pytest' in sys.modules:
+            raise ImportError('pytest')
         from rich.logging import RichHandler
         console_handler = RichHandler(
             rich_tracebacks=True,

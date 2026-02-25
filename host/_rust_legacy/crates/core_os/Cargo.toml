@@ -1,0 +1,22 @@
+[package]
+name    = "core_os"
+version = "0.1.0"
+edition = "2021"
+description = "OS-specific helpers: keychain, autostart, platform paths"
+
+[dependencies]
+serde      = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+dirs       = { workspace = true }
+once_cell  = { workspace = true }
+
+keyring = { workspace = true }
+
+core_config = { path = "../core_config" }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+[features]
+default = []

@@ -1,0 +1,13 @@
+========================================================================
+ЁЯЪА NAVIG COGNITIVE ENGINE: Booting Auto-All Execution from JSON...
+========================================================================
+Task ID: example-app-auto-01
+Intent:  Post a message on the example-app forum
+
+[SYS] Secure IPC Vault Payload Loaded for Domain: example.org
+[ACT] Navigating to: https://example.org/login
+[IPC EVENT] LoginSuccess: {"success":true,"nextPageType":"unknown","requiresMFA":false}
+[IPC EVENT] StepFailed: {"error":"waitFor: timeout after 5s (selector=\"textarea[name='text']\" text=\"\")","index":3,"type":"wait_for"}
+[IPC EVENT] SelectorEvolved: {"evolved":"heuristic:text","hint":"message","original":"div:nth-of-type(1) \u003e div:nth-of-type(2) \u003e div:nth-of-type(3) \u003e div \u003e div \u003e div:nth-of-type(1) \u003e form \u003e textarea"}
+
+тЬЕ Execution Completed in 6362ms. Passed: 4, Failed: 1

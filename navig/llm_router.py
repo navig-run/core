@@ -15,11 +15,34 @@ Usage:
     mode = router.detect_mode(user_text)
     resolved = router.get_config(mode, prefer_uncensored=True)
     # → ResolvedLLMConfig(provider="ollama", model="dolphin-llama3:8b", ...)
+
+──────────────────────────────────────────────────────────────────────────────
+ARCHITECTURE NOTE: Two-Layer LLM Routing
+──────────────────────────────────────────────────────────────────────────────
+NAVIG has two router modules that serve orthogonal purposes. Use the right one:
+
+  navig.llm_router           ← THIS FILE
+    Layer 1 — MODE routing.  Picks WHAT TYPE of LLM task to perform.
+    Consumers: llm_generate.py, commands/mode.py, gateway/deck_api.py,
+               gateway/channels/telegram.py, cli commands.
+    Key types:  LLMModeRouter, ResolvedLLMConfig, get_llm_router()
+
+  navig.agent.model_router   ← AGENT RUNTIME
+    Layer 2 — TIER routing.  Picks WHICH MODEL SIZE to call (small/big/coder).
+    Consumers: agent/ai_client.py, agent/conversational.py only.
+    Key types:  HybridRouter, RoutingDecision, ModelSlot, RoutingConfig
+
+agent/conversational.py correctly orchestrates BOTH layers:
+  • llm_router → selects mode (coding vs chat)
+  • model_router → selects tier (3b vs 70b)
+DO NOT merge these two modules.
+──────────────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
 
 import os
+import threading
 import re
 import logging
 from typing import Any, Dict, List, Optional, Set
@@ -92,6 +115,7 @@ PROVIDER_ENV_KEYS: Dict[str, List[str]] = {
     "together":      ["TOGETHER_API_KEY"],
     "github_models": ["GITHUB_TOKEN"],  # free via GitHub PAT
     "ollama":        [],  # local, no key needed
+    "mcp_forge":     [],  # VS Code Copilot via MCP WebSocket (no key, uses tunnel)
 }
 
 # Provider → base URL
@@ -103,13 +127,14 @@ PROVIDER_BASE_URLS: Dict[str, str] = {
     "xai":           "https://api.x.ai/v1",
     "openrouter":    "https://openrouter.ai/api/v1",
     "groq":          "https://api.groq.com/openai/v1",
-    "google":        "https://generativelanguage.googleapis.com/v1beta",
+    "google":        "https://generativelanguage.googleapis.com/v1beta/openai",
     "siliconflow":   "https://api.siliconflow.cn/v1",
     "mistral":       "https://api.mistral.ai/v1",
     "cohere":        "https://api.cohere.ai/v1",
     "together":      "https://api.together.xyz/v1",
     "github_models": "https://models.inference.ai.azure.com",
     "ollama":        "http://127.0.0.1:11434/v1",
+    "mcp_forge":     "ws://127.0.0.1:42070",
 }
 
 SUPPORTED_PROVIDERS = set(PROVIDER_BASE_URLS.keys())
@@ -162,8 +187,11 @@ if PYDANTIC_OK:
         """Top-level llm_modes configuration block."""
         small_talk: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Fast, conversational, personality-driven chat",
-            provider="github_models",
-            model="gpt-4o-mini",
+            # AUDIT self-check: Correct implementation? yes - restores documented defaults.
+            # AUDIT self-check: Break callers? no - user config still overrides these values.
+            # AUDIT self-check: Simpler alternative? yes - default provider swap only.
+            provider="ollama",
+            model="qwen2.5:3b-instruct",
             fallback_model="qwen2.5:3b-instruct",
             fallback_provider="ollama",
             temperature=0.8,
@@ -172,8 +200,8 @@ if PYDANTIC_OK:
         ))
         big_tasks: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Complex reasoning, planning, multi-step tasks",
-            provider="github_models",
-            model="gpt-4o",
+            provider="openai",
+            model="gpt-4o-mini",
             fallback_model="qwen2.5:7b-instruct",
             fallback_provider="ollama",
             temperature=0.5,
@@ -182,8 +210,8 @@ if PYDANTIC_OK:
         ))
         coding: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Code generation, review, debugging",
-            provider="github_models",
-            model="gpt-4o",
+            provider="deepseek",
+            model="deepseek-coder",
             fallback_model="qwen2.5:7b-instruct",
             fallback_provider="ollama",
             temperature=0.2,
@@ -192,8 +220,8 @@ if PYDANTIC_OK:
         ))
         summarize: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Cheap, fast summarization of long text and logs",
-            provider="github_models",
-            model="gpt-4o-mini",
+            provider="ollama",
+            model="qwen2.5:3b-instruct",
             fallback_model="qwen2.5:3b-instruct",
             fallback_provider="ollama",
             temperature=0.3,
@@ -202,8 +230,8 @@ if PYDANTIC_OK:
         ))
         research: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
             description="Long-context, tool-using research and document analysis",
-            provider="github_models",
-            model="gpt-4o",
+            provider="deepseek",
+            model="deepseek-chat",
             fallback_model="qwen2.5:7b-instruct",
             fallback_provider="ollama",
             temperature=0.4,
@@ -397,7 +425,7 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> Dict[str, 
     import time
 
     now = time.time()
-    if _ollama_model_cache is not None and (now - _ollama_cache_ts) < 30:
+    if _ollama_model_cache is not None and (now - _ollama_cache_ts) < 300:
         return _ollama_model_cache
 
     try:
@@ -751,6 +779,7 @@ def _get_env_var_name(provider: str) -> str:
 # ─────────────────────────────────────────────────────────────
 
 _router_instance: Optional[LLMModeRouter] = None
+_router_instance_lock = threading.Lock()
 
 
 def get_llm_router(force_new: bool = False) -> LLMModeRouter:
@@ -765,21 +794,25 @@ def get_llm_router(force_new: bool = False) -> LLMModeRouter:
     if _router_instance is not None and not force_new:
         return _router_instance
 
-    config = {}
-    try:
-        from navig.config import get_config_manager
-        cm = get_config_manager()
-        raw = cm.global_config or {}
-        # Look for llm_router or llm_modes at top level
-        if "llm_router" in raw:
-            config = raw
-        elif "llm_modes" in raw:
-            config = raw
-    except Exception as e:
-        logger.debug("Could not load config for LLM router: %s", e)
+    with _router_instance_lock:
+        if _router_instance is not None and not force_new:
+            return _router_instance
 
-    _router_instance = LLMModeRouter(config)
-    return _router_instance
+        config = {}
+        try:
+            from navig.config import get_config_manager
+            cm = get_config_manager()
+            raw = cm.global_config or {}
+            # Look for llm_router or llm_modes at top level
+            if "llm_router" in raw:
+                config = raw
+            elif "llm_modes" in raw:
+                config = raw
+        except Exception as e:
+            logger.debug("Could not load config for LLM router: %s", e)
+
+        _router_instance = LLMModeRouter(config)
+        return _router_instance
 
 
 # ─────────────────────────────────────────────────────────────

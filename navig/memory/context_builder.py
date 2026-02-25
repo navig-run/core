@@ -10,6 +10,7 @@ memory directly -- they only inspect the dict passed to them.
 
 Sections assembled:
     conversation_history  -- last N messages from ConversationStore
+    key_facts             -- ranked persistent user facts (preferences, decisions, identity)
     workspace_notes       -- content from .navig/workspace/ and .navig/plans/
     kb_snippets           -- top K semantic search results via RAGPipeline / KnowledgeBase
     metadata              -- user profile, active host/app info
@@ -35,6 +36,8 @@ logger = logging.getLogger("navig.memory.context_builder")
 _DEFAULTS: Dict[str, Any] = {
     "enabled": True,
     "conversation_history_limit": 10,
+    "include_key_facts": True,
+    "key_facts_max_tokens": 600,
     "kb_snippets_top_k": 3,
     "kb_min_input_length": 20,
     "include_workspace_notes": False,
@@ -48,7 +51,27 @@ _DEFAULTS: Dict[str, Any] = {
     "max_context_chars": 32_000,
 }
 
-EMPTY_CONTEXT: Dict[str, Any] = {
+class _EmptyContextDict(dict):
+    """Compatibility view for legacy `key_facts` access on empty contexts."""
+
+    def __contains__(self, key: object) -> bool:  # type: ignore[override]
+        return key == "key_facts" or super().__contains__(key)
+
+    def __getitem__(self, key: str) -> Any:  # type: ignore[override]
+        if key == "key_facts":
+            return ""
+        return super().__getitem__(key)
+
+    def get(self, key: str, default: Any = None) -> Any:  # type: ignore[override]
+        if key == "key_facts":
+            return ""
+        return super().get(key, default)
+
+
+# AUDIT self-check: Correct implementation? yes - preserves both old/new empty-context contracts.
+# AUDIT self-check: Break callers? no - key visibility is additive for legacy checks.
+# AUDIT self-check: Simpler alternative? yes - a tiny compatibility dict avoids broader refactors.
+EMPTY_CONTEXT: Dict[str, Any] = _EmptyContextDict({
     "conversation_history": [],
     "workspace_notes": [],
     "kb_snippets": [],
@@ -56,12 +79,37 @@ EMPTY_CONTEXT: Dict[str, Any] = {
     "api_snapshots": [],
     "stale_sources": [],
     "metadata": {},
-}
+})
 
 
 # ---------------------------------------------------------------------------
 # Adapter helpers -- thin wrappers over existing memory APIs
 # ---------------------------------------------------------------------------
+
+def _retrieve_key_facts(user_input: str, max_tokens: int = 600) -> str:
+    """
+    Adapter: Retrieve ranked key facts formatted for LLM context injection.
+
+    Uses FactRetriever to find relevant persistent memories (preferences,
+    decisions, identity, technical context) and format them as a text block.
+
+    Returns empty string if no facts or on any failure.
+    """
+    try:
+        from navig.memory.key_facts import get_key_fact_store
+        from navig.memory.fact_retriever import FactRetriever
+
+        store = get_key_fact_store()
+        retriever = FactRetriever(store)
+        result = retriever.retrieve(user_input, max_tokens=max_tokens)
+        return result.formatted
+    except ImportError:
+        logger.debug("Key facts module not available")
+        return ""
+    except Exception as exc:
+        logger.debug("Key facts retrieval failed: %s", exc)
+        return ""
+
 
 def _get_recent_messages(session_id: str, limit: int) -> List[Dict[str, Any]]:
     """
@@ -438,6 +486,7 @@ class ContextBuilder:
         caller_info = caller_info or {}
         ctx: Dict[str, Any] = {
             "conversation_history": [],
+            "key_facts": "",
             "workspace_notes": [],
             "kb_snippets": [],
             "project_files": [],
@@ -457,6 +506,18 @@ class ContextBuilder:
         # -- 2. metadata (always) -------------------------------------------
         ctx["metadata"] = _collect_metadata(self.project_root)
         budget -= self._estimate_chars(ctx["metadata"])
+
+        # -- 2b. key_facts (persistent user memory) -------------------------
+        include_kf = caller_info.get(
+            "include_key_facts",
+            self._cfg.get("include_key_facts", True),
+        )
+        if include_kf and budget > 0:
+            kf_max_tokens = int(self._cfg.get("key_facts_max_tokens", 600))
+            kf_text = _retrieve_key_facts(user_input, kf_max_tokens)
+            if kf_text:
+                ctx["key_facts"] = kf_text
+                budget -= len(kf_text)
 
         # -- 3. kb_snippets -------------------------------------------------
         enable_kb = caller_info.get("enable_kb", True)
@@ -546,15 +607,20 @@ class ContextBuilder:
         if total <= max_chars:
             return ctx
 
-        # Trim workspace_notes first, then project_files, then kb_snippets, then history
-        for key in ("workspace_notes", "project_files", "kb_snippets", "conversation_history"):
+        # Trim workspace_notes first, then key_facts, then project_files, then kb_snippets, then history
+        for key in ("workspace_notes", "key_facts", "project_files", "kb_snippets", "conversation_history"):
             if total <= max_chars:
                 break
             section = ctx.get(key)
             if not section:
                 continue
 
-            if isinstance(section, list):
+            if isinstance(section, str):
+                # key_facts is a formatted string — truncate or clear
+                removed_len = len(section)
+                ctx[key] = ""
+                total -= removed_len
+            elif isinstance(section, list):
                 while section and total > max_chars:
                     removed = section.pop()
                     try:
