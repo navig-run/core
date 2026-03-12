@@ -4,9 +4,9 @@
 
 | Version | Status |
 |---|---|
-| 2.1.x | Supported |
-| 2.0.x | Critical fixes only |
-| < 2.0 | Unsupported |
+| 2.4.x | ✅ Supported |
+| 2.3.x | Critical fixes only |
+| 2.2.x and below | Unsupported |
 
 ## Reporting a Vulnerability
 
@@ -65,4 +65,4 @@ For a confirmed issue:
 - Primary: security@navig.run
 - Advisory portal: GitHub Security Advisories
 
-_Last updated: 2026-02-15_
+_Last updated: 2026-03-12_

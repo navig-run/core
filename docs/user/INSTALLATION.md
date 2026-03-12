@@ -11,7 +11,7 @@ This guide explains how to install NAVIG as a Python package in editable mode, w
 
 ## Prerequisites
 
-- **Python 3.8 or higher** (check with `python --version` or `python3 --version`)
+- **Python 3.10 or higher** (check with `python --version` or `python3 --version`)
 - **pip** (Python package installer)
 - **Git** (for cloning the repository)
 
@@ -168,7 +168,7 @@ $env:NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
 navig = "navig.cli:app"
 ```
 
-This creates a `navig` command that calls the Typer `app` object in `navig/cli.py`.
+This creates a `navig` command that calls the Typer `app` object in `navig/cli/__init__.py`.
 
 **Dependencies**:
 - `typer[all]>=0.9.0` - CLI framework
@@ -214,6 +214,47 @@ pytest
 # Run tests with coverage
 pytest --cov=navig
 ```
+
+---
+
+## Configuration File Locations
+
+NAVIG stores configuration and runtime data in OS-standard directories. No
+files are written to the install directory or system paths.
+
+### Windows
+
+| Data type | Path | Notes |
+|-----------|------|-------|
+| **Config** (roaming) | `%APPDATA%\NAVIG\config.yaml` | Synced across machines if roaming profiles are enabled |
+| **Hosts / apps** | `%APPDATA%\NAVIG\hosts\` | Host YAML files live here |
+| **Vault** (encrypted) | `%LOCALAPPDATA%\NAVIG\vault\` | Machine-local, never synced |
+| **Logs** | `%LOCALAPPDATA%\NAVIG\logs\` | Machine-local |
+| **Cache / state** | `%LOCALAPPDATA%\NAVIG\` | Active host, tunnels, staging |
+| **Project overrides** | `.navig\` in repo root | Per-project host/app configs |
+
+Locate your config file from PowerShell:
+```powershell
+notepad "$env:APPDATA\NAVIG\config.yaml"
+```
+
+### Linux / macOS
+
+| Data type | Path |
+|-----------|------|
+| **Config** | `~/.navig/config.yaml` |
+| **Hosts / apps** | `~/.navig/hosts/` |
+| **Vault** | `~/.navig/vault/` |
+| **Logs** | `~/.local/share/navig/logs/` or `~/.navig/logs/` |
+| **Project overrides** | `.navig/` in repo root |
+
+Locate your config file:
+```bash
+cat ~/.navig/config.yaml
+```
+
+> ⚠️ On Linux/macOS `~/.navig` may be a symlink to `~/.local/share/navig` depending
+> on your install method. `navig config show` always prints the resolved path.
 
 ---
 
