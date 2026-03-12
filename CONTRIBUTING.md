@@ -1,4 +1,4 @@
-# Contributing to NAVIG Core
+﻿# Contributing to NAVIG Core
 
 Thanks for contributing.
 
@@ -12,7 +12,7 @@ Thanks for contributing.
 
 ```bash
 git clone https://github.com/navig-run/core.git
-cd navig/navig-core
+cd core
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e .[dev]
@@ -45,6 +45,11 @@ Coverage threshold is enforced in CI (`--cov-fail-under=65`).
 - Prefer explicit types and clear function boundaries.
 - Do not commit secrets, credentials, or private infrastructure details.
 - Keep public APIs stable; mark internal-only modules clearly.
+- Never use `print()` in production code — use `loguru` logger.
+- Never use raw `sqlite3` in command modules — use `storage/engine.py`.
+- Never use bare `except:` — always catch specific exception types.
+- Defer heavy imports inside function bodies to keep CLI startup under 50 ms.
+- Verify no circular imports after structural changes: `python -c "import navig"`.
 
 ## Commits and Pull Requests
 
