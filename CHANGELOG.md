@@ -1,11 +1,135 @@
-# Changelog
+﻿# Changelog
 
-All notable changes to NAVIG (No Admin Visible In Graveyard) will be documented in this file.
+All notable changes to NAVIG are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this app adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.13] - 2026-03-12
+
+### Security / Portability — Cross-Platform Audit (`upgrade/portability-audit`)
+- **`navig/daemon/service_manager.py`** — `import ctypes` moved inside the `try` block of `is_admin()` to fix `NameError` on Windows (was crashing daemon startup).
+- **`navig/commands/security.py`** — All 31 callsites replaced `result['exit_code']` / `result['stdout']` / `result['stderr']` dict access with `.returncode` / `.stdout` / `.stderr` attributes on `subprocess.CompletedProcess`; entire security subsystem was broken (TypeError on every call).
+- **`navig/remote.py`** — Localhost-shortcut path now uses `shell=False` + `shlex.split()` instead of `shell=True`; added Windows Unix-tool guard (`NotImplementedError` for `ls`, `df`, `cat`, etc.).
+- **`navig/agent/service.py`** — `_install_systemd()` guarded by `sys.platform`: Linux → `/etc/systemd/system`, macOS → `~/Library/LaunchAgents`, Windows → `~/navig-services` + `schtasks`, other platforms → graceful failure. Previously unconditionally wrote to `/etc/systemd/system` on all platforms.
+- **`navig/core/automation_engine.py`** — `run_command` action: `shell=True` → `shell=False` + `shlex.split()` + RCE denylist.
+- **`navig/agent/conversational.py`** — Both `command.run` and `navig.run` actions: `shell=True` → `shell=False` + `shlex.split()` + denylist.
+- **`navig/discovery.py`** — `_build_ssh_command()`: `StrictHostKeyChecking=no` + `UserKnownHostsFile=/dev/null` → `accept-new`; insecure mode gated behind `self.insecure`. Fixed `HAS_PARAMIKO = True` hardcode — now a runtime try/import check.
+- **`navig/commands/sync.py`** — rsync `-e` option: `StrictHostKeyChecking=no` → `accept-new`; `shlex.quote()` wrapping on `ssh_key` path.
+- **`navig/agent/runner.py`** — Added Windows signal handler fallback: `signal.SIGBREAK` + `signal.SIGINT` via `signal.signal()` (Windows has no `loop.add_signal_handler()`).
+- **`navig/commands/backup.py`** — `os.chmod(config_path, 0o600)` wrapped in `try/except OSError`; added Windows `icacls` ACL fallback.
+- **`navig/logging_setup.py`** — `_NAVIG_DIR` / `_LOG_DIR` / `_LOG_FILE` / `_DEBUG_FLAG` now resolve from `NAVIG_CONFIG_DIR` environment variable before falling back to `~/.navig`.
+- **`navig/ipc_pipe.py`** — Unix socket path uses `tempfile.gettempdir()` instead of `/tmp` (breaks under macOS App Sandbox); `conn._handle.SetReadTimeout(...)` wrapped in `try/except AttributeError`.
+- **`navig/adapters/os/linux.py`** — Package manager detection uses `shutil.which(pm)` instead of `os.path.exists('/usr/bin/{pm}')` to respect `$PATH`.
+- **`navig/commands/docker.py`** — Unsanitised `| grep -E '{filter}'` injection fixed with `shlex.quote(filter)`.
+- **`navig/tunnel.py`** — Removed `-f` SSH background-fork flag; `process.pid` stored directly instead of psutil polling (eliminates PID reuse race); reduced `time.sleep(2)` → `time.sleep(0.5)`.
+- **`navig/vault/encryption.py`** + **`navig/vault/storage.py`** — Added Windows `icacls` ACL restriction after `os.chmod` for vault and salt files.
+- **`navig/commands/monitoring.py`** — CPU batch command replaced fragile `top -bn1 | grep 'Cpu(s)'` (breaks on RHEL/CentOS) with portable `/proc/stat` awk calculation.
+- **`navig/commands/files.py`** — Disk-space error hint is platform-conditional: `df -h` on Unix, `Get-PSDrive` / `dir /-c` on Windows.
+- **`navig/plugins/navig-mini/plugin.py`** — Default `--dir` option changed from `/root/navig-mini` to `~/navig-mini` (non-root-user portability).
+- **Encoding sweep (13 files)** — Added `encoding='utf-8'` to all `open()` / `Path.read_text()` calls in: `tunnel.py`, `mcp_manager.py`, `commands/proactive.py`, `commands/script.py`, `commands/suggest.py`, `commands/local.py`, `commands/triggers.py`, `assistant_utils.py`, `tasks/queue.py`, `memory/embeddings.py`, `vault/core.py`, `local_operations.py`, `commands/monitoring.py`.
+- **Documentation updates** — Updated 5 docs to reflect `NAVIG_CONFIG_DIR` portability:
+  - `README.md` — Config location note updated; config tree annotated with `← default; override with NAVIG_CONFIG_DIR`.
+  - `docs/user/troubleshooting.md` — Debug log path mentions `$NAVIG_CONFIG_DIR/debug.log` fallback.
+  - `docs/user/HANDBOOK.md` — CI/CD env-var table gains `NAVIG_CONFIG_DIR` row (override config/log base directory).
+  - `docs/architecture/AUTONOMOUS_DEPLOYMENT.md` — Dockerfile and docker-compose examples migrated from `/root/.navig` to `/app/.navig` with `ENV NAVIG_CONFIG_DIR=/app/.navig` (non-root container portability).
+  - `docs/dev/PRODUCTION_DEPLOYMENT.md` — `docker run` mounts updated to `/app/.navig` with `-e NAVIG_CONFIG_DIR=/app/.navig`.
+
+### Security / Portability — Cross-Platform Audit Round 2 (`upgrade/portability-audit`, 2026-03-01)
+- **`navig/commands/sync.py`** (`_run_pull`) — `StrictHostKeyChecking=no` → `accept-new`; `ssh_key` path now wrapped with `shlex.quote(str(...))`. Mirrors the `_run_push` fix applied in Round 1 — the pull-side was inadvertently missed. [R1 — Critical regression]
+- **`navig/commands/security.py`** (`firewall_allow`) — `allow_from`, `port`, `protocol` now wrapped with `shlex.quote(str(...))` before interpolation into the UFW SSH command. Previously allowed remote command injection via any of those three user-supplied arguments. [C1 — Critical]
+- **`navig/commands/security.py`** (`fail2ban_unban`) — `jail` and `ip_address` now wrapped with `shlex.quote()` in both `fail2ban-client set … unbanip` and `fail2ban-client unban` commands. [C2 — Critical]; `import shlex` added to module imports.
+- **`navig/core/automation_engine.py`** (`run_command`) — Denylist check now normalises the command string via `unicodedata.normalize('NFKC')` + `re.sub(r'\\s+', ' ')` + `.lower()` before matching, blocking bypass via uppercase (`RM -RF`), double-space, tab, or Unicode look-alikes. `shlex.split()` call now passes `posix=(sys.platform != 'win32')` to preserve Windows backslash paths. [C3 + L2]
+- **`navig/core/evolution/fix.py`** (`CodeFixer.validate`) — `subprocess.run(cmd, shell=True)` replaced with `shlex.split(cmd, posix=…) + shell=False` for config-sourced `check_command` strings. [M1]
+- **`navig/commands/packs.py`** / **`navig/commands/skills.py`** — Added explicit trust-boundary comments on `shell=True` subprocess calls for pack/skill hook commands (intentional — author-defined scripts may use pipelines). [M2, M3]
+- **`navig/commands/database.py`** (`_create_mysql_config_file`) — `os.chmod(0o600)` now guarded by `sys.platform` check with `icacls` fallback on Windows, matching the identical fix already applied to `commands/backup.py`. `import sys` added. [M4]
+- **`navig/commands/backup.py`** — `encoding='utf-8'` added to all six bare `open()` / `os.fdopen()` write calls (`_create_mysql_config_file`, three `metadata.json` writes, MySQL dump header, HestiaCP metadata, web-server metadata). [M5–M8 + 2 additional sites]
+- **`navig/commands/agent.py`** — `encoding='utf-8'` added to all bare `open()` calls (config read/write ×4, log read, personality write) and two `write_text()` calls (systemd temp file, macOS plist). [M9]
+- **`navig/commands/assistant.py`** — `encoding='utf-8'` added to all bare `open()` calls (history read, issues read ×2, context JSON write, reset-data write). [M10]
+- **`navig/adapters/os/linux.py`** (`LinuxAdapter`) — `get_temp_directory()` fallback changed from hardcoded `'/tmp'` to `tempfile.gettempdir()`; `get_home_directory()` fallback changed from `'/root'` (fails for non-root container users) to `Path.home()`. [M11]
+- **`navig/daemon/service_manager.py`** (`_schtasks_xml`) — Task Scheduler XML now escapes `python` executable path and `args` string via `xml.sax.saxutils.escape()` (stdlib, no new dependency) before interpolation. Paths containing `&`, `<`, or `>` previously produced malformed XML. [M12]
+- **`navig/commands/bridge_ai.py`** (`bridge_stop`) — `os.kill(pid, SIGTERM)` now guarded by `sys.platform != 'win32'`; Windows branch uses `subprocess.run(["taskkill", "/PID", str(pid)])` for catchable graceful shutdown instead of `TerminateProcess`. [L1]
+- **`navig/agent/service.py`** (`_install_systemd`) — `service_path.write_text(unit_content)` now passes `encoding='utf-8'` explicitly. [L3]
+
+> Test results after Round 2: **3058 passed** (+7 vs Round 1 baseline), **53 skipped**, **1 pre-existing flaky failure** (`test_decoy_guard::test_different_messages_different_output` — randomness-based assertion, unrelated to audit changes). All 3 previously listed pre-existing failures are now resolved.
+
+### Performance — Phase 3 Startup & Syscall Reduction (`upgrade/portability-audit`, 2026-02-28)
+- **`navig/config.py`** (`_is_directory_accessible`) — `list(iterdir())` → `next(iterdir(), None)`: O(N) → O(1) directory-access probe.
+- **`navig/config.py`** (`_ensure_directories`) — stamp-file gate (`~/.navig/.dirs_init`, 24h TTL): 40+ `mkdir` syscalls → single `stat` on warm runs every process invocation after the first.
+- **`navig/config.py`** (`_load_global_config_cached`) — shadow-verify thread now rate-limited: skips spawn if `time.monotonic() - _last_shadow_ts < 300`; at most one background thread per 5 minutes.
+- **`navig/config.py`** (`_find_app_root`) — sentinel-based process-lifetime cache (`_APP_ROOT_NOT_SEARCHED`): CWD filesystem walk runs once per process, not per call.
+- **`navig/config.py`** (`get_active_host`) — `_active_host_cache` tuple: YAML parse on first call only; `set_active_host` invalidates. New `_resolve_active_host()` private helper.
+- **`navig/config.py`** (`list_hosts`) — dir-mtime pre-check guards the per-file stat scan; returns cached list immediately when directory mtime unchanged.
+- **`navig/config.py`** (`list_apps`) — `_apps_list_cache` was initialised in `__init__` but never used; now wired with mtime-keyed per-host invalidation.
+- **`navig/config.py`** (`_host_config_cache`) — capped at 64 entries via new `_host_cache_put()` LRU helper; prevents unbounded dict growth in multi-host environments.
+- **`navig/plugins/__init__.py`** — module-level `Console()` eager import replaced with lazy `_get_console()` factory; `rich.console` only imported when a plugin actually prints output.
+- **`navig/cli/__init__.py`** (`_EXTERNAL_CMD_MAP`) — 10 commands added: `telemetry`, `wut`, `eval`, `agents`, `webdash`, `explain`, `snapshot`, `replay`, `cloud`, `benchmark`; all now fully lazy-dispatched.
+- **`navig/main.py`** — 11 unconditional `try/except` import blocks removed (replaced by `_EXTERNAL_CMD_MAP` entries); eliminates 11 module imports on every startup.
+- **`navig/remote.py`** — `SSHConnectionPool` fast-path added for `capture_output=True` SSH calls; reuses pre-existing pooled paramiko connections from `connection_pool.py` (which was dead code); subprocess fallback retained for PTY/non-captured paths.
+
+> Full analysis: `docs/CLI_STARTUP_PERFORMANCE.md` § Phase 3. Zero regressions (2939 passed, 53 skipped).
+
+### Changed — OSS Release Audit (MVP1 gate)
+- **`navig/integrations/telegram_bridge.py`** — added `_scrub_token()` helper;
+  `logger.warning` in the long-poll exception handler now redacts the bot token
+  from httpx URL reprs before they reach any log output (`.cursorrules` rule #6:
+  secrets never in logs, even under `--debug`).
+- **`navig/integrations/telegram_inbox.py`** — `_get_file_bytes` now raises
+  `RuntimeError` when Telegram returns `ok=false` (e.g. 401 Unauthorized,
+  revoked bot token); `_handle_message` catches and logs without crashing;
+  `run()` uses `upd.get("update_id")` defensively to skip malformed updates.
+- **`navig/commands/memory.py`, `navig/commands/kg.py`, `navig/commands/store.py`**
+  — added `# CURSORRULES:R8-EXCEPTION:` annotations explaining why each
+  diagnostic read-only `sqlite3` call is justified and cannot use
+  `storage/engine.py` (`.cursorrules` rule #8 explicit documented exception).
+- **`navig/commands/spaces.py`** — **name history**: this file was originally
+  created as `spaces.py` to provide a "spaces" concept distinct from `space.py`
+  (which manages full space directories).  During the active_space_context
+  refactor the command was renamed to `spaces` internally; the file was kept as
+  `spaces.py` for backward-compat imports.  The public CLI surface is
+  `navig spaces list/show/switch`; the `spaces_app` alias exists only for
+  internal imports.  The command does **not** implement `@target` routing
+  (agents/workspaces/people) — that is a separate post-MVP2 feature tracked
+  in `.navig/plans/TASK_PROPOSALS.md`; see `# KNOWN GAP:` comments in the file.
+
+### Fixed — Security / Test Coverage
+- Added 4 failure-path tests to `tests/test_telegram_inbox.py`
+  (tests 12–15): Telegram API 401 rejection, download failure swallowed,
+  bad-token run() does not crash, malformed update skipped.
+
+### Added — Package Manager + Cross-Platform Architecture Sprint
+
+#### Cross-Platform Path Infrastructure
+- `navig/config.py` — `roaming_root` (AppData\\Roaming\\NAVIG on Windows, `~/.config/NAVIG` on Linux/macOS), `identity_dir`, `store_dir`, `system_dir`, `logs_dir`, `cache_dir` — all via `platformdirs`; removed hardcoded `~/.navig` references
+- `navig/daemon/entry.py` — `_navig_home()` lazy helper; auto-starts WebSocket server in `main()`
+- `navig/daemon/service_manager.py` — full **macOS launchd** backend: `launchd_install/uninstall/status`; plist written to `~/Library/LaunchAgents/run.navig.NavigDaemon.plist`; `detect_best_method()` returns `"launchd"` on darwin
+- `navig/commands/service.py` — log path resolved via `ConfigManager().logs_dir`
+- `pyproject.toml` — `platformdirs>=4.0.0` dependency added
+
+#### New CLI Commands
+- `navig user` — user profile management (`show/set/switch`)
+- `navig node` — multi-node discovery and management UI
+- `navig boot` — boot sequence configuration
+- `navig space` — space/environment management (dev/staging/prod)
+- `navig blueprint` — project blueprint scaffold and template definitions
+- `navig deck` — deck/stack management UI
+- `navig portable` — portable mode for USB/external drive launch
+- `navig install` (v2) — package installer with SHA-256 cache, `--update`, `--freeze`
+- `navig migrate run/status/rollback` — migrate `~/.navig` → platform roaming dir; compat symjunction so old paths keep working
+- `navig system init/wallpaper/icons/theme/sounds` — OS integration in `portable`/`standard`/`deep` modes; cross-platform (Win32 API + gsettings/GTK)
+- `navig paths` — show all resolved NAVIG directories with ✅/❌ status + daemon WS reachability; `--json`
+- `navig mcp install/uninstall/status/serve` — wires `.vscode/mcp.json` and VS Code user settings for the NAVIG MCP server
+
+#### Daemon WebSocket Server
+- `navig/daemon/ws_server.py` — JSON-RPC 2.0 WebSocket server (`ws://127.0.0.1:7001/ws`) with `exec` (subprocess streaming), `status` (daemon health), `cancel` (kill in-flight proc), `start_ws_server()` background thread launcher
+
+---
+
+## [2.3.0] — 2026-02-25 — First Public Open-Source Release
+
+> First public release on GitHub under Apache-2.0. All internal identifiers,
+> personal paths, and private server references scrubbed. Repository renamed
+> to `navig-run/core`.
 
 ### Workspace
 - **Rename NAVIG Bar → NAVIG Dock** (no functional changes) — `@navig/bar` v0.1.0 → `@navig/dock` v0.1.1
@@ -13,7 +137,7 @@ and this app adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - All internal imports, DOM IDs, manifest command keys, and build artifact names updated
   - Root `package.json` scripts updated (`dev:bar` → `dev:dock`, etc.)
   - `pnpm-workspace.yaml` deduped: single `navig-dock` entry, `navig-bar` removed
-  - See [`docs/navig-dock/audit.md`](../docs/navig-dock/audit.md) and [`docs/navig-dock/README.md`](../docs/navig-dock/README.md)
+  - See [`navig-dock/docs/audit.md`](../navig-dock/docs/audit.md) and [`navig-dock/docs/README.md`](../navig-dock/docs/README.md)
 
 ### Open-Source Readiness
 - Switched license posture to **Apache-2.0** for ecosystem and enterprise adoption.
@@ -3338,9 +3462,9 @@ navig addon list
 └── hosts/
     └── vultr.yaml          # Contains embedded apps array
         apps:
-          pigkiss:
+          myapp:
             webserver: {type: nginx}
-            database: {name: pigkiss_db}
+            database: {name: myapp_db}
           myapp:
             webserver: {type: nginx}
 ```
@@ -3351,7 +3475,7 @@ navig addon list
 ├── hosts/
 │   └── vultr.yaml          # Host configuration ONLY (no embedded apps)
 └── apps/               # NEW: Individual app files
-    ├── pigkiss.yaml
+    ├── myapp.yaml
     ├── myapp.yaml
     └── ai.yaml
 ```
@@ -3368,19 +3492,19 @@ navig addon list
 #### **App File Format**
 
 ```yaml
-# .navig/apps/pigkiss.yaml
-name: pigkiss
+# .navig/apps/myapp.yaml
+name: myapp
 host: vultr                        # Reference to host in hosts/vultr.yaml
 paths:
-  web_root: /var/www/pigkiss
-  log_path: /var/log/pigkiss
+  web_root: /var/www/myapp
+  log_path: /var/log/myapp
 webserver:
   type: nginx
-  config_file: /etc/nginx/sites-available/pigkiss
+  config_file: /etc/nginx/sites-available/myapp
   ssl_enabled: true
 database:
-  name: pigkiss_db
-  user: pigkiss_user
+  name: myapp_db
+  user: myapp_user
   host: localhost
 metadata:
   created: "2025-11-25T10:30:00"
