@@ -5,7 +5,7 @@ applyTo: '**'
 # NAVIG - AI-Optimized Command Reference Guide
 
 > **Primary Knowledge Base for AI Assistants**
-> Version: 2.3.0 | Last Updated: 2026-02-10
+> Version: 2.4.4 | Last Updated: 2026-02-28
 
 ---
 
@@ -84,8 +84,8 @@ applyTo: '**'
 pip install navig
 
 # Or install from source
-git clone https://github.com/your-org/navig.git
-cd navig
+git clone https://github.com/navig-run/core.git
+cd core
 pip install -e .
 ```
 
@@ -3628,6 +3628,7 @@ execution:
 |----------|-------------|
 | `NAVIG_ACTIVE_HOST` | Override active host (highest priority) |
 | `NAVIG_ACTIVE_APP` | Override active app (highest priority) |
+| `NAVIG_CONFIG_DIR` | Override config/log base directory (default: `~/.navig`) |
 
 **Usage:**
 ```powershell
@@ -4357,7 +4358,7 @@ See `.navig/plans/CHANNEL_ARCHITECTURE.md` for the full design:
 
 | Channel  | Status    | Description |
 |----------|-----------|-------------|
-| Telegram | Active    | Primary channel (python-telegram-bot) |
+| Telegram | Active    | Primary channel (raw Bot API via httpx) |
 | CLI      | Active    | `navig ai ask` for one-shot queries |
 | Web UI   | Planned   | FastAPI + WebSocket streaming |
 | Discord  | Planned   | discord.py adapter |
@@ -4459,6 +4460,79 @@ You: remind me in 30 minutes to check backup
 Bot: 🐙 Understood: /remind 30m check backup
      ⏰ Reminder set for 30 minutes
 ```
+
+### 22.8 navig-bridge Extension — Builder Bridge & MCP File Tools
+
+**Version:** v3.39.78+
+
+The navig-bridge VS Code extension exposes workspace file operations to the NAVIG daemon (and any MCP client) over the extension's local MCP WebSocket server (port 42070).
+
+#### New MCP Tools (Sprint 8)
+
+| Tool | Description | Required Args |
+|------|-------------|---------------|
+| `write_file` | Write content to a workspace-relative path. Creates missing dirs. | `path`, `content` |
+| `read_file` | Read full content of a workspace-relative path. | `path` |
+| `list_workspace_files` | List files matching a glob pattern. | *(none — defaults to `**/*`)* |
+| `get_problems` | Alias for `vscode_get_diagnostics`. Returns all errors/warnings. | *(none)* |
+
+**Example JSON-RPC call (MCP):**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "write_file",
+    "arguments": {
+      "path": "src/utils/helper.ts",
+      "content": "export function hello() { return 'world'; }\n"
+    }
+  }
+}
+```
+
+**`list_workspace_files` options:**
+```json
+{
+  "glob": "src/**/*.ts",
+  "exclude": "**/node_modules/**",
+  "max_results": 100
+}
+```
+
+#### AI Diff Panel — Automatic Code Routing
+
+When the NAVIG chat produces a code block with an annotated file path, it is automatically written to `.navig/proposed/<path>` and surfaced in the **NAVIG Diff Panel** (sidebar tree view).
+
+**Supported annotation formats:**
+
+````
+```typescript
+// src/components/Button.tsx
+... code here ...
+```
+
+```python
+# scripts/deploy.py
+... code here ...
+```
+
+```typescript:src/utils/helper.ts
+... code here ...
+```
+````
+
+Open the diff panel (`Ctrl+Shift+P → NAVIG: Refresh Diff Panel`) to review, accept, or reject each proposed change.
+
+#### Dev Server Preview Command
+
+`Ctrl+Shift+P → NAVIG: Open Dev Server Preview`
+
+Opens your workspace dev server in VS Code's Simple Browser. Port detection order:
+1. `navig-bridge.previewPort` setting (if non-zero)
+2. Auto-detect from `package.json` `scripts.dev` or `scripts.start` (looks for `--port NNNN`)
+3. Default: `http://localhost:3000`
 
 ---
 
@@ -5241,16 +5315,19 @@ navig cred audit <id> --limit 20    # For specific credential
 navig cred providers
 ```
 
-### Profile Management
+### Credential Profile Management
 
-Profiles act as namespaces for organizing credentials by environment:
+Credential profiles act as namespaces for organizing credentials by environment.
+
+> **Note:** `navig profile` manages operating-mode profiles (node / builder / operator / architect).
+> Use `navig cred-profile` for credential namespace management.
 
 ```bash
-# List all profiles
-navig profile list
+# List all credential profiles
+navig cred-profile list
 
-# Switch active profile
-navig profile use work
+# Switch active credential profile
+navig cred-profile use work
 
 # Credentials resolve in order: active profile → default → any enabled
 ```
@@ -5482,6 +5559,97 @@ kb = KnowledgeBase(db_path, embedding_provider=embeddings)
 
 # Semantic search (finds similar concepts, not just keywords)
 results = kb.search("database connection issues", min_similarity=0.5)
+```
+
+---
+
+### 24.6 Knowledge Graph (`navig kg`)
+
+Store and recall structured facts as subject→predicate→object triples.
+Useful for remembering user preferences, project decisions, and routines.
+
+```bash
+# Remember a fact
+navig kg remember user prefers dark_mode
+navig kg remember user pays_bills_on "15th of month" --confidence 0.9
+
+# Recall all facts about a subject
+navig kg recall user
+
+# Filter by predicate
+navig kg recall user --predicate prefers
+
+# Full-text search across all facts
+navig kg search "payment"
+
+# Delete a fact (shows confirmation prompt)
+navig kg forget <fact-id>
+navig kg forget <fact-id> --force
+
+# Show database stats
+navig kg status
+```
+
+Facts are automatically injected into every AI turn via the knowledge-graph enrichment
+pipeline (see §24.8).
+
+---
+
+### 24.7 Project Code Index (`navig index`)
+
+BM25 full-text index of your project's source code and documentation.
+Enables fast code search and feeds search results into the AI context automatically
+when the Gateway daemon detects a project index (§24.8).
+
+```bash
+# Full scan — index the current project
+navig index scan
+
+# Incremental scan — only changed files (faster)
+navig index scan --incremental
+
+# Index a specific project root
+navig index scan /path/to/project
+
+# Search indexed code (BM25 ranked)
+navig index search "authentication middleware"
+navig index search "database connection" --top 5
+navig index search "login handler" --root /path/to/project
+
+# Show index statistics
+navig index stats
+
+# Drop the index (forces full rescan next time)
+navig index drop
+```
+
+The index is stored at `<project-root>/.navig/project_index.db` and is ignored by
+git (added to `.gitignore` automatically on first scan).
+
+---
+
+### 24.8 Automatic AI Context Injection
+
+Every AI turn — whether through `navig ai ask`, the Gateway REST API, Telegram, or any
+other channel — automatically injects the following memory sources into the system prompt:
+
+| Source | What is injected | CLI to manage |
+|--------|-----------------|---------------|
+| **Knowledge Base (KB)** | Top-5 keyword-matching entries from `knowledge.db` | `navig memory knowledge` |
+| **Knowledge Graph (KG)** | Top-8 matching fact triples + active routines | `navig kg` |
+| **Episodic Memory** | 3 most relevant past-session excerpts | `navig memory sessions/history` |
+| **Project Code Index** | Top-3 BM25 code/doc snippets (when `.navig/project_index.db` exists) | `navig index scan/search` |
+| **User Profile** | Profile context from `MemoryManager.get_user_context()` | auto-updated |
+
+All four sources run concurrently (KB + KG + episodic in a `ThreadPoolExecutor(3)` in `ai.py`;
+code index in `_build_agent_context` in `gateway/server.py`). Any source that fails
+degrades silently — it never blocks the AI turn.
+
+To build the project code index so it is available for injection:
+
+```bash
+cd /your/project
+navig index scan   # one-time or run regularly
 ```
 
 ---
@@ -7201,7 +7369,7 @@ Examples:
 - `navig topic action --flag`
 ```
 
-The help system also falls back to the `HELP_REGISTRY` in `navig/cli.py` if no markdown file exists.
+The help system also falls back to the `HELP_REGISTRY` in `navig/cli/__init__.py` if no markdown file exists.
 
 ---
 
@@ -7326,6 +7494,104 @@ See `formations/README.md` for the complete JSON schema reference.
 
 ---
 
+## 34. ⭐ Platform & OS Integration (NEW)
+
+### `navig paths` — Resolved Directory Layout
+
+Shows all NAVIG directories on the current machine with live ✅/❌ status.
+
+```bash
+navig paths            # rich table output
+navig paths --json     # machine-readable JSON
+```
+
+Output columns: Name · Path · Exists · Writable · Daemon WS
+
+---
+
+### `navig system` — OS Integration Modes
+
+Integrates NAVIG into the OS at three depth levels:
+
+```bash
+navig system init                  # first-run: detect best mode and apply
+navig system init --mode portable  # no OS writes (USB/external drive)
+navig system init --mode standard  # PATH + shell completion (default)
+navig system init --mode deep      # wallpaper + icons + theme + sounds + fonts
+
+navig system wallpaper <path>      # set desktop wallpaper (Win32 / gsettings)
+navig system icons <theme>         # change icon theme (Win shell / GTK)
+navig system theme <name>          # change window theme (.msstyles / GTK)
+navig system sounds <event> <wav>  # assign sound event (Win / aplay)
+```
+
+**Deep mode platform support:**
+
+| Feature | Windows | Linux |
+|---------|---------|-------|
+| Wallpaper | `SystemParametersInfoW` | `gsettings org.gnome.desktop.background` |
+| Icons | Registry/shell replacement | GTK icon theme via `gsettings` |
+| Theme | `.msstyles` in `system/themes/` | `gsettings org.gnome.desktop.interface` |
+| Sounds | `winsound.PlaySound` | `aplay` |
+| Fonts | Copy to `C:\Windows\Fonts\` | Copy to `~/.fonts/`, `fc-cache -fv` |
+
+---
+
+### `navig migrate` — Path Migration
+
+Migrates legacy `~/.navig` to the platform-native roaming dir and creates a backwards-compatible junction.
+
+```bash
+navig migrate status          # show current state: migrated / legacy / mixed
+navig migrate run             # migrate ~/.navig → AppData\Roaming\NAVIG (Windows)
+                              #                  → ~/.config/NAVIG (Linux/macOS)
+                              # creates compat symjunction so old tools keep working
+navig migrate rollback        # restore ~/.navig as primary
+```
+
+---
+
+### `navig mcp install` — VS Code MCP Wiring
+
+Registers the NAVIG daemon as an MCP server in VS Code:
+
+```bash
+navig mcp install             # write .vscode/mcp.json in current workspace
+navig mcp install --global    # write to VS Code user settings
+navig mcp install --url ws://127.0.0.1:7001/ws   # override WS URL
+navig mcp uninstall           # remove navig key from mcp.json
+navig mcp status              # show socket reachability + config state
+navig mcp serve               # start WS server in foreground (for dev)
+```
+
+---
+
+### `navig install` (v2) — Package Installer
+
+```bash
+navig install <package>          # install with SHA-256 cache + signature verify
+navig install <package> --update # force re-download even if cached
+navig install list               # list installed packages
+navig install freeze             # pin all package versions to lock file
+```
+
+---
+
+### Platform-Aware Config Paths
+
+```python
+from navig.config import ConfigManager
+cfg = ConfigManager()
+cfg.roaming_root   # AppData\Roaming\NAVIG (Win) | ~/.config/NAVIG (Linux/macOS)
+cfg.identity_dir   # .../NAVIG/identity
+cfg.store_dir      # .../NAVIG/store
+cfg.system_dir     # .../NAVIG/system
+cfg.logs_dir       # .../NAVIG/logs
+cfg.cache_dir      # platform cache dir (AppData\Local\NAVIG\Cache on Win)
+```
+
+---
+
 ## 35. Additional Documentation
 
 For specialized topics, see these detailed guides:
@@ -7341,7 +7607,168 @@ For specialized topics, see these detailed guides:
 | [AGENT_GOALS.md](AGENT_GOALS.md) | Goal planning and task decomposition |
 | [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) | Production deployment checklist |
 
-## 36. NAVIG Ecosystem Products
+## 36. Finance (`navig finance`)
+
+Personal and operational finance tracking using double-entry accounting via **beancount** (MIT).
+
+### Install
+
+```bash
+pip install "navig[finance]"
+```
+
+### Quick start
+
+```bash
+# Create a new journal (default: ~/finance/main.beancount)
+navig finance init
+
+# Or specify a custom path
+navig finance init --path ~/documents/money.beancount
+
+# Set a permanent custom path in NAVIG config
+navig config set finance.journal_path ~/documents/money.beancount
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `navig finance init` | Scaffold a new beancount journal with default accounts |
+| `navig finance add "<entry>"` | Append a raw beancount transaction |
+| `navig finance balance [account]` | Show current account balances |
+| `navig finance income [--year N]` | Income vs expenses summary for a year |
+| `navig finance check` | Validate the journal for errors |
+| `navig finance accounts [filter]` | List all declared accounts |
+| `navig finance import <file.csv>` | Import transactions from a CSV file |
+| `navig finance hledger -- <args>` | Pass-through to hledger (if installed separately) |
+
+### Adding a transaction
+
+```bash
+navig finance add '2024-03-01 * "Coffee" Expenses:Food  4.50 USD ; Assets:Checking'
+```
+
+Or edit the `.beancount` file directly — it is plain text.
+
+### Importing from a CSV bank export
+
+The CSV must have `Date`, `Description`, and `Amount` columns (any case):
+
+```bash
+navig finance import ~/downloads/statement-march.csv
+navig finance import ~/downloads/statement-march.csv --dry-run   # preview only
+```
+
+### Checking for errors
+
+```bash
+navig finance check           # 0 exit code = clean journal
+navig finance check --strict  # also exits 1 on warnings
+```
+
+### hledger pass-through
+
+hledger (GPL-3.0) is **not bundled**. If you install it separately, NAVIG will
+find it on PATH and forward commands:
+
+```bash
+navig finance hledger -- bal --cost
+navig finance hledger -- reg Expenses
+```
+
+### Configuration
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `finance.journal_path` | `~/finance/main.beancount` | Path to the primary journal |
+
+---
+
+## 37. Work (`navig work`)
+
+Work is NAVIG's lifecycle and stage tracker.  Use it to follow anything through
+stages: client leads, active projects, one-off tasks, proposals, initiatives,
+and more.
+
+> **Mnemonic**: wiki = *what* (knowledge), finance = *money*, work = *state*
+
+### Concepts
+
+| Term | Meaning |
+|------|---------|
+| **item** | A trackable thing with a title, kind, and current stage |
+| **kind** | What it is: `lead`, `client`, `project`, `task`, `proposal`, `initiative`, `other` |
+| **stage** | Where it is: `inbox → planned → active → blocked → review → done → archived` |
+| **slug** | Auto-generated URL-safe identifier derived from the title |
+| **wiki note** | An optional linked Markdown file created automatically in `~/.navig/wiki/hub/` |
+
+### Quick start
+
+```bash
+# Add items
+navig work add "Acme Corp intro call"  --kind lead
+navig work add "Redesign homepage"     --kind project --stage planned
+
+# See what's active
+navig work list --stage active
+
+# Move something forward
+navig work move redesign-homepage --to active
+
+# Inspect one item
+navig work show acme-corp-intro-call
+
+# Update fields
+navig work update acme-corp-intro-call --owner alice --tag q2 --tag priority
+
+# Archive when done
+navig work archive acme-corp-intro-call
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `navig work add <title>` | Create a new work item (wiki note created by default) |
+| `navig work list` | List items (excludes archived unless `--stage archived`) |
+| `navig work show <slug\|id>` | Full detail view including event history |
+| `navig work move <slug\|id> --to <stage>` | Move item to a new stage |
+| `navig work update <slug\|id>` | Update title, owner, tags, or external ref |
+| `navig work archive <slug\|id>` | Archive item (shortcut for `move --to archived`) |
+| `navig work stages` | Print valid stage names |
+| `navig work kinds` | Print valid kind names |
+
+### Options for `add`
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--kind` / `-k` | `task` | Item kind |
+| `--stage` / `-s` | `inbox` | Initial stage |
+| `--owner` / `-o` | — | Owner name |
+| `--tag` / `-t` | — | Tag (repeatable) |
+| `--no-wiki` | false | Skip creating the wiki note |
+| `--json` | false | JSON output |
+
+### Wiki integration
+
+Every `navig work add` call creates a Markdown note in `~/.navig/wiki/hub/<slug>.md`
+with YAML frontmatter (`title`, `kind`, `stage`, `work_slug`, `created`, `tags`).
+`navig work move` and `navig work archive` update the `stage:` field in that note
+automatically.
+
+Run `navig wiki init` first to enable the wiki directory tree.
+
+### Storage
+
+Work items are stored in `~/.navig/store/work.db` (SQLite, two tables):
+
+- **`work_items`** — one row per item
+- **`work_events`** — append-only audit log of every state change
+
+---
+
+## 38. NAVIG Ecosystem Products
 
 ### Landing Page (`packages/landing`)
 - **Stack**: Next.js 16, React 19, Tailwind v4, static export
@@ -7383,12 +7810,297 @@ Unified component library used by both NAVIG Deck (browser extension) and NAVIG 
 ### NAVIG Voice (`navig/voice/`)
 - **TTS Providers**: Edge TTS (free default), OpenAI, ElevenLabs, Google Cloud TTS, Deepgram Aura
 - **STT Providers**: OpenAI Whisper API (default), Deepgram Nova-2, local Whisper (offline)
+- **Wake Word**: `WakeWordDetector` in `navig/voice/wake_word.py` — openwakeword-based, lazy-loaded
+  - Built-in keyword: `"echo"` (ships in `navig/voice/assets/`)
+  - `WakeWordDetector(keyword="echo", on_wake=callback, threshold=0.5)`
+  - `detector.start_background()` → daemon thread; `await detector.start()` → async
+  - Tauri commands (navig-echo): `start_wake_word` / `stop_wake_word` → emits `"wake-word-detected"` event
+  - Install extras: `pip install openwakeword pyaudio`
 - **Audio Playback**: Cross-platform (Windows/macOS/Linux) with 14 built-in notification sounds from Chappy firmware
 - **Usage**: `from navig.voice import speak, transcribe, play_notification`
 - **See**: [voice-services.md](voice-services.md)
 
+### NAVIG Matrix Bridges (`navig bridge matrix`)
+
+| Command | Description |
+|---------|-------------|
+| `navig bridge matrix setup [name]` | Interactive wizard — configure + deploy one or all bridges |
+| `navig bridge matrix status` | Show running state of all bridges |
+| `navig bridge matrix deploy <name>` | Deploy bridge container to remote host |
+| `navig bridge matrix register <name>` | Register appservice with Conduit homeserver |
+| `navig bridge matrix login <name>` | Initiate login (QR / cookie / token depending on bridge) |
+| `navig bridge matrix bench <name>` | Latency benchmark + 256 MB / 50% CPU hard-limit check |
+| `navig bridge matrix vault-set <name>` | Store bridge credentials in encrypted vault |
+| `navig bridge matrix generate-config <name>` | Render config.yaml from vault-injected template |
+
+**14 GA bridges**: whatsapp · discord · telegram · messenger · instagram · linkedin · twitter · sms · email · nextcloud · line · wechat · tox · xmpp  
+**Resource limits**: 256 MB RAM / 50% CPU per bridge container (enforced in docker-compose + bench command)  
+**See**: [`docs/MATRIX_BRIDGE_SETUP.md`](MATRIX_BRIDGE_SETUP.md)
+
+---
+
+### NAVIG Task Completion — ATLE Primitive (`navig task complete`)
+
+> **ATLE** = Automated Task Lifecycle Event. Agents call this at the end of every
+> non-trivial work session to record what shipped, close the loop in the plan
+> docs, and fire the Inbox Router event so navig-bridge can react.
+
+#### CLI
+
+```bash
+navig task complete <task-title> <task-slug> <summary> <phase-name> [--dry-run] [--now-date YYYY-MM-DD]
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `task-title` | ✅ | Human-readable title (wrap in quotes if it contains spaces) |
+| `task-slug` | ✅ | `kebab-case` identifier — used as filename |
+| `summary` | ✅ | One-sentence description of what was done |
+| `phase-name` | ✅ | Active phase name (must match a `## …` heading in `CURRENT_PHASE.md`) |
+| `--dry-run` | | Validate all inputs + files, print what would happen, exit 0 |
+| `--now-date` | | Override timestamp (ISO date, default = today) |
+
+**Example:**
+```bash
+navig task complete "Fix daemon health" fix-daemon-health "Resolved /health 500 via middleware fix" "Phase 4"
+```
+
+#### What it does (11 steps)
+
+1. Resolves project root by walking up from `cwd` looking for `.navig/`
+2. Validates all required arguments are non-empty
+3. Checks for duplicate slug in `.navig/plans/CURRENT_PHASE.md` (idempotency)
+4. Acquires a `.navig/.complete-task.lock` directory lock (atomic, POSIX + NTFS)
+5. Reads `.navig/plans/CURRENT_PHASE.md` and locates `## <phaseName>` heading
+6. Appends `- [x] YYYY-MM-DD — <taskTitle>: <summary>` under the phase heading (atomic write)
+7. Appends the same line to `.navig/plans/DEV_PLAN.md` under `## Completed Tasks`
+8. Creates `.navig/plans/completed/<today>__<slug>.md` (standup-style artifact) — atomic write
+9. Archives a copy to `.navig/plans/archive/<today>__<slug>.md`
+10. Releases lock
+11. Emits exit 0; prints `ATLE:COMPLETE` to stdout
+
+#### Outputs
+
+| File | Purpose |
+|------|---------|
+| `.navig/plans/CURRENT_PHASE.md` | Phase checklist updated |
+| `.navig/plans/DEV_PLAN.md` | `## Completed Tasks` section updated |
+| `.navig/plans/completed/<date>__<slug>.md` | Standup artifact (live copy) |
+| `.navig/plans/archive/<date>__<slug>.md` | Permanent archive copy |
+
+#### Safety guarantees
+
+- All writes are **atomic** (temp file + rename — never partial writes)
+- **Idempotent** — duplicate slug is silently skipped on rerun
+- **Lock-protected** — concurrent agent calls serialize safely
+- `--dry-run` runs all validation but **writes nothing**
+- Lock is always released via `trap`/`finally`, even on crash
+
+#### Cross-platform scripts
+
+The CLI delegates to shell scripts in `.navig/scripts/`:
+
+| Platform | Script |
+|----------|--------|
+| macOS / Linux | `.navig/scripts/complete-task.sh` (bash, `set -euo pipefail`) |
+| Windows | `.navig/scripts/complete-task.ps1` (PowerShell 5.1+) |
+
+See `.navig/scripts/README.md` for direct invocation docs.
+
+#### VS Code / navig-bridge integration
+
+The Inbox Router in navig-bridge handles the `task.completed` event:
+
+```typescript
+// Programmatic dispatch
+await vscode.commands.executeCommand(
+    'navig-bridge.inboxRouterDispatchEvent',
+    'task.completed',
+    { taskTitle, taskSlug, summary, phaseName, cwd, source: 'forge' },
+);
+
+// Slash command in NAVIG chat
+/complete-task "My Task" my-task "Summary text" "Phase 4"
+```
+
+The handler resolves the correct script, spawns it, streams output to the
+`NAVIG Inbox Router` output channel, and shows a VS Code notification on
+completion or failure.
+
 ---
 
 **Remember:** NAVIG is the secure, unified way to interact with remote servers. Direct SSH/database connections bypass security, tunnel management, and error handling. Always use NAVIG commands.
+
+---
+
+## 39. Device Identity (`navig node`)
+
+Manage local device fingerprint and identity files.
+
+| Command | Description |
+|---------|-------------|
+| `navig node init` | Generate `DEVICE.md` under `<device_dir>/` (fingerprint, hostname, OS, hardware) |
+| `navig node show` | Display device info, key NAVIG paths, and fingerprint hash |
+| `navig node fp` | Print device fingerprint hash only (scripting-friendly) |
+| `navig node edit [device\|soul\|rules]` | Open `DEVICE.md`, `SOUL.device.md`, or `RULES.md` in `$EDITOR` |
+
+**Examples:**
+```bash
+navig node init        # First-time device registration
+navig node show        # Inspect paths and device summary
+navig node fp          # Get fingerprint for cross-device comparisons
+navig node edit soul   # Edit device-local SOUL personality file
+```
+
+---
+
+## 40. Identity & Persona Management (`navig origin`)
+
+Manage named origin identities used by the autonomous agent and Telegram bot.
+
+| Command | Description |
+|---------|-------------|
+| `navig origin init` | Scaffold default identity at `~/.navig/identity/` |
+| `navig origin show` | Display current active identity (default action) |
+| `navig origin use <name>` | Switch active identity |
+| `navig origin clear` | Remove active identity selection |
+| `navig origin set-path <path>` | Point NAVIG at a non-default identity directory |
+| `navig origin list` | List all registered identities |
+
+**Storage:** `~/.navig/identity/` and `~/.navig/registry/formations/`
+
+**Examples:**
+```bash
+navig origin list           # See all identities
+navig origin use deepwatch  # Activate "deepwatch" persona
+navig origin show           # Verify active identity
+```
+
+---
+
+## 41. Session Boot & Diary (`navig boot`)
+
+Bootstrap daily sessions and manage the device + session diary system.
+
+Session diaries are stored at `<session_dir>/YYYY-MM-DD.md`.
+Device context lives at `<device_dir>/DEVICE.md`.
+
+| Command | Description |
+|---------|-------------|
+| `navig boot init` | Create boot dirs, scaffold today's session diary, generate `DEVICE.md` if missing |
+| `navig boot show` | Print `DEVICE.md` summary and today's session file content |
+| `navig boot edit [device\|session\|boot]` | Open device, today's session, or boot config in `$EDITOR` |
+| `navig boot log` | List recent session diary files |
+
+**Examples:**
+```bash
+navig boot init            # Morning setup: creates today's YYYY-MM-DD.md
+navig boot show            # Quick device + session overview
+navig boot edit            # Edit today's session diary
+navig boot log             # Browse past sessions
+```
+
+---
+
+## 42. Contextual Namespaces (`navig space`)
+
+Manage *spaces* — contextual namespace bundles that group workspace settings, tools, and overlays for a specific project or role.
+
+| Command | Description |
+|---------|-------------|
+| `navig space list` | List all available spaces |
+| `navig space init <name>` | Create a new space |
+| `navig space use <name>` | Activate a space |
+| `navig space show [name]` | Show space details |
+| `navig space jump <name>` | Switch to space and `cd` to its root |
+| `navig space clear` | Deactivate the current space |
+| `navig space pack <name>` | Bundle space into a portable archive |
+| `navig space install <archive>` | Install a packed space |
+| `navig space validate [name]` | Validate space configuration |
+| `navig space apply [name]` | Apply space overlays to working directory |
+| `navig space unapply [name]` | Remove applied overlays |
+| `navig space diff [name]` | Show diff of pending space changes |
+| `navig space publish <name>` | Publish space to the registry |
+| `navig space workspace generate` | Generate workspace config from active space |
+
+**Examples:**
+```bash
+navig space list
+navig space init devops-prod    # Create "devops-prod" space
+navig space use devops-prod     # Activate it
+navig space show                # Inspect the active space
+navig space pack devops-prod    # Archive for sharing
+```
+
+---
+
+## 43. Agent Loadout Blueprints (`navig blueprint`)
+
+Blueprints are YAML loadout definitions that specify which skills, tools, prompts, and personas the agent should use for a specific role or project.
+
+YAML files live at `<store_dir>/blueprints/*.yaml`.
+
+| Command | Description |
+|---------|-------------|
+| `navig blueprint list` | List all available blueprints |
+| `navig blueprint show <name>` | Display a blueprint's contents |
+| `navig blueprint apply <name>` | Apply a blueprint to the active agent session |
+| `navig blueprint create <name>` | Create a new blueprint from a wizard |
+
+**Examples:**
+```bash
+navig blueprint list
+navig blueprint show ops-lead       # Inspect before applying
+navig blueprint apply ops-lead      # Switch agent to ops-lead loadout
+navig blueprint create my-loadout   # Scaffold a custom blueprint
+```
+
+---
+
+## 44. Loadout Snapshots (`navig deck`)
+
+Decks are saved snapshots of an applied Blueprint — a concrete timestamp of what was loaded, which can be restored later.
+
+| Command | Description |
+|---------|-------------|
+| `navig deck list` | List all saved deck snapshots |
+| `navig deck show <name>` | View snapshot details |
+| `navig deck apply <name>` | Restore agent state from a snapshot |
+| `navig deck save [name]` | Save current agent loadout as a new deck |
+| `navig deck remove <name>` | Delete a deck snapshot |
+
+**Examples:**
+```bash
+navig deck save sprint-42-loadout   # Save current state
+navig deck list                     # Browse saved decks
+navig deck apply sprint-42-loadout  # Restore it later
+navig deck remove old-deck          # Housekeeping
+```
+
+---
+
+## 45. Portable Vault (`navig portable`)
+
+Manage a *portable vault* — a self-contained, encrypted NAVIG config that can be carried on a USB drive or synced to an external path.
+
+| Command | Description |
+|---------|-------------|
+| `navig portable status` | Show whether a portable vault is active and its path |
+| `navig portable init <path>` | Initialise a new portable vault at `<path>` |
+| `navig portable export <dest>` | Export current config into a portable vault archive |
+| `navig portable enable <path>` | Mount a portable vault (overrides `~/.navig/`) |
+| `navig portable disable` | Unmount portable vault and return to local config |
+
+**Examples:**
+```bash
+navig portable status            # Is a portable vault active?
+navig portable init /media/usb   # Set up vault on USB drive
+navig portable enable /media/usb # Use it for this session
+navig portable export ./backup   # Archive current config to portable format
+navig portable disable           # Switch back to local ~/.navig/
+```
+
+**Security:** Portable vaults use the same AES-256 encryption as `navig backup export --encrypt`. Always keep the vault passphrase separate from the drive.
+
 
 
