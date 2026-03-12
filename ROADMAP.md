@@ -1,49 +1,64 @@
 # NAVIG Roadmap
 
-> ⚡ **The canonical strategy document is [`ROADMAP_MASTER.md`](ROADMAP_MASTER.md).**
-> It contains the complete 2026–2027+ execution plan with monthly deadlines, every checkbox wired to a Mission in `schemas/mission.schema.json`, and the full NavigOS Ecosphere gap register.
-> This file is a community-facing summary.
-
-This roadmap outlines current development priorities and planned features. Timelines are estimates and may change based on community feedback and maintainer availability.
-
-## Now (Current Focus)
-
-- ✅ **Security hardening** — credential protection, input validation, SSH MITM prevention
-- ✅ **Self-healing components** — automatic restart with exponential backoff
-- 🔄 **Learning system refinements** — improved error pattern detection and recommendations
-- 🔄 **Open-source transition** — documentation, governance, community structures
-- 🔄 **Telegram bot stability** — resilient reconnection, better command parsing
-
-## Next (3-6 Months)
-
-- **Packs system** — community-contributed runbooks, checklists, and workflow templates
-- **Enhanced AI context** — better project awareness, improved command suggestions
-- **Multi-user support** — shared configurations for small teams
-- **Backup improvements** — encrypted backups, remote storage backends (S3, B2)
-- **Plugin system** — extensibility framework for custom commands and integrations
-- **Health dashboard** — web-based UI for monitoring multiple servers
-- **Docker Compose management** — multi-container orchestration workflows
-
-## Future (6+ Months)
-
-- **Cross-server orchestration** — coordinate deployments across multiple hosts
-- **Workflow automation** — trigger actions based on health checks or schedules
-- **Integration marketplace** — community plugins and packs directory
-- **Desktop app** — native GUI for visual server management
-- **Metrics retention** — long-term storage and visualization of system metrics
-- **Incident response automation** — runbook execution during detected outages
-
-## Community Requests
-
-Prioritization is influenced by:
-- Community upvotes on GitHub Issues
-- Funding from sponsors and supporters
-- Alignment with NAVIG's core mission
-
-**Want to influence the roadmap?** Open an issue or start a discussion on GitHub.
+> The canonical strategy document is [`.navig/plans/ROADMAP_MASTER.md`](.navig/plans/ROADMAP_MASTER.md).
+> This file is the community-facing summary. Timelines are estimates.
 
 ---
 
-**Last Updated**: February 2026 — see [ROADMAP_MASTER.md](ROADMAP_MASTER.md) for full detail
+## Shipped in v2.4.x
 
+- ✅ Python 3.10+ requirement enforced and documented
+- ✅ `tomli` dependency pinned for Python < 3.11 compatibility
+- ✅ `pydantic>=2.0` promoted to core dependency
+- ✅ Encrypted vault with per-host credential injection at runtime
+- ✅ SSH MITM prevention and credential security hardening
+- ✅ Self-healing daemon with exponential backoff restart
+- ✅ Telegram gateway — resilient reconnection, improved command parsing
+- ✅ MCP server — tool and resource exposure for AI editors
+- ✅ `NAVIG_CONFIG_DIR` environment variable override for config root
+- ✅ LAN mesh peer discovery — Phase 1 (UDP multicast, local-only)
+
+---
+
+## Current focus
+
+- 🔄 **Mesh Phase 1 stabilisation** — peer registration, proxy routing, graceful degradation to local
+- 🔄 **Learning system** — improved error pattern detection, personalised recommendations
+- 🔄 **Matrix gateway** — bridge stability, better event handling
+- 🔄 **Plugin system** — extensibility framework for custom commands and integrations
+- 🔄 **Packs system** — community-contributed runbooks, checklists, workflow templates
+- 🔄 **Test coverage** — maintain ≥65% coverage as surface area grows
+
+---
+
+## Next (3–6 months)
+
+- **Multi-user support** — shared configurations for small teams
+- **Backup improvements** — encrypted backups, remote storage backends (S3, Backblaze B2)
+- **Health dashboard** — lightweight web UI for multi-server monitoring
+- **Enhanced AI context** — better project awareness, improved command suggestions
+- **Docker Compose management** — multi-container orchestration workflows
+- **Mesh Phase 2** — WAN-capable with secure mesh token auth
+
+---
+
+## Future (6+ months)
+
+- **Cross-server orchestration** — coordinate deployments across multiple hosts
+- **Workflow automation triggers** — event-driven actions from health checks or schedules
+- **Integration marketplace** — community plugins and packs directory
+- **Metrics retention** — long-term storage and visualisation of system metrics
+- **Incident response automation** — automated runbook execution during detected outages
+
+---
+
+## How to influence the roadmap
+
+- Open an issue or start a discussion on [GitHub](https://github.com/navig-run/core/discussions)
+- Sponsor development via [GitHub Sponsors](https://github.com/sponsors/navig-run) to accelerate specific areas
+- Contribute directly — see [CONTRIBUTING.md](CONTRIBUTING.md)
+
+---
+
+_Last updated: March 2026 · NAVIG v2.4.13_
 

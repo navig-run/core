@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python 3.10+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square" alt="License"></a>
   <a href="https://github.com/sponsors/navig-run"><img src="https://img.shields.io/badge/GitHub%20Sponsors-support-pink?style=flat-square" alt="GitHub Sponsors"></a>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform">
 </p>
 
 > [!WARNING]
@@ -48,6 +49,7 @@ NAVIG combines direct infrastructure control with an AI-assisted operator layer,
 | **Encrypted vault** | Store credentials without leaving secrets in plaintext config files |
 | **Workflows** | Define repeatable multi-step flows with preview and dry-run support |
 | **AI operator layer** | Use natural language in CLI or chat channels to assist with infra tasks |
+| **Mesh networking** | Peer-to-peer node discovery and command delegation over LAN |
 | **MCP integration** | Expose tools and resources to AI editors and compatible clients |
 
 ---
@@ -80,6 +82,12 @@ curl -fsSL https://raw.githubusercontent.com/navig-run/core/main/install.sh | ba
 
 ```powershell
 irm https://raw.githubusercontent.com/navig-run/core/main/install.ps1 | iex
+```
+
+### From PyPI
+
+```bash
+pip install navig
 ```
 
 ### Install options
@@ -132,29 +140,44 @@ navig run "uname -a"
 
 ---
 
-## Command overview
+## Command reference
 
 ```
 navig <resource> <action> [options]
 ```
 
-| Command group | What it does |
+### Infrastructure
+
+| Command | What it does |
 |---|---|
 | `navig host` | Add, switch, test, and inspect remote hosts |
-| `navig run` | Execute remote commands |
-| `navig db` | Database query, dump, restore, optimize |
+| `navig run` | Execute commands on remote or local hosts |
+| `navig file` | Upload, download, read, and edit remote files |
+| `navig db` | Query, dump, restore, and maintain databases |
 | `navig docker` | Container and compose operations |
-| `navig file` | Upload, download, read, and edit files |
-| `navig web` | Web server config and reload operations |
-| `navig backup` | Export/import config and backup operations |
+| `navig web` | Web server config, test, and reload |
 | `navig tunnel` | SSH tunnel management |
-| `navig flow` | Multi-step automation workflows |
-| `navig config` | Validate and manage configuration |
-| `navig vault` | Encrypted credential storage |
-| `navig copilot` | AI-assisted command and troubleshooting workflows |
-| `navig mcp` | MCP server for tool integration |
+| `navig backup` | Config and data backup / restore |
 
-Run `navig help` or `navig help <topic>` for details.
+### AI & Automation
+
+| Command | What it does |
+|---|---|
+| `navig copilot` | AI-assisted troubleshooting and command guidance |
+| `navig flow` | Multi-step automation workflows |
+| `navig mcp` | MCP server for tool and AI editor integration |
+| `navig gateway` | Start and manage chat gateway (Telegram, Matrix) |
+
+### Organisation
+
+| Command | What it does |
+|---|---|
+| `navig config` | View, validate, and manage configuration |
+| `navig vault` | Encrypted credential storage |
+| `navig workspace` | Multi-context operator workspace |
+| `navig mesh` | LAN peer-to-peer node discovery and delegation |
+
+Run `navig help` or `navig help <topic>` for usage details.
 
 ---
 
@@ -228,11 +251,14 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution workflow.
 
 ---
 
-## Community
+## Community & support
 
-- GitHub Issues — bugs and feature requests
-- GitHub Discussions — broader ideas
-- Telegram: [t.me/navig-run?direct](https://t.me/navig-run?direct)
+| Channel | |
+|---|---|
+| Bug reports & features | [GitHub Issues](https://github.com/navig-run/core/issues) |
+| Ideas & discussion | [GitHub Discussions](https://github.com/navig-run/core/discussions) |
+| Telegram | [t.me/navig-run](https://t.me/navig-run?direct) |
+| Security reports | [SECURITY.md](SECURITY.md) |
 
 ---
 
@@ -280,12 +306,6 @@ If it saves you time, prevents mistakes, or becomes part of your workflow, consi
 See [FUNDING.md](FUNDING.md) for full details.
 
 ---
-
-## Roadmap note
-
-NAVIG is the main project in this repository.
-
-Some ideas may later connect to a broader direction under Schema, but this repo is focused on shipping and stabilizing NAVIG core first.
 
 ---
 
