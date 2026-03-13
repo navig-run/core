@@ -7,6 +7,7 @@ Performance note: Heavy imports (TunnelManager, RemoteOperations, AIAssistant)
 are deferred until actually needed to improve CLI startup time.
 """
 
+import logging
 import os
 import sys
 import typer
@@ -72,6 +73,7 @@ _TunnelManager = None
 _RemoteOperations = None
 _AIAssistant = None
 _lazy_lock = _threading.Lock()  # shared lock for lazy class references (cheap)
+_log = logging.getLogger(__name__)
 
 
 def _get_tunnel_manager():
@@ -125,34 +127,34 @@ def show_subcommand_help(name: str, ctx: typer.Context = None):
     """Display compact help for a subcommand using the help registry."""
     from rich.console import Console
     from rich.table import Table
-    
+
     # Use legacy_windows=True to avoid Unicode encoding issues on some Windows consoles
     console = Console(legacy_windows=True)
-    
+
     if name not in HELP_REGISTRY:
         # Fallback to default Typer help if not in registry
         return False
-    
+
     info = HELP_REGISTRY[name]
-    
+
     console.print()
     console.print(f"[bold cyan]navig {name}[/bold cyan] [dim]-[/dim] [white]{info['desc']}[/white]")
     console.print("[dim]" + "=" * 75 + "[/dim]")
-    
+
     # Commands table
     cmd_table = Table(box=None, show_header=False, padding=(0, 2), collapse_padding=True)
     cmd_table.add_column("Command", style="cyan", min_width=12)
     cmd_table.add_column("Description", style="dim")
-    
+
     for cmd, desc in info["commands"].items():
         cmd_table.add_row(cmd, desc)
-    
+
     console.print(cmd_table)
-    
+
     console.print("[dim]" + "=" * 75 + "[/dim]")
     console.print(f"[yellow]navig {name} <cmd> --help[/yellow] [dim]for command details[/dim]")
     console.print()
-    
+
     return True
 
 
@@ -166,72 +168,16 @@ def make_subcommand_callback(name: str):
 
 
 def show_compact_help():
-    """Display custom compact help."""
-    from rich.console import Console
-    from rich.table import Table
-    from navig import __version__
-    
-    # Use legacy_windows=True to avoid Unicode encoding issues on Windows
-    console = Console(legacy_windows=True)
-    
-    # Header - clean and bold
-    console.print()
-    console.print("[bold cyan]NAVIG[/bold cyan] [dim]v{0}[/dim]  [bold white]Server Management CLI[/bold white]".format(__version__))
-    console.print("[dim]" + "=" * 75 + "[/dim]")
-    
-    # Commands table - clean 4-column layout with colored commands
-    cmd_table = Table(box=None, show_header=True, header_style="bold white", padding=(0, 1), collapse_padding=True)
-    cmd_table.add_column("INFRA", style="bold green", min_width=18)
-    cmd_table.add_column("SERVICES", style="bold green", min_width=18) 
-    cmd_table.add_column("DATA", style="bold green", min_width=18)
-    cmd_table.add_column("AUTOMATION", style="bold green", min_width=18)
-    
-    cmd_table.add_row(
-        "[cyan]host[/cyan]   [dim]servers[/dim]",
-        "[cyan]app[/cyan]    [dim]applications[/dim]",
-        "[cyan]db[/cyan]     [dim]databases[/dim]",
-        "[cyan]flow[/cyan]   [dim]workflows[/dim]"
-    )
-    cmd_table.add_row(
-        "[cyan]tunnel[/cyan] [dim]ssh tunnels[/dim]",
-        "[cyan]docker[/cyan] [dim]containers[/dim]",
-        "[cyan]file[/cyan]   [dim]transfers[/dim]",
-        "[cyan]ai[/cyan]     [dim]assistant[/dim]"
-    )
-    cmd_table.add_row(
-        "[cyan]local[/cyan]  [dim]local ops[/dim]",
-        "[cyan]web[/cyan]    [dim]webservers[/dim]",
-        "[cyan]log[/cyan]    [dim]logging[/dim]",
-        "[cyan]wiki[/cyan]   [dim]knowledge[/dim]"
-    )
-    cmd_table.add_row(
-        "[cyan]hosts[/cyan]  [dim]/etc/hosts[/dim]",
-        "[cyan]gateway[/cyan][dim]agent server[/dim]",
-        "[cyan]backup[/cyan] [dim]backups[/dim]",
-        "[cyan]config[/cyan] [dim]settings[/dim]"
-    )
-    cmd_table.add_row(
-        "",
-        "[cyan]heartbeat[/cyan][dim]health[/dim]",
-        "",
-        "[cyan]cron[/cyan]   [dim]scheduler[/dim]"
-    )
-    console.print(cmd_table)
-    
-    # Quick Start
-    console.print("[dim]" + "=" * 75 + "[/dim]")
-    console.print("[bold white]Quick Start[/bold white]  [yellow]navig init[/yellow] -> [yellow]host add[/yellow] -> [yellow]host use[/yellow] -> [yellow]run[/yellow] [dim]\"command\"[/dim]")
-    
-    # Options - compact single line
-    console.print("[bold white]Options[/bold white]      [cyan]-h[/cyan] [dim]host[/dim]  [cyan]-a[/cyan] [dim]app[/dim]  [cyan]-v[/cyan] [dim]verbose[/dim]  [cyan]-y[/cyan] [dim]yes[/dim]  [cyan]-q[/cyan] [dim]quiet[/dim]  [cyan]--json[/cyan]  [cyan]--dry-run[/cyan]")
-    
-    # More commands
-    console.print("[bold white]More[/bold white]         [dim]run init menu migrate server-template mcp software install plugin[/dim]")
-    
-    # Footer
-    console.print("[dim]" + "=" * 75 + "[/dim]")
-    console.print("[yellow]navig <cmd> --help[/yellow] [dim]for details[/dim]  |  [yellow]navig menu[/yellow] [dim]interactive mode[/dim]")
-    console.print()
+    """Display domain-grouped help using the registry renderer."""
+    try:
+        from navig.cli.help import render_root_help  # noqa: PLC0415
+        render_root_help()
+    except Exception:  # noqa: BLE001
+        # Absolute fallback: bare version line so we never crash on --help
+        from navig import __version__ as _v  # noqa: PLC0415
+        typer.echo(f"NAVIG v{_v}")
+        typer.echo("  navig <command> [options]")
+        typer.echo("  navig help <cmd>  for details")
     raise typer.Exit()
 
 
@@ -257,107 +203,35 @@ app = typer.Typer(
 # ============================================================================
 # HACKER CULTURE & TECHNOLOGY QUOTES
 # ============================================================================
+# Quote list lives in navig/cli/_quotes.py and is imported lazily inside
+# version_callback() and the 'version' command body.  This avoids parsing
+# the 90-line list on every CLI import where quotes are never shown.
 
-HACKER_QUOTES = [
-    # Richard Stallman
-    ("Free software is a matter of liberty, not price.", "Richard Stallman"),
-    ("With software there are only two possibilities: either the users control the program or the program controls the users.", "Richard Stallman"),
-    ("Sharing is good, and with digital technology, sharing is easy.", "Richard Stallman"),
+_HACKER_QUOTES: list | None = None  # populated on first use below
 
-    # Linus Torvalds
-    ("Talk is cheap. Show me the code.", "Linus Torvalds"),
-    ("Software is like sex: it's better when it's free.", "Linus Torvalds"),
-    ("Given enough eyeballs, all bugs are shallow.", "Linus Torvalds"),
-    ("Bad programmers worry about the code. Good programmers worry about data structures and their relationships.", "Linus Torvalds"),
-    ("In real open source, you have the right to control your own destiny.", "Linus Torvalds"),
 
-    # Eric S. Raymond
-    ("When you don't know what you're doing, do it neatly.", "Eric S. Raymond"),
-    ("Good programmers know what to write. Great ones know what to rewrite and reuse.", "Eric S. Raymond"),
-    ("To solve an interesting problem, start by finding a problem that is interesting to you.", "Eric S. Raymond"),
-    ("Hackers are not joiners. They never identify themselves by a uniform or conventional badges.", "Eric S. Raymond"),
+def _get_hacker_quotes() -> list:
+    global _HACKER_QUOTES
+    if _HACKER_QUOTES is None:
+        from navig.cli._quotes import HACKER_QUOTES as _q
+        _HACKER_QUOTES = _q
+    return _HACKER_QUOTES
 
-    # Grace Hopper
-    ("The most dangerous phrase in the language is: We've always done it this way.", "Grace Hopper"),
-    ("A ship in port is safe, but that's not what ships are built for.", "Grace Hopper"),
-    ("It is often easier to ask for forgiveness than to ask for permission.", "Grace Hopper"),
-    ("If it's a good idea, go ahead and do it. It's much easier to apologize than it is to get permission.", "Grace Hopper"),
-
-    # Alan Turing
-    ("We can only see a short distance ahead, but we can see plenty there that needs to be done.", "Alan Turing"),
-    ("Those who can imagine anything, can create the impossible.", "Alan Turing"),
-    ("Sometimes it is the people no one can imagine anything of who do the things no one can imagine.", "Alan Turing"),
-
-    # Dennis Ritchie
-    ("UNIX is basically a simple operating system, but you have to be a genius to understand the simplicity.", "Dennis Ritchie"),
-    ("C is quirky, flawed, and an enormous success.", "Dennis Ritchie"),
-
-    # Ken Thompson
-    ("One of my most productive days was throwing away 1000 lines of code.", "Ken Thompson"),
-    ("When in doubt, use brute force.", "Ken Thompson"),
-
-    # Brian Kernighan
-    ("Debugging is twice as hard as writing the code in the first place.", "Brian Kernighan"),
-    ("Controlling complexity is the essence of computer programming.", "Brian Kernighan"),
-    ("Don't comment bad code — rewrite it.", "Brian Kernighan"),
-
-    # Edsger Dijkstra
-    ("Simplicity is prerequisite for reliability.", "Edsger Dijkstra"),
-    ("Program testing can be used to show the presence of bugs, but never to show their absence.", "Edsger Dijkstra"),
-    ("If debugging is the process of removing bugs, then programming must be the process of putting them in.", "Edsger Dijkstra"),
-    ("The question of whether a computer can think is no more interesting than the question of whether a submarine can swim.", "Edsger Dijkstra"),
-
-    # Donald Knuth
-    ("Premature optimization is the root of all evil.", "Donald Knuth"),
-    ("Beware of bugs in the above code; I have only proved it correct, not tested it.", "Donald Knuth"),
-    ("The best programs are written so that computing machines can perform them quickly.", "Donald Knuth"),
-
-    # Steve Wozniak
-    ("Never trust a computer you can't throw out a window.", "Steve Wozniak"),
-    ("My goal wasn't to make a ton of money. It was to build good computers.", "Steve Wozniak"),
-
-    # Kevin Mitnick
-    ("Hackers are breaking the systems for profit. Before, it was about intellectual curiosity and pursuit of knowledge.", "Kevin Mitnick"),
-    ("Social engineering bypasses all technologies, including firewalls.", "Kevin Mitnick"),
-    ("The key to social engineering is influencing a person to do something that allows the hacker to gain access.", "Kevin Mitnick"),
-
-    # Bruce Schneier
-    ("Security is not a product, but a process.", "Bruce Schneier"),
-    ("Amateurs hack systems, professionals hack people.", "Bruce Schneier"),
-    ("If you think technology can solve your security problems, then you don't understand the problems and you don't understand the technology.", "Bruce Schneier"),
-
-    # John Carmack
-    ("If you want to set off and go develop some grand new thing, you don't need millions of dollars of capitalization.", "John Carmack"),
-    ("Focused, hard work is the real key to success.", "John Carmack"),
-
-    # Tim Berners-Lee
-    ("The Web does not just connect machines, it connects people.", "Tim Berners-Lee"),
-    ("Anyone who has lost track of time when using a computer knows the propensity to dream.", "Tim Berners-Lee"),
-
-    # Aaron Swartz
-    ("Information is power. But like all power, there are those who want to keep it for themselves.", "Aaron Swartz"),
-    ("Be curious. Read widely. Try new things.", "Aaron Swartz"),
-
-    # Cyberpunk/Hacker Culture
-    ("The street finds its own uses for things.", "William Gibson"),
-    ("The future is already here — it's just not evenly distributed.", "William Gibson"),
-    ("We're the ones that live in the cracks.", "Hackers Movie"),
-    ("Hack the planet!", "Hackers Movie"),
-    ("This is our world now... the world of the electron and the switch.", "The Mentor"),
-    ("We exist without skin color, without nationality, without religious bias.", "The Mentor"),
-
-    # Classic Computing
-    ("First, solve the problem. Then, write the code.", "John Johnson"),
-    ("Any fool can write code that a computer can understand. Good programmers write code that humans can understand.", "Martin Fowler"),
-    ("The only way to learn a new programming language is by writing programs in it.", "Dennis Ritchie"),
-    ("The computer was born to solve problems that did not exist before.", "Bill Gates"),
-    ("Hardware eventually fails. Software eventually works.", "Michael Hartung"),
-]
 
 
 # ============================================================================
 # GLOBAL FLAGS (applied via context)
 # ============================================================================
+
+def _schema_callback(value: bool):
+    """Output machine-readable command schema as JSON and exit."""
+    if value:
+        import json as _json
+        from navig.cli.registry import get_schema
+        _schema = get_schema()
+        typer.echo(_json.dumps(_schema, indent=2))
+        raise typer.Exit()
+
 
 def version_callback(value: bool):
     """Show version and exit."""
@@ -365,7 +239,7 @@ def version_callback(value: bool):
         ch.info(f"NAVIG v{__version__}")
         # Select and display a random quote
         import random
-        quote, author = random.choice(HACKER_QUOTES)
+        quote, author = random.choice(_get_hacker_quotes())
         ch.dim(f'💬 {quote} - {author}')
         raise typer.Exit()
 
@@ -373,6 +247,14 @@ def version_callback(value: bool):
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
+    schema: bool = typer.Option(
+        None,
+        "--schema",
+        callback=_schema_callback,
+        is_eager=True,
+        expose_value=False,
+        help="Output machine-readable command schema as JSON and exit.",
+    ),
     version: bool = typer.Option(
         None,
         "--version",
@@ -519,10 +401,10 @@ def main(
         from navig.operation_recorder import get_operation_recorder, OperationType
         import sys
         import time
-        
+
         recorder = get_operation_recorder()
         command_str = ' '.join(sys.argv[1:])  # Exclude 'python -m navig'
-        
+
         # Determine operation type from command
         op_type = OperationType.LOCAL_COMMAND
         if any(kw in command_str for kw in ['exec ', 'ssh ', 'tunnel ']):
@@ -539,13 +421,13 @@ def main(
             op_type = OperationType.HOST_SWITCH
         elif 'service' in command_str:
             op_type = OperationType.SERVICE_RESTART
-        
+
         # Skip recording for certain meta commands
         skip_record = any(kw in command_str for kw in [
             'history ', 'help', '--help', '-h', '--version', '-v',
             'insights ', 'dashboard', 'suggest', 'trigger test', 'trigger history',
         ])
-        
+
         if not skip_record and command_str.strip():
             record = recorder.start_operation(
                 command=f"navig {command_str}",
@@ -578,7 +460,7 @@ def main(
                 import yaml
                 _gc_file = _cm.global_config_dir / "config.yaml"
                 if _gc_file.exists():
-                    with open(_gc_file, 'r') as _f:
+                    with open(_gc_file, 'r', encoding='utf-8') as _f:
                         _debug_raw_cfg = yaml.safe_load(_f) or {}
                     debug_log_enabled = _debug_raw_cfg.get('debug_log', False)
         except Exception:
@@ -635,14 +517,14 @@ def main(
     if '_operation_record' in ctx.obj:
         import atexit
         import time
-        
+
         def record_operation_on_exit():
             def _do_record():
                 try:
                     record = ctx.obj.get('_operation_record')
                     recorder = ctx.obj.get('_operation_recorder')
                     start_time = ctx.obj.get('_operation_start', time.time())
-                    
+
                     if record and recorder:
                         duration_ms = (time.time() - start_time) * 1000
                         # Assume success unless we explicitly track failure
@@ -658,7 +540,7 @@ def main(
             import threading
             threading.Thread(target=_do_record, daemon=True).start()
 
-        
+
         atexit.register(record_operation_on_exit)
 
     # Register fact extraction handler — runs silently after every CLI invocation.
@@ -743,14 +625,14 @@ def main(
         # (navig "check disk space" should work like AI chat)
         import sys
         remaining_args = sys.argv[1:]
-        
+
         # Filter out global flags
-        global_flags = {'--host', '-h', '--app', '-p', '--verbose', '--quiet', '-q', 
-                       '--dry-run', '--yes', '-y', '--confirm', '-c', '--raw', 
+        global_flags = {'--host', '-h', '--app', '-p', '--verbose', '--quiet', '-q',
+                       '--dry-run', '--yes', '-y', '--confirm', '-c', '--raw',
                        '--json', '--debug-log', '--no-cache', '--version', '-v', '--help'}
-        non_flag_args = [arg for arg in remaining_args 
+        non_flag_args = [arg for arg in remaining_args
                         if arg not in global_flags and not arg.startswith('--')]
-        
+
         if non_flag_args and not non_flag_args[0].startswith('-'):
             # User passed something like: navig "check disk space"
             # Treat as natural language query → start AI chat
@@ -766,26 +648,26 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
     import sys
     from rich.console import Console
     console = Console()
-    
+
     try:
         # Add parent dir to path for navig_ai import
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from navig_ai import NavigAI, safe_print
-        
+
         ai = NavigAI()
-        
+
         if single_query and initial_query:
             # Single query mode - run and exit
             response = ai.chat(initial_query, [])
             console.print(response)
             return
-        
+
         # Interactive mode
         console.print("\n🤖 [bold cyan]NAVIG AI Chat[/bold cyan]")
         console.print("   Type your question or command. Type 'exit' or 'quit' to leave.\n")
-        
+
         conversation = []
-        
+
         # Process initial query if provided
         if initial_query:
             console.print(f"[dim]You:[/dim] {initial_query}")
@@ -793,35 +675,35 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
             console.print(f"\n{response}\n")
             conversation.append({"role": "user", "content": initial_query})
             conversation.append({"role": "assistant", "content": response})
-        
+
         # Interactive loop
         while True:
             try:
                 user_input = input("You: ").strip()
-                
+
                 if not user_input:
                     continue
-                    
+
                 if user_input.lower() in ('exit', 'quit', 'q', 'bye'):
                     console.print("\n👋 Goodbye!")
                     break
-                
+
                 response = ai.chat(user_input, conversation)
                 console.print(f"\n{response}\n")
-                
+
                 conversation.append({"role": "user", "content": user_input})
                 conversation.append({"role": "assistant", "content": response})
-                
+
                 # Keep conversation manageable
                 if len(conversation) > 20:
                     conversation = conversation[-20:]
-                    
+
             except KeyboardInterrupt:
                 console.print("\n👋 Goodbye!")
                 break
             except EOFError:
                 break
-                
+
     except ImportError as e:
         ch.error(f"AI module not available: {e}")
         ch.info("Run 'pip install -e .' to install dependencies")
@@ -839,14 +721,14 @@ def version_command(
 ):
     """
     Show NAVIG version and system info.
-    
+
     Examples:
         navig version
         navig version --json
     """
     import platform
     import sys
-    
+
     if json_output:
         import json
         info = {
@@ -862,8 +744,156 @@ def version_command(
         ch.dim(f"Python {sys.version.split()[0]} on {platform.system()} {platform.release()}")
         # Show a random quote
         import random
-        quote, author = random.choice(HACKER_QUOTES)
+        quote, author = random.choice(_get_hacker_quotes())
         ch.dim(f'💬 {quote} - {author}')
+
+
+@app.command("upgrade")
+def upgrade_command(
+    ctx: typer.Context,
+    check: bool = typer.Option(False, "--check", "-c", help="Only check, don't install"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force reinstall even if already up-to-date"),
+):
+    """
+    Upgrade NAVIG to the latest version.
+
+    For dev (git) installs: pulls latest commits and reinstalls.
+    For regular pip installs: upgrades via uv or pip.
+
+    Examples:
+        navig upgrade            # Upgrade to latest
+        navig upgrade --check    # Check if an upgrade is available
+    """
+    import subprocess
+    import shutil
+    import sys
+    from pathlib import Path
+    from rich.console import Console as _RC
+
+    _con = _RC()
+    src_dir = Path(__file__).resolve().parent.parent.parent  # navig/cli/__init__.py → navig-core/
+    is_git = (src_dir / ".git").exists()
+
+    # ------------------------------------------------------------------ check
+    if check:
+        if is_git:
+            try:
+                # Show current commit without any network call
+                log = subprocess.run(
+                    ["git", "-C", str(src_dir), "log", "--oneline", "-1"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                commit = log.stdout.strip()
+                _con.print(f"[green]✓[/green] NAVIG v{__version__}  [dim]{commit}[/dim]")
+                _con.print("[dim]Run [bold]navig upgrade[/bold] to pull latest commits.[/dim]")
+            except Exception as exc:
+                _con.print(f"[dim]Could not read git info: {exc}[/dim]")
+        else:
+            _con.print(f"[green]✓[/green] NAVIG v{__version__}")
+            _con.print("[dim]Run [bold]navig upgrade[/bold] to upgrade to the latest release.[/dim]")
+        return
+
+    # ---------------------------------------------------------------- upgrade
+    old_version = __version__
+    success = False
+
+    if is_git:
+        _con.print(f"[cyan]▶[/cyan] Pulling latest from git… [dim]({src_dir})[/dim]")
+        _git_env = {**__import__('os').environ, "GIT_TERMINAL_PROMPT": "0"}
+        try:
+            pull = subprocess.run(
+                [
+                    "git",
+                    "-C", str(src_dir),
+                    "-c", "http.connectTimeout=10",
+                    "-c", "http.lowSpeedLimit=0",
+                    "-c", "http.lowSpeedTime=20",
+                    "pull", "--ff-only",
+                ],
+                capture_output=True, text=True, timeout=30, env=_git_env,
+            )
+            if pull.returncode != 0:
+                err = pull.stderr.strip()
+                _con.print(f"[red]✗[/red] git pull failed:\n[dim]{err[:300]}[/dim]")
+                raise SystemExit(1)
+            if "Already up to date" in pull.stdout and not force:
+                _con.print(f"[green]✓[/green] Already up-to-date (v{old_version})")
+                return
+            _con.print(f"[dim]{pull.stdout.strip()}[/dim]")
+        except FileNotFoundError:
+            _con.print("[red]✗[/red] git not found — install git and retry")
+            raise SystemExit(1)
+        except subprocess.TimeoutExpired:
+            _con.print("[yellow]⚠[/yellow] git pull timed out (slow network) — reinstalling from local source")
+
+        # Re-install editable so any new entry points or deps are picked up
+        _con.print("[cyan]▶[/cyan] Reinstalling package…")
+        uv = shutil.which("uv")
+        if uv:
+            cmd = [uv, "pip", "install", "--python", sys.executable, "-e", str(src_dir), "-q"]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", "-e", str(src_dir), "-q"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            _con.print(f"[yellow]⚠[/yellow] Reinstall warning:\n[dim]{r.stderr.strip()[:300]}[/dim]")
+        success = True
+
+    else:
+        # PyPI install — use uv or pip
+        uv = shutil.which("uv")
+        if uv:
+            _con.print("[cyan]▶[/cyan] Upgrading via [bold]uv[/bold]…")
+            cmd = [uv, "pip", "install", "--python", sys.executable, "--upgrade", "navig"]
+            if force:
+                cmd.append("--reinstall")
+        else:
+            _con.print("[cyan]▶[/cyan] Upgrading via [bold]pip[/bold]…")
+            cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "navig",
+                   "--disable-pip-version-check", "-q"]
+            if force:
+                cmd.append("--force-reinstall")
+
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if r.returncode != 0:
+                _con.print(f"[red]✗[/red] Upgrade failed:\n[dim]{r.stderr.strip()[:400]}[/dim]")
+                raise SystemExit(1)
+            success = True
+        except subprocess.TimeoutExpired:
+            _con.print("[red]✗[/red] Upgrade timed out — check your network connection")
+            raise SystemExit(1)
+
+    if success:
+        # Re-import to get new version string
+        try:
+            import importlib
+            import navig as _nav
+            importlib.reload(_nav)
+            new_version = _nav.__version__
+        except Exception:
+            new_version = "?"
+        if new_version != old_version:
+            _con.print(f"[bold green]✓[/bold green] Upgraded [cyan]v{old_version}[/cyan] → [bold cyan]v{new_version}[/bold cyan]")
+        else:
+            _con.print(f"[bold green]✓[/bold green] NAVIG v{new_version} is ready")
+
+        # Sync the PATH entry point if it differs from the venv script
+        # (handles cases where an old navig.exe lives in ~/.local/bin)
+        try:
+            _venv_exe = Path(__file__).resolve().parent.parent.parent / ".venv" / "Scripts" / "navig.exe"
+            _path_navig = shutil.which("navig")
+            _path_exe = Path(_path_navig) if _path_navig else None
+            if _venv_exe.exists() and _path_exe and _path_exe.exists() and _venv_exe != _path_exe:
+                shutil.copy2(str(_venv_exe), str(_path_exe))
+                _con.print(f"[dim]↳ PATH entry point updated: {_path_exe}[/dim]")
+        except Exception:
+            pass  # Never fail the upgrade over a PATH sync issue
+
+
+@app.command("update", hidden=True)
+def update_alias(ctx: typer.Context):
+    """Alias for 'navig upgrade'."""
+    upgrade_command(ctx=ctx, check=False, force=False)
 
 
 @app.command("chat", hidden=True)
@@ -896,12 +926,23 @@ def help_command(
         "--raw",
         help="Output raw/plain text (no rich formatting).",
     ),
+    schema_out: bool = typer.Option(
+        False,
+        "--schema",
+        help="Output full command schema as JSON (for automation/tooling).",
+    ),
 ):
     """In-app help system for predictable, AI-friendly help output."""
     import json as jsonlib
     from pathlib import Path
 
     from rich.console import Console
+
+    # --schema: emit the canonical command registry and exit
+    if schema_out:
+        from navig.cli.registry import get_schema as _get_schema
+        typer.echo(jsonlib.dumps(_get_schema(), indent=2))
+        raise typer.Exit()
 
     console = Console()
     help_dir = Path(__file__).resolve().parent / "help"
@@ -1031,11 +1072,11 @@ def docs_command(
 ):
     """
     Search NAVIG documentation for relevant information.
-    
+
     Searches through markdown files in the docs/ directory to find
     content relevant to your query. Useful for finding how to use
     specific features or troubleshooting issues.
-    
+
     Examples:
         navig docs                      # List all documentation topics
         navig docs "ssh tunnel"         # Search for SSH tunnel info
@@ -1045,14 +1086,14 @@ def docs_command(
     import json as jsonlib
     from pathlib import Path
     from rich.console import Console
-    
+
     # Force UTF-8 encoding for console to handle emoji on Windows
     console = Console(force_terminal=True)
-    
+
     # Find docs directory (project root or installed package)
     project_docs = Path(__file__).resolve().parent.parent / "docs"
     pkg_docs = Path(__file__).resolve().parent / "docs"
-    
+
     if project_docs.exists():
         docs_dir = project_docs
     elif pkg_docs.exists():
@@ -1063,10 +1104,10 @@ def docs_command(
             "Make sure NAVIG is installed correctly with docs/ available."
         )
         raise typer.Exit(1)
-    
+
     want_json = bool(json_output or ctx.obj.get("json"))
     want_plain = plain or ctx.obj.get("raw")
-    
+
     # List all docs if no query
     if not query:
         md_files = sorted(docs_dir.glob("**/*.md"))
@@ -1088,7 +1129,7 @@ def docs_command(
                 })
             except Exception:
                 topics.append({"file": str(rel_path), "title": f.stem})
-        
+
         if want_json:
             console.print(jsonlib.dumps({"topics": topics}, indent=2))
         else:
@@ -1106,13 +1147,13 @@ def docs_command(
                 console.print(f"  [cyan]*[/cyan] [yellow]{item['file']}[/yellow]: {title.strip()}")
             console.print("\n[dim]Use 'navig docs <query>' to search documentation.[/dim]")
         raise typer.Exit()
-    
+
     # Search docs
     try:
         from navig.tools.web import search_docs
-        
+
         results = search_docs(query=query, docs_path=docs_dir, max_results=limit)
-        
+
         if want_json:
             console.print(jsonlib.dumps({
                 "query": query,
@@ -1139,7 +1180,7 @@ def docs_command(
                         excerpt = r['excerpt'][:300] + "..." if len(r.get('excerpt', '')) > 300 else r.get('excerpt', '')
                         console.print(f"   {excerpt}")
                     console.print()
-                    
+
     except ImportError as e:
         ch.error(f"Search tools not available: {e}")
         raise typer.Exit(1)
@@ -1180,10 +1221,10 @@ def fetch_command(
 ):
     """
     Fetch and extract content from a URL.
-    
+
     Downloads a web page and extracts the main content, converting
     HTML to clean markdown or plain text.
-    
+
     Examples:
         navig fetch https://example.com
         navig fetch https://news.ycombinator.com --mode text
@@ -1193,23 +1234,23 @@ def fetch_command(
     import json as jsonlib
     from rich.console import Console
     from rich.markdown import Markdown
-    
+
     console = Console()
     want_json = bool(json_output or ctx.obj.get("json"))
     want_plain = plain or ctx.obj.get("raw")
-    
+
     try:
         from navig.tools.web import web_fetch
-        
+
         console.print(f"[dim]Fetching {url}...[/dim]") if not want_json else None
-        
+
         result = web_fetch(
             url=url,
             extract_mode=mode,
             max_chars=max_chars,
             timeout_seconds=timeout,
         )
-        
+
         if want_json:
             console.print(jsonlib.dumps({
                 "success": result.success,
@@ -1235,7 +1276,7 @@ def fetch_command(
         else:
             ch.error(f"Failed to fetch URL: {result.error}")
             raise typer.Exit(1)
-            
+
     except ImportError as e:
         ch.error(f"Web tools not available: {e}")
         raise typer.Exit(1)
@@ -1271,36 +1312,36 @@ def search_command(
 ):
     """
     Search the web for information.
-    
+
     Uses Brave Search API (requires API key) or DuckDuckGo as fallback.
-    
+
     Examples:
         navig search "Python best practices"
         navig search "Docker tutorial" --limit 5
         navig search "kubernetes deployment" --json
         navig search "nginx configuration" --provider duckduckgo
-        
+
     Setup Brave Search:
         1. Get API key from https://brave.com/search/api/
         2. Set in config: navig config set web.search.api_key=YOUR_KEY
     """
     import json as jsonlib
     from rich.console import Console
-    
+
     console = Console()
     want_json = bool(json_output or ctx.obj.get("json"))
     want_plain = plain or ctx.obj.get("raw")
-    
+
     try:
         from navig.tools.web import web_search
-        
+
         console.print(f"[dim]Searching for '{query}'...[/dim]") if not want_json else None
-        
+
         result = web_search(
             query=query,
             count=limit,
         )
-        
+
         if want_json:
             console.print(jsonlib.dumps({
                 "success": result.success,
@@ -1339,7 +1380,7 @@ def search_command(
             console.print("[dim]  1. Get key from https://brave.com/search/api/[/dim]")
             console.print("[dim]  2. navig config set web.search.api_key=YOUR_KEY[/dim]")
             raise typer.Exit(1)
-            
+
     except ImportError as e:
         ch.error(f"Web tools not available: {e}")
         raise typer.Exit(1)
@@ -1367,17 +1408,23 @@ def onboard_command(
         "-n",
         help="Skip prompts and use defaults (for automation)",
     ),
+    skip: bool = typer.Option(
+        False,
+        "--skip",
+        "-s",
+        help="Show banner then exit immediately (no setup)",
+    ),
 ):
     """
     Interactive setup wizard for NAVIG (inspired by agentic best practices).
-    
+
     Creates configuration, workspace templates, and sets up AI providers.
-    
+
     Flows:
       - auto: Choose between quickstart and manual
       - quickstart: Minimal prompts, sensible defaults
       - manual: Full configuration with all options
-    
+
     Examples:
         navig onboard                    # Interactive mode (choose flow)
         navig onboard --flow quickstart  # Quick setup
@@ -1385,78 +1432,21 @@ def onboard_command(
         navig onboard -n                 # Non-interactive with defaults
     """
     from navig.commands.onboard import run_onboard
-    run_onboard(flow=flow, non_interactive=non_interactive)
+    run_onboard(flow=flow, non_interactive=non_interactive, skip=skip)
 
 
-@app.command("workspace")
-def workspace_command(
+@app.command("onboarding", hidden=True)
+def onboarding_alias(
     ctx: typer.Context,
-    status: bool = typer.Option(False, "--status", "-s", help="Show workspace status"),
-    init: bool = typer.Option(False, "--init", "-i", help="Initialize workspace with templates"),
-    path: Optional[str] = typer.Option(None, "--path", "-p", help="Custom workspace path"),
+    flow: str = typer.Option("auto", "--flow", "-f"),
+    non_interactive: bool = typer.Option(False, "--non-interactive", "-n"),
 ):
-    """
-    Manage NAVIG workspace (agent templates and context files).
-    
-    The workspace contains markdown files that define the agent's
-    personality, capabilities, and user preferences.
-    
-    Examples:
-        navig workspace --status    # Show workspace status
-        navig workspace --init      # Initialize with templates
-        navig workspace --path ~/my-workspace --init
-    """
-    from rich.console import Console
-    from pathlib import Path as P
-    console = Console()
-    
-    from navig.workspace import WorkspaceManager, DEFAULT_WORKSPACE_DIR
-    from navig.workspace_ownership import detect_project_workspace_duplicates, summarize_duplicates
-    
-    workspace_path = P(path) if path else None
-    wm = WorkspaceManager(workspace_path=workspace_path)
-    
-    if init:
-        from navig.commands.onboard import create_workspace_templates
-        target_path = workspace_path or DEFAULT_WORKSPACE_DIR
-        console.print(f"[bold]Initializing workspace at:[/bold] {target_path}")
-        create_workspace_templates(target_path, console)
-        console.print("[green]✓ Workspace initialized[/green]")
-        return
-    
-    # Default: show status
-    console.print(f"[bold]Workspace:[/bold] {wm.workspace_path}")
-    if getattr(wm, "legacy_workspace_path", None):
-        console.print(
-            f"[yellow]Legacy project workspace detected:[/yellow] {wm.legacy_workspace_path}"
-        )
-        console.print(
-            "[dim]Personal/state files are sourced from user workspace first.[/dim]"
-        )
-    console.print(f"[bold]Initialized:[/bold] {'Yes ✓' if wm.is_initialized() else 'No ✗'}")
-    console.print(f"[bold]Bootstrap pending:[/bold] {'Yes' if wm.has_bootstrap_pending() else 'No'}")
-
-    duplicates = detect_project_workspace_duplicates(project_root=P.cwd())
-    if duplicates:
-        summary = summarize_duplicates(duplicates)
-        console.print(
-            "[yellow]Project-level personal workspace duplicates found.[/yellow] "
-            f"conflicts={summary.get('duplicate_conflict', 0)}, "
-            f"identical={summary.get('duplicate_identical', 0)}, "
-            f"project_only={summary.get('project_only_legacy', 0)}"
-        )
-    
-    if wm.is_initialized():
-        identity = wm.get_agent_identity()
-        console.print(f"\n[bold]Agent:[/bold] {identity['emoji']} {identity['name']}")
-        
-        console.print("\n[bold]Bootstrap files:[/bold]")
-        for f in wm.BOOTSTRAP_FILES:
-            exists = (wm.workspace_path / f).exists()
-            status_icon = "[green]✓[/green]" if exists else "[red]✗[/red]"
-            console.print(f"  {status_icon} {f}")
-    else:
-        console.print("\n[yellow]Run 'navig workspace --init' to create templates[/yellow]")
+    """Alias for 'navig onboard' — use that instead."""
+    ctx.obj = getattr(ctx, "obj", None)
+    from rich.console import Console as _C
+    _C().print("[yellow]Tip:[/yellow] use [bold]navig onboard[/bold] (this alias works too)")
+    from navig.commands.onboard import run_onboard
+    run_onboard(flow=flow, non_interactive=non_interactive)
 
 
 @app.command("init")
@@ -1475,14 +1465,14 @@ def init_command(
 ):
     """
     Interactive setup wizard for new NAVIG installations.
-    
+
     Guides you through:
       - AI provider configuration (OpenRouter, OpenAI, Anthropic, Ollama)
       - SSH key setup
       - Telegram bot configuration
       - Initial host setup
       - Optional daemon installation
-    
+
     Examples:
         navig init                    # First-time setup
         navig init --reconfigure      # Re-run for existing installation
@@ -1491,10 +1481,15 @@ def init_command(
     try:
         from navig.cli.wizard import SetupWizard
         from navig.workspace_ownership import detect_project_workspace_duplicates, summarize_duplicates
+        from navig.commands.init import _maybe_send_first_run_ping
         wizard = SetupWizard(reconfigure=reconfigure, install_daemon=install_daemon)
         success = wizard.run()
         if not success:
             raise typer.Exit(1)
+
+        # Opt-in first-run telemetry ping (fire-and-forget, no secrets, no PII)
+        if not reconfigure:
+            _maybe_send_first_run_ping()
 
         duplicates = detect_project_workspace_duplicates(project_root=Path.cwd())
         if duplicates:
@@ -1514,17 +1509,8 @@ def init_command(
         raise typer.Exit(1)
 
 
-# ============================================================================
-# TELEGRAM BOT MANAGEMENT  (registered by _register_external_commands)
-# ============================================================================
-
-# ============================================================================
-# MATRIX MESSAGING  (registered by _register_external_commands)
-# ============================================================================
-
-# ============================================================================
-# STORE MANAGEMENT  (registered by _register_external_commands)
-# ============================================================================
+# TELEGRAM BOT MANAGEMENT, MATRIX MESSAGING, STORE MANAGEMENT
+# All registered lazily via _EXTERNAL_CMD_MAP / _register_external_commands()
 
 
 # ============================================================================
@@ -1687,10 +1673,10 @@ def context_show(
 ):
     """
     Show current context resolution.
-    
+
     Displays which host/app is active and where the context is resolved from
     (environment variable, project config, user cache, or default).
-    
+
     Examples:
         navig context show
         navig context show --json
@@ -1711,10 +1697,10 @@ def context_set(
 ):
     """
     Set project-local context in .navig/config.yaml.
-    
+
     This creates a project-specific context that takes precedence over
     the global user context (set with 'navig host use').
-    
+
     Examples:
         navig context set --host production
         navig context set --host staging --app myapp
@@ -1728,10 +1714,10 @@ def context_set(
 def context_clear(ctx: typer.Context):
     """
     Clear project-local context.
-    
+
     Removes active_host and active_app from .navig/config.yaml.
     After clearing, context will resolve from global user settings.
-    
+
     Examples:
         navig context clear
     """
@@ -1743,11 +1729,11 @@ def context_clear(ctx: typer.Context):
 def context_init(ctx: typer.Context):
     """
     Initialize .navig directory in current project.
-    
+
     Creates .navig/config.yaml with the current active host.
     If a legacy .navig file exists, it will be migrated.
     Also adds .navig/ to .gitignore if in a git repository.
-    
+
     Examples:
         navig context init
     """
@@ -1786,7 +1772,7 @@ def index_scan(
     import time as _time
     from pathlib import Path
     from navig.memory.project_indexer import ProjectIndexer
-    from navig.utils.output import console
+    from rich.console import Console as _Con; console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
     if not project_root.is_dir():
@@ -1799,7 +1785,7 @@ def index_scan(
             stats = indexer.update_incremental()
         else:
             console.print(f"[dim]Full scan of[/] [bold]{project_root}[/]")
-            stats = indexer.full_scan()
+            stats = indexer.scan()
         console.print(f"[green]✓[/] Indexed: {stats}")
 
 
@@ -1821,7 +1807,7 @@ def index_search(
     """
     from pathlib import Path
     from navig.memory.project_indexer import ProjectIndexer
-    from navig.utils.output import console
+    from rich.console import Console as _Con; console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
     with ProjectIndexer(project_root) as indexer:
@@ -1861,11 +1847,11 @@ def index_stats(
     import json
     from pathlib import Path
     from navig.memory.project_indexer import ProjectIndexer
-    from navig.utils.output import console
+    from rich.console import Console as _Con; console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
     with ProjectIndexer(project_root) as indexer:
-        stats = indexer.get_stats()
+        stats = indexer.stats()
         if json_out:
             console.print(json.dumps(stats, indent=2))
         else:
@@ -1889,7 +1875,7 @@ def index_drop(
     """
     from pathlib import Path
     from navig.memory.project_indexer import ProjectIndexer
-    from navig.utils.output import console
+    from rich.console import Console as _Con; console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
 
@@ -1940,7 +1926,7 @@ def history_list(
 ):
     """
     List command history with filtering.
-    
+
     Examples:
         navig history list
         navig history list --limit 50
@@ -1971,7 +1957,7 @@ def history_show(
 ):
     """
     Show detailed information about an operation.
-    
+
     Examples:
         navig history show 1              # Show last operation
         navig history show op-20260208... # Show by ID
@@ -1993,7 +1979,7 @@ def history_replay(
 ):
     """
     Replay a previous operation.
-    
+
     Examples:
         navig history replay 1                    # Replay last command
         navig history replay 1 --dry-run          # Preview only
@@ -2011,10 +1997,10 @@ def history_undo(
 ):
     """
     Undo a reversible operation.
-    
+
     Only works for operations that were marked as reversible
     and have undo data stored.
-    
+
     Examples:
         navig history undo 1
     """
@@ -2031,7 +2017,7 @@ def history_export(
 ):
     """
     Export operation history to file.
-    
+
     Examples:
         navig history export audit.json
         navig history export audit.csv --format csv
@@ -2048,7 +2034,7 @@ def history_clear(
 ):
     """
     Clear all operation history.
-    
+
     Examples:
         navig history clear
         navig history clear --yes
@@ -2065,7 +2051,7 @@ def history_stats_cmd(
 ):
     """
     Show history statistics.
-    
+
     Examples:
         navig history stats
         navig history stats --json
@@ -2590,7 +2576,8 @@ system_app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
-app.add_typer(system_app, name="system", hidden=True)  # Deprecated
+# Registration removed — navig.commands.system_cmd is the canonical source
+# (registered below via `from navig.commands.system_cmd import system_app`)
 
 
 @system_app.callback()
@@ -2758,7 +2745,7 @@ def run_command(
     \b
     ⚠️  PowerShell Users: For commands with (), {}, $, or other special chars,
     use --stdin or --file to avoid quoting issues:
-      
+
       echo 'complex command' | navig run --b64 --stdin
       navig run --b64 --file script.txt
       navig run -i     # Opens editor
@@ -2862,18 +2849,18 @@ def dashboard_command(
 ):
     """
     Real-time operations dashboard with host status, Docker, and history.
-    
+
     The dashboard shows:
     - Host connectivity status with latency
     - Docker container overview
     - Recent operations from history
     - System resource overview
-    
+
     Examples:
         navig dashboard           # Full live dashboard
         navig dashboard --no-live # Single snapshot
         navig dashboard -r 10     # Refresh every 10 seconds
-    
+
     Press Q to quit, R to force refresh.
     """
     from navig.commands.dashboard import run_dashboard, run_dashboard_simple
@@ -2896,16 +2883,16 @@ def suggest_command(
 ):
     """
     Intelligent command suggestions based on history and context.
-    
+
     Analyzes your command history, current project context, and time patterns
     to suggest relevant commands.
-    
+
     Examples:
         navig suggest                    # Show suggestions
         navig suggest --context docker   # Docker-related suggestions
         navig suggest --run 1            # Run first suggestion
         navig suggest --run 2 --dry-run  # Preview second suggestion
-    
+
     Suggestion sources:
         H = History (frequently used)
         S = Sequence (what usually follows)
@@ -2992,15 +2979,15 @@ def trigger_add(
 ):
     """
     Create a new trigger.
-    
+
     Interactive mode (no args):
         navig trigger add
-    
+
     Quick mode:
         navig trigger add "Disk Alert" --action "notify:telegram" --type threshold --host prod --condition "disk gte 80"
         navig trigger add "Daily Backup" --action "workflow:backup" --type schedule --schedule "0 2 * * *"
         navig trigger add "Health Check" --action "host test" --type health
-    
+
     Action formats:
         - navig command: "host list", "db dump", etc.
         - workflow: "workflow:deploy", "workflow:backup"
@@ -3008,7 +2995,7 @@ def trigger_add(
         - webhook: "webhook:https://example.com/hook"
     """
     from navig.commands.triggers import add_trigger_interactive, add_trigger_quick
-    
+
     if name is None:
         # Interactive mode
         add_trigger_interactive()
@@ -3065,7 +3052,7 @@ def trigger_test(
 ):
     """
     Test a trigger (dry run).
-    
+
     Shows what actions would be executed without actually running them.
     """
     from navig.commands.triggers import test_trigger
@@ -3079,7 +3066,7 @@ def trigger_fire(
 ):
     """
     Manually fire a trigger.
-    
+
     Executes all actions associated with the trigger immediately,
     regardless of conditions or cooldown.
     """
@@ -3165,11 +3152,11 @@ def insights_hosts(
 ):
     """
     Show host health scores and trends.
-    
+
     Calculates a health score (0-100) for each host based on:
     - Success rate (60% weight)
     - Average latency (40% weight)
-    
+
     Also shows if host performance is improving, stable, or declining.
     """
     from navig.commands.insights import show_host_health
@@ -3198,7 +3185,7 @@ def insights_time(
 ):
     """
     Show time-based usage patterns.
-    
+
     Displays a breakdown of operations by hour, showing:
     - Activity levels throughout the day
     - Success rates per time period
@@ -3217,7 +3204,7 @@ def insights_anomalies(
 ):
     """
     Detect unusual patterns and potential issues.
-    
+
     Analyzes:
     - Error rate spikes
     - Unusual command frequencies
@@ -3249,14 +3236,14 @@ def insights_report(
 ):
     """
     Generate a full analytics report.
-    
+
     Includes:
     - Overall statistics
     - Host health scores
     - Top commands
     - Detected anomalies
     - Personalized recommendations
-    
+
     Can be exported to JSON for further analysis.
     """
     from navig.commands.insights import generate_report
@@ -3319,7 +3306,7 @@ def pack_install(
 ):
     """
     Install a pack.
-    
+
     Sources:
     - Built-in pack name (e.g., "starter/deployment-checklist")
     - Local file path (e.g., "./my-pack.yaml")
@@ -3349,14 +3336,14 @@ def pack_run(
 ):
     """
     Run a pack (execute its steps).
-    
+
     Examples:
         navig pack run deployment-checklist
         navig pack run backup-runbook --var host=production
         navig pack run my-workflow --dry-run
     """
     from navig.commands.packs import run_pack
-    
+
     # Parse variables
     variables = {}
     if var:
@@ -3364,7 +3351,7 @@ def pack_run(
             if '=' in v:
                 key, value = v.split('=', 1)
                 variables[key] = value
-    
+
     run_pack(name, variables=variables, dry_run=dry_run, yes=yes)
 
 
@@ -3390,6 +3377,265 @@ def pack_search(
     """Search for packs by name, description, or tags."""
     from navig.commands.packs import search_packs
     search_packs(query, plain=plain, json_out=json_out)
+
+
+# ============================================================================
+# INSTALL — Community asset installer (brain/<type>/)
+# ============================================================================
+
+install_app = typer.Typer(
+    help="Install community assets (skills, playbooks, workflows, …) from GitHub.",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+app.add_typer(install_app, name="install")
+
+
+@install_app.callback()
+def install_callback(ctx: typer.Context):
+    """Install community assets from GitHub into store/."""
+    if ctx.invoked_subcommand is None:
+        from navig.commands.install import list_assets
+        list_assets()
+        raise typer.Exit()
+
+
+# ORIGIN, USER, NODE, BOOT, SPACE, BLUEPRINT, DECK, PORTABLE, MIGRATE, SYSTEM
+# are now registered lazily via _EXTERNAL_CMD_MAP (see bottom of this file).
+# This removes ~10 eager imports that fired on every CLI invocation.
+
+
+@install_app.command("add")
+def install_add(
+    ctx: typer.Context,
+    spec: str = typer.Argument(..., help="type:owner/repo[@ref]  e.g. skill:myuser/my-skill"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite if already installed."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+):
+    """Install an asset from GitHub.
+
+    SPEC format: <type>:<owner>/<repo>[@ref]
+
+    Types: skill, playbook, workflow, formation, stack, plugin, tool, prompt, webflow,
+    blueprint, deck
+
+    Examples:
+
+      navig install add skill:myuser/my-skill
+
+      navig install add playbook:myorg/ops-pack@v1.2.0 --force
+    """
+    from navig.commands.install import install_asset
+    try:
+        install_asset(spec, force=force, dry_run=dry_run)
+    except (ValueError, SystemExit) as exc:
+        raise typer.Exit(1) from exc
+
+
+@install_app.command("list")
+def install_list(
+    ctx: typer.Context,
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting."),
+):
+    """List installed community assets."""
+    from navig.commands.install import list_assets
+    list_assets(plain=plain)
+
+
+@install_app.command("remove")
+def install_remove(
+    ctx: typer.Context,
+    spec: str = typer.Argument(..., help="type:owner/repo  or  type/name"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation."),
+):
+    """Remove an installed community asset."""
+    from navig.commands.install import remove_asset
+    try:
+        remove_asset(spec, force=force)
+    except (ValueError, SystemExit) as exc:
+        raise typer.Exit(1) from exc
+
+
+@install_app.command("update")
+def install_update(
+    ctx: typer.Context,
+    spec: str = typer.Argument(None, help="Specific asset to update (omit to update all)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without changes."),
+):
+    """Update one or all installed assets to latest."""
+    from navig.commands.install import update_assets
+    try:
+        update_assets(spec, dry_run=dry_run)
+    except (ValueError, SystemExit) as exc:
+        raise typer.Exit(1) from exc
+
+
+@install_app.command("upgrade")
+def install_upgrade(
+    ctx: typer.Context,
+    spec: str = typer.Argument(None, help="Specific asset (omit to upgrade all)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without changes."),
+):
+    """Upgrade all installed assets (alias for update)."""
+    from navig.commands.install import update_assets
+    try:
+        update_assets(spec, dry_run=dry_run)
+    except (ValueError, SystemExit) as exc:
+        raise typer.Exit(1) from exc
+
+
+@install_app.command("show")
+def install_show(
+    ctx: typer.Context,
+    spec: str = typer.Argument(..., help="type:owner/repo"),
+):
+    """Show details of an installed asset."""
+    from navig.commands.install import show_asset
+    try:
+        show_asset(spec)
+    except (ValueError, SystemExit) as exc:
+        raise typer.Exit(1) from exc
+
+
+@install_app.command("freeze")
+def install_freeze(
+    ctx: typer.Context,
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting."),
+):
+    """Print installed assets as type/name==version specs."""
+    from navig.commands.install import freeze_assets
+    freeze_assets(plain=plain)
+
+
+@install_app.command("status")
+def install_status(ctx: typer.Context):
+    """Show health of all installed assets."""
+    from navig.commands.install import status_assets
+    status_assets()
+
+
+@install_app.command("search")
+def install_search(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="Search query (name, description, tags)"),
+    type_filter: Optional[str] = typer.Option(
+        None, "--type", "-t",
+        help="Filter by asset type: skill, playbook, workflow, plugin, …",
+    ),
+    refresh: bool = typer.Option(False, "--refresh", help="Force registry re-fetch."),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting."),
+    json_out: bool = typer.Option(False, "--json", help="JSON output."),
+) -> None:
+    """
+    Search the NAVIG community registry.
+
+    Examples:
+        navig install search docker
+        navig install search backup --type playbook
+        navig install search git --refresh
+    """
+    from navig.commands.install import search_assets  # type: ignore
+
+    results = search_assets(query, asset_type=type_filter, force_refresh=refresh)
+
+    if json_out:
+        import json as _json
+        ch.print(_json.dumps(results, indent=2, ensure_ascii=False))
+        return
+
+    if not results:
+        ch.warn(f"No assets found matching {query!r}.")
+        ch.dim("  Try 'navig install browse' to see all available assets.")
+        return
+
+    if plain:
+        for asset in results:
+            ch.print(
+                f"{asset.get('type','?')}:{asset.get('repo', asset.get('name','?'))}"
+                f"  — {asset.get('description', '')}"
+            )
+        return
+
+    from rich.table import Table
+    table = Table(title=f"Registry search: {query!r}", show_lines=False)
+    table.add_column("Type", style="dim", width=10)
+    table.add_column("Name", style="cyan")
+    table.add_column("Description")
+    table.add_column("Install", style="green")
+
+    for asset in results:
+        install_spec = f"{asset.get('type','?')}:{asset.get('repo', asset.get('name',''))}"
+        table.add_row(
+            asset.get("type", "?"),
+            asset.get("name", "?"),
+            asset.get("description", "")[:60],
+            f"navig install add {install_spec}",
+        )
+
+    ch.console.print(table)
+    ch.dim(f"\n{len(results)} result(s). Install with: navig install add <type>:<repo>")
+
+
+@install_app.command("browse")
+def install_browse(
+    ctx: typer.Context,
+    type_filter: Optional[str] = typer.Option(
+        None, "--type", "-t",
+        help="Filter by asset type: skill, playbook, workflow, plugin, …",
+    ),
+    refresh: bool = typer.Option(False, "--refresh", help="Force registry re-fetch."),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting."),
+    json_out: bool = typer.Option(False, "--json", help="JSON output."),
+) -> None:
+    """
+    Browse the NAVIG community registry.
+
+    Examples:
+        navig install browse
+        navig install browse --type skill
+        navig install browse --type playbook --plain
+    """
+    from navig.commands.install import browse_assets  # type: ignore
+
+    assets = browse_assets(asset_type=type_filter, force_refresh=refresh)
+
+    if json_out:
+        import json as _json
+        ch.print(_json.dumps(assets, indent=2, ensure_ascii=False))
+        return
+
+    if not assets:
+        label = f" of type {type_filter!r}" if type_filter else ""
+        ch.warn(f"Registry is empty{label}.")
+        ch.dim("  Check your internet connection or run with --refresh.")
+        return
+
+    if plain:
+        for asset in assets:
+            ch.print(
+                f"{asset.get('type','?')}  {asset.get('name','?')}  "
+                f"{asset.get('description', '')}"
+            )
+        return
+
+    from rich.table import Table
+    title = f"Community Registry" + (f" — {type_filter}" if type_filter else "")
+    table = Table(title=title, show_lines=False)
+    table.add_column("Type", style="dim", width=10)
+    table.add_column("Name", style="cyan")
+    table.add_column("Author", style="dim")
+    table.add_column("Description")
+
+    for asset in assets:
+        table.add_row(
+            asset.get("type", "?"),
+            asset.get("name", "?"),
+            asset.get("author", "—"),
+            asset.get("description", "")[:60],
+        )
+
+    ch.console.print(table)
+    ch.dim(f"\n{len(assets)} asset(s). Install: navig install add <type>:<repo>")
 
 
 # ============================================================================
@@ -3433,7 +3679,7 @@ def quick_run(
 ):
     """
     Run a quick action by name.
-    
+
     Examples:
         navig quick run deploy
         navig quick run backup --dry-run
@@ -3452,20 +3698,20 @@ def quick_add(
 ):
     """
     Add a quick action shortcut.
-    
+
     Examples:
         navig quick add deploy "run 'cd /var/www && git pull'"
         navig quick add backup "db dump --output /tmp/backup.sql"
         navig quick add status "dashboard --no-live"
-    
+
     Then run with: navig quick run deploy
     """
     from navig.commands.suggest import add_quick_action
-    
+
     # Ensure command starts with navig
     if not command.startswith("navig "):
         command = f"navig {command}"
-    
+
     add_quick_action(name, command, description)
 
 
@@ -3478,26 +3724,26 @@ def quick_remove(
     from navig.config import get_config_manager
     from pathlib import Path
     import yaml
-    
+
     config_manager = get_config_manager()
     quick_file = Path(config_manager.global_config_dir) / "quick_actions.yaml"
-    
+
     if not quick_file.exists():
         ch.error(f"Quick action '{name}' not found.")
         return
-    
-    with open(quick_file, 'r') as f:
+
+    with open(quick_file, 'r', encoding='utf-8') as f:
         actions = yaml.safe_load(f) or {}
-    
+
     if name not in actions:
         ch.error(f"Quick action '{name}' not found.")
         return
-    
+
     del actions[name]
-    
-    with open(quick_file, 'w') as f:
+
+    with open(quick_file, 'w', encoding='utf-8') as f:
         yaml.safe_dump(actions, f, default_flow_style=False)
-    
+
     ch.success(f"Removed quick action: {name}")
 
 
@@ -4029,7 +4275,7 @@ def write_file(
     """[DEPRECATED: Use 'navig file edit --content'] Write to remote file."""
     deprecation_warning("navig write-file", "navig file edit --content")
     from navig.commands.files_advanced import write_file_cmd
-    write_file_cmd(remote, content, ctx.obj, stdin=stdin, local_file=from_file, 
+    write_file_cmd(remote, content, ctx.obj, stdin=stdin, local_file=from_file,
                    append=append, mode=mode, owner=owner)
 
 
@@ -4363,7 +4609,7 @@ def ai_models(
     provider: Optional[str] = typer.Option(None, "--provider", "-p", help="Filter by provider (e.g., openai, airllm)"),
 ):
     """List available AI models from all providers.
-    
+
     Examples:
         navig ai models
         navig ai models --provider airllm
@@ -4372,18 +4618,18 @@ def ai_models(
     from rich.console import Console
     from rich.table import Table
     console = Console()
-    
+
     try:
         from navig.providers import BUILTIN_PROVIDERS
-        
+
         console.print("[bold cyan]Available AI Models[/bold cyan]")
         console.print()
-        
+
         for pname, pconfig in BUILTIN_PROVIDERS.items():
             # Filter by provider if specified
             if provider and pname.lower() != provider.lower():
                 continue
-            
+
             if not pconfig.models:
                 if pname == "ollama":
                     console.print(f"[bold]{pname}[/bold] [dim](models discovered dynamically)[/dim]")
@@ -4395,15 +4641,15 @@ def ai_models(
                     console.print("  • deepseek-ai/deepseek-coder-33b-instruct")
                     console.print()
                 continue
-            
+
             console.print(f"[bold]{pname}[/bold]")
-            
+
             table = Table(box=None, show_header=True, padding=(0, 2))
             table.add_column("Model ID", style="cyan")
             table.add_column("Name")
             table.add_column("Context", justify="right")
             table.add_column("Max Tokens", justify="right")
-            
+
             for model in pconfig.models:
                 ctx_str = f"{model.context_window // 1000}K" if model.context_window >= 1000 else str(model.context_window)
                 table.add_row(
@@ -4412,14 +4658,14 @@ def ai_models(
                     ctx_str,
                     str(model.max_tokens),
                 )
-            
+
             console.print(table)
             console.print()
-        
+
         if provider and provider.lower() not in [p.lower() for p in BUILTIN_PROVIDERS.keys()]:
             console.print(f"[yellow]Unknown provider: {provider}[/yellow]")
             console.print(f"[dim]Available: {', '.join(BUILTIN_PROVIDERS.keys())}[/dim]")
-        
+
     except ImportError:
         console.print("[yellow]Provider system not available.[/yellow]")
 
@@ -4435,18 +4681,18 @@ def ai_providers(
     from rich.console import Console
     from rich.table import Table
     console = Console()
-    
+
     try:
         from navig.providers import AuthProfileManager, BUILTIN_PROVIDERS
         auth = AuthProfileManager()
-        
+
         if add:
             # Add API key for provider
             import getpass
             provider = add.lower()
             if provider not in BUILTIN_PROVIDERS:
                 console.print(f"[yellow]⚠ Unknown provider '{provider}'. Known: {', '.join(BUILTIN_PROVIDERS.keys())}[/yellow]")
-            
+
             api_key = getpass.getpass(f"Enter API key for {provider}: ")
             if api_key:
                 auth.add_api_key(provider=provider, api_key=api_key, profile_id=f"{provider}-default")
@@ -4455,7 +4701,7 @@ def ai_providers(
             else:
                 console.print("[yellow]No key entered, cancelled[/yellow]")
             return
-        
+
         if remove:
             # Remove API key for provider
             provider = remove.lower()
@@ -4466,7 +4712,7 @@ def ai_providers(
             else:
                 console.print(f"[yellow]No API key found for {provider}[/yellow]")
             return
-        
+
         if test:
             # Test provider connection
             provider = test.lower()
@@ -4475,23 +4721,23 @@ def ai_providers(
                 console.print(f"[red]✗ No API key configured for {provider}[/red]")
                 console.print(f"  Add one with: navig ai providers --add {provider}")
                 return
-            
+
             console.print(f"[dim]Testing {provider} (key from: {source})...[/dim]")
-            
+
             # Quick test - try to list models or make a tiny request
             import asyncio
             from navig.providers import create_client, BUILTIN_PROVIDERS
-            
+
             config = BUILTIN_PROVIDERS.get(provider)
             if not config:
                 console.print(f"[red]✗ Unknown provider: {provider}[/red]")
                 return
-            
+
             try:
                 client = create_client(config, api_key=api_key, timeout=10)
                 # Make a minimal request to test auth
                 from navig.providers import CompletionRequest, Message
-                
+
                 async def test_request():
                     request = CompletionRequest(
                         messages=[Message(role="user", content="Hi")],
@@ -4505,7 +4751,7 @@ def ai_providers(
                         return False, str(e)
                     finally:
                         await client.close()
-                
+
                 success, error = asyncio.run(test_request())
                 if success:
                     console.print(f"[green]✓ {provider} is working![/green]")
@@ -4514,39 +4760,39 @@ def ai_providers(
             except Exception as e:
                 console.print(f"[red]✗ Test failed: {e}[/red]")
             return
-        
+
         # List providers and their status
         console.print("[bold cyan]AI Providers[/bold cyan]")
         console.print()
-        
+
         table = Table(box=None, show_header=True, padding=(0, 2))
         table.add_column("Provider", style="cyan")
         table.add_column("API Key", style="green")
         table.add_column("Source")
         table.add_column("Models", style="dim")
-        
+
         for name, config in BUILTIN_PROVIDERS.items():
             api_key, source = auth.resolve_auth(name)
             key_status = "✓ configured" if api_key else "✗ not set"
             key_style = "green" if api_key else "red"
-            
+
             model_count = len(config.models)
             models_str = f"{model_count} models" if model_count else "dynamic"
-            
+
             table.add_row(
                 name,
                 f"[{key_style}]{key_status}[/{key_style}]",
                 source or "-",
                 models_str,
             )
-        
+
         console.print(table)
         console.print()
         console.print("[dim]Add a key: navig ai providers --add <provider>[/dim]")
         console.print("[dim]Test connection: navig ai providers --test <provider>[/dim]")
         console.print("[dim]Configure AirLLM: navig ai airllm --configure[/dim]")
         console.print("[dim]OAuth login: navig ai login openai-codex[/dim]")
-        
+
     except ImportError:
         console.print("[yellow]Provider system not available. Install httpx: pip install httpx[/yellow]")
 
@@ -4562,10 +4808,10 @@ def ai_airllm(
     status: bool = typer.Option(False, "--status", "-s", help="Show AirLLM status and configuration"),
 ):
     """Configure and manage AirLLM local inference provider.
-    
+
     AirLLM enables running 70B+ models on limited VRAM (4-8GB) through
     layer-wise inference and model sharding.
-    
+
     Examples:
         navig ai airllm --status
         navig ai airllm --configure --model-path meta-llama/Llama-3.3-70B-Instruct
@@ -4576,7 +4822,7 @@ def ai_airllm(
     from rich.table import Table
     from rich.panel import Panel
     console = Console()
-    
+
     # Check if AirLLM is installed
     try:
         from navig.providers import is_airllm_available, get_airllm_vram_recommendations
@@ -4584,14 +4830,14 @@ def ai_airllm(
     except ImportError:
         console.print("[red]✗ Provider system not available.[/red]")
         raise typer.Exit(1)
-    
+
     airllm_available = is_airllm_available()
-    
+
     if status or (not configure and not test):
         # Show AirLLM status
         console.print("[bold cyan]AirLLM Local Inference Provider[/bold cyan]")
         console.print()
-        
+
         # Installation status
         if airllm_available:
             console.print("[green]✓ AirLLM is installed[/green]")
@@ -4599,32 +4845,32 @@ def ai_airllm(
             console.print("[yellow]✗ AirLLM is not installed[/yellow]")
             console.print("  Install with: [cyan]pip install airllm[/cyan]")
             console.print()
-        
+
         # Current configuration
         console.print()
         console.print("[bold]Current Configuration:[/bold]")
-        
+
         config = AirLLMConfig.from_env()
         config_table = Table(box=None, show_header=False, padding=(0, 2))
         config_table.add_column("Setting", style="dim")
         config_table.add_column("Value")
-        
+
         config_table.add_row("Model Path", config.model_path or "[dim]not set[/dim]")
         config_table.add_row("Max VRAM", f"{config.max_vram_gb} GB")
         config_table.add_row("Compression", config.compression or "none")
         config_table.add_row("Device", config.device)
         config_table.add_row("Layer Shards Path", config.layer_shards_path or "[dim]default[/dim]")
         config_table.add_row("Prefetching", "enabled" if config.prefetching else "disabled")
-        
+
         console.print(config_table)
-        
+
         # VRAM recommendations
         console.print()
         console.print("[bold]VRAM Recommendations:[/bold]")
         recommendations = get_airllm_vram_recommendations()
         for model_size, rec in recommendations.items():
             console.print(f"  • {model_size}: {rec}")
-        
+
         # Environment variables
         console.print()
         console.print("[bold]Environment Variables:[/bold]")
@@ -4633,7 +4879,7 @@ def ai_airllm(
         console.print("  AIRLLM_COMPRESSION    - '4bit', '8bit', or empty for none")
         console.print("  AIRLLM_DEVICE         - 'cuda', 'cpu', or 'mps' (macOS)")
         console.print("  HF_TOKEN              - HuggingFace token for gated models")
-        
+
         # Suggested models
         console.print()
         console.print("[bold]Suggested Models:[/bold]")
@@ -4641,28 +4887,28 @@ def ai_airllm(
         console.print("  • Qwen/Qwen2.5-72B-Instruct")
         console.print("  • deepseek-ai/deepseek-coder-33b-instruct")
         console.print("  • mistralai/Mixtral-8x7B-Instruct-v0.1")
-        
+
         return
-    
+
     if configure:
         # Configure AirLLM settings
-        
+
         config_updates = {}
-        
+
         if model_path is not None:
             config_updates["AIRLLM_MODEL_PATH"] = model_path
             console.print(f"[green]✓ Model path: {model_path}[/green]")
-        
+
         if max_vram is not None:
             config_updates["AIRLLM_MAX_VRAM_GB"] = str(max_vram)
             console.print(f"[green]✓ Max VRAM: {max_vram} GB[/green]")
-        
+
         if compression is not None:
             if compression.lower() == "none":
                 compression = ""
             config_updates["AIRLLM_COMPRESSION"] = compression
             console.print(f"[green]✓ Compression: {compression or 'disabled'}[/green]")
-        
+
         if config_updates:
             # Save to config file
             try:
@@ -4677,7 +4923,7 @@ def ai_airllm(
                 console.print("[green]Configuration saved to ~/.navig/config.yaml[/green]")
             except Exception as e:
                 console.print(f"[yellow]⚠ Could not save to config file: {e}[/yellow]")
-            
+
             # Also show env var export commands
             console.print()
             console.print("[dim]Or set environment variables:[/dim]")
@@ -4686,29 +4932,29 @@ def ai_airllm(
         else:
             console.print("[yellow]No configuration options specified.[/yellow]")
             console.print("Use --model-path, --max-vram, or --compression")
-        
+
         return
-    
+
     if test:
         # Test AirLLM with a sample prompt
         if not airllm_available:
             console.print("[red]✗ AirLLM is not installed.[/red]")
             console.print("  Install with: [cyan]pip install airllm[/cyan]")
             raise typer.Exit(1)
-        
+
         config = AirLLMConfig.from_env()
         if not config.model_path:
             console.print("[red]✗ No model configured.[/red]")
             console.print("  Set AIRLLM_MODEL_PATH or use --configure --model-path")
             raise typer.Exit(1)
-        
+
         console.print(f"[dim]Testing AirLLM with model: {config.model_path}[/dim]")
         console.print("[dim]This may take a while on first run (downloading/sharding model)...[/dim]")
         console.print()
-        
+
         import asyncio
         from navig.providers import create_airllm_client, CompletionRequest, Message
-        
+
         async def run_test():
             try:
                 client = create_airllm_client(config)
@@ -4719,16 +4965,16 @@ def ai_airllm(
                     model=config.model_path,
                     max_tokens=50,
                 )
-                
+
                 response = await client.complete(request)
                 await client.close()
                 return response
             except Exception as e:
                 return str(e)
-        
+
         with console.status("[bold green]Running inference..."):
             result = asyncio.run(run_test())
-        
+
         if hasattr(result, 'content'):
             console.print("[green]✓ AirLLM is working![/green]")
             console.print()
@@ -4749,7 +4995,7 @@ def ai_login(
     """Login to an AI provider using OAuth (e.g., OpenAI Codex)."""
     from rich.console import Console
     console = Console()
-    
+
     try:
         from navig.providers import (
             AuthProfileManager,
@@ -4757,7 +5003,7 @@ def ai_login(
             run_oauth_flow_interactive,
             run_oauth_flow_headless,
         )
-        
+
         # Check if any OAuth providers are configured
         if not OAUTH_PROVIDERS:
             console.print("[red]✗ OAuth authentication is not currently available.[/red]")
@@ -4772,31 +5018,31 @@ def ai_login(
             console.print()
             console.print("[dim]See: docs/development/oauth-limitations.md[/dim]")
             raise typer.Exit(1)
-        
+
         provider_lower = provider.lower()
         if provider_lower not in OAUTH_PROVIDERS:
             console.print(f"[red]✗ Unknown OAuth provider: {provider}[/red]")
             console.print(f"[dim]Available: {', '.join(OAUTH_PROVIDERS.keys()) or 'none'}[/dim]")
             raise typer.Exit(1)
-        
+
         oauth_config = OAUTH_PROVIDERS[provider_lower]
         console.print(f"[bold cyan]OAuth Login: {oauth_config.name}[/bold cyan]")
         console.print()
-        
+
         if headless:
             # Headless mode
             console.print("[yellow]Headless mode: Copy the URL below and open it in a browser.[/yellow]")
             console.print()
-            
+
             def on_auth_url(url: str):
                 console.print("[bold]Authorization URL:[/bold]")
                 console.print(url)
                 console.print()
-            
+
             def get_callback_input() -> str:
                 console.print("[bold]After signing in, paste the redirect URL here:[/bold]")
                 return input("> ")
-            
+
             result = run_oauth_flow_headless(
                 provider_lower,
                 on_auth_url=on_auth_url,
@@ -4806,12 +5052,12 @@ def ai_login(
             # Interactive mode
             def on_progress(msg: str):
                 console.print(f"[dim]{msg}[/dim]")
-            
+
             result = run_oauth_flow_interactive(
                 provider_lower,
                 on_progress=on_progress,
             )
-        
+
         if result.success and result.credentials:
             # Save credentials
             auth = AuthProfileManager()
@@ -4824,21 +5070,21 @@ def ai_login(
                 account_id=result.credentials.account_id,
                 email=result.credentials.email,
             )
-            
+
             console.print()
             console.print(f"[green]✓ Successfully logged in to {oauth_config.name}![/green]")
             console.print(f"[dim]Profile saved: {profile_id}[/dim]")
-            
+
             if result.credentials.account_id:
                 console.print(f"[dim]Account ID: {result.credentials.account_id}[/dim]")
-            
+
             console.print()
             console.print("[dim]You can now use this provider with:[/dim]")
             console.print(f"  navig ai ask 'your question' --model {provider_lower}:gpt-4o")
         else:
             console.print(f"[red]✗ OAuth failed: {result.error}[/red]")
             raise typer.Exit(1)
-        
+
     except ImportError as e:
         console.print(f"[yellow]OAuth not available: {e}[/yellow]")
         console.print("[dim]Install httpx: pip install httpx[/dim]")
@@ -4853,13 +5099,13 @@ def ai_logout(
     """Remove OAuth credentials for a provider."""
     from rich.console import Console
     console = Console()
-    
+
     try:
         from navig.providers import AuthProfileManager
-        
+
         auth = AuthProfileManager()
         provider_lower = provider.lower()
-        
+
         # Find and remove all profiles for this provider
         removed = []
         for profile_id in list(auth.store.profiles.keys()):
@@ -4867,7 +5113,7 @@ def ai_logout(
             if cred.provider == provider_lower:
                 del auth.store.profiles[profile_id]
                 removed.append(profile_id)
-        
+
         if removed:
             auth.save()
             console.print(f"[green]✓ Logged out from {provider}[/green]")
@@ -4875,7 +5121,7 @@ def ai_logout(
                 console.print(f"[dim]  Removed: {pid}[/dim]")
         else:
             console.print(f"[yellow]No credentials found for {provider}[/yellow]")
-            
+
     except ImportError:
         console.print("[yellow]Provider system not available.[/yellow]")
 
@@ -4927,9 +5173,9 @@ def memory_edit():
     from pathlib import Path
     from rich.console import Console
     console = Console()
-    
+
     profile_path = Path.home() / '.navig' / 'memory' / 'user_profile.json'
-    
+
     if not profile_path.exists():
         # Create empty profile first
         try:
@@ -4940,12 +5186,12 @@ def memory_edit():
         except Exception as e:
             console.print(f"[red]Error creating profile: {e}[/red]")
             raise typer.Exit(1)
-    
+
     # Get editor from environment
     editor = os.environ.get('EDITOR', os.environ.get('VISUAL', 'notepad' if os.name == 'nt' else 'nano'))
-    
+
     console.print(f"[dim]Opening {profile_path} in {editor}...[/dim]")
-    
+
     import subprocess
     try:
         subprocess.run([editor, str(profile_path)], check=True)
@@ -4990,7 +5236,7 @@ def memory_search(
         from navig.memory.user_profile import get_profile
         profile = get_profile()
         results = profile.search_memory(query, limit=limit)
-        
+
         if results:
             console.print(f"[bold]Found {len(results)} result(s) for '{query}':[/bold]\n")
             for i, result in enumerate(results, 1):
@@ -5014,11 +5260,11 @@ def memory_clear(
         console.print("[yellow]⚠️  This will delete all stored user profile data.[/yellow]")
         console.print("[dim]Run with --confirm to proceed.[/dim]")
         raise typer.Exit(1)
-    
+
     try:
         from navig.memory.user_profile import get_profile
         profile = get_profile()
-        
+
         if profile.clear(confirm=True):
             console.print("[green]✓ Memory cleared. Backup created.[/green]")
         else:
@@ -5040,15 +5286,15 @@ def memory_set(
     try:
         from navig.memory.user_profile import get_profile
         profile = get_profile()
-        
+
         # Handle list fields (comma-separated)
-        if field in ['technical_context.stack', 'technical_context.managed_hosts', 
+        if field in ['technical_context.stack', 'technical_context.managed_hosts',
                      'technical_context.primary_projects', 'work_patterns.active_hours',
                      'work_patterns.common_tasks', 'goals', 'preferences.confirmation_required_for']:
             value = [v.strip() for v in value.split(',')]
-        
+
         updated = profile.update({field: value})
-        
+
         if updated:
             console.print(f"[green]✓ Updated {field} = {value}[/green]")
         else:
@@ -5442,40 +5688,6 @@ def addon_run(
 
 
 # ============================================================================
-# MIGRATION COMMANDS
-# ============================================================================
-
-migrate_app = typer.Typer(help="Migration utilities for upgrading NAVIG configurations")
-app.add_typer(migrate_app, name="migrate")
-
-
-@migrate_app.command("addons-to-templates")
-def migrate_addons_to_templates(
-    ctx: typer.Context,
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be done without making changes"),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing YAML files"),
-):
-    """
-    Migrate legacy addons to templates format.
-    
-    Converts:
-    - Repository: addons/<name>/addon.json → templates/<name>/template.yaml
-    - User: ~/.navig/apps/<server>/addons/*.json → ~/.navig/apps/<server>/templates/*.yaml
-    
-    This migration is idempotent and safe to run multiple times.
-    
-    Examples:
-        navig migrate addons-to-templates --dry-run    # Preview changes
-        navig migrate addons-to-templates              # Run migration
-        navig migrate addons-to-templates --force      # Overwrite existing files
-    """
-    from navig.migrations.migrate_addons_to_templates import migrate_addons_to_templates_cmd
-    ctx.obj['dry_run'] = dry_run
-    ctx.obj['force'] = force
-    migrate_addons_to_templates_cmd(ctx.obj)
-
-
-# ============================================================================
 # SERVER-SPECIFIC TEMPLATE COMMANDS
 # ============================================================================
 
@@ -5585,7 +5797,7 @@ mcp_app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
-app.add_typer(mcp_app, name="mcp")
+# Registration removed — "mcp" is dispatched via _EXTERNAL_CMD_MAP -> navig.commands.mcp_cmd
 
 
 @mcp_app.callback()
@@ -5706,21 +5918,21 @@ def mcp_serve(
     token: str = typer.Option(None, "--token", help="Auth token (auto-generated if omitted)"),
 ):
     """Start NAVIG as an MCP server for AI assistants like Copilot.
-    
+
     This exposes NAVIG's hosts, apps, wiki, and database info to AI assistants
     via the Model Context Protocol (MCP).
-    
+
     Examples:
         navig mcp serve                          # Start in stdio mode (for VS Code)
         navig mcp serve --transport websocket    # WebSocket on port 3001
         navig mcp serve -t websocket -p 4000     # WebSocket on custom port
     """
     from navig.mcp_server import start_mcp_server
-    
+
     # Infer transport from port for backward compatibility
     if transport == "stdio" and port != 3001:
         transport = "websocket"
-    
+
     if transport == "stdio":
         start_mcp_server(mode="stdio")
     elif transport == "websocket":
@@ -5738,7 +5950,7 @@ def mcp_config_cmd(
     output: bool = typer.Option(False, "--output", "-o", help="Output config to file"),
 ):
     """Generate MCP configuration for AI assistants.
-    
+
     Examples:
         navig mcp config vscode    # Show VS Code MCP config
         navig mcp config claude    # Show Claude Desktop config
@@ -5747,7 +5959,7 @@ def mcp_config_cmd(
     import json
     from navig.mcp_server import generate_vscode_mcp_config, generate_claude_mcp_config
     from pathlib import Path
-    
+
     if target == "vscode":
         config = generate_vscode_mcp_config()
         filename = ".vscode/mcp.json"
@@ -5757,9 +5969,9 @@ def mcp_config_cmd(
     else:
         ch.error(f"Unknown target: {target}. Use 'vscode' or 'claude'")
         raise typer.Exit(1)
-    
+
     config_json = json.dumps(config, indent=2)
-    
+
     if output:
         # Write to file
         path = Path(filename)
@@ -5959,7 +6171,7 @@ def config_set_mode(
 ):
     """
     Set the default execution mode.
-    
+
     Modes:
         interactive - Prompts for confirmation based on confirmation level (default)
         auto - Bypasses all confirmation prompts
@@ -5975,7 +6187,7 @@ def config_set_confirmation_level(
 ):
     """
     Set the confirmation level for interactive mode.
-    
+
     Levels:
         critical - Only confirm destructive operations (DROP, DELETE, rm)
         standard - Confirm state-changing operations (default)
@@ -6016,6 +6228,40 @@ def config_edit(
     edit_config(target=target)
 
 
+@config_app.command("backup")
+def config_backup_cmd(
+    ctx: typer.Context,
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path (auto-generated if not provided)"),
+    format: str = typer.Option("archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"),
+    include_secrets: bool = typer.Option(False, "--include-secrets", help="Include unredacted secrets (passwords, API keys)"),
+    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Encrypt the output with a password"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Encryption password (prompted if not provided)"),
+):
+    """
+    Export NAVIG configuration to a backup file.
+
+    Alias for: navig backup export
+    Backs up all hosts, apps, and settings. Sensitive data is redacted by default.
+
+    Examples:
+        navig config backup
+        navig config backup --format json --output ~/my-backup.json
+        navig config backup --include-secrets --encrypt
+    """
+    obj = ctx.obj or {}
+    from navig.commands.config_backup import export_config
+    export_config({
+        'output': output,
+        'format': format,
+        'include_secrets': include_secrets,
+        'encrypt': encrypt,
+        'password': password,
+        'yes': obj.get('yes', False),
+        'confirm': obj.get('confirm', False),
+        'json': obj.get('json', False),
+    })
+
+
 # ============================================================================
 # CONFIGURATION BACKUP & EXPORT COMMANDS
 # ============================================================================
@@ -6047,10 +6293,10 @@ def backup_export(
 ):
     """
     Export NAVIG configuration to a backup file.
-    
+
     Creates a portable backup of all hosts, apps, and settings.
     By default, sensitive data (passwords, API keys) is redacted.
-    
+
     Examples:
         navig backup export
         navig backup export --format json --output ~/my-backup.json
@@ -6078,9 +6324,9 @@ def backup_import(
 ):
     """
     Import NAVIG configuration from a backup file.
-    
+
     Restores hosts, apps, and settings from a previous export.
-    
+
     Examples:
         navig backup import navig-config-20241206.tar.gz
         navig backup import backup.json --replace
@@ -6244,6 +6490,40 @@ def backup_delete(
         'yes': ctx.obj.get('yes', False),
         'confirm': ctx.obj.get('confirm', False),
         'json': ctx.obj.get('json', False),
+    })
+
+
+@backup_app.command("config")
+def backup_config_cmd(
+    ctx: typer.Context,
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path (auto-generated if not provided)"),
+    format: str = typer.Option("archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"),
+    include_secrets: bool = typer.Option(False, "--include-secrets", help="Include unredacted secrets (passwords, API keys)"),
+    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Encrypt the output with a password"),
+    password: Optional[str] = typer.Option(None, "--password", "-p", help="Encryption password (prompted if not provided)"),
+):
+    """
+    Backup/export NAVIG configuration (hosts, apps, settings).
+
+    Canonical alias for: navig backup export
+    The inverse of: navig backup import
+
+    Examples:
+        navig backup config
+        navig backup config --format json --output ~/my-backup.json
+        navig backup config --include-secrets --encrypt
+    """
+    obj = ctx.obj or {}
+    from navig.commands.config_backup import export_config
+    export_config({
+        'output': output,
+        'format': format,
+        'include_secrets': include_secrets,
+        'encrypt': encrypt,
+        'password': password,
+        'yes': obj.get('yes', False),
+        'confirm': obj.get('confirm', False),
+        'json': obj.get('json', False),
     })
 
 
@@ -6448,6 +6728,124 @@ def skills_run(
         raise typer.Exit(exit_code)
 
 
+@skills_app.command("synthesize")
+def skills_synthesize(
+    ctx: typer.Context,
+    min_occurrences: int = typer.Option(
+        3, "--min-occurrences", "-m", min=1,
+        help="Minimum pattern repetitions to consider.",
+    ),
+    limit: int = typer.Option(
+        10, "--limit", "-n", min=1, max=100,
+        help="Maximum number of patterns to analyse.",
+    ),
+    apply: bool = typer.Option(
+        False, "--apply", help="Write approved skill YAML to ~/.navig/skills/."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview without writing any files."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve all safe drafts."),
+) -> None:
+    """
+    Synthesize new skill YAML files from repeated command patterns.
+
+    Scans ~/.navig/data/pattern_log.sqlite, clusters repeated sequences,
+    and generates ready-to-use NAVIG skill definitions.
+
+    Examples:
+        navig skills synthesize                  # preview top patterns
+        navig skills synthesize --apply          # generate + save skills
+        navig skills synthesize --min-occurrences 5 --apply --yes
+    """
+    import typer as _typer
+
+    try:
+        from navig.agent.pattern_observer import PatternObserver, DEFAULT_DB_PATH  # type: ignore
+        from navig.agent.pattern_analyzer import PatternAnalyzer  # type: ignore
+        from navig.agent.skill_drafter import SkillDrafter  # type: ignore
+    except ImportError as exc:
+        ch.error(f"Synthesis pipeline not available: {exc}")
+        raise typer.Exit(1)
+
+    observer = PatternObserver(DEFAULT_DB_PATH)
+    records = observer.get_recent(limit=500)
+
+    if not records:
+        ch.warn(
+            "No command patterns found in pattern log.\n"
+            "  Run a few commands first to build the pattern database.\n"
+            f"  Log path: {DEFAULT_DB_PATH}"
+        )
+        raise typer.Exit(0)
+
+    analyzer = PatternAnalyzer(min_occurrences=min_occurrences, max_results=limit)
+    scored = analyzer.score_by_frequency(records)
+
+    if not scored:
+        ch.warn(
+            f"No patterns found with ≥{min_occurrences} occurrences.\n"
+            "  Try lowering --min-occurrences."
+        )
+        raise typer.Exit(0)
+
+    drafter = SkillDrafter()
+
+    # -- Preview table --------------------------------------------------------
+    from rich.table import Table
+    table = Table(title=f"Top {len(scored)} Synthesisable Patterns", show_lines=True)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Sequence", style="cyan")
+    table.add_column("Occurrences", justify="right")
+    table.add_column("Score", justify="right")
+    table.add_column("Safe")
+
+    drafts = []
+    for idx, pattern in enumerate(scored, 1):
+        draft = drafter.draft(pattern)
+        drafts.append(draft)
+        safe_icon = "[green]✓[/green]" if draft.safe else "[red]✗[/red]"
+        table.add_row(
+            str(idx),
+            " → ".join(list(pattern.sequence)[:4]),
+            str(pattern.occurrences),
+            f"{pattern.score:.0f}",
+            safe_icon,
+        )
+
+    ch.console.print(table)
+
+    if dry_run:
+        ch.dim("  (dry-run: no files written)")
+        raise typer.Exit(0)
+
+    if not apply:
+        ch.dim("\nRun with --apply to save skill YAML files.")
+        raise typer.Exit(0)
+
+    # -- Apply ----------------------------------------------------------------
+    saved = 0
+    skipped = 0
+    for draft in drafts:
+        if not draft.safe:
+            if yes:
+                ch.warn(f"Skipping unsafe draft: {draft.name}")
+                skipped += 1
+                continue
+            choice = typer.confirm(
+                f"Draft '{draft.name}' has safety warnings. Save anyway?", default=False
+            )
+            if not choice:
+                skipped += 1
+                continue
+
+        path = drafter.apply(draft)
+        ch.success(f"Saved: {path}")
+        saved += 1
+
+    ch.print(f"\n[bold]{saved}[/bold] skill(s) saved, {skipped} skipped.")
+
+
 # ============================================================================
 # SCAFFOLD COMMANDS (Lazy-loaded)
 # ============================================================================
@@ -6565,7 +6963,7 @@ workflow_app = typer.Typer(
     no_args_is_help=False,
 )
 app.add_typer(workflow_app, name="workflow", hidden=True)  # Deprecated
-app.add_typer(workflow_app, name="task", hidden=True)  # Deprecated alias
+# Removed "task" alias — task_app (line ~1487) is the canonical registration
 
 
 @workflow_app.callback()
@@ -6735,6 +7133,102 @@ app.add_typer(wiki_app, name="wiki")
 
 
 # ============================================================================
+# DISPATCH - MULTI-NETWORK RELIABLE MESSAGE ROUTER
+# ============================================================================
+
+
+class _LazyDispatchGroup(TyperGroup):
+    _loaded: bool = False
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
+        from typer.main import get_command
+        from navig.commands import dispatch as dispatch_module
+        cmd = get_command(dispatch_module.dispatch_app)
+        if hasattr(cmd, "commands"):
+            for name, c in cmd.commands.items():
+                if name not in self.commands:
+                    self.add_command(c, name)
+        self._loaded = True
+
+    def get_command(self, ctx, cmd_name):
+        self._ensure_loaded()
+        return super().get_command(ctx, cmd_name)
+
+    def list_commands(self, ctx):
+        self._ensure_loaded()
+        return super().list_commands(ctx)
+
+
+dispatch_app = typer.Typer(
+    help="Multi-network reliable message dispatch (Telegram, Discord, Matrix)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+    cls=_LazyDispatchGroup,
+)
+
+
+@dispatch_app.callback()
+def dispatch_cli_callback(ctx: typer.Context):
+    """Dispatch commands - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("dispatch", ctx)
+        raise typer.Exit()
+
+
+app.add_typer(dispatch_app, name="dispatch")
+
+
+# ============================================================================
+# CONTACTS - ADDRESS BOOK FOR NL ROUTING
+# ============================================================================
+
+
+class _LazyContactsGroup(TyperGroup):
+    _loaded: bool = False
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
+        from typer.main import get_command
+        from navig.commands import dispatch as dispatch_module
+        cmd = get_command(dispatch_module.contacts_app)
+        if hasattr(cmd, "commands"):
+            for name, c in cmd.commands.items():
+                if name not in self.commands:
+                    self.add_command(c, name)
+        self._loaded = True
+
+    def get_command(self, ctx, cmd_name):
+        self._ensure_loaded()
+        return super().get_command(ctx, cmd_name)
+
+    def list_commands(self, ctx):
+        self._ensure_loaded()
+        return super().list_commands(ctx)
+
+
+contacts_app = typer.Typer(
+    help="Address book for NL contact routing (Phase 2)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+    cls=_LazyContactsGroup,
+)
+
+
+@contacts_app.callback()
+def contacts_cli_callback(ctx: typer.Context):
+    """Contacts commands - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("contacts", ctx)
+        raise typer.Exit()
+
+
+app.add_typer(contacts_app, name="contacts")
+
+
+# ============================================================================
 # GATEWAY - AUTONOMOUS AGENT CONTROL PLANE
 # ============================================================================
 
@@ -6743,6 +7237,18 @@ gateway_app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
+
+
+def _gw_base_url() -> str:
+    """Return local gateway base URL from config (gateway.port / host)."""
+    try:
+        from navig.config import get_config_manager
+        raw = get_config_manager()._load_global_config()
+    except Exception:
+        raw = {}
+    gw = raw.get("gateway") or {}
+    port = int(gw.get("port") or 8765)
+    return f"http://localhost:{port}"
 
 
 @gateway_app.callback()
@@ -6755,32 +7261,44 @@ def gateway_callback(ctx: typer.Context):
 
 @gateway_app.command("start")
 def gateway_start(
-    port: int = typer.Option(8789, "--port", "-p", help="Port to run gateway on"),
-    host: str = typer.Option("0.0.0.0", "--host", help="Host to bind to"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Port (default: gateway.port from config, fallback 8765)"),
+    host: Optional[str] = typer.Option(None, "--host", help="Bind address (default: gateway.host from config, fallback 0.0.0.0)"),
     background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
 ):
     """
     Start the autonomous agent gateway server.
-    
+
     The gateway provides:
     - HTTP/WebSocket API for agent communication
     - Session persistence across restarts
     - Heartbeat-based health monitoring
     - Cron job scheduling
     - Multi-channel message routing
-    
+
     Examples:
         navig gateway start
         navig gateway start --port 9000
         navig gateway start --background
     """
     import asyncio
-    
+
+    # Fill port/host from config if not explicitly passed
+    try:
+        from navig.config import get_config_manager
+        _raw = get_config_manager()._load_global_config()
+    except Exception:
+        _raw = {}
+    _gw_cfg = (_raw.get("gateway") or {})
+    if port is None:
+        port = int(_gw_cfg.get("port") or 8765)
+    if host is None:
+        host = str(_gw_cfg.get("host") or "0.0.0.0")
+
     ch.info(f"Starting NAVIG Gateway on {host}:{port}...")
-    
+
     try:
         from navig.gateway import NavigGateway, GatewayConfig
-        
+
         # Build config dict for GatewayConfig
         raw_config = {
             'gateway': {
@@ -6789,7 +7307,7 @@ def gateway_start(
                 'host': host,
             }
         }
-        
+
         gateway_config = GatewayConfig(raw_config)
 
         if background:
@@ -6827,7 +7345,7 @@ def gateway_start(
 
         gateway = NavigGateway(config=gateway_config)
         asyncio.run(gateway.start())
-        
+
     except KeyboardInterrupt:
         ch.info("Gateway stopped by user")
     except ImportError as e:
@@ -6841,29 +7359,29 @@ def gateway_start(
 def gateway_stop():
     """
     Stop the running gateway server.
-    
+
     Sends a shutdown signal to the running gateway via its API.
     If the gateway is running in the foreground, use Ctrl+C instead.
-    
+
     Examples:
         navig gateway stop
     """
     import requests
-    
+
     try:
         # First check if gateway is running
         try:
-            health_response = requests.get("http://localhost:8789/health", timeout=2)
+            health_response = requests.get(f"{_gw_base_url()}/health", timeout=2)
             if health_response.status_code != 200:
                 ch.warning("Gateway does not appear to be running")
                 return
         except Exception:
             ch.warning("Gateway is not running")
             return
-        
+
         # Try to stop via API
         try:
-            response = requests.post("http://localhost:8789/shutdown", timeout=5)
+            response = requests.post(f"{_gw_base_url()}/shutdown", timeout=5)
             if response.status_code == 200:
                 ch.success("Gateway shutdown signal sent")
             else:
@@ -6885,15 +7403,15 @@ def gateway_stop():
 def gateway_status():
     """Show gateway status."""
     import requests
-    
+
     try:
         # Get detailed status from /status endpoint
-        response = requests.get("http://localhost:8789/status", timeout=2)
+        response = requests.get(f"{_gw_base_url()}/status", timeout=2)
         if response.status_code == 200:
             data = response.json()
             ch.success("Gateway is running")
             ch.info(f"  Status: {data.get('status', 'unknown')}")
-            
+
             # Format uptime nicely
             uptime_sec = data.get("uptime_seconds")
             if uptime_sec:
@@ -6905,17 +7423,17 @@ def gateway_status():
                     ch.info(f"  Uptime: {minutes}m {seconds}s")
                 else:
                     ch.info(f"  Uptime: {seconds}s")
-            
+
             # Show session count
             sessions = data.get("sessions", {})
             if sessions:
                 ch.info(f"  Active sessions: {sessions.get('active', 0)}")
-            
+
             # Show cron/heartbeat summary
             cron = data.get("cron", {})
             if cron:
                 ch.info(f"  Cron jobs: {cron.get('jobs', 0)} ({cron.get('enabled_jobs', 0)} enabled)")
-            
+
             hb = data.get("heartbeat", {})
             if hb.get("running"):
                 ch.info("  Heartbeat: active")
@@ -6935,17 +7453,17 @@ def gateway_session(
 ):
     """
     Manage gateway sessions.
-    
+
     Examples:
         navig gateway session list
         navig gateway session show agent:default:telegram:123
         navig gateway session clear agent:default:telegram:123
     """
     import requests
-    
+
     try:
         if action == "list":
-            response = requests.get("http://localhost:8789/sessions", timeout=5)
+            response = requests.get("{ _gw_base_url()}/sessions", timeout=5)
             if response.status_code == 200:
                 sessions = response.json().get("sessions", [])
                 if sessions:
@@ -6956,10 +7474,10 @@ def gateway_session(
                     ch.info("No active sessions")
             else:
                 ch.error(f"Failed to list sessions: {response.status_code}")
-                
+
         elif action == "show" and session_key:
             response = requests.get(
-                f"http://localhost:8789/sessions/{session_key}", 
+                f"{ _gw_base_url()}/sessions/{session_key}",
                 timeout=5
             )
             if response.status_code == 200:
@@ -6970,21 +7488,21 @@ def gateway_session(
                 ch.info(f"  Updated: {session.get('updated_at', 'unknown')}")
             else:
                 ch.error(f"Session not found: {session_key}")
-                
+
         elif action == "clear" and session_key:
             response = requests.delete(
-                f"http://localhost:8789/sessions/{session_key}",
+                f"{ _gw_base_url()}/sessions/{session_key}",
                 timeout=5
             )
             if response.status_code == 200:
                 ch.success(f"Cleared session: {session_key}")
             else:
                 ch.error(f"Failed to clear session: {response.status_code}")
-                
+
         else:
             ch.error(f"Unknown action: {action}")
             ch.info("Actions: list, show <key>, clear <key>")
-            
+
     except requests.exceptions.ConnectionError:
         ch.warning("Gateway is not running")
         ch.info("Start with: navig gateway start")
@@ -7026,15 +7544,15 @@ def bot_callback(ctx: typer.Context):
 @bot_app.command("start")
 def bot_start(
     gateway: bool = typer.Option(False, "--gateway", "-g", help="Start with gateway (session persistence)"),
-    port: int = typer.Option(8789, "--port", "-p", help="Gateway port (when using --gateway)"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Gateway port (default: gateway.port from config, fallback 8765)"),
     background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
 ):
     """
     Start the NAVIG Telegram bot.
-    
+
     By default runs in direct mode (standalone).
     Use --gateway to start both gateway and bot together.
-    
+
     Examples:
         navig bot                    # Start bot (direct mode)
         navig bot --gateway          # Start gateway + bot together
@@ -7042,7 +7560,7 @@ def bot_start(
     """
     import subprocess
     import os
-    
+
     # Check for telegram token
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not telegram_token:
@@ -7050,7 +7568,7 @@ def bot_start(
         ch.info("  Get token from @BotFather on Telegram")
         ch.info("  Add to .env file: TELEGRAM_BOT_TOKEN=your-token")
         raise typer.Exit(1)
-    
+
     if gateway:
         ch.info("Starting NAVIG with Gateway + Telegram Bot...")
         ch.info(f"  Gateway: http://localhost:{port}")
@@ -7094,7 +7612,7 @@ def bot_status():
     """Check if bot is running."""
     import subprocess
     patterns = r'navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start'
-    
+
     # Check for running python processes with navig_bot
     try:
         if sys.platform == 'win32':
@@ -7132,7 +7650,7 @@ def bot_stop():
     """Stop all running NAVIG bot/gateway processes."""
     import subprocess
     patterns = r'navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start'
-    
+
     try:
         if sys.platform == 'win32':
             ps_cmd = (
@@ -7175,14 +7693,14 @@ app.add_typer(bot_app, name="bot")
 def quick_start(
     bot: bool = typer.Option(True, "--bot/--no-bot", "-b/-B", help="Start Telegram bot"),
     gateway: bool = typer.Option(True, "--gateway/--no-gateway", "-g/-G", help="Start gateway"),
-    port: int = typer.Option(8789, "--port", "-p", help="Gateway port"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Gateway port (default: gateway.port from config, fallback 8765)"),
     background: bool = typer.Option(True, "--background/--foreground", "-d/-f", help="Run in background"),
 ):
     """
     Quick launcher - start NAVIG services with sensible defaults.
-    
+
     By default starts both gateway and bot in background.
-    
+
     Examples:
         navig start                  # Start gateway + bot (background)
         navig start --foreground     # Start in foreground (see logs)
@@ -7191,7 +7709,7 @@ def quick_start(
     """
     import os
     import subprocess
-    
+
     if bot:
         telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
         if not telegram_token:
@@ -7199,7 +7717,7 @@ def quick_start(
             ch.info("  Get token from @BotFather on Telegram")
             ch.info("  Add to .env file: TELEGRAM_BOT_TOKEN=your-token")
             raise typer.Exit(1)
-    
+
     if gateway and bot:
         ch.info("Starting NAVIG (Gateway + Telegram Bot)...")
         cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--port", str(port)]
@@ -7219,7 +7737,7 @@ def quick_start(
             ch.info("  Stop: navig bot stop")
         else:
             os.execv(sys.executable, cmd)
-    
+
     elif bot:
         ch.info("Starting NAVIG Telegram Bot (standalone)...")
         ch.warning("⚠️  Conversations reset on restart")
@@ -7237,7 +7755,7 @@ def quick_start(
             ch.success("Started in background")
         else:
             os.execv(sys.executable, cmd)
-    
+
     elif gateway:
         ch.info(f"Starting NAVIG Gateway on port {port}...")
         from navig.commands.gateway import gateway_start
@@ -7268,21 +7786,21 @@ def heartbeat_status():
     """Show heartbeat status."""
     import requests
     from datetime import datetime
-    
+
     try:
-        response = requests.get("http://localhost:8789/status", timeout=5)
+        response = requests.get("{ _gw_base_url()}/status", timeout=5)
         if response.status_code == 200:
             data = response.json()
             hb = data.get("heartbeat", {})
             config = data.get("config", {})
-            
+
             if hb.get("running"):
                 ch.success("Heartbeat is running")
-                
+
                 # Get interval from config
                 interval = config.get("heartbeat_interval", "30m")
                 ch.info(f"  Interval: {interval}")
-                
+
                 # Parse and display next run time
                 next_run = hb.get("next_run")
                 if next_run:
@@ -7295,11 +7813,11 @@ def heartbeat_status():
                             ch.info(f"  Next check: in {minutes} minutes")
                         else:
                             ch.info("  Next check: imminent")
-                    except:
+                    except Exception:
                         ch.info(f"  Next check: {next_run}")
                 else:
                     ch.info("  Next check: unknown")
-                
+
                 # Display last run
                 last_run = hb.get("last_run")
                 if last_run:
@@ -7322,12 +7840,12 @@ def heartbeat_status():
 def heartbeat_trigger():
     """Trigger an immediate heartbeat check."""
     import requests
-    
+
     ch.info("Triggering heartbeat check...")
-    
+
     try:
         response = requests.post(
-            "http://localhost:8789/heartbeat/trigger",
+            "{ _gw_base_url()}/heartbeat/trigger",
             timeout=300  # Heartbeat can take a while
         )
         if response.status_code == 200:
@@ -7355,10 +7873,10 @@ def heartbeat_history(
 ):
     """Show heartbeat history."""
     import requests
-    
+
     try:
         response = requests.get(
-            f"http://localhost:8789/heartbeat/history?limit={limit}",
+            f"{ _gw_base_url()}/heartbeat/history?limit={limit}",
             timeout=5
         )
         if response.status_code == 200:
@@ -7386,20 +7904,20 @@ def heartbeat_configure(
 ):
     """Configure heartbeat settings."""
     config_manager = _get_config_manager()
-    
+
     if interval is not None or enable is not None:
         config = config_manager.global_config
         if "heartbeat" not in config:
             config["heartbeat"] = {}
-        
+
         if interval is not None:
             config["heartbeat"]["interval"] = interval
             ch.success(f"Set heartbeat interval to {interval} minutes")
-        
+
         if enable is not None:
             config["heartbeat"]["enabled"] = enable
             ch.success(f"Heartbeat {'enabled' if enable else 'disabled'}")
-        
+
         config_manager.save_global()
     else:
         # Show current config
@@ -7437,9 +7955,9 @@ def cron_callback(ctx: typer.Context):
 def cron_list():
     """List all scheduled jobs."""
     import requests
-    
+
     try:
-        response = requests.get("http://localhost:8789/cron/jobs", timeout=5)
+        response = requests.get("{ _gw_base_url()}/cron/jobs", timeout=5)
         if response.status_code == 200:
             jobs = response.json().get("jobs", [])
             if jobs:
@@ -7471,21 +7989,21 @@ def cron_add(
 ):
     """
     Add a new scheduled job.
-    
+
     Schedule formats:
     - Natural language: "every 30 minutes", "hourly", "daily"
     - Cron expression: "*/5 * * * *", "0 9 * * *"
-    
+
     Examples:
         navig cron add "Disk check" "every 30 minutes" "navig host monitor disk"
         navig cron add "Daily backup" "0 2 * * *" "navig backup export"
         navig cron add "Health check" "hourly" "Check all hosts and report issues"
     """
     import requests
-    
+
     try:
         response = requests.post(
-            "http://localhost:8789/cron/jobs",
+            "{ _gw_base_url()}/cron/jobs",
             json={
                 "name": name,
                 "schedule": schedule,
@@ -7515,10 +8033,10 @@ def cron_remove(
 ):
     """Remove a scheduled job."""
     import requests
-    
+
     try:
         response = requests.delete(
-            f"http://localhost:8789/cron/jobs/{job_id}",
+            f"{ _gw_base_url()}/cron/jobs/{job_id}",
             timeout=5
         )
         if response.status_code == 200:
@@ -7537,12 +8055,12 @@ def cron_run(
 ):
     """Run a job immediately."""
     import requests
-    
+
     ch.info(f"Running job {job_id}...")
-    
+
     try:
         response = requests.post(
-            f"http://localhost:8789/cron/jobs/{job_id}/run",
+            f"{ _gw_base_url()}/cron/jobs/{job_id}/run",
             timeout=300
         )
         if response.status_code == 200:
@@ -7567,10 +8085,10 @@ def cron_enable(
 ):
     """Enable a disabled job."""
     import requests
-    
+
     try:
         response = requests.post(
-            f"http://localhost:8789/cron/jobs/{job_id}/enable",
+            f"{ _gw_base_url()}/cron/jobs/{job_id}/enable",
             timeout=5
         )
         if response.status_code == 200:
@@ -7589,10 +8107,10 @@ def cron_disable(
 ):
     """Disable a job without removing it."""
     import requests
-    
+
     try:
         response = requests.post(
-            f"http://localhost:8789/cron/jobs/{job_id}/disable",
+            f"{ _gw_base_url()}/cron/jobs/{job_id}/disable",
             timeout=5
         )
         if response.status_code == 200:
@@ -7609,17 +8127,17 @@ def cron_disable(
 def cron_status():
     """Show cron service status."""
     import requests
-    
+
     try:
-        response = requests.get("http://localhost:8789/status", timeout=5)
+        response = requests.get("{ _gw_base_url()}/status", timeout=5)
         if response.status_code == 200:
             data = response.json()
             cron = data.get("cron", {})
-            
+
             # Cron is running if gateway is up and jobs exist
             total_jobs = cron.get("jobs", cron.get("total_jobs", 0))
             enabled_jobs = cron.get("enabled_jobs", 0)
-            
+
             if data.get("status") == "running":
                 ch.success("Cron service is running")
                 ch.info(f"  Total jobs: {total_jobs}")
@@ -7663,17 +8181,17 @@ def approve_callback(ctx: typer.Context):
 def approve_list():
     """List pending approval requests."""
     import requests
-    
+
     try:
-        response = requests.get("http://localhost:8789/approval/pending", timeout=5)
+        response = requests.get("{ _gw_base_url()}/approval/pending", timeout=5)
         if response.status_code == 200:
             data = response.json()
             pending = data.get("pending", [])
-            
+
             if not pending:
                 ch.info("No pending approval requests")
                 return
-            
+
             ch.info(f"Pending approval requests ({len(pending)}):")
             for req in pending:
                 level_color = {
@@ -7681,7 +8199,7 @@ def approve_list():
                     "dangerous": "red",
                     "never": "bright_red",
                 }.get(req.get("level", ""), "white")
-                
+
                 ch.console.print(
                     f"  [{req['id']}] {req['action']} ({req['level']}) - {req.get('description', '')}",
                     style=level_color
@@ -7701,10 +8219,10 @@ def approve_yes(
 ):
     """Approve a pending request."""
     import requests
-    
+
     try:
         response = requests.post(
-            f"http://localhost:8789/approval/{request_id}/respond",
+            f"{ _gw_base_url()}/approval/{request_id}/respond",
             json={"approved": True, "reason": reason},
             timeout=5,
         )
@@ -7727,10 +8245,10 @@ def approve_no(
 ):
     """Deny a pending request."""
     import requests
-    
+
     try:
         response = requests.post(
-            f"http://localhost:8789/approval/{request_id}/respond",
+            f"{ _gw_base_url()}/approval/{request_id}/respond",
             json={"approved": False, "reason": reason},
             timeout=5,
         )
@@ -7752,20 +8270,20 @@ def approve_policy():
     try:
         from navig.approval import ApprovalPolicy
         policy = ApprovalPolicy.default()
-        
+
         ch.info("Approval Policy Patterns:")
         ch.console.print("\n[bold green]SAFE (no approval needed):[/bold green]")
         for pattern in policy.patterns.get("safe", []):
             ch.console.print(f"  • {pattern}")
-        
+
         ch.console.print("\n[bold yellow]CONFIRM (requires approval):[/bold yellow]")
         for pattern in policy.patterns.get("confirm", []):
             ch.console.print(f"  • {pattern}")
-        
+
         ch.console.print("\n[bold red]DANGEROUS (always confirm):[/bold red]")
         for pattern in policy.patterns.get("dangerous", []):
             ch.console.print(f"  • {pattern}")
-        
+
         ch.console.print("\n[bold bright_red]NEVER (always denied):[/bold bright_red]")
         for pattern in policy.patterns.get("never", []):
             ch.console.print(f"  • {pattern}")
@@ -7800,9 +8318,9 @@ def browser_callback(ctx: typer.Context):
 def browser_status():
     """Show browser status."""
     import requests
-    
+
     try:
-        response = requests.get("http://localhost:8789/browser/status", timeout=5)
+        response = requests.get("{ _gw_base_url()}/browser/status", timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("started"):
@@ -7829,10 +8347,10 @@ def browser_open(
 ):
     """Navigate browser to URL."""
     import requests
-    
+
     try:
         response = requests.post(
-            "http://localhost:8789/browser/navigate",
+            "{ _gw_base_url()}/browser/navigate",
             json={"url": url},
             timeout=30,
         )
@@ -7855,10 +8373,10 @@ def browser_screenshot(
 ):
     """Capture browser screenshot."""
     import requests
-    
+
     try:
         response = requests.post(
-            "http://localhost:8789/browser/screenshot",
+            "{ _gw_base_url()}/browser/screenshot",
             json={"path": path, "full_page": full_page},
             timeout=30,
         )
@@ -7881,10 +8399,10 @@ def browser_click(
 ):
     """Click element on page."""
     import requests
-    
+
     try:
         response = requests.post(
-            "http://localhost:8789/browser/click",
+            "{ _gw_base_url()}/browser/click",
             json={"selector": selector},
             timeout=30,
         )
@@ -7907,10 +8425,10 @@ def browser_fill(
 ):
     """Fill input field."""
     import requests
-    
+
     try:
         response = requests.post(
-            "http://localhost:8789/browser/fill",
+            "{ _gw_base_url()}/browser/fill",
             json={"selector": selector, "value": value},
             timeout=30,
         )
@@ -7930,10 +8448,10 @@ def browser_fill(
 def browser_stop():
     """Stop browser."""
     import requests
-    
+
     try:
         response = requests.post(
-            "http://localhost:8789/browser/stop",
+            "{ _gw_base_url()}/browser/stop",
             timeout=10,
         )
         if response.status_code == 200:
@@ -7948,7 +8466,8 @@ def browser_stop():
         ch.error(f"Error: {e}")
 
 
-app.add_typer(browser_app, name="browser")
+# browser_app moved to navig/commands/browser.py — registered lazily via _EXTERNAL_CMD_MAP
+# app.add_typer(browser_app, name="browser")  # ← removed to avoid double-registration
 
 
 # ============================================================================
@@ -7976,25 +8495,25 @@ def queue_list(
 ):
     """List queued tasks."""
     import requests
-    
+
     try:
         params = {"limit": limit}
         if status:
             params["status"] = status
-        
+
         response = requests.get(
-            "http://localhost:8789/tasks",
+            "{ _gw_base_url()}/tasks",
             params=params,
             timeout=5,
         )
         if response.status_code == 200:
             data = response.json()
             tasks = data.get("tasks", [])
-            
+
             if not tasks:
                 ch.info("No tasks in queue")
                 return
-            
+
             ch.info(f"Tasks ({len(tasks)}):")
             for task in tasks:
                 status_color = {
@@ -8005,7 +8524,7 @@ def queue_list(
                     "failed": "red",
                     "cancelled": "dim",
                 }.get(task.get("status", ""), "white")
-                
+
                 ch.console.print(
                     f"  [{task['id']}] {task['name']} - {task['status']}",
                     style=status_color
@@ -8030,14 +8549,14 @@ def queue_add(
     """Add a task to the queue."""
     import requests
     import json as json_mod
-    
+
     try:
         task_params = {}
         if params:
             task_params = json_mod.loads(params)
-        
+
         response = requests.post(
-            "http://localhost:8789/tasks",
+            "{ _gw_base_url()}/tasks",
             json={
                 "name": name,
                 "handler": handler,
@@ -8067,10 +8586,10 @@ def queue_show(
 ):
     """Show task details."""
     import requests
-    
+
     try:
         response = requests.get(
-            f"http://localhost:8789/tasks/{task_id}",
+            f"{ _gw_base_url()}/tasks/{task_id}",
             timeout=5,
         )
         if response.status_code == 200:
@@ -8102,10 +8621,10 @@ def queue_cancel(
 ):
     """Cancel a pending task."""
     import requests
-    
+
     try:
         response = requests.post(
-            f"http://localhost:8789/tasks/{task_id}/cancel",
+            f"{ _gw_base_url()}/tasks/{task_id}/cancel",
             timeout=5,
         )
         if response.status_code == 200:
@@ -8126,26 +8645,26 @@ def queue_cancel(
 def queue_stats():
     """Show queue statistics."""
     import requests
-    
+
     try:
         response = requests.get(
-            "http://localhost:8789/tasks/stats",
+            "{ _gw_base_url()}/tasks/stats",
             timeout=5,
         )
         if response.status_code == 200:
             data = response.json()
-            
+
             ch.info("Task Queue Statistics:")
             ch.console.print(f"  Total tasks: {data.get('total_tasks', 0)}")
             ch.console.print(f"  Heap size: {data.get('heap_size', 0)}")
             ch.console.print(f"  Completed: {data.get('completed_count', 0)}")
-            
+
             counts = data.get("status_counts", {})
             if counts:
                 ch.console.print("\n  Status breakdown:")
                 for status, count in counts.items():
                     ch.console.print(f"    {status}: {count}")
-            
+
             worker = data.get("worker", {})
             if worker:
                 ch.console.print("\n  Worker:")
@@ -8183,42 +8702,42 @@ def memory_sessions(
 ):
     """List conversation sessions."""
     from pathlib import Path
-    
+
     try:
         from navig.memory import ConversationStore
-        
+
         config = _get_config_manager()
-        db_path = Path(config.global_config_dir) / "memory.db"
-        
+        db_path = Path(config.global_config_dir) / "memory" / "memory.db"
+
         if not db_path.exists():
             if plain:
                 print("No sessions")
             else:
                 ch.info("No conversation history yet")
             return
-        
+
         store = ConversationStore(db_path)
         sessions = store.list_sessions(limit=limit)
-        
+
         if not sessions:
             if plain:
                 print("No sessions")
             else:
                 ch.info("No conversation sessions found")
             return
-        
+
         if plain:
             for s in sessions:
                 print(f"{s.session_key}\t{s.message_count}\t{s.total_tokens}\t{s.updated_at.isoformat()}")
         else:
             from rich.table import Table
-            
+
             table = Table(title="Conversation Sessions")
             table.add_column("Session", style="cyan")
             table.add_column("Messages", justify="right")
             table.add_column("Tokens", justify="right")
             table.add_column("Last Updated", style="dim")
-            
+
             for s in sessions:
                 table.add_row(
                     s.session_key,
@@ -8226,11 +8745,11 @@ def memory_sessions(
                     str(s.total_tokens),
                     s.updated_at.strftime("%Y-%m-%d %H:%M"),
                 )
-            
+
             ch.console.print(table)
-        
+
         store.close()
-        
+
     except ImportError as e:
         ch.error(f"Memory module not available: {e}")
     except Exception as e:
@@ -8245,40 +8764,40 @@ def memory_history(
 ):
     """Show conversation history for a session."""
     from pathlib import Path
-    
+
     try:
         from navig.memory import ConversationStore
-        
+
         config = _get_config_manager()
-        db_path = Path(config.global_config_dir) / "memory.db"
-        
+        db_path = Path(config.global_config_dir) / "memory" / "memory.db"
+
         if not db_path.exists():
             ch.error("No conversation history")
             return
-        
+
         store = ConversationStore(db_path)
         messages = store.get_history(session, limit=limit)
-        
+
         if not messages:
             ch.info(f"No messages in session '{session}'")
             store.close()
             return
-        
+
         if plain:
             for m in messages:
                 print(f"{m.role}\t{m.timestamp.isoformat()}\t{m.content[:100]}")
         else:
             ch.info(f"Session: {session} ({len(messages)} messages)")
             ch.console.print()
-            
+
             for m in messages:
                 role_style = "bold cyan" if m.role == "user" else "bold green"
                 ch.console.print(f"[{role_style}]{m.role.upper()}[/] ({m.timestamp.strftime('%H:%M')})")
                 ch.console.print(m.content[:500] + ("..." if len(m.content) > 500 else ""))
                 ch.console.print()
-        
+
         store.close()
-        
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -8291,28 +8810,28 @@ def memory_clear(
 ):
     """Clear conversation memory."""
     from pathlib import Path
-    
+
     if not session and not all_sessions:
         ch.error("Specify --session or --all")
         raise typer.Exit(1)
-    
+
     try:
         from navig.memory import ConversationStore
-        
+
         config = _get_config_manager()
-        db_path = Path(config.global_config_dir) / "memory.db"
-        
+        db_path = Path(config.global_config_dir) / "memory" / "memory.db"
+
         if not db_path.exists():
             ch.info("No memory to clear")
             return
-        
+
         if not force:
             target = "all sessions" if all_sessions else f"session '{session}'"
             if not typer.confirm(f"Clear {target}?"):
                 raise typer.Abort()
-        
+
         store = ConversationStore(db_path)
-        
+
         if all_sessions:
             sessions = store.list_sessions(limit=1000)
             count = 0
@@ -8325,9 +8844,9 @@ def memory_clear(
                 ch.success(f"Cleared session '{session}'")
             else:
                 ch.warning(f"Session '{session}' not found")
-        
+
         store.close()
-        
+
     except typer.Abort:
         ch.info("Cancelled")
     except Exception as e:
@@ -8346,35 +8865,36 @@ def memory_knowledge(
 ):
     """Manage knowledge base entries."""
     from pathlib import Path
-    
+
     try:
         from navig.memory import KnowledgeBase, KnowledgeEntry
-        
+
         config = _get_config_manager()
-        db_path = Path(config.global_config_dir) / "knowledge.db"
-        
+        db_path = Path(config.global_config_dir) / "memory" / "knowledge.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
         kb = KnowledgeBase(db_path, embedding_provider=None)
-        
+
         if action == "list":
             # List all entries
             entries = kb.export_entries()[:limit]
-            
+
             if not entries:
                 ch.info("Knowledge base is empty")
                 return
-            
+
             if plain:
                 for e in entries:
                     print(f"{e['key']}\t{e['source']}\t{e['content'][:80]}")
             else:
                 from rich.table import Table
-                
+
                 table = Table(title="Knowledge Base")
                 table.add_column("Key", style="cyan")
                 table.add_column("Source", style="dim")
                 table.add_column("Content", max_width=50)
                 table.add_column("Tags")
-                
+
                 for e in entries:
                     import json
                     tags_list = json.loads(e.get('tags', '[]'))
@@ -8384,16 +8904,16 @@ def memory_knowledge(
                         e['content'][:50] + "..." if len(e['content']) > 50 else e['content'],
                         ", ".join(tags_list),
                     )
-                
+
                 ch.console.print(table)
-        
+
         elif action == "add":
             if not key or not content:
                 ch.error("--key and --content required for add")
                 raise typer.Exit(1)
-            
+
             tag_list = [t.strip() for t in tags.split(",")] if tags else []
-            
+
             entry = KnowledgeEntry(
                 key=key,
                 content=content,
@@ -8402,19 +8922,19 @@ def memory_knowledge(
             )
             kb.upsert(entry, compute_embedding=False)
             ch.success(f"Added knowledge: {key}")
-        
+
         elif action == "search":
             if not query:
                 ch.error("--query required for search")
                 raise typer.Exit(1)
-            
+
             tag_list = [t.strip() for t in tags.split(",")] if tags else None
             results = kb.text_search(query, limit=limit, tags=tag_list)
-            
+
             if not results:
                 ch.info("No matching entries")
                 return
-            
+
             if plain:
                 for e in results:
                     print(f"{e.key}\t{e.content[:80]}")
@@ -8425,19 +8945,19 @@ def memory_knowledge(
                     if e.tags:
                         ch.console.print(f"  Tags: {', '.join(e.tags)}")
                     ch.console.print()
-        
+
         elif action == "clear":
             if not typer.confirm("Clear entire knowledge base?"):
                 raise typer.Abort()
             count = kb.clear()
             ch.success(f"Cleared {count} entries")
-        
+
         else:
             ch.error(f"Unknown action: {action}")
             ch.info("Valid actions: list, add, search, clear")
-        
+
         kb.close()
-        
+
     except typer.Abort:
         ch.info("Cancelled")
     except Exception as e:
@@ -8448,21 +8968,21 @@ def memory_knowledge(
 def memory_stats():
     """Show memory usage statistics."""
     from pathlib import Path
-    
+
     try:
         from navig.memory import ConversationStore, KnowledgeBase
-        
+
         config = _get_config_manager()
-        
+
         # Conversation stats
-        conv_db = Path(config.global_config_dir) / "memory.db"
+        conv_db = Path(config.global_config_dir) / "memory" / "memory.db"
         if conv_db.exists():
             store = ConversationStore(conv_db)
             sessions = store.list_sessions(limit=1000)
             total_messages = sum(s.message_count for s in sessions)
             total_tokens = sum(s.total_tokens for s in sessions)
             store.close()
-            
+
             ch.info("Conversation Memory:")
             ch.console.print(f"  Sessions: {len(sessions)}")
             ch.console.print(f"  Messages: {total_messages}")
@@ -8470,22 +8990,22 @@ def memory_stats():
             ch.console.print(f"  Size: {conv_db.stat().st_size / 1024:.1f} KB")
         else:
             ch.info("Conversation Memory: empty")
-        
+
         ch.console.print()
-        
+
         # Knowledge stats
-        kb_db = Path(config.global_config_dir) / "knowledge.db"
+        kb_db = Path(config.global_config_dir) / "memory" / "knowledge.db"
         if kb_db.exists():
             kb = KnowledgeBase(kb_db, embedding_provider=None)
             count = kb.count()
             kb.close()
-            
+
             ch.info("Knowledge Base:")
             ch.console.print(f"  Entries: {count}")
             ch.console.print(f"  Size: {kb_db.stat().st_size / 1024:.1f} KB")
         else:
             ch.info("Knowledge Base: empty")
-        
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -8497,20 +9017,20 @@ def memory_bank_status(
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
 ):
     """Show memory bank status and statistics.
-    
+
     The memory bank is a file-based knowledge store at ~/.navig/memory/
     that supports hybrid search (vector + keyword).
-    
+
     Examples:
         navig memory bank
         navig memory bank --plain
     """
     try:
         from navig.memory import get_memory_manager
-        
+
         manager = get_memory_manager(use_embeddings=False)  # Don't load embeddings for status
         status = manager.get_status()
-        
+
         if plain:
             print(f"directory={status['memory_directory']}")
             print(f"files={status['indexed_files']}")
@@ -8527,14 +9047,14 @@ def memory_bank_status(
             ch.console.print(f"  Total tokens: {status['total_tokens']:,}")
             ch.console.print(f"  Embedded chunks: {status['embedded_chunks']}")
             ch.console.print(f"  Database size: {status['database_size_mb']} MB")
-            
+
             if status['embeddings_enabled']:
                 ch.console.print(f"  Embedding model: {status['embedding_model']}")
             else:
                 ch.console.print("  Embeddings: [dim]disabled[/dim]")
-        
+
         manager.close()
-        
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -8546,10 +9066,10 @@ def memory_bank_index(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show file-by-file progress"),
 ):
     """Index files in the memory bank.
-    
+
     Scans ~/.navig/memory/ for .md/.txt files and creates
     searchable chunks with vector embeddings.
-    
+
     Examples:
         navig memory index
         navig memory index --force
@@ -8557,34 +9077,34 @@ def memory_bank_index(
     """
     try:
         from navig.memory import get_memory_manager
-        
+
         def progress(file_path: str, status: str):
             if verbose:
                 icon = "✓" if status == "indexed" else "→" if status == "skipped" else "✗"
                 ch.console.print(f"  {icon} {file_path}")
-        
+
         ch.info("Indexing memory bank...")
-        
+
         manager = get_memory_manager(use_embeddings=not no_embed)
         result = manager.index(
             force=force,
             embed=not no_embed,
             progress_callback=progress if verbose else None,
         )
-        
+
         ch.success(f"Indexed {result.files_processed} files ({result.files_skipped} skipped)")
         ch.console.print(f"  Created {result.chunks_created} chunks")
         ch.console.print(f"  Total tokens: {result.total_tokens:,}")
         ch.console.print(f"  Embedded: {result.chunks_embedded} chunks")
         ch.console.print(f"  Duration: {result.duration_seconds:.2f}s")
-        
+
         if result.errors:
             ch.warning(f"Errors ({len(result.errors)}):")
             for err in result.errors[:5]:
                 ch.console.print(f"  • {err}")
-        
+
         manager.close()
-        
+
     except ImportError as e:
         ch.error(f"Missing dependency: {e}")
         ch.info("For embeddings, install: pip install sentence-transformers")
@@ -8602,10 +9122,10 @@ def memory_bank_search(
     keyword_only: bool = typer.Option(False, "--keyword", "-k", help="Keyword-only search (no embeddings)"),
 ):
     """Search the memory bank with hybrid search.
-    
+
     Uses 70% vector similarity + 30% BM25 keyword matching.
     Falls back to keyword-only if embeddings unavailable.
-    
+
     Examples:
         navig memory search "docker networking"
         navig memory search "nginx config" --limit 10
@@ -8613,14 +9133,14 @@ def memory_bank_search(
         navig memory search "docker" --keyword
     """
     import json as json_module
-    
+
     try:
         from navig.memory import get_memory_manager
-        
+
         # Try with embeddings first, fall back to keyword-only
         use_embeddings = not keyword_only
         manager = None
-        
+
         try:
             manager = get_memory_manager(use_embeddings=use_embeddings)
             response = manager.search(query, limit=limit, file_filter=file)
@@ -8634,13 +9154,13 @@ def memory_bank_search(
             response = manager.search_engine.search(
                 query, limit=limit, file_filter=file, keyword_only=True
             )
-        
+
         if json_output:
             print(json_module.dumps(response.to_dict(), indent=2))
             if manager:
                 manager.close()
             return
-        
+
         if not response.results:
             if plain:
                 print("No results")
@@ -8649,24 +9169,24 @@ def memory_bank_search(
             if manager:
                 manager.close()
             return
-        
+
         if plain:
             for r in response.results:
                 print(f"{r.combined_score:.3f}\t{r.file_path}:{r.line_start}\t{r.snippet[:80]}")
         else:
             ch.info(f"Found {len(response.results)} results ({response.search_time_ms:.1f}ms)")
             ch.console.print()
-            
+
             for i, r in enumerate(response.results, 1):
                 score_bar = "█" * int(r.combined_score * 10)
                 ch.console.print(f"[bold cyan]{i}.[/bold cyan] [dim]{r.citation()}[/dim]")
                 ch.console.print(f"   Score: [green]{score_bar}[/green] {r.combined_score:.3f}")
                 ch.console.print(f"   {r.snippet}")
                 ch.console.print()
-        
+
         if manager:
             manager.close()
-        
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -8678,10 +9198,10 @@ def memory_bank_files(
     """List indexed files in the memory bank."""
     try:
         from navig.memory import get_memory_manager
-        
+
         manager = get_memory_manager(use_embeddings=False)
         files = manager.list_files()
-        
+
         if not files:
             if plain:
                 print("No files")
@@ -8690,19 +9210,19 @@ def memory_bank_files(
                 ch.info(f"Add .md files to: {manager.memory_dir}")
             manager.close()
             return
-        
+
         if plain:
             for f in files:
                 print(f"{f['file_path']}\t{f['chunk_count']}\t{f['total_tokens']}")
         else:
             from rich.table import Table
-            
+
             table = Table(title="Indexed Memory Files")
             table.add_column("File", style="cyan")
             table.add_column("Chunks", justify="right")
             table.add_column("Tokens", justify="right")
             table.add_column("Indexed", style="dim")
-            
+
             for f in files:
                 indexed_at = f['indexed_at'][:10] if f.get('indexed_at') else '-'
                 table.add_row(
@@ -8711,11 +9231,11 @@ def memory_bank_files(
                     str(f['total_tokens']),
                     indexed_at,
                 )
-            
+
             ch.console.print(table)
-        
+
         manager.close()
-        
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -8725,31 +9245,31 @@ def memory_bank_clear(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Clear the memory bank index (keeps original files).
-    
+
     This clears the search index but preserves the original
     .md files in ~/.navig/memory/
-    
+
     Examples:
         navig memory clear-bank
         navig memory clear-bank --force
     """
     try:
         from navig.memory import get_memory_manager
-        
+
         if not force:
             if not typer.confirm("Clear memory bank index? (files are preserved)"):
                 raise typer.Abort()
-        
+
         manager = get_memory_manager(use_embeddings=False)
         result = manager.clear(confirm=True)
-        
+
         ch.success("Memory bank index cleared")
         ch.console.print(f"  Files removed: {result.get('files_deleted', 0)}")
         ch.console.print(f"  Chunks removed: {result.get('chunks_deleted', 0)}")
         ch.console.print(f"  Cache cleared: {result.get('cache_cleared', 0)}")
-        
+
         manager.close()
-        
+
     except typer.Abort:
         ch.info("Cancelled")
     except Exception as e:
@@ -8954,6 +9474,81 @@ def memory_fact_stats(
         ch.error(f"Error: {e}")
 
 
+@memory_app.command("sync")
+def memory_sync(
+    ctx: typer.Context,
+    from_url: str = typer.Option(..., "--from", help="Source gateway URL (e.g. http://10.0.0.5:7422)."),
+    formation: str = typer.Option("", "--formation", "-f", help="Formation ID filter."),
+    limit: int = typer.Option(500, "--limit", "-n", min=1, max=5000, help="Max chunks to pull."),
+    token: str = typer.Option("", "--token", "-t", help="Bearer token for remote gateway."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be imported without writing."),
+) -> None:
+    """
+    Pull memory chunks from a remote NAVIG formation.
+
+    Connects to a remote NAVIG gateway, exports its memory chunks,
+    and imports them into the local memory store.
+
+    Uses HTTP transport — not mesh (mesh explicitly excludes memory sync).
+
+    Examples:
+        navig memory sync --from http://10.0.0.5:7422
+        navig memory sync --from http://remote:7422 --formation myproject
+        navig memory sync --from http://remote:7422 --token mytoken --dry-run
+    """
+    ch.info(f"Connecting to {from_url} …")
+
+    try:
+        from urllib.request import Request, urlopen
+        from navig.memory.sync import import_chunks
+        import json as _json
+
+        params = f"limit={limit}"
+        if formation:
+            params += f"&formation_id={formation}"
+
+        url = f"{from_url.rstrip('/')}/memory/sync/export?{params}"
+        headers: dict = {"User-Agent": "navig-sync/1.0"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        req = Request(url, headers=headers)
+        try:
+            with urlopen(req, timeout=30) as resp:  # noqa: S310
+                payload = _json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            ch.error(f"Failed to connect to {from_url}: {exc}")
+            raise typer.Exit(1)
+
+        chunks = (
+            payload.get("chunks", payload)
+            if isinstance(payload, dict)
+            else payload
+        )
+        if not isinstance(chunks, list):
+            ch.error("Remote returned unexpected format.")
+            raise typer.Exit(1)
+
+        ch.info(f"Received {len(chunks)} chunk(s) from remote.")
+
+        if dry_run:
+            ch.dim("  (dry-run: nothing written)")
+            raise typer.Exit(0)
+
+        from navig.config import get_config_manager
+        cfg = get_config_manager()
+        db_path = cfg.storage_dir / "memory" / "chunks.db"
+
+        imported, skipped = import_chunks(db_path, chunks, formation)
+        ch.success(f"Sync complete: {imported} imported, {skipped} skipped.")
+
+    except (SystemExit, typer.Exit):
+        raise
+    except Exception as exc:
+        ch.error(f"Sync failed: {exc}")
+        raise typer.Exit(1)
+
+
 app.add_typer(memory_app, name="memory")
 
 
@@ -8965,24 +9560,24 @@ app.add_typer(memory_app, name="memory")
 def menu_command(ctx: typer.Context):
     """
     Launch interactive menu interface.
-    
+
     Navigate NAVIG using a terminal UI with arrow keys and keyboard shortcuts.
     Mr. Robot inspired theme with Rich formatting.
-    
+
     Features:
     - Host and app management
     - Database operations
     - File transfers
     - System monitoring
     - Command history tracking
-    
+
     Navigation:
     - Arrow keys or numbers to select menu items
     - Enter to confirm selection
     - ESC or 'q' to go back
     - '?' for help
     - Ctrl+C to exit
-    
+
     Note: If experiencing freezes on Windows, questionary may need to be uninstalled.
     The menu will work fine with number-based selection only.
     """
@@ -9035,33 +9630,33 @@ def config_migrate(
     from navig.core.migrations import migrate_config
     from navig.config import get_config_manager
     import yaml
-    
+
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
-    
+
     if not global_config_file.exists():
         ch.error("No global configuration found.")
         raise typer.Exit(1)
-        
+
     try:
         # Load raw config to avoid auto-migration on load
-        with open(global_config_file, 'r') as f:
+        with open(global_config_file, 'r', encoding='utf-8') as f:
             raw_config = yaml.safe_load(f) or {}
-            
+
         migrated, modified = migrate_config(raw_config)
-        
+
         if not modified:
             ch.success("Configuration is already up to date.")
             return
-            
+
         if dry_run:
             ch.info("Dry run: Configuration would be updated.")
             ch.info(f"New version: {migrated.get('version')}")
         else:
-            with open(global_config_file, 'w') as f:
+            with open(global_config_file, 'w', encoding='utf-8') as f:
                 yaml.dump(migrated, f, default_flow_style=False, sort_keys=False)
             ch.success(f"Configuration migrated to version {migrated.get('version')}")
-            
+
     except Exception as e:
         ch.error(f"Migration failed: {e}")
         raise typer.Exit(1)
@@ -9084,7 +9679,7 @@ def config_show(
 ):
     """Show configuration."""
     cm = _get_config_manager()
-    
+
     if scope == "global":
         config = cm._load_global_config()
         ch.print_json(config)
@@ -9096,16 +9691,6 @@ def config_show(
             ch.error(str(e))
 
 
-@app.command("config")
-def config_command(ctx: typer.Context):
-    """
-    Manage NAVIG settings and configuration.
-    """
-    if ctx.invoked_subcommand is None:
-        show_subcommand_help("config", ctx)
-        raise typer.Exit()
-
-
 @config_app.command("get")
 def config_get(
     key: str = typer.Argument(..., help="Configuration key (e.g. ai.default_provider)"),
@@ -9115,11 +9700,11 @@ def config_get(
     """
     cm = _get_config_manager()
     config = cm._load_global_config()
-    
+
     # Traverse nested keys
     keys = key.split('.')
     value = config
-    
+
     try:
         for k in keys:
             if isinstance(value, dict):
@@ -9127,7 +9712,7 @@ def config_get(
             else:
                 value = None
                 break
-        
+
         if value is None:
             ch.warning(f"Key '{key}' not found or is empty.")
         else:
@@ -9135,7 +9720,7 @@ def config_get(
                 ch.print_json(value)
             else:
                 ch.console.print(str(value))
-                
+
     except Exception as e:
         ch.error(f"Error retrieving key: {e}")
 
@@ -9151,27 +9736,27 @@ def config_set(
     try:
         import yaml
         from navig.config import get_config_manager
-        
+
         # Parse value - try JSON/YAML first, fallback to string
         try:
             parsed_value = yaml.safe_load(value)
-        except:
+        except Exception:
             parsed_value = value
-            
+
         cm = get_config_manager()
         global_config_file = cm.global_config_dir / "config.yaml"
-        
+
         if not global_config_file.exists():
             ch.error("No global configuration found.")
             raise typer.Exit(1)
-            
-        with open(global_config_file, 'r') as f:
+
+        with open(global_config_file, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f) or {}
-            
+
         # Update nested key
         keys = key.split('.')
         target = config
-        
+
         for k in keys[:-1]:
             if k not in target:
                 target[k] = {}
@@ -9179,15 +9764,15 @@ def config_set(
             if not isinstance(target, dict):
                  ch.error(f"Cannot set key '{key}' because '{k}' is not a dictionary.")
                  raise typer.Exit(1)
-                 
+
         target[keys[-1]] = parsed_value
-        
+
         # Save
-        with open(global_config_file, 'w') as f:
+        with open(global_config_file, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-            
+
         ch.success(f"Updated '{key}' to: {parsed_value}")
-        
+
     except Exception as e:
         ch.error(f"Error setting config: {e}")
         raise typer.Exit(1)
@@ -9212,17 +9797,17 @@ def calendar_list(
 ):
     """
     List upcoming calendar events.
-    
+
     Examples:
         navig calendar list
         navig calendar list --hours 48
     """
     import asyncio
     from datetime import datetime, timedelta
-    
+
     try:
         from navig.agent.proactive import GoogleCalendar, MockCalendar
-        
+
         # Try Google, fallback to Mock
         try:
             provider = GoogleCalendar()
@@ -9231,10 +9816,10 @@ def calendar_list(
                 provider = MockCalendar()
         except Exception:
             provider = MockCalendar()
-        
+
         now = datetime.now()
         events = asyncio.run(provider.list_events(now, now + timedelta(hours=hours)))
-        
+
         if json_output:
             import json
             ch.raw_print(json.dumps([{
@@ -9245,25 +9830,25 @@ def calendar_list(
                 "location": e.location,
             } for e in events], indent=2))
             return
-        
+
         if not events:
             ch.info(f"No events in the next {hours} hours.")
             return
-            
+
         table = ch.Table(title=f"Upcoming Events ({hours}h)")
         table.add_column("Time", style="cyan")
         table.add_column("Title", style="yellow")
         table.add_column("Location", style="green")
-        
+
         for event in events:
             table.add_row(
                 event.start.strftime("%m/%d %H:%M"),
                 event.title,
                 event.location or "-"
             )
-        
+
         ch.console.print(table)
-        
+
     except Exception as e:
         ch.error(f"Error listing events: {e}")
 
@@ -9272,12 +9857,12 @@ def calendar_list(
 def calendar_auth():
     """
     Authenticate with Google Calendar.
-    
+
     Requires a credentials.json file from Google Cloud Console.
     """
     try:
         from navig.agent.proactive.google_calendar import GoogleCalendar
-        
+
         provider = GoogleCalendar()
         if provider.service:
             ch.success("Successfully authenticated with Google Calendar!")
@@ -9310,19 +9895,19 @@ def email_list(
 ):
     """
     List unread emails.
-    
+
     Requires email credentials in config or environment.
-    
+
     Examples:
         navig email list
         navig email list --limit 20 --provider outlook
     """
     import asyncio
-    
+
     try:
         from navig.agent.proactive import MockEmail
         from navig.config import get_config_manager
-        
+
         cm = get_config_manager()
         email_config = cm.global_config.get('email', {})
 
@@ -9358,7 +9943,7 @@ def email_list(
                 "Using legacy plaintext email password from config. "
                 "Run 'navig email setup <provider>' to migrate to vault."
             )
-        
+
         if not email_addr or not password:
             ch.warning("Email not configured. Using mock data.")
             ch.dim("Set email.address in config and store credentials via 'navig email setup',")
@@ -9367,21 +9952,21 @@ def email_list(
             email_provider = MockEmail()
         else:
             from navig.agent.proactive.imap_email import GmailProvider, OutlookProvider, FastmailProvider
-            
+
             providers_map = {
                 'gmail': GmailProvider,
                 'outlook': OutlookProvider,
                 'fastmail': FastmailProvider,
             }
-            
+
             if provider in providers_map:
                 email_provider = providers_map[provider](email_addr, password)
             else:
                 ch.error(f"Unknown provider: {provider}")
                 return
-        
+
         messages = asyncio.run(email_provider.list_unread(limit=limit))
-        
+
         if json_output:
             import json
             ch.raw_print(json.dumps([{
@@ -9392,25 +9977,25 @@ def email_list(
                 "received_at": m.received_at.isoformat(),
             } for m in messages], indent=2))
             return
-        
+
         if not messages:
             ch.info("No unread emails.")
             return
-            
+
         table = ch.Table(title=f"Unread Emails ({len(messages)})")
         table.add_column("From", style="cyan", max_width=25)
         table.add_column("Subject", style="yellow")
         table.add_column("Preview", style="dim", max_width=40)
-        
+
         for msg in messages:
             table.add_row(
                 msg.sender[:25] if len(msg.sender) > 25 else msg.sender,
                 msg.subject,
                 msg.snippet[:40] + "..." if len(msg.snippet) > 40 else msg.snippet
             )
-        
+
         ch.console.print(table)
-        
+
     except Exception as e:
         ch.error(f"Error listing emails: {e}")
 
@@ -9421,11 +10006,11 @@ def email_setup(
 ):
     """
     Interactive email setup.
-    
+
     Stores credentials securely in NAVIG config.
     """
     import getpass
-    
+
     try:
         from navig.config import get_config_manager
         from navig.vault import get_vault
@@ -9433,34 +10018,34 @@ def email_setup(
         provider = provider.strip().lower()
 
         ch.info(f"Setting up {provider} email...")
-        
+
         email_addr = input("Email address: ").strip()
-        
+
         if provider == 'gmail':
             ch.dim("Gmail requires an App Password (not your regular password)")
             ch.dim("Generate at: https://myaccount.google.com/apppasswords")
-        
+
         password = getpass.getpass("Password/App Password: ")
-        
+
         # Test connection
         ch.info("Testing connection...")
-        
+
         from navig.agent.proactive.imap_email import GmailProvider, OutlookProvider, FastmailProvider
-        
+
         providers_map = {
             'gmail': GmailProvider,
             'outlook': OutlookProvider,
             'fastmail': FastmailProvider,
         }
-        
+
         if provider not in providers_map:
             ch.error(f"Unknown provider: {provider}")
             return
-        
+
         import asyncio
         test_provider = providers_map[provider](email_addr, password)
         messages = asyncio.run(test_provider.list_unread(limit=1))
-        
+
         ch.success(f"Connection successful! Found {len(messages)} unread message(s).")
 
         # AUDIT DECISION:
@@ -9485,7 +10070,7 @@ def email_setup(
         # Save non-secret provider settings to config
         cm = get_config_manager()
         config_file = cm.global_config_dir / "config.yaml"
-        
+
         config = {}
         if config_file.exists():
             with open(config_file, 'r', encoding='utf-8') as f:
@@ -9505,10 +10090,10 @@ def email_setup(
 
         with open(config_file, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, default_flow_style=False)
-        
+
         ch.success("Email configuration saved (password stored in vault).")
         ch.dim(f"Stored in: {config_file}")
-        
+
     except Exception as e:
         ch.error(f"Setup failed: {e}")
 
@@ -9531,29 +10116,29 @@ def proactive_status():
     try:
         from navig.agent.proactive import ProactiveEngine
         from navig.config import get_config_manager
-        
+
         cm = get_config_manager()
-        
+
         ch.console.print("\n[bold]Proactive Assistance Status[/bold]\n")
-        
+
         # Calendar
         calendar_config = cm.global_config.get('calendar', {})
         if calendar_config.get('provider'):
             ch.console.print(f"  📅 Calendar: [green]{calendar_config.get('provider')}[/green]")
         else:
             ch.console.print("  📅 Calendar: [dim]Not configured[/dim]")
-        
+
         # Email
         email_config = cm.global_config.get('email', {})
         if email_config.get('address'):
             ch.console.print(f"  📧 Email: [green]{email_config.get('address')}[/green]")
         else:
             ch.console.print("  📧 Email: [dim]Not configured[/dim]")
-        
+
         # Engine status
         ch.console.print("\n  ⚙️  Engine: [yellow]Starts with gateway[/yellow]")
         ch.dim("\n  Run 'navig gateway start' to activate proactive assistance.")
-        
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -9562,17 +10147,17 @@ def proactive_status():
 def proactive_test():
     """Run a test check for upcoming events/emails."""
     import asyncio
-    
+
     try:
         from navig.agent.proactive.engine import get_proactive_engine
-        
+
         ch.info("Running proactive check...")
-        
+
         engine = get_proactive_engine()
         asyncio.run(engine.run_checks(None))
-        
+
         ch.success("Proactive check complete!")
-        
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -9601,6 +10186,7 @@ _EXTERNAL_CMD_MAP = {
     "farmore":      ("navig.commands.farmore",      "farmore_app"),
     "copilot":      ("navig.commands.copilot",      "copilot_app"),
     "inbox":        ("navig.commands.inbox",        "inbox_app"),
+    "sync":         ("navig.commands.sync",         "sync_app"),
     "agent":        ("navig.commands.agent",        "agent_app"),
     "service":      ("navig.commands.service",      "service_app"),
     "stack":        ("navig.commands.stack",         "stack_app"),
@@ -9614,14 +10200,17 @@ _EXTERNAL_CMD_MAP = {
     "mode":         ("navig.commands.mode",          "mode_app"),
     "email":        ("navig.commands.email",         "email_app"),
     "voice":        ("navig.commands.voice",         "voice_app"),
-    "crash":        ("navig.commands.crash",         "app"),
+    "crash":        ("navig.commands.crash",         "crash_app"),
     "telegram":     ("navig.commands.telegram",      "telegram_app"),
     "tg":           ("navig.commands.telegram",      "telegram_app"),
     "matrix":       ("navig.commands.matrix",        "matrix_app"),
     "mx":           ("navig.commands.matrix",        "matrix_app"),
     "store":        ("navig.commands.store",         "store_app"),
     "cred":         ("navig.commands.vault",         "cred_app"),
-    "profile":      ("navig.commands.vault",         "profile_app"),
+    # Operating-mode profiles (node / builder / operator / architect)
+    "profile":      ("navig.commands.profile",       "profile_app"),
+    # Credential profiles (vault round-trip selection) — was the original "profile" entry
+    "cred-profile": ("navig.commands.vault",         "profile_app"),
     "flux":         ("navig.commands.flux",          "flux_app"),
     "fx":           ("navig.commands.flux",          "flux_app"),
     "cortex":       ("navig.commands.cortex",        "cortex_app"),
@@ -9657,8 +10246,59 @@ _EXTERNAL_CMD_MAP = {
     # Moved from 175-line inline block → navig/commands/docker.py :: docker_app
     # Saves parsing Typer decorators on every non-docker cold start.
     "docker":       ("navig.commands.docker",      "docker_app"),
-    # ── Brain: prompt management, soul context, agent system prompts ─────────
-    "brain":        ("navig.commands.brain",       "brain_app"),
+    # ── Prompts: agent system-prompt management (.navig/store/prompts/) ───────
+    "prompts":      ("navig.commands.prompts",     "prompts_app"),
+    # ── Browser: Playwright/gateway web automation ────────────────────────────
+    # Extracted from inline definition → navig/commands/browser.py :: browser_app
+    "browser":      ("navig.commands.browser",     "browser_app"),
+    # ── Multi-network reliable dispatch (Phase 0/1/2) ─────────────────────────
+    "dispatch":     ("navig.commands.dispatch",    "dispatch_app"),
+    "contacts":     ("navig.commands.dispatch",    "contacts_app"),
+    "ct":           ("navig.commands.dispatch",    "contacts_app"),
+    # ── NAVIG Bridge — standalone AI relay (no VS Code required) ─────────────
+    "bridge":       ("navig.commands.bridge",      "bridge_app"),
+    # ── System paths inspection & MCP server registration ──────────────────────
+    "paths":        ("navig.commands.paths_cmd",   "paths_app"),
+    "mcp":          ("navig.commands.mcp_cmd",     "mcp_app"),
+    # ── Generic mention & keyword tracker ─────────────────────────────────────
+    "radar":        ("navig.commands.radar",       "radar_app"),
+    # ── Unified event observation system ──────────────────────────────────────
+    "watch":        ("navig.commands.watch_cmd",   "watch_app"),
+    # ── Flux Mesh: peer management, config sync, remote upgrade ───────────────
+    "mesh":         ("navig.commands.mesh",        "mesh_app"),
+    # ── Debug / observability: toggle debug mode, show log sizes ─────────────
+    "debug":        ("navig.commands.debug_cmd",   "debug_app"),
+    # ── Memory: conversations, key-facts, sessions ────────────────────────────
+    "memory":       ("navig.commands.memory",      "memory_app"),
+    # ── Spaces context: personal / workspace / studio mode switcher ────────────
+    "spaces":       ("navig.commands.spaces",      "spaces_context_app"),
+    # ── PERF: commands migrated from main.py unconditional try/except blocks ─
+    # Were imported on EVERY CLI invocation; now dispatched lazily via this map.
+    "telemetry":  ("navig.commands.telemetry",   "telemetry_app"),
+    "wut":        ("navig.commands.wut",         "app"),
+    "eval":       ("navig.commands.eval",        "app"),
+    "agents":     ("navig.commands.agents",      "app"),
+    "webdash":    ("navig.commands.webdash",     "app"),
+    "explain":    ("navig.commands.explain",     "app"),
+    "snapshot":   ("navig.commands.snapshot",    "app"),
+    "replay":     ("navig.commands.replay",      "app"),
+    "cloud":      ("navig.commands.cloud",       "app"),
+    "benchmark":  ("navig.commands.benchmark",   "app"),
+    # ── Finance: beancount double-entry accounting (pip install navig[finance]) ──
+    "finance":    ("navig.commands.finance",     "finance_app"),
+    # ── Work: lifecycle/stage tracker for leads, projects, tasks, etc. ────────
+    "work":       ("navig.commands.work",        "work_app"),
+    # ── Formerly eager-loaded inline — now lazy via this map ─────────────────
+    "origin":     ("navig.commands.origin",      "origin_app"),
+    "user":       ("navig.commands.user",        "user_app"),
+    "node":       ("navig.commands.node",        "node_app"),
+    "boot":       ("navig.commands.boot_cmd",    "boot_app"),
+    "space":      ("navig.commands.space",       "space_app"),
+    "blueprint":  ("navig.commands.blueprint",   "blueprint_app"),
+    "deck":       ("navig.commands.deck",        "deck_app"),
+    "portable":   ("navig.commands.portable",    "portable_app"),
+    "migrate":    ("navig.commands.migrate",     "migrate_app"),
+    "system":     ("navig.commands.system_cmd",  "system_app"),
 }
 
 
@@ -9673,7 +10313,7 @@ def _register_external_commands(*, register_all: bool = False):
     * If argv[1] is an external command, only *that* module is loaded.
     * If we cannot decide (e.g. ``navig --help`` fell through), we
       import everything so the help screen is complete.
-    
+
     Args:
         register_all: If True, skip argv heuristic and register every
                       external command.  Useful for tests and tooling.
@@ -9694,8 +10334,11 @@ def _register_external_commands(*, register_all: bool = False):
             mod = importlib.import_module(mod_path)
             app.add_typer(getattr(mod, attr), name=target,
                           hidden=(target in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")))
-        except ImportError:
-            pass
+        except ImportError as _ie:
+            import sys as _sys
+            _sys.stderr.write(
+                f"[navig] \u26a0 command '{target}' unavailable (import failed: {_ie})\n"
+            )
         return
 
     # AHK sub-app (Windows only)
@@ -9723,8 +10366,11 @@ def _register_external_commands(*, register_all: bool = False):
             mod = importlib.import_module(mod_path)
             app.add_typer(getattr(mod, attr), name=cmd_name,
                           hidden=(cmd_name in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")))
-        except ImportError:
-            pass
+        except ImportError as _ie:
+            import sys as _sys
+            _sys.stderr.write(
+                f"[navig] \u26a0 command '{cmd_name}' unavailable (import failed: {_ie})\n"
+            )
 
     if sys.platform == "win32":
         try:
@@ -9853,11 +10499,31 @@ def restore_backup_cmd(
 # ============================================================================
 
 # ============================================================================
+# SELF-UPDATE
+# ============================================================================
+
+
+@app.command("update")
+def update_cmd(
+    check: bool = typer.Option(False, "--check", "-c", help="Check for updates only — do not apply."),
+    force: bool = typer.Option(False, "--force", "-f", help="Apply even if already on latest."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would happen, no changes."),
+    channel: Optional[str] = typer.Option(None, "--channel", help="Update channel: stable or beta.", hidden=True),
+) -> None:
+    """Check for and apply NAVIG self-updates.
+
+    Preserves all user data across every update and runs pending
+    data-root migrations automatically after upgrading.
+    """
+    from navig.commands.update import _run_update  # noqa: PLC0415
+    _run_update(check=check, force=force, dry_run=dry_run)
+
+
+# ============================================================================
 # ENTRY POINT
 # ============================================================================
 
 if __name__ == "__main__":
     _register_external_commands()
     app()
-
 
