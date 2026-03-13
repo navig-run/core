@@ -18,9 +18,17 @@ desktop.ini                 # Windows folder settings
 nul                         # Windows NUL device artifact
 
 # ===============================================
+# Dev scripts generated during agent sessions
+# ===============================================
+validate_prompts.py
+track_c_results.txt
+
+# ===============================================
 # Python
 # ===============================================
 __pycache__/                # Python bytecode cache
+**/__pycache__/             # Python bytecode cache (any depth)
+**/__pycache__              # Python bytecode cache (no trailing slash variant)
 *.py[cod]                   # Compiled Python files
 *$py.class                  # Python class files
 *.so                        # Shared objects
@@ -128,9 +136,21 @@ discord-webhooks.json       # Webhook URLs
 *.token                     # Bot tokens
 discord-*.json              # Discord config with secrets
 
-# NAVIG Configuration (contains server credentials)
-~/.navig/                   # User NAVIG config (shouldn't be in repo anyway)
-.navig/                     # Local project NAVIG runtime config
+# NAVIG Vault & Encrypted Data (NEVER commit)
+*.enc                       # AES-256 encrypted vault blobs
+.blackbox/                  # Vault key directory
+**/.blackbox/               # Vault key directory (any depth)
+vault.salt                  # Vault salt file
+
+# Cython compiled binaries (generated at build time, not committed)
+*.pyd                       # Cython/C extension — Windows
+# *.so compiled by Cython are already covered by *.so above
+
+# NAVIG Configuration
+# ~/.navig/ is the global user store — never in a repo
+~/.navig/                   # Global user NAVIG config (shouldn't be in repo anyway)
+# .navig/ is TRACKED — plans/, brand/, wiki/, agents/ all live here
+# Only runtime / credential files inside it are ignored (see list below)
 .archive/                   # Local archive folder
 nohup.out                   # Background process output
 
@@ -138,6 +158,7 @@ nohup.out                   # Background process output
 # Backups and Archives
 # ===============================================
 .backups/                   # Backup directory
+.backup/                     # Local backup folder (singular)
 *.backup                    # Backup files
 *.bak                       # Backup files
 *.INSECURE.bak              # Security-removed code backups
@@ -205,33 +226,36 @@ cython_debug/               # Cython debug symbols
 # END OF .gitignore
 # ===============================================
 
-# NAVIG Configuration
-# .navig/ is tracked — contains plans, agents, and project config
-.navig/config.yaml
+# NAVIG runtime files inside .navig/ — excluded from VCS
+# Tracked paths: .navig/plans/ .navig/brand/ .navig/wiki/ .navig/agents/
+.navig/config.yaml          # credential-bearing config — use .navig/config.yaml.example
 .navig/profile.json
-.navig/ai_system_prompt.txt
+.navig/ai_system_prompt.txt # runtime-generated
 .navig/debug.log
 .navig/navig.log
 .navig/cache/
 .navig/history/
 .navig/logs/
 .navig/backups/
-.navig/hosts/
-.navig/tests/
-.navig/schemas/
-.navig/workspace/USER.md
+.navig/hosts/               # machine-specific host data
+.navig/apps/
+.navig/tests/               # local test run output
+.navig/schemas/             # runtime-copied schemas (source is navig/schemas/)
+.navig/inbox/               # personal inbox items
+.navig/tasks/               # personal task queue
+.navig/workspace/USER.md    # user identity sidecar — machine-specific
 .backups/
 node_modules
 
-# AI IDE Configuration (per-developer, not committed)
+# AI IDE Configuration
+# .agents/ .claude/ .codex/ .gemini/ are TRACKED — auto-synced from
+# .github/copilot-instructions.md via scripts/sync-instructions.ps1
+# Per-developer overrides only:
 .augment
 .clinerules
 .cursorrules
 .windsurfrules
 .agent/
-.claude/
-.codex/
-.gemini/
 .ruff_cache/
 
 # Archive (cleanup staging — never commit)
@@ -282,4 +306,45 @@ run_test.py
 test_google.py
 test_json.py
 test_parse*.py
+patch_wizard.py
+patch2_wizard.py
+patch3_wizard.py
+fix_escapes.py
+fix_escapes2.py
+audit_prompts.py
+audit_slugs.py
+validate_prompts.py
+
+# Root output / tracking files
+latest.json                 # Stale release metadata artifact
+pytest_fail.txt
+tC_out*.txt
+track_c_results.txt
+STABILITY_REPORT.md
+
+# Internal step-completion reports (not relevant to contributors)
+docs/.archive/
 test_vision.py
+
+temp_restore/
+
+# Runtime local data (user-specific, not for VCS)
+userdata/
+
+# host/ — compiled binaries and runtime logs
+host/out.log
+host/build_errors.txt
+host/*.exe
+
+# Community stub folder (separate repo at navig-community/)
+navig-community/
+
+# Runtime store — live content lives in ~/.navig/store/, not in VCS
+store/
+
+# icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
+icons/
+
+# Private dev-only plugin — never commit
+navig/plugins/llm_bridge/
+navig/plugins/llm-bridge/
