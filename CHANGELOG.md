@@ -1,5 +1,41 @@
 ﻿# Changelog
 
+
+## [2.4.14] - 2026-03-13
+
+### Release (`main`)
+
+- feat: animated TUI onboarding, navig upgrade cmd, auto-install textual
+- docs: rewrite public-facing Markdown for v2.4.13 release
+- chore: portability-audit fixes вЂ” v2.4.13 publish readiness
+- chore: remove all tracked __pycache__ and .pyc files from git index
+- feat: major update вЂ” mesh, browser, memory, gateway, new commands + gitignore hardening
+- perf(QUANTUM-V E+B+A): batch monitor SSH 27->4 round-trips, docker lazy dispatch, production install mode
+- perf(sessions): fast-scan mode for list/stats/delete вЂ” reads header line only, skips GBs of JSONL
+- chore(dev): add pydantic + numpy to dev extras
+- perf: navig help fast path + McpForge port pre-check + disable debug_log
+- feat(memory): wire existing memory module into all AI paths
+- chore(dev): add pydantic + numpy to dev extras
+- perf: navig help fast path + McpForge port pre-check + disable debug_log
+- feat(memory): wire existing memory module into all AI paths
+- Update TASK_PROPOSALS.md
+- Update TASK_PROPOSALS.md
+- Refine issue proposals and restore minimal README
+- chore: remove top-level __pycache__ from tracking
+- chore: remove tracked __pycache__ files from repo
+- chore: update gitignore for runtime artifacts
+- docs: rewrite README вЂ” pro-grade, one-command install, donation links, full doc index
+- fix(agent): auto-resolve GitHub Models token from vault/config + enhance /models command
+- fix(bot): fix SOUL personality + multi-model fallback chain
+- feat(core): GitHub Models routing, vault CLI improvements, personality fix
+- feat(forge): LLM provider chain, GitHub Models, streaming, webhook, copilot CLI, tests
+- perf(cli): optimize startup from 886ms to ~450ms (50% faster)
+- feat(storage): unified SQLite engine with PRAGMA profiles, write batching & query timing
+- feat(store): implement SQLite local-first migration (Phases 1-3)
+- feat(matrix): Phase 4 вЂ” persistent store, stats webhook, PG mirror
+- feat(matrix): Phase 3 вЂ” E2EE key verification, device trust, SAS flow
+- feat(matrix): Phase 2 вЂ” inbox bridge, notifications, file sharing
+
 All notable changes to NAVIG are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
