@@ -84,6 +84,9 @@ finance = [
 ]
 # telegram extra intentionally empty — NAVIG uses raw Bot API via httpx (no PTB required)
 telegram = []
+tui = [
+  "textual>=0.50.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/navig-run/core"
@@ -121,8 +124,12 @@ addopts = [
   "--cov=navig.daemon.telegram_worker",
   "--cov=navig.daemon.service_manager",
   "--cov=navig.contracts",
+  "--cov=navig.remote",
+  "--cov=navig.tunnel",
+  "--cov=navig.core.security",
+  "--cov=navig.routing.router",
   "--cov-report=term-missing",
-  "--cov-fail-under=65",
+  "--cov-fail-under=75",
 ]
 asyncio_mode = "auto"
 markers = [
