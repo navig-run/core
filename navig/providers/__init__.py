@@ -18,6 +18,16 @@ from .types import (
     AuthProfileStore,
     BUILTIN_PROVIDERS,
     PROVIDER_ENV_VARS,
+    builtin_provider_configs,
+)
+
+from .registry import (
+    ProviderManifest,
+    ProviderTier,
+    ALL_PROVIDERS,
+    get_provider,
+    list_enabled_providers,
+    list_all_providers,
 )
 
 from .auth import AuthProfileManager
@@ -102,6 +112,14 @@ __all__ = [
     "AuthProfileStore",
     "BUILTIN_PROVIDERS",
     "PROVIDER_ENV_VARS",
+    "builtin_provider_configs",
+    # Registry
+    "ProviderManifest",
+    "ProviderTier",
+    "ALL_PROVIDERS",
+    "get_provider",
+    "list_enabled_providers",
+    "list_all_providers",
     # Auth
     "AuthProfileManager",
     # Clients

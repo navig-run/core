@@ -387,7 +387,7 @@ class McpForgeProvider(LLMProvider):
             raise ConnectionError(
                 f"Forge daemon not reachable at {_forge_host}:{_forge_port} "
                 "(start the NAVIG Forge extension in VS Code)"
-            )
+            ) from None
 
         session = await self._get_session()
         self._ws = await session.ws_connect(
@@ -415,16 +415,12 @@ class McpForgeProvider(LLMProvider):
             if resp.get("error"):
                 raise RuntimeError(f"MCP initialize failed: {resp['error']}")
 
-            # Send initialized notification
-            self._request_id += 1
+            # Send initialized notification (JSON-RPC notification — no id, no response expected)
             await self._ws.send_json({
                 "jsonrpc": "2.0",
-                "id": self._request_id,
                 "method": "initialized",
                 "params": {},
             })
-            # Read ack (initialized response)
-            await self._ws.receive_json(timeout=5)
             self._initialized = True
 
     async def _call_tool(self, tool_name: str, arguments: dict) -> dict:
@@ -806,17 +802,280 @@ class _ServerError(Exception):
     pass
 
 
+# ── OpenAI-compatible provider subclasses ───────────────────────────
+# These providers all speak the OpenAI chat-completions protocol.
+# Each subclass only overrides name, default base_url, and env-var.
+
+class AnthropicProvider(OpenAIProvider):
+    """Anthropic Claude via their OpenAI-compatible messages adapter."""
+    name = "anthropic"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://api.anthropic.com/v1",
+            api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY", ""),
+            **kwargs,
+        )
+
+    async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
+        if not self.api_key:
+            raise RuntimeError("Anthropic API key not set (ANTHROPIC_API_KEY or CLAUDE_API_KEY)")
+        session = await self._get_session()
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        t0 = time.monotonic()
+        async with session.post(url, headers=headers, json=payload) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"Anthropic error ({resp.status}): {text}")
+            data = await resp.json()
+        latency = int((time.monotonic() - t0) * 1000)
+        choice = data["choices"][0]
+        usage = data.get("usage", {})
+        return LLMResponse(
+            content=choice["message"]["content"],
+            model=data.get("model", model),
+            provider=self.name,
+            latency_ms=latency,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            finish_reason=choice.get("finish_reason", ""),
+            raw=data,
+        )
+
+    async def is_available(self) -> bool:
+        return bool(self.api_key)
+
+
+class GroqProvider(OpenAIProvider):
+    """Groq LPU inference — OpenAI-compatible endpoint."""
+    name = "groq"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://api.groq.com/openai/v1",
+            api_key=api_key or os.getenv("GROQ_API_KEY", ""),
+            **kwargs,
+        )
+
+    async def is_available(self) -> bool:
+        return bool(self.api_key)
+
+
+class GoogleProvider(OpenAIProvider):
+    """Google Gemini via OpenAI-compatible generative-language endpoint."""
+    name = "google"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
+            api_key=api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", ""),
+            **kwargs,
+        )
+
+    async def is_available(self) -> bool:
+        return bool(self.api_key)
+
+
+class NvidiaProvider(OpenAIProvider):
+    """NVIDIA NIM — OpenAI-compatible hosted inference, 40 RPM free tier."""
+    name = "nvidia"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://integrate.api.nvidia.com/v1",
+            api_key=api_key or os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY", ""),
+            **kwargs,
+        )
+
+    async def is_available(self) -> bool:
+        return bool(self.api_key)
+
+
+class XAIProvider(OpenAIProvider):
+    """xAI Grok — OpenAI-compatible endpoint."""
+    name = "xai"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://api.x.ai/v1",
+            api_key=api_key or os.getenv("XAI_API_KEY") or os.getenv("GROK_KEY", ""),
+            **kwargs,
+        )
+
+    async def is_available(self) -> bool:
+        return bool(self.api_key)
+
+
+class MistralProvider(OpenAIProvider):
+    """Mistral AI — OpenAI-compatible endpoint."""
+    name = "mistral"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://api.mistral.ai/v1",
+            api_key=api_key or os.getenv("MISTRAL_API_KEY", ""),
+            **kwargs,
+        )
+
+    async def is_available(self) -> bool:
+        return bool(self.api_key)
+
+
+class CerebrasProvider(OpenAIProvider):
+    """Cerebras wafer-scale inference — OpenAI-compatible."""
+    name = "cerebras"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://api.cerebras.ai/v1",
+            api_key=api_key or os.getenv("CEREBRAS_API_KEY", ""),
+            **kwargs,
+        )
+
+    async def is_available(self) -> bool:
+        return bool(self.api_key)
+
+
+class BlockrunProvider(OpenAIProvider):
+    """
+    BlockRun AI proxy — routes to 30+ models via x402 micropayments (Solana/USDC).
+
+    The proxy runs locally and presents an OpenAI-compatible API.
+    No per-model API keys are required; the BLOCKRUN_WALLET_KEY funds the wallet.
+    Derived from .lab/ClawRouter — see that directory for the full proxy implementation.
+    """
+    name = "blockrun"
+    DEFAULT_URL = "https://blockrun.ai/api"  # Direct fallback; local proxy preferred
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or os.getenv("BLOCKRUN_BASE_URL", self.DEFAULT_URL),
+            api_key=api_key or os.getenv("BLOCKRUN_WALLET_KEY", ""),
+            **kwargs,
+        )
+
+    async def is_available(self) -> bool:
+        # Prefer local proxy check; fall back to env key presence
+        import socket as _sock
+        try:
+            s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+            s.settimeout(0.3)
+            result = s.connect_ex(("127.0.0.1", 8419)) == 0
+            s.close()
+            if result:
+                return True
+        except Exception:
+            pass
+        return bool(self.api_key)
+
+
+class AirLLMProvider(LLMProvider):
+    """
+    AirLLM — run full-precision HuggingFace models on a single consumer GPU.
+
+    AirLLM uses layer-by-layer inference to run 70B+ models on 4GB VRAM.
+    No API server required — model runs in-process via the `airllm` package.
+    Falls back gracefully if airllm is not installed.
+    """
+    name = "airllm"
+
+    def __init__(self, model: str = "", **kwargs):
+        self.model = model or os.getenv("AIRLLM_MODEL", "")
+        self.base_url = ""  # in-process, no base URL
+        self.api_key = ""   # no key needed
+        self._engine = None
+
+    def _get_engine(self):
+        if self._engine is not None:
+            return self._engine
+        try:
+            from airllm import AutoModel  # type: ignore[import]
+            if not self.model:
+                raise ValueError("AIRLLM_MODEL env var or model= argument required")
+            self._engine = AutoModel.from_pretrained(self.model)
+        except ImportError as exc:
+            raise RuntimeError(
+                "AirLLM not installed. Run: pip install airllm"
+            ) from exc
+        return self._engine
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 512,
+        **kwargs,
+    ) -> str:
+        import asyncio
+        engine = self._get_engine()
+        prompt = "\n".join(
+            f"{m['role'].upper()}: {m.get('content','')}"
+            for m in messages
+        )
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: engine.chat(prompt, max_new_tokens=max_tokens),
+        )
+        return result if isinstance(result, str) else str(result)
+
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 512,
+        **kwargs,
+    ):
+        # AirLLM has no native streaming; yield the full response as one chunk
+        text = await self.chat(messages, model=model, temperature=temperature, max_tokens=max_tokens)
+        yield text
+
+    async def is_available(self) -> bool:
+        try:
+            import importlib
+            return importlib.util.find_spec("airllm") is not None
+        except Exception:
+            return False
+
+
 # ── Factory ─────────────────────────────────────────────────────────
 
 _PROVIDER_MAP = {
+    # Cloud — OpenAI-compatible subclasses
+    "openai": OpenAIProvider,
+    "anthropic": AnthropicProvider,
+    "google": GoogleProvider,
+    "groq": GroqProvider,
+    "nvidia": NvidiaProvider,
+    "xai": XAIProvider,
+    "mistral": MistralProvider,
+    "cerebras": CerebrasProvider,
+    "blockrun": BlockrunProvider,
+    # Cloud — gateway / aggregator
+    "openrouter": OpenRouterProvider,
     "github_models": GitHubModelsProvider,
     "github": GitHubModelsProvider,
+    # Local
     "ollama": OllamaProvider,
-    "openrouter": OpenRouterProvider,
-    "openai": OpenAIProvider,
     "llamacpp": LlamaCppProvider,
     "llama.cpp": LlamaCppProvider,
     "llama_cpp": LlamaCppProvider,
+    "airllm": AirLLMProvider,
+    # Bridge
+    "mcp_forge": McpForgeProvider,
 }
 
 
