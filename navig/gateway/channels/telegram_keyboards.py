@@ -436,6 +436,74 @@ _ACTION_PROMPTS: Dict[str, str] = {
     "fb_down": None,
 }
 
+# ── Settings menu helpers ─────────────────────────────────────────────────────
+
+def _settings_header_text(session: Any) -> str:
+    """Header text for the /settings panel — shows current state at a glance."""
+    tts_labels = {
+        "auto": "Auto", "google_cloud": "Google Cloud",
+        "edge": "Edge TTS", "openai": "OpenAI",
+    }
+    mode_labels = {"": "Auto", "talk": "Talk", "reason": "Reason", "code": "Code"}
+
+    voice = "on" if getattr(session, "voice_enabled", True) else "off"
+    stt   = "on" if getattr(session, "stt_enabled", True) else "off"
+    grp   = "on" if getattr(session, "voice_in_groups", False) else "off"
+    tts   = tts_labels.get(getattr(session, "tts_provider", "auto"), "Auto")
+    mode  = mode_labels.get(getattr(session, "ai_mode", ""), "Auto")
+
+    return (
+        "⚙️ *Settings*\n\n"
+        f"Voice `{voice}` · Transcribe `{stt}` · Groups `{grp}`\n"
+        f"TTS: `{tts}` · Mode: `{mode}`"
+    )
+
+
+def build_settings_keyboard(session: Any) -> List[List[Dict[str, Any]]]:
+    """Build the inline keyboard rows for /settings, reflecting current session state.
+
+    Returns a list-of-rows suitable for ``send_message(keyboard=...)`` or wrapping
+    as ``{"inline_keyboard": rows}`` for raw editMessageText calls.
+    """
+
+    def _on(active: bool) -> str:
+        return " ●" if active else ""
+
+    voice_on = getattr(session, "voice_enabled", True)
+    stt_on = getattr(session, "stt_enabled", True)
+    grp_on = getattr(session, "voice_in_groups", False)
+    tts_p = getattr(session, "tts_provider", "auto")
+    ai_mode = getattr(session, "ai_mode", "")
+
+    return [
+        # ── Voice toggles ──────────────────────────────────────
+        [
+            {"text": f"{'🔊' if voice_on else '🔇'} Voice  {'ON' if voice_on else 'OFF'}",  "callback_data": "st_voice"},
+            {"text": f"{'🎙' if stt_on else '🚫'} Transcribe  {'ON' if stt_on else 'OFF'}", "callback_data": "st_stt"},
+        ],
+        [
+            {"text": f"{'👥' if grp_on else '💬'} Group voice  {'ON' if grp_on else 'OFF'}", "callback_data": "st_grp"},
+        ],
+        # ── TTS engine ─────────────────────────────────────────
+        [
+            {"text": f"Auto{_on(tts_p == 'auto')}",         "callback_data": "st_tts_a"},
+            {"text": f"Google ☁️{_on(tts_p == 'google_cloud')}", "callback_data": "st_tts_g"},
+            {"text": f"Edge{_on(tts_p == 'edge')}",          "callback_data": "st_tts_e"},
+            {"text": f"OpenAI{_on(tts_p == 'openai')}",      "callback_data": "st_tts_o"},
+        ],
+        # ── AI mode ────────────────────────────────────────────
+        [
+            {"text": f"Auto{_on(ai_mode == '')}",      "callback_data": "st_mode_a"},
+            {"text": f"Talk{_on(ai_mode == 'talk')}",  "callback_data": "st_mode_t"},
+            {"text": f"Reason{_on(ai_mode == 'reason')}", "callback_data": "st_mode_r"},
+            {"text": f"Code{_on(ai_mode == 'code')}",  "callback_data": "st_mode_c"},
+        ],
+        # ── Dismiss ────────────────────────────────────────────
+        [
+            {"text": "✕ close", "callback_data": "st_close"},
+        ],
+    ]
+
 
 class CallbackHandler:
     """Handle Telegram callback_query events (inline button presses)."""
@@ -460,6 +528,36 @@ class CallbackHandler:
         # ── Model switcher callbacks (ms_*) — no store needed ──
         if cb_data.startswith("ms_"):
             await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        # ── Provider model picker callbacks (pm_*) — no store needed ──
+        if cb_data.startswith("pm_"):
+            await self._handle_provider_model_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        # ── Provider hub callbacks (prov_*) — no store needed ──
+        if cb_data.startswith("prov_"):
+            await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        # ── Settings callbacks (st_*) — no store needed ──
+        if cb_data.startswith("st_"):
+            await self._handle_settings_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        # ── Debug callbacks (dbg_*) — no store needed ──
+        if cb_data.startswith("dbg_"):
+            await self._handle_debug_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        # ── Trace action buttons (trace_*) — no store needed ──
+        if cb_data.startswith("trace_"):
+            await self._handle_trace_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        # ── Heard action cards (heard_*) — no store needed ──
+        if cb_data.startswith("heard_"):
+            await self._handle_heard_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         if not chat_id or not cb_data:
@@ -556,11 +654,11 @@ class CallbackHandler:
 
         await self._answer(cb_id, "⚠️ Unknown action")
 
-    async def _answer(self, callback_id: str, text: str) -> None:
+    async def _answer(self, callback_id: str, text: str, show_alert: bool = False) -> None:
         await self.channel._api_call("answerCallbackQuery", {
             "callback_query_id": callback_id,
             "text": text,
-            "show_alert": False,
+            "show_alert": show_alert,
         })
 
     async def _handle_approval_action(
@@ -672,7 +770,392 @@ class CallbackHandler:
                 await self._answer(cb_id, f"Error: {e}")
             return
 
+        # ── Provider-force shortcuts (ms_prov_*) ──
+        prov_map = {
+            "ms_prov_xai":    ("xai",    "⚡ xAI/Grok"),
+            "ms_prov_openai": ("openai", "🤖 OpenAI"),
+        }
+        if cb_data in prov_map:
+            prov_key, prov_label = prov_map[cb_data]
+            self.channel._user_model_prefs[user_id] = prov_key
+            await self._answer(cb_id, f"✅ Provider preference: {prov_label}")
+            try:
+                await self.channel._handle_models_command(chat_id, user_id)
+            except Exception:
+                pass
+            await self.channel.send_message(
+                chat_id,
+                f"✅ Provider locked to *{prov_label}*\n"
+                f"The system will prefer this provider for your messages.",
+                parse_mode="Markdown",
+            )
+            return
+
         await self._answer(cb_id, "⚠️ Unknown model action")
+
+    async def _handle_provider_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle provider hub inline buttons (prov_* callbacks)."""
+        if cb_data == "prov_close":
+            await self._answer(cb_id, "✖ Closed")
+            try:
+                await self.channel._api_call(
+                    "deleteMessage",
+                    {"chat_id": chat_id, "message_id": message_id},
+                )
+            except Exception:
+                pass
+            return
+
+        if cb_data == "prov_noai":
+            self.channel._user_model_prefs[user_id] = "noai"
+            await self._answer(cb_id, "🚫 Raw mode — no AI on next message", show_alert=True)
+            return
+
+        if cb_data == "prov_forge":
+            import socket as _sock
+            forge_port = 42070
+            try:
+                from navig.providers.bridge_grid_reader import get_llm_port
+                forge_port = get_llm_port() or 42070
+            except Exception:
+                pass
+            try:
+                sock = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+                sock.settimeout(1.0)
+                online = sock.connect_ex(("127.0.0.1", forge_port)) == 0
+                sock.close()
+            except Exception:
+                online = False
+            status = f"online at port {forge_port}" if online else f"offline (expected port {forge_port})"
+            await self._answer(cb_id, f"⚡ Forge Bridge: {status}", show_alert=True)
+            return
+
+        if cb_data == "prov_back":
+            await self._answer(cb_id, "")
+            await self.channel._handle_providers(chat_id)
+            return
+
+        # Providers that open a full model↔tier picker
+        # Static map for known providers + dynamic fallback via registry
+        picker_map: dict = {
+            "prov_openrouter":    "openrouter",
+            "prov_github":        "github_models",
+            "prov_github_models": "github_models",
+            "prov_nvidia":        "nvidia",
+            "prov_ollama":        "ollama",
+            "prov_xai":           "xai",
+            "prov_openai":        "openai",
+            "prov_anthropic":     "anthropic",
+            "prov_google":        "google",
+            "prov_groq":          "groq",
+            "prov_mistral":       "mistral",
+            "prov_llamacpp":      "llamacpp",
+            "prov_airllm":        "airllm",
+        }
+        if cb_data in picker_map:
+            await self._answer(cb_id, "")
+            await self.channel._show_provider_model_picker(chat_id, picker_map[cb_data])
+            return
+
+        # Deepgram: STT only, no LLM routing
+        if cb_data == "prov_deepgram":
+            await self._answer(
+                cb_id,
+                "🎙 Deepgram STT — speech-to-text only · not used for LLM routing",
+                show_alert=True,
+            )
+            return
+
+        # Generic fallback: look up provider in registry for a live description
+        prov_id = cb_data[len("prov_"):]  # strip "prov_" prefix
+        try:
+            from navig.providers.registry import get_provider
+            from navig.providers.verifier import verify_provider
+            manifest = get_provider(prov_id)
+            if manifest:
+                result = verify_provider(manifest)
+                if result.key_detected or not manifest.requires_key:
+                    key_status = "✅ configured"
+                else:
+                    env_hint = " or ".join(manifest.env_vars[:2]) if manifest.env_vars else "—"
+                    vault_hint = manifest.vault_keys[0] if manifest.vault_keys else "—"
+                    key_status = (
+                        f"⬜ not found — set {env_hint}"
+                        + (f" or vault '{vault_hint}'" if vault_hint != "—" else "")
+                    )
+                toast = (
+                    f"{manifest.emoji} {manifest.display_name} — "
+                    f"{manifest.description[:80]}{'…' if len(manifest.description) > 80 else ''} | "
+                    f"Key: {key_status}"
+                )
+                await self._answer(cb_id, toast, show_alert=True)
+                return
+        except Exception:
+            pass
+
+        await self._answer(cb_id, f"Provider info unavailable for '{prov_id}'")
+
+    async def _handle_provider_model_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle model→tier assignment buttons (pm_{prov_id}_{idx}_{tier_code}).
+
+        Callback data format: pm_{prov_id}_{model_idx}_{tier_code}
+        tier_code: s=small  b=big  c=coder_big
+        prov_id may contain underscores (e.g. github_models) — split from right.
+        """
+        rest = cb_data[3:]  # strip "pm_"
+        parts = rest.rsplit("_", 2)
+        if len(parts) != 3:
+            await self._answer(cb_id, "⚠️ Bad callback format")
+            return
+        prov_id, model_idx_str, tier_code = parts
+
+        tier_map: dict = {
+            "s": ("small",     "⚡ Small"),
+            "b": ("big",       "🧠 Big"),
+            "c": ("coder_big", "💻 Code"),
+        }
+        if tier_code not in tier_map:
+            await self._answer(cb_id, "⚠️ Unknown tier code")
+            return
+        tier, tier_label = tier_map[tier_code]
+
+        try:
+            model_idx = int(model_idx_str)
+        except ValueError:
+            await self._answer(cb_id, "⚠️ Bad model index")
+            return
+
+        # Resolve model list for this provider
+        import json as _json
+        models: list = []
+        if prov_id == "ollama":
+            try:
+                import urllib.request
+                with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
+                    data = _json.loads(r.read())
+                    models = [m["name"] for m in data.get("models", []) if m.get("name")]
+            except Exception:
+                models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
+        else:
+            try:
+                from navig.providers.registry import _INDEX as PROV_INDEX
+                manifest = PROV_INDEX.get(prov_id)
+                if manifest:
+                    models = list(manifest.models)
+            except Exception:
+                pass
+
+        if model_idx >= len(models):
+            await self._answer(cb_id, "⚠️ Model index out of range")
+            return
+        model = models[model_idx]
+
+        # Update the live hybrid router config in-place (session-level override)
+        try:
+            from navig.agent.ai_client import get_ai_client
+            router = get_ai_client().model_router
+            if not router or not router.is_active:
+                await self._answer(
+                    cb_id,
+                    "⚠️ Hybrid router not active — enable routing in config.yaml first",
+                    show_alert=True,
+                )
+                return
+            slot = router.cfg.slot_for_tier(tier)
+            slot.provider = prov_id
+            slot.model = model
+            await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
+            await self.channel.send_message(
+                chat_id,
+                f"✅ *{tier_label}* set to `{prov_id}:{model}`\n"
+                f"_Active for this session. Use /model to verify._",
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            await self._answer(cb_id, f"Error: {e}", show_alert=True)
+
+    async def _handle_debug_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle debug button presses (dbg_* callbacks).
+        dbg_trace → show /trace snapshot for the pressing user.
+        """
+        await self._answer(cb_id, "🔍 Fetching trace...")
+        if cb_data == "dbg_trace":
+            try:
+                await self.channel._handle_trace(chat_id, user_id)
+            except Exception as exc:
+                logger.debug("Debug trace callback failed: %s", exc)
+                await self.channel.send_message(chat_id, "⚠️ Trace unavailable.", parse_mode=None)
+        else:
+            await self.channel.send_message(
+                chat_id, f"⚠️ Unknown debug action: `{cb_data}`", parse_mode=None
+            )
+
+    async def _handle_trace_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle /trace action buttons: refresh, providers, model, close."""
+        if cb_data == "trace_refresh":
+            await self._answer(cb_id, "🔄 Refreshing...")
+            try:
+                await self.channel._handle_trace(chat_id, user_id)
+            except Exception as exc:
+                logger.debug("Trace refresh failed: %s", exc)
+        elif cb_data == "trace_providers":
+            await self._answer(cb_id, "")
+            await self.channel._handle_providers(chat_id)
+        elif cb_data == "trace_model":
+            await self._answer(cb_id, "")
+            await self.channel._handle_models_command(chat_id, user_id)
+        elif cb_data == "trace_close":
+            try:
+                await self.channel._api_call(
+                    "deleteMessage",
+                    {"chat_id": chat_id, "message_id": message_id},
+                )
+                await self._answer(cb_id, "")
+            except Exception:
+                await self._answer(cb_id, "")
+        else:
+            await self._answer(cb_id, "")
+
+    async def _handle_heard_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle voice Heard: action cards."""
+        if cb_data == "heard_process":
+            # The transcript is in the message text; just dismiss and let the pipeline run
+            await self._answer(cb_id, "💡 Processing...")
+        elif cb_data == "heard_retry":
+            await self._answer(cb_id, "🔁 Send a new voice message to re-transcribe.")
+        elif cb_data == "heard_edit":
+            await self._answer(cb_id, "📝 Reply to the Heard: message with your edited text.")
+        else:
+            await self._answer(cb_id, "")
+
+    async def _handle_settings_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle /settings inline button presses (st_* callbacks)."""
+        is_group = chat_id < 0
+
+        # Resolve session
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+            sm = get_session_manager()
+            session = sm.get_or_create_session(chat_id, user_id, is_group)
+        except Exception as exc:
+            await self._answer(cb_id, f"⚠️ Session error: {exc}")
+            return
+
+        # Close / dismiss
+        if cb_data == "st_close":
+            await self._answer(cb_id, "✖ Settings closed")
+            try:
+                await self.channel._api_call("deleteMessage", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                })
+            except Exception:
+                pass
+            return
+
+        # Map callback → (field, value) or toggle
+        _TOGGLE = {
+            "st_voice": "voice_enabled",
+            "st_stt":   "stt_enabled",
+            "st_grp":   "voice_in_groups",
+        }
+        _SELECT = {
+            "st_tts_a": ("tts_provider", "auto"),
+            "st_tts_g": ("tts_provider", "google_cloud"),
+            "st_tts_e": ("tts_provider", "edge"),
+            "st_tts_o": ("tts_provider", "openai"),
+            "st_mode_a": ("ai_mode", ""),
+            "st_mode_t": ("ai_mode", "talk"),
+            "st_mode_r": ("ai_mode", "reason"),
+            "st_mode_c": ("ai_mode", "code"),
+        }
+        _TOAST = {
+            "st_voice":   lambda s: f"🔊 Voice {'ON' if s.voice_enabled else 'OFF'}",
+            "st_stt":     lambda s: f"🎙 Transcription {'ON' if s.stt_enabled else 'OFF'}",
+            "st_grp":     lambda s: f"👥 Group voice {'ON' if s.voice_in_groups else 'OFF'}",
+            "st_tts_a":   lambda _: "⚡ TTS: Auto",
+            "st_tts_g":   lambda _: "☁️ TTS: Google Cloud",
+            "st_tts_e":   lambda _: "🔷 TTS: Edge",
+            "st_tts_o":   lambda _: "🤖 TTS: OpenAI",
+            "st_mode_a":  lambda _: "🔄 Mode: Auto",
+            "st_mode_t":  lambda _: "💬 Mode: Talk",
+            "st_mode_r":  lambda _: "🧠 Mode: Reason",
+            "st_mode_c":  lambda _: "💻 Mode: Code",
+        }
+
+        if cb_data in _TOGGLE:
+            field = _TOGGLE[cb_data]
+            setattr(session, field, not getattr(session, field, True))
+        elif cb_data in _SELECT:
+            field, value = _SELECT[cb_data]
+            setattr(session, field, value)
+        else:
+            await self._answer(cb_id, "⚠️ Unknown setting")
+            return
+
+        # Persist
+        try:
+            sm._save_session(session)
+        except Exception:
+            pass
+
+        toast = _TOAST.get(cb_data, lambda _: "✅ Updated")(session)
+        await self._answer(cb_id, toast)
+
+        # Refresh the settings message in-place
+        keyboard_rows = build_settings_keyboard(session)
+        try:
+            await self.channel._api_call("editMessageText", {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": _settings_header_text(session),
+                "parse_mode": "Markdown",
+                "reply_markup": {"inline_keyboard": keyboard_rows},
+            })
+        except Exception as exc:
+            logger.debug("Settings refresh failed: %s", exc)
 
     async def _get_ai_response(self, prompt: str, user_id: int) -> Optional[str]:
         if self.channel.on_message:

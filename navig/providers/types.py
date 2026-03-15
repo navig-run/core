@@ -389,10 +389,94 @@ BUILTIN_PROVIDERS: Dict[str, ProviderConfig] = {
         ],
         priority=60,  # Lower priority than cloud providers by default
     ),
+    "nvidia": ProviderConfig(
+        name="nvidia",
+        base_url="https://integrate.api.nvidia.com/v1",
+        api=ModelApi.OPENAI_COMPLETIONS,
+        models=[
+            ModelDefinition(
+                id="meta/llama-3.3-70b-instruct",
+                name="Llama 3.3 70B (NVIDIA NIM)",
+                context_window=128000,
+                max_tokens=4096,
+            ),
+            ModelDefinition(
+                id="mistralai/mistral-7b-instruct-v0.3",
+                name="Mistral 7B (NVIDIA NIM)",
+                context_window=32768,
+                max_tokens=4096,
+            ),
+            ModelDefinition(
+                id="nvidia/llama-3.1-nemotron-70b-instruct",
+                name="Nemotron 70B (NVIDIA NIM)",
+                context_window=128000,
+                max_tokens=4096,
+            ),
+        ],
+        priority=35,
+    ),
+    "xai": ProviderConfig(
+        name="xai",
+        base_url="https://api.x.ai/v1",
+        api=ModelApi.OPENAI_COMPLETIONS,
+        models=[
+            ModelDefinition(
+                id="grok-2-1212",
+                name="Grok 2",
+                context_window=131072,
+                max_tokens=4096,
+            ),
+            ModelDefinition(
+                id="grok-2-vision-1212",
+                name="Grok 2 Vision",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=32768,
+                max_tokens=4096,
+            ),
+        ],
+        priority=35,
+    ),
+    "mistral": ProviderConfig(
+        name="mistral",
+        base_url="https://api.mistral.ai/v1",
+        api=ModelApi.OPENAI_COMPLETIONS,
+        enabled=False,  # Opt-in; no default key source
+        models=[
+            ModelDefinition(
+                id="mistral-large-latest",
+                name="Mistral Large",
+                context_window=131072,
+                max_tokens=4096,
+            ),
+            ModelDefinition(
+                id="codestral-latest",
+                name="Codestral",
+                context_window=262144,
+                max_tokens=4096,
+            ),
+        ],
+        priority=45,
+    ),
+    "cerebras": ProviderConfig(
+        name="cerebras",
+        base_url="https://api.cerebras.ai/v1",
+        api=ModelApi.OPENAI_COMPLETIONS,
+        enabled=False,  # Opt-in
+        models=[
+            ModelDefinition(
+                id="llama3.1-70b",
+                name="Llama 3.1 70B (Cerebras)",
+                context_window=128000,
+                max_tokens=8192,
+            ),
+        ],
+        priority=45,
+    ),
 }
 
 
 # Environment variable mapping for providers
+# Kept in sync with navig.providers.registry.ALL_PROVIDERS[*].env_vars
 PROVIDER_ENV_VARS: Dict[str, List[str]] = {
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
@@ -400,8 +484,30 @@ PROVIDER_ENV_VARS: Dict[str, List[str]] = {
     "groq": ["GROQ_API_KEY"],
     "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
     "mistral": ["MISTRAL_API_KEY"],
-    "xai": ["XAI_API_KEY"],
+    "xai": ["XAI_API_KEY", "GROK_KEY"],
     "cerebras": ["CEREBRAS_API_KEY"],
-    # AirLLM uses config-based settings, not API keys
-    "airllm": ["AIRLLM_MODEL_PATH"],  # Path indicates configuration
+    "nvidia": ["NVIDIA_API_KEY", "NIM_API_KEY"],
+    "github_models": ["GITHUB_TOKEN", "GH_TOKEN"],
+    "github": ["GITHUB_TOKEN", "GH_TOKEN"],
+    "github_copilot": ["GITHUB_COPILOT_TOKEN"],
+    "kilocode": ["KILOCODE_API_KEY"],
+    "qwen": ["QWEN_API_KEY"],
+    "blockrun": ["BLOCKRUN_WALLET_KEY"],
+    # Local providers: no API key; env var indicates config path where applicable
+    "airllm": ["AIRLLM_MODEL_PATH"],
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Accessors
+# ─────────────────────────────────────────────────────────────────────────────
+
+def builtin_provider_configs() -> List[ProviderConfig]:
+    """
+    Return all built-in ``ProviderConfig`` entries as an ordered list.
+
+    Preferred over accessing ``BUILTIN_PROVIDERS`` directly so callers
+    receive a consistent, iterable snapshot rather than a raw dict.
+    Providers with ``enabled=False`` are included — filter at call site
+    if needed.
+    """
+    return list(BUILTIN_PROVIDERS.values())
