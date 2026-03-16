@@ -321,11 +321,12 @@ class ResponseKeyboardBuilder:
                 ))
             return [row]
 
+        is_ru = bool(re.search(r'[А-Яа-я]', ai_response))
         # Default approval pattern
         return [[
-            self._make_button("✅ Approve", "approve", msg_hash, user_message, ai_response),
-            self._make_button("🔀 Alternative", "alternative", msg_hash, user_message, ai_response),
-            self._make_button("❌ Cancel", "cancel", msg_hash, user_message, ai_response),
+            self._make_button("✅ Принять" if is_ru else "✅ Approve", "approve", msg_hash, user_message, ai_response),
+            self._make_button("🔀 Альтернатива" if is_ru else "🔀 Alternative", "alternative", msg_hash, user_message, ai_response),
+            self._make_button("❌ Отмена" if is_ru else "❌ Cancel", "cancel", msg_hash, user_message, ai_response),
         ]]
 
     def _build_expand_rows(
@@ -344,26 +345,29 @@ class ResponseKeyboardBuilder:
           Other → [Summarize] [Go deeper]
         Row 2 → [👍] [👎] (always)
         """
+        # Minimal language detection check based on cyrillic characters
+        is_ru = bool(re.search(r'[А-Яа-я]', ai_response))
+        
         # Row 1 — contextual actions
         if category == ContentCategory.CODE:
             row1 = [
-                self._make_button("🔍 Explain", "explain", msg_hash, user_message, ai_response),
-                self._make_button("📋 Copy code", "copy_code", msg_hash, user_message, ai_response),
+                self._make_button("🔍 Объяснить" if is_ru else "🔍 Explain", "explain", msg_hash, user_message, ai_response),
+                self._make_button("📋 Копировать" if is_ru else "📋 Copy code", "copy_code", msg_hash, user_message, ai_response),
             ]
         elif category == ContentCategory.HOWTO:
             row1 = [
-                self._make_button("📋 Summarize", "summarize", msg_hash, user_message, ai_response),
-                self._make_button("📝 Show steps", "show_steps", msg_hash, user_message, ai_response),
+                self._make_button("📋 Кратко" if is_ru else "📋 Summarize", "summarize", msg_hash, user_message, ai_response),
+                self._make_button("📝 По шагам" if is_ru else "📝 Show steps", "show_steps", msg_hash, user_message, ai_response),
             ]
         elif category == ContentCategory.COMPARISON:
             row1 = [
-                self._make_button("📊 Compare", "table_fmt", msg_hash, user_message, ai_response),
-                self._make_button("✅ Recommend", "recommend", msg_hash, user_message, ai_response),
+                self._make_button("📊 Сравнить" if is_ru else "📊 Compare", "table_fmt", msg_hash, user_message, ai_response),
+                self._make_button("✅ Рекомендовать" if is_ru else "✅ Recommend", "recommend", msg_hash, user_message, ai_response),
             ]
         else:
             row1 = [
-                self._make_button("📋 Summarize", "summarize", msg_hash, user_message, ai_response),
-                self._make_button("🔍 Go deeper", "elaborate", msg_hash, user_message, ai_response),
+                self._make_button("📋 Кратко" if is_ru else "📋 Summarize", "summarize", msg_hash, user_message, ai_response),
+                self._make_button("🔍 Подробнее" if is_ru else "🔍 Go deeper", "elaborate", msg_hash, user_message, ai_response),
             ]
 
         # Row 2 — feedback
