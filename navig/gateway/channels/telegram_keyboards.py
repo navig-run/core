@@ -438,69 +438,112 @@ _ACTION_PROMPTS: Dict[str, str] = {
 
 # ── Settings menu helpers ─────────────────────────────────────────────────────
 
-def _settings_header_text(session: Any) -> str:
-    """Header text for the /settings panel — shows current state at a glance."""
+def _audio_header_text(session: Any) -> str:
+    """Header text for the /audio panel — shows reply routing at a glance."""
     tts_labels = {
-        "auto": "Auto", "google_cloud": "Google Cloud",
-        "edge": "Edge TTS", "openai": "OpenAI",
+        "auto": "Auto",
+        "google_cloud": "Google",
+        "edge": "Edge TTS",
+        "openai": "OpenAI",
+        "deepgram": "Deepgram",
     }
-    mode_labels = {"": "Auto", "talk": "Talk", "reason": "Reason", "code": "Code"}
-
-    voice = "on" if getattr(session, "voice_enabled", True) else "off"
-    stt   = "on" if getattr(session, "stt_enabled", True) else "off"
-    grp   = "on" if getattr(session, "voice_in_groups", False) else "off"
-    tts   = tts_labels.get(getattr(session, "tts_provider", "auto"), "Auto")
-    mode  = mode_labels.get(getattr(session, "ai_mode", ""), "Auto")
+    voice_mode = getattr(session, "voice_response_to_voice", "text")
+    text_mode = getattr(session, "voice_response_to_text", "text")
+    grp = "on" if getattr(session, "voice_in_groups", False) else "off"
+    tts = tts_labels.get(getattr(session, "tts_provider", "auto"), "Auto")
 
     return (
-        "⚙️ *Settings*\n\n"
-        f"Voice `{voice}` · Transcribe `{stt}` · Groups `{grp}`\n"
-        f"TTS: `{tts}` · Mode: `{mode}`"
+        "🔊 *Audio Settings*\n\n"
+        f"Voice input → `{voice_mode}` · Text input → `{text_mode}`\n"
+        f"Groups `{grp}` · Provider `{tts}`"
     )
 
 
-def build_settings_keyboard(session: Any) -> List[List[Dict[str, Any]]]:
-    """Build the inline keyboard rows for /settings, reflecting current session state.
+# Backward-compat alias used in telegram.py import
+_settings_header_text = _audio_header_text
 
-    Returns a list-of-rows suitable for ``send_message(keyboard=...)`` or wrapping
-    as ``{"inline_keyboard": rows}`` for raw editMessageText calls.
-    """
+
+def _settings_hub_text(session: Any) -> str:
+    """Header text for the /settings hub panel."""
+    try:
+        from navig.agent.soul import MOOD_REGISTRY
+        focus = getattr(session, "focus_mode", "balance")
+        mp = MOOD_REGISTRY.get(focus)
+        focus_label = f"{mp.emoji} {focus}" if mp else focus
+    except Exception:
+        focus_label = getattr(session, "focus_mode", "balance")
+
+    tts_p  = getattr(session, "tts_provider", "auto")
+    vr     = "on" if getattr(session, "voice_replies", False) else "off"
+    ai_m   = getattr(session, "ai_mode", "") or "auto"
+    return (
+        "⚙️ *NAVIG Settings*\n\n"
+        f"Focus `{focus_label}` · AI mode `{ai_m}`\n"
+        f"Voice replies `{vr}` · TTS `{tts_p}`\n\n"
+        "_Tap a section — /voice for full audio settings_"
+    )
+
+
+def build_audio_keyboard(session: Any) -> List[List[Dict[str, Any]]]:
+    """Inline keyboard rows for /audio — input/output voice routing."""
 
     def _on(active: bool) -> str:
         return " ●" if active else ""
 
-    voice_on = getattr(session, "voice_enabled", True)
-    stt_on = getattr(session, "stt_enabled", True)
+    voice_mode = getattr(session, "voice_response_to_voice", "text")
+    text_mode = getattr(session, "voice_response_to_text", "text")
     grp_on = getattr(session, "voice_in_groups", False)
     tts_p = getattr(session, "tts_provider", "auto")
-    ai_mode = getattr(session, "ai_mode", "")
+
+    provider_labels = {
+        "auto": "Auto",
+        "google_cloud": "Google",
+        "edge": "Edge TTS",
+        "openai": "OpenAI",
+        "deepgram": "Deepgram",
+    }
 
     return [
-        # ── Voice toggles ──────────────────────────────────────
         [
-            {"text": f"{'🔊' if voice_on else '🔇'} Voice  {'ON' if voice_on else 'OFF'}",  "callback_data": "st_voice"},
-            {"text": f"{'🎙' if stt_on else '🚫'} Transcribe  {'ON' if stt_on else 'OFF'}", "callback_data": "st_stt"},
+            {"text": f"🎤 Voice → Text{_on(voice_mode == 'text')}", "callback_data": "st_vrv_text"},
+            {"text": f"🎤 Voice → Voice{_on(voice_mode == 'voice')}", "callback_data": "st_vrv_voice"},
+            {"text": f"🎤 Voice → Auto{_on(voice_mode == 'auto')}", "callback_data": "st_vrv_auto"},
         ],
         [
-            {"text": f"{'👥' if grp_on else '💬'} Group voice  {'ON' if grp_on else 'OFF'}", "callback_data": "st_grp"},
+            {"text": f"⌨️ Text → Text{_on(text_mode == 'text')}", "callback_data": "st_vrt_text"},
+            {"text": f"⌨️ Text → Voice{_on(text_mode == 'voice')}", "callback_data": "st_vrt_voice"},
+            {"text": f"⌨️ Text → Off{_on(text_mode == 'off')}", "callback_data": "st_vrt_off"},
         ],
-        # ── TTS engine ─────────────────────────────────────────
         [
-            {"text": f"Auto{_on(tts_p == 'auto')}",         "callback_data": "st_tts_a"},
-            {"text": f"Google ☁️{_on(tts_p == 'google_cloud')}", "callback_data": "st_tts_g"},
-            {"text": f"Edge{_on(tts_p == 'edge')}",          "callback_data": "st_tts_e"},
-            {"text": f"OpenAI{_on(tts_p == 'openai')}",      "callback_data": "st_tts_o"},
+            {"text": f"{'👥' if grp_on else '💬'} Group voice {'ON' if grp_on else 'OFF'}", "callback_data": "st_grp"},
         ],
-        # ── AI mode ────────────────────────────────────────────
         [
-            {"text": f"Auto{_on(ai_mode == '')}",      "callback_data": "st_mode_a"},
-            {"text": f"Talk{_on(ai_mode == 'talk')}",  "callback_data": "st_mode_t"},
-            {"text": f"Reason{_on(ai_mode == 'reason')}", "callback_data": "st_mode_r"},
-            {"text": f"Code{_on(ai_mode == 'code')}",  "callback_data": "st_mode_c"},
+            {"text": f"🎙 Provider: {provider_labels.get(tts_p, 'Auto')}", "callback_data": "st_goto_voice"},
         ],
-        # ── Dismiss ────────────────────────────────────────────
         [
-            {"text": "✕ close", "callback_data": "st_close"},
+            {"text": "🎙 TTS Providers", "callback_data": "st_goto_voice"},
+            {"text": "⚙️ All settings", "callback_data": "st_goto_settings"},
+            {"text": "✕ close",          "callback_data": "st_close"},
+        ],
+    ]
+
+
+# Backward-compat alias
+build_settings_keyboard = build_audio_keyboard
+
+
+def build_settings_hub_keyboard(session: Any = None) -> List[List[Dict[str, Any]]]:
+    """Main /settings hub — pro inline navigation panel."""
+    return [
+        [
+            {"text": "🎙  Voice settings",        "callback_data": "st_goto_audio"},
+            {"text": "🤖  Providers & Models",     "callback_data": "st_goto_providers"},
+        ],
+        [
+            {"text": "🛠  Debug",                  "callback_data": "st_goto_debug"},
+        ],
+        [
+            {"text": "✕  Close",                  "callback_data": "st_close"},
         ],
     ]
 
@@ -526,6 +569,14 @@ class CallbackHandler:
             return
 
         # ── Model switcher callbacks (ms_*) — no store needed ──
+        if cb_data.startswith("task:"):
+            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        if cb_data.startswith("task:"):
+            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
         if cb_data.startswith("ms_"):
             await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
             return
@@ -558,6 +609,23 @@ class CallbackHandler:
         # ── Heard action cards (heard_*) — no store needed ──
         if cb_data.startswith("heard_"):
             await self._handle_heard_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+
+        # ── Audio deep menu (audio:*) — no store needed ──
+        if cb_data.startswith("audio:"):
+            try:
+                from navig.gateway.channels.audio_menu import handle_audio_callback
+                await handle_audio_callback(
+                    self.channel, cb_id, cb_data, chat_id, message_id, user_id
+                )
+            except Exception as _amc_err:
+                logger.warning("Audio menu callback error: %s", _amc_err)
+                await self._answer(cb_id, "\u26a0\ufe0f Audio menu error")
+            return
+
+        # ── Audio file action buttons (audmsg:*) — no store needed ──
+        if cb_data.startswith("audmsg:"):
+            await self._handle_audio_file_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         if not chat_id or not cb_data:
@@ -650,6 +718,21 @@ class CallbackHandler:
                     await typing_task
                 except asyncio.CancelledError:
                     pass
+            return
+
+        # ── Auto-Heal action buttons (heal_*) ───────────────────────────────────
+        if action.startswith("heal_"):
+            mixin = self.channel
+            if hasattr(mixin, "_dispatch_heal_callback"):
+                await mixin._dispatch_heal_callback(
+                    action=action,
+                    cb_key=cb_data,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    cb_id=cb_id,
+                )
+            else:
+                await self._answer(cb_id, "⚠️ Auto-Heal not available")
             return
 
         await self._answer(cb_id, "⚠️ Unknown action")
@@ -770,6 +853,11 @@ class CallbackHandler:
                 await self._answer(cb_id, f"Error: {e}")
             return
 
+        if cb_data == "ms_providers":
+            await self._answer(cb_id, "⚡ Provider Hub")
+            await self.channel._handle_providers(chat_id)
+            return
+
         # ── Provider-force shortcuts (ms_prov_*) ──
         prov_map = {
             "ms_prov_xai":    ("xai",    "⚡ xAI/Grok"),
@@ -819,22 +907,9 @@ class CallbackHandler:
             return
 
         if cb_data == "prov_forge":
-            import socket as _sock
-            forge_port = 42070
-            try:
-                from navig.providers.bridge_grid_reader import get_llm_port
-                forge_port = get_llm_port() or 42070
-            except Exception:
-                pass
-            try:
-                sock = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-                sock.settimeout(1.0)
-                online = sock.connect_ex(("127.0.0.1", forge_port)) == 0
-                sock.close()
-            except Exception:
-                online = False
-            status = f"online at port {forge_port}" if online else f"offline (expected port {forge_port})"
-            await self._answer(cb_id, f"⚡ Forge Bridge: {status}", show_alert=True)
+            online, url = await self.channel._probe_bridge_grid()
+            status = f"online at {url}" if online else f"offline ({url})"
+            await self._answer(cb_id, f"⚡ Bridge Grid: {status}", show_alert=True)
             return
 
         if cb_data == "prov_back":
@@ -1044,6 +1119,171 @@ class CallbackHandler:
         else:
             await self._answer(cb_id, "")
 
+    async def _handle_audio_file_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle action buttons for received audio/music files (audmsg:{action}:{file_id})."""
+        import asyncio as _asyncio
+        parts = cb_data.split(":", 2)  # ["audmsg", action, short_id]
+        action = parts[1] if len(parts) > 1 else ""
+        short_id = parts[2] if len(parts) > 2 else ""
+
+        try:
+            from navig.gateway.channels.telegram_voice import _af_cache
+            meta = _af_cache.get(short_id, {})
+        except Exception:
+            meta = {}
+
+        file_id = meta.get("file_id", short_id)
+        is_speech = meta.get("is_speech", False)
+
+        if action == "dismiss":
+            try:
+                await self.channel._api_call(
+                    "deleteMessage", {"chat_id": chat_id, "message_id": message_id}
+                )
+            except Exception:
+                pass
+            await self._answer(cb_id, "")
+            return
+
+        if action == "transcribe":
+            await self._answer(cb_id, "🎤 Transcribing...")
+            from navig.gateway.channels.task_card import StepState, make_task, send_task_card, update_task_card
+            view = make_task([
+                ("download", "Downloading audio file"),
+                ("stt",      "Running speech-to-text"),
+                ("finalize", "Finalizing transcript"),
+            ], title="🎤 Transcribing Audio...")
+            
+            # Use raw message store if context data not easily available
+            if not getattr(self.channel, "task_views", None):
+                self.channel.task_views = {}
+            
+            await send_task_card(self.channel, chat_id, view)
+            self.channel.task_views[view.message_id] = view
+
+            try:
+                transcript = await self.channel._transcribe_audio_file(
+                    chat_id, file_id, is_voice=is_speech, task_view=view
+                )
+                if transcript:
+                    view.set_step("finalize", StepState.DONE)
+                    view.done = True
+                    view.running = False
+                    view.recompute_percent()
+                    await update_task_card(self.channel, chat_id, view, force=True)
+                    
+                    await self.channel.send_message(chat_id, f"📝 *Transcript:*\n{transcript}", parse_mode="Markdown")
+                else:
+                    view.set_step("finalize", StepState.FAILED, "No speech found")
+                    view.done = True
+                    view.running = False
+                    view.recompute_percent()
+                    await update_task_card(self.channel, chat_id, view, force=True)
+                    
+                    await self.channel.send_message(
+                        chat_id, "⚠️ Transcription failed — this file may not contain speech."
+                    )
+            except Exception as exc:
+                import logging
+                logging.getLogger("navig").warning("audmsg:transcribe error: %s", exc)
+                view.set_step("finalize", StepState.FAILED, str(exc)[:50])
+                view.done = True
+                view.running = False
+                view.recompute_percent()
+                await update_task_card(self.channel, chat_id, view, force=True)
+                
+                await self.channel.send_message(
+                    chat_id, "⚠️ Transcription failed — this file may not contain speech."
+                )
+            return
+
+        if action == "identify":
+            await self._answer(cb_id, "🔍 Looking it up...")
+            title = meta.get("title") or "an audio file"
+            performer = meta.get("performer") or ""
+            duration = int(meta.get("duration") or 0)
+            mins, secs = divmod(duration, 60)
+
+            prompt = f'The user sent an audio file titled "{title}"'
+            if performer:
+                prompt += f' by {performer}'
+            if duration:
+                prompt += f' ({mins}:{secs:02d} long)'
+            prompt += ". Tell the user what you know about this track or artist in 2-3 short sentences. If you don't recognise it, say so honestly."
+
+            try:
+                from navig.llm_generate import llm_generate
+                reply = await _asyncio.to_thread(
+                    llm_generate,
+                    messages=[{"role": "user", "content": prompt}],
+                    mode="chat",
+                )
+                await self.channel.send_message(chat_id, reply or "Nothing found.")
+            except Exception as exc:
+                logger.warning("audmsg:identify error: %s", exc)
+                await self.channel.send_message(chat_id, "⚠️ Couldn't look that up right now.")
+            return
+
+        if action == "info":
+            await self._answer(cb_id, "ℹ️")
+            title = meta.get("title") or "Unknown"
+            performer = meta.get("performer") or "—"
+            duration = int(meta.get("duration") or 0)
+            file_size = int(meta.get("file_size") or 0)
+            mime_type = meta.get("mime_type") or "—"
+            mins, secs = divmod(duration, 60)
+            dur_str = f"{mins}:{secs:02d}" if duration else "—"
+            size_str = f"{file_size // 1024:,} KB" if file_size else "—"
+            kind = "Voice recording" if is_speech else "Music file"
+            info_text = (
+                f"ℹ️ *File Info*\n"
+                f"Title: {title}\n"
+                f"Artist: {performer}\n"
+                f"Duration: {dur_str}\n"
+                f"Size: {size_str}\n"
+                f"MIME: `{mime_type}`\n"
+                f"Type: {kind}"
+            )
+            await self.channel.send_message(chat_id, info_text, parse_mode="Markdown")
+            return
+
+        if action == "lang":
+            await self._answer(cb_id, "🌐 Detecting language...")
+            try:
+                transcript = await self.channel._transcribe_audio_file(
+                    chat_id, file_id, is_voice=True
+                )
+                if transcript:
+                    # Ask LLM what language the transcript is in
+                    try:
+                        from navig.llm_generate import llm_generate
+                        prompt = f'What language is this text written in? Reply with only the language name.\n\n"{transcript[:500]}"'
+                        lang_reply = await _asyncio.to_thread(
+                            llm_generate,
+                            messages=[{"role": "user", "content": prompt}],
+                            mode="chat",
+                        )
+                        await self.channel.send_message(
+                            chat_id, f"🌐 Detected language: *{lang_reply or 'Unknown'}*", parse_mode="Markdown"
+                        )
+                    except Exception:
+                        await self.channel.send_message(chat_id, "⚠️ Language detection failed.")
+                else:
+                    await self.channel.send_message(chat_id, "⚠️ Could not transcribe audio for language detection.")
+            except Exception as exc:
+                logger.warning("audmsg:lang error: %s", exc)
+                await self.channel.send_message(chat_id, "⚠️ Language detection failed.")
+            return
+
+        await self._answer(cb_id, "")
+
     async def _handle_heard_callback(
         self,
         cb_id: str,
@@ -1100,30 +1340,76 @@ class CallbackHandler:
             "st_voice": "voice_enabled",
             "st_stt":   "stt_enabled",
             "st_grp":   "voice_in_groups",
+            "st_vr":    "voice_replies",
         }
         _SELECT = {
             "st_tts_a": ("tts_provider", "auto"),
             "st_tts_g": ("tts_provider", "google_cloud"),
             "st_tts_e": ("tts_provider", "edge"),
             "st_tts_o": ("tts_provider", "openai"),
+            "st_tts_d": ("tts_provider", "deepgram"),
+            "st_vrv_text": ("voice_response_to_voice", "text"),
+            "st_vrv_voice": ("voice_response_to_voice", "voice"),
+            "st_vrv_auto": ("voice_response_to_voice", "auto"),
+            "st_vrt_text": ("voice_response_to_text", "text"),
+            "st_vrt_voice": ("voice_response_to_text", "voice"),
+            "st_vrt_off": ("voice_response_to_text", "off"),
             "st_mode_a": ("ai_mode", ""),
             "st_mode_t": ("ai_mode", "talk"),
             "st_mode_r": ("ai_mode", "reason"),
             "st_mode_c": ("ai_mode", "code"),
         }
         _TOAST = {
-            "st_voice":   lambda s: f"🔊 Voice {'ON' if s.voice_enabled else 'OFF'}",
-            "st_stt":     lambda s: f"🎙 Transcription {'ON' if s.stt_enabled else 'OFF'}",
-            "st_grp":     lambda s: f"👥 Group voice {'ON' if s.voice_in_groups else 'OFF'}",
-            "st_tts_a":   lambda _: "⚡ TTS: Auto",
-            "st_tts_g":   lambda _: "☁️ TTS: Google Cloud",
-            "st_tts_e":   lambda _: "🔷 TTS: Edge",
-            "st_tts_o":   lambda _: "🤖 TTS: OpenAI",
-            "st_mode_a":  lambda _: "🔄 Mode: Auto",
-            "st_mode_t":  lambda _: "💬 Mode: Talk",
-            "st_mode_r":  lambda _: "🧠 Mode: Reason",
-            "st_mode_c":  lambda _: "💻 Mode: Code",
+            "st_voice":  lambda s: f"🔊 Voice {'ON' if s.voice_enabled else 'OFF'}",
+            "st_stt":    lambda s: f"🎙 Transcription {'ON' if s.stt_enabled else 'OFF'}",
+            "st_grp":    lambda s: f"👥 Group voice {'ON' if s.voice_in_groups else 'OFF'}",
+            "st_vr":     lambda s: f"🔊 Bot voice replies {'ON' if s.voice_replies else 'OFF'}",
+            "st_tts_a":  lambda _: "⚡ TTS: Auto (Edge → Google fallback)",
+            "st_tts_g":  lambda _: "☁️ TTS: Google Cloud",
+            "st_tts_e":  lambda _: "🌐 TTS: Edge TTS (Microsoft, no key needed)",
+            "st_tts_o":  lambda _: "🤖 TTS: OpenAI TTS-1",
+            "st_tts_d":  lambda _: "🎙 TTS: Deepgram (API key required)",
+            "st_vrv_text": lambda _: "🎤 Voice messages will get text replies",
+            "st_vrv_voice": lambda _: "🎤 Voice messages will get voice replies",
+            "st_vrv_auto": lambda s: f"🎤 Voice messages set to auto ({'voice' if s.voice_replies else 'text'} fallback)",
+            "st_vrt_text": lambda _: "⌨️ Text messages will get text replies",
+            "st_vrt_voice": lambda _: "⌨️ Text messages will get voice replies",
+            "st_vrt_off": lambda _: "⌨️ Text-triggered replies are now off",
+            "st_mode_a": lambda _: "🔄 AI mode: Auto",
+            "st_mode_t": lambda _: "💬 AI mode: Talk",
+            "st_mode_r": lambda _: "🧠 AI mode: Reason",
+            "st_mode_c": lambda _: "💻 AI mode: Code",
         }
+
+        # ── Navigation callbacks ───────────────────────────────────────────
+        _NAV = {
+            "st_goto_audio":     "_handle_audio_menu",
+            "st_goto_voice":     "_handle_voice_menu",
+            "st_goto_providers": "_handle_providers_and_models",
+            "st_goto_focus":     "_handle_mode_menu",
+            "st_goto_model":     "_handle_models_command",
+            "st_goto_trace":     "_handle_trace",
+            "st_goto_debug":     "_handle_debug",
+            "st_goto_settings":  "_handle_settings_hub",
+        }
+        if cb_data in _NAV:
+            await self._answer(cb_id, "")
+            method_name = _NAV[cb_data]
+            method = getattr(self.channel, method_name, None)
+            if method:
+                try:
+                    if cb_data in ("st_goto_model", "st_goto_trace"):
+                        await method(chat_id, user_id)
+                    elif cb_data == "st_goto_focus":
+                        await method(chat_id, "", user_id=user_id)
+                    else:
+                        try:
+                            await method(chat_id, user_id, is_group)
+                        except TypeError:
+                            await method(chat_id)
+                except Exception as exc:
+                    logger.debug("Nav callback %s failed: %s", cb_data, exc)
+            return
 
         if cb_data in _TOGGLE:
             field = _TOGGLE[cb_data]
@@ -1145,17 +1431,17 @@ class CallbackHandler:
         await self._answer(cb_id, toast)
 
         # Refresh the settings message in-place
-        keyboard_rows = build_settings_keyboard(session)
+        keyboard_rows = build_audio_keyboard(session)
         try:
             await self.channel._api_call("editMessageText", {
                 "chat_id": chat_id,
                 "message_id": message_id,
-                "text": _settings_header_text(session),
+                "text": _audio_header_text(session),
                 "parse_mode": "Markdown",
                 "reply_markup": {"inline_keyboard": keyboard_rows},
             })
         except Exception as exc:
-            logger.debug("Settings refresh failed: %s", exc)
+            logger.debug("Audio settings refresh failed: %s", exc)
 
     async def _get_ai_response(self, prompt: str, user_id: int) -> Optional[str]:
         if self.channel.on_message:
