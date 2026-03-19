@@ -147,11 +147,10 @@ vault.salt                  # Vault salt file
 # *.so compiled by Cython are already covered by *.so above
 
 # NAVIG Configuration
-# ~/.navig/ is the global user store — never in a repo
-~/.navig/                   # Global user NAVIG config (shouldn't be in repo anyway)
-# .navig/ is TRACKED — plans/, brand/, wiki/, agents/ all live here
-# Only runtime / credential files inside it are ignored (see list below)
-.archive/                   # Local archive folder
+# .navig/ is project-local runtime state (plans, wiki, apps, logs) — user-specific, NOT for VCS
+# ~/.navig/ is the global user store — absolute path, not relevant as a gitignore rule
+.navig/                     # Project-local NAVIG state — never commit
+.archive/                   # Local archive / cleanup staging
 nohup.out                   # Background process output
 
 # ===============================================
@@ -226,26 +225,8 @@ cython_debug/               # Cython debug symbols
 # END OF .gitignore
 # ===============================================
 
-# NAVIG runtime files inside .navig/ — excluded from VCS
-# Tracked paths: .navig/plans/ .navig/brand/ .navig/wiki/ .navig/agents/
-.navig/config.yaml          # credential-bearing config — use .navig/config.yaml.example
-.navig/profile.json
-.navig/ai_system_prompt.txt # runtime-generated
-.navig/debug.log
-.navig/navig.log
-.navig/cache/
-.navig/history/
-.navig/logs/
-.navig/backups/
-.navig/hosts/               # machine-specific host data
-.navig/apps/
-.navig/tests/               # local test run output
-.navig/schemas/             # runtime-copied schemas (source is navig/schemas/)
-.navig/inbox/               # personal inbox items
-.navig/tasks/               # personal task queue
-.navig/workspace/USER.md    # user identity sidecar — machine-specific
-.backups/
-node_modules
+# Runtime dependencies (not committed)
+node_modules/
 
 # AI IDE Configuration
 # .agents/ .claude/ .codex/ .gemini/ are TRACKED — auto-synced from
@@ -256,10 +237,6 @@ node_modules
 .cursorrules
 .windsurfrules
 .agent/
-.ruff_cache/
-
-# Archive (cleanup staging — never commit)
-.archive/
 
 # Bot stack (separate private repo)
 navig_ai.py
@@ -271,9 +248,6 @@ requirements-bot.txt
 # Private files
 knowledge/
 .env.remote
-
-# NAVIG reports (security scans, secret scans — never commit)
-.navig/reports/
 
 # Dev scratch / test output files in repo root (never commit)
 out*.txt
@@ -316,6 +290,8 @@ audit_slugs.py
 validate_prompts.py
 
 # Root output / tracking files
+audit_log.txt               # Agent session audit log — user-specific
+ft4.txt                     # Dev scratch output
 latest.json                 # Stale release metadata artifact
 pytest_fail.txt
 tC_out*.txt
