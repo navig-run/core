@@ -93,14 +93,15 @@ Secret scan via `gitleaks-action` runs first and blocks the test job if triggere
 
 ## CI Weaknesses / Gaps
 
-| Gap | Severity | Notes |
-|-----|----------|-------|
-| Python 3.13 absent from CI matrix | Low | Listed in `pyproject.toml` classifiers but not tested |
+| Gap | Severity | Status |
+|-----|----------|--------|
+| Python 3.13 absent from CI matrix | Low | **Fixed** — added to `ci.yml` matrix |
 | No pip dependency caching | Low | Acceptable trade-off per minimal CI constraint |
-| Go code in `host/` has no CI coverage | Medium | Separate binary; `go build ./...` and `go test ./...` not wired in |
-| Node/TS in `packages/` has no CI coverage | Medium | `pnpm-workspace.yaml` present; zero TS compilation check in CI |
-| Coverage threshold 65% | Medium | Low for a security-sensitive CLI with SSH, vault, and credential handling |
-| No `pip install --dry-run` check on lockfile | Low | No lockfile exists; reproducible installs are not guaranteed |
+| Go code in `host/` has no CI coverage | Medium | **Fixed** — `test-go` job added to `ci.yml` (`go vet`, `go build`, `go test`) |
+| `packages/` are Python/YAML tool packs — no TypeScript in this repo | N/A | **False alarm** — TS packages (navig-deck etc.) are sibling repos, not in navig-core |
+| Coverage threshold 65% | Medium | **Fixed** — raised to 75% in `pytest.ini` |
+| No pip lockfile | Medium | **Fixed** — `requirements.lock` generated via `pip-compile pyproject.toml` |
 | `FUNDING.yml` had `REPLACE_ME` placeholder | Fixed | Visible in Sponsors button on GitHub; fixed in this branch |
 | `feature_request.yml` had unrelated content | Fixed | Prompt Optimization Checklist exposed to contributors; fixed in this branch |
 | `config.yml` had wrong `SECURITY.md` URL | Fixed | 404 on click; fixed in this branch |
+| `enforce_admins: true` blocked maintainer merges | Low | **Fixed** — set to `false` in `github-bootstrap.sh` |

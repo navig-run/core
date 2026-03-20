@@ -14,9 +14,13 @@ Push `chore/github-bootstrap` to `navig-run/core` and open a PR to get the fixed
 - [x] `FUNDING.yml` — `REPLACE_ME` replaced with `github: navig-run` + correct support URL
 - [x] `SUPPORT.md` created
 - [x] `BOOTSTRAP_REPORT.md` created
-- [x] `scripts/github-bootstrap.sh` created
+- [x] `scripts/github-bootstrap.sh` created (enforce_admins: false, all 6 checks required)
 - [x] `GITHUB_MANUAL_OR_CLI_STEPS.md` created
 - [x] `K:\_PROJECTS\navig\.github\profile\README.md` created (org profile)
+- [x] `requirements.lock` generated via `pip-compile` (121 pinned packages)
+- [x] `pytest.ini` coverage threshold raised from 65% → 75%
+- [x] CI matrix extended to Python 3.13
+- [x] `test-go` job added to `ci.yml` (`go vet`, `go build`, `go test` in `host/`)
 - [ ] Push `chore/github-bootstrap` to `navig-run/core`
 - [ ] Open PR → merge to `main`
 - [ ] Run `bash scripts/github-bootstrap.sh` (requires `gh` auth with repo/admin scope)
