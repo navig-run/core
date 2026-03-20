@@ -63,7 +63,7 @@ class AgentMessage:
     timestamp: datetime = field(default_factory=datetime.now)
     reply_to: Optional[str] = None  # For response messages
     ttl: int = 60  # Time-to-live in seconds
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -77,7 +77,7 @@ class AgentMessage:
             "reply_to": self.reply_to,
             "ttl": self.ttl,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AgentMessage':
         """Create from dictionary."""
@@ -104,7 +104,7 @@ class TaskRequest:
     priority: int = 5  # 1-10, higher = more important
     timeout: int = 300  # seconds
     require_confirmation: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -125,7 +125,7 @@ class TaskResult:
     result: Any
     error: Optional[str] = None
     execution_time: float = 0.0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -142,62 +142,62 @@ class AgentRegistry:
     
     Maintains list of available agents and their capabilities.
     """
-    
+
     def __init__(self):
         self._agents: Dict[str, AgentInfo] = {}
         self._capabilities_index: Dict[str, List[str]] = {}  # capability -> agent_ids
-    
+
     def register(self, agent: AgentInfo) -> bool:
         """Register an agent."""
         if agent.agent_id in self._agents:
             logger.warning(f"Agent {agent.agent_id} already registered, updating")
-        
+
         self._agents[agent.agent_id] = agent
-        
+
         # Update capabilities index
         for cap in agent.capabilities:
             if cap not in self._capabilities_index:
                 self._capabilities_index[cap] = []
             if agent.agent_id not in self._capabilities_index[cap]:
                 self._capabilities_index[cap].append(agent.agent_id)
-        
+
         logger.info(f"Registered agent: {agent.name} ({agent.agent_id})")
         return True
-    
+
     def unregister(self, agent_id: str) -> bool:
         """Unregister an agent."""
         if agent_id not in self._agents:
             return False
-        
+
         agent = self._agents.pop(agent_id)
-        
+
         # Remove from capabilities index
         for cap in agent.capabilities:
             if cap in self._capabilities_index:
                 self._capabilities_index[cap] = [
                     a for a in self._capabilities_index[cap] if a != agent_id
                 ]
-        
+
         logger.info(f"Unregistered agent: {agent.name} ({agent_id})")
         return True
-    
+
     def get(self, agent_id: str) -> Optional[AgentInfo]:
         """Get agent by ID."""
         return self._agents.get(agent_id)
-    
+
     def find_by_capability(self, capability: str) -> List[AgentInfo]:
         """Find agents with a specific capability."""
         agent_ids = self._capabilities_index.get(capability, [])
         return [self._agents[aid] for aid in agent_ids if aid in self._agents]
-    
+
     def find_by_role(self, role: AgentRole) -> List[AgentInfo]:
         """Find agents with a specific role."""
         return [a for a in self._agents.values() if a.role == role]
-    
+
     def list_all(self) -> List[AgentInfo]:
         """List all registered agents."""
         return list(self._agents.values())
-    
+
     def update_heartbeat(self, agent_id: str):
         """Update agent's last heartbeat."""
         if agent_id in self._agents:
@@ -210,14 +210,14 @@ class MessageBus:
     
     Handles message routing, delivery, and acknowledgment.
     """
-    
+
     def __init__(self, registry: AgentRegistry):
         self.registry = registry
         self._handlers: Dict[str, Callable] = {}  # agent_id -> message handler
         self._pending_responses: Dict[str, asyncio.Future] = {}
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._running = False
-    
+
     def register_handler(
         self,
         agent_id: str,
@@ -225,11 +225,11 @@ class MessageBus:
     ):
         """Register a message handler for an agent."""
         self._handlers[agent_id] = handler
-    
+
     def unregister_handler(self, agent_id: str):
         """Unregister a message handler."""
         self._handlers.pop(agent_id, None)
-    
+
     async def send(
         self,
         message: AgentMessage,
@@ -251,19 +251,19 @@ class MessageBus:
             # Broadcast
             await self._broadcast(message)
             return None
-        
+
         if message.to_agent not in self._handlers:
             logger.warning(f"No handler for agent {message.to_agent}")
             return None
-        
+
         if wait_response:
             # Create future for response
             future = asyncio.get_event_loop().create_future()
             self._pending_responses[message.message_id] = future
-        
+
         # Queue message
         await self._message_queue.put(message)
-        
+
         if wait_response:
             try:
                 return await asyncio.wait_for(future, timeout=timeout)
@@ -271,9 +271,9 @@ class MessageBus:
                 logger.warning(f"Timeout waiting for response to {message.message_id}")
                 self._pending_responses.pop(message.message_id, None)
                 return None
-        
+
         return None
-    
+
     async def _broadcast(self, message: AgentMessage):
         """Broadcast message to all agents."""
         for agent_id in self._handlers:
@@ -289,7 +289,7 @@ class MessageBus:
                     ttl=message.ttl,
                 )
                 await self._message_queue.put(msg_copy)
-    
+
     async def _process_messages(self):
         """Process messages from queue."""
         while self._running:
@@ -298,32 +298,32 @@ class MessageBus:
                     self._message_queue.get(),
                     timeout=1.0,
                 )
-                
+
                 handler = self._handlers.get(message.to_agent)
                 if handler:
                     try:
                         response = await handler(message)
-                        
+
                         # Check if this is a response to a pending request
                         if message.reply_to and message.reply_to in self._pending_responses:
                             future = self._pending_responses.pop(message.reply_to)
                             if not future.done():
                                 future.set_result(response)
-                        
+
                     except Exception as e:
                         logger.error(f"Error handling message: {e}")
-                
+
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
                 logger.error(f"Error in message processor: {e}")
-    
+
     async def start(self):
         """Start the message bus."""
         self._running = True
         asyncio.create_task(self._process_messages())
         logger.info("Message bus started")
-    
+
     async def stop(self):
         """Stop the message bus."""
         self._running = False
@@ -340,20 +340,20 @@ class AgentCoordinator:
     - Conversation handoffs
     - Shared context management
     """
-    
+
     def __init__(self):
         self.registry = AgentRegistry()
         self.bus = MessageBus(self.registry)
         self._shared_context: Dict[str, Any] = {}
-    
+
     async def start(self):
         """Start the coordinator."""
         await self.bus.start()
-    
+
     async def stop(self):
         """Stop the coordinator."""
         await self.bus.stop()
-    
+
     def register_agent(
         self,
         agent_id: str,
@@ -373,12 +373,12 @@ class AgentCoordinator:
         )
         self.registry.register(agent)
         self.bus.register_handler(agent_id, handler)
-    
+
     def unregister_agent(self, agent_id: str):
         """Unregister an agent."""
         self.registry.unregister(agent_id)
         self.bus.unregister_handler(agent_id)
-    
+
     async def delegate_task(
         self,
         task: TaskRequest,
@@ -407,11 +407,11 @@ class AgentCoordinator:
                     result=None,
                     error=f"No agent available for {task.task_type}",
                 )
-            
+
             # Simple selection: first available
             # Could implement load balancing here
             to_agent = candidates[0].agent_id
-        
+
         # Create task message
         message = AgentMessage(
             message_id=str(uuid.uuid4()),
@@ -421,24 +421,24 @@ class AgentCoordinator:
             content=task.to_dict(),
             ttl=task.timeout,
         )
-        
+
         # Send and wait for response
         response = await self.bus.send(
             message,
             wait_response=True,
             timeout=float(task.timeout),
         )
-        
+
         if response and response.content:
             return TaskResult(**response.content)
-        
+
         return TaskResult(
             task_id=task.task_id,
             success=False,
             result=None,
             error="No response from agent",
         )
-    
+
     async def handoff_conversation(
         self,
         from_agent: str,
@@ -468,14 +468,14 @@ class AgentCoordinator:
                 "reason": reason,
             },
         )
-        
+
         response = await self.bus.send(message, wait_response=True, timeout=10.0)
-        
+
         if response and response.message_type == MessageType.RESPONSE:
             return response.content.get("accepted", False)
-        
+
         return False
-    
+
     def update_shared_context(self, key: str, value: Any, from_agent: str):
         """Update shared context."""
         self._shared_context[key] = {
@@ -483,13 +483,13 @@ class AgentCoordinator:
             "updated_by": from_agent,
             "updated_at": datetime.now().isoformat(),
         }
-    
+
     def get_shared_context(self, key: Optional[str] = None) -> Any:
         """Get shared context."""
         if key:
             return self._shared_context.get(key, {}).get("value")
         return {k: v["value"] for k, v in self._shared_context.items()}
-    
+
     def gather_context_speculatively(
         self,
         query: str,
@@ -503,11 +503,11 @@ class AgentCoordinator:
         """
         async def _fetch_context():
             try:
-                # Memory search is synchronous, so push to thread pool 
+                # Memory search is synchronous, so push to thread pool
                 # to avoid blocking the event loop during route selection
                 from navig.memory.manager import get_memory_manager
                 manager = get_memory_manager()
-                
+
                 loop = asyncio.get_running_loop()
                 return await loop.run_in_executor(
                     None,
@@ -516,7 +516,7 @@ class AgentCoordinator:
             except Exception as e:
                 logger.error(f"Speculative context gather failed: {e}")
                 return ""
-                
+
         # Return the un-awaited task so the caller can gather it later
         return asyncio.create_task(_fetch_context())
 

@@ -1,9 +1,9 @@
 """Approval policies and command classification."""
 
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import List
 import fnmatch
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import List
 
 
 class ApprovalLevel(Enum):
@@ -94,12 +94,12 @@ class ApprovalPolicy:
     auto_evolve_whitelist: List[str] = field(
         default_factory=lambda: DEFAULT_AUTO_EVOLVE_WHITELIST.copy()
     )
-    
+
     @classmethod
     def default(cls) -> 'ApprovalPolicy':
         """Create default policy with standard patterns."""
         return cls()
-    
+
     @property
     def patterns(self) -> dict:
         """Get patterns as dict for display."""
@@ -109,11 +109,11 @@ class ApprovalPolicy:
             "dangerous": self.dangerous_patterns,
             "never": self.never_patterns,
         }
-    
+
     def classify(self, command: str) -> ApprovalLevel:
         """Alias for classify_command for compatibility."""
         return self.classify_command(command)
-    
+
     @classmethod
     def from_config(cls, config: dict) -> 'ApprovalPolicy':
         """Load policy from config dict."""
@@ -161,31 +161,31 @@ class ApprovalPolicy:
             fnmatch.fnmatch(cmd_lower, pat.lower())
             for pat in self.auto_evolve_whitelist
         )
-    
+
     def classify_command(self, command: str) -> ApprovalLevel:
         """Classify a command into an approval level."""
         command_lower = command.lower().strip()
-        
+
         # Check patterns in order of severity
         for pattern in self.never_patterns:
             if fnmatch.fnmatch(command_lower, pattern.lower()):
                 return ApprovalLevel.NEVER
-        
+
         for pattern in self.dangerous_patterns:
             if fnmatch.fnmatch(command_lower, pattern.lower()):
                 return ApprovalLevel.DANGEROUS
-        
+
         for pattern in self.confirm_patterns:
             if fnmatch.fnmatch(command_lower, pattern.lower()):
                 return ApprovalLevel.CONFIRM
-        
+
         for pattern in self.safe_patterns:
             if fnmatch.fnmatch(command_lower, pattern.lower()):
                 return ApprovalLevel.SAFE
-        
+
         # Default to CONFIRM for unlisted commands
         return ApprovalLevel.CONFIRM
-    
+
     def is_user_auto_approved(self, user_id: str) -> bool:
         """Check if user has auto-approve privileges."""
         return user_id in self.auto_approve_users

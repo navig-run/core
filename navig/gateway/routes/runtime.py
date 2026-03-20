@@ -33,6 +33,7 @@ from navig.gateway.routes.common import json_error_response, json_ok, require_be
 
 if TYPE_CHECKING:
     from aiohttp import web
+
     from navig.gateway.server import NavigGateway
 
 try:

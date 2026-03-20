@@ -7,18 +7,17 @@ Generate comprehensive context summaries for external AI assistants:
 - Export commands for clipboard/file
 """
 
-from typing import Dict, Any, List
-from datetime import datetime, timedelta
 import json
 import platform
-
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
 
 class ContextGenerator:
     """
     Generate comprehensive context for AI copilot integration.
     """
-    
+
     def __init__(self, assistant):
         """
         Initialize context generator module.
@@ -29,7 +28,7 @@ class ContextGenerator:
         self.assistant = assistant
         self.ai_context_dir = assistant.ai_context_dir
         self.config = assistant.assistant_config
-    
+
     def generate_context_summary(
         self,
         config_manager,
@@ -68,7 +67,7 @@ class ContextGenerator:
         # Resource usage
         if remote_ops and server_config:
             context['resource_usage'] = self._get_resource_usage(remote_ops, server_config)
-        
+
         # Recent operations
         context['recent_operations'] = self._get_recent_operations(limit=20)
 
@@ -81,9 +80,9 @@ class ContextGenerator:
 
         # Context summary (human-readable)
         context['context_summary'] = self._generate_summary(context)
-        
+
         return context
-    
+
     def _get_navig_version(self) -> str:
         """Get NAVIG version."""
         try:
@@ -91,7 +90,7 @@ class ContextGenerator:
             return __version__
         except (ImportError, AttributeError):
             return 'unknown'
-    
+
     def _build_server_context(
         self,
         server_config: Dict[str, Any],
@@ -129,7 +128,7 @@ class ContextGenerator:
                 server_ctx['live_data_error'] = str(e)
 
         return server_ctx
-    
+
     def _get_services_status(self, remote_ops, server_config: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Get status of common services."""
         services = ['nginx', 'mysql', 'php-fpm', 'redis', 'postgresql']
@@ -157,7 +156,7 @@ class ContextGenerator:
                 pass
 
         return services_status
-    
+
     def _get_resource_usage(self, remote_ops, server_config: Dict[str, Any]) -> Dict[str, Any]:
         """Get current resource usage."""
         try:
@@ -169,35 +168,35 @@ class ContextGenerator:
             pass
 
         return {'status': 'unavailable'}
-    
+
     def _get_recent_operations(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get recent command operations."""
         history_file = self.ai_context_dir / 'command_history.json'
-        
+
         try:
             if not history_file.exists():
                 return []
-            
+
             with open(history_file, 'r') as f:
                 history = json.load(f)
-            
+
             # Return last N entries
             return history[-limit:] if len(history) > limit else history
-            
+
         except (OSError, json.JSONDecodeError, TypeError):
             return []
-    
+
     def _get_active_issues(self) -> List[Dict[str, Any]]:
         """Get active detected issues."""
         issues_file = self.ai_context_dir / 'detected_issues.json'
-        
+
         try:
             if not issues_file.exists():
                 return []
-            
+
             with open(issues_file, 'r') as f:
                 issues = json.load(f)
-            
+
             # Filter for active issues from last 24 hours
             cutoff = datetime.now() - timedelta(hours=24)
             active = [
@@ -205,51 +204,51 @@ class ContextGenerator:
                 if i.get('status') == 'active' and
                 datetime.fromisoformat(i['timestamp']) >= cutoff
             ]
-            
+
             return active
-            
+
         except (OSError, json.JSONDecodeError, KeyError, ValueError):
             return []
-    
+
     def _get_recent_errors(self, hours: int = 24) -> List[Dict[str, Any]]:
         """Get recent errors."""
         # Use error_resolution module if available
         if hasattr(self.assistant, 'error_resolution'):
             stats = self.assistant.error_resolution.get_error_statistics(hours=hours)
             return stats.get('recent_errors', [])
-        
+
         return []
-    
+
     def _generate_summary(self, context: Dict[str, Any]) -> str:
         """Generate human-readable context summary."""
         lines = []
-        
+
         # Server info
         if 'server' in context and 'name' in context['server']:
             server = context['server']
             lines.append(f"Managing server: {server.get('name')} ({server.get('host')})")
             if 'os' in server:
                 lines.append(f"OS: {server['os']}")
-        
+
         # Services
         if 'services' in context and context['services']:
             running_services = [s['name'] for s in context['services'] if s.get('status') == 'running']
             if running_services:
                 lines.append(f"Running services: {', '.join(running_services)}")
-        
+
         # Resource status
         if 'resource_usage' in context:
             usage = context['resource_usage']
             if 'status' in usage and usage['status'] != 'unavailable':
                 lines.append(f"Resource status: {usage.get('status', 'unknown')}")
-        
+
         # Issues
         if 'active_issues' in context and context['active_issues']:
             lines.append(f"Active issues: {len(context['active_issues'])}")
-        
+
         # Recent activity
         if 'recent_operations' in context:
             lines.append(f"Recent operations: {len(context['recent_operations'])}")
-        
+
         return '. '.join(lines) if lines else 'No context available'
 

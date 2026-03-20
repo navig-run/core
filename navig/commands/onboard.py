@@ -42,11 +42,11 @@ else:
 # Rich availability guard (always needed — fallback mode depends on it)
 # ---------------------------------------------------------------------------
 try:
+    from rich import print as rprint  # noqa: F401
     from rich.console import Console
     from rich.panel import Panel
     from rich.prompt import Confirm, Prompt
     from rich.table import Table
-    from rich import print as rprint  # noqa: F401
 
     RICH_AVAILABLE = True
 except ImportError:
@@ -58,7 +58,6 @@ except ImportError:
 # ---------------------------------------------------------------------------
 try:
     import textual  # noqa: F401 — version probe
-
     from textual import on, work
     from textual.app import App, ComposeResult
     from textual.binding import Binding
@@ -2238,8 +2237,8 @@ def _auto_install_textual() -> bool:
     Returns True if textual is importable after the attempt.
     """
     import importlib
-    import subprocess
     import shutil
+    import subprocess
 
     console = get_console()
     if console:
@@ -2347,6 +2346,7 @@ def run_onboard(flow: str = "auto", non_interactive: bool = False, skip: bool = 
             # widget/screen classes get defined, then run the app.
             try:
                 import importlib
+
                 import navig.commands.onboard as _self
                 importlib.reload(_self)
                 _self.NavigOnboardingApp().run()

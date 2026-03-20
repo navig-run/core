@@ -219,7 +219,7 @@ class ProviderClientAdapter:
         self._client = client
 
     async def complete(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
-        from navig.providers.clients import Message, CompletionRequest
+        from navig.providers.clients import CompletionRequest, Message
         msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
         request = CompletionRequest(
             messages=msgs, model=model,
@@ -265,19 +265,19 @@ class UnifiedProviderFactory:
 
     def _create_client(self, provider_name: str, **kwargs: Any) -> Any:
         try:
-            from navig.agent.llm_providers import create_provider, _PROVIDER_MAP
+            from navig.agent.llm_providers import _PROVIDER_MAP, create_provider
             if provider_name.lower() in _PROVIDER_MAP:
                 provider = create_provider(provider_name, **kwargs)
                 return LLMProviderAdapter(provider)
         except (ImportError, ValueError):
             pass
         try:
-            from navig.providers.clients import create_client, get_builtin_provider
             from navig.providers.auth import resolve_auth
+            from navig.providers.clients import create_client, get_builtin_provider
             config = get_builtin_provider(provider_name)
             if config is None:
-                from navig.providers.types import ProviderConfig, ModelApi
                 from navig.llm_router import PROVIDER_BASE_URLS
+                from navig.providers.types import ModelApi, ProviderConfig
                 url = kwargs.get("base_url") or PROVIDER_BASE_URLS.get(
                     provider_name, "https://openrouter.ai/api/v1")
                 config = ProviderConfig(name=provider_name, base_url=url, api=ModelApi.OPENAI_COMPLETIONS)

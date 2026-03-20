@@ -39,11 +39,11 @@ def generate_pkce_pair() -> Tuple[str, str]:
     """
     # Generate 32 bytes of random data (64 hex chars)
     verifier = secrets.token_hex(32)
-    
+
     # SHA256 hash the verifier, then base64url encode
     digest = hashlib.sha256(verifier.encode('ascii')).digest()
     challenge = base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
-    
+
     return verifier, challenge
 
 
@@ -65,14 +65,14 @@ class OAuthCredentials:
     account_id: Optional[str] = None
     email: Optional[str] = None
     client_id: Optional[str] = None
-    
+
     @property
     def is_expired(self) -> bool:
         """Check if the access token is expired."""
         # Add 5 minute buffer
         buffer_ms = 5 * 60 * 1000
         return time.time() * 1000 >= self.expires - buffer_ms
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
@@ -83,7 +83,7 @@ class OAuthCredentials:
             "email": self.email,
             "client_id": self.client_id,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "OAuthCredentials":
         """Create from dictionary."""
@@ -112,7 +112,7 @@ class OAuthProviderConfig:
     redirect_uri: str = "http://127.0.0.1:1455/auth/callback"
     scopes: List[str] = field(default_factory=list)
     userinfo_url: Optional[str] = None
-    
+
     def build_authorize_url(
         self,
         state: str,
@@ -129,7 +129,7 @@ class OAuthProviderConfig:
         }
         if self.scopes:
             params["scope"] = " ".join(self.scopes)
-        
+
         return f"{self.authorize_url}?{urlencode(params)}"
 
 
@@ -156,21 +156,21 @@ OAUTH_PROVIDERS: Dict[str, OAuthProviderConfig] = {
 
 class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
     """HTTP handler for OAuth callback."""
-    
+
     def log_message(self, format: str, *args) -> None:
         """Suppress HTTP logs."""
         pass
-    
+
     def do_GET(self):
         """Handle GET request (OAuth callback)."""
         parsed = urlparse(self.path)
-        
+
         if parsed.path == "/auth/callback":
             query = parse_qs(parsed.query)
             code = query.get("code", [None])[0]
             state = query.get("state", [None])[0]
             error = query.get("error", [None])[0]
-            
+
             if error:
                 self.server.oauth_result = {"error": error}
                 self._send_response("Authentication failed. You can close this window.")
@@ -182,7 +182,7 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 self._send_response("Invalid callback. Missing code or state.")
         else:
             self.send_error(404)
-    
+
     def _send_response(self, message: str):
         """Send HTML response."""
         html = f"""<!DOCTYPE html>
@@ -193,7 +193,7 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
 <p>You can close this window.</p>
 </body>
 </html>"""
-        
+
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.end_headers()
@@ -202,14 +202,14 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
 
 class OAuthCallbackServer:
     """Local HTTP server for OAuth callbacks."""
-    
+
     def __init__(self, port: int = 1455, timeout: float = 120.0):
         self.port = port
         self.timeout = timeout
         self.server = None
         self.result = None
         self._thread = None
-    
+
     def is_port_available(self) -> bool:
         """Check if the port is available."""
         try:
@@ -218,12 +218,12 @@ class OAuthCallbackServer:
                 return True
         except OSError:
             return False
-    
+
     def start(self) -> bool:
         """Start the callback server."""
         if not self.is_port_available():
             return False
-        
+
         try:
             self.server = http.server.HTTPServer(
                 ("127.0.0.1", self.port),
@@ -231,29 +231,29 @@ class OAuthCallbackServer:
             )
             self.server.oauth_result = None
             self.server.timeout = 1.0
-            
+
             def serve():
                 start = time.time()
                 while time.time() - start < self.timeout:
                     self.server.handle_request()
                     if self.server.oauth_result:
                         break
-            
+
             self._thread = threading.Thread(target=serve, daemon=True)
             self._thread.start()
             return True
         except Exception:
             return False
-    
+
     def wait_for_callback(self) -> Optional[Dict[str, str]]:
         """Wait for the OAuth callback."""
         if self._thread:
             self._thread.join(timeout=self.timeout)
-        
+
         if self.server and self.server.oauth_result:
             return self.server.oauth_result
         return None
-    
+
     def stop(self):
         """Stop the callback server."""
         if self.server:
@@ -291,7 +291,7 @@ async def exchange_code_for_tokens(
     """
     if not HTTPX_AVAILABLE:
         raise ImportError("httpx is required for OAuth. Install: pip install httpx")
-    
+
     async with httpx.AsyncClient() as client:
         # Build token request
         data = {
@@ -303,25 +303,25 @@ async def exchange_code_for_tokens(
         }
         if provider.client_secret:
             data["client_secret"] = provider.client_secret
-        
+
         response = await client.post(
             provider.token_url,
             data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        
+
         if response.status_code != 200:
             raise Exception(f"Token exchange failed: {response.text}")
-        
+
         token_data = response.json()
-        
+
         access_token = token_data.get("access_token", "")
         refresh_token = token_data.get("refresh_token", "")
         expires_in = token_data.get("expires_in", 3600)
-        
+
         # Calculate expiry timestamp
         expires = int((time.time() + expires_in) * 1000)
-        
+
         # Try to extract account ID from token claims (JWT)
         account_id = None
         try:
@@ -338,7 +338,7 @@ async def exchange_code_for_tokens(
                 account_id = claims.get("sub") or claims.get("account_id")
         except Exception:
             pass
-        
+
         return OAuthCredentials(
             access=access_token,
             refresh=refresh_token,
@@ -364,7 +364,7 @@ async def refresh_oauth_tokens(
     """
     if not HTTPX_AVAILABLE:
         raise ImportError("httpx is required for OAuth. Install: pip install httpx")
-    
+
     async with httpx.AsyncClient() as client:
         data = {
             "grant_type": "refresh_token",
@@ -373,24 +373,24 @@ async def refresh_oauth_tokens(
         }
         if provider.client_secret:
             data["client_secret"] = provider.client_secret
-        
+
         response = await client.post(
             provider.token_url,
             data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        
+
         if response.status_code != 200:
             raise Exception(f"Token refresh failed: {response.text}")
-        
+
         token_data = response.json()
-        
+
         access_token = token_data.get("access_token", credentials.access)
         refresh_token = token_data.get("refresh_token", credentials.refresh)
         expires_in = token_data.get("expires_in", 3600)
-        
+
         expires = int((time.time() + expires_in) * 1000)
-        
+
         return OAuthCredentials(
             access=access_token,
             refresh=refresh_token,
@@ -427,24 +427,24 @@ def run_oauth_flow_interactive(
             success=False,
             error=f"Unknown OAuth provider: {provider_name}",
         )
-    
+
     def log(msg: str):
         if on_progress:
             on_progress(msg)
         else:
             print(msg)
-    
+
     # Generate PKCE and state
     code_verifier, code_challenge = generate_pkce_pair()
     state = generate_state()
-    
+
     # Build authorization URL
     auth_url = provider.build_authorize_url(state, code_challenge)
-    
+
     # Try to start callback server
     callback_server = OAuthCallbackServer()
     use_callback_server = callback_server.start()
-    
+
     if use_callback_server:
         log(f"Starting OAuth flow for {provider.name}...")
         log("A browser window will open. Complete the sign-in there.")
@@ -452,7 +452,7 @@ def run_oauth_flow_interactive(
         log(f"Starting OAuth flow for {provider.name}...")
         log("Note: Could not start local callback server.")
         log("You will need to paste the redirect URL manually.")
-    
+
     # Open browser
     log(f"\nOpening: {auth_url}\n")
     try:
@@ -460,15 +460,15 @@ def run_oauth_flow_interactive(
     except Exception:
         log("Could not open browser automatically.")
         log(f"Please open this URL manually:\n{auth_url}\n")
-    
+
     # Wait for callback or manual input
     result = None
-    
+
     if use_callback_server:
         log("Waiting for authentication callback...")
         result = callback_server.wait_for_callback()
         callback_server.stop()
-    
+
     if not result:
         # Manual input fallback
         log("\nPaste the redirect URL (or just the authorization code):")
@@ -476,33 +476,33 @@ def run_oauth_flow_interactive(
             user_input = input("> ").strip()
         except EOFError:
             return OAuthFlowResult(success=False, error="No input received")
-        
+
         # Parse input
         if user_input.startswith("http"):
             parsed = urlparse(user_input)
             query = parse_qs(parsed.query)
             code = query.get("code", [None])[0]
             recv_state = query.get("state", [None])[0]
-            
+
             if recv_state and recv_state != state:
                 return OAuthFlowResult(success=False, error="State mismatch")
-            
+
             result = {"code": code, "state": recv_state or state}
         else:
             # Assume it's just the code
             result = {"code": user_input, "state": state}
-    
+
     if not result or "error" in result:
         error = result.get("error") if result else "No callback received"
         return OAuthFlowResult(success=False, error=str(error))
-    
+
     code = result.get("code")
     if not code:
         return OAuthFlowResult(success=False, error="No authorization code received")
-    
+
     # Exchange code for tokens
     log("\nExchanging code for tokens...")
-    
+
     try:
         credentials = asyncio.run(
             exchange_code_for_tokens(provider, code, code_verifier)
@@ -538,35 +538,35 @@ def run_oauth_flow_headless(
             success=False,
             error=f"Unknown OAuth provider: {provider_name}",
         )
-    
+
     # Generate PKCE and state
     code_verifier, code_challenge = generate_pkce_pair()
     state = generate_state()
-    
+
     # Build authorization URL
     auth_url = provider.build_authorize_url(state, code_challenge)
-    
+
     # Display URL
     on_auth_url(auth_url)
-    
+
     # Get callback input
     user_input = get_callback_input().strip()
-    
+
     # Parse input
     if user_input.startswith("http"):
         parsed = urlparse(user_input)
         query = parse_qs(parsed.query)
         code = query.get("code", [None])[0]
         recv_state = query.get("state", [None])[0]
-        
+
         if recv_state and recv_state != state:
             return OAuthFlowResult(success=False, error="State mismatch")
     else:
         code = user_input
-    
+
     if not code:
         return OAuthFlowResult(success=False, error="No authorization code")
-    
+
     # Exchange code for tokens
     try:
         credentials = asyncio.run(

@@ -12,9 +12,9 @@ Usage:
 """
 
 import asyncio
-import sys
-import typer
 from typing import Optional
+
+import typer
 
 from navig.lazy_loader import lazy_import
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
@@ -70,7 +70,7 @@ def _read_bridge_config():
             token = token or bridge.get("token", "")
         except Exception:
             pass
-    return url or "ws://127.0.0.1:42070", token
+    return url or f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}", token
 
 
 async def _chat(messages: list, model: str = "") -> str:
@@ -232,7 +232,7 @@ def copilot_review(
             code = f.read()
     except Exception as e:
         ch.error(f"Cannot read file: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Truncate very large files
     max_chars = 15000

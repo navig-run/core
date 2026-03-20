@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import Generator
 
 
 @contextmanager

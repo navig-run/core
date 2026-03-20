@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 from typing import Optional
 
 from loguru import logger
@@ -154,9 +153,9 @@ def cli_review_and_approve(
     """
     import typer  # noqa: PLC0415
 
+    from navig.selfheal.git_manager import _CORE_REPO_DIR  # noqa: PLC0415
     from navig.selfheal.patcher import build_patch  # noqa: PLC0415
     from navig.selfheal.pr_builder import submit_pr  # noqa: PLC0415
-    from navig.selfheal.git_manager import _CORE_REPO_DIR  # noqa: PLC0415
 
     grouped = _group_by_severity(findings)
     if not grouped:
@@ -381,13 +380,13 @@ class ContributeFlow:
         Returns:
             Message dict with ``pr_url`` set on success and ``done=True``.
         """
-        from navig.selfheal.patcher import build_patch  # noqa: PLC0415
-        from navig.selfheal.pr_builder import submit_pr  # noqa: PLC0415
         from navig.selfheal.git_manager import (  # noqa: PLC0415
             _CORE_REPO_DIR,
             apply_patch,
             commit_and_push,
         )
+        from navig.selfheal.patcher import build_patch  # noqa: PLC0415
+        from navig.selfheal.pr_builder import submit_pr  # noqa: PLC0415
 
         repo_path = _CORE_REPO_DIR
         try:

@@ -199,7 +199,7 @@ class CommandQueue:
         if lane not in self._lanes:
             ls = _LaneState(lane=lane)
             self._lanes[lane] = ls
-            task = asyncio.ensure_future(ls._worker())
+            task = asyncio.create_task(ls._worker())
             ls.worker_task = task
         return self._lanes[lane]
 
@@ -303,7 +303,10 @@ class CommandQueue:
 
         Raises asyncio.TimeoutError if not drained within *timeout* seconds.
         """
-        targets = [self._lanes[lane]] if lane and lane in self._lanes else list(self._lanes.values())
+        targets = (
+            [self._lanes[lane]] if lane and lane in self._lanes
+            else list(self._lanes.values())
+        )
         waits = [ls.queue.join() for ls in targets]
         if not waits:
             return

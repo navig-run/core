@@ -7,11 +7,12 @@ reloading/restarting operations.
 """
 
 import json
-from typing import Dict, Any
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
+from typing import Any, Dict
+
 from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 from navig.config import get_config_manager
 from navig.remote import RemoteOperations
@@ -65,7 +66,7 @@ def list_vhosts(options: Dict[str, Any]) -> None:
 
     # Load host configuration for SSH connection
     host_config = config_manager.load_host_config(host_name)
-    
+
     try:
         from datetime import datetime
         result_data = {
@@ -75,7 +76,7 @@ def list_vhosts(options: Dict[str, Any]) -> None:
             'enabled': [],
             'available': []
         }
-        
+
         # Normalize server type (apache2 → apache for paths)
         server_type_normalized = 'apache' if server_type == 'apache2' else server_type
 
@@ -107,30 +108,30 @@ def list_vhosts(options: Dict[str, Any]) -> None:
             if available_result.returncode == 0 and available_result.stdout:
                 available_sites = [s.strip() for s in available_result.stdout.strip().split('\n') if s.strip()]
                 result_data['available'] = available_sites
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
             return
-        
+
         # Display results in Rich table
         console.rule(f"[bold cyan]{server_type.upper()} Virtual Hosts[/bold cyan]")
-        
+
         table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED)
         table.add_column("Status", style="cyan", width=10)
         table.add_column("Site Name", style="white")
-        
+
         # Add enabled sites
         for site in result_data['enabled']:
             table.add_row("✓ Enabled", f"[green]{site}[/green]")
-        
+
         # Add disabled sites
         disabled = [s for s in result_data['available'] if s not in result_data['enabled']]
         for site in disabled:
             table.add_row("- Disabled", f"[dim]{site}[/dim]")
-        
+
         console.print(table)
         console.print(f"\n[cyan]Enabled: {len(result_data['enabled'])}[/cyan]  |  [dim]Available: {len(result_data['available'])}[/dim]")
-        
+
     except Exception as e:
         console.print(f"[red]✗ Error listing virtual hosts: {e}[/red]")
         if json_output:
@@ -215,13 +216,13 @@ def test_config(options: Dict[str, Any]) -> None:
 
             if success_pattern in output:
                 result_data['valid'] = True
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
             return
-        
+
         console.rule(f"[bold cyan]{server_type.upper()} Configuration Test[/bold cyan]")
-        
+
         if result_data['valid']:
             console.print(Panel(
                 f"[green]✓ Configuration is valid[/green]\n\n{result_data['output']}",
@@ -234,7 +235,7 @@ def test_config(options: Dict[str, Any]) -> None:
                 title=f"{server_type.upper()} Config Test",
                 border_style="red"
             ))
-        
+
     except Exception as e:
         console.print(f"[red]✗ Error testing configuration: {e}[/red]")
         if json_output:
@@ -600,7 +601,7 @@ def disable_module(options: Dict[str, Any]) -> None:
             console.print("[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]")
         else:
             console.print(f"[red]✗ Failed to disable module '{module_name}'[/red]")
-        
+
     except Exception as e:
         console.print(f"[red]✗ Error disabling module: {e}[/red]")
         if json_output:
@@ -713,11 +714,11 @@ def reload_server(options: Dict[str, Any]) -> None:
                 status_cmd = f"systemctl is-active {service_name}"
                 status_result = remote_ops.execute_command(status_cmd, host_config)
                 result_data['service_active'] = 'active' in status_result.stdout
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
             return
-        
+
         if result_data['reload_success']:
             console.print(f"[green]✓ {server_type.upper()} reloaded successfully[/green]")
             if result_data['service_active']:
@@ -726,7 +727,7 @@ def reload_server(options: Dict[str, Any]) -> None:
                 console.print("[yellow]⚠ Service status could not be verified[/yellow]")
         else:
             console.print(f"[red]✗ Failed to reload {server_type.upper()}[/red]")
-        
+
     except Exception as e:
         console.print(f"[red]✗ Error reloading server: {e}[/red]")
         if json_output:
@@ -844,7 +845,7 @@ def get_recommendations(options: Dict[str, Any]) -> None:
             }
         ]
     }
-    
+
     tips = recommendations.get(server_type_normalized, recommendations['nginx'])
 
     result_data = {
@@ -857,14 +858,14 @@ def get_recommendations(options: Dict[str, Any]) -> None:
         return
 
     console.rule(f"[bold cyan]{server_type_normalized.upper()} Performance Recommendations[/bold cyan]")
-    
+
     for i, tip in enumerate(tips, 1):
         console.print(f"\n[bold cyan]{i}. {tip['title']}[/bold cyan]")
         console.print(f"   [dim]{tip['description']}[/dim]")
-        
+
         if 'command' in tip:
             console.print(f"   [yellow]Command:[/yellow] {tip['command']}")
         if 'config' in tip:
             console.print(f"   [yellow]Config:[/yellow] {tip['config']}")
-    
+
     console.print()

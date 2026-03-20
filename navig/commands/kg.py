@@ -12,6 +12,7 @@ Commands:
 from __future__ import annotations
 
 from typing import Optional
+
 import typer
 
 from navig.lazy_loader import lazy_import
@@ -65,8 +66,8 @@ def kg_recall(
     if not facts:
         _ch.warning(f"No facts found for '{subject}'.")
         return
-    from rich.table import Table
     from rich.console import Console
+    from rich.table import Table
     table = Table(title=f"Facts: {subject}", show_lines=False)
     table.add_column("ID", style="dim", no_wrap=True)
     table.add_column("Predicate", style="yellow")
@@ -135,8 +136,8 @@ def kg_routines(
     if not routines:
         _ch.warning("No routines found.")
         return
-    from rich.table import Table
     from rich.console import Console
+    from rich.table import Table
     table = Table(title="NAVIG Routines", show_lines=False)
     table.add_column("ID", style="dim")
     table.add_column("Name", style="cyan")
@@ -153,7 +154,6 @@ def kg_routines(
 def kg_status():
     """Show knowledge graph statistics."""
     kg = _kg()
-    import sqlite3
     con = kg._con
     fact_count = con.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
     routine_count = con.execute("SELECT COUNT(*) FROM routines").fetchone()[0]

@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 # ── Router configuration ───────────────────────────────────────────────────

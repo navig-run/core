@@ -1,0 +1,59 @@
+name: "Database Backup Runbook"
+description: "Standard procedure for creating and verifying database backups"
+author: "NAVIG Core Team"
+type: runbook
+version: "1.0.0"
+# For quick config-file backup (no database), see: packs/backup-essential.yml
+
+prerequisites:
+  - "Host configured in NAVIG (e.g., production)"
+  - "Database connection configured"
+  - "Sufficient disk space for backup"
+
+steps:
+  - step: 1
+    description: "Switch to target host"
+    command: "navig host use production"
+    expected: "Switched to: production"
+  
+  - step: 2
+    description: "Check current disk space"
+    command: "navig exec df -h"
+    notes: "Ensure sufficient space for backup file"
+  
+  - step: 3
+    description: "Create database backup with verification"
+    command: "navig db backup --verify"
+    notes: "Backup will be compressed and checksummed"
+  
+  - step: 4
+    description: "List recent backups"
+    command: "navig db backup list"
+    expected: "New backup should appear in list with checksum"
+  
+  - step: 5
+    description: "Verify backup integrity"
+    command: "navig db backup verify --latest"
+    expected: "Checksum verification should pass"
+  
+  - step: 6
+    description: "Test backup restoration (optional)"
+    command: "navig db restore --latest --dry-run"
+    notes: "Dry-run shows what would be restored without executing"
+
+recovery:
+  - "If backup fails, check disk space and database connectivity"
+  - "If verification fails, delete corrupt backup and retry"
+  - "Keep at least 3 verified backups before deleting old ones"
+
+schedule:
+  - "Daily: automated backups via cron or systemd timer"
+  - "Weekly: manual verification of backup restoration"
+  - "Monthly: backup retention cleanup"
+
+notes: |
+  Best Practices:
+  - Always verify backups after creation
+  - Store backups on separate storage (not same disk as database)
+  - Test restoration regularly in staging environment
+  - Encrypt backups containing sensitive data

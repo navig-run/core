@@ -22,14 +22,13 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from navig.platform.paths import config_dir as _navig_config_dir
 from navig.selfheal.git_manager import (
     UPSTREAM_REPO,
-    _github_headers,
     _github_request,
     create_branch,
     get_github_username,
 )
-from navig.platform.paths import config_dir as _navig_config_dir
 
 # ---------------------------------------------------------------------------
 # Constants

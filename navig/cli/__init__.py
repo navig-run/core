@@ -10,9 +10,10 @@ are deferred until actually needed to improve CLI startup time.
 import logging
 import os
 import sys
-import typer
-from typing import Optional, List, Dict, Any
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import typer
 
 from navig import __version__
 from navig.deprecation import deprecation_warning
@@ -227,6 +228,7 @@ def _schema_callback(value: bool):
     """Output machine-readable command schema as JSON and exit."""
     if value:
         import json as _json
+
         from navig.cli.registry import get_schema
         _schema = get_schema()
         typer.echo(_json.dumps(_schema, indent=2))
@@ -398,9 +400,10 @@ def main(
     # Initialize operation recorder for history tracking
     # void: every command becomes a memory. every memory becomes a lesson.
     try:
-        from navig.operation_recorder import get_operation_recorder, OperationType
         import sys
         import time
+
+        from navig.operation_recorder import OperationType, get_operation_recorder
 
         recorder = get_operation_recorder()
         command_str = ' '.join(sys.argv[1:])  # Exclude 'python -m navig'
@@ -490,8 +493,8 @@ def main(
             ctx.obj['debug_logger'] = debug_logger
 
             # Log command start
-            import sys
             import atexit
+            import sys
             command_str = ' '.join(sys.argv)
             debug_logger.log_command_start(command_str, {
                 'host': host,
@@ -646,6 +649,7 @@ def main(
 def _run_ai_chat(initial_query: str = None, single_query: bool = False):
     """Run interactive AI chat or process single query."""
     import sys
+
     from rich.console import Console
     console = Console()
 
@@ -764,10 +768,11 @@ def upgrade_command(
         navig upgrade            # Upgrade to latest
         navig upgrade --check    # Check if an upgrade is available
     """
-    import subprocess
     import shutil
+    import subprocess
     import sys
     from pathlib import Path
+
     from rich.console import Console as _RC
 
     _con = _RC()
@@ -820,9 +825,9 @@ def upgrade_command(
                 _con.print(f"[green]✓[/green] Already up-to-date (v{old_version})")
                 return
             _con.print(f"[dim]{pull.stdout.strip()}[/dim]")
-        except FileNotFoundError:
+        except FileNotFoundError as _exc:
             _con.print("[red]✗[/red] git not found — install git and retry")
-            raise SystemExit(1)
+            raise SystemExit(1) from _exc
         except subprocess.TimeoutExpired:
             _con.print("[yellow]⚠[/yellow] git pull timed out (slow network) — reinstalling from local source")
 
@@ -859,14 +864,15 @@ def upgrade_command(
                 _con.print(f"[red]✗[/red] Upgrade failed:\n[dim]{r.stderr.strip()[:400]}[/dim]")
                 raise SystemExit(1)
             success = True
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as _exc:
             _con.print("[red]✗[/red] Upgrade timed out — check your network connection")
-            raise SystemExit(1)
+            raise SystemExit(1) from _exc
 
     if success:
         # Re-import to get new version string
         try:
             import importlib
+
             import navig as _nav
             importlib.reload(_nav)
             new_version = _nav.__version__
@@ -1085,6 +1091,7 @@ def docs_command(
     """
     import json as jsonlib
     from pathlib import Path
+
     from rich.console import Console
 
     # Force UTF-8 encoding for console to handle emoji on Windows
@@ -1183,10 +1190,10 @@ def docs_command(
 
     except ImportError as e:
         ch.error(f"Search tools not available: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         ch.error(f"Documentation search failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command("fetch")
@@ -1232,6 +1239,7 @@ def fetch_command(
         navig fetch https://github.com/user/repo --max-chars 10000
     """
     import json as jsonlib
+
     from rich.console import Console
     from rich.markdown import Markdown
 
@@ -1279,10 +1287,10 @@ def fetch_command(
 
     except ImportError as e:
         ch.error(f"Web tools not available: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         ch.error(f"Fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command("search")
@@ -1326,6 +1334,7 @@ def search_command(
         2. Set in config: navig config set web.search.api_key=YOUR_KEY
     """
     import json as jsonlib
+
     from rich.console import Console
 
     console = Console()
@@ -1383,10 +1392,10 @@ def search_command(
 
     except ImportError as e:
         ch.error(f"Web tools not available: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         ch.error(f"Search failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -1480,8 +1489,11 @@ def init_command(
     """
     try:
         from navig.cli.wizard import SetupWizard
-        from navig.workspace_ownership import detect_project_workspace_duplicates, summarize_duplicates
         from navig.commands.init import _maybe_send_first_run_ping
+        from navig.workspace_ownership import (
+            detect_project_workspace_duplicates,
+            summarize_duplicates,
+        )
         wizard = SetupWizard(reconfigure=reconfigure, install_daemon=install_daemon)
         success = wizard.run()
         if not success:
@@ -1503,10 +1515,10 @@ def init_command(
                 f"identical={summary.get('duplicate_identical', 0)}, "
                 f"project_only={summary.get('project_only_legacy', 0)}"
             )
-    except ImportError:
+    except ImportError as _exc:
         ch.error("Setup wizard not available")
         ch.dim("  Install questionary: pip install questionary")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from _exc
 
 
 # TELEGRAM BOT MANAGEMENT, MATRIX MESSAGING, STORE MANAGEMENT
@@ -2899,7 +2911,7 @@ def suggest_command(
         T = Time (typical for this time of day)
         C = Context (project type detected)
     """
-    from navig.commands.suggest import show_suggestions, run_suggestion
+    from navig.commands.suggest import run_suggestion, show_suggestions
 
     if run_idx is not None:
         run_suggestion(run_idx, dry_run=dry_run)
@@ -3619,7 +3631,7 @@ def install_browse(
         return
 
     from rich.table import Table
-    title = f"Community Registry" + (f" — {type_filter}" if type_filter else "")
+    title = "Community Registry" + (f" — {type_filter}" if type_filter else "")
     table = Table(title=title, show_lines=False)
     table.add_column("Type", style="dim", width=10)
     table.add_column("Name", style="cyan")
@@ -3721,9 +3733,11 @@ def quick_remove(
     name: str = typer.Argument(..., help="Quick action name to remove"),
 ):
     """Remove a quick action."""
-    from navig.config import get_config_manager
     from pathlib import Path
+
     import yaml
+
+    from navig.config import get_config_manager
 
     config_manager = get_config_manager()
     quick_file = Path(config_manager.global_config_dir) / "quick_actions.yaml"
@@ -4058,9 +4072,8 @@ def web_hestia_list(
     """List HestiaCP resources (users, domains)."""
     ctx.obj['plain'] = plain
     if users:
-        from navig.commands.config_backup import inspect_export
         # Also need list_exports to verify index exists if not provided
-        from navig.commands.config_backup import list_exportsmains_cmd
+        from navig.commands.config_backup import inspect_export, list_exportsmains_cmd
         list_domains_cmd(user_filter, ctx.obj)
     else:
         # Default: show users
@@ -4683,7 +4696,7 @@ def ai_providers(
     console = Console()
 
     try:
-        from navig.providers import AuthProfileManager, BUILTIN_PROVIDERS
+        from navig.providers import BUILTIN_PROVIDERS, AuthProfileManager
         auth = AuthProfileManager()
 
         if add:
@@ -4726,7 +4739,8 @@ def ai_providers(
 
             # Quick test - try to list models or make a tiny request
             import asyncio
-            from navig.providers import create_client, BUILTIN_PROVIDERS
+
+            from navig.providers import BUILTIN_PROVIDERS, create_client
 
             config = BUILTIN_PROVIDERS.get(provider)
             if not config:
@@ -4819,17 +4833,17 @@ def ai_airllm(
         navig ai airllm --test
     """
     from rich.console import Console
-    from rich.table import Table
     from rich.panel import Panel
+    from rich.table import Table
     console = Console()
 
     # Check if AirLLM is installed
     try:
-        from navig.providers import is_airllm_available, get_airllm_vram_recommendations
+        from navig.providers import get_airllm_vram_recommendations, is_airllm_available
         from navig.providers.airllm import AirLLMConfig
-    except ImportError:
+    except ImportError as _exc:
         console.print("[red]✗ Provider system not available.[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from _exc
 
     airllm_available = is_airllm_available()
 
@@ -4953,7 +4967,8 @@ def ai_airllm(
         console.print()
 
         import asyncio
-        from navig.providers import create_airllm_client, CompletionRequest, Message
+
+        from navig.providers import CompletionRequest, Message, create_airllm_client
 
         async def run_test():
             try:
@@ -4998,10 +5013,10 @@ def ai_login(
 
     try:
         from navig.providers import (
-            AuthProfileManager,
             OAUTH_PROVIDERS,
-            run_oauth_flow_interactive,
+            AuthProfileManager,
             run_oauth_flow_headless,
+            run_oauth_flow_interactive,
         )
 
         # Check if any OAuth providers are configured
@@ -5088,7 +5103,7 @@ def ai_login(
     except ImportError as e:
         console.print(f"[yellow]OAuth not available: {e}[/yellow]")
         console.print("[dim]Install httpx: pip install httpx[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @ai_app.command("logout")
@@ -5171,6 +5186,7 @@ def memory_edit():
     """Open user profile in your default editor."""
     import os
     from pathlib import Path
+
     from rich.console import Console
     console = Console()
 
@@ -5185,7 +5201,7 @@ def memory_edit():
             console.print(f"[green]Created new profile at: {profile_path}[/green]")
         except Exception as e:
             console.print(f"[red]Error creating profile: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     # Get editor from environment
     editor = os.environ.get('EDITOR', os.environ.get('VISUAL', 'notepad' if os.name == 'nt' else 'nano'))
@@ -5957,8 +5973,9 @@ def mcp_config_cmd(
         navig mcp config vscode -o # Write to .vscode/mcp.json
     """
     import json
-    from navig.mcp_server import generate_vscode_mcp_config, generate_claude_mcp_config
     from pathlib import Path
+
+    from navig.mcp_server import generate_claude_mcp_config, generate_vscode_mcp_config
 
     if target == "vscode":
         config = generate_vscode_mcp_config()
@@ -6761,12 +6778,12 @@ def skills_synthesize(
     import typer as _typer
 
     try:
-        from navig.agent.pattern_observer import PatternObserver, DEFAULT_DB_PATH  # type: ignore
         from navig.agent.pattern_analyzer import PatternAnalyzer  # type: ignore
+        from navig.agent.pattern_observer import DEFAULT_DB_PATH, PatternObserver  # type: ignore
         from navig.agent.skill_drafter import SkillDrafter  # type: ignore
     except ImportError as exc:
         ch.error(f"Synthesis pipeline not available: {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     observer = PatternObserver(DEFAULT_DB_PATH)
     records = observer.get_recent(limit=500)
@@ -7144,6 +7161,7 @@ class _LazyDispatchGroup(TyperGroup):
         if self._loaded:
             return
         from typer.main import get_command
+
         from navig.commands import dispatch as dispatch_module
         cmd = get_command(dispatch_module.dispatch_app)
         if hasattr(cmd, "commands"):
@@ -7192,6 +7210,7 @@ class _LazyContactsGroup(TyperGroup):
         if self._loaded:
             return
         from typer.main import get_command
+
         from navig.commands import dispatch as dispatch_module
         cmd = get_command(dispatch_module.contacts_app)
         if hasattr(cmd, "commands"):
@@ -7297,7 +7316,7 @@ def gateway_start(
     ch.info(f"Starting NAVIG Gateway on {host}:{port}...")
 
     try:
-        from navig.gateway import NavigGateway, GatewayConfig
+        from navig.gateway import GatewayConfig, NavigGateway
 
         # Build config dict for GatewayConfig
         raw_config = {
@@ -7558,8 +7577,8 @@ def bot_start(
         navig bot --gateway          # Start gateway + bot together
         navig bot -g -p 9000         # Gateway on custom port
     """
-    import subprocess
     import os
+    import subprocess
 
     # Check for telegram token
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -7784,8 +7803,9 @@ def heartbeat_callback(ctx: typer.Context):
 @heartbeat_app.command("status")
 def heartbeat_status():
     """Show heartbeat status."""
-    import requests
     from datetime import datetime
+
+    import requests
 
     try:
         response = requests.get("{ _gw_base_url()}/status", timeout=5)
@@ -8547,8 +8567,9 @@ def queue_add(
     priority: int = typer.Option(50, "--priority", help="Priority (lower = higher)"),
 ):
     """Add a task to the queue."""
-    import requests
     import json as json_mod
+
+    import requests
 
     try:
         task_params = {}
@@ -9354,7 +9375,7 @@ def memory_remember(
         navig memory remember "Deploy target is AWS eu-west-1" --category technical --tags aws,deploy
     """
     try:
-        from navig.memory.key_facts import KeyFact, get_key_fact_store, VALID_CATEGORIES
+        from navig.memory.key_facts import VALID_CATEGORIES, KeyFact, get_key_fact_store
 
         cat = category.lower().strip()
         if cat not in VALID_CATEGORIES:
@@ -9499,9 +9520,10 @@ def memory_sync(
     ch.info(f"Connecting to {from_url} …")
 
     try:
-        from urllib.request import Request, urlopen
-        from navig.memory.sync import import_chunks
         import json as _json
+        from urllib.request import Request, urlopen
+
+        from navig.memory.sync import import_chunks
 
         params = f"limit={limit}"
         if formation:
@@ -9518,7 +9540,7 @@ def memory_sync(
                 payload = _json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
             ch.error(f"Failed to connect to {from_url}: {exc}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
         chunks = (
             payload.get("chunks", payload)
@@ -9546,7 +9568,7 @@ def memory_sync(
         raise
     except Exception as exc:
         ch.error(f"Sync failed: {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 app.add_typer(memory_app, name="memory")
@@ -9627,9 +9649,10 @@ def config_migrate(
     """
     Migrate configuration to the latest version.
     """
-    from navig.core.migrations import migrate_config
-    from navig.config import get_config_manager
     import yaml
+
+    from navig.config import get_config_manager
+    from navig.core.migrations import migrate_config
 
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
@@ -9659,7 +9682,7 @@ def config_migrate(
 
     except Exception as e:
         ch.error(f"Migration failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @config_app.command("audit")
@@ -9735,6 +9758,7 @@ def config_set(
     """
     try:
         import yaml
+
         from navig.config import get_config_manager
 
         # Parse value - try JSON/YAML first, fallback to string
@@ -9775,7 +9799,7 @@ def config_set(
 
     except Exception as e:
         ch.error(f"Error setting config: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -9951,7 +9975,11 @@ def email_list(
             ch.dim("  NAVIG_EMAIL_ADDRESS, NAVIG_EMAIL_PASSWORD")
             email_provider = MockEmail()
         else:
-            from navig.agent.proactive.imap_email import GmailProvider, OutlookProvider, FastmailProvider
+            from navig.agent.proactive.imap_email import (
+                FastmailProvider,
+                GmailProvider,
+                OutlookProvider,
+            )
 
             providers_map = {
                 'gmail': GmailProvider,
@@ -10012,9 +10040,10 @@ def email_setup(
     import getpass
 
     try:
+        import yaml
+
         from navig.config import get_config_manager
         from navig.vault import get_vault
-        import yaml
         provider = provider.strip().lower()
 
         ch.info(f"Setting up {provider} email...")
@@ -10030,7 +10059,11 @@ def email_setup(
         # Test connection
         ch.info("Testing connection...")
 
-        from navig.agent.proactive.imap_email import GmailProvider, OutlookProvider, FastmailProvider
+        from navig.agent.proactive.imap_email import (
+            FastmailProvider,
+            GmailProvider,
+            OutlookProvider,
+        )
 
         providers_map = {
             'gmail': GmailProvider,

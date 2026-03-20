@@ -23,9 +23,11 @@ Migration::
 
 import asyncio
 import concurrent.futures as _cf
-import requests
 import json
-from typing import ClassVar, Dict, Any, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
+
+import requests
+
 from navig import console_helper as ch
 from navig.ai_context import get_ai_context_manager
 
@@ -41,7 +43,7 @@ class AIAssistant:
     Supports OpenRouter, OpenAI, Anthropic, and more via the providers system.
     Falls back automatically if a provider fails.
     """
-    
+
     def __init__(self, config_manager):
         self.config = config_manager
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
@@ -54,13 +56,14 @@ class AIAssistant:
         """Return a cached ConversationStore singleton (opens DB once per process)."""
         if AIAssistant._conv_store is None:
             try:
-                from navig.memory.conversation import ConversationStore
                 from pathlib import Path
+
+                from navig.memory.conversation import ConversationStore
                 AIAssistant._conv_store = ConversationStore(Path.home() / '.navig' / 'memory.db')
             except Exception:
                 pass
         return AIAssistant._conv_store
-    
+
     def _get_fallback_manager(self):
         """Lazy-load the fallback manager for multi-provider support."""
         if self._fallback_manager is None:
@@ -70,7 +73,7 @@ class AIAssistant:
             except ImportError:
                 pass  # Providers not available, will use legacy mode
         return self._fallback_manager
-    
+
     def ask(
         self,
         question: str,
@@ -172,10 +175,10 @@ class AIAssistant:
 
         # Build context string
         context_str = self._build_context_string(context)
-        
+
         # Try the new provider system first if available
         fallback_mgr = self._get_fallback_manager() if use_fallback else None
-        
+
         if fallback_mgr:
             try:
                 return self._ask_with_providers(
@@ -187,7 +190,7 @@ class AIAssistant:
                 )
             except Exception as e:
                 ch.dim(f"Provider system error, falling back to legacy: {e}")
-        
+
         # Fall back to legacy OpenRouter-only mode
         return self._ask_legacy(
             system_prompt,
@@ -195,7 +198,7 @@ class AIAssistant:
             question,
             model_override,
         )
-    
+
     def _ask_with_providers(
         self,
         fallback_mgr,
@@ -205,21 +208,21 @@ class AIAssistant:
         model_override: Optional[str] = None,
     ) -> str:
         """Ask using the multi-provider fallback system."""
-        from navig.providers import Message, CompletionRequest
-        
+        from navig.providers import CompletionRequest, Message
+
         # Build messages
         messages = [
             Message(role="system", content=system_prompt),
             Message(role="user", content=f"{context_str}\n\nUSER QUESTION: {question}"),
         ]
-        
+
         # Determine model
         if model_override:
             model = model_override
         else:
             models = self.config.global_config.get('ai_model_preference', [])
             model = models[0] if models else "gpt-4o-mini"
-        
+
         # Build fallback models
         fallback_models = []
         if not model_override:
@@ -229,14 +232,14 @@ class AIAssistant:
                 'anthropic:claude-3-haiku-20240307',
             ])
             fallback_models = all_models[1:] if len(all_models) > 1 else []
-        
+
         request = CompletionRequest(
             messages=messages,
             model=model,
             temperature=0.7,
             max_tokens=4096,
         )
-        
+
         # Run with fallback (async)
         async def run():
             result = await fallback_mgr.run_with_fallback(
@@ -244,9 +247,9 @@ class AIAssistant:
                 fallback_models=fallback_models,
             )
             return result.response.content
-        
+
         return asyncio.run(run())
-    
+
     def _ask_legacy(
         self,
         system_prompt: str,
@@ -261,7 +264,7 @@ class AIAssistant:
                 "OpenRouter API key not configured. "
                 "Set it in ~/.navig/config.yaml or use 'navig config set openrouter_api_key <key>'"
             )
-        
+
         # Determine model to use
         if model_override:
             models = [model_override]
@@ -272,7 +275,7 @@ class AIAssistant:
                 'qwen/qwen-2.5-72b-instruct',
                 'meta-llama/llama-3.3-70b-instruct',
             ])
-        
+
         # Try each model in fallback chain
         for model in models:
             try:
@@ -287,60 +290,60 @@ class AIAssistant:
             except Exception as e:
                 ch.dim(f"Model {model} failed: {e}")
                 continue
-        
+
         raise RuntimeError("All AI models failed to respond")
-    
+
     def _build_context_string(self, context: Dict[str, Any]) -> str:
         """Build context string for AI from gathered information."""
         lines = ["CONTEXT:"]
-        
+
         if 'server' in context:
             server = context['server']
             lines.append(f"Server: {server.get('name')} ({server.get('host')})")
             lines.append(f"User: {server.get('user')}")
-            
+
             if 'paths' in server:
                 paths = server['paths']
                 if paths.get('web_root'):
                     lines.append(f"Web Root: {paths['web_root']}")
-        
+
         if 'directory' in context:
             lines.append(f"Current Directory: {context['directory']}")
-        
+
         if 'processes' in context:
             lines.append("\nRunning Services:")
             for proc in context['processes']:
                 lines.append(f"- {proc}")
-        
+
         if 'logs' in context:
             lines.append("\nRecent Logs:")
             lines.append(context['logs'])
-        
+
         if 'disk' in context:
             lines.append(f"\nDisk Usage: {context['disk']}")
-        
+
         # Add recent error context for AI awareness
         try:
             ai_context_mgr = get_ai_context_manager()
             error_summary = ai_context_mgr.get_error_summary(hours=24)
-            
+
             if error_summary['total_errors'] > 0:
                 lines.append(f"\nRecent Errors (Last 24h): {error_summary['total_errors']}")
-                
+
                 if error_summary['categories']:
                     lines.append("Error Categories:")
                     for cat, count in sorted(error_summary['categories'].items(), key=lambda x: x[1], reverse=True):
                         lines.append(f"  - {cat}: {count}")
-                
+
                 if error_summary['common_errors']:
                     lines.append("\nMost Common Issues:")
                     for i, err in enumerate(error_summary['common_errors'][:3], 1):
                         lines.append(f"  {i}. [{err['category']}] {err['example'][:80]}...")
         except Exception:
             pass  # Don't fail if error context unavailable
-        
+
         return "\n".join(lines)
-    
+
     def _call_openrouter(
         self,
         api_key: str,
@@ -354,7 +357,7 @@ class AIAssistant:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        
+
         payload = {
             "model": model,
             "messages": [
@@ -362,14 +365,14 @@ class AIAssistant:
                 {"role": "user", "content": f"{context}\n\nUSER QUESTION: {question}"},
             ],
         }
-        
+
         response = requests.post(
             self.api_url,
             headers=headers,
             json=payload,
             timeout=30,
         )
-        
+
         response.raise_for_status()
         data = response.json()
 
@@ -475,31 +478,31 @@ def ask_ai_with_context(
         AI response text
     """
     from navig.config import get_config_manager
-    
+
     config_mgr = get_config_manager()
     ai_key = config_mgr.global_config.get('openrouter_api_key')
-    
+
     if not ai_key:
         return "Error: OpenRouter API key not configured. Set it in ~/.navig/config.yaml"
-    
+
     # Build messages
     messages = []
-    
+
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-    
+
     # Add history
     if history:
         messages.extend(history)
-    
+
     # Add current prompt
     messages.append({"role": "user", "content": prompt})
-    
+
     # Determine model
     if not model:
         models = config_mgr.global_config.get('ai_model_preference', [])
         model = models[0] if models else "google/gemini-2.5-flash"
-    
+
     # Call OpenRouter API
     try:
         response = requests.post(
@@ -518,10 +521,10 @@ def ask_ai_with_context(
             timeout=120
         )
         response.raise_for_status()
-        
+
         data = response.json()
         return data['choices'][0]['message']['content']
-    
+
     except requests.exceptions.RequestException as e:
         return f"Error calling AI API: {e}"
     except (KeyError, IndexError) as e:

@@ -1,17 +1,25 @@
-"""Voice and Command API routes: /api/voice/transcribe, /api/voice/synthesize, /api/voice/poll_wake, /api/command"""
-from __future__ import annotations
-import base64
-import time
-from typing import TYPE_CHECKING
-from collections import deque
+"""Voice and Command API routes.
 
-if TYPE_CHECKING:
-    from aiohttp import web
-    from navig.gateway.server import NavigGateway  # noqa: F401
+Routes: /api/voice/transcribe, /api/voice/synthesize, /api/voice/poll_wake, /api/command
+"""
+from __future__ import annotations
+
+import base64
+import tempfile
+import time
+from collections import deque
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 try:
     from aiohttp import web
 except ImportError:
     pass
+
+if TYPE_CHECKING:
+    from aiohttp import web  # noqa: F811
+
+    from navig.gateway.server import NavigGateway  # noqa: F401
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import json_error_response, json_ok, require_bearer_auth
@@ -35,8 +43,8 @@ def register(app, gateway):
 
 def _transcribe(gw):
     async def h(r: web.Request):
-        auth = require_bearer_auth(r, gw, allow_anonymous=True) # allow local unauthenticated for now, or ensure rust sends token
-        # For simplicity, bridge sends token
+        # Allow anonymous local access; Rust bridge is expected to send the token.
+        _auth = require_bearer_auth(r, gw, allow_anonymous=True)
         reader = await r.multipart()
         audio_bytes = None
         is_voice = False
@@ -54,19 +62,42 @@ def _transcribe(gw):
         if not audio_bytes:
             return json_error_response("Missing audio part", status=400)
 
+        # Write bytes to a temp file; STT.transcribe() requires a Path.
+        tmp_path: Path | None = None
         try:
+            suffix = ".oga" if is_voice else ".wav"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(audio_bytes)
+                tmp_path = Path(tmp.name)
+
             stt = get_stt()
-            # Deepgram config option if is_voice for better formatting? 
-            # Stt engine handles raw bytes
-            transcript = await stt.transcribe(audio_bytes)
+            result = await stt.transcribe(tmp_path, is_voice=is_voice)
+            if not result.success:
+                return json_error_response(
+                    "Transcription failed",
+                    details={"error": result.error},
+                    status=500,
+                )
             return json_ok({
-                "text": transcript,
-                "confidence": 1.0,
-                "provider": stt.config.provider.value,
+                "text": result.text or "",
+                "confidence": result.confidence or 1.0,
+                "provider": (
+                    result.provider.value
+                    if result.provider
+                    else stt.config.provider.value
+                ),
             })
         except Exception as e:
             logger.exception("Transcribe failed")
-            return json_error_response("Transcription failed", details={"error": str(e)}, status=500)
+            return json_error_response(
+                "Transcription failed", details={"error": str(e)}, status=500
+            )
+        finally:
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     return h
 
@@ -80,16 +111,24 @@ def _synthesize(gw):
 
         try:
             tts = get_tts()
-            audio_path = await tts.synthesize(text)
-            if not audio_path:
-                return json_error_response("TTS returned no audio", status=500)
+            result = await tts.synthesize(text)
+            if not result.success or not result.audio_path:
+                return json_error_response(
+                    "TTS returned no audio",
+                    details={"error": result.error},
+                    status=500,
+                )
 
-            with open(audio_path, "rb") as f:
+            with open(result.audio_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("utf-8")
 
             return json_ok({
                 "audio_b64": b64,
-                "provider": tts.config.provider.value,
+                "provider": (
+                    result.provider.value
+                    if result.provider
+                    else tts.config.provider.value
+                ),
             })
         except Exception as e:
             logger.exception("Synthesize failed")
@@ -143,6 +182,8 @@ def _poll_wake(gw):
             return web.json_response({"status": "no_event"}, status=404)
 
     return h
+
+
 class _SSEClient:
     def __init__(self):
         import asyncio
@@ -155,6 +196,7 @@ def _events(gw):
     async def h(r: web.Request):
         import asyncio
         import json
+
         from aiohttp import web
         response = web.StreamResponse(
             status=200,
@@ -170,7 +212,7 @@ def _events(gw):
 
         client = _SSEClient()
         event_bridge = getattr(gw, 'event_bridge', None)
-        
+
         if event_bridge:
             from navig.event_bridge import SubscriptionFilter
             filt = SubscriptionFilter(topics={'voice.session.*'})
@@ -201,6 +243,6 @@ def _events(gw):
         finally:
             if event_bridge:
                 event_bridge.unregister_client(client)
-        
+
         return response
     return h

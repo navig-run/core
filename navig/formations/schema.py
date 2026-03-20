@@ -255,7 +255,7 @@ def validate_agent_file(path: Path) -> AgentSpec:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        raise FormationValidationError(f"Invalid JSON in agent file: {e}", path=path)
+        raise FormationValidationError(f"Invalid JSON in agent file: {e}", path=path) from e
     return validate_agent_data(data, path=path)
 
 
@@ -280,7 +280,7 @@ def validate_formation_file(path: Path) -> Formation:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        raise FormationValidationError(f"Invalid JSON in formation manifest: {e}", path=path)
+        raise FormationValidationError(f"Invalid JSON in formation manifest: {e}", path=path) from e
 
     _, errors = validate_formation_data(data, path=path)
     if errors:

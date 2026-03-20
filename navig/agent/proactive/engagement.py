@@ -23,19 +23,19 @@ Integration:
 - ProactiveEngine polling loop integrates calendar/email triggers
 """
 
-import time
 import random
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from navig.debug_logger import get_debug_logger
 from navig.agent.proactive.user_state import (
     OperatorState,
     TimeOfDay,
     UserStateTracker,
 )
+from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
 
@@ -57,7 +57,7 @@ class EngagementAction(Enum):
 class EngagementConfig:
     """Configuration for proactive engagement behavior."""
     enabled: bool = True
-    
+
     # Cooldown periods (hours) — minimum time between each action type
     greeting_cooldown_hours: float = 12.0
     checkin_cooldown_hours: float = 4.0
@@ -66,19 +66,19 @@ class EngagementConfig:
     feedback_ask_cooldown_hours: float = 72.0
     idle_nudge_cooldown_hours: float = 6.0
     celebration_cooldown_hours: float = 24.0
-    
+
     # Time windows
     greeting_hours: Tuple[int, int] = (7, 10)   # 7AM-10AM
     wrapup_hours: Tuple[int, int] = (17, 20)    # 5PM-8PM
     quiet_hours: Tuple[int, int] = (23, 7)      # 11PM-7AM: no proactive
-    
+
     # Probability tuning (0.0 = never, 1.0 = always when eligible)
     checkin_probability: float = 0.3
     capability_promo_probability: float = 0.4
     contextual_tip_probability: float = 0.5
     feedback_ask_probability: float = 0.15
     idle_nudge_probability: float = 0.2
-    
+
     # Engagement limits
     max_proactive_per_day: int = 5
     min_interactions_before_promo: int = 10  # Need baseline before promoting
@@ -107,7 +107,7 @@ class EngagementCoordinator:
     feel like a thoughtful colleague who notices things and offers
     help — not a notification firehose.
     """
-    
+
     def __init__(
         self,
         state_tracker: Optional[UserStateTracker] = None,
@@ -115,21 +115,21 @@ class EngagementCoordinator:
     ):
         self.state = state_tracker or UserStateTracker()
         self.config = config or EngagementConfig()
-        
+
         # Track daily sends to enforce max_proactive_per_day
         self._daily_sends: List[float] = []
         self._daily_reset_date: Optional[str] = None
-        
+
         # Callbacks for delivering proactive messages
         self._delivery_callbacks: List[Callable[[EngagementResult], None]] = []
-        
+
         # Capability promoter (lazy-loaded to avoid circular imports)
         self._capability_promoter = None
-    
+
     def register_delivery_callback(self, callback: Callable[[EngagementResult], None]):
         """Register a callback that will be called when a proactive message is ready."""
         self._delivery_callbacks.append(callback)
-    
+
     def engagement_tick(self) -> Optional[EngagementResult]:
         """
         Main evaluation loop — called on each heartbeat tick.
@@ -142,84 +142,84 @@ class EngagementCoordinator:
         """
         if not self.config.enabled:
             return None
-        
+
         # Enforce quiet hours
         if self._is_quiet_hours():
             return None
-        
+
         # Enforce daily limit
         self._prune_daily_sends()
         if len(self._daily_sends) >= self.config.max_proactive_per_day:
             logger.debug("Daily proactive limit reached, skipping tick")
             return None
-        
+
         # Get current state
         operator_state = self.state.get_operator_state()
         time_of_day = self.state.get_time_of_day()
-        
+
         # Don't interrupt deep work
         if operator_state == OperatorState.DEEP_WORK:
             logger.debug("Operator in deep work, skipping proactive")
             return None
-        
+
         # Evaluate all candidate actions
         candidates: List[EngagementResult] = []
-        
+
         # 1. Greeting (highest priority for returning users)
         greeting = self._evaluate_greeting(operator_state, time_of_day)
         if greeting:
             candidates.append(greeting)
-        
+
         # 2. Evening wrap-up
         wrapup = self._evaluate_wrapup(operator_state, time_of_day)
         if wrapup:
             candidates.append(wrapup)
-        
+
         # 3. Check-in
         checkin = self._evaluate_checkin(operator_state)
         if checkin:
             candidates.append(checkin)
-        
+
         # 4. Capability promotion
         promo = self._evaluate_capability_promo(operator_state)
         if promo:
             candidates.append(promo)
-        
+
         # 5. Contextual tip
         tip = self._evaluate_contextual_tip(operator_state)
         if tip:
             candidates.append(tip)
-        
+
         # 6. Idle nudge
         nudge = self._evaluate_idle_nudge(operator_state)
         if nudge:
             candidates.append(nudge)
-        
+
         # 7. Feedback ask (lowest frequency)
         feedback = self._evaluate_feedback_ask(operator_state)
         if feedback:
             candidates.append(feedback)
-        
+
         # Pick highest priority non-suppressed candidate
         candidates = [c for c in candidates if not c.suppress]
         if not candidates:
             return None
-        
+
         candidates.sort(key=lambda c: c.priority, reverse=True)
         winner = candidates[0]
-        
+
         # Record and deliver
         self._record_send(winner)
         self._deliver(winner)
-        
+
         logger.info(
             f"Proactive engagement: {winner.action.value} "
             f"(priority={winner.priority}, state={operator_state.value})"
         )
         return winner
-    
+
     # ─── Action Evaluators ──────────────────────────────────────────
-    
+
     def _evaluate_greeting(
         self, state: OperatorState, tod: TimeOfDay
     ) -> Optional[EngagementResult]:
@@ -231,7 +231,7 @@ class EngagementCoordinator:
         - Morning hours + no greeting today
         """
         hours_since = self.state.hours_since("greeting")
-        
+
         # Always greet a returning user (with cooldown)
         if state == OperatorState.JUST_ARRIVED:
             if hours_since is None or hours_since >= self.config.greeting_cooldown_hours:
@@ -242,7 +242,7 @@ class EngagementCoordinator:
                     priority=9,
                     metadata={"trigger": "just_arrived", "tod": tod.value},
                 )
-        
+
         # Morning greeting
         if tod in (TimeOfDay.EARLY_MORNING, TimeOfDay.MORNING):
             if hours_since is None or hours_since >= self.config.greeting_cooldown_hours:
@@ -255,14 +255,14 @@ class EngagementCoordinator:
                         metadata={"trigger": "morning", "tod": tod.value},
                     )
         return None
-    
+
     def _evaluate_wrapup(
         self, state: OperatorState, tod: TimeOfDay
     ) -> Optional[EngagementResult]:
         """Evaluate whether to offer an evening wrap-up."""
         hour = datetime.now().hour
         start, end = self.config.wrapup_hours
-        
+
         if start <= hour < end and state in (OperatorState.ACTIVE, OperatorState.WINDING_DOWN):
             hours_since = self.state.hours_since("checkin")
             if hours_since is None or hours_since >= 6:
@@ -273,7 +273,7 @@ class EngagementCoordinator:
                     metadata={"trigger": "evening_hours"},
                 )
         return None
-    
+
     def _evaluate_checkin(self, state: OperatorState) -> Optional[EngagementResult]:
         """Evaluate whether to do a periodic check-in."""
         hours_since = self.state.hours_since("checkin")
@@ -287,7 +287,7 @@ class EngagementCoordinator:
                         metadata={"trigger": "periodic"},
                     )
         return None
-    
+
     def _evaluate_capability_promo(
         self, state: OperatorState
     ) -> Optional[EngagementResult]:
@@ -307,7 +307,7 @@ class EngagementCoordinator:
                                 metadata={"feature": feature},
                             )
         return None
-    
+
     def _evaluate_contextual_tip(
         self, state: OperatorState
     ) -> Optional[EngagementResult]:
@@ -327,13 +327,13 @@ class EngagementCoordinator:
                             metadata={"command": cmd, "count": count},
                         )
         return None
-    
+
     def _evaluate_idle_nudge(self, state: OperatorState) -> Optional[EngagementResult]:
         """Evaluate whether to gently nudge an idle user."""
         if state == OperatorState.IDLE:
             hours_idle = self.state.hours_since("last_interaction")
             hours_since_nudge = self.state.hours_since("checkin")
-            
+
             if hours_idle and hours_idle >= 0.5:  # 30+ min idle
                 if hours_since_nudge is None or hours_since_nudge >= self.config.idle_nudge_cooldown_hours:
                     if random.random() < self.config.idle_nudge_probability:
@@ -344,7 +344,7 @@ class EngagementCoordinator:
                             metadata={"idle_hours": hours_idle},
                         )
         return None
-    
+
     def _evaluate_feedback_ask(self, state: OperatorState) -> Optional[EngagementResult]:
         """Evaluate whether to ask for self-improvement feedback."""
         hours_since = self.state.hours_since("feedback_ask")
@@ -363,9 +363,9 @@ class EngagementCoordinator:
                                 metadata={"days_known": days_known},
                             )
         return None
-    
+
     # ─── Message Builders ───────────────────────────────────────────
-    
+
     def _build_greeting(self, tod: TimeOfDay, returning: bool) -> str:
         """Build a greeting message."""
         greetings = {
@@ -392,17 +392,17 @@ class EngagementCoordinator:
                 "Night owl session. I'm here.",
             ],
         }
-        
+
         if returning:
             return random.choice([
                 "Welcome back. Picking up where we left off.",
                 "Back in action. I've been keeping watch — all clear.",
                 "Good to see you. Ready to continue.",
             ])
-        
+
         options = greetings.get(tod, ["Hello. Ready when you are."])
         return random.choice(options)
-    
+
     def _build_wrapup(self) -> str:
         """Build an evening wrap-up message."""
         total = self.state.stats.total_commands
@@ -411,7 +411,7 @@ class EngagementCoordinator:
             "Evening check — anything to finish before signing off?",
             "End-of-day offer: I can summarize what we worked on today.",
         ])
-    
+
     def _build_checkin(self) -> str:
         """Build a periodic check-in message."""
         return random.choice([
@@ -419,19 +419,19 @@ class EngagementCoordinator:
             "Still here. Shout if you need anything.",
             "Checking in. All systems nominal on my end.",
         ])
-    
+
     def _build_contextual_tip(self, command: str, count: int) -> Optional[str]:
         """Build a contextual usage tip based on command patterns."""
         tips = {
             "db": f"You've used `db` {count} times. Did you know you can pipe queries with `--plain` for scripting?",
-            "run": f"Tip: for complex commands, `navig run -i` opens an editor — no more escaping quotes.",
-            "file": f"Pro tip: `navig file list --tree --depth 2` gives a quick directory overview.",
+            "run": "Tip: for complex commands, `navig run -i` opens an editor — no more escaping quotes.",
+            "file": "Pro tip: `navig file list --tree --depth 2` gives a quick directory overview.",
             "host": "Remember: `navig host monitor show` gives you a full health snapshot.",
             "docker": "Quick win: `navig docker stats` shows real-time resource usage across all containers.",
             "backup": "Consider scheduling regular backups with `navig flow run backup-daily`.",
         }
         return tips.get(command)
-    
+
     def _build_idle_nudge(self) -> str:
         """Build a gentle idle nudge."""
         return random.choice([
@@ -439,7 +439,7 @@ class EngagementCoordinator:
             "I'm idle too. Want me to check on anything in the background?",
             "Still here if you need me. I could run diagnostics while we wait.",
         ])
-    
+
     def _build_feedback_ask(self) -> str:
         """Build a self-improvement feedback request."""
         return random.choice([
@@ -447,9 +447,9 @@ class EngagementCoordinator:
             "Self-improvement check: any commands or flows that feel clunky? I'd like to know.",
             "Feedback time: what's one thing that would make working with me smoother?",
         ])
-    
+
     # ─── Internal Helpers ───────────────────────────────────────────
-    
+
     def _is_quiet_hours(self) -> bool:
         """Check if we're in quiet hours (no proactive messages)."""
         hour = datetime.now().hour
@@ -457,18 +457,18 @@ class EngagementCoordinator:
         if start > end:  # Wraps midnight (e.g., 23-7)
             return hour >= start or hour < end
         return start <= hour < end
-    
+
     def _prune_daily_sends(self):
         """Prune daily send tracker, resetting at midnight."""
         today = datetime.now().strftime("%Y-%m-%d")
         if self._daily_reset_date != today:
             self._daily_sends = []
             self._daily_reset_date = today
-    
+
     def _record_send(self, result: EngagementResult):
         """Record that a proactive message was sent."""
         self._daily_sends.append(time.time())
-        
+
         # Map action to event type for state tracker
         event_map = {
             EngagementAction.GREETING: "greeting",
@@ -482,7 +482,7 @@ class EngagementCoordinator:
         }
         event_type = event_map.get(result.action, "checkin")
         self.state.record_proactive_event(event_type)
-    
+
     def _deliver(self, result: EngagementResult):
         """Deliver a proactive message through registered callbacks."""
         for callback in self._delivery_callbacks:
@@ -490,7 +490,7 @@ class EngagementCoordinator:
                 callback(result)
             except Exception as e:
                 logger.warning(f"Engagement delivery callback failed: {e}")
-    
+
     def _get_capability_promoter(self):
         """Lazy-load the capability promoter to avoid circular imports."""
         if self._capability_promoter is None:

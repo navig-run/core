@@ -10,18 +10,18 @@ Engagement subsystem (inspired by OpenClaw patterns):
 - CapabilityPromoter: Feature discovery engine
 """
 
+from .capability_promo import CapabilityPromoter
+from .engagement import EngagementAction, EngagementConfig, EngagementCoordinator, EngagementResult
+from .engine import ProactiveEngine
 from .providers import (
     CalendarEvent,
-    EmailMessage,
     CalendarProvider,
+    EmailMessage,
     EmailProvider,
     MockCalendar,
     MockEmail,
 )
-from .engine import ProactiveEngine
-from .user_state import UserStateTracker, OperatorState, TimeOfDay
-from .engagement import EngagementCoordinator, EngagementConfig, EngagementAction, EngagementResult
-from .capability_promo import CapabilityPromoter
+from .user_state import OperatorState, TimeOfDay, UserStateTracker
 
 # Optional: Google Calendar (needs google-api-python-client)
 try:
@@ -31,14 +31,14 @@ except ImportError:
 
 # Optional: ICS/CalDAV (needs icalendar, caldav)
 try:
-    from .ics_calendar import ICSCalendarProvider, CalDAVProvider
+    from .ics_calendar import CalDAVProvider, ICSCalendarProvider
 except ImportError:
     ICSCalendarProvider = None
     CalDAVProvider = None
 
 # Optional: IMAP Email (needs imaplib - stdlib)
 try:
-    from .imap_email import IMAPEmailProvider, GmailProvider, OutlookProvider, FastmailProvider
+    from .imap_email import FastmailProvider, GmailProvider, IMAPEmailProvider, OutlookProvider
 except ImportError:
     IMAPEmailProvider = None
     GmailProvider = None
@@ -48,7 +48,7 @@ except ImportError:
 __all__ = [
     # Core types
     "CalendarEvent",
-    "EmailMessage", 
+    "EmailMessage",
     "CalendarProvider",
     "EmailProvider",
     # Mocks

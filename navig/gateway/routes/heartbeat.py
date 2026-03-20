@@ -1,5 +1,6 @@
 """Heartbeat routes: /heartbeat/trigger, /heartbeat/history, /heartbeat/status."""
 from __future__ import annotations
+
 try:
     from aiohttp import web
 except ImportError:

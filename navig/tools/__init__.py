@@ -69,12 +69,12 @@ def is_web_tools_available() -> bool:
 # Direct imports for common web tools (these don't have heavy dependencies)
 try:
     from .web import (
-        web_fetch,
-        web_search,
-        search_docs,
+        SearchResult,
         WebFetchResult,
         WebSearchResult,
-        SearchResult,
+        search_docs,
+        web_fetch,
+        web_search,
     )
 except ImportError:
     web_fetch = None  # type: ignore[assignment, misc]
@@ -139,7 +139,7 @@ def get_pipeline_registry():
     """Get the global pipeline ToolRegistry singleton (lazy, pre-seeded)."""
     global _pipeline_registry
     if _pipeline_registry is None:
-        from .registry import ToolRegistry, BaseTool, ToolResult  # type: ignore[import]
+        from .registry import BaseTool, ToolRegistry, ToolResult  # type: ignore[import]
 
         class _StubTool(BaseTool):
             description: str = ""
@@ -162,4 +162,4 @@ def get_pipeline_registry():
 
 # Re-export key types (lazy via TYPE_CHECKING for zero import cost)
 if TYPE_CHECKING:
-    from .schemas import ToolCallAction, RespondAction, ToolResult  # noqa: F811
+    from .schemas import RespondAction, ToolCallAction, ToolResult  # noqa: F811

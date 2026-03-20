@@ -60,7 +60,7 @@ STANDARDIZATION RULES
 """
 
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -1155,7 +1155,7 @@ def get_group_help(group_name: str) -> Dict[str, str]:
         # Browser automation
         "browser": BROWSER,
     }
-    
+
     if group_name in groups:
         return {
             "desc": groups[group_name].description,

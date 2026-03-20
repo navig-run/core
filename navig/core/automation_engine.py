@@ -2,22 +2,24 @@
 """
 Cross-Platform Automation Workflow Engine
 """
-import yaml
-import time
-import subprocess
 import os
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
+import subprocess
 import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
 
 try:
     from yaml import CSafeLoader as SafeLoader
 except ImportError:
     from yaml import SafeLoader
 
+from navig.console_helper import error, info, warning
 from navig.core.safe_eval import safe_eval
-from navig.console_helper import info, error, warning
+
 
 @dataclass
 class WorkflowStep:
@@ -40,33 +42,33 @@ class WorkflowEngine:
         self._workflows_dir = self._navig_root / "workflows"
         self._workflows_dir.mkdir(exist_ok=True)
         self._workflow_cache: Dict[str, Tuple[float, Workflow]] = {}
-        
+
         # Lazy load adapters
         self._ahk = None
         self._linux = None
         self._macos = None
-        
+
     @property
     def ahk(self):
         if not self._ahk and sys.platform == 'win32':
             from navig.adapters.automation.ahk import AHKAdapter
             self._ahk = AHKAdapter()
         return self._ahk
-    
+
     @property
     def linux(self):
         if not self._linux and sys.platform == 'linux':
             from navig.adapters.automation.linux import LinuxAdapter
             self._linux = LinuxAdapter()
         return self._linux
-    
+
     @property
     def macos(self):
         if not self._macos and sys.platform == 'darwin':
             from navig.adapters.automation.macos import MacOSAdapter
             self._macos = MacOSAdapter()
         return self._macos
-    
+
     @property
     def adapter(self):
         """Get the appropriate adapter for current platform."""
@@ -86,16 +88,16 @@ class WorkflowEngine:
             self._workflows_dir / f"{name}.yml",
             Path.home() / ".navig" / "workflows" / f"{name}.yaml"
         ]
-        
+
         target_path = None
         for p in possible_paths:
             if p.exists():
                 target_path = p
                 break
-                
+
         if not target_path:
             return None
-            
+
         try:
             mtime = os.stat(target_path).st_mtime
             if name in self._workflow_cache:
@@ -105,7 +107,7 @@ class WorkflowEngine:
 
             with open(target_path, 'r', encoding='utf-8') as f:
                 data = yaml.load(f, Loader=SafeLoader)
-                
+
             steps = []
             for s in data.get('steps', []):
                 steps.append(WorkflowStep(
@@ -115,7 +117,7 @@ class WorkflowEngine:
                     capture=s.get('capture', None),
                     if_condition=s.get('if', None)
                 ))
-                
+
             wf = Workflow(
                 name=data.get('name',name),
                 description=data.get('description', ''),
@@ -127,20 +129,20 @@ class WorkflowEngine:
         except Exception as e:
             error(f"Failed to load workflow {name}: {e}")
             return None
-        
+
     def execute_workflow(self, workflow: Workflow, variables: Dict[str, str] = None):
         """Execute a cross-platform workflow."""
         info(f"Executing workflow: {workflow.name}")
-        
+
         # Merge variables
         current_vars = workflow.variables.copy() if workflow.variables else {}
         if variables:
             current_vars.update(variables)
-            
+
         for i, step in enumerate(workflow.steps):
             action = step.action
             args = step.args.copy()
-            
+
             # Resolve variables in args
             for k, v in args.items():
                 if isinstance(v, str) and "{{" in v:
@@ -151,16 +153,16 @@ class WorkflowEngine:
             # Check Condition
             if step.if_condition:
                 cond = step.if_condition
-                
+
                 # Use safe evaluation with variables map
-                
+
                 # Prepare variables for eval (convert all to appropriate types if possible, otherwise strings)
                 eval_vars = current_vars.copy()
-                
+
                 # Helper: smart cast? For now just pass strings/dicts as is
                 # 'true', 'false' strings -> booleans?
                 # Let's rely on standard python types in variables
-                
+
                 try:
                     result = safe_eval(cond, eval_vars)
                     if not result:
@@ -169,7 +171,7 @@ class WorkflowEngine:
                 except Exception as e:
                     warning(f"Condition evaluation failed '{cond}': {e}. Skipping step.")
                     continue
-            
+
             # Platform overrides
             if step.platform_override:
                 platform_key = "windows" if sys.platform == 'win32' else sys.platform
@@ -185,15 +187,15 @@ class WorkflowEngine:
                                     v = v.replace(f"{{{{{var_k}}}}}", str(var_v))
                                 override_args[k] = v
                         args.update(override_args)
-                        
+
             # Execute Action
             result = self._execute_action(action, args)
-            
+
             # Capture Output
             if step.capture and result is not None:
                 current_vars[step.capture] = str(result)
                 info(f"Captured variable '{step.capture}': {result}")
-        
+
         return current_vars
 
     def _execute_action(self, action: str, args: Dict[str, Any]) -> Any:
@@ -202,7 +204,7 @@ class WorkflowEngine:
         if action == "wait":
             time.sleep(float(args.get('seconds', 1.0)))
             return True
-            
+
         if action == "run_command":
             cmd = args.get('command')
             if cmd:
@@ -210,13 +212,13 @@ class WorkflowEngine:
                 if res.returncode == 0:
                     return res.stdout.strip()
             return ""
-        
+
         # Get platform-specific adapter
         adapter = self.adapter
         if not adapter or not adapter.is_available():
             warning(f"Platform {sys.platform} automation not available.")
             return None
-        
+
         # Dispatch to adapter methods
         if action == "open_app":
             return adapter.open_app(args.get('target', ''))
@@ -237,10 +239,10 @@ class WorkflowEngine:
             return adapter.close_window(args.get('selector'))
         elif action == "move_window":
             return adapter.move_window(
-                args.get('selector'), 
-                args.get('x'), 
-                args.get('y'), 
-                args.get('width'), 
+                args.get('selector'),
+                args.get('x'),
+                args.get('y'),
+                args.get('width'),
                 args.get('height')
             )
         elif action == "resize_window":
@@ -266,7 +268,7 @@ class WorkflowEngine:
             target = args.get('target', '')
             timeout = float(args.get('timeout', 30.0))
             start = time.time()
-            
+
             if check_type == 'window':
                 # Poll for window existence
                 while time.time() - start < timeout:

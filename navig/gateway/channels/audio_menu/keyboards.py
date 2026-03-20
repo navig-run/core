@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .config import PROVIDERS, SPEEDS, FORMATS, VOICES_PER_PAGE
+from .config import FORMATS, PROVIDERS, SPEEDS, VOICES_PER_PAGE
 from .state import AudioConfig
 
 

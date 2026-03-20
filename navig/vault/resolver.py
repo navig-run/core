@@ -20,7 +20,6 @@ KeyError
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 from pathlib import Path
@@ -110,7 +109,7 @@ def resolve_refs(text: str, strict: bool = True) -> str:
 
         try:
             value = _fetch_secret(label)
-        except Exception as exc:
+        except Exception:
             if strict:
                 raise
             return match.group(0)  # leave token as-is

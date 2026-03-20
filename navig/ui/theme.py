@@ -15,6 +15,7 @@ import sys
 
 from rich.console import Console
 
+
 # ── SAFE MODE detection ───────────────────────────────────────────────────
 def _detect_safe_mode() -> bool:
     if os.getenv("NAVIG_SAFE_MODE", "0") == "1":

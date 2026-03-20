@@ -3,10 +3,11 @@ import os
 import re
 import subprocess
 import sys
+from typing import Any, Dict, List, Optional, Tuple
+
 from navig import console_helper as ch
-from typing import Dict, Any, List, Optional, Tuple
-from navig.template_manager import TemplateManager
 from navig.config import get_config_manager
+from navig.template_manager import TemplateManager
 
 
 def list_templates_cmd(options: Dict[str, Any]):
@@ -142,11 +143,11 @@ def enable_template_cmd(name: str, options: Dict[str, Any]):
     """Enable an template."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
-    
+
     if options.get('dry_run'):
         ch.dim(f"Would enable template: {name}")
         return
-    
+
     template_manager.enable_template(name)
 
 
@@ -154,11 +155,11 @@ def disable_template_cmd(name: str, options: Dict[str, Any]):
     """Disable an template."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
-    
+
     if options.get('dry_run'):
         ch.dim(f"Would disable template: {name}")
         return
-    
+
     template_manager.disable_template(name)
 
 
@@ -166,14 +167,14 @@ def toggle_template_cmd(name: str, options: Dict[str, Any]):
     """Toggle template enabled/disabled state."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
-    
+
     if options.get('dry_run'):
         template = template_manager.get_template(name)
         if template:
             action = "disable" if template.is_enabled() else "enable"
             ch.dim(f"Would {action} template: {name}")
         return
-    
+
     template_manager.toggle_template(name)
 
 
@@ -181,25 +182,25 @@ def show_template_cmd(name: str, options: Dict[str, Any]):
     """Show detailed information about an template."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
-    
+
     template = template_manager.get_template(name)
     if not template:
         ch.error(f"Template '{name}' not found")
         return
-    
+
     # Header
     status = "Enabled ✓" if template.is_enabled() else "Disabled"
     ch.header(f"{template.metadata['name']} v{template.metadata['version']}")
     ch.info(f"Status: {status}")
     ch.dim(template.metadata['description'])
     ch.newline()
-    
+
     # Metadata
     ch.info(f"Author: {template.metadata['author']}")
     if template.metadata.get('dependencies'):
         ch.info(f"Dependencies: {', '.join(template.metadata['dependencies'])}")
     ch.newline()
-    
+
     # Paths
     paths = template.get_paths()
     if paths:
@@ -207,7 +208,7 @@ def show_template_cmd(name: str, options: Dict[str, Any]):
         for key, value in paths.items():
             ch.dim(f"  {key}: {value}")
         ch.newline()
-    
+
     # Services
     services = template.get_services()
     if services:
@@ -215,7 +216,7 @@ def show_template_cmd(name: str, options: Dict[str, Any]):
         for key, value in services.items():
             ch.dim(f"  {key}: {value}")
         ch.newline()
-    
+
     # Commands
     commands = template.get_commands()
     if commands:
@@ -224,7 +225,7 @@ def show_template_cmd(name: str, options: Dict[str, Any]):
             ch.dim(f"  {cmd['name']}: {cmd['description']}")
             ch.dim(f"    → {cmd['command']}", prefix="    ")
         ch.newline()
-    
+
     # Environment Variables
     env_vars = template.get_env_vars()
     if env_vars:
@@ -493,19 +494,19 @@ def validate_templates_cmd(options: Dict[str, Any]):
     """Validate all template configurations."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
-    
+
     ch.header("Validating Template Configurations")
-    
+
     results = template_manager.validate_all_templates()
-    
+
     all_valid = all(results.values())
-    
+
     if all_valid:
         ch.success(f"✓ All {len(results)} templates passed validation")
     else:
         failed = [name for name, valid in results.items() if not valid]
         ch.error(f"✗ {len(failed)} template(s) failed validation: {', '.join(failed)}")
-    
+
     # Show summary table
     table = ch.create_table(
         title="Validation Results",
@@ -515,11 +516,11 @@ def validate_templates_cmd(options: Dict[str, Any]):
         ],
         show_header=True
     )
-    
+
     for name, valid in results.items():
         status = ch.status_text("Valid", "success") if valid else ch.status_text("Invalid", "error")
         table.add_row(name, status)
-    
+
     ch.print_table(table)
 
 
@@ -532,39 +533,39 @@ def edit_template_cmd(name: str, options: Dict[str, Any]):
     """
     config_manager = get_config_manager()
     server = options.get('server') or config_manager.get_active_server()
-    
+
     if not server:
         ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
-    
+
     # Check if repo template exists
     template_manager = TemplateManager()
     template_manager.discover_templates()
     template = template_manager.get_template(name)
-    
+
     if not template:
         ch.error(f"Template '{name}' not found in repository")
         ch.dim("Available templates:")
         for t in template_manager.list_templates():
             ch.dim(f"  - {t.name}")
         return
-    
+
     # Get path to host-specific override file
     override_dir = config_manager.apps_dir / server / "templates"
     override_file = override_dir / f"{name}.yaml"
-    
+
     # Create directory if needed
     override_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create skeleton file if it doesn't exist
     if not override_file.exists():
         skeleton = _generate_template_skeleton(template)
         override_file.write_text(skeleton, encoding='utf-8')
         ch.success(f"Created new override file: {override_file}")
-    
+
     # Get editor
     editor = os.environ.get('EDITOR') or os.environ.get('VISUAL')
-    
+
     if not editor:
         # Platform-specific defaults
         if sys.platform == 'win32':
@@ -573,9 +574,9 @@ def edit_template_cmd(name: str, options: Dict[str, Any]):
             editor = 'nano'
         else:
             editor = 'nano'
-    
+
     ch.info(f"Opening {override_file} in {editor}...")
-    
+
     try:
         if sys.platform == 'win32':
             # Windows: shell=False is sufficient with list args
@@ -599,7 +600,7 @@ def _generate_template_skeleton(template) -> str:
         "#",
         ""
     ]
-    
+
     # Add path overrides section
     paths = template.get_paths()
     if paths:
@@ -608,7 +609,7 @@ def _generate_template_skeleton(template) -> str:
         for key, value in paths.items():
             lines.append(f"#   {key}: {value}")
         lines.append("")
-    
+
     # Add service overrides section
     services = template.get_services()
     if services:
@@ -617,7 +618,7 @@ def _generate_template_skeleton(template) -> str:
         for key, value in services.items():
             lines.append(f"#   {key}: {value}")
         lines.append("")
-    
+
     # Add env var overrides section
     env_vars = template.get_env_vars()
     if env_vars:
@@ -626,7 +627,7 @@ def _generate_template_skeleton(template) -> str:
         for key, value in env_vars.items():
             lines.append(f"#   {key}: \"{value}\"")
         lines.append("")
-    
+
     # Add API overrides if present
     if 'api' in template.metadata:
         lines.append("# API configuration overrides:")
@@ -634,7 +635,7 @@ def _generate_template_skeleton(template) -> str:
         for key, value in template.metadata['api'].items():
             lines.append(f"#   {key}: {value}")
         lines.append("")
-    
+
     return "\n".join(lines)
 
 

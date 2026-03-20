@@ -1,9 +1,11 @@
 
-import typer
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+
+import typer
 
 from navig.lazy_loader import lazy_import
+
 ch = lazy_import("navig.console_helper")
 
 evolution_app = typer.Typer(
@@ -20,24 +22,24 @@ def evolve_skill(
 ):
     """Generate and refine a new skill definition (SKILL.md)."""
     from navig.core.evolution.skill import SkillEvolver
-    
+
     if not skills_root:
         # Default to navig/skills if exists, else ~/.navig/skills
         # For now assume local project skills
         skills_root = Path("skills") # Relative to CWD
-        
+
     evolver = SkillEvolver(skills_root)
     evolver.max_retries = retries
-    
+
     ch.info(f"Evolving skill for: {goal}")
     result = evolver.evolve(goal)
-    
+
     if result.success:
         ch.success("Skill evolution successful!")
         # Could print path
     else:
         ch.error(f"Skill evolution failed: {result.error}")
-        
+
 @evolution_app.command("workflow")
 def evolve_workflow(
     goal: str = typer.Argument(..., help="Description of the workflow to create"),
@@ -45,13 +47,13 @@ def evolve_workflow(
 ):
     """Generate and refine a new automation workflow (YAML)."""
     from navig.core.evolution.workflow import WorkflowEvolver
-    
+
     evolver = WorkflowEvolver()
     evolver.max_retries = retries
-    
+
     ch.info(f"Evolving workflow for: {goal}")
     result = evolver.evolve(goal)
-    
+
     if result.success:
         ch.success("Workflow evolution successful!")
     else:
@@ -65,13 +67,13 @@ def evolve_pack(
 ):
     """Generate a new Pack (collection of skills)."""
     from navig.core.evolution.pack import PackEvolver
-    
+
     evolver = PackEvolver()
     evolver.max_retries = retries
-    
+
     ch.info(f"Evolving pack for: {goal}")
     result = evolver.evolve(goal)
-    
+
     if result.success:
         ch.success("Pack evolution successful!")
     else:
@@ -85,13 +87,13 @@ def evolve_script(
 ):
     """Generate a Python automation script."""
     from navig.core.evolution.script import ScriptEvolver
-    
+
     evolver = ScriptEvolver()
     evolver.max_retries = retries
-    
+
     ch.info(f"Evolving script for: {goal}")
     result = evolver.evolve(goal)
-    
+
     if result.success:
         ch.success("Script evolution successful!")
     else:
@@ -108,14 +110,14 @@ def evolve_fix(
     if not file_path.exists():
         ch.error(f"File not found: {file_path}")
         raise typer.Exit(1)
-        
+
     from navig.core.evolution.fix import FixEvolver
-    
+
     evolver = FixEvolver(file_path, check_command=check)
-    
+
     ch.info(f"Analyzing {file_path.name} for fix: {instruction}")
     result = evolver.evolve(instruction)
-    
+
     if result.success:
         ch.success("File update successful!")
     else:
@@ -132,7 +134,12 @@ def evolve_status(
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show performance trends and regression alerts from the auto-profiler."""
-    from navig.perf.profiler import load_recent_samples, detect_regressions, suggest_optimizations, PERF_DIR
+    from navig.perf.profiler import (
+        PERF_DIR,
+        detect_regressions,
+        load_recent_samples,
+        suggest_optimizations,
+    )
 
     samples = load_recent_samples(days=days)
 
@@ -185,8 +192,8 @@ def evolve_optimize(
     days: int = typer.Option(7, "--days", "-d", help="Number of days of history to analyze"),
 ):
     """Analyze profile data and propose the next optimization target."""
-    from navig.perf.profiler import load_recent_samples, suggest_optimizations, detect_regressions, PERF_DIR
     from navig.ipc_pipe import get_pipe_status
+    from navig.perf.profiler import detect_regressions, load_recent_samples, suggest_optimizations
 
     samples = load_recent_samples(days=days)
     suggestions = suggest_optimizations(samples)

@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import json
-import re
 import logging
+import re
 from typing import Any, Optional, TypedDict
 
 import json_repair  # ships py.typed — fully typed, no ignore needed

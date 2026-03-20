@@ -1,0 +1,29 @@
+{
+  "id": "containers",
+  "name": "Containers — Docker",
+  "summary": "List, inspect, restart Docker containers on this server. Use command.run.",
+  "commands": [
+    {
+      "name": "list",
+      "signature": "command.run(cmd=\"navig docker ps\")",
+      "description": "List running containers. Use for: 'show containers', 'what is running', 'docker ps'.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"navig docker ps\"}, \"description\": \"List containers\"}], \"message\": \"Listing containers\"}"
+    },
+    {
+      "name": "logs",
+      "signature": "command.run(cmd=\"navig docker logs <name> --tail 50\")",
+      "description": "Show last 50 lines of container logs. Replace <name> with container name."
+    },
+    {
+      "name": "restart",
+      "signature": "command.run(cmd=\"navig docker restart <name>\")",
+      "description": "Restart a container by name."
+    },
+    {
+      "name": "stats",
+      "signature": "command.run(cmd=\"docker stats --no-stream --format 'table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}'\")",
+      "description": "Show CPU and RAM usage per container.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"docker stats --no-stream\"}, \"description\": \"Container stats\"}], \"message\": \"Checking container resource usage\"}"
+    }
+  ]
+}

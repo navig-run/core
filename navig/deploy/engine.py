@@ -8,7 +8,6 @@ Triggers automatic rollback on health check failure (unless --no-auto-rollback).
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
 import time
 from datetime import datetime, timezone

@@ -38,12 +38,12 @@ class ConversationalAgent:
         soul_loader=None, history=None, language_detector=None,
         localization=None, task_executor=None, fallback_planner=None,
     ) -> None:
-        from navig.agent.conv.soul import get_soul_loader
+        from navig.agent.conv.executor import TaskExecutor
         from navig.agent.conv.history import ConversationHistory
         from navig.agent.conv.language import LanguageDetector
         from navig.agent.conv.localization import LocalizationStore
-        from navig.agent.conv.executor import TaskExecutor
         from navig.agent.conv.planner import FallbackPlanner, PlanExtractor
+        from navig.agent.conv.soul import get_soul_loader
         self._ai_client = ai_client
         self._on_status_update: Callable[[StatusEvent], Awaitable[None]] | None = None
         self._session_id: str = str(uuid.uuid4())[:8]
@@ -197,7 +197,7 @@ class ConversationalAgent:
         self._history.add("user", message)
         response = await self._get_ai_response(message)
         try:
-            from navig.agent.soul import ContextSignal, shape_response, get_mood_profile
+            from navig.agent.soul import ContextSignal, get_mood_profile, shape_response
             response = shape_response(response, ContextSignal.build(message), get_mood_profile(self._focus_mode))
         except Exception:
             # Soul shaping is best-effort; the raw response is still valid output.
@@ -274,7 +274,7 @@ class ConversationalAgent:
             if tokens:
                 return "".join(tokens)
         try:
-            from navig.routing.router import get_router, RouteRequest
+            from navig.routing.router import RouteRequest, get_router
             text = (await get_router().run(RouteRequest(messages=msgs, text=message, tier_override=tier, entrypoint=self._entrypoint)))[0]
             if text: return text
         except Exception as exc:

@@ -171,6 +171,7 @@ nohup.out                   # Background process output
 # Testing and Coverage
 # ===============================================
 .pytest_cache/              # Pytest cache
+.benchmarks/                # Benchmark results — local only, not for VCS
 .coverage                   # Coverage data
 htmlcov/                    # HTML coverage reports
 .tox/                       # Tox testing
@@ -315,8 +316,11 @@ host/*.exe
 # Community stub folder (separate repo at navig-community/)
 navig-community/
 
-# Runtime store — live content lives in ~/.navig/store/, not in VCS
-store/
+# store/ at repo root is the built-in content package store — it IS tracked.
+# Only exclude generated/runtime artifacts within it if they appear:
+store/cache/
+store/tmp/
+store/*.log
 
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
@@ -324,3 +328,9 @@ icons/
 # Private dev-only plugin — never commit
 navig/plugins/llm_bridge/
 navig/plugins/llm-bridge/
+
+# Rust/Cargo build outputs
+host/crates/**/target/
+nohup.out
+*.pdb
+

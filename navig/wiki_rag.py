@@ -11,13 +11,13 @@ For production use with large knowledge bases, consider:
 This module provides a lightweight fallback that works without extra dependencies.
 """
 
-import re
+import json
 import math
-from pathlib import Path
-from typing import TYPE_CHECKING, List, Dict, Any, Optional, Tuple
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from navig import console_helper as ch
 
@@ -33,38 +33,38 @@ class WikiDocument:
     content: str
     folder: str
     chunks: List[str] = None
-    
+
     def __post_init__(self):
         if self.chunks is None:
             self.chunks = self._chunk_content()
-    
+
     def _chunk_content(self, chunk_size: int = 500, overlap: int = 100) -> List[str]:
         """Split content into overlapping chunks for better retrieval."""
         if len(self.content) <= chunk_size:
             return [self.content]
-        
+
         chunks = []
         start = 0
         while start < len(self.content):
             end = start + chunk_size
             chunk = self.content[start:end]
-            
+
             # Try to break at sentence boundary
             if end < len(self.content):
                 last_period = chunk.rfind('. ')
                 if last_period > chunk_size // 2:
                     chunk = chunk[:last_period + 1]
                     end = start + last_period + 1
-            
+
             chunks.append(chunk.strip())
             start = end - overlap
-        
+
         return chunks
 
 
 class TextTokenizer:
     """Simple text tokenizer for search."""
-    
+
     # Common stop words to filter
     STOP_WORDS = {
         'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
@@ -75,9 +75,9 @@ class TextTokenizer:
         'than', 'so', 'no', 'not', 'only', 'own', 'same', 'such', 'too',
         'very', 'just', 'also', 'now', 'here', 'there', 'where', 'how',
         'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
-        'some', 'any', 'no', 'nor', 'not', 'only', 'over', 'under',
+        'some', 'any', 'nor', 'over', 'under',
     }
-    
+
     @staticmethod
     def tokenize(text: str) -> List[str]:
         """Tokenize text into words."""
@@ -93,7 +93,7 @@ class BM25Index:
     BM25 is a bag-of-words retrieval function that ranks documents
     based on query terms appearing in each document.
     """
-    
+
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         """Initialize BM25 index.
         
@@ -108,32 +108,32 @@ class BM25Index:
         self.doc_lens: List[int] = []
         self.avg_doc_len: float = 0
         self.term_freqs: List[Counter] = []
-    
+
     def index(self, documents: List[WikiDocument]):
         """Index a list of documents."""
         self.documents = []
         self.term_freqs = []
         self.doc_lens = []
         self.doc_freqs = defaultdict(int)
-        
+
         # Index each chunk as a separate document
         for doc in documents:
             for chunk_idx, chunk in enumerate(doc.chunks):
                 tokens = TextTokenizer.tokenize(chunk)
-                
+
                 self.documents.append((doc, chunk_idx))
                 self.doc_lens.append(len(tokens))
-                
+
                 term_freq = Counter(tokens)
                 self.term_freqs.append(term_freq)
-                
+
                 # Update document frequencies
                 for term in set(tokens):
                     self.doc_freqs[term] += 1
-        
+
         if self.doc_lens:
             self.avg_doc_len = sum(self.doc_lens) / len(self.doc_lens)
-    
+
     def _idf(self, term: str) -> float:
         """Calculate inverse document frequency for a term."""
         n = len(self.documents)
@@ -141,7 +141,7 @@ class BM25Index:
         if df == 0:
             return 0
         return math.log((n - df + 0.5) / (df + 0.5) + 1)
-    
+
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Search the index.
         
@@ -153,44 +153,44 @@ class BM25Index:
             List of search results with scores
         """
         query_tokens = TextTokenizer.tokenize(query)
-        
+
         if not query_tokens:
             return []
-        
+
         scores = []
-        
+
         for idx, ((doc, chunk_idx), doc_len, term_freq) in enumerate(
             zip(self.documents, self.doc_lens, self.term_freqs)
         ):
             score = 0
-            
+
             for term in query_tokens:
                 if term not in term_freq:
                     continue
-                
+
                 tf = term_freq[term]
                 idf = self._idf(term)
-                
+
                 # BM25 formula
                 numerator = tf * (self.k1 + 1)
                 denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avg_doc_len)
                 score += idf * numerator / denominator
-            
+
             if score > 0:
                 scores.append((score, idx, doc, chunk_idx))
-        
+
         # Sort by score descending
         scores.sort(key=lambda x: x[0], reverse=True)
-        
+
         # Deduplicate by document path (keep highest scoring chunk)
         seen_paths = set()
         results = []
-        
+
         for score, idx, doc, chunk_idx in scores:
             if doc.path in seen_paths:
                 continue
             seen_paths.add(doc.path)
-            
+
             results.append({
                 'path': doc.path,
                 'title': doc.title,
@@ -200,10 +200,10 @@ class BM25Index:
                 'chunk_index': chunk_idx,
                 'total_chunks': len(doc.chunks)
             })
-            
+
             if len(results) >= top_k:
                 break
-        
+
         return results
 
 
@@ -248,7 +248,7 @@ class WikiRAG:
         self.index_file = self.wiki_path / '.meta' / 'rag_index.json'
 
         self._load_or_build_index()
-    
+
     def _load_or_build_index(self):
         """Load existing index or build new one."""
         if self.index_file.exists():
@@ -257,14 +257,14 @@ class WikiRAG:
                 return
             except Exception as e:
                 ch.dim(f"Could not load index: {e}")
-        
+
         self.rebuild_index()
-    
+
     def _load_index(self):
         """Load index from file."""
         with open(self.index_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         self.documents = [
             WikiDocument(
                 path=d['path'],
@@ -275,13 +275,13 @@ class WikiRAG:
             )
             for d in data.get('documents', [])
         ]
-        
+
         self.index.index(self.documents)
-    
+
     def _save_index(self):
         """Save index to file."""
         self.index_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         data = {
             'documents': [
                 {
@@ -294,10 +294,10 @@ class WikiRAG:
                 for d in self.documents
             ]
         }
-        
+
         with open(self.index_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
-    
+
     def rebuild_index(self):
         """Rebuild the search index from wiki pages.
 
@@ -311,26 +311,26 @@ class WikiRAG:
 
         if not self.wiki_path.exists():
             return
-        
+
         for md_file in self.wiki_path.glob('**/*.md'):
             rel_path = md_file.relative_to(self.wiki_path)
-            
+
             # Skip hidden folders
             if any(part.startswith('.') for part in rel_path.parts):
                 continue
-            
+
             try:
                 content = md_file.read_text(encoding='utf-8')
-                
+
                 # Extract title from first heading
                 title = md_file.stem
                 for line in content.split('\n'):
                     if line.startswith('# '):
                         title = line[2:].strip()
                         break
-                
+
                 folder = str(rel_path.parent).replace('\\', '/')
-                
+
                 doc = WikiDocument(
                     path=str(rel_path).replace('\\', '/'),
                     title=title,
@@ -338,13 +338,13 @@ class WikiRAG:
                     folder=folder
                 )
                 self.documents.append(doc)
-                
+
             except Exception as e:
                 ch.dim(f"Could not index {rel_path}: {e}")
-        
+
         self.index.index(self.documents)
         self._save_index()
-    
+
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Search wiki for relevant content.
 
@@ -372,7 +372,7 @@ class WikiRAG:
                 for r in results
             ]
         return self.index.search(query, top_k)
-    
+
     def get_context(self, query: str, max_tokens: int = 2000) -> str:
         """Get relevant context for an AI query.
 
@@ -422,7 +422,7 @@ class WikiRAG:
             total_chars += len(content)
 
         return "\n\n---\n\n".join(context_parts)
-    
+
     def add_document(self, path: str, content: str, title: Optional[str] = None):
         """Add a new document to the index.
         
@@ -438,24 +438,24 @@ class WikiRAG:
                     break
             if not title:
                 title = Path(path).stem
-        
+
         folder = str(Path(path).parent).replace('\\', '/')
-        
+
         doc = WikiDocument(
             path=path,
             title=title,
             content=content,
             folder=folder
         )
-        
+
         # Remove existing document with same path
         self.documents = [d for d in self.documents if d.path != path]
         self.documents.append(doc)
-        
+
         # Rebuild index
         self.index.index(self.documents)
         self._save_index()
-    
+
     def remove_document(self, path: str):
         """Remove a document from the index.
         
@@ -465,7 +465,7 @@ class WikiRAG:
         self.documents = [d for d in self.documents if d.path != path]
         self.index.index(self.documents)
         self._save_index()
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get index statistics."""
         if self._project_indexer is not None:

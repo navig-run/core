@@ -1,0 +1,80 @@
+# Prometheus Template Configuration
+# Monitoring system and time series database
+
+name: prometheus
+version: 1.0.0
+description: Open-source systems monitoring and alerting toolkit with time series database
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  config_file: /etc/prometheus/prometheus.yml
+  data_dir: /var/lib/prometheus
+  rules_dir: /etc/prometheus/rules
+  alerts_file: /etc/prometheus/alerts.yml
+  console_dir: /etc/prometheus/consoles
+  console_libraries: /etc/prometheus/console_libraries
+  log_file: /var/log/prometheus/prometheus.log
+
+services:
+  prometheus: prometheus
+  prometheus_service: prometheus.service
+
+commands:
+  - name: start
+    description: Start Prometheus service
+    command: systemctl start prometheus
+
+  - name: stop
+    description: Stop Prometheus service
+    command: systemctl stop prometheus
+
+  - name: restart
+    description: Restart Prometheus service
+    command: systemctl restart prometheus
+
+  - name: status
+    description: Check Prometheus service status
+    command: systemctl status prometheus
+
+  - name: logs
+    description: View Prometheus logs
+    command: journalctl -u prometheus -f
+
+  - name: reload
+    description: Reload Prometheus configuration
+    command: curl -X POST http://localhost:9090/-/reload
+
+  - name: validate
+    description: Validate Prometheus configuration
+    command: promtool check config /etc/prometheus/prometheus.yml
+
+  - name: targets
+    description: List all scrape targets
+    command: curl -s http://localhost:9090/api/v1/targets | jq
+
+  - name: alerts
+    description: List all alerts
+    command: curl -s http://localhost:9090/api/v1/alerts | jq
+
+  - name: rules
+    description: List all recording/alerting rules
+    command: curl -s http://localhost:9090/api/v1/rules | jq
+
+  - name: query
+    description: Execute PromQL query
+    command: 'curl -s "http://localhost:9090/api/v1/query?query=up"'
+
+env_vars:
+  PROMETHEUS_RETENTION_TIME: 15d
+  PROMETHEUS_RETENTION_SIZE: 10GB
+  PROMETHEUS_WEB_LISTEN_ADDRESS: "0.0.0.0:9090"
+
+api:
+  endpoint: http://localhost:9090/api/v1
+  auth_method: none
+  doc_url: https://prometheus.io/docs/prometheus/latest/querying/api/
+
+default_port: 9090
+systemd_service: /lib/systemd/system/prometheus.service

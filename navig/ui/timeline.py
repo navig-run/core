@@ -10,7 +10,7 @@ import sys
 from typing import List
 
 from navig.ui.models import Event
-from navig.ui.theme import SAFE_MODE, COLOR_STYLE, console
+from navig.ui.theme import COLOR_STYLE, SAFE_MODE, console
 
 
 def render_event_timeline(

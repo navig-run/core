@@ -1,0 +1,30 @@
+{
+  "personaId": "tyler-durden",
+  "colorScheme": {
+    "background": "#0d0d0d",
+    "surface": "#1a1a1a",
+    "primary": "#c0392b",
+    "secondary": "#e67e22",
+    "accent": "#f39c12",
+    "text": "#f0ece4",
+    "textMuted": "#7f8c8d",
+    "border": "#2c2c2c",
+    "danger": "#e74c3c",
+    "success": "#27ae60"
+  },
+  "typography": {
+    "fontFamily": "monospace",
+    "headingWeight": "900",
+    "bodyWeight": "400",
+    "letterSpacing": "0.03em"
+  },
+  "ui": {
+    "borderRadius": "2px",
+    "animationStyle": "abrupt",
+    "density": "compact",
+    "mottoVisible": true,
+    "motto": "No excuses. No audience. Just output."
+  },
+  "version": "1",
+  "schema": "navig-theme-v1"
+}

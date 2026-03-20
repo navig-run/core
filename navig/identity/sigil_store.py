@@ -84,6 +84,7 @@ def get_seed_for_session(demo: bool = False) -> str:
     In normal mode: generate_seed() from machine fingerprint.
     """
     import os
+
     from navig.identity.seed import generate_seed
 
     if demo:

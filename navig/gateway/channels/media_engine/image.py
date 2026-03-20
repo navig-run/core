@@ -30,7 +30,7 @@ import os
 import time
 from typing import Any, Optional
 
-from navig.gateway.channels.media_engine.budget import BudgetGuard, BudgetExceeded
+from navig.gateway.channels.media_engine.budget import BudgetExceeded, BudgetGuard
 from navig.gateway.channels.media_engine.media_cache import MediaCache
 
 try:
@@ -92,7 +92,7 @@ def _stage_classify(file_bytes: bytes) -> dict:
     }
     try:
         from PIL import Image  # type: ignore
-        from PIL.ExifTags import TAGS, GPSTAGS  # type: ignore
+        from PIL.ExifTags import GPSTAGS, TAGS  # type: ignore
 
         img = Image.open(io.BytesIO(file_bytes))
         result["width"], result["height"] = img.size
@@ -288,6 +288,7 @@ async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> Optional[li
         return None
     try:
         import json
+
         from google.cloud import vision  # type: ignore
         from google.oauth2 import service_account  # type: ignore
 

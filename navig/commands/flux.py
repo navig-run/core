@@ -65,12 +65,12 @@ def _get(path: str) -> dict:
         r = httpx.get(f"{_GW}{path}", timeout=5)
         r.raise_for_status()
         return r.json()
-    except httpx.ConnectError:
+    except httpx.ConnectError as _exc:
         typer.echo(_daemon_offline_msg(), err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from _exc
     except Exception as e:
         typer.echo(f"[ERROR] Daemon error: {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 def _post(path: str, payload: dict) -> dict:
@@ -88,12 +88,12 @@ def _post(path: str, payload: dict) -> dict:
         r = httpx.post(f"{_GW}{path}", json=payload, timeout=10)
         r.raise_for_status()
         return r.json()
-    except httpx.ConnectError:
+    except httpx.ConnectError as _exc:
         typer.echo(_daemon_offline_msg(), err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from _exc
     except Exception as e:
         typer.echo(f"[ERROR] {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 def _lan_ip() -> str:
@@ -265,10 +265,10 @@ def install(
             typer.echo(result.stderr, err=True)
         return
 
-    typer.echo(f"\n  📦  NAVIG — Add a machine to this mesh\n")
-    typer.echo(f"  Windows (PowerShell 5+):")
+    typer.echo("\n  📦  NAVIG — Add a machine to this mesh\n")
+    typer.echo("  Windows (PowerShell 5+):")
     typer.echo(f"    (iwr {src}/install/windows).Content | iex\n")
-    typer.echo(f"  Linux / macOS (bash):")
+    typer.echo("  Linux / macOS (bash):")
     typer.echo(f"    curl -fsSL {src}/install/linux | bash\n")
     typer.echo(f"  Install page: {src}/install\n")
     try:

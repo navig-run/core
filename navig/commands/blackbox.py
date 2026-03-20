@@ -48,6 +48,7 @@ def blackbox_status():
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
+
     from navig.blackbox.seal import is_sealed
     from navig.platform.paths import blackbox_dir
 
@@ -107,10 +108,10 @@ def blackbox_record(
 
     try:
         et = EventType(event_type.upper())
-    except ValueError:
+    except ValueError as _exc:
         valid = [e.value for e in EventType]
         _ch.error(f"Unknown event type '{event_type}'. Valid: {valid}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from _exc
 
     if stdin:
         msg = sys.stdin.read().strip()
@@ -165,9 +166,9 @@ def blackbox_timeline(
     if event_type:
         try:
             et_filter = EventType(event_type.upper())
-        except ValueError:
+        except ValueError as _exc:
             _ch.error(f"Unknown event type '{event_type}'")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from _exc
 
     since_dt: Optional[datetime] = None
     if since:
@@ -189,8 +190,9 @@ def blackbox_seal(
     unseal: bool = typer.Option(False, "--unseal", help="Remove seal instead of applying"),
 ):
     """Seal the blackbox (prevents recording new events until unsealed)."""
-    from navig.blackbox.seal import seal_bundle, is_sealed, unseal as _unseal
     from navig.blackbox.bundle import create_bundle
+    from navig.blackbox.seal import is_sealed, seal_bundle
+    from navig.blackbox.seal import unseal as _unseal
 
     if unseal:
         ok = _unseal()
@@ -244,11 +246,13 @@ def bundle_inspect(
     file: str = typer.Argument(..., help="Path to a .navbox file"),
 ):
     """Inspect the contents of a .navbox bundle."""
-    from navig.blackbox.bundle import inspect_bundle
-    from navig.blackbox.timeline import render_timeline
+    import pathlib
+
     from rich.console import Console
     from rich.panel import Panel
-    import pathlib
+
+    from navig.blackbox.bundle import inspect_bundle
+    from navig.blackbox.timeline import render_timeline
 
     path = pathlib.Path(file).expanduser()
     if not path.exists():
@@ -288,9 +292,10 @@ def bundle_export(
     encrypted: bool = typer.Option(False, "--encrypted", help="Encrypt the export"),
 ):
     """Re-export an existing .navbox bundle, optionally with encryption."""
+    import pathlib
+
     from navig.blackbox.bundle import inspect_bundle
     from navig.blackbox.export import export_bundle
-    import pathlib
 
     src = pathlib.Path(file).expanduser()
     if not src.exists():
@@ -309,8 +314,9 @@ def blackbox_crashes(
     limit: int = typer.Option(10, "--limit", "-n", help="Number of crash reports to show"),
 ):
     """List recent crash reports."""
-    from navig.blackbox.crash import list_crashes
     from rich.console import Console
+
+    from navig.blackbox.crash import list_crashes
 
     con = Console()
     crashes = list_crashes()[:limit]

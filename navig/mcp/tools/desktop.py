@@ -1,8 +1,8 @@
-import json
 import os
 import sys
-from typing import Dict, Any, List, Optional
 from pathlib import Path
+from typing import Any, Dict, Optional
+
 
 def register(server: Any) -> None:
     """Register desktop automation tools."""
@@ -67,7 +67,7 @@ def register(server: Any) -> None:
             }
         }
     })
-    
+
     server._tool_handlers.update({
         "desktop_find": _tool_desktop_find,
         "desktop_tree": _tool_desktop_tree,
@@ -78,7 +78,6 @@ def register(server: Any) -> None:
 
 def _desktop_client():
     """Return a live _DesktopClient, raising structured errors on failure."""
-    import sys
     if sys.platform != "win32":
         raise ValueError("desktop tools are Windows only")
     from navig.commands.desktop import _DesktopClient

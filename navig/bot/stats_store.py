@@ -21,7 +21,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 
 def _utc_now() -> datetime:
@@ -46,7 +46,7 @@ class Reminder:
     remind_at: datetime
     created_at: datetime
     completed: bool = False
-    
+
     def to_dict(self) -> dict:
         return {
             'id': self.id,
@@ -79,17 +79,17 @@ class BotStatsStore:
     - Reminder storage
     - TTL-based cache for frequent data
     """
-    
+
     SCHEMA_VERSION = 1
-    
+
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or _bot_db_path()
         self._local = threading.local()
         self._lock = threading.Lock()
         self._cache: Dict[str, Dict[str, Any]] = {}  # In-memory cache
-        
+
         self._init_schema()
-    
+
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local connection."""
         if not hasattr(self._local, 'conn') or self._local.conn is None:
@@ -101,11 +101,11 @@ class BotStatsStore:
             # Enable WAL mode for better concurrency
             self._local.conn.execute("PRAGMA journal_mode=WAL")
         return self._local.conn
-    
+
     def _init_schema(self):
         """Initialize database schema."""
         conn = self._get_conn()
-        
+
         conn.executescript("""
             -- Command usage statistics
             CREATE TABLE IF NOT EXISTS command_stats (
@@ -171,11 +171,11 @@ class BotStatsStore:
             );
             CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
         """)
-        
+
         conn.commit()
-    
+
     # ===== Command Statistics =====
-    
+
     def log_command(
         self,
         command: str,
@@ -188,14 +188,14 @@ class BotStatsStore:
         """Log a command execution."""
         conn = self._get_conn()
         now = _utc_now().isoformat()
-        
+
         with self._lock:
             # Insert into log
             conn.execute("""
                 INSERT INTO command_log (command, user_id, chat_id, duration_ms, success, error_message, executed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (command, user_id, chat_id, duration_ms, 1 if success else 0, error_message, now))
-            
+
             # Update aggregate stats
             conn.execute("""
                 INSERT INTO command_stats (command, count, last_used, total_duration_ms, error_count)
@@ -206,7 +206,7 @@ class BotStatsStore:
                     total_duration_ms = total_duration_ms + excluded.total_duration_ms,
                     error_count = error_count + excluded.error_count
             """, (command, now, duration_ms, 0 if success else 1))
-            
+
             # Prune old logs (keep last 1000 per command)
             conn.execute("""
                 DELETE FROM command_log WHERE id IN (
@@ -215,42 +215,42 @@ class BotStatsStore:
                     LIMIT -1 OFFSET 1000
                 )
             """, (command,))
-            
+
             conn.commit()
-    
+
     def get_stats_summary(self) -> Dict[str, Any]:
         """Get summary statistics."""
         conn = self._get_conn()
-        
+
         # Total commands today
         today_start = _utc_now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         row = conn.execute("""
             SELECT COUNT(*) as count FROM command_log WHERE executed_at >= ?
         """, (today_start,)).fetchone()
         commands_today = row['count'] if row else 0
-        
+
         # Total commands all time
         row = conn.execute("SELECT SUM(count) as total FROM command_stats").fetchone()
         total_commands = row['total'] or 0
-        
+
         # Total errors today
         row = conn.execute("""
             SELECT COUNT(*) as count FROM command_log WHERE executed_at >= ? AND success = 0
         """, (today_start,)).fetchone()
         errors_today = row['count'] if row else 0
-        
+
         # Most used commands
         rows = conn.execute("""
             SELECT command, count FROM command_stats ORDER BY count DESC LIMIT 5
         """).fetchall()
         top_commands = [(r['command'], r['count']) for r in rows]
-        
+
         # Active reminders
         row = conn.execute("""
             SELECT COUNT(*) as count FROM reminders WHERE completed = 0 AND remind_at > ?
         """, (_utc_now().isoformat(),)).fetchone()
         active_reminders = row['count'] if row else 0
-        
+
         return {
             'commands_today': commands_today,
             'total_commands': total_commands,
@@ -258,7 +258,7 @@ class BotStatsStore:
             'top_commands': top_commands,
             'active_reminders': active_reminders,
         }
-    
+
     def get_command_stats(self) -> List[CommandStat]:
         """Get statistics for all commands."""
         conn = self._get_conn()
@@ -267,7 +267,7 @@ class BotStatsStore:
             FROM command_stats
             ORDER BY count DESC
         """).fetchall()
-        
+
         return [
             CommandStat(
                 command=r['command'],
@@ -278,9 +278,9 @@ class BotStatsStore:
             )
             for r in rows
         ]
-    
+
     # ===== Reminders =====
-    
+
     def create_reminder(
         self,
         user_id: int,
@@ -291,14 +291,14 @@ class BotStatsStore:
         """Create a new reminder."""
         conn = self._get_conn()
         now = _utc_now()
-        
+
         with self._lock:
             cursor = conn.execute("""
                 INSERT INTO reminders (user_id, chat_id, message, remind_at, created_at)
                 VALUES (?, ?, ?, ?, ?)
             """, (user_id, chat_id, message, remind_at.isoformat(), now.isoformat()))
             conn.commit()
-            
+
             return Reminder(
                 id=cursor.lastrowid,
                 user_id=user_id,
@@ -307,18 +307,18 @@ class BotStatsStore:
                 remind_at=remind_at,
                 created_at=now,
             )
-    
+
     def get_due_reminders(self) -> List[Reminder]:
         """Get all reminders that are due."""
         conn = self._get_conn()
         now = _utc_now().isoformat()
-        
+
         rows = conn.execute("""
             SELECT * FROM reminders
             WHERE completed = 0 AND remind_at <= ?
             ORDER BY remind_at
         """, (now,)).fetchall()
-        
+
         return [
             Reminder(
                 id=r['id'],
@@ -331,18 +331,18 @@ class BotStatsStore:
             )
             for r in rows
         ]
-    
+
     def get_user_reminders(self, user_id: int) -> List[Reminder]:
         """Get all active reminders for a user."""
         conn = self._get_conn()
-        
+
         rows = conn.execute("""
             SELECT * FROM reminders
             WHERE user_id = ? AND completed = 0 AND remind_at > ?
             ORDER BY remind_at
             LIMIT 20
         """, (user_id, _utc_now().isoformat())).fetchall()
-        
+
         return [
             Reminder(
                 id=r['id'],
@@ -354,14 +354,14 @@ class BotStatsStore:
             )
             for r in rows
         ]
-    
+
     def complete_reminder(self, reminder_id: int):
         """Mark a reminder as completed."""
         conn = self._get_conn()
         with self._lock:
             conn.execute("UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,))
             conn.commit()
-    
+
     def cancel_reminder(self, reminder_id: int, user_id: int) -> bool:
         """Cancel (delete) a reminder. Returns True if deleted."""
         conn = self._get_conn()
@@ -372,9 +372,9 @@ class BotStatsStore:
             )
             conn.commit()
             return cursor.rowcount > 0
-    
+
     # ===== AI State =====
-    
+
     def get_ai_state(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get AI conversation state for a user."""
         conn = self._get_conn()
@@ -382,10 +382,10 @@ class BotStatsStore:
             "SELECT * FROM ai_state WHERE user_id = ?",
             (user_id,)
         ).fetchone()
-        
+
         if not row:
             return None
-        
+
         return {
             'user_id': row['user_id'],
             'chat_id': row['chat_id'],
@@ -394,7 +394,7 @@ class BotStatsStore:
             'started_at': row['started_at'],
             'context': json.loads(row['context']) if row['context'] else None,
         }
-    
+
     def set_ai_state(
         self,
         user_id: int,
@@ -407,7 +407,7 @@ class BotStatsStore:
         conn = self._get_conn()
         now = _utc_now().isoformat()
         context_json = json.dumps(context) if context else None
-        
+
         with self._lock:
             conn.execute("""
                 INSERT INTO ai_state (user_id, chat_id, mode, persona, started_at, context)
@@ -421,7 +421,7 @@ class BotStatsStore:
                     context = excluded.context
             """, (user_id, chat_id, mode, persona, now, context_json))
             conn.commit()
-    
+
     def clear_ai_state(self, user_id: int):
         """Clear AI state for a user."""
         conn = self._get_conn()
@@ -431,9 +431,9 @@ class BotStatsStore:
                 (user_id,)
             )
             conn.commit()
-    
+
     # ===== Caching =====
-    
+
     def cache_get(self, key: str) -> Optional[Any]:
         """Get a cached value if not expired."""
         # Check in-memory cache first
@@ -443,39 +443,39 @@ class BotStatsStore:
                 return cached['value']
             else:
                 del self._cache[key]
-        
+
         # Check database
         conn = self._get_conn()
         row = conn.execute(
             "SELECT value, expires_at FROM cache WHERE key = ?",
             (key,)
         ).fetchone()
-        
+
         if not row:
             return None
-        
+
         expires_at = datetime.fromisoformat(row['expires_at'])
         if expires_at <= _utc_now():
             # Expired, delete it
             conn.execute("DELETE FROM cache WHERE key = ?", (key,))
             conn.commit()
             return None
-        
+
         value = json.loads(row['value'])
-        
+
         # Store in memory cache
         self._cache[key] = {'value': value, 'expires_at': row['expires_at']}
-        
+
         return value
-    
+
     def cache_set(self, key: str, value: Any, ttl_seconds: int = 60):
         """Set a cached value with TTL."""
         expires_at = (_utc_now() + timedelta(seconds=ttl_seconds)).isoformat()
         value_json = json.dumps(value)
-        
+
         # Store in memory cache
         self._cache[key] = {'value': value, 'expires_at': expires_at}
-        
+
         # Store in database
         conn = self._get_conn()
         with self._lock:
@@ -487,21 +487,21 @@ class BotStatsStore:
                     expires_at = excluded.expires_at
             """, (key, value_json, expires_at))
             conn.commit()
-    
+
     def cache_delete(self, key: str):
         """Delete a cached value."""
         if key in self._cache:
             del self._cache[key]
-        
+
         conn = self._get_conn()
         with self._lock:
             conn.execute("DELETE FROM cache WHERE key = ?", (key,))
             conn.commit()
-    
+
     def cache_clear_expired(self):
         """Clean up expired cache entries."""
         now = _utc_now().isoformat()
-        
+
         # Clean memory cache
         expired_keys = [
             k for k, v in self._cache.items()
@@ -509,20 +509,20 @@ class BotStatsStore:
         ]
         for k in expired_keys:
             del self._cache[k]
-        
+
         # Clean database
         conn = self._get_conn()
         with self._lock:
             conn.execute("DELETE FROM cache WHERE expires_at <= ?", (now,))
             conn.commit()
-    
+
     # ===== Notes =====
-    
+
     def save_note(self, user_id: int, chat_id: int, text: str) -> int:
         """Save a note. Returns the note ID."""
         conn = self._get_conn()
         now = _utc_now().isoformat()
-        
+
         with self._lock:
             cursor = conn.execute("""
                 INSERT INTO notes (user_id, chat_id, text, created_at)
@@ -530,23 +530,23 @@ class BotStatsStore:
             """, (user_id, chat_id, text, now))
             conn.commit()
             return cursor.lastrowid
-    
+
     def get_user_notes(self, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
         """Get user's notes, most recent first."""
         conn = self._get_conn()
-        
+
         rows = conn.execute("""
             SELECT id, text, created_at FROM notes
             WHERE user_id = ?
             ORDER BY created_at DESC
             LIMIT ?
         """, (user_id, limit)).fetchall()
-        
+
         return [
             {'id': r['id'], 'text': r['text'], 'created_at': r['created_at']}
             for r in rows
         ]
-    
+
     def delete_note(self, note_id: int, user_id: int) -> bool:
         """Delete a note. Returns True if deleted."""
         conn = self._get_conn()

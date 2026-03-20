@@ -1,12 +1,14 @@
 
-import typer
-from pathlib import Path
-import sys
 import os
 import subprocess
+import sys
+from pathlib import Path
 from typing import Optional
 
+import typer
+
 from navig.lazy_loader import lazy_import
+
 ch = lazy_import("navig.console_helper")
 
 script_app = typer.Typer(
@@ -36,10 +38,10 @@ def list_scripts():
     table = Table(title="Available Scripts")
     table.add_column("Name", style="cyan")
     table.add_column("Path", style="dim")
-    
+
     for s in scripts:
         table.add_row(s.stem, str(s))
-        
+
     ch.console.print(table)
 
 @script_app.command("run")
@@ -50,7 +52,7 @@ def run_script(
     """Run a Python script."""
     scripts_dir = _get_scripts_dir()
     script_path = scripts_dir / f"{name}.py"
-    
+
     if not script_path.exists():
         # Try local path?
         local_path = Path(name)
@@ -61,11 +63,11 @@ def run_script(
             return
 
     ch.info(f"Running script: {script_path.name}")
-    
+
     cmd = [sys.executable, str(script_path)]
     if args:
         cmd.extend(args)
-        
+
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
@@ -80,11 +82,11 @@ def edit_script(
     """Open script in editor."""
     scripts_dir = _get_scripts_dir()
     script_path = scripts_dir / f"{name}.py"
-    
+
     if not script_path.exists():
         ch.error(f"Script not found: {name}")
         return
-        
+
     editor = os.environ.get('EDITOR', 'notepad' if sys.platform == 'win32' else 'nano')
     subprocess.run([editor, str(script_path)])
 
@@ -96,12 +98,12 @@ def new_script(
     """Create a new manual script."""
     scripts_dir = _get_scripts_dir()
     scripts_dir.mkdir(parents=True, exist_ok=True)
-    
+
     script_path = scripts_dir / f"{name}.py"
     if script_path.exists():
         ch.error(f"Script already exists: {name}")
         return
-        
+
     content = ""
     if template == "basic":
         content = """#!/usr/bin/env python3
@@ -133,7 +135,7 @@ if __name__ == "__main__":
 
     with open(script_path, 'w') as f:
         f.write(content)
-        
+
     ch.success(f"Created script: {script_path}")
     ch.info(f"Edit with: navig script edit {name}")
 

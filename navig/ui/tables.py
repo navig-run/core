@@ -8,11 +8,11 @@ from __future__ import annotations
 import sys
 from typing import List, Optional
 
-from rich.table import Table
 from rich import box
+from rich.table import Table
 
 from navig.ui.models import CauseScore
-from navig.ui.theme import SEVERITY_STYLE, COLOR_STYLE, console
+from navig.ui.theme import SEVERITY_STYLE, console
 
 
 def render_findings_table(

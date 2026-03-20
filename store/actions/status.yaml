@@ -1,0 +1,5 @@
+id: status
+description: Quick status check
+command: navig dashboard --no-live
+created: "2026-02-08T13:56:35"
+tags: [core, monitoring]

@@ -12,8 +12,8 @@ from __future__ import annotations
 import sys
 from typing import List
 
-from navig.ui.models import DiffPreview, DiffLine
-from navig.ui.theme import SAFE_MODE, console
+from navig.ui.models import DiffLine, DiffPreview
+from navig.ui.theme import console
 
 _OP_STYLE = {
     "add":     ("green", "+"),

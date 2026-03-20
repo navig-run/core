@@ -16,7 +16,7 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
     import aiohttp
@@ -43,7 +43,7 @@ logger = get_debug_logger()
 
 class WhatsAppChannelConfig:
     """Configuration for WhatsApp channel."""
-    
+
     def __init__(
         self,
         bridge_url: Optional[str] = None,
@@ -80,7 +80,7 @@ class WhatsAppChannelConfig:
         self.respond_to_groups = respond_to_groups
         self.respond_to_dms = respond_to_dms
         self.mention_required_in_groups = mention_required_in_groups
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'WhatsAppChannelConfig':
         """Create config from dictionary."""
@@ -98,7 +98,7 @@ class WhatsAppChannelConfig:
 
 class WhatsAppMessage:
     """Parsed WhatsApp message."""
-    
+
     def __init__(
         self,
         message_id: str,
@@ -122,7 +122,7 @@ class WhatsAppMessage:
         self.sender_name = sender_name
         self.is_mentioned = is_mentioned
         self.quoted_message = quoted_message
-    
+
     @classmethod
     def from_bridge_payload(cls, data: Dict[str, Any]) -> 'WhatsAppMessage':
         """Create from bridge webhook payload."""
@@ -151,7 +151,7 @@ class WhatsAppChannel:
     2. Run bridge server on localhost:3000
     3. Scan QR code to authenticate
     """
-    
+
     def __init__(
         self,
         config: WhatsAppChannelConfig,
@@ -170,28 +170,28 @@ class WhatsAppChannel:
                 "aiohttp is required for WhatsApp channel. "
                 "Install: pip install aiohttp"
             )
-        
+
         self.config = config
         self.message_handler = message_handler
-        
+
         self._session: Optional[aiohttp.ClientSession] = None
         self._ws: Optional[Any] = None  # WebSocket connection
         self._running = False
         self._reconnect_delay = 5
         self._max_reconnect_delay = 60
         self._bot_number: Optional[str] = None
-    
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create HTTP session."""
         if self._session is None or self._session.closed:
             headers = {"Content-Type": "application/json"}
             if self.config.api_key:
                 headers["Authorization"] = f"Bearer {self.config.api_key}"
-            
+
             self._session = aiohttp.ClientSession(headers=headers)
-        
+
         return self._session
-    
+
     async def _send_message(self, to: str, content: str) -> bool:
         """
         Send a message via the bridge.
@@ -204,17 +204,17 @@ class WhatsAppChannel:
             True if sent successfully
         """
         session = await self._get_session()
-        
+
         # Ensure proper format
         if not to.endswith("@c.us") and not to.endswith("@g.us"):
             to = f"{to}@c.us"
-        
+
         try:
             payload = {
                 "to": to,
                 "message": content,
             }
-            
+
             async with session.post(
                 f"{self.config.bridge_url}/api/send",
                 json=payload,
@@ -225,29 +225,29 @@ class WhatsAppChannel:
                     error = await response.text()
                     logger.error(f"Failed to send WhatsApp message: {error}")
                     return False
-                    
+
         except Exception as e:
             logger.error(f"Error sending WhatsApp message: {e}")
             return False
-    
+
     async def _handle_incoming_message(self, message: WhatsAppMessage):
         """Handle an incoming WhatsApp message."""
         # Check if we should respond
         if not self._should_respond(message):
             return
-        
+
         # Extract clean content
         content = message.content
         if message.is_mentioned and self._bot_number:
             # Remove mention from content
             content = content.replace(f"@{self._bot_number}", "").strip()
-        
+
         if not content:
             return
-        
+
         # Build metadata
         metadata = self._build_metadata(message)
-        
+
         try:
             # Route to handler
             response = await self.message_handler(
@@ -256,11 +256,11 @@ class WhatsAppChannel:
                 content,
                 metadata,
             )
-            
+
             # Send response
             reply_to = message.group_id if message.is_group else message.from_number
             await self._send_message(reply_to, response)
-            
+
         except Exception as e:
             logger.error(f"Error handling WhatsApp message: {e}")
             reply_to = message.group_id if message.is_group else message.from_number
@@ -268,41 +268,41 @@ class WhatsAppChannel:
                 reply_to,
                 "❌ Sorry, I encountered an error processing your request."
             )
-    
+
     def _should_respond(self, message: WhatsAppMessage) -> bool:
         """Check if we should respond to this message."""
         # Check permissions
         if not self._check_permissions(message):
             return False
-        
+
         # DM handling
         if not message.is_group:
             return self.config.respond_to_dms
-        
+
         # Group handling
         if not self.config.respond_to_groups:
             return False
-        
+
         # Check if mention required
         if self.config.mention_required_in_groups:
             return message.is_mentioned
-        
+
         return True
-    
+
     def _check_permissions(self, message: WhatsAppMessage) -> bool:
         """Check if message sender is allowed."""
         # Check number permission
         if self.config.allowed_numbers is not None:
             if message.from_number not in self.config.allowed_numbers:
                 return False
-        
+
         # Check group permission
         if message.is_group and self.config.allowed_groups is not None:
             if message.group_id not in self.config.allowed_groups:
                 return False
-        
+
         return True
-    
+
     def _build_metadata(self, message: WhatsAppMessage) -> Dict[str, Any]:
         """Build metadata from WhatsApp message."""
         metadata = {
@@ -310,16 +310,16 @@ class WhatsAppChannel:
             "sender_name": message.sender_name,
             "timestamp": message.timestamp.isoformat(),
         }
-        
+
         if message.is_group:
             metadata["group_id"] = message.group_id
             metadata["group_name"] = message.group_name
-        
+
         if message.quoted_message:
             metadata["quoted_message"] = message.quoted_message
-        
+
         return metadata
-    
+
     async def _connect_websocket(self):
         """Connect to bridge WebSocket for receiving messages."""
         if not WEBSOCKETS_AVAILABLE:
@@ -328,93 +328,93 @@ class WhatsAppChannel:
                 "Install: pip install websockets"
             )
             return
-        
+
         reconnect_delay = self._reconnect_delay
-        
+
         while self._running:
             try:
                 logger.info(f"Connecting to WhatsApp bridge at {self.config.bridge_ws_url}")
-                
+
                 headers = {}
                 if self.config.api_key:
                     headers["Authorization"] = f"Bearer {self.config.api_key}"
-                
+
                 async with websockets.connect(
                     self.config.bridge_ws_url,
                     extra_headers=headers,
                 ) as ws:
                     self._ws = ws
                     reconnect_delay = self._reconnect_delay  # Reset on success
-                    
+
                     logger.info("Connected to WhatsApp bridge")
-                    
+
                     async for raw_message in ws:
                         try:
                             data = json.loads(raw_message)
-                            
+
                             # Handle different event types
                             event_type = data.get("type", "message")
-                            
+
                             if event_type == "qr":
                                 # QR code for authentication
                                 logger.info("WhatsApp QR code received - scan to authenticate")
                                 # Could emit event for UI display
-                                
+
                             elif event_type == "authenticated":
                                 logger.info("WhatsApp authenticated successfully")
                                 self._bot_number = data.get("number")
-                                
+
                             elif event_type == "ready":
                                 logger.info("WhatsApp client ready")
-                                
+
                             elif event_type == "message":
                                 message = WhatsAppMessage.from_bridge_payload(data)
                                 await self._handle_incoming_message(message)
-                                
+
                             elif event_type == "disconnected":
                                 logger.warning("WhatsApp disconnected")
-                                
+
                         except json.JSONDecodeError:
                             logger.warning(f"Invalid JSON from bridge: {raw_message[:100]}")
                         except Exception as e:
                             logger.error(f"Error processing bridge message: {e}")
-                
+
             except websockets.ConnectionClosed:
                 logger.warning("WhatsApp bridge connection closed")
             except Exception as e:
                 logger.error(f"WhatsApp bridge error: {e}")
-            
+
             if self._running:
                 logger.info(f"Reconnecting in {reconnect_delay}s...")
                 await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, self._max_reconnect_delay)
-    
+
     async def start(self):
         """Start the WhatsApp channel."""
         logger.info("Starting WhatsApp channel...")
         self._running = True
-        
+
         # Start WebSocket listener
         asyncio.create_task(self._connect_websocket())
-    
+
     async def stop(self):
         """Stop the WhatsApp channel."""
         logger.info("Stopping WhatsApp channel...")
         self._running = False
-        
+
         if self._ws:
             await self._ws.close()
             self._ws = None
-        
+
         if self._session:
             await self._session.close()
             self._session = None
-    
+
     @property
     def is_running(self) -> bool:
         """Check if channel is running."""
         return self._running
-    
+
     async def get_qr_code(self) -> Optional[str]:
         """
         Get QR code for WhatsApp authentication.
@@ -423,7 +423,7 @@ class WhatsAppChannel:
             QR code data URL or None if not available
         """
         session = await self._get_session()
-        
+
         try:
             async with session.get(f"{self.config.bridge_url}/api/qr") as response:
                 if response.status == 200:
@@ -431,9 +431,9 @@ class WhatsAppChannel:
                     return data.get("qr")
         except Exception as e:
             logger.error(f"Error getting QR code: {e}")
-        
+
         return None
-    
+
     async def get_status(self) -> Dict[str, Any]:
         """
         Get WhatsApp connection status.
@@ -442,14 +442,14 @@ class WhatsAppChannel:
             Status dict with connection info
         """
         session = await self._get_session()
-        
+
         try:
             async with session.get(f"{self.config.bridge_url}/api/status") as response:
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
             logger.error(f"Error getting status: {e}")
-        
+
         return {"connected": False, "error": "Unable to reach bridge"}
 
 
@@ -474,13 +474,13 @@ def create_whatsapp_channel(
     """
     if config is None:
         config = WhatsAppChannelConfig()
-    
+
     if message_handler is None:
         # Default handler that echoes
         async def echo_handler(channel, user_id, message, metadata):
             return f"Echo: {message}"
         message_handler = echo_handler
-    
+
     return WhatsAppChannel(config, message_handler)
 
 

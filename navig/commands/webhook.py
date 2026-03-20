@@ -11,7 +11,8 @@ Commands:
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
+
 import typer
 
 from navig.lazy_loader import lazy_import
@@ -40,10 +41,10 @@ def _api(method: str, path: str, json=None):
             _ch.error(f"API error {r.status_code}: {r.text[:200]}")
             raise typer.Exit(1)
         return r.json()
-    except httpx.ConnectError:
+    except httpx.ConnectError as _exc:
         _ch.error("NAVIG host daemon is not running (port 7421).")
         _ch.info("Start with: navig gateway start  (or the Go host daemon)")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from _exc
 
 
 @webhook_app.command("list")
@@ -55,8 +56,8 @@ def webhook_list(json_output: bool = typer.Option(False, "--json")):
         from rich import print as rprint
         rprint(_json.dumps(data, indent=2))
         return
-    from rich.table import Table
     from rich.console import Console
+    from rich.table import Table
 
     inbound = data.get("inbound") or []
     outbound = data.get("outbound") or []

@@ -5,25 +5,37 @@ Terminal UI alternative using Rich library - Mr. Robot inspired theme.
 The Schema provides. The interface adapts. The void watches.
 """
 
-import sys
 import os
 import subprocess
-from typing import Dict, Any, Optional, List, Tuple
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from rich import box
 
 # Rich components for terminal UI
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
-from rich import box
-
-# NAVIG components
-from navig.config import get_config_manager, ConfigManager
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
 
 # Import existing command functions for reuse
-from navig.commands import host, app, database, tunnel, files, webserver, backup, maintenance, monitoring, db
+from navig.commands import (
+    app,
+    backup,
+    database,
+    db,
+    files,
+    host,
+    maintenance,
+    monitoring,
+    tunnel,
+    webserver,
+)
+
+# NAVIG components
+from navig.config import ConfigManager, get_config_manager
 
 # Initialize console with Mr. Robot theme
 console = Console()
@@ -48,14 +60,14 @@ MENU_STYLE = None
 def _init_questionary():
     """Lazy initialization of questionary (only when needed)."""
     global QUESTIONARY_AVAILABLE, MENU_STYLE
-    
+
     if QUESTIONARY_AVAILABLE or MENU_STYLE is not None:
         return  # Already initialized
-    
+
     try:
         import questionary
         from questionary import Style
-        
+
         QUESTIONARY_AVAILABLE = True
         # Questionary uses ANSI color names, not Rich color names
         MENU_STYLE = Style([
@@ -78,11 +90,11 @@ def _init_questionary():
 
 class CommandHistory:
     """Track recent commands executed through the menu."""
-    
+
     def __init__(self, max_size: int = 10):
         self.max_size = max_size
         self.commands: List[Dict[str, Any]] = []
-    
+
     def add(self, command: str, description: str, success: bool = True):
         """Add a command to history."""
         entry = {
@@ -94,11 +106,11 @@ class CommandHistory:
         self.commands.insert(0, entry)  # Add to front
         if len(self.commands) > self.max_size:
             self.commands.pop()  # Remove oldest
-    
+
     def get_recent(self, count: int = 5) -> List[Dict[str, Any]]:
         """Get most recent commands."""
         return self.commands[:count]
-    
+
     def clear(self):
         """Clear command history."""
         self.commands.clear()
@@ -106,7 +118,7 @@ class CommandHistory:
 
 class MenuState:
     """Manages menu navigation state and context."""
-    
+
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
         self.menu_stack: List[str] = []
@@ -114,25 +126,25 @@ class MenuState:
         self.active_app: Optional[str] = config_manager.get_active_app()
         self.history = CommandHistory()
         self.last_selections: Dict[str, Any] = {}  # Remember user choices
-        
+
         # Terminal info
         self.terminal_width = console.width
         self.terminal_height = console.height
-    
+
     def push_menu(self, menu_name: str):
         """Navigate to a submenu."""
         self.menu_stack.append(menu_name)
-    
+
     def pop_menu(self) -> Optional[str]:
         """Return to previous menu."""
         if self.menu_stack:
             return self.menu_stack.pop()
         return None
-    
+
     def current_menu(self) -> Optional[str]:
         """Get current menu name."""
         return self.menu_stack[-1] if self.menu_stack else None
-    
+
     def refresh_context(self):
         """Refresh active host/app from config."""
         self.active_host = self.config_manager.get_active_host()
@@ -154,7 +166,7 @@ def clear_screen():
 def show_header(state: MenuState):
     """Display banner with current context and timestamp."""
     from navig import __version__
-    
+
     # Clean, professional banner
     banner = f"""[cyan]╔═══════════════════════════════════════════════════════════╗
 ║         [bright_green]NAVIG Command Center[/bright_green]  [dim]v{__version__}[/dim]                  ║
@@ -165,7 +177,7 @@ def show_header(state: MenuState):
     context_line = ""
     host_info = ""
     app_info = ""
-    
+
     if state.active_host:
         # Try to get host IP from config
         try:
@@ -191,7 +203,7 @@ def show_header(state: MenuState):
 
     # Timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     console.print(f"{context_line}   [dim]🕐 {timestamp}[/dim]")
     console.print()
 
@@ -207,7 +219,7 @@ def show_status(message: str, status: str = 'info'):
         'loading': '[~]',
         'removed': '[-]',
     }
-    
+
     colors = {
         'info': COLORS['info'],
         'success': COLORS['success'],
@@ -217,10 +229,10 @@ def show_status(message: str, status: str = 'info'):
         'loading': COLORS['accent'],
         'removed': COLORS['warning'],  # Yellow for removal operations
     }
-    
+
     icon = icons.get(status, '[*]')
     color = colors.get(status, COLORS['secondary'])
-    
+
     console.print(f"[{color}]{icon} {message}[/{color}]")
 
 
@@ -233,32 +245,32 @@ def create_menu_table(title: str, items: List[Tuple[str, str]], show_keys: bool 
         show_header=False,
         padding=(0, 2),
     )
-    
+
     table.add_column("Key", style=COLORS['accent'], width=6 if show_keys else 0)
     table.add_column("Option", style=COLORS['secondary'])
-    
+
     for idx, (key, option) in enumerate(items, 1):
         display_key = f"[{key}]" if show_keys else ""
         table.add_row(display_key, option)
-    
+
     return table
 
 
-def prompt_selection(options: List[str], message: str = "Select option", 
+def prompt_selection(options: List[str], message: str = "Select option",
                      allow_back: bool = True) -> Optional[str]:
     """Prompt user to select from options using questionary or fallback."""
     # Try to initialize questionary (lazy load)
     _init_questionary()
-    
+
     if QUESTIONARY_AVAILABLE:
         # Use questionary for better UX
         try:
             import questionary
-            
+
             choices = options.copy()
             if allow_back:
                 choices.append("← Back")
-            
+
             result = questionary.select(
                 message,
                 choices=choices,
@@ -266,7 +278,7 @@ def prompt_selection(options: List[str], message: str = "Select option",
                 use_arrow_keys=True,
                 use_shortcuts=True,
             ).ask()
-            
+
             if result == "← Back" or result is None:
                 return None
             return result
@@ -276,25 +288,25 @@ def prompt_selection(options: List[str], message: str = "Select option",
             # If questionary fails on Windows, fall back to number selection
             console.print(f"[{COLORS['dim']}]Note: Using fallback menu (questionary error: {e})[/{COLORS['dim']}]")
             pass  # Fall through to number-based selection
-    
+
     # Fallback to number-based selection
     console.print(f"\n[{COLORS['accent']}]{message}:[/{COLORS['accent']}]")
     for idx, option in enumerate(options, 1):
         console.print(f"  [{COLORS['accent']}][{idx}][/{COLORS['accent']}] {option}")
-    
+
     if allow_back:
         console.print(f"  [{COLORS['dim']}][0] ← Back[/{COLORS['dim']}]")
-    
+
     while True:
         try:
             choice = Prompt.ask(
                 f"[{COLORS['action']}]Enter choice[/{COLORS['action']}]",
                 default="0" if allow_back else "1"
             )
-            
+
             if choice == "0" and allow_back:
                 return None
-            
+
             idx = int(choice) - 1
             if 0 <= idx < len(options):
                 return options[idx]
@@ -318,14 +330,14 @@ def prompt_menu_choice(options: List[Tuple[str, str]], title: str) -> Optional[s
     """
     # Try arrow key navigation first
     _init_questionary()
-    
+
     if QUESTIONARY_AVAILABLE:
         try:
             import questionary
-            
+
             # Create choices with number prefix for clarity
             choices = [f"[{num}] {desc}" for num, desc in options]
-            
+
             result = questionary.select(
                 title,
                 choices=choices,
@@ -333,23 +345,23 @@ def prompt_menu_choice(options: List[Tuple[str, str]], title: str) -> Optional[s
                 use_arrow_keys=True,
                 qmark=">",
             ).ask()
-            
+
             if result is None:
                 return None
-            
+
             # Extract the description (remove "[X] " prefix)
             for num, desc in options:
                 if result == f"[{num}] {desc}":
                     return desc
-            
+
             return None
-            
+
         except (KeyboardInterrupt, EOFError):
             return None
         except Exception:
             # Fall through to number input
             pass
-    
+
     # Fallback: number input only
     while True:
         try:
@@ -357,31 +369,31 @@ def prompt_menu_choice(options: List[Tuple[str, str]], title: str) -> Optional[s
                 f"[{COLORS['action']}]Select option[/{COLORS['action']}]",
                 default="0"
             )
-            
+
             # Find matching option by number
             for num, desc in options:
                 if choice == num:
                     return desc
-            
+
             # Special case for exit/back
             if choice == "0":
                 for num, desc in options:
                     if num == "0":
                         return desc
                 return None
-            
+
             show_status("Invalid choice. Try again.", 'error')
-            
+
         except (KeyboardInterrupt, EOFError):
             return None
 
 
 def show_status_dashboard(state: MenuState):
     """Display a compact status dashboard."""
-    
+
     # Build status indicators
     status_items = []
-    
+
     # Host connection status
     if state.active_host:
         try:
@@ -392,13 +404,13 @@ def show_status_dashboard(state: MenuState):
             status_items.append(f"[{COLORS['success']}]●[/{COLORS['success']}] Host: {state.active_host}")
     else:
         status_items.append(f"[{COLORS['dim']}]○[/{COLORS['dim']}] Host: [dim]not set[/dim]")
-    
+
     # App status
     if state.active_app:
         status_items.append(f"[{COLORS['success']}]●[/{COLORS['success']}] App: {state.active_app}")
     else:
         status_items.append(f"[{COLORS['dim']}]○[/{COLORS['dim']}] App: [dim]not set[/dim]")
-    
+
     # Recent command
     recent = state.history.get_recent(1)
     if recent:
@@ -407,7 +419,7 @@ def show_status_dashboard(state: MenuState):
         status_color = COLORS['success'] if last_cmd['success'] else COLORS['error']
         desc = last_cmd['description'][:25] + "..." if len(last_cmd['description']) > 25 else last_cmd['description']
         status_items.append(f"[{status_color}]{status_icon}[/{status_color}] Last: {desc}")
-    
+
     # Print dashboard in a single line
     console.print(f"  {' │ '.join(status_items)}")
     console.print()
@@ -417,18 +429,18 @@ def show_main_menu(state: MenuState) -> Optional[str]:
     """Display main menu with three-pillar organization."""
     clear_screen()
     show_header(state)
-    
+
     # Optional: Show compact status dashboard
     show_status_dashboard(state)
 
     # Check if .navig/ directory exists in current directory
     from pathlib import Path
     navig_dir = Path.cwd() / ".navig"
-    
+
     # Three-pillar menu structure with visual separators
     # Note: questionary doesn't render Rich markup, so descriptions use plain parentheses
     console.print(f"[{COLORS['primary']}]━━━ SYSOPS (Infrastructure) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['primary']}]")
-    
+
     sysops_options = [
         ("1", "Host Management         (servers, SSH, discovery)"),
         ("2", "File Operations         (upload, download, browse)"),
@@ -438,9 +450,9 @@ def show_main_menu(state: MenuState) -> Optional[str]:
         ("6", "System Maintenance      (updates, health, services)"),
         ("7", "Monitoring & Security   (resources, firewall, audit)"),
     ]
-    
+
     console.print(f"\n[{COLORS['accent']}]━━━ DEVOPS (Applications) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['accent']}]")
-    
+
     devops_options = [
         ("A", "Application Management  (apps, configs, deploy)"),
         ("R", "Remote Execution        (run commands via SSH)"),
@@ -448,9 +460,9 @@ def show_main_menu(state: MenuState) -> Optional[str]:
         ("F", "Flow Automation         (workflows, templates)"),
         ("L", "Local Operations        (system info, network)"),
     ]
-    
+
     console.print(f"\n[{COLORS['info']}]━━━ LIFEOPS (Automation) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['info']}]")
-    
+
     lifeops_options = [
         ("G", "Agent & Gateway         (autonomous mode, 24/7)"),
         ("M", "MCP Server Management   (AI tool integrations)"),
@@ -458,7 +470,7 @@ def show_main_menu(state: MenuState) -> Optional[str]:
         ("W", "Wiki & Knowledge        (docs, search, RAG)"),
         ("B", "Backup & Config         (export, import, settings)"),
     ]
-    
+
     # DEV INTELLIGENCE section
     console.print(f"\n[{COLORS['secondary']}]━━━ DEV INTELLIGENCE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['secondary']}]")
 
@@ -469,21 +481,21 @@ def show_main_menu(state: MenuState) -> Optional[str]:
 
     # System options
     console.print(f"\n[{COLORS['dim']}]━━━ System ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['dim']}]")
-    
+
     system_options = [
         ("C", "Configuration           (settings, context)"),
         ("H", "Command History         (recent commands)"),
         ("?", "Quick Help              (keyboard shortcuts)"),
     ]
-    
+
     if not navig_dir.exists():
         system_options.append(("I", "Initialize (.navig/)    (project setup)"))
-    
+
     system_options.append(("0", "Exit"))
-    
+
     # Combine all options
     options = sysops_options + devops_options + lifeops_options + intel_options + system_options
-    
+
     # Map display labels to internal action names
     action_map = {
         "Host Management": "Host Management",
@@ -511,16 +523,16 @@ def show_main_menu(state: MenuState) -> Optional[str]:
         "Initialize (.navig/)": "Initialize App (.navig/)",
         "Exit": "exit",
     }
-    
+
     # Use arrow-key navigation
     selection = prompt_menu_choice(options, "NAVIG Command Center")
-    
+
     if selection is None:
         return "exit"
-    
+
     # Strip description in parentheses from selection (e.g., "Host Management (servers, SSH)" -> "Host Management")
     clean_selection = selection.split('(')[0].strip() if '(' in selection else selection
-    
+
     return action_map.get(clean_selection, clean_selection)
 
 
@@ -950,8 +962,12 @@ def show_monitoring_menu(state: MenuState, standalone: bool = False) -> bool:
                 return not standalone
 
             from navig.commands.monitoring import (
-                monitor_resources, monitor_disk, monitor_services,
-                monitor_network, health_check, generate_report
+                generate_report,
+                health_check,
+                monitor_disk,
+                monitor_network,
+                monitor_resources,
+                monitor_services,
             )
 
             if selection == "Resource Usage (CPU, RAM, Disk)":
@@ -1018,9 +1034,14 @@ def show_security_menu(state: MenuState, standalone: bool = False) -> bool:
                 return not standalone
 
             from navig.commands.security import (
-                firewall_status, firewall_add_rule, firewall_remove_rule,
-                fail2ban_status, fail2ban_unban, ssh_audit,
-                check_security_updates, security_scan
+                check_security_updates,
+                fail2ban_status,
+                fail2ban_unban,
+                firewall_add_rule,
+                firewall_remove_rule,
+                firewall_status,
+                security_scan,
+                ssh_audit,
             )
 
             if selection == "Firewall Status":
@@ -1182,44 +1203,44 @@ def show_command_history(state: MenuState) -> bool:
     """Display command history."""
     clear_screen()
     show_header(state)
-    
+
     recent = state.history.get_recent(10)
-    
+
     if not recent:
         show_status("No command history yet.", 'info')
         Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
         return True
-    
+
     # Create history table
     table = Table(
         title=f"[{COLORS['primary']}]Recent Commands[/{COLORS['primary']}]",
         box=box.ROUNDED,
         style=COLORS['secondary'],
     )
-    
+
     table.add_column("Time", style=COLORS['accent'], width=10)
     table.add_column("Command", style=COLORS['secondary'])
     table.add_column("Status", style=COLORS['info'], width=10)
-    
+
     for cmd in recent:
         timestamp = cmd['timestamp'].strftime("%H:%M:%S")
         status_icon = "[+]" if cmd['success'] else "[x]"
         status_color = COLORS['success'] if cmd['success'] else COLORS['error']
-        
+
         table.add_row(
             timestamp,
             cmd['description'],
             f"[{status_color}]{status_icon}[/{status_color}]"
         )
-    
+
     console.print(table)
     console.print()
-    
+
     # Option to clear history
     if Confirm.ask(f"[{COLORS['action']}]Clear history?[/{COLORS['action']}]", default=False):
         state.history.clear()
         show_status("History cleared.", 'success')
-    
+
     Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
     return True
 
@@ -1243,16 +1264,16 @@ def execute_host_list(state: MenuState):
 def execute_host_switch(state: MenuState):
     """Switch active host."""
     hosts = state.config_manager.list_hosts()
-    
+
     if not hosts:
         show_status("No hosts configured.", 'warning')
         return
-    
+
     # Show current active host
     current = state.active_host
     if current:
         show_status(f"Current active host: {current}", 'info')
-    
+
     selection = prompt_selection(hosts, "Select host to activate")
 
     if selection:
@@ -1290,19 +1311,19 @@ def execute_host_add(state: MenuState):
 def execute_discover_local(state: MenuState):
     """Discover and configure local development environment."""
     from navig.commands.local_discovery import discover_local_host
-    
+
     show_status("Discovering local development environment...", 'action')
     console.print()
-    
+
     # Prompt for host name
     name = Prompt.ask(
         f"[{COLORS['action']}]Host name for local machine[/{COLORS['action']}]",
         default="localhost"
     )
-    
+
     if not name:
         name = "localhost"
-    
+
     try:
         result = discover_local_host(
             name=name,
@@ -1310,7 +1331,7 @@ def execute_discover_local(state: MenuState):
             set_active=True,
             progress=True
         )
-        
+
         if result:
             state.history.add(
                 f"navig host discover-local --name {name}",
@@ -1507,13 +1528,13 @@ def execute_host_info(state: MenuState):
 def execute_host_remove(state: MenuState):
     """Remove host configuration."""
     hosts = state.config_manager.list_hosts()
-    
+
     if not hosts:
         show_status("No hosts configured.", 'warning')
         return
-    
+
     selection = prompt_selection(hosts, "Select host to remove")
-    
+
     if selection:
         if Confirm.ask(f"[{COLORS['warning']}]Remove host '{selection}'? This cannot be undone.[/{COLORS['warning']}]", default=False):
             try:
@@ -1532,20 +1553,21 @@ def execute_host_remove(state: MenuState):
 
 def execute_app_init(state: MenuState):
     """Initialize app-specific .navig/ directory."""
-    from navig.commands.init import init_app
     from pathlib import Path
-    
+
+    from navig.commands.init import init_app
+
     # Show current directory
     current_dir = Path.cwd()
     show_status(f"Current directory: {current_dir}", 'info')
-    
+
     # Check if .navig already exists
     navig_dir = current_dir / ".navig"
     if navig_dir.exists():
         show_status("App already initialized (.navig/ exists)", 'warning')
         Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
         return
-    
+
     # Confirm initialization
     console.print()
     console.print(f"[{COLORS['info']}]This will create a .navig/ directory with:[/{COLORS['info']}]")
@@ -1556,7 +1578,7 @@ def execute_app_init(state: MenuState):
     console.print()
     console.print(f"[{COLORS['dim']}]App-specific configs take precedence over global ~/.navig/ configs.[/{COLORS['dim']}]")
     console.print()
-    
+
     if Confirm.ask(f"[{COLORS['action']}]Initialize NAVIG here?[/{COLORS['action']}]"):
         # Smart prompt for copying global configs - only ask if configs exist
         copy_global = False
@@ -1590,7 +1612,7 @@ def execute_app_init(state: MenuState):
             raise
     else:
         show_status("Initialization cancelled.", 'info')
-    
+
     Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
 
 
@@ -1778,11 +1800,11 @@ def execute_app_info(state: MenuState):
 def execute_app_search(state: MenuState):
     """Search for apps."""
     query = Prompt.ask(f"[{COLORS['action']}]Search query[/{COLORS['action']}]")
-    
+
     if not query:
         show_status("Search query cannot be empty.", 'error')
         return
-    
+
     try:
         app.search_apps({'query': query})
         state.history.add(f"navig app search {query}", f"Search apps: {query}", True)
@@ -1796,18 +1818,18 @@ def execute_app_remove(state: MenuState):
     """Remove app."""
     all_apps = []
     hosts = state.config_manager.list_hosts()
-    
+
     for host_name in hosts:
         apps = state.config_manager.list_apps(host_name)
         for app_item in apps:
             all_apps.append(f"{host_name}/{app_item}")
-    
+
     if not all_apps:
         show_status("No apps configured.", 'warning')
         return
-    
+
     selection = prompt_selection(all_apps, "Select app to remove")
-    
+
     if selection:
         # Parse host/app
         host_name = selection.split('/', 1)[0] if '/' in selection else None
@@ -1850,11 +1872,11 @@ def execute_app_migrate(state: MenuState):
 def execute_sql_query(state: MenuState):
     """Execute SQL query."""
     query = Prompt.ask(f"[{COLORS['action']}]SQL query[/{COLORS['action']}]", default="SELECT VERSION()")
-    
+
     if not query:
         show_status("Query cannot be empty.", 'error')
         return
-    
+
     # Warn about destructive operations
     dangerous_keywords = ['DROP', 'TRUNCATE', 'DELETE FROM', 'ALTER TABLE', 'DROP DATABASE']
     if any(keyword in query.upper() for keyword in dangerous_keywords):
@@ -1864,11 +1886,11 @@ def execute_sql_query(state: MenuState):
             title="[bold red]⚠ WARNING[/bold red]",
             box=box.DOUBLE_EDGE,
         ))
-        
+
         if not Confirm.ask(f"[{COLORS['error']}]Execute this query?[/{COLORS['error']}]", default=False):
             show_status("Query cancelled.", 'info')
             return
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Executing query...[/{COLORS['accent']}]", spinner="dots"):
             database.execute_sql({'query': query})
@@ -1883,15 +1905,15 @@ def execute_sql_query(state: MenuState):
 def execute_sql_file(state: MenuState):
     """Execute SQL file."""
     filepath = Prompt.ask(f"[{COLORS['action']}]SQL file path[/{COLORS['action']}]")
-    
+
     if not filepath:
         show_status("File path cannot be empty.", 'error')
         return
-    
+
     if not Path(filepath).exists():
         show_status(f"File not found: {filepath}", 'error')
         return
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Executing SQL file...[/{COLORS['accent']}]", spinner="dots"):
             database.execute_sql_file({'file': filepath})
@@ -1909,7 +1931,7 @@ def execute_db_backup(state: MenuState):
         f"[{COLORS['action']}]Backup path (press Enter for default)[/{COLORS['action']}]",
         default=""
     )
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Creating backup...[/{COLORS['accent']}]", spinner="dots"):
             options = {'path': backup_path} if backup_path else {}
@@ -1925,15 +1947,15 @@ def execute_db_backup(state: MenuState):
 def execute_db_restore(state: MenuState):
     """Restore database from backup."""
     backup_path = Prompt.ask(f"[{COLORS['action']}]Backup file path[/{COLORS['action']}]")
-    
+
     if not backup_path:
         show_status("File path cannot be empty.", 'error')
         return
-    
+
     if not Path(backup_path).exists():
         show_status(f"Backup file not found: {backup_path}", 'error')
         return
-    
+
     # Confirm destructive operation
     console.print(Panel(
         f"[{COLORS['warning']}]This will overwrite the current database![/{COLORS['warning']}]\n"
@@ -1941,11 +1963,11 @@ def execute_db_restore(state: MenuState):
         title="[bold red]⚠ DESTRUCTIVE OPERATION[/bold red]",
         box=box.DOUBLE_EDGE,
     ))
-    
+
     if not Confirm.ask(f"[{COLORS['error']}]Restore from this backup?[/{COLORS['error']}]", default=False):
         show_status("Restore cancelled.", 'info')
         return
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Restoring database...[/{COLORS['accent']}]", spinner="dots"):
             database.restore_database({'file': backup_path, 'yes': False})
@@ -1960,38 +1982,38 @@ def execute_db_restore(state: MenuState):
 def execute_list_backups(state: MenuState):
     """List available backups."""
     backups_dir = state.config_manager.backups_dir
-    
+
     if not backups_dir.exists():
         show_status("No backups directory found.", 'warning')
         return
-    
+
     backups = list(backups_dir.glob("*.sql*"))
-    
+
     if not backups:
         show_status("No backups found.", 'info')
         return
-    
+
     # Create backups table
     table = Table(
         title=f"[{COLORS['primary']}]Available Backups[/{COLORS['primary']}]",
         box=box.ROUNDED,
         style=COLORS['secondary'],
     )
-    
+
     table.add_column("Filename", style=COLORS['secondary'])
     table.add_column("Size", style=COLORS['accent'], justify="right")
     table.add_column("Modified", style=COLORS['info'])
-    
+
     for backup in sorted(backups, key=lambda x: x.stat().st_mtime, reverse=True):
         size_mb = backup.stat().st_size / (1024 * 1024)
         modified = datetime.fromtimestamp(backup.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        
+
         table.add_row(
             backup.name,
             f"{size_mb:.2f} MB",
             modified
         )
-    
+
     console.print(table)
     state.history.add("navig list-backups", "List backups", True)
 
@@ -2086,7 +2108,7 @@ def execute_webserver_reload(state: MenuState):
     if not Confirm.ask(f"[{COLORS['warning']}]Reload webserver?[/{COLORS['warning']}]", default=False):
         show_status("Reload cancelled.", 'info')
         return
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Reloading webserver...[/{COLORS['accent']}]", spinner="dots"):
             webserver.reload_webserver({'host': state.active_host, 'app': state.active_app})
@@ -2103,7 +2125,7 @@ def execute_webserver_restart(state: MenuState):
     if not Confirm.ask(f"[{COLORS['error']}]Restart webserver? (may cause brief downtime)[/{COLORS['error']}]", default=False):
         show_status("Restart cancelled.", 'info')
         return
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Restarting webserver...[/{COLORS['accent']}]", spinner="dots"):
             webserver.restart_webserver({'host': state.active_host, 'app': state.active_app})
@@ -2118,7 +2140,7 @@ def execute_webserver_restart(state: MenuState):
 def execute_webserver_access_logs(state: MenuState):
     """View webserver access logs."""
     lines = Prompt.ask(f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50")
-    
+
     try:
         webserver.view_logs({'host': state.active_host, 'app': state.active_app, 'type': 'access', 'lines': int(lines)})
         state.history.add(f"navig webserver logs --type access --lines {lines}", "View access logs", True)
@@ -2131,7 +2153,7 @@ def execute_webserver_access_logs(state: MenuState):
 def execute_webserver_error_logs(state: MenuState):
     """View webserver error logs."""
     lines = Prompt.ask(f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50")
-    
+
     try:
         webserver.view_logs({'host': state.active_host, 'app': state.active_app, 'type': 'error', 'lines': int(lines)})
         state.history.add(f"navig webserver logs --type error --lines {lines}", "View error logs", True)
@@ -2148,18 +2170,18 @@ def execute_webserver_error_logs(state: MenuState):
 def execute_file_upload(state: MenuState):
     """Upload a file to the server."""
     local_path = Prompt.ask(f"[{COLORS['action']}]Local file path[/{COLORS['action']}]")
-    
+
     if not local_path:
         show_status("Local path cannot be empty.", 'error')
         return
-    
+
     local_file = Path(local_path)
     if not local_file.exists():
         show_status(f"File not found: {local_path}", 'error')
         return
-    
+
     remote_path = Prompt.ask(f"[{COLORS['action']}]Remote path (press Enter for auto)[/{COLORS['action']}]", default="")
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Uploading file...[/{COLORS['accent']}]", spinner="dots"):
             files.upload_file_cmd(local_file, remote_path if remote_path else None, {'app': state.active_app})
@@ -2174,13 +2196,13 @@ def execute_file_upload(state: MenuState):
 def execute_file_download(state: MenuState):
     """Download a file from the server."""
     remote_path = Prompt.ask(f"[{COLORS['action']}]Remote file path[/{COLORS['action']}]")
-    
+
     if not remote_path:
         show_status("Remote path cannot be empty.", 'error')
         return
-    
+
     local_path = Prompt.ask(f"[{COLORS['action']}]Local path (press Enter for current dir)[/{COLORS['action']}]", default="")
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Downloading file...[/{COLORS['accent']}]", spinner="dots"):
             files.download_file_cmd(remote_path, Path(local_path) if local_path else None, {'app': state.active_app})
@@ -2195,7 +2217,7 @@ def execute_file_download(state: MenuState):
 def execute_file_list(state: MenuState):
     """List remote directory contents."""
     remote_path = Prompt.ask(f"[{COLORS['action']}]Remote path[/{COLORS['action']}]", default="/var/www")
-    
+
     try:
         files.list_remote_cmd(remote_path, {'app': state.active_app})
         state.history.add(f"navig list {remote_path}", f"List {remote_path}", True)
@@ -2208,11 +2230,11 @@ def execute_file_list(state: MenuState):
 def execute_file_mkdir(state: MenuState):
     """Create remote directory."""
     remote_path = Prompt.ask(f"[{COLORS['action']}]Remote directory path[/{COLORS['action']}]")
-    
+
     if not remote_path:
         show_status("Path cannot be empty.", 'error')
         return
-    
+
     try:
         files.mkdir_cmd(remote_path, {'app': state.active_app, 'parents': True})
         show_status(f"Directory created: {remote_path}", 'success')
@@ -2226,15 +2248,15 @@ def execute_file_mkdir(state: MenuState):
 def execute_file_delete(state: MenuState):
     """Delete remote file or directory."""
     remote_path = Prompt.ask(f"[{COLORS['action']}]Remote path to delete[/{COLORS['action']}]")
-    
+
     if not remote_path:
         show_status("Path cannot be empty.", 'error')
         return
-    
+
     if not Confirm.ask(f"[{COLORS['error']}]Delete {remote_path}? This cannot be undone.[/{COLORS['error']}]", default=False):
         show_status("Deletion cancelled.", 'info')
         return
-    
+
     try:
         files.delete_cmd(remote_path, {'app': state.active_app, 'recursive': True, 'yes': True})
         show_status(f"Deleted: {remote_path}", 'success')
@@ -2254,7 +2276,7 @@ def execute_maintenance_update(state: MenuState):
     if not Confirm.ask(f"[{COLORS['warning']}]Update system packages?[/{COLORS['warning']}]", default=False):
         show_status("Update cancelled.", 'info')
         return
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Updating packages...[/{COLORS['accent']}]", spinner="dots"):
             maintenance.update_packages({})
@@ -2304,7 +2326,7 @@ def execute_maintenance_disk(state: MenuState):
 def execute_maintenance_service_status(state: MenuState):
     """Check service status."""
     service = Prompt.ask(f"[{COLORS['action']}]Service name[/{COLORS['action']}]", default="nginx")
-    
+
     try:
         monitoring.service_status({'host': state.active_host, 'service': service})
         state.history.add(f"navig service-status {service}", f"Check {service} status", True)
@@ -2317,11 +2339,11 @@ def execute_maintenance_service_status(state: MenuState):
 def execute_maintenance_restart_service(state: MenuState):
     """Restart a service."""
     service = Prompt.ask(f"[{COLORS['action']}]Service name[/{COLORS['action']}]", default="nginx")
-    
+
     if not Confirm.ask(f"[{COLORS['warning']}]Restart {service}?[/{COLORS['warning']}]", default=False):
         show_status("Restart cancelled.", 'info')
         return
-    
+
     try:
         with console.status(f"[{COLORS['accent']}]Restarting {service}...[/{COLORS['accent']}]", spinner="dots"):
             maintenance.restart_service({'host': state.active_host, 'service': service})
@@ -2340,7 +2362,7 @@ def execute_maintenance_restart_service(state: MenuState):
 def execute_config_show(state: MenuState):
     """Show current configuration."""
     from navig.commands import config as config_cmd
-    
+
     try:
         config_cmd.show_config({})
         state.history.add("navig config show", "Show configuration", True)
@@ -2353,7 +2375,7 @@ def execute_config_show(state: MenuState):
 def execute_config_edit(state: MenuState):
     """Edit global configuration."""
     from navig.commands import config as config_cmd
-    
+
     try:
         config_cmd.edit_config({})
         show_status("Configuration editor opened.", 'success')
@@ -2380,7 +2402,7 @@ def execute_config_clear_context(state: MenuState):
     if not Confirm.ask(f"[{COLORS['warning']}]Clear active host and app?[/{COLORS['warning']}]", default=False):
         show_status("Cancelled.", 'info')
         return
-    
+
     try:
         state.config_manager.set_active_host(None)
         state.config_manager.set_active_app(None)
@@ -2402,12 +2424,12 @@ def execute_tunnel_menu(state: MenuState):
         ("3", "Tunnel Status"),
         ("0", "Back"),
     ]
-    
+
     selection = prompt_menu_choice(options, "Tunnel action")
-    
+
     if selection == "Back" or selection is None:
         return
-    
+
     try:
         if selection == "Start Tunnel":
             with console.status(f"[{COLORS['accent']}]Starting tunnel...[/{COLORS['accent']}]", spinner="dots"):
@@ -2813,11 +2835,19 @@ def show_monitoring_security_menu(state: MenuState, standalone: bool = False) ->
                 return not standalone
 
             from navig.commands.monitoring import (
-                monitor_resources, monitor_disk, monitor_services,
-                monitor_network, health_check, generate_report
+                generate_report,
+                health_check,
+                monitor_disk,
+                monitor_network,
+                monitor_resources,
+                monitor_services,
             )
             from navig.commands.security import (
-                firewall_status, firewall_add_rule, fail2ban_status, security_scan, ssh_audit
+                fail2ban_status,
+                firewall_add_rule,
+                firewall_status,
+                security_scan,
+                ssh_audit,
             )
 
             if selection == "Resource usage (CPU, RAM, Disk)":
@@ -2872,7 +2902,7 @@ def show_quick_help(state: MenuState):
     """Display quick keyboard shortcuts help."""
     clear_screen()
     show_header(state)
-    
+
     help_content = f"""
 [{COLORS['primary']}]━━━ NAVIG Keyboard Shortcuts ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['primary']}]
 
@@ -2926,32 +2956,32 @@ def launch_menu(options: Dict[str, Any]):
         print("\nOr install all dependencies:")
         print("  pip install -r requirements.txt")
         sys.exit(1)
-    
+
     # Check terminal size
     if console.width < 60 or console.height < 20:
         console.print(f"[{COLORS['warning']}]⚠ Warning: Terminal size too small.[/{COLORS['warning']}]")
         console.print(f"Minimum recommended: 60x20, current: {console.width}x{console.height}")
         console.print()
-        
+
         if not Confirm.ask("Continue anyway?", default=False):
             sys.exit(0)
-    
+
     # Initialize state
     try:
         config_manager = get_config_manager()
         state = MenuState(config_manager)
-        
+
         # Main menu loop
         while True:
             try:
                 selection = show_main_menu(state)
-                
+
                 if selection == "exit" or selection is None:
                     clear_screen()
                     console.print(f"\n[{COLORS['primary']}][*] Exiting NAVIG interactive menu.[/{COLORS['primary']}]")
                     console.print(f"[{COLORS['dim']}]    The void sees nothing we don't want it to see.[/{COLORS['dim']}]\n")
                     sys.exit(0)
-                
+
                 # Route to submenus based on three-pillar organization
                 try:
                     # ===== SYSOPS (Infrastructure) =====
@@ -2969,7 +2999,7 @@ def launch_menu(options: Dict[str, Any]):
                         show_maintenance_menu(state)
                     elif selection == "Monitoring & Security":
                         show_monitoring_security_menu(state)
-                    
+
                     # ===== DEVOPS (Applications) =====
                     elif selection == "App Management":
                         show_app_management_menu(state)
@@ -2981,7 +3011,7 @@ def launch_menu(options: Dict[str, Any]):
                         show_flow_menu(state)
                     elif selection == "Local Operations":
                         show_local_menu(state)
-                    
+
                     # ===== LIFEOPS (Automation) =====
                     elif selection == "Agent & Gateway":
                         show_agent_gateway_menu(state)
@@ -3009,19 +3039,19 @@ def launch_menu(options: Dict[str, Any]):
                         show_quick_help(state)
                     elif selection == "Initialize App (.navig/)":
                         execute_app_init(state)
-                        
+
                 except KeyboardInterrupt:
                     # Ctrl+C in submenu returns to main menu
                     console.print(f"\n[{COLORS['info']}][~] Returning to main menu...[/{COLORS['info']}]")
                     continue
-                
+
             except KeyboardInterrupt:
                 # Ctrl+C on main menu exits completely
                 clear_screen()
                 console.print(f"\n[{COLORS['primary']}][*] Exiting NAVIG interactive menu.[/{COLORS['primary']}]")
                 console.print(f"[{COLORS['dim']}]    The void sees nothing we don't want it to see.[/{COLORS['dim']}]\n")
                 sys.exit(0)
-    
+
     except Exception as e:
         console.print(f"\n[{COLORS['error']}][x] Fatal error: {e}[/{COLORS['error']}]")
         console.print(f"[{COLORS['dim']}]Check ~/.navig/navig.log for details.[/{COLORS['dim']}]\n")
@@ -3057,12 +3087,12 @@ def _launch_copilot_sessions(state: MenuState) -> None:
     console.print(f"[{COLORS['primary']}]━━━ Copilot Sessions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['primary']}]")
     console.print()
     console.print(f"[{COLORS['dim']}]  Commands:[/]")
-    console.print(f"  [bright_cyan]navig copilot sessions[/]          — list all sessions")
-    console.print(f"  [bright_cyan]navig copilot sessions stats[/]    — storage statistics")
-    console.print(f"  [bright_cyan]navig copilot sessions search Q[/] — full-text search")
-    console.print(f"  [bright_cyan]navig copilot sessions view ID[/]  — inspect a session")
-    console.print(f"  [bright_cyan]navig copilot sessions export[/]   — export to JSON/MD/CSV")
-    console.print(f"  [bright_cyan]navig copilot sessions delete ID[/]— delete a session")
+    console.print("  [bright_cyan]navig copilot sessions[/]          — list all sessions")
+    console.print("  [bright_cyan]navig copilot sessions stats[/]    — storage statistics")
+    console.print("  [bright_cyan]navig copilot sessions search Q[/] — full-text search")
+    console.print("  [bright_cyan]navig copilot sessions view ID[/]  — inspect a session")
+    console.print("  [bright_cyan]navig copilot sessions export[/]   — export to JSON/MD/CSV")
+    console.print("  [bright_cyan]navig copilot sessions delete ID[/]— delete a session")
     console.print()
 
     options = [
@@ -3429,20 +3459,20 @@ def execute_wiki_search(state: MenuState):
     """Quick search across knowledge base (wiki)."""
     clear_screen()
     show_header(state)
-    
+
     try:
         from navig.commands import wiki as wiki_cmd
-        
+
         console.print(f"\n[{COLORS['primary']}]🔍 Search Knowledge Base[/{COLORS['primary']}]\n")
         term = Prompt.ask(f"[{COLORS['action']}]Search term[/{COLORS['action']}]")
-        
+
         if term:
             wiki_cmd.search_wiki(term)
             state.history.add(f"navig wiki search '{term}'", "Wiki search", True)
-        
+
         console.print()
         Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
-    
+
     except Exception as e:
         show_status(f"Search failed: {e}", 'error')
         Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")

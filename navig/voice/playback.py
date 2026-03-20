@@ -20,14 +20,10 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import os
 import platform
-import subprocess
-import sys
 from enum import Enum
 from pathlib import Path
 from typing import Optional
-
 
 # =============================================================================
 # Sound catalog — maps names to bundled asset files

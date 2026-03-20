@@ -22,28 +22,29 @@ def ahk_processes(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all running processes."""
+    import json
+
     from rich.console import Console
     from rich.table import Table
-    import json
-    
+
     adapter = _get_adapter()
     if not adapter: return
-    
+
     processes = adapter.get_processes()
-    
+
     if filter_name:
         processes = [p for p in processes if filter_name.lower() in p.get('name', '').lower()]
-    
+
     if json_output:
         print(json.dumps(processes, indent=2))
         return
-    
+
     console = Console()
     table = Table(title="Running Processes")
     table.add_column("PID", style="cyan")
     table.add_column("Name", style="green")
     table.add_column("Memory (MB)", style="yellow")
-    
+
     for proc in sorted(processes, key=lambda x: x.get('memory', 0), reverse=True)[:50]:
         mem_mb = proc.get('memory', 0) / (1024 * 1024)
         table.add_row(
@@ -51,7 +52,7 @@ def ahk_processes(
             proc.get('name', ''),
             f"{mem_mb:.1f}"
         )
-    
+
     console.print(table)
 
 
@@ -63,14 +64,14 @@ def ahk_kill(
     """Kill a process by name or PID."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     if not force:
         ch.warning(f"About to kill process: {identifier}")
         import typer
         if not typer.confirm("Are you sure?"):
             ch.info("Cancelled")
             return
-    
+
     result = adapter.kill_process(identifier)
     if result.success:
         ch.success(f"Killed process: {identifier}")
@@ -87,7 +88,7 @@ def ahk_start(
     """Start a new process."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     result = adapter.start_process(executable, args, wait)
     if result.success:
         ch.success(f"Started: {executable}")
@@ -103,19 +104,20 @@ def ahk_monitors(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all connected monitors."""
+    import json
+
     from rich.console import Console
     from rich.table import Table
-    import json
-    
+
     adapter = _get_adapter()
     if not adapter: return
-    
+
     monitors = adapter.get_monitors()
-    
+
     if json_output:
         print(json.dumps(monitors, indent=2))
         return
-    
+
     console = Console()
     table = Table(title="Connected Monitors")
     table.add_column("#", style="cyan")
@@ -123,13 +125,13 @@ def ahk_monitors(
     table.add_column("Position", style="yellow")
     table.add_column("Work Area", style="blue")
     table.add_column("Primary", style="magenta")
-    
+
     for mon in monitors:
         resolution = f"{mon['width']}x{mon['height']}"
         position = f"({mon['left']}, {mon['top']})"
         work_area = f"{mon['work_width']}x{mon['work_height']}"
         primary = "✓" if mon['primary'] else ""
-        
+
         table.add_row(
             str(mon['index']),
             resolution,
@@ -137,7 +139,7 @@ def ahk_monitors(
             work_area,
             primary
         )
-    
+
     console.print(table)
 
 
@@ -149,7 +151,7 @@ def ahk_move_to_monitor(
     """Move window to specific monitor."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     result = adapter.move_window_to_monitor(window, monitor)
     if result.success:
         ch.success(f"Moved '{window}' to monitor {monitor}")
@@ -168,7 +170,7 @@ def ahk_transparency(
     """Set window transparency."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     result = adapter.set_window_transparency(window, opacity)
     if result.success:
         ch.success(f"Set '{window}' opacity to {opacity}")
@@ -182,32 +184,33 @@ def ahk_window_state(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Get detailed window state."""
+    import json
+
     from rich.console import Console
     from rich.table import Table
-    import json
-    
+
     adapter = _get_adapter()
     if not adapter: return
-    
+
     state = adapter.get_window_state(window)
-    
+
     if json_output:
         print(json.dumps(state, indent=2))
         return
-    
+
     console = Console()
-    
+
     if not state.get('exists'):
         ch.error(f"Window not found: {window}")
         return
-    
+
     table = Table(title=f"State: {window}")
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="green")
-    
+
     for key, value in state.items():
         table.add_row(key, "✓ Yes" if value else "✗ No")
-    
+
     console.print(table)
 
 
@@ -216,23 +219,24 @@ def ahk_active_window(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Get currently active window."""
+    import json
+
     from rich.console import Console
     from rich.panel import Panel
-    import json
-    
+
     adapter = _get_adapter()
     if not adapter: return
-    
+
     window = adapter.get_active_window()
-    
+
     if not window:
         ch.error("No active window")
         return
-    
+
     if json_output:
         print(json.dumps(window.to_dict(), indent=2))
         return
-    
+
     console = Console()
     info = f"""Title: {window.title}
 Class: {window.class_name}
@@ -240,7 +244,7 @@ PID: {window.pid}
 Position: ({window.x}, {window.y})
 Size: {window.width}x{window.height}
 Handle: {window.id}"""
-    
+
     console.print(Panel(info, title="Active Window", border_style="green"))
 
 
@@ -251,31 +255,32 @@ def ahk_find(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Find windows matching criteria."""
+    import json
+
     from rich.console import Console
     from rich.table import Table
-    import json
-    
+
     adapter = _get_adapter()
     if not adapter: return
-    
+
     windows = adapter.find_windows(title, class_name)
-    
+
     if json_output:
         print(json.dumps([w.to_dict() for w in windows], indent=2))
         return
-    
+
     console = Console()
-    
+
     if not windows:
         ch.warning("No windows found")
         return
-    
+
     table = Table(title=f"Found {len(windows)} window(s)")
     table.add_column("Title", style="cyan")
     table.add_column("Class", style="green")
     table.add_column("PID", style="yellow")
     table.add_column("Size", style="blue")
-    
+
     for win in windows:
         table.add_row(
             win.title[:50],
@@ -283,7 +288,7 @@ def ahk_find(
             str(win.pid),
             f"{win.width}x{win.height}"
         )
-    
+
     console.print(table)
 
 
@@ -299,7 +304,7 @@ def ahk_notify(
     """Show Windows notification."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     result = adapter.show_notification(title, message, duration)
     if result.success:
         ch.success("Notification shown")
@@ -317,7 +322,7 @@ def ahk_volume(
     """Get or set system volume."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     if level is None:
         # Get current volume
         vol = adapter.get_volume()
@@ -338,7 +343,7 @@ def ahk_mute(
     """Mute or unmute system audio."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     result = adapter.mute(not unmute)
     if result.success:
         status = "unmuted" if unmute else "muted"
@@ -352,7 +357,7 @@ def ahk_is_muted():
     """Check if system audio is muted."""
     adapter = _get_adapter()
     if not adapter: return
-    
+
     muted = adapter.is_muted()
     if muted:
         ch.info("🔇 System is muted")

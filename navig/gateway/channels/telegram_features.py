@@ -21,15 +21,15 @@ _audio_header_text: Callable[..., str] | None = None
 _settings_hub_text: Callable[..., str] | None = None
 try:
     from navig.gateway.channels.telegram_keyboards import (
-        ResponseKeyboardBuilder,
         CallbackHandler,
-        get_callback_store,
-        build_settings_keyboard,
+        ResponseKeyboardBuilder,
+        _audio_header_text,
+        _settings_header_text,
+        _settings_hub_text,
         build_audio_keyboard,
         build_settings_hub_keyboard,
-        _settings_header_text,
-        _audio_header_text,
-        _settings_hub_text,
+        build_settings_keyboard,
+        get_callback_store,
     )
     HAS_KEYBOARDS = True
 except ImportError:
@@ -41,9 +41,13 @@ _audio_screen_a_text: Callable[..., str] | None = None
 _load_audio_config: Callable[..., Any] | None = None
 try:
     from navig.gateway.channels.audio_menu import (
-        screen_a_keyboard as _audio_screen_a_kb,
-        screen_a_text as _audio_screen_a_text,
         load_config as _load_audio_config,
+    )
+    from navig.gateway.channels.audio_menu import (
+        screen_a_keyboard as _audio_screen_a_kb,
+    )
+    from navig.gateway.channels.audio_menu import (
+        screen_a_text as _audio_screen_a_text,
     )
     HAS_AUDIO_MENU = True
 except ImportError:
@@ -56,10 +60,10 @@ SessionManager: Any = None
 MentionGate: Any = None
 try:
     from navig.gateway.channels.telegram_sessions import (
-        get_session_manager,
-        get_mention_gate,
-        SessionManager,
         MentionGate,
+        SessionManager,
+        get_mention_gate,
+        get_session_manager,
     )
     HAS_SESSIONS = True
 except ImportError:
@@ -97,9 +101,9 @@ extract_url: Callable[..., Any] | None = None
 try:
     from navig.gateway.channels.telegram_mode_classifier import (
         classify_mode,
+        extract_url,
         mode_to_llm_tier,
         select_tools_for_text,
-        extract_url,
     )
     HAS_CLASSIFIER = True
 except ImportError:
@@ -107,8 +111,12 @@ except ImportError:
 
 # Voice STT/TTS pipeline
 try:
-    from navig.voice.stt import STT as _STT, STTProvider as _STTProvider, STTConfig as _STTConfig
-    from navig.voice.tts import TTS as _TTS, TTSProvider as _TTSProvider, TTSConfig as _TTSConfig
+    from navig.voice.stt import STT as _STT
+    from navig.voice.stt import STTConfig as _STTConfig
+    from navig.voice.stt import STTProvider as _STTProvider
+    from navig.voice.tts import TTS as _TTS
+    from navig.voice.tts import TTSConfig as _TTSConfig
+    from navig.voice.tts import TTSProvider as _TTSProvider
     HAS_VOICE = True
 except ImportError:
     _STT = None

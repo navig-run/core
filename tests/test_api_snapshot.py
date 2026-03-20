@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for Section 18 — JSON API & Memory Integration.
 
 Covers:
@@ -758,7 +758,7 @@ class TestApiPackRegistration:
         from navig.tools.router import ToolDomain, ToolRegistry
 
         registry = ToolRegistry()
-        from navig.tools.packs.api_pack import register_tools
+        from navig.tools.domains.api_pack import register_tools
         register_tools(registry)
 
         expected_names = [
@@ -777,7 +777,7 @@ class TestApiPackRegistration:
         from navig.tools.router import ToolDomain, ToolRegistry
 
         registry = ToolRegistry()
-        from navig.tools.packs.api_pack import register_tools
+        from navig.tools.domains.api_pack import register_tools
         register_tools(registry)
 
         web_tools = ["web.api.get_json", "web.api.post_json"]
@@ -792,7 +792,7 @@ class TestApiPackRegistration:
 
     def test_infra_node_status_handler(self):
         """infra.metrics.node_status returns ApiToolResult-compatible dict."""
-        from navig.tools.packs.api_pack import _infra_node_status
+        from navig.tools.domains.api_pack import _infra_node_status
 
         result = _infra_node_status()
         assert result["status"] == "ok"

@@ -30,16 +30,15 @@ from __future__ import annotations
 
 import asyncio
 import re
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from loguru import logger
 
 if TYPE_CHECKING:
-    from navig.gateway.channels.telegram import TelegramChannel
+    pass
 
 # ---------------------------------------------------------------------------
 # Failure taxonomy
@@ -138,7 +137,6 @@ class HealEvent:
 
 # Re-export HealResult from ssh_healer so callers can import from one place
 from navig.selfheal.ssh_healer import HealResult  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Classifier — pure function, no I/O
@@ -261,7 +259,7 @@ def detect_failure_in_response(
 
     matched = any(pat in response for pat in _SSH_ERROR_PATTERNS)
     exit_code = _exit_code_from_response(response)
-    
+
     # Trigger autoheal if explicit ssh failure OR non-zero exit OR generic command failed
     has_failed = "Command failed" in response or "command not found" in response or "Permission denied" in response
     if not (matched or exit_code != 0 or has_failed):
@@ -744,8 +742,8 @@ class AutoHealMixin:
     ) -> List[List[Dict[str, str]]]:
         """Build the 3-button heal keyboard using the CallbackStore pattern."""
         from navig.gateway.channels.telegram_keyboards import (
-            _short_hash,
             CallbackEntry,
+            _short_hash,
             get_callback_store,
         )
 

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import typer
 
+from navig.cli._callbacks import show_subcommand_help
 from navig.deprecation import deprecation_warning
 from navig.lazy_loader import lazy_import
-from navig.cli._callbacks import show_subcommand_help
 
 ch = lazy_import("navig.console_helper")
 

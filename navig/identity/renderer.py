@@ -200,7 +200,7 @@ def render_sigil_card(entity: "NaviEntity") -> None:
 def _render_sigil_plain(entity: "NaviEntity") -> None:
     from navig.identity.entity import generate_machine_name
     node_id = "NODE-" + entity.seed[:4].upper()
-    print(f"\n  GENESIS RECORD")
+    print("\n  GENESIS RECORD")
     print(f"  {node_id}  ·  {generate_machine_name(entity.seed)}")
     print()
     for row in entity.sigil_matrix:

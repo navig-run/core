@@ -30,13 +30,13 @@ Usage:
 """
 
 from .core import CredentialsVault
+from .secret_str import SecretStr
 from .types import (
     Credential,
     CredentialInfo,
     CredentialType,
     TestResult,
 )
-from .secret_str import SecretStr
 
 __all__ = [
     "CredentialsVault",

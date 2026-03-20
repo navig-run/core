@@ -13,9 +13,9 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 from enum import Enum
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
 
@@ -43,7 +43,7 @@ class SystemEvent:
     timestamp: datetime
     processed: bool = False
     error: Optional[str] = None
-    
+
     def to_dict(self) -> dict:
         return {
             'id': self.id,
@@ -54,7 +54,7 @@ class SystemEvent:
             'processed': self.processed,
             'error': self.error,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'SystemEvent':
         return cls(
@@ -82,7 +82,7 @@ class SystemEventQueue:
     - Subscription model
     - Event history
     """
-    
+
     def __init__(
         self,
         storage_path: Path,
@@ -90,79 +90,79 @@ class SystemEventQueue:
     ):
         self.storage_path = storage_path
         self.max_history = max_history
-        
+
         # Event queue (priority queue simulation)
         self._queue: asyncio.Queue = asyncio.Queue()
-        
+
         # Pending events (not yet processed)
         self._pending: Dict[str, SystemEvent] = {}
-        
+
         # Event history
         self._history: List[SystemEvent] = []
-        
+
         # Subscribers by event type
         self._subscribers: Dict[str, List[EventHandler]] = {}
-        
+
         # Wildcard subscribers (receive all events)
         self._wildcard_subscribers: List[EventHandler] = []
-        
+
         # Running state
         self._running = False
         self._processor_task: Optional[asyncio.Task] = None
-        
+
         # Event counter for ID generation
         self._event_counter = 0
-        
+
         # Load persisted events
         self._load_events()
-    
+
     def _get_events_path(self) -> Path:
         return self.storage_path / 'events.json'
-    
+
     def _load_events(self) -> None:
         """Load pending events from disk."""
         events_path = self._get_events_path()
-        
+
         if events_path.exists():
             try:
                 data = json.loads(events_path.read_text())
-                
+
                 # Load pending events
                 for event_data in data.get('pending', []):
                     event = SystemEvent.from_dict(event_data)
                     self._pending[event.id] = event
-                
+
                 # Load counter
                 self._event_counter = data.get('counter', 0)
-                
+
                 logger.info(f"Loaded {len(self._pending)} pending events")
-                
+
             except Exception as e:
                 logger.error(f"Failed to load events: {e}")
-    
+
     def _save_events(self) -> None:
         """Save pending events to disk."""
         self.storage_path.mkdir(parents=True, exist_ok=True)
-        
+
         data = {
             'counter': self._event_counter,
             'pending': [e.to_dict() for e in self._pending.values()],
         }
-        
+
         self._get_events_path().write_text(json.dumps(data, indent=2))
-    
+
     def _generate_id(self) -> str:
         """Generate unique event ID."""
         self._event_counter += 1
         return f"evt_{self._event_counter}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
+
     async def start(self) -> None:
         """Start event processor."""
         if self._running:
             return
-        
+
         self._running = True
-        
+
         # Queue pending events for processing
         for event in sorted(
             self._pending.values(),
@@ -170,28 +170,28 @@ class SystemEventQueue:
             reverse=True  # Higher priority first
         ):
             await self._queue.put(event)
-        
+
         # Start processor
         self._processor_task = asyncio.create_task(self._process_loop())
-        
+
         logger.info("Event queue started")
-    
+
     async def stop(self) -> None:
         """Stop event processor."""
         self._running = False
-        
+
         if self._processor_task:
             self._processor_task.cancel()
             try:
                 await self._processor_task
             except asyncio.CancelledError:
                 pass
-        
+
         # Save pending events
         self._save_events()
-        
+
         logger.info("Event queue stopped")
-    
+
     async def emit(
         self,
         event_type: str,
@@ -216,18 +216,18 @@ class SystemEventQueue:
             priority=priority,
             timestamp=datetime.now(),
         )
-        
+
         # Add to pending
         self._pending[event.id] = event
         self._save_events()
-        
+
         # Queue for processing
         await self._queue.put(event)
-        
+
         logger.debug(f"Event emitted: {event_type} (id={event.id})")
-        
+
         return event.id
-    
+
     def subscribe(
         self,
         event_type: str,
@@ -246,9 +246,9 @@ class SystemEventQueue:
             if event_type not in self._subscribers:
                 self._subscribers[event_type] = []
             self._subscribers[event_type].append(handler)
-        
+
         logger.debug(f"Subscribed to event: {event_type}")
-    
+
     def unsubscribe(
         self,
         event_type: str,
@@ -262,7 +262,7 @@ class SystemEventQueue:
             if event_type in self._subscribers:
                 if handler in self._subscribers[event_type]:
                     self._subscribers[event_type].remove(handler)
-    
+
     async def _process_loop(self) -> None:
         """Main event processing loop."""
         while self._running:
@@ -275,27 +275,27 @@ class SystemEventQueue:
                     )
                 except asyncio.TimeoutError:
                     continue
-                
+
                 await self._process_event(event)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in event processor: {e}")
-    
+
     async def _process_event(self, event: SystemEvent) -> None:
         """Process a single event."""
         logger.debug(f"Processing event: {event.event_type} (id={event.id})")
-        
+
         handlers = []
-        
+
         # Get type-specific handlers
         if event.event_type in self._subscribers:
             handlers.extend(self._subscribers[event.event_type])
-        
+
         # Add wildcard handlers
         handlers.extend(self._wildcard_subscribers)
-        
+
         # Call all handlers
         errors = []
         for handler in handlers:
@@ -307,28 +307,28 @@ class SystemEventQueue:
             except Exception as e:
                 errors.append(str(e))
                 logger.error(f"Handler error for {event.event_type}: {e}")
-        
+
         # Mark as processed
         event.processed = True
         if errors:
             event.error = "; ".join(errors)
-        
+
         # Move to history
         if event.id in self._pending:
             del self._pending[event.id]
-        
+
         self._history.append(event)
-        
+
         # Trim history
         if len(self._history) > self.max_history:
             self._history = self._history[-self.max_history:]
-        
+
         self._save_events()
-    
+
     def get_pending(self) -> List[SystemEvent]:
         """Get all pending events."""
         return list(self._pending.values())
-    
+
     def get_history(
         self,
         event_type: Optional[str] = None,
@@ -336,55 +336,55 @@ class SystemEventQueue:
     ) -> List[SystemEvent]:
         """Get event history."""
         events = self._history
-        
+
         if event_type:
             events = [e for e in events if e.event_type == event_type]
-        
+
         return events[-limit:]
 
 
 # Common event types
 class EventTypes:
     """Standard event type constants."""
-    
+
     # Host events
     HOST_CHECK = 'host_check'
     HOST_DOWN = 'host_down'
     HOST_UP = 'host_up'
     HOST_DISK_WARNING = 'host_disk_warning'
     HOST_MEMORY_WARNING = 'host_memory_warning'
-    
+
     # Certificate events
     CERT_EXPIRY_WARNING = 'cert_expiry_warning'
     CERT_EXPIRED = 'cert_expired'
-    
+
     # Service events
     SERVICE_DOWN = 'service_down'
     SERVICE_UP = 'service_up'
     SERVICE_RESTARTED = 'service_restarted'
-    
+
     # Configuration events
     CONFIG_RELOADED = 'config_reloaded'
     CONFIG_ERROR = 'config_error'
-    
+
     # Session events
     SESSION_CREATED = 'session_created'
     SESSION_EXPIRED = 'session_expired'
-    
+
     # Heartbeat events
     HEARTBEAT_START = 'heartbeat_start'
     HEARTBEAT_COMPLETE = 'heartbeat_complete'
     HEARTBEAT_FAILED = 'heartbeat_failed'
-    
+
     # Cron events
     CRON_JOB_START = 'cron_job_start'
     CRON_JOB_COMPLETE = 'cron_job_complete'
     CRON_JOB_FAILED = 'cron_job_failed'
-    
+
     # Notification events
     NOTIFICATION_SENT = 'notification_sent'
     NOTIFICATION_SUPPRESSED = 'notification_suppressed'
-    
+
     # Workspace events
     WORKSPACE_FILE_CHANGED = 'workspace_file_changed'
 
@@ -399,7 +399,7 @@ class SmartNotificationFilter:
     - Rate limiting
     - Priority-based delivery
     """
-    
+
     def __init__(
         self,
         event_queue: SystemEventQueue,
@@ -419,16 +419,16 @@ class SmartNotificationFilter:
         self.notifications_enabled = bool(
             notifications_enabled if notifications_enabled is not None else _env_bool("NAVIG_NOTIFICATIONS_ENABLED", True)
         )
-        
+
         # Track recent notifications for dedup
         self._recent: Dict[str, datetime] = {}
-        
+
         # Subscribe to notification events
         event_queue.subscribe(
             EventTypes.NOTIFICATION_SENT,
             self._on_notification
         )
-    
+
     async def should_notify(
         self,
         notification_type: str,
@@ -458,11 +458,11 @@ class SmartNotificationFilter:
                 {'reason': 'heartbeat_ok', 'type': notification_type}
             )
             return False
-        
+
         # Check for duplicates
         cache_key = f"{notification_type}:{hash(message)}"
         now = datetime.now()
-        
+
         if cache_key in self._recent:
             last_sent = self._recent[cache_key]
             if (now - last_sent).total_seconds() < self.cooldown_seconds:
@@ -472,11 +472,11 @@ class SmartNotificationFilter:
                     {'reason': 'duplicate', 'type': notification_type}
                 )
                 return False
-        
+
         # Critical priority always goes through
         if priority == EventPriority.CRITICAL:
             return True
-        
+
         # Quiet hours suppression for non-urgent traffic
         if self.quiet_hours_enabled and self._is_quiet_hours():
             if priority in (EventPriority.LOW, EventPriority.NORMAL):
@@ -485,9 +485,9 @@ class SmartNotificationFilter:
                     {'reason': 'quiet_hours', 'type': notification_type}
                 )
                 return False
-        
+
         return True
-    
+
     async def notify(
         self,
         notification_type: str,
@@ -503,11 +503,11 @@ class SmartNotificationFilter:
         """
         if not await self.should_notify(notification_type, message, priority):
             return False
-        
+
         # Record notification
         cache_key = f"{notification_type}:{hash(message)}"
         self._recent[cache_key] = datetime.now()
-        
+
         # Emit event
         await self.event_queue.emit(
             EventTypes.NOTIFICATION_SENT,
@@ -518,9 +518,9 @@ class SmartNotificationFilter:
                 'message_length': len(message),
             }
         )
-        
+
         return True
-    
+
     def _on_notification(self, event: SystemEvent) -> None:
         """Track sent notifications."""
         # Cleanup old entries

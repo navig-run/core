@@ -1,10 +1,10 @@
 """Daemon lifecycle and formation endpoints."""
 import asyncio
-import sys
 import subprocess
-from aiohttp import web
+import sys
+
 from navig.debug_logger import get_debug_logger
-from navig.gateway.routes.common import json_ok, json_error_response, require_bearer_auth
+from navig.gateway.routes.common import json_error_response, json_ok, require_bearer_auth
 
 logger = get_debug_logger()
 
@@ -22,7 +22,7 @@ def _daemon_status(gw):
             formation = get_registry().get_active()
             if formation:
                 active_formation = formation.name
-        except Exception as e:
+        except Exception:
             pass
 
         # 2. Active Nodes
@@ -35,7 +35,7 @@ def _daemon_status(gw):
                         "name": p.hostname,
                         "state": "active" if p.health == "online" else "idle"
                     })
-        except Exception as e:
+        except Exception:
             pass
 
         # To ensure we have CORS enabled for Deck / Forge if they hit it directly from browser

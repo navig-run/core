@@ -13,14 +13,20 @@ from typing import Any
 from loguru import logger
 
 from .keyboards import (
-    screen_a_keyboard, screen_a_text,
-    screen_b_keyboard, screen_b_text,
-    screen_c_keyboard, screen_c_text,
-    screen_d_keyboard, screen_d_text,
-    screen_e_keyboard, screen_e_text,
-    screen_f_keyboard, screen_f_text,
+    screen_a_keyboard,
+    screen_a_text,
+    screen_b_keyboard,
+    screen_b_text,
+    screen_c_keyboard,
+    screen_c_text,
+    screen_d_keyboard,
+    screen_d_text,
+    screen_e_keyboard,
+    screen_e_text,
+    screen_f_keyboard,
+    screen_f_text,
 )
-from .state import AudioConfig, load_config, save_config
+from .state import load_config, save_config
 
 
 async def _edit(

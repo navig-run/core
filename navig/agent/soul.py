@@ -39,7 +39,7 @@ logger = get_debug_logger()
 
 class Mood(Enum):
     """Emotional states the agent can express."""
-    
+
     NEUTRAL = auto()
     HAPPY = auto()
     CONCERNED = auto()
@@ -51,7 +51,7 @@ class Mood(Enum):
 
 class Verbosity(Enum):
     """Response verbosity levels."""
-    
+
     MINIMAL = auto()   # Just the facts
     NORMAL = auto()    # Standard responses
     VERBOSE = auto()   # Detailed explanations
@@ -60,16 +60,16 @@ class Verbosity(Enum):
 @dataclass
 class PersonalityProfile:
     """A complete personality profile."""
-    
+
     name: str = "NAVIG"
     tagline: str = "Your friendly server assistant"
-    
+
     # Communication style
     greeting: str = "Hello! I'm ready to help."
     farewell: str = "Take care!"
     acknowledgment: str = "Got it!"
     thinking_phrase: str = "Let me look into that..."
-    
+
     # Emoji usage
     emoji_enabled: bool = True
     emoji_success: str = "✅"
@@ -78,16 +78,16 @@ class PersonalityProfile:
     emoji_info: str = "ℹ️"
     emoji_thinking: str = "🤔"
     emoji_greeting: str = "👋"
-    
+
     # Behavioral traits
     proactive: bool = True
     verbose: Verbosity = Verbosity.NORMAL
     formal: bool = False
     humor_enabled: bool = True
-    
+
     # Response templates
     templates: Dict[str, List[str]] = field(default_factory=dict)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'PersonalityProfile':
         """Create profile from dictionary."""
@@ -96,7 +96,7 @@ class PersonalityProfile:
             verbosity = Verbosity[verbosity_str]
         except KeyError:
             verbosity = Verbosity.NORMAL
-        
+
         return cls(
             name=data.get('name', cls.name),
             tagline=data.get('tagline', cls.tagline),
@@ -115,18 +115,18 @@ class PersonalityProfile:
             humor_enabled=data.get('humor_enabled', cls.humor_enabled),
             templates=data.get('templates', {}),
         )
-    
+
     @classmethod
     def load(cls, path: Path) -> 'PersonalityProfile':
         """Load profile from YAML file."""
         if not path.exists():
             return cls()
-        
+
         with open(path) as f:
             data = yaml.safe_load(f) or {}
-        
+
         return cls.from_dict(data)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -246,11 +246,11 @@ class Soul(Component):
     - Generates proactive messages
     - Loads SOUL.md for AI personality injection
     """
-    
+
     # Default SOUL.md location
     SOUL_FILE = Path.home() / '.navig' / 'workspace' / 'SOUL.md'
     SOUL_DEFAULT = Path(__file__).parent.parent / 'resources' / 'SOUL.default.md'
-    
+
     def __init__(
         self,
         config: PersonalityConfig,
@@ -258,24 +258,24 @@ class Soul(Component):
     ):
         super().__init__("soul", nervous_system)
         self.config = config
-        
+
         # Load personality profile
         self._profile = self._load_profile(config.profile)
-        
+
         # Load SOUL.md content
         self._soul_content: Optional[str] = None
         self._soul_loaded_from: Optional[Path] = None
         self._load_soul_file()
-        
+
         # Current mood
         self._mood = Mood.NEUTRAL
         self._mood_reason: str = ""
         self._mood_changed_at: datetime = datetime.now()
-        
+
         # Interaction tracking
         self._interaction_count = 0
         self._last_interaction: Optional[datetime] = None
-    
+
     def _load_soul_file(self) -> None:
         """
         Load SOUL.md personality file.
@@ -294,7 +294,7 @@ class Soul(Component):
                 return
             except Exception as e:
                 logger.warning(f"Soul: Failed to load user SOUL.md: {e}")
-        
+
         # Try bundled default
         if self.SOUL_DEFAULT.exists():
             try:
@@ -304,20 +304,20 @@ class Soul(Component):
                 return
             except Exception as e:
                 logger.warning(f"Soul: Failed to load default SOUL.md: {e}")
-        
+
         # No SOUL.md found - will use built-in profile
         logger.debug("Soul: No SOUL.md found, using built-in personality profile")
         self._soul_content = None
         self._soul_loaded_from = None
-    
+
     def get_soul_content(self) -> Optional[str]:
         """Get the loaded SOUL.md content."""
         return self._soul_content
-    
+
     def has_soul_file(self) -> bool:
         """Check if SOUL.md was loaded."""
         return self._soul_content is not None
-    
+
     def create_user_soul_file(self) -> bool:
         """
         Create user SOUL.md from default template.
@@ -326,23 +326,23 @@ class Soul(Component):
         """
         if self.SOUL_FILE.exists():
             return False
-        
+
         # Ensure directory exists
         self.SOUL_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Copy from default or create basic template
         if self.SOUL_DEFAULT.exists():
             content = self.SOUL_DEFAULT.read_text(encoding='utf-8')
         else:
             content = self._generate_default_soul()
-        
+
         self.SOUL_FILE.write_text(content, encoding='utf-8')
         logger.info(f"Soul: Created user SOUL.md at {self.SOUL_FILE}")
-        
+
         # Reload
         self._load_soul_file()
         return True
-    
+
     def _generate_default_soul(self) -> str:
         """Generate a basic SOUL.md if no default exists."""
         return f"""# SOUL.md - NAVIG Agent Personality
@@ -374,30 +374,30 @@ I am your autonomous operations companion. I help manage both your computer syst
 3. Transparency: I explain what I'm doing
 4. Continuous improvement: I learn from mistakes
 """
-    
+
     def _load_profile(self, profile_name: str) -> PersonalityProfile:
         """Load a personality profile by name."""
         # Check built-in profiles
         if profile_name in BUILTIN_PROFILES:
             return BUILTIN_PROFILES[profile_name]
-        
+
         # Try to load from file
         profiles_dir = Path.home() / '.navig' / 'agent' / 'personalities'
         profile_path = profiles_dir / f"{profile_name}.yaml"
-        
+
         if profile_path.exists():
             return PersonalityProfile.load(profile_path)
-        
+
         # Check package profiles
         pkg_profiles = Path(__file__).parent / 'personalities'
         pkg_path = pkg_profiles / f"{profile_name}.yaml"
-        
+
         if pkg_path.exists():
             return PersonalityProfile.load(pkg_path)
-        
+
         # Default to friendly
         return BUILTIN_PROFILES.get('friendly', PersonalityProfile())
-    
+
     async def _on_start(self) -> None:
         """Initialize soul."""
         # Subscribe to events for mood tracking
@@ -405,14 +405,14 @@ I am your autonomous operations companion. I help manage both your computer syst
             self.nervous_system.subscribe(EventType.ALERT_TRIGGERED, self._on_alert)
             self.nervous_system.subscribe(EventType.COMMAND_COMPLETED, self._on_command_complete)
             self.nervous_system.subscribe(EventType.COMMAND_FAILED, self._on_command_failed)
-    
+
     async def _on_stop(self) -> None:
         """Cleanup."""
         if self.nervous_system:
             self.nervous_system.unsubscribe(EventType.ALERT_TRIGGERED, self._on_alert)
             self.nervous_system.unsubscribe(EventType.COMMAND_COMPLETED, self._on_command_complete)
             self.nervous_system.unsubscribe(EventType.COMMAND_FAILED, self._on_command_failed)
-    
+
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for soul."""
         return {
@@ -421,34 +421,34 @@ I am your autonomous operations companion. I help manage both your computer syst
             'mood_reason': self._mood_reason,
             'interaction_count': self._interaction_count,
         }
-    
+
     async def _on_alert(self, event: Event) -> None:
         """React to alerts emotionally."""
         alert = event.data.get('alert', {})
         level = alert.get('level', 'info')
-        
+
         if level == 'critical':
             await self.set_mood(Mood.ALERT, "Critical alert detected")
         elif level == 'warning':
             await self.set_mood(Mood.CONCERNED, "Warning detected")
-    
+
     async def _on_command_complete(self, event: Event) -> None:
         """React to successful command."""
         result = event.data.get('result', {})
         if result.get('success'):
             await self.set_mood(Mood.HAPPY, "Task completed successfully")
-    
+
     async def _on_command_failed(self, event: Event) -> None:
         """React to failed command."""
         await self.set_mood(Mood.CONCERNED, "Command failed")
-    
+
     async def set_mood(self, mood: Mood, reason: str = "") -> None:
         """Set the current mood."""
         old_mood = self._mood
         self._mood = mood
         self._mood_reason = reason
         self._mood_changed_at = datetime.now()
-        
+
         if old_mood != mood:
             await self.emit(
                 EventType.MOOD_CHANGED,
@@ -458,11 +458,11 @@ I am your autonomous operations companion. I help manage both your computer syst
                     'reason': reason,
                 }
             )
-    
+
     def get_mood(self) -> Tuple[Mood, str]:
         """Get current mood and reason."""
         return self._mood, self._mood_reason
-    
+
     def format_response(
         self,
         content: str,
@@ -479,7 +479,7 @@ I am your autonomous operations companion. I help manage both your computer syst
         """
         self._interaction_count += 1
         self._last_interaction = datetime.now()
-        
+
         # Get emoji if enabled
         emoji = ""
         if include_emoji and self._profile.emoji_enabled:
@@ -490,41 +490,41 @@ I am your autonomous operations companion. I help manage both your computer syst
                 'info': self._profile.emoji_info,
             }
             emoji = emoji_map.get(response_type, "") + " " if response_type in emoji_map else ""
-        
+
         # Check for template responses
         if response_type in self._profile.templates:
             templates = self._profile.templates[response_type]
             if templates:
                 prefix = random.choice(templates)
                 return f"{prefix}{content}"
-        
+
         # Apply verbosity
         if self._profile.verbose == Verbosity.MINIMAL:
             # Strip to essentials
             lines = content.split('\n')
             if len(lines) > 3:
                 content = '\n'.join(lines[:3]) + "..."
-        
+
         return f"{emoji}{content}"
-    
+
     def get_greeting(self) -> str:
         """Get a greeting message."""
         return self._profile.greeting
-    
+
     def get_farewell(self) -> str:
         """Get a farewell message."""
         return self._profile.farewell
-    
+
     def get_acknowledgment(self) -> str:
         """Get an acknowledgment phrase."""
         return self._profile.acknowledgment
-    
+
     def get_thinking_phrase(self) -> str:
         """Get a 'thinking' phrase."""
         if self._profile.emoji_enabled:
             return f"{self._profile.emoji_thinking} {self._profile.thinking_phrase}"
         return self._profile.thinking_phrase
-    
+
     def get_system_prompt(self) -> str:
         """
         Get system prompt for AI, personalized with SOUL.md.
@@ -533,7 +533,7 @@ I am your autonomous operations companion. I help manage both your computer syst
         Otherwise, uses built-in PersonalityProfile settings.
         """
         base_prompt = self.config.system_prompt or ""
-        
+
         # If SOUL.md is loaded, use it as the primary personality source
         if self._soul_content:
             soul_section = f"""# Agent Identity
@@ -550,7 +550,7 @@ When handling technical tasks, maintain your personality while being precise
 and helpful. Balance warmth with competence.
 """
             return f"{base_prompt}\n\n{soul_section}".strip()
-        
+
         # Fall back to built-in personality profile
         personality_context = f"""
 You are {self._profile.name}. {self._profile.tagline}
@@ -569,14 +569,14 @@ Conversational responses:
 - When asked "Who are you?", explain your role as a server management assistant
 - When you don't understand, ask for clarification politely
 """
-        
+
         # Add behavioral rules from config
         if self.config.behavioral_rules:
             rules = "\n".join([f"- {rule}" for rule in self.config.behavioral_rules])
             personality_context += f"\nBehavioral rules:\n{rules}"
-        
+
         return f"{base_prompt}\n\n{personality_context}".strip()
-    
+
     def switch_profile(self, profile_name: str) -> bool:
         """Switch to a different personality profile."""
         new_profile = self._load_profile(profile_name)
@@ -585,15 +585,15 @@ Conversational responses:
             self.config.profile = profile_name
             return True
         return False
-    
+
     def get_profile(self) -> PersonalityProfile:
         """Get current personality profile."""
         return self._profile
-    
+
     def list_profiles(self) -> List[str]:
         """List available personality profiles."""
         profiles = list(BUILTIN_PROFILES.keys())
-        
+
         # Add user profiles
         user_dir = Path.home() / '.navig' / 'agent' / 'personalities'
         if user_dir.exists():
@@ -601,9 +601,9 @@ Conversational responses:
                 name = f.stem
                 if name not in profiles:
                     profiles.append(name)
-        
+
         return profiles
-    
+
     def get_status(self) -> Dict[str, Any]:
         """Get soul status."""
         return {
@@ -616,7 +616,7 @@ Conversational responses:
             'soul_file_loaded': self.has_soul_file(),
             'soul_file_path': str(self._soul_loaded_from) if self._soul_loaded_from else None,
         }
-    
+
     def reload_soul(self) -> bool:
         """
         Reload SOUL.md from disk.

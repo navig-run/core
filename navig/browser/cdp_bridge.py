@@ -20,10 +20,9 @@ Usage:
 
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
-from navig.browser.controller import BrowserController, BrowserConfig
+from navig.browser.controller import BrowserConfig, BrowserController
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -71,7 +70,7 @@ class CDPBridge(BrowserController):
                 f"[CDPBridge] Could not connect to Chrome at {self._cdp_endpoint}. "
                 f"Make sure Chrome is running with --remote-debugging-port={self.debug_port}. "
                 f"Error: {exc}"
-            )
+            ) from exc
 
         # Attach to existing context + page
         contexts = self._browser.contexts

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -96,8 +95,8 @@ def _retrieve_key_facts(user_input: str, max_tokens: int = 600) -> str:
     Returns empty string if no facts or on any failure.
     """
     try:
-        from navig.memory.key_facts import get_key_fact_store
         from navig.memory.fact_retriever import FactRetriever
+        from navig.memory.key_facts import get_key_fact_store
 
         store = get_key_fact_store()
         retriever = FactRetriever(store)
@@ -157,7 +156,7 @@ def _search_knowledge(query: str, top_k: int) -> List[Dict[str, Any]]:
     """
     # Try RAGPipeline
     try:
-        from navig.memory.rag import RAGPipeline, RAGConfig
+        from navig.memory.rag import RAGConfig, RAGPipeline
 
         config = RAGConfig(
             max_knowledge_entries=top_k,
@@ -227,7 +226,7 @@ def _load_api_snapshots(
         stale_tool_names: Tools whose latest snapshot exceeds max_age_minutes
     """
     try:
-        from navig.memory.snapshot import load_snapshots, load_snapshot_policies, is_stale
+        from navig.memory.snapshot import load_snapshot_policies, load_snapshots
 
         policies = load_snapshot_policies()
         stored_tools = [t for t, p in policies.items() if p.store]
@@ -295,7 +294,7 @@ def _search_project_index(
     returns [].
     """
     try:
-        from navig.memory.project_indexer import ProjectIndexer, ProjectIndexConfig
+        from navig.memory.project_indexer import ProjectIndexConfig, ProjectIndexer
 
         db_path = project_root / ".navig" / ProjectIndexer.DB_NAME
         if not db_path.exists():

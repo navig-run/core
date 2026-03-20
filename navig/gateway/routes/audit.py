@@ -1,5 +1,6 @@
 """Audit log routes: GET /audit"""
 from __future__ import annotations
+
 from navig.gateway.routes.common import json_ok, require_bearer_auth
 
 

@@ -99,7 +99,8 @@ async def _act_sigil_assembly(entity: "NaviEntity", primary: str, accent: str) -
         from rich.console import Console
         from rich.live import Live
         from rich.text import Text
-        from navig.identity.renderer import sigil_fits, _glyph_style
+
+        from navig.identity.renderer import _glyph_style, sigil_fits
     except ImportError:
         return
 

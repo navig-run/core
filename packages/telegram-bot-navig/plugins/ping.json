@@ -1,0 +1,9 @@
+﻿{
+  "id": "ping",
+  "version": "1.0.0",
+  "description": "Ping the bot and measure response time.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

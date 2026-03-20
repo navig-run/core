@@ -7,7 +7,6 @@ Uses matrix-nio via the comms.matrix module.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Callable, Dict, List, Optional
 

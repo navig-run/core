@@ -17,7 +17,7 @@ def detect_os() -> str:
         OS name: 'windows', 'linux', or 'macos'
     """
     system = platform.system().lower()
-    
+
     if system == 'windows':
         return 'windows'
     elif system == 'darwin':
@@ -43,14 +43,14 @@ def detect_linux_distro() -> Optional[str]:
                     return line.strip().split('=')[1].strip('"')
     except FileNotFoundError:
         pass
-    
+
     # Try other methods
     try:
         import distro
         return distro.id()
     except ImportError:
         pass
-    
+
     return None
 
 
@@ -70,22 +70,22 @@ def get_os_adapter(os_name: Optional[str] = None) -> OSAdapter:
     """
     if os_name is None:
         os_name = detect_os()
-    
+
     os_name = os_name.lower()
-    
+
     if os_name == 'windows':
         from navig.adapters.os.windows import WindowsAdapter
         return WindowsAdapter()
-    
+
     elif os_name == 'linux':
         from navig.adapters.os.linux import LinuxAdapter
         distro = detect_linux_distro()
         return LinuxAdapter(distro=distro)
-    
+
     elif os_name in ('macos', 'darwin'):
         from navig.adapters.os.macos import MacOSAdapter
         return MacOSAdapter()
-    
+
     else:
         raise ValueError(f"Unsupported operating system: {os_name}")
 
@@ -104,7 +104,7 @@ def get_os_adapter_for_remote(os_info: str) -> OSAdapter:
         OSAdapter instance for the remote OS
     """
     os_lower = os_info.lower()
-    
+
     if 'windows' in os_lower or 'mingw' in os_lower or 'msys' in os_lower:
         return get_os_adapter('windows')
     elif 'darwin' in os_lower:

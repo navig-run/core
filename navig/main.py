@@ -17,7 +17,7 @@ Plugin Loading:
 """
 
 import sys
-from typing import List, Dict
+from typing import Dict, List
 
 
 def _fast_help_text(version: str) -> str:
@@ -152,18 +152,18 @@ def load_plugins_into_app(app) -> None:
         app: Main Typer app instance to register plugins into
     """
     global _loaded_plugins, _failed_plugins
-    
+
     try:
         from navig.plugins import get_plugin_manager
-        
+
         manager = get_plugin_manager()
-        
+
         # Discover all plugins
         manager.discover_plugins()
-        
+
         # Load all enabled plugins
         _loaded_plugins, _failed_plugins = manager.load_all_plugins(silent=False)
-        
+
         # Register loaded plugins as sub-commands
         for name, plugin_app in manager.get_loaded_apps().items():
             try:
@@ -173,7 +173,7 @@ def load_plugins_into_app(app) -> None:
                     'name': name,
                     'reason': f"Failed to register: {e}"
                 })
-    
+
     except Exception as e:
         # Plugin system failure should not break NAVIG
         _eprint(f"[yellow]⚠ Plugin system error: {e}[/yellow]")
@@ -257,42 +257,44 @@ def add_plugin_commands(app) -> None:
     - navig plugin info <name>: Show detailed plugin information
     """
     import typer
+
     from navig import console_helper as ch
-    
+
     plugin_app = typer.Typer(
         name="plugin",
         help="Manage NAVIG plugins",
         no_args_is_help=True,
     )
-    
+
     @plugin_app.command("list")
     def plugin_list(
         all_plugins: bool = typer.Option(False, "--all", "-a", help="Include disabled plugins"),
     ):
         """List all installed plugins."""
-        from navig.plugins import get_plugin_manager
         from rich.table import Table
-        
+
+        from navig.plugins import get_plugin_manager
+
         manager = get_plugin_manager()
         plugins = manager.list_plugins()
-        
+
         if not plugins:
             ch.info("No plugins installed")
             ch.dim("Built-in plugins are in navig/plugins/")
             ch.dim("User plugins can be added to ~/.navig/plugins/")
             return
-        
+
         table = Table(title="NAVIG Plugins")
         table.add_column("Name", style="cyan")
         table.add_column("Version", style="dim")
         table.add_column("Source", style="dim")
         table.add_column("Status", style="bold")
         table.add_column("Description")
-        
+
         for name, info in plugins.items():
             if not all_plugins and not info.enabled:
                 continue
-            
+
             if info.loaded:
                 status = "[green]+ Loaded[/green]"
             elif not info.enabled:
@@ -301,10 +303,10 @@ def add_plugin_commands(app) -> None:
                 status = f"[red]x {info.error[:30]}...[/red]" if len(info.error) > 30 else f"[red]x {info.error}[/red]"
             else:
                 status = "[yellow]? Not loaded[/yellow]"
-            
+
             source_icons = {'builtin': 'builtin', 'user': 'user', 'project': 'project'}
             source = f"{source_icons.get(info.source, '?')}"
-            
+
             table.add_row(
                 name,
                 info.version,
@@ -312,33 +314,33 @@ def add_plugin_commands(app) -> None:
                 status,
                 info.description[:50] + "..." if len(info.description) > 50 else info.description
             )
-        
+
         ch.console.print(table)
-        
+
         if _failed_plugins:
             ch.dim("")
             ch.warning(f"{len(_failed_plugins)} plugin(s) failed to load. Use 'navig plugin info <name>' for details.")
-    
+
     @plugin_app.command("info")
     def plugin_info(
         name: str = typer.Argument(..., help="Plugin name"),
     ):
         """Show detailed information about a plugin."""
         from navig.plugins import get_plugin_manager
-        
+
         manager = get_plugin_manager()
         info = manager.get_plugin_info(name)
-        
+
         if not info:
             ch.error(f"Plugin '{name}' not found")
             raise typer.Exit(1)
-        
+
         ch.heading(f"Plugin: {info.name}")
         ch.dim(f"Version: {info.version}")
         ch.dim(f"Source: {info.source} ({info.path})")
         ch.dim(f"Description: {info.description or '(no description)'}")
         ch.dim("")
-        
+
         if info.loaded:
             ch.success("Status: Loaded and active")
         elif not info.enabled:
@@ -346,7 +348,7 @@ def add_plugin_commands(app) -> None:
             ch.dim("Enable with: navig plugin enable " + name)
         elif info.error:
             ch.error("Status: Failed to load", info.error)
-        
+
         if info.missing_deps:
             ch.dim("")
             ch.warning("Missing dependencies:")
@@ -354,7 +356,7 @@ def add_plugin_commands(app) -> None:
                 ch.dim(f"  • {dep}")
             ch.dim("")
             ch.dim("Install with: pip install " + " ".join(info.missing_deps))
-    
+
     @plugin_app.command("enable")
     def plugin_enable(
         name: str = typer.Argument(..., help="Plugin name to enable"),
@@ -362,19 +364,19 @@ def add_plugin_commands(app) -> None:
         """Enable a disabled plugin."""
         from navig.core import Config
         from navig.plugins import get_plugin_manager
-        
+
         config = Config()
         manager = get_plugin_manager()
-        
+
         info = manager.get_plugin_info(name)
         if not info:
             ch.error(f"Plugin '{name}' not found")
             raise typer.Exit(1)
-        
+
         config.enable_plugin(name)
         ch.success(f"Plugin '{name}' enabled")
         ch.dim("Restart NAVIG to load the plugin")
-    
+
     @plugin_app.command("disable")
     def plugin_disable(
         name: str = typer.Argument(..., help="Plugin name to disable"),
@@ -382,19 +384,19 @@ def add_plugin_commands(app) -> None:
         """Disable a plugin (without uninstalling)."""
         from navig.core import Config
         from navig.plugins import get_plugin_manager
-        
+
         config = Config()
         manager = get_plugin_manager()
-        
+
         info = manager.get_plugin_info(name)
         if not info:
             ch.error(f"Plugin '{name}' not found")
             raise typer.Exit(1)
-        
+
         config.disable_plugin(name)
         ch.success(f"Plugin '{name}' disabled")
         ch.dim("Restart NAVIG to unload the plugin")
-    
+
     @plugin_app.command("install")
     def plugin_install(
         path: str = typer.Argument(..., help="Path to plugin directory or Git URL"),
@@ -402,18 +404,19 @@ def add_plugin_commands(app) -> None:
         """Install a plugin from local path or Git URL."""
         import shutil
         from pathlib import Path
+
         from navig.core import Config
-        
+
         config = Config()
         source_path = Path(path)
-        
+
         if source_path.exists() and source_path.is_dir():
             # Local directory installation
             plugin_file = source_path / "plugin.py"
             if not plugin_file.exists():
                 ch.error("Invalid plugin", "Directory must contain plugin.py")
                 raise typer.Exit(1)
-            
+
             plugin_name = source_path.name
 
             # P1-9: Validate plugin name — prevent path traversal via crafted names
@@ -426,28 +429,28 @@ def add_plugin_commands(app) -> None:
                 raise typer.Exit(1)
 
             dest_path = config.plugins_dir / plugin_name
-            
+
             if dest_path.exists():
                 ch.error(f"Plugin '{plugin_name}' already exists")
                 ch.dim(f"Remove it first: rm -rf {dest_path}")
                 raise typer.Exit(1)
-            
+
             # Copy plugin to user plugins directory
             shutil.copytree(source_path, dest_path)
             ch.success(f"Installed plugin '{plugin_name}' to {dest_path}")
             ch.dim("Restart NAVIG to load the plugin")
-        
+
         elif path.startswith(("http://", "https://", "git@")):
             # Git URL installation
             ch.error("Git URL installation not yet implemented")
             ch.dim("Clone the repository manually and use: navig plugin install ./path/to/plugin")
             raise typer.Exit(1)
-        
+
         else:
             ch.error(f"Invalid path: {path}")
             ch.dim("Provide a local directory path or Git URL")
             raise typer.Exit(1)
-    
+
     @plugin_app.command("uninstall")
     def plugin_uninstall(
         name: str = typer.Argument(..., help="Plugin name to uninstall"),
@@ -455,30 +458,31 @@ def add_plugin_commands(app) -> None:
     ):
         """Uninstall a user-installed plugin."""
         import shutil
+
         from navig.core import Config
         from navig.plugins import get_plugin_manager
-        
+
         config = Config()
         manager = get_plugin_manager()
-        
+
         info = manager.get_plugin_info(name)
         if not info:
             ch.error(f"Plugin '{name}' not found")
             raise typer.Exit(1)
-        
+
         if info.source == 'builtin':
             ch.error("Cannot uninstall built-in plugins")
             ch.dim("You can disable it instead: navig plugin disable " + name)
             raise typer.Exit(1)
-        
+
         if not force:
             confirm = typer.confirm(f"Uninstall plugin '{name}'?")
             if not confirm:
                 raise typer.Abort()
-        
+
         shutil.rmtree(info.path)
         ch.success(f"Uninstalled plugin '{name}'")
-    
+
     # Register plugin commands
     app.add_typer(plugin_app, name="plugin")
 
@@ -494,8 +498,7 @@ def main() -> None:
     """
     try:
         from navig.core.crash_handler import crash_handler
-        import os
-        
+
         # Check for debug flag early to configure handler
         if "--debug" in sys.argv:
             crash_handler.enable_debug()
@@ -506,7 +509,7 @@ def main() -> None:
             return
 
         # Import the existing CLI app (maintains all current functionality)
-        from navig.cli import app, _register_external_commands
+        from navig.cli import _register_external_commands, app
 
         # Register all external command sub-apps (deferred from module load)
         _register_external_commands()
@@ -528,10 +531,10 @@ def main() -> None:
             # Add plugin management commands only when plugin system is active.
             # This avoids importing rich/console_helper during `navig --help`.
             add_plugin_commands(app)
-        
+
         # Run the CLI
         app()
-    
+
     except KeyboardInterrupt:
         _eprint("\n[dim]Interrupted[/dim]")
         sys.exit(130)
@@ -553,11 +556,11 @@ def _handle_powershell_parsing_error(argv: List[str]) -> None:
     breaks the arguments due to special characters.
     """
     import os
-    
+
     # Only help if this looks like a 'navig run' command
     if len(argv) < 2 or argv[1] not in ['run', 'r']:
         return
-    
+
     # Detect PowerShell environment
     is_powershell = False
     if sys.platform == 'win32':
@@ -566,13 +569,13 @@ def _handle_powershell_parsing_error(argv: List[str]) -> None:
             is_powershell = False
     elif 'powershell' in os.environ.get('TERM_PROGRAM', '').lower():
         is_powershell = True
-    
+
     if not is_powershell:
         return
-    
+
     # Join all args to see the original attempted command
     attempted_cmd = ' '.join(argv[2:]) if len(argv) > 2 else ''
-    
+
     # Check for signs PowerShell mangled it (backslash-escaped quotes, broken strings)
     powershell_mangled = any([
         '\\"' in attempted_cmd,
@@ -580,10 +583,10 @@ def _handle_powershell_parsing_error(argv: List[str]) -> None:
         attempted_cmd.count('"') % 2 != 0,  # Odd number of quotes
         attempted_cmd.count("'") % 2 != 0,
     ])
-    
+
     if not powershell_mangled:
         return
-    
+
     # Show helpful guidance
     sys.stderr.write("\n")
     sys.stderr.write("[!] PowerShell Quoting Error Detected\n")

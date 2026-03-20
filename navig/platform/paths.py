@@ -16,11 +16,9 @@ doing ad-hoc `sys.platform == 'win32'` checks.
 """
 
 import os
-import sys
 import platform
 from pathlib import Path
-from typing import Optional, Dict, Any
-
+from typing import Any, Dict, Optional
 
 # ── OS Detection (cached) ────────────────────────────────────
 
@@ -232,6 +230,20 @@ def onboarding_json_path() -> Path:
     if not new_path.exists() and legacy.exists():
         return legacy
     return new_path
+
+
+def builtin_store_dir() -> Path:
+    """Built-in content store bundled with NAVIG (store/ in the project root).
+
+    Contains formations, skills, templates, and other content packages
+    shipped with NAVIG. Use ``store_dir()`` for user-installed content.
+    """
+    return Path(__file__).resolve().parent.parent.parent / "store"
+
+
+def builtin_packages_dir() -> Path:
+    """Built-in packs bundled with NAVIG (packs/ in the project root)."""
+    return Path(__file__).resolve().parent.parent.parent / "packs"
 
 
 def store_dir() -> Path:

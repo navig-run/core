@@ -26,7 +26,8 @@ Usage:
 """
 
 from abc import ABC, abstractmethod
-from typing import Tuple, List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
+
 import typer
 
 
@@ -48,7 +49,7 @@ class PluginBase(ABC):
     - on_load(): Called after plugin is loaded
     - on_unload(): Called before plugin is unloaded
     """
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -58,7 +59,7 @@ class PluginBase(ABC):
         Must be a valid Python identifier (letters, numbers, underscores).
         """
         pass
-    
+
     @property
     @abstractmethod
     def app(self) -> typer.Typer:
@@ -78,7 +79,7 @@ class PluginBase(ABC):
                 return app
         """
         pass
-    
+
     @abstractmethod
     def check_dependencies(self) -> Tuple[bool, List[str]]:
         """
@@ -107,27 +108,27 @@ class PluginBase(ABC):
                 return (len(missing) == 0, missing)
         """
         pass
-    
+
     @property
     def description(self) -> str:
         """Plugin description (shown in help text and plugin list)."""
         return ""
-    
+
     @property
     def version(self) -> str:
         """Plugin version string (semantic versioning recommended)."""
         return "1.0.0"
-    
+
     @property
     def author(self) -> str:
         """Plugin author name or email."""
         return ""
-    
+
     @property
     def homepage(self) -> str:
         """Plugin homepage URL."""
         return ""
-    
+
     @property
     def permissions(self) -> List[str]:
         """
@@ -141,7 +142,7 @@ class PluginBase(ABC):
         - 'network': Make network requests
         """
         return []
-    
+
     def on_load(self) -> None:
         """
         Called after plugin is successfully loaded.
@@ -149,7 +150,7 @@ class PluginBase(ABC):
         Use this for initialization that depends on NAVIG being fully loaded.
         """
         pass
-    
+
     def on_unload(self) -> None:
         """
         Called before plugin is unloaded.
@@ -157,7 +158,7 @@ class PluginBase(ABC):
         Use this for cleanup (close connections, save state, etc.).
         """
         pass
-    
+
     def get_config(self, key: str = None, default: Any = None) -> Any:
         """
         Get plugin-specific configuration.
@@ -180,7 +181,7 @@ class PluginBase(ABC):
         if key:
             return config.get_plugin_config(self.name, key, default)
         return config.get_plugin_config(self.name, default=default)
-    
+
     def set_config(self, key: str, value: Any) -> None:
         """
         Set plugin-specific configuration.
@@ -213,24 +214,24 @@ class PluginAPI:
         result = api.run_remote("ls -la")
         api.console.print("Hello!")
     """
-    
+
     def __init__(self):
-        from navig.core import Config
         from navig import console_helper as ch
-        
+        from navig.core import Config
+
         self.config = Config()
         self.console = ch
-    
+
     def get_active_host(self) -> Optional[str]:
         """Get the currently active host name."""
         host, _ = self.config.get_active_host()
         return host
-    
+
     def get_active_app(self) -> Optional[str]:
         """Get the currently active app name."""
         app, _ = self.config.get_active_app()
         return app
-    
+
     def get_host_config(self, host_name: str = None) -> Optional[Dict[str, Any]]:
         """
         Get configuration for a host.
@@ -242,15 +243,15 @@ class PluginAPI:
             Host configuration dict or None if not found
         """
         from navig.config import get_config_manager
-        
+
         config_manager = get_config_manager()
         target_host = host_name or self.get_active_host()
-        
+
         if not target_host:
             return None
-        
+
         return config_manager.load_host_config(target_host)
-    
+
     def run_remote(
         self,
         command: str,
@@ -271,22 +272,22 @@ class PluginAPI:
             Tuple of (success, stdout, stderr)
         """
         from navig.remote import RemoteOperations
-        
+
         target_host = host_name or self.get_active_host()
         if not target_host:
             return (False, "", "No active host")
-        
+
         host_config = self.get_host_config(target_host)
         if not host_config:
             return (False, "", f"Host '{target_host}' not found")
-        
+
         try:
             remote = RemoteOperations(host_config)
             result = remote.execute(command, timeout=timeout)
             return (result.success, result.stdout, result.stderr)
         except Exception as e:
             return (False, "", str(e))
-    
+
     def upload_file(
         self,
         local_path: str,
@@ -304,24 +305,25 @@ class PluginAPI:
         Returns:
             Tuple of (success, error_message)
         """
-        from navig.remote import RemoteOperations
         from pathlib import Path
-        
+
+        from navig.remote import RemoteOperations
+
         target_host = host_name or self.get_active_host()
         if not target_host:
             return (False, "No active host")
-        
+
         host_config = self.get_host_config(target_host)
         if not host_config:
             return (False, f"Host '{target_host}' not found")
-        
+
         try:
             remote = RemoteOperations(host_config)
             remote.upload(str(Path(local_path)), remote_path)
             return (True, "")
         except Exception as e:
             return (False, str(e))
-    
+
     def download_file(
         self,
         remote_path: str,
@@ -339,17 +341,18 @@ class PluginAPI:
         Returns:
             Tuple of (success, error_message)
         """
-        from navig.remote import RemoteOperations
         from pathlib import Path
-        
+
+        from navig.remote import RemoteOperations
+
         target_host = host_name or self.get_active_host()
         if not target_host:
             return (False, "No active host")
-        
+
         host_config = self.get_host_config(target_host)
         if not host_config:
             return (False, f"Host '{target_host}' not found")
-        
+
         try:
             remote = RemoteOperations(host_config)
             remote.download(remote_path, str(Path(local_path)))

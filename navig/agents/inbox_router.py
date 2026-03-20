@@ -67,7 +67,7 @@ INBOX_ROUTER_SYSTEM_PROMPT = (
     "## Classification Rules\n"
     "\n"
     "### task_roadmap\n"
-    "Plans, roadmaps, milestones, phases, TODO lists, project timelines.\n"
+    "Plans, roadmaps, milestones, phases, task lists, project timelines.\n"
     "Target: .navig/plans/\n"
     "Transform: YAML frontmatter (type, status, created), normalize headings.\n"
     "\n"
@@ -88,7 +88,7 @@ INBOX_ROUTER_SYSTEM_PROMPT = (
     "\n"
     "### other\n"
     "Cannot classify confidently. Keep in inbox for human review.\n"
-    "Transform: Add TODO comment at top suggesting categories.\n"
+    "Transform: Add inline comment at top suggesting categories.\n"
     "\n"
     "## Behavioral Rules\n"
     "1. NEVER invent content. Only restructure and add metadata.\n"
@@ -158,7 +158,7 @@ _EXEMPLARS: Dict[str, List[str]] = {
         "Roadmap and project plan with milestones and deliverables. Phase 1 setup "
         "infrastructure. Phase 2 implement core features. Sprint backlog items with "
         "deadline dates. Q1 2025 goals. Epic tracking and task list. Timeline for "
-        "deployment. TODO items remaining in the backlog. Gantt chart with dependencies.",
+        "deployment. Incomplete items remaining in the backlog. Gantt chart with dependencies.",
         "Project plan with scheduled milestones. Sprint 1 deliverables due next week. "
         "Task list for the deployment phase. Backlog grooming session items. Release "
         "timeline Q2 2025. Epic authentication system. Deadline tracker with status.",

@@ -1,0 +1,140 @@
+{
+  "schema_version": "2.0",
+  "generated_at": "2026-03-15T00:00:00Z",
+  "catalog": [
+    {
+      "id": "navig-commands-core",
+      "version": "1.1.0",
+      "type": "commands",
+      "name": "NAVIG Commands Core",
+      "description": "Transport-agnostic command handlers shared by all NAVIG channels.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "navig-memory",
+      "version": "1.0.0",
+      "type": "commands",
+      "name": "NAVIG Memory",
+      "description": "Memory and knowledge management commands.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "navig-telegram",
+      "version": "1.0.0",
+      "type": "telegram",
+      "name": "NAVIG Telegram",
+      "description": "Telegram bot transport — connects NAVIG to Telegram channels.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "navig-telegram-handlers",
+      "version": "1.0.0",
+      "type": "telegram",
+      "name": "NAVIG Telegram Handlers",
+      "description": "Extended Telegram bot handlers and conversation flows.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "navig-windows-automation",
+      "version": "1.0.0",
+      "type": "tools",
+      "name": "NAVIG Windows Automation",
+      "description": "Windows UI automation tools — AHK library, screen capture, OCR.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "telegram-bot-navig",
+      "version": "1.0.0",
+      "type": "telegram",
+      "name": "Telegram Bot Navig",
+      "description": "Core Telegram bot dispatcher and command router.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "backup-essential",
+      "version": "1.0.0",
+      "type": "workflows",
+      "name": "Backup Essential",
+      "description": "Quick backup runbook for essential config files.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "lifeos",
+      "version": "1.0.0",
+      "type": "workflows",
+      "name": "Life OS",
+      "description": "Personal life operating system workflows.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "startup",
+      "version": "1.0.0",
+      "type": "workflows",
+      "name": "Startup",
+      "description": "Startup sequence workflow for NAVIG sessions.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "community",
+      "version": "1.0.0",
+      "type": "workflows",
+      "name": "Community Packs",
+      "description": "Community-contributed workflows: backups, deployments, devops, security.",
+      "author": "navig",
+      "license": "MIT",
+      "source": "github:navig-run/core",
+      "installed": true
+    },
+    {
+      "id": "runbook-plugin",
+      "version": "1.0.0",
+      "type": "workflows",
+      "name": "Runbook Plugin",
+      "description": "Structured ops runbooks for common infrastructure tasks.",
+      "author": "navig",
+      "license": "MIT",
+      "tags": ["ops", "runbooks", "infrastructure"],
+      "source": "github:navig-run/core",
+      "installed": false
+    },
+    {
+      "id": "security-auditor-soul",
+      "version": "1.0.0",
+      "type": "agents",
+      "name": "Security Auditor Soul",
+      "description": "Expert security-focused persona — audits code, configs, and infra.",
+      "author": "navig",
+      "license": "MIT",
+      "tags": ["security", "audit", "devsecops"],
+      "source": "github:navig-run/core",
+      "installed": false
+    }
+  ]
+}

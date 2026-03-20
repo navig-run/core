@@ -9,13 +9,13 @@ Commands execute directly on the remote server via SSH, with special handling
 for databases running inside Docker containers.
 """
 
-from navig import console_helper as ch
-from typing import Dict, Any, Optional, List, Tuple
-from pathlib import Path
 import json
 import shlex
 from contextlib import nullcontext
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
+from navig import console_helper as ch
 
 # ============================================================================
 # DATABASE TYPE DETECTION
@@ -37,9 +37,9 @@ def _detect_db_type(discovery, container: Optional[str] = None) -> Optional[str]
         cmd = f"docker exec {container} sh -c 'which mysql || which mariadb || which psql' 2>/dev/null"
     else:
         cmd = "which mysql || which mariadb || which psql 2>/dev/null"
-    
+
     success, stdout, _ = discovery._execute_ssh(cmd)
-    
+
     if success and stdout:
         if 'psql' in stdout:
             return 'postgresql'
@@ -66,13 +66,13 @@ def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
     # Get running containers with database images
     cmd = "docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}' 2>/dev/null"
     success, stdout, _ = discovery._execute_ssh(cmd)
-    
+
     if not success or not stdout:
         return []
-    
+
     containers = []
     db_images = ['mysql', 'mariadb', 'postgres', 'postgresql', 'mongo', 'redis']
-    
+
     for line in stdout.strip().split('\n'):
         if not line:
             continue
@@ -88,7 +88,7 @@ def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
                     if db == 'postgres':
                         db_type = 'postgresql'
                     break
-            
+
             if db_type:
                 containers.append({
                     'name': name,
@@ -96,7 +96,7 @@ def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
                     'status': status,
                     'db_type': db_type
                 })
-    
+
     return containers
 
 
@@ -224,7 +224,7 @@ def _build_db_command(
         # Build MySQL/MariaDB command
         # Use mariadb command for MariaDB to avoid deprecation warnings
         cmd_name = 'mariadb' if db_type == 'mariadb' else 'mysql'
-        
+
         # Use -p with password attached (no space) for MySQL compatibility
         if password:
             # Format: mysql/mariadb -u'user' -p'password' [database] -e 'query'
@@ -385,12 +385,12 @@ def db_query_cmd(
     # Only use CLI-provided credentials if they differ from defaults
     cli_user_provided = user != "root"  # Check if user explicitly provided
     user, password, db_type_from_config = _get_db_credentials_from_config(
-        config_manager, host_name, 
+        config_manager, host_name,
         user if cli_user_provided else None,  # Only pass if explicitly provided
-        password, 
+        password,
         db_type
     )
-    
+
     # Use db_type from config if available and not specified
     if not db_type:
         db_type = db_type_from_config
@@ -425,13 +425,13 @@ def db_query_cmd(
     if stderr:
         stderr_lines = stderr.strip().split('\n')
         filtered_stderr = '\n'.join(
-            line for line in stderr_lines 
-            if 'Deprecated program name' not in line and 
+            line for line in stderr_lines
+            if 'Deprecated program name' not in line and
                'use \'/usr/bin/mariadb\' instead' not in line
         ).strip()
     else:
         filtered_stderr = ''
-    
+
     if options.get('json'):
         ch.raw_print(
             json.dumps(
@@ -452,7 +452,7 @@ def db_query_cmd(
             )
         )
         return
-    
+
     if success:
         if stdout:
             if options.get('plain'):
@@ -473,7 +473,7 @@ def db_query_cmd(
         ch.error("Query failed")
         if filtered_stderr:
             ch.error(filtered_stderr)
-            
+
             # Detect authentication errors and provide helpful guidance
             if "Access denied" in filtered_stderr or "authentication failed" in filtered_stderr.lower():
                 ch.console.print()
@@ -762,9 +762,10 @@ def db_dump_cmd(
 
     Usage: navig db-dump mydb --container mysql_db --output backup.sql
     """
+    from datetime import datetime
+
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
-    from datetime import datetime
 
     config_manager = get_config_manager()
     host_name = options.get('host') or config_manager.get_active_host()
@@ -866,8 +867,9 @@ def db_shell_cmd(
 
     Usage: navig db-shell --container mysql_db
     """
-    from navig.config import get_config_manager
     import subprocess
+
+    from navig.config import get_config_manager
 
     config_manager = get_config_manager()
     host_name = options.get('host') or config_manager.get_active_host()
@@ -918,7 +920,8 @@ def db_shell_cmd(
         db_cmd = f"docker exec -it {_escape_for_shell(container)} sh -c {_escape_for_shell(db_cmd)}"
 
     # Build SSH command for interactive session — resolve full path for 32-bit Python on Windows
-    import shutil as _shutil, pathlib as _pl
+    import pathlib as _pl
+    import shutil as _shutil
     def _find_ssh_db():
         b = _shutil.which('ssh') or _shutil.which('ssh.exe')
         if b: return b
@@ -941,12 +944,12 @@ def db_shell_cmd(
 
 
 
-import typer
-from navig.cli import show_subcommand_help, deprecation_warning
-from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
-from navig import console_helper as ch
+from typing import Any, Dict, List, Optional, Tuple
 
+import typer
+
+from navig.cli import deprecation_warning, show_subcommand_help
 
 db_app = typer.Typer(
     help="Database operations (query, backup, restore, list, shell)",
@@ -1066,9 +1069,10 @@ def db_query_new(
     
     Use --b64 to force base64 decoding if auto-detection fails.
     """
-    from navig.commands.db import db_query_cmd
     import base64
-    
+
+    from navig.commands.db import db_query_cmd
+
     # Auto-detect base64 or use explicit flag
     if b64 or _is_base64_encoded(query):
         try:
@@ -1079,10 +1083,10 @@ def db_query_new(
         except Exception as e:
             if b64:
                 ch.error(f"Failed to decode base64 query: {e}")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
             # If auto-detect failed, just use original query
             pass
-    
+
     ctx.obj['plain'] = plain
     if json:
         ctx.obj["json"] = True

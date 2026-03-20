@@ -1,7 +1,8 @@
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
 from dataclasses import dataclass
+from typing import Any, List, Optional
+
 
 @dataclass
 class EvolutionResult:
@@ -13,7 +14,7 @@ class EvolutionResult:
 
 class BaseEvolver(ABC):
     """Abstract base class for evolving artifacts."""
-    
+
     def __init__(self, max_retries: int = 3):
         self.max_retries = max_retries
         self.history = []
@@ -23,7 +24,7 @@ class BaseEvolver(ABC):
         Generate, refine, and validate an artifact.
         """
         self.history = []
-        
+
         # Check cache/library first (optional override)
         cached = self._check_cache(goal)
         if cached:
@@ -38,23 +39,23 @@ class BaseEvolver(ABC):
                 new_artifact = self._generate(goal, current_artifact, current_error, context)
             except Exception as e:
                 return EvolutionResult(False, error=f"Generation failed: {e}", attempts=attempt)
-            
+
             if not new_artifact:
                  return EvolutionResult(False, error="Generator returned empty artifact", attempts=attempt)
-                 
+
             self.history.append(str(new_artifact)[:500]) # Store snippet
-            
+
             # Validate / Test
             validation_error = self._validate(new_artifact, context)
-            
+
             if not validation_error:
                 # Success!
                 self._save(goal, new_artifact)
                 return EvolutionResult(True, artifact=new_artifact, attempts=attempt, history=self.history)
-            
+
             current_artifact = new_artifact
             current_error = validation_error
-            
+
         return EvolutionResult(False, error=current_error, attempts=self.max_retries, history=self.history)
 
     def _check_cache(self, goal: str) -> Optional[Any]:

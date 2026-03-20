@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,16 @@ class NavigMatrixBot:
         """Login and begin background sync."""
         global _bot
         try:
-            from nio import AsyncClient, AsyncClientConfig, LoginResponse, RoomMessageText, InviteMemberEvent
-        except ImportError:
+            from nio import (
+                AsyncClient,
+                AsyncClientConfig,
+                InviteMemberEvent,
+                LoginResponse,
+                RoomMessageText,
+            )
+        except ImportError as _exc:
             logger.error("matrix-nio is not installed. pip install matrix-nio[e2e]")
-            raise ImportError("matrix-nio required for Matrix support. pip install matrix-nio[e2e]")
+            raise ImportError("matrix-nio required for Matrix support. pip install matrix-nio[e2e]") from _exc
 
         # Resolve E2EE: enabled only if config says so AND libolm is available
         want_e2ee = self.cfg.e2ee and HAS_OLM
@@ -130,8 +136,9 @@ class NavigMatrixBot:
 
         # Initialise persistent store
         try:
-            from navig.comms.matrix_store import MatrixStore
             import os
+
+            from navig.comms.matrix_store import MatrixStore
             store_db = os.path.expanduser("~/.navig/matrix.db")
             self._store = MatrixStore(store_db)
             self._store.prune_events()  # keep DB tidy
@@ -301,7 +308,6 @@ class NavigMatrixBot:
         if not self._client:
             logger.warning("Matrix client not initialised")
             return None
-        import os
         import mimetypes
         from pathlib import Path as _P
 
@@ -321,7 +327,7 @@ class NavigMatrixBot:
             return None
 
         try:
-            from nio import UploadResponse, RoomSendResponse
+            from nio import RoomSendResponse, UploadResponse
 
             with open(fp, "rb") as f:
                 resp, _keys = await self._client.upload(

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import shlex
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
-import json
-import subprocess
-import shlex
-import sys
 
 from navig import console_helper as ch
 
@@ -50,7 +50,8 @@ def _resolve_skills_dirs(explicit_dir: Optional[str]) -> List[Path]:
     candidates = [
         base_dir.parent / "skills",
         base_dir.parent.parent / "skills",
-        base_dir.parent.parent.parent / "skills",
+        base_dir.parent.parent.parent / "store" / "skills",   # canonical store
+        base_dir.parent.parent.parent / "skills",             # legacy fallback
     ]
 
     unique: List[Path] = []
@@ -350,8 +351,8 @@ def show_skill_cmd(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
         return skill
 
     # Rich output
-    from rich.table import Table
     from rich.panel import Panel
+    from rich.table import Table
     from rich.text import Text
 
     header = Text()

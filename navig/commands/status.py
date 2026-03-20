@@ -118,7 +118,7 @@ def show_status(options: Dict[str, Any]) -> None:
         uptime = format_uptime(gw.get("uptime"))
         sessions = gw.get("sessions", 0)
         ch.success(f"Gateway: running (uptime {uptime}, {sessions} sessions)")
-        
+
         # Heartbeat info
         hb = gw.get("heartbeat", {})
         if hb.get("running"):
@@ -128,7 +128,7 @@ def show_status(options: Dict[str, Any]) -> None:
                 ch.dim(f"  Heartbeat: active (next: {next_run}, last: {last_run})")
             else:
                 ch.dim("  Heartbeat: active")
-        
+
         # Cron info
         cron = gw.get("cron", {})
         jobs = cron.get("jobs", 0)
@@ -142,7 +142,7 @@ def show_status(options: Dict[str, Any]) -> None:
         ch.dim("Gateway: stopped")
         if show_all:
             ch.dim("  (start with: navig start)")
-    
+
     # Extended status
     if show_all:
         ch.dim("")

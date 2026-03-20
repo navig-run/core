@@ -306,7 +306,7 @@ class EventBridge:
         self.enable_ipc_offload = enable_ipc_offload
         import sys
         self.ipc_socket_path = ipc_socket_path or (
-            r"\\.\pipe\navig-sysd.sock" if sys.platform == "win32" 
+            r"\\.\pipe\navig-sysd.sock" if sys.platform == "win32"
             else "/tmp/navig-sysd.sock"
         )
 
@@ -454,7 +454,7 @@ class EventBridge:
         if not self._clients:
             return 0
 
-        # Rate limit: suppress rapid-fire duplicates of same topic 
+        # Rate limit: suppress rapid-fire duplicates of same topic
         # dynamically based on serverity to protect UI from freezing
         if envelope.severity in (Severity.DEBUG, Severity.INFO):
             window = self.debounce_seconds
@@ -467,16 +467,16 @@ class EventBridge:
         last = self._recent.get(envelope.topic)
         if last is not None and (now - last) < window:
             self._stats["events_filtered"] += 1
-            # Return early without updating last_time, creating a rate limit 
+            # Return early without updating last_time, creating a rate limit
             # instead of a trailing debounce that would indefinitely silence streams.
             return 0
-            
+
         self._recent[envelope.topic] = now
 
         # Build JSON-RPC payload once
         payload_obj = envelope.to_jsonrpc_notification()
         payload_str = json.dumps(payload_obj, default=str)
-        
+
         # Fast-path: offload to Go daemon via IPC
         if self.enable_ipc_offload:
             asyncio.create_task(self._forward_to_ipc(payload_str))
@@ -542,16 +542,16 @@ class EventBridge:
         """
         if not self.ipc_socket_path:
             return
-            
+
         import sys
         try:
             if sys.platform == "win32":
                 # Named pipe connection
                 reader, writer = await asyncio.open_connection(self.ipc_socket_path)
             else:
-                # Unix domain socket connection 
+                # Unix domain socket connection
                 reader, writer = await asyncio.open_unix_connection(self.ipc_socket_path)
-                
+
             writer.write(payload.encode("utf-8") + b"\n")
             await writer.drain()
             writer.close()

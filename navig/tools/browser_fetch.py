@@ -105,9 +105,9 @@ async def _browser_fetch(url: str, on_status: Optional[StatusCallback]) -> tuple
         await on_status("Launching browser…", "Playwright headless", 55)
 
     try:
-        from navig.browser.controller import BrowserController, BrowserConfig  # lazy
-    except ImportError:
-        raise RuntimeError("navig.browser not available (playwright not installed?)")
+        from navig.browser.controller import BrowserConfig, BrowserController  # lazy
+    except ImportError as _exc:
+        raise RuntimeError("navig.browser not available (playwright not installed?)") from _exc
 
     config = BrowserConfig(
         headless=True,
