@@ -108,15 +108,16 @@ repos:
       # NAVIG security audit
       - id: navig-security
         name: NAVIG Security Check
-        entry: python -c "
-try:
-    from navig.core.security import run_security_audit, substitute_env_vars
-    print('✅ Security module loaded successfully')
-except ImportError as e:
-    print(f'⚠️ Security module not available: {e}')
-"
+        entry: |-
+          python -c "
+          try:
+              from navig.core.security import run_security_audit, substitute_env_vars
+              print('\u2705 Security module loaded successfully')
+          except ImportError as e:
+              print(f'\u26a0\ufe0f Security module not available: {e}')
+          "
         language: system
-        files: '\.yaml$|\.py$'
+        files: "\\.yaml$|\\.py$"
         pass_filenames: false
         verbose: true
 
