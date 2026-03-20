@@ -1,0 +1,15 @@
+[Unit]
+Description=NAVIG Cloudflare Tunnel (Deck Mini App HTTPS)
+After=network-online.target navig-daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=void
+ExecStart=/bin/bash /opt/navig/scripts/navig-tunnel.sh
+Restart=on-failure
+RestartSec=10
+Environment=NAVIG_GATEWAY_PORT=8765
+
+[Install]
+WantedBy=multi-user.target
