@@ -16,8 +16,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/navig.git
-cd navig
+git clone https://github.com/navig-run/core.git
+cd core
 
 # Install dependencies
 pip install -r requirements.txt

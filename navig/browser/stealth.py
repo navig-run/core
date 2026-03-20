@@ -306,6 +306,9 @@ class StealthController:
 
         for line in raw.splitlines():
             stripped = line.lstrip()
+            if stripped.startswith("- /"):
+                annotated_lines.append(line)
+                continue
             if stripped.startswith("- "):
                 rest = stripped[2:]
                 m = _re.match(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?', rest)

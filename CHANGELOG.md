@@ -13,10 +13,10 @@
 - perf(QUANTUM-V E+B+A): batch monitor SSH 27->4 round-trips, docker lazy dispatch, production install mode
 - perf(sessions): fast-scan mode for list/stats/delete вЂ” reads header line only, skips GBs of JSONL
 - chore(dev): add pydantic + numpy to dev extras
-- perf: navig help fast path + McpForge port pre-check + disable debug_log
+- perf: navig help fast path + McpBridge port pre-check + disable debug_log
 - feat(memory): wire existing memory module into all AI paths
 - chore(dev): add pydantic + numpy to dev extras
-- perf: navig help fast path + McpForge port pre-check + disable debug_log
+- perf: navig help fast path + McpBridge port pre-check + disable debug_log
 - feat(memory): wire existing memory module into all AI paths
 - Update TASK_PROPOSALS.md
 - Update TASK_PROPOSALS.md
@@ -196,7 +196,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `_ensure_mesh_token()` — auto-generates `secrets.token_hex(32)` on first gateway start; persists to `~/.navig/config.yaml`.
   - **`navig flux` CLI command group** (`navig/commands/flux.py`): `status`, `peers`, `ping <url>`, `route <message>` (also accessible as `navig fx`).
   - **BackendRegistry priority chain** rewritten: local daemon → best mesh peer → Copilot (last).
-  - **VS Code Forge nodes panel** (`navig.nodesPanel`): live peer tree with health icons, set/clear target, add node, scan LAN commands.
+  - **VS Code Bridge nodes panel** (`navig.nodesPanel`): live peer tree with health icons, set/clear target, add node, scan LAN commands.
   - 11 unit tests (`tests/mesh/test_registry.py`) — all passing.
   - Feature doc: `docs/features/flux-mesh.md`.
 
@@ -558,7 +558,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Chappy Integration & Voice System
 
-- **NEW**: Avatar Companion — Tamagotchi-style animated sidebar avatar in NAVIG Forge extension. Reacts to session events, pattern matches, and responses with 7 emotional states (idle, listening, speaking, thinking, working, success, error). Uses 24 sprite frames from Chappy firmware. Click to interact.
+- **NEW**: Avatar Companion — Tamagotchi-style animated sidebar avatar in NAVIG Bridge extension. Reacts to session events, pattern matches, and responses with 7 emotional states (idle, listening, speaking, thinking, working, success, error). Uses 24 sprite frames from Chappy firmware. Click to interact.
 - **NEW**: Avatar settings — `avatar.enabled`, `avatar.animationSpeed`, `avatar.idleTimeout` in extension configuration.
 - **NEW**: Audio playback module (`navig/voice/playback.py`) — cross-platform (Windows/macOS/Linux) audio playback with 14 built-in notification sounds (wake, alarm, ok, end, hello, analyzing, wait, etc.).
 - **NEW**: Speech-to-Text module (`navig/voice/stt.py`) — multi-provider STT with Deepgram Nova-2, OpenAI Whisper API, and local Whisper models. Automatic provider fallback.

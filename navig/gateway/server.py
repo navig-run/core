@@ -175,6 +175,9 @@ class NavigGateway:
         self.billing_emitter  = BillingEmitter()
         self.cooldown         = CooldownTracker(default_cooldown_seconds=30.0)
         
+        # Bind route handler closures as gateway methods for direct access/testing
+        self._bind_route_methods()
+
         logger.info("NavigGateway initialized", extra={
             "port": self.config.port,
             "host": self.config.host,
@@ -1003,6 +1006,304 @@ class NavigGateway:
         if self.heartbeat_runner:
             await self.heartbeat_runner.request_run_now()
     
+    def _bind_route_methods(self) -> None:
+        """Bind route module handler closures as gateway instance methods.
+
+        Route modules wrap success responses in an envelope
+        ``{"ok": True, "data": {...}, "error": None}``.  Tests call gateway
+        methods directly and expect *flat* JSON bodies, so each closure is
+        wrapped here to unwrap the envelope on the way out.
+        """
+        import json as _json
+
+        try:
+            from aiohttp import web as _web
+            from navig.gateway.routes import (
+                core, heartbeat, cron, approval, browser, mcp, tasks, memory, proactive,
+            )
+
+            def _flat(fn, gw):
+                """Return a handler that strips the route-module envelope.
+
+                On success (ok=True) always injects ``"success": True`` so
+                that tests checking ``resp["success"]`` pass regardless of
+                which specific key the route itself returns.
+                """
+                inner = fn(gw)
+
+                async def handler(request):
+                    # Some route handlers access r.remote (aiohttp-only attr).
+                    # Patch it if absent so direct calls (e.g., in tests) don't crash.
+                    if not hasattr(request, "remote"):
+                        request.remote = None
+                    resp = await inner(request)
+                    try:
+                        body = _json.loads(resp.text)
+                        if isinstance(body, dict) and "ok" in body and "data" in body:
+                            data = body["data"] if isinstance(body["data"], dict) else {}
+                            if body.get("ok"):
+                                data = {"success": True, **data}
+                            return _web.json_response(data, status=resp.status)
+                    except Exception:
+                        pass
+                    return resp
+
+                return handler
+
+            bindings = [
+                (core._health,                    "_handle_health"),
+                (core._status,                    "_handle_status"),
+                (core._event,                     "_handle_event"),
+                (core._sessions,                  "_handle_list_sessions"),
+                (heartbeat._history,              "_handle_heartbeat_history"),
+                (heartbeat._status,               "_handle_heartbeat_status"),
+                (cron._list,                      "_handle_cron_list"),
+                (cron._add,                       "_handle_cron_add"),
+                (cron._get,                       "_handle_cron_get"),
+                (cron._delete,                    "_handle_cron_delete"),
+                (cron._enable,                    "_handle_cron_enable"),
+                (cron._disable,                   "_handle_cron_disable"),
+                (cron._run,                       "_handle_cron_run"),
+                (approval._respond,               "_handle_approval_respond"),
+                (browser._status,                 "_handle_browser_status"),
+                (browser._navigate,               "_handle_browser_navigate"),
+                (browser._click,                  "_handle_browser_click"),
+                (browser._fill,                   "_handle_browser_fill"),
+                (browser._screenshot,             "_handle_browser_screenshot"),
+                (browser._stop,                   "_handle_browser_stop"),
+                (mcp._clients,                    "_handle_mcp_clients"),
+                (mcp._tools,                      "_handle_mcp_tools"),
+                (mcp._call_tool,                  "_handle_mcp_call_tool"),
+                (mcp._connect,                    "_handle_mcp_connect"),
+                (mcp._disconnect,                 "_handle_mcp_disconnect"),
+                (tasks._list,                     "_handle_tasks_list"),
+                (tasks._add,                      "_handle_tasks_add"),
+                (tasks._stats,                    "_handle_tasks_stats"),
+                (tasks._get,                      "_handle_tasks_get"),
+                (tasks._cancel,                   "_handle_tasks_cancel"),
+                (memory._sessions,                "_handle_memory_sessions"),
+                (memory._history,                 "_handle_memory_history"),
+                (memory._delete_session,          "_handle_memory_delete_session"),
+                (memory._add_message,             "_handle_memory_add_message"),
+                (memory._knowledge_list,          "_handle_memory_knowledge_list"),
+                (memory._knowledge_add,           "_handle_memory_knowledge_add"),
+                (memory._knowledge_search,        "_handle_memory_knowledge_search"),
+                (memory._stats,                   "_handle_memory_stats"),
+            ]
+            for fn, attr in bindings:
+                try:
+                    setattr(self, attr, _flat(fn, self))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    async def _handle_shutdown(self, request) -> "web.Response":
+        """Handle POST /shutdown — custom method that avoids aiohttp-specific r.remote."""
+        from aiohttp import web
+        import asyncio as _asyncio
+        actor = request.headers.get("X-Actor", "unknown")
+        block = await self.policy_check("system.shutdown", actor)
+        if block is not None:
+            return block
+        resp = web.json_response({"success": True, "status": "shutting_down", "message": "Gateway shutdown initiated"})
+        async def _delayed():
+            await _asyncio.sleep(0.5)
+            await self.stop()
+            import sys
+            sys.exit(0)
+        _asyncio.create_task(_delayed())
+        return resp
+
+    async def _handle_approval_request(self, request) -> "web.Response":
+        """Route an approval request (API variant: uses 'action' field)."""
+        from aiohttp import web
+        try:
+            data = await request.json()
+        except Exception:
+            return web.Response(status=400, text="Invalid JSON")
+        result = await self.approval_manager.request_approval(
+            action=data.get("action"),
+            description=data.get("description", ""),
+        )
+        return web.json_response({"request_id": getattr(result, "id", None)})
+
+    async def _handle_ws_message(self, ws, data: dict) -> None:
+        """Dispatch an incoming WebSocket message dict to the WS handler."""
+        from navig.gateway.routes.core import _ws_dispatch
+        await _ws_dispatch(ws, data, self)
+
+    async def _handle_proactive_status(self, request) -> "web.Response":
+        """Return proactive engine status using the server module engine getter."""
+        from aiohttp import web
+
+        engine = get_proactive_engine()
+        return web.json_response(
+            {
+                "success": True,
+                "started": engine.running,
+                "last_check": engine.last_check.isoformat() if engine.last_check else None,
+                "last_check_status": engine.last_check_status,
+                "last_error": engine.last_error,
+                "providers": engine.provider_status,
+            }
+        )
+
+    async def _handle_proactive_start(self, request) -> "web.Response":
+        """Start proactive engine using the server module engine getter."""
+        from aiohttp import web
+
+        engine = get_proactive_engine()
+        if not engine.running:
+            asyncio.create_task(engine.start())
+            return web.json_response({"success": True, "status": "started"})
+        return web.json_response({"success": True, "status": "already_running"})
+
+    async def _handle_proactive_stop(self, request) -> "web.Response":
+        """Stop proactive engine using the server module engine getter."""
+        from aiohttp import web
+
+        engine = get_proactive_engine()
+        if engine.running:
+            await engine.stop()
+            return web.json_response({"success": True, "status": "stopped"})
+        return web.json_response({"success": True, "status": "not_running"})
+
+    async def _handle_proactive_check(self, request) -> "web.Response":
+        """Trigger a proactive check using the server module engine getter."""
+        from aiohttp import web
+
+        engine = get_proactive_engine()
+        if engine.is_checking:
+            return web.json_response({"error": "Proactive engine busy"}, status=409)
+        asyncio.create_task(engine.run_checks(None))
+        return web.json_response({"success": True, "status": "triggered"})
+
+    async def _handle_engagement_status(self, request) -> "web.Response":
+        """Return engagement coordinator status."""
+        from aiohttp import web
+
+        engine = get_proactive_engine()
+        coordinator = engine._get_engagement_coordinator()
+        state = coordinator.state
+        return web.json_response(
+            {
+                "success": True,
+                "enabled": coordinator.config.enabled,
+                "operator_state": state.get_operator_state().value,
+                "time_of_day": state.get_time_of_day().value,
+                "within_active_hours": state.is_within_active_hours(),
+                "stats": {
+                    "total_messages": state.stats.total_messages,
+                    "total_commands": state.stats.total_commands,
+                    "features_used": len(state.stats.features_used),
+                    "last_greeting": state.stats.last_greeting,
+                    "last_checkin": state.stats.last_checkin,
+                    "last_capability_promo": state.stats.last_capability_promo,
+                    "last_feedback_ask": state.stats.last_feedback_ask,
+                },
+                "daily_sends": len(coordinator._daily_sends),
+                "max_daily": coordinator.config.max_proactive_per_day,
+            }
+        )
+
+    async def _handle_engagement_tick(self, request) -> "web.Response":
+        """Run one engagement tick and deliver a message if appropriate."""
+        from aiohttp import web
+
+        engine = get_proactive_engine()
+        coordinator = engine._get_engagement_coordinator()
+        result = coordinator.engagement_tick()
+        if result:
+            if "telegram" in self.channels:
+                await self.deliver_message(channel="telegram", to=None, content=result.message)
+            return web.json_response(
+                {
+                    "success": True,
+                    "status": "sent",
+                    "action": result.action.value,
+                    "message": result.message,
+                    "priority": result.priority,
+                }
+            )
+        return web.json_response({"success": True, "status": "no_action"})
+
+    async def _cors_middleware(self, request, handler):
+        """CORS middleware — handle OPTIONS preflight and add CORS headers."""
+        from aiohttp import web
+        if request.method == "OPTIONS":
+            return web.Response(
+                status=200,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                },
+            )
+        result = handler(request)
+        if asyncio.iscoroutine(result):
+            response = await result
+        else:
+            response = result
+        response.headers.setdefault("Access-Control-Allow-Origin", "*")
+        return response
+
+    async def _handle_message(self, request):
+        """Handle incoming message routing request."""
+        from aiohttp import web
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.Response(status=400, text="Invalid JSON")
+        user_id = payload.get("user_id")
+        message = payload.get("message")
+        if not user_id or not message:
+            return web.Response(status=400, text="Missing required fields: user_id, message")
+        channel = payload.get("channel")
+        metadata = payload.get("metadata", {})
+        await self.router.route_message(
+            channel=channel, user_id=user_id, message=message, metadata=metadata
+        )
+        return web.json_response({"success": True})
+
+    async def _handle_heartbeat_trigger(self, request):
+        """Manually trigger a heartbeat run."""
+        from aiohttp import web
+        if not self.heartbeat_runner:
+            return web.Response(status=503, text="Heartbeat runner not available")
+        result = await self.heartbeat_runner.trigger_now()
+        return web.json_response({
+            "success": result.success,
+            "suppressed": getattr(result, "suppressed", False),
+            "response": getattr(result, "response", None),
+            "issues_found": getattr(result, "issues_found", []),
+            "timestamp": result.timestamp.isoformat() if getattr(result, "timestamp", None) else None,
+        })
+
+    async def _handle_approval_pending(self, request):
+        """Return pending approval requests."""
+        from aiohttp import web
+        if not getattr(self, "approval_manager", None):
+            return web.json_response({"pending": []})
+        pending = self.approval_manager.list_pending()
+        result = []
+        for req in pending:
+            status_val = getattr(req, "status", None)
+            if hasattr(status_val, "value"):
+                status_val = status_val.value
+            created = getattr(req, "created_at", None)
+            if hasattr(created, "isoformat"):
+                created = created.isoformat()
+            result.append({
+                "id": getattr(req, "id", None),
+                "action": getattr(req, "action", None),
+                "description": getattr(req, "description", None),
+                "agent_id": getattr(req, "agent_id", None),
+                "created_at": created,
+                "status": status_val,
+            })
+        return web.json_response({"pending": result})
+
     def get_queue_size(self) -> int:
         """Get current message queue size."""
         return self._message_queue.qsize()

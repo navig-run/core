@@ -13,7 +13,7 @@ model_router.py (3-tier) with a single router that:
 7. Logs full route trace in JSONL
 
 Provider priority:
-    mcp_forge → openrouter → github_models → ollama → error
+    mcp_bridge → openrouter → github_models → ollama → error
 """
 
 from __future__ import annotations
@@ -296,7 +296,7 @@ class UnifiedRouter:
         audit = self._audit_response(response_text, decision)
         trace.audit_result = audit
 
-        if audit == "retry" and trace.provider != "mcp_forge":
+        if audit == "retry" and trace.provider != "mcp_bridge":
             # Escalate: try next provider with stronger model
             escalated = await self._escalate(
                 request, decision, trace, provider_chain, t0,
@@ -343,7 +343,7 @@ class UnifiedRouter:
     def _get_provider_chain(self) -> List[str]:
         """Ordered provider chain. VS Code first, then cloud, then local."""
         chain = self._config.get("provider_chain", [
-            "mcp_forge", "openrouter", "github_models", "ollama",
+            "mcp_bridge", "openrouter", "github_models", "ollama",
         ])
         return chain
 
@@ -364,18 +364,18 @@ class UnifiedRouter:
     def _create_provider(self, name: str):
         """Create a provider from config."""
         from navig.agent.llm_providers import (
-            McpForgeProvider, OpenRouterProvider,
+            McpBridgeProvider, OpenRouterProvider,
             GitHubModelsProvider, OllamaProvider,
         )
 
-        forge_cfg = self._config.get("forge", {})
-        forge_token = forge_cfg.get("token", "")
+        bridge_cfg = self._config.get("bridge", {})
+        bridge_token = bridge_cfg.get("token", "")
 
-        if name == "mcp_forge":
-            mcp_url = forge_cfg.get("mcp_url", "")
+        if name == "mcp_bridge":
+            mcp_url = bridge_cfg.get("mcp_url", "")
             if not mcp_url:
                 return None
-            return McpForgeProvider(base_url=mcp_url, api_key=forge_token)
+            return McpBridgeProvider(base_url=mcp_url, api_key=bridge_token)
 
         elif name == "openrouter":
             import os
@@ -421,9 +421,9 @@ class UnifiedRouter:
         """Execute a request against a specific provider."""
 
         # VS Code providers: pass purpose, let VS Code pick model
-        if provider_name == "mcp_forge":
+        if provider_name == "mcp_bridge":
             kwargs: Dict[str, Any] = {}
-            if provider_name == "mcp_forge":
+            if provider_name == "mcp_bridge":
                 kwargs["purpose"] = decision.purpose
             resp = await provider.chat(
                 model=decision.model or "",
@@ -445,6 +445,15 @@ class UnifiedRouter:
 
         if not model:
             raise RuntimeError(f"No model configured for {provider_name}/{decision.mode}")
+
+        # Guard: log a warning if Opus is about to be used — it must never auto-route.
+        if "claude-opus" in model.lower():
+            from loguru import logger  # noqa: PLC0415
+            logger.warning(
+                "[routing] Opus model selected: provider={} mode={} model={} — "
+                "verify this is an explicit user request (allow_premium=True)",
+                provider_name, decision.mode, model,
+            )
 
         resp = await provider.chat(
             model=model,

@@ -24,9 +24,9 @@ func simulateTelegramPush(target string, body string, price string) {
 	fmt.Println("╰───────────────────────────────────────────────────╯")
 }
 
-// simulateForgeVscodeNotification renders what the VS Code Extension or CLI sees
-func simulateForgeVscodeNotification(target string, action string) {
-	fmt.Println("\n\033[34m[NAVIG FORGE EXTENSION (VS CODE ALERT)]\033[0m")
+// simulateBridgeVscodeNotification renders what the VS Code Extension or CLI sees
+func simulateBridgeVscodeNotification(target string, action string) {
+	fmt.Println("\n\033[34m[NAVIG BRIDGE EXTENSION (VS CODE ALERT)]\033[0m")
 	fmt.Printf("🔔 The Cognitive Engine halted on \033[1m%s\033[0m.\n", target)
 	fmt.Printf("   Awaiting Operator consent to \033[1m%s\033[0m.\n", action)
 	fmt.Printf("   \033[2m(Approve via CLI, VS Code Command Palette, or Telegram to resume execution)\033[0m\n")
@@ -64,7 +64,7 @@ func main() {
 	defer webhookServer.Shutdown(context.Background())
 
 	fmt.Println("========================================================================")
-	fmt.Println("🚀 NAVIG COGNITIVE OODA LOOP: TELEGRAM & FORGE UI DEMO")
+	fmt.Println("🚀 NAVIG COGNITIVE OODA LOOP: TELEGRAM & BRIDGE UI DEMO")
 	fmt.Println("========================================================================")
 	fmt.Println("Executing task: ID: tx-019a")
 
@@ -77,7 +77,7 @@ func main() {
 	time.Sleep(500 * time.Millisecond)
 
 	// Triggering the notifications exactly as they appear in the user's workflow
-	simulateForgeVscodeNotification("example.org", "Purchase 1 Year Premium ($50.00)")
+	simulateBridgeVscodeNotification("example.org", "Purchase 1 Year Premium ($50.00)")
 	simulateTelegramPush("example.org", "Purchase 1 Year Premium", "$50.00")
 
 	fmt.Println("\n>> Engine suspended JS execution on page. Awaiting Operator ACK.")

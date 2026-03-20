@@ -1,0 +1,38 @@
+# Navig Mesh Configuration
+# Global: ~/.navig/config.yaml  (copy and edit this template)
+# Project: .navig/config.yaml   (overrides global for this repo)
+#
+# All values below are defaults — only set what you need to change.
+
+mesh:
+  # Enable/disable mesh discovery entirely.
+  # When false, this node operates in standalone mode.
+  enabled: true
+
+  # Formation name — nodes with the same formation can share leadership.
+  # Leave as "default" for single-formation setups.
+  formation: "default"
+
+  # UDP multicast address. Must match across all nodes.
+  multicast_group: "224.0.0.251"
+
+  # UDP multicast port.
+  multicast_port: 5354
+
+  # How often this node sends a UDP heartbeat (seconds).
+  heartbeat_interval_s: 5
+
+  # How long since the last leader heartbeat before a standby proposes candidacy (seconds).
+  # Must be > heartbeat_interval_s. Recommended: 3× heartbeat.
+  election_ttl_s: 15
+
+  # How often the leader broadcasts a sync_state packet (seconds).
+  sync_interval_s: 10
+
+  # Enable Collective Mode (MVP 2).
+  # When true, the leader distributes large tasks across standby peers.
+  collective_enabled: false
+
+  # Optional path to a file containing the mesh BLAKE2b-256 HMAC secret.
+  # If unset, navig will auto-generate and persist a secret in ~/.navig/vault/mesh_secret.
+  # secret_file: "~/.navig/vault/mesh_secret"

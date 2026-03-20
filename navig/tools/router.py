@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
 import time
@@ -101,13 +102,16 @@ class ToolMeta:
     # Config requirements (env vars or config keys)
     required_config: List[str] = field(default_factory=list)
 
+    # Optional output schema (JSON Schema) for this tool's return value
+    output_schema: Optional[Dict[str, Any]] = None
+
     def is_available(self) -> bool:
         """Check if tool is available for execution."""
         return self.status == ToolStatus.AVAILABLE
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize for display / LLM prompt schema injection."""
-        return {
+        d: Dict[str, Any] = {
             "name": self.name,
             "domain": self.domain.value,
             "description": self.description,
@@ -116,6 +120,37 @@ class ToolMeta:
             "parameters": self.parameters_schema,
             "tags": self.tags,
         }
+        if self.output_schema is not None:
+            d["output_schema"] = self.output_schema
+        return d
+
+    def to_openapi_schema(self) -> Dict[str, Any]:
+        """Return an OpenAPI 3.0 operation object for this tool."""
+        schema: Dict[str, Any] = {
+            "operationId": self.name,
+            "summary": self.description,
+            "tags": [self.domain.value],
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": self.parameters_schema or {"type": "object"},
+                    }
+                },
+            },
+        }
+        if self.output_schema is not None:
+            schema["responses"] = {
+                "200": {
+                    "description": "Successful result",
+                    "content": {
+                        "application/json": {
+                            "schema": self.output_schema,
+                        }
+                    },
+                }
+            }
+        return schema
 
 
 # =============================================================================
@@ -166,6 +201,7 @@ class ToolRegistry:
             "navig.tools.packs.web_pack",
             "navig.tools.packs.image_pack",
             "navig.tools.packs.code_pack",
+            "navig.tools.packs.exec_pack",
             "navig.tools.packs.system_pack",
             "navig.tools.packs.data_pack",
             "navig.tools.packs.api_pack",
@@ -304,6 +340,43 @@ class ToolRegistry:
             "tools": [t.to_dict() for t in tools],
         }
 
+    def names(self) -> List[str]:
+        """Return a list of all registered tool names."""
+        if not self._initialized:
+            self.initialize()
+        return list(self._tools.keys())
+
+    def to_markdown_summary(
+        self,
+        domain: Optional[ToolDomain] = None,
+    ) -> str:
+        """Return a Markdown table summarising registered tools."""
+        tools = self.list_tools(domain=domain)
+        if not tools:
+            return "No tools registered."
+        lines = [
+            "| Tool | Domain | Safety | Description |",
+            "|------|--------|--------|-------------|" ,
+        ]
+        for t in tools:
+            lines.append(
+                f"| {t.name} | {t.domain.value} | {t.safety.value} | {t.description[:60]} |"
+            )
+        return "\n".join(lines)
+
+    def to_openapi_schema(self) -> Dict[str, Any]:
+        """Return an OpenAPI 3.0 document for all registered tools."""
+        paths: Dict[str, Any] = {}
+        for meta in self.list_tools():
+            paths[f"/tools/{meta.name}"] = {
+                "post": meta.to_openapi_schema(),
+            }
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "NAVIG Tools", "version": "1.0.0"},
+            "paths": paths,
+        }
+
 
 # =============================================================================
 # ToolRouter - executes tool calls with safety checks
@@ -348,6 +421,8 @@ class ToolRouter:
         # 1. Normalize
         canonical = self.registry.normalize_tool_name(tool_name)
         if canonical is None:
+            from navig.tools.hooks import get_hook_registry, ToolEvent
+            get_hook_registry().fire(ToolEvent.NOT_FOUND, tool=tool_name)
             return ToolResult(
                 tool=tool_name,
                 status=ToolResultStatus.NOT_FOUND,
@@ -451,9 +526,13 @@ class ToolRouter:
             )
 
         # 6. Execute
+        from navig.tools.hooks import get_hook_registry, ToolEvent
+        _hooks = get_hook_registry()
+        _hooks.fire(ToolEvent.BEFORE_EXECUTE, tool=canonical)
         try:
             output = handler(**action.parameters)
             latency = int((time.monotonic() - t0) * 1000)
+            _hooks.fire(ToolEvent.AFTER_EXECUTE, tool=canonical, status="success")
             return ToolResult(
                 tool=canonical,
                 status=ToolResultStatus.SUCCESS,
@@ -477,6 +556,14 @@ class ToolRouter:
                 error=f"{type(e).__name__}: {e}",
                 latency_ms=latency,
             )
+
+    async def async_execute(self, action: ToolCallAction) -> "ToolResult":
+        """Async wrapper around execute() — fires the same hooks and awaits async handlers."""
+        result = self.execute(action)
+        # Some handlers are coroutines (async def) — await the output if needed
+        if asyncio.iscoroutine(result.output):
+            result.output = await result.output
+        return result
 
     def execute_multi(self, actions: List[ToolCallAction]) -> List[ToolResult]:
         """Execute multiple tool calls sequentially, respecting max_calls_per_turn."""

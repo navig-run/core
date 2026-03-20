@@ -49,12 +49,19 @@ def build_step_registry(
         _step_config_file(navig_dir, genesis, config.reset),
         _step_configure_ssh(navig_dir),
         _step_verify_network(),
+        _step_sigil_genesis(navig_dir, genesis),
+        _step_core_navig(navig_dir),
         # ── Phase 2: interactive configuration ───────────────────────────
         _step_ai_provider(navig_dir),
         _step_vault_init(navig_dir),
         _step_first_host(navig_dir),
+        _step_matrix(navig_dir),
         _step_telegram_bot(navig_dir),
+        _step_email(navig_dir),
+        _step_social_networks(navig_dir),
+        _step_runtime_secrets(navig_dir),
         _step_skills_activation(navig_dir),
+        _step_review(navig_dir),
     ]
 
 
@@ -238,7 +245,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         provider = os.environ.get("NAVIG_LLM_PROVIDER", "").strip()
         if provider:
             api_key = _fast_path_key(provider)
-            if api_key or provider in ("ollama", "llamacpp", "airllm", "mcp_forge"):
+            if api_key or provider in ("ollama", "llamacpp", "airllm", "mcp_bridge"):
                 marker.write_text(provider, encoding="utf-8")
                 return StepResult(
                     status="completed",
@@ -656,5 +663,387 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
         verify=verify,
         on_failure="skip",
         independent=True,
+        phase="configuration",
+    )
+
+
+# ── Phase 1 bootstrap steps (added in v2) ─────────────────────────────────────
+
+def _step_sigil_genesis(navig_dir: Path, genesis: "GenesisData") -> OnboardingStep:
+    """Initialise the node's cryptographic sigil identity."""
+    marker = navig_dir / "state" / ".sigil_initialized"
+
+    def run() -> StepResult:
+        if marker.exists():
+            return StepResult(status="completed", output={"note": "already initialized"})
+
+        try:
+            from navig.identity.sigil_store import ensure_sigil  # type: ignore[import]
+            ensure_sigil(genesis)
+        except Exception:  # noqa: BLE001
+            pass
+
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(getattr(genesis, "nodeId", ""), encoding="utf-8")
+        return StepResult(
+            status="completed",
+            output={"nodeId": getattr(genesis, "nodeId", "")},
+        )
+
+    def verify() -> bool:
+        return marker.exists()
+
+    return OnboardingStep(
+        id="sigil-genesis",
+        title="Initialise node sigil",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        phase="bootstrap",
+    )
+
+
+def _step_core_navig(navig_dir: Path) -> OnboardingStep:
+    """Verify core NAVIG config structure is in place."""
+    marker = navig_dir / ".core_navig_initialized"
+
+    def run() -> StepResult:
+        if marker.exists():
+            return StepResult(status="completed", output={"note": "already initialized"})
+
+        # Ensure the base directory tree exists
+        for sub in ("state", "logs", "vault"):
+            (navig_dir / sub).mkdir(parents=True, exist_ok=True)
+
+        marker.write_text("1", encoding="utf-8")
+        return StepResult(status="completed", output={"navig_dir": str(navig_dir)})
+
+    def verify() -> bool:
+        return marker.exists()
+
+    return OnboardingStep(
+        id="core-navig",
+        title="Verify core NAVIG structure",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        phase="bootstrap",
+    )
+
+
+# ── Phase 2 integration steps (added in v2) ───────────────────────────────────
+
+def _step_matrix(navig_dir: Path) -> OnboardingStep:
+    """Configure Matrix homeserver integration."""
+    marker      = navig_dir / ".matrix_configured"
+    config_path = navig_dir / "config.yaml"
+
+    def run() -> StepResult:
+        if marker.exists():
+            return StepResult(status="completed", output={"note": "already configured"})
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        homeserver_url = typer.prompt("  Matrix homeserver URL").strip()
+        access_token   = typer.prompt("  Matrix access token").strip()
+
+        # Validate — import here to avoid circular deps at module load
+        from navig.onboarding.validators import validate_matrix
+        validation = validate_matrix(homeserver_url, access_token)
+
+        if not validation.ok:
+            msgs = "; ".join(e.get("message", "") for e in validation.errors)
+            typer.echo(f"  ✗ Validation failed: {msgs}", err=True)
+            return StepResult(status="skipped", output={"reason": msgs})
+
+        if not typer.confirm("  Token validated. Save and continue?", default=True):
+            return StepResult(status="skipped", output={"reason": "user declined"})
+
+        default_room_id = typer.prompt("  Default room ID (e.g. !abc:matrix.org)").strip()
+
+        # Persist token to vault
+        try:
+            from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+            vault = get_vault_v2()
+            vault.put("matrix/access_token", json.dumps({"value": access_token}).encode())
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Persist config
+        try:
+            import yaml  # type: ignore[import]
+            cfg: dict[str, Any] = {}
+            if config_path.exists():
+                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            cfg.setdefault("matrix", {})["homeserver_url"] = homeserver_url
+            cfg["matrix"]["default_room_id"] = default_room_id
+            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+
+        marker.write_text("1", encoding="utf-8")
+        return StepResult(
+            status="completed",
+            output={
+                "homeserver_url": homeserver_url,
+                "default_room_id": default_room_id,
+            },
+        )
+
+    def verify() -> bool:
+        return marker.exists()
+
+    return OnboardingStep(
+        id="matrix",
+        title="Configure Matrix homeserver",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="configuration",
+    )
+
+
+def _step_email(navig_dir: Path) -> OnboardingStep:
+    """Configure outbound SMTP / email settings."""
+    marker      = navig_dir / ".email_configured"
+    config_path = navig_dir / "config.yaml"
+
+    def run() -> StepResult:
+        if marker.exists():
+            return StepResult(status="completed", output={"note": "already configured"})
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        smtp_host = typer.prompt("  SMTP host (or blank to skip)", default="").strip()
+        if not smtp_host:
+            marker.write_text("skipped", encoding="utf-8")
+            return StepResult(status="skipped", output={"reason": "no SMTP host provided"})
+
+        smtp_port_str = typer.prompt("  SMTP port", default="587").strip()
+        try:
+            smtp_port = int(smtp_port_str)
+        except ValueError:
+            smtp_port = 587
+
+        from navig.onboarding.validators import validate_smtp
+        validation = validate_smtp(smtp_host, smtp_port)
+
+        if not validation.ok:
+            msgs = "; ".join(e.get("message", "") for e in validation.errors)
+            typer.echo(f"  ✗ Validation failed: {msgs}", err=True)
+            return StepResult(status="skipped", output={"reason": msgs})
+
+        try:
+            import yaml  # type: ignore[import]
+            cfg: dict[str, Any] = {}
+            if config_path.exists():
+                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            cfg.setdefault("email", {})["smtp_host"] = smtp_host
+            cfg["email"]["smtp_port"] = smtp_port
+            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+
+        marker.write_text("1", encoding="utf-8")
+        return StepResult(
+            status="completed",
+            output={"smtp_host": smtp_host, "smtp_port": smtp_port},
+        )
+
+    def verify() -> bool:
+        return marker.exists()
+
+    return OnboardingStep(
+        id="email",
+        title="Configure email / SMTP",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="configuration",
+    )
+
+
+def _step_social_networks(navig_dir: Path) -> OnboardingStep:
+    """Configure social-network integrations (Twitter/X, Mastodon, etc.)."""
+    marker = navig_dir / ".social_configured"
+
+    def run() -> StepResult:
+        if marker.exists():
+            return StepResult(status="completed", output={"note": "already configured"})
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        configure = typer.confirm(
+            "  Configure social network integrations?", default=False
+        )
+        if not configure:
+            marker.write_text("skipped", encoding="utf-8")
+            return StepResult(status="skipped", output={"reason": "user declined"})
+
+        marker.write_text("1", encoding="utf-8")
+        return StepResult(status="completed", output={})
+
+    def verify() -> bool:
+        return marker.exists()
+
+    return OnboardingStep(
+        id="social-networks",
+        title="Configure social networks",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="configuration",
+    )
+
+
+# Known env vars to offer importing into vault
+_ENV_KEY_IMPORTS: list[tuple[str, str, str]] = [
+    ("OPENAI_API_KEY",    "openai/api_key",    "OpenAI API key"),
+    ("ANTHROPIC_API_KEY", "anthropic/api_key", "Anthropic API key"),
+    ("SERPAPI_KEY",       "serpapi/key",       "SerpAPI key"),
+    ("DEEPGRAM_API_KEY",  "deepgram/api_key",  "Deepgram API key"),
+]
+
+
+def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
+    """Import runtime API keys from environment into the NAVIG vault."""
+    marker = navig_dir / ".runtime_secrets_configured"
+
+    def run() -> StepResult:  # noqa: C901
+        if marker.exists():
+            return StepResult(status="completed", output={"note": "already configured"})
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        try:
+            from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+            vault = get_vault_v2()
+        except Exception:  # noqa: BLE001
+            vault = None
+
+        imported: list[str] = []
+
+        # ── 1. Offer to import env-var API keys ──────────────────────────
+        import typer
+
+        for env_var, vault_label, display_name in _ENV_KEY_IMPORTS:
+            val = os.environ.get(env_var, "").strip()
+            if not val:
+                continue
+            try:
+                if typer.confirm(f"  Import {display_name} from environment?", default=True):
+                    if vault is not None:
+                        vault.put(vault_label, json.dumps({"value": val}).encode())
+                    imported.append(display_name)
+            except (KeyboardInterrupt, EOFError):
+                break
+
+        # ── 2. Offer Google service-account JSON ─────────────────────────
+        sys.stdout.write(
+            "  Paste Google service account JSON (or blank to skip):\n"
+        )
+        sys.stdout.flush()
+
+        lines: list[str] = []
+        try:
+            while True:
+                line = input()
+                if line.strip() in ("", "END"):
+                    break
+                lines.append(line)
+        except (KeyboardInterrupt, EOFError):
+            lines = []
+
+        if lines:
+            json_str = "\n".join(lines)
+            try:
+                json.loads(json_str)  # validate JSON
+                if vault is not None:
+                    vault.put_json_file("google/vision-service-account", json_str)
+                    vault.put_json_file("google/tts-service-account", json_str)
+            except (ValueError, Exception):  # noqa: BLE001
+                pass
+
+        marker.write_text("1", encoding="utf-8")
+        return StepResult(
+            status="completed",
+            output={"importedFromEnv": imported},
+        )
+
+    def verify() -> bool:
+        return marker.exists()
+
+    return OnboardingStep(
+        id="runtime-secrets",
+        title="Import runtime secrets",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="configuration",
+    )
+
+
+def _step_review(navig_dir: Path) -> OnboardingStep:
+    """Show onboarding summary and let the user revisit any step."""
+    artifact = navig_dir / "onboarding.json"
+
+    def run() -> StepResult:
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        # Print summary from artifact if available
+        if artifact.exists():
+            try:
+                data = json.loads(artifact.read_text(encoding="utf-8"))
+                steps_summary = data.get("steps", [])
+                sys.stdout.write("\n  Onboarding summary:\n")
+                for s in steps_summary:
+                    status_icon = "✓" if s.get("status") == "completed" else "·"
+                    sys.stdout.write(f"    [{status_icon}] {s.get('id', '?')} — {s.get('status', '?')}\n")
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+            except Exception:  # noqa: BLE001
+                pass
+
+        if typer.confirm("  All settings look good?", default=True):
+            return StepResult(status="completed", output={})
+
+        try:
+            jump_to = typer.prompt("  Which step ID to revisit?").strip()
+        except (KeyboardInterrupt, EOFError):
+            jump_to = ""
+
+        return StepResult(status="skipped", output={"jumpTo": jump_to})
+
+    def verify() -> bool:
+        return False  # always reruns
+
+    return OnboardingStep(
+        id="review",
+        title="Review onboarding summary",
+        run=run,
+        verify=verify,
+        on_failure="skip",
         phase="configuration",
     )

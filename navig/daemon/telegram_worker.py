@@ -8,6 +8,7 @@ from pathlib import Path
 
 from navig.config import get_config_manager
 from navig.daemon.entry import NAVIG_HOME
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 from navig.gateway.channels.telegram import create_telegram_channel
 from navig.gateway.server import NavigGateway
 from navig.gateway.channels.matrix import MatrixChannelAdapter
@@ -72,22 +73,22 @@ def _matrix_config() -> dict:
     }
 
 
-def _mcp_forge_config() -> dict:
-    """Read MCP Forge auto-connect config from global config."""
+def _mcp_bridge_config() -> dict:
+    """Read MCP Bridge auto-connect config from global config."""
     cfg = get_config_manager().global_config or {}
-    forge_cfg = cfg.get("forge", {}) if isinstance(cfg, dict) else {}
+    bridge_cfg = cfg.get("bridge", {}) if isinstance(cfg, dict) else {}
     return {
         "mcp_url": (
-            os.getenv("NAVIG_FORGE_MCP_URL")
-            or forge_cfg.get("mcp_url")
+            os.getenv("NAVIG_BRIDGE_MCP_URL")
+            or bridge_cfg.get("mcp_url")
             or "ws://127.0.0.1:42070"
         ),
         "token": (
-            os.getenv("NAVIG_FORGE_LLM_TOKEN")
-            or forge_cfg.get("token", "")
+            os.getenv("NAVIG_BRIDGE_LLM_TOKEN")
+            or bridge_cfg.get("token", "")
         ),
-        "auto_connect": forge_cfg.get("mcp_auto_connect", True),
-        "reconnect_interval": forge_cfg.get("mcp_reconnect_interval", 60),
+        "auto_connect": bridge_cfg.get("mcp_auto_connect", True),
+        "reconnect_interval": bridge_cfg.get("mcp_reconnect_interval", 60),
     }
 
 
@@ -159,7 +160,7 @@ async def _mcp_reconnect_loop(
     mcp_cfg: dict,
     stop_event: asyncio.Event,
 ) -> None:
-    """Background task: keep MCP Forge connection alive."""
+    """Background task: keep MCP Bridge connection alive."""
     import logging
     logger = logging.getLogger(__name__)
     interval = mcp_cfg.get("reconnect_interval", 60)
@@ -204,7 +205,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
 
     deck_cfg = _deck_config()
     matrix_cfg = _matrix_config()
-    mcp_cfg = _mcp_forge_config()
+    mcp_cfg = _mcp_bridge_config()
 
     gateway = NavigGateway()
     if port is not None:
@@ -238,9 +239,9 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
                     name="vscode-copilot",
                     url=mcp_cfg["mcp_url"],
                 )
-                logger.info("MCP Forge client connected → %s", mcp_cfg["mcp_url"])
+                logger.info("MCP Bridge client connected → %s", mcp_cfg["mcp_url"])
             except Exception as e:
-                logger.info("MCP Forge not yet available (will retry): %s", e)
+                logger.info("MCP Bridge not yet available (will retry): %s", e)
         except ImportError as e:
             logger.warning("MCP module not available: %s", e)
 

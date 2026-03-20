@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Literal, Optional
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 
 ProviderTier = Literal["cloud", "local", "proxy"]
@@ -276,14 +277,14 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         emoji="🌬",
         auth_mode="none",
     ),
-    # ── Bridge: MCP Forge (VS Code Copilot) ──────────────────────────────────
+    # ── Bridge: navig-bridge (VS Code Copilot) ─────────────────────────────
     ProviderManifest(
-        id="mcp_forge",
-        display_name="Forge Bridge",
+        id="mcp_bridge",
+        display_name="Bridge",
         description="VS Code Copilot via navig-bridge MCP WebSocket — requires extension running.",
         tier="local",
         env_vars=[],
-        vault_keys=["forge/token"],
+        vault_keys=["bridge/token"],
         requires_key=False,
         local_probe="127.0.0.1:42070",
         models=["copilot-gpt-4o", "copilot-claude-3.5-sonnet"],

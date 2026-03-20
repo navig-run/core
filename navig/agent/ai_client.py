@@ -10,6 +10,7 @@ Provides a unified interface for AI/LLM calls with:
 - Backward-compatible: single-provider mode when routing disabled
 """
 
+import asyncio
 import logging
 import os
 import threading
@@ -163,15 +164,15 @@ class AIClient:
     def _detect_best_provider(self) -> str:
         """Detect the best available provider.
         
-        Priority: mcp_forge → github_models → openrouter → airllm → local → none
+        Priority: mcp_bridge → github_models → openrouter → airllm → local → none
         """
-        # ⓪ MCP Forge — VS Code Copilot via MCP WebSocket (preferred)
-        mcp_forge_url = self._get_forge_mcp_url()
-        if mcp_forge_url:
+        # ⓪ MCP Bridge — VS Code Copilot via MCP WebSocket (preferred)
+        mcp_bridge_url = self._get_bridge_mcp_url()
+        if mcp_bridge_url:
             try:
                 import socket
                 from urllib.parse import urlparse
-                parsed = urlparse(mcp_forge_url.replace("ws://", "http://").replace("wss://", "https://"))
+                parsed = urlparse(mcp_bridge_url.replace("ws://", "http://").replace("wss://", "https://"))
                 host = parsed.hostname or "127.0.0.1"
                 port = parsed.port or 42070
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -179,7 +180,7 @@ class AIClient:
                 result = sock.connect_ex((host, port))
                 sock.close()
                 if result == 0:
-                    return "mcp_forge"
+                    return "mcp_bridge"
             except Exception:
                 pass
 
@@ -215,13 +216,13 @@ class AIClient:
         # Default to pattern matching (no LLM available)
         return "none"
 
-    def _get_forge_mcp_url(self) -> str:
-        """Read Forge MCP WebSocket URL from bridge-grid.json, config, env, or default.
+    def _get_bridge_mcp_url(self) -> str:
+        """Read Bridge MCP WebSocket URL from bridge-grid.json, config, env, or default.
 
         Priority:
         1. bridge-grid.json live llm_port  (written by navig-bridge heartbeat)
-        2. NAVIG_FORGE_MCP_URL env var
-        3. forge.mcp_url in ~/.navig/config.yaml
+        2. NAVIG_BRIDGE_MCP_URL env var
+        3. bridge.mcp_url in ~/.navig/config.yaml
         4. Hardcoded default ws://127.0.0.1:42070
         """
         # ① Live port from navig-bridge heartbeat file (most reliable)
@@ -234,7 +235,7 @@ class AIClient:
             pass
 
         # ② Explicit env override
-        env_url = os.getenv("NAVIG_FORGE_MCP_URL")
+        env_url = os.getenv("NAVIG_BRIDGE_MCP_URL")
         if env_url:
             return env_url
 
@@ -242,8 +243,8 @@ class AIClient:
         try:
             from navig.config import get_config_manager
             cfg = get_config_manager().global_config or {}
-            forge_cfg = cfg.get("forge", {})
-            url = forge_cfg.get("mcp_url")
+            bridge_cfg = cfg.get("bridge", {})
+            url = bridge_cfg.get("mcp_url")
             if url:
                 return url
         except Exception:
@@ -251,15 +252,15 @@ class AIClient:
 
         return "ws://127.0.0.1:42070"
 
-    def _get_forge_token(self) -> str:
-        """Read Forge LLM bearer token from config or env."""
-        env_tok = os.getenv("NAVIG_FORGE_LLM_TOKEN")
+    def _get_bridge_token(self) -> str:
+        """Read Bridge LLM bearer token from config or env."""
+        env_tok = os.getenv("NAVIG_BRIDGE_LLM_TOKEN")
         if env_tok:
             return env_tok
         try:
             from navig.config import get_config_manager
             cfg = get_config_manager().global_config or {}
-            return cfg.get("forge", {}).get("token", "")
+            return cfg.get("bridge", {}).get("token", "")
         except Exception:
             return ""
 
@@ -298,6 +299,14 @@ class AIClient:
                 pass
         return self._fallback_manager
         
+    def _trim_messages_for_retry(self, messages: list, keep_recent: int = 4) -> list:
+        """Keep system message + last keep_recent messages to reduce context on retry."""
+        if not messages:
+            return messages
+        system = [m for m in messages if m.get("role") == "system"]
+        non_system = [m for m in messages if m.get("role") != "system"]
+        return system[:1] + non_system[-keep_recent:]
+
     async def _get_session(self):
         global aiohttp
         if aiohttp is None:
@@ -331,7 +340,7 @@ class AIClient:
         """
         
         # Try using the full provider system first
-        if self.provider in ("openrouter", "openai", "airllm", "mcp_forge", "github_models"):
+        if self.provider in ("openrouter", "openai", "airllm", "mcp_bridge", "github_models"):
             fallback_mgr = self._get_fallback_manager()
             if fallback_mgr:
                 try:
@@ -357,9 +366,9 @@ class AIClient:
                 messages, temperature, max_tokens, model=model
             )
 
-        # MCP Forge — VS Code Copilot via MCP WebSocket (preferred)
-        if self.provider == "mcp_forge":
-            return await self._chat_mcp_forge(messages, temperature, max_tokens, model=model)
+        # MCP Bridge — VS Code Copilot via MCP WebSocket (preferred)
+        if self.provider == "mcp_bridge":
+            return await self._chat_mcp_bridge(messages, temperature, max_tokens, model=model)
 
         # GitHub Models — free tier via GitHub PAT
         if self.provider == "github_models":
@@ -508,12 +517,12 @@ class AIClient:
                 temperature=decision.temperature,
                 max_tokens=decision.max_tokens,
             )
-        elif provider == "mcp_forge":
+        elif provider == "mcp_bridge":
             # Map routing tier to purpose hint for navig-bridge model selection
             tier = getattr(decision, 'tier', '')
             purpose_map = {'small': 'small_talk', 'big': 'big_tasks', 'coder_big': 'coding'}
             purpose = purpose_map.get(tier, '')
-            return await self._chat_mcp_forge(
+            return await self._chat_mcp_bridge(
                 messages,
                 temperature=decision.temperature,
                 max_tokens=decision.max_tokens,
@@ -612,6 +621,22 @@ class AIClient:
                 json=payload,
                 timeout=aiohttp.ClientTimeout(total=120, connect=10),
             ) as response:
+                if response.status == 429:
+                    # Rate-limited: honour Retry-After and retry once
+                    retry_after = int(response.headers.get("Retry-After", 1))
+                    await asyncio.sleep(retry_after)
+                    async with session.post(
+                        f"{base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=120, connect=10),
+                    ) as retry_response:
+                        if retry_response.status != 200:
+                            error_text = await retry_response.text()
+                            raise RuntimeError(f"AI API error ({retry_response.status}): {error_text}")
+                        data = await retry_response.json()
+                        return data["choices"][0]["message"]["content"]
+
                 if response.status != 200:
                     error_text = await response.text()
                     raise RuntimeError(f"AI API error ({response.status}): {error_text}")
@@ -660,7 +685,7 @@ class AIClient:
         except Exception as e:
             raise RuntimeError(f"AirLLM inference failed: {e}")
             
-    async def _chat_mcp_forge(
+    async def _chat_mcp_bridge(
         self,
         messages: List[Dict[str, str]],
         temperature: float,
@@ -674,12 +699,12 @@ class AIClient:
             purpose: Task purpose hint (coding/small_talk/big_tasks/summarize/research).
                      When set, navig-bridge picks the optimal Copilot model automatically.
         """
-        from navig.agent.llm_providers import McpForgeProvider
+        from navig.agent.llm_providers import McpBridgeProvider
 
-        mcp_url = self._get_forge_mcp_url()
-        mcp_token = self._get_forge_token()
+        mcp_url = self._get_bridge_mcp_url()
+        mcp_token = self._get_bridge_token()
 
-        provider = McpForgeProvider(base_url=mcp_url, api_key=mcp_token)
+        provider = McpBridgeProvider(base_url=mcp_url, api_key=mcp_token)
         try:
             resp = await provider.chat(
                 model=model or "",

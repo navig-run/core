@@ -47,7 +47,7 @@ def _daemon_offline_msg() -> str:
         "\n"
         "  Start it:   navig service start\n"
         "  Status:     navig service status\n"
-        "  Install:    https://github.com/navigHQ/navig\n"
+        "  Install:    https://github.com/navig-run/core\n"
         "\nOnce the daemon is running, retry: navig flux status\n"
     )
 

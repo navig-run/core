@@ -89,6 +89,9 @@ MODE_CAPABILITIES: Dict[str, ModeProfile] = {
 OPENROUTER_MODELS: Dict[str, FrozenSet[str]] = {
     "anthropic/claude-sonnet-4.5": frozenset({"fast", "strong", "coder", "format_strict"}),
     "anthropic/claude-sonnet-4": frozenset({"fast", "coder", "format_strict"}),
+    # NOTE: claude-opus-4 is catalogued for capability lookup only.
+    # It must NEVER appear as a routing default — too expensive for automated tasks.
+    # Users may select it explicitly via CLI flag allow_premium=True.
     "anthropic/claude-opus-4": frozenset({"strong", "coder", "format_strict", "long_context"}),
     "openai/gpt-4o": frozenset({"fast", "coder", "format_strict", "tool_capable"}),
     "openai/gpt-4o-mini": frozenset({"fast", "format_strict", "tool_capable"}),
@@ -129,7 +132,9 @@ MODE_MODEL_PREFERENCE: Dict[str, Dict[str, str]] = {
         "ollama": "llama3.2",
     },
     "big_tasks": {
-        "openrouter": "anthropic/claude-opus-4",
+        # Intentionally Sonnet — Opus is 30× more expensive and must never be auto-selected.
+        # To use Opus, set allow_premium=True on the RouteDecision explicitly.
+        "openrouter": "anthropic/claude-sonnet-4.5",
         "github_models": "gpt-4o",
         "ollama": "",  # Not suitable for big tasks
     },

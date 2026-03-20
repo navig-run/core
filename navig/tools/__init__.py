@@ -105,6 +105,7 @@ __all__ = [
     "get_tool_registry",
     "get_tool_router",
     "parse_llm_action",
+    "get_pipeline_registry",
     "ToolCallAction",
     "RespondAction",
     "ToolResult",
@@ -128,6 +129,35 @@ def parse_llm_action(text: str):
     """Parse LLM response text into a typed action (lazy load)."""
     from .schemas import parse_llm_action as _parse
     return _parse(text)
+
+
+# ─── Pipeline ToolRegistry singleton ──────────────────────────
+_pipeline_registry = None
+
+
+def get_pipeline_registry():
+    """Get the global pipeline ToolRegistry singleton (lazy, pre-seeded)."""
+    global _pipeline_registry
+    if _pipeline_registry is None:
+        from .registry import ToolRegistry, BaseTool, ToolResult  # type: ignore[import]
+
+        class _StubTool(BaseTool):
+            description: str = ""
+
+            async def run(self, args, on_status=None):  # type: ignore[override]
+                return ToolResult(name=self.name, success=True)
+
+        def _make(tool_name: str) -> BaseTool:
+            t = _StubTool.__new__(_StubTool)
+            t.name = tool_name
+            t.description = tool_name.replace("_", " ").title()
+            return t
+
+        reg = ToolRegistry()
+        for _name in ("site_check", "browser_fetch", "search", "code_exec_sandbox", "skill_run"):
+            reg.register(_make(_name))
+        _pipeline_registry = reg
+    return _pipeline_registry
 
 
 # Re-export key types (lazy via TYPE_CHECKING for zero import cost)

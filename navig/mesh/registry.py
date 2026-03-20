@@ -428,6 +428,18 @@ class NodeRegistry:
         """Alias for get_peers() for consistent naming."""
         return self.get_peers()
 
+    @staticmethod
+    def get_tiebreaker(hostname: str) -> int:
+        """
+        Return a deterministic tiebreaker score for election purposes.
+
+        Lower score wins — the node with the lexicographically smallest hostname
+        hash is preferred as leader.  The value is stable across restarts and
+        consistent across all nodes that know the same hostname.
+        """
+        import hashlib
+        return int(hashlib.sha256(hostname.encode("utf-8")).hexdigest(), 16) % (10 ** 9)
+
     # ─────────────────────────── Persistence ─────────────────────────
 
     def _evict_stale(self) -> None:

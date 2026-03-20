@@ -1,4 +1,4 @@
-# Flux Mesh — LAN-Local Node Discovery & Routing
+﻿# Flux Mesh — LAN-Local Node Discovery & Routing
 
 Flux is NAVIG's zero-config, LAN-only peer mesh. Multiple NAVIG daemons on the
 same subnet discover each other via UDP multicast, share load information, and

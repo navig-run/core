@@ -287,7 +287,7 @@ def _systemd_unit_content(user: bool = False) -> str:
 
     unit = f"""[Unit]
 Description=NAVIG Agent Daemon
-Documentation=https://github.com/navigai/navig
+Documentation=https://github.com/navig-run/core
 After=network-online.target docker.service
 Wants=network-online.target
 

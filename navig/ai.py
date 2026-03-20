@@ -506,7 +506,7 @@ def ask_ai_with_context(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {ai_key}",
-                "HTTP-Referer": "https://github.com/yourusername/navig",
+                "HTTP-Referer": "https://github.com/navig-run/core",
                 "X-Title": "NAVIG Autonomous Agent",
             },
             json={

@@ -22,6 +22,9 @@ def register(app, gateway):
 
 
 def _get_store(gw):
+    getter = getattr(gw, "_get_memory_store", None)
+    if callable(getter):
+        return getter()
     if not hasattr(gw, '_conversation_store'):
         from navig.memory import ConversationStore
         db_path = gw.config.storage_dir / "memory.db"
@@ -30,6 +33,9 @@ def _get_store(gw):
 
 
 def _get_kb(gw):
+    getter = getattr(gw, "_get_knowledge_base", None)
+    if callable(getter):
+        return getter()
     if not hasattr(gw, '_knowledge_base'):
         from navig.memory import KnowledgeBase
         db_path = gw.config.storage_dir / "knowledge.db"

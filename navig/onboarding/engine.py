@@ -121,11 +121,15 @@ class OnboardingEngine:
         if self._config.dry_run:
             return self._dry_run()
 
+        # True once we reach (or pass) the jump target; always True when no jump configured.
+        reached_target = not bool(self._config.jump_to_step)
+
         for step in self._steps:
-            if self._config.jump_to_step and step.id != self._config.jump_to_step:
-                if self._already_completed(step.id):
-                    continue
-                continue
+            if not reached_target:
+                if step.id == self._config.jump_to_step:
+                    reached_target = True
+                else:
+                    continue  # skip steps before the jump target
 
             if self._already_completed(step.id):
                 continue

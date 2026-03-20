@@ -410,3 +410,177 @@ def _prompt_local_discovery(navig_dir: Path) -> None:
                 set_active=False,
                 progress=True
             )
+
+
+# =============================================================================
+# Global directory migration helpers
+# =============================================================================
+
+_DEFAULT_NAVIG_DIR: Path = Path.home() / ".navig"
+
+
+def _legacy_documents_config_dir() -> Path:
+    """Return the legacy Documents/.navig config directory (pre-migration path)."""
+    return Path.home() / "Documents" / ".navig"
+
+
+def _local_log_dir() -> Path:
+    """Return the canonical per-user log directory for NAVIG."""
+    try:
+        import platformdirs
+        return Path(platformdirs.user_log_dir("navig", "navig"))
+    except ImportError:
+        return Path.home() / ".navig" / "logs"
+
+
+def _local_state_dir() -> Path:
+    """Return the canonical per-user state directory for NAVIG."""
+    try:
+        import platformdirs
+        return Path(platformdirs.user_state_dir("navig", "navig"))
+    except ImportError:
+        return Path.home() / ".navig" / "state"
+
+
+def _cache_dir() -> Path:
+    """Return the canonical per-user cache directory for NAVIG."""
+    try:
+        import platformdirs
+        return Path(platformdirs.user_cache_dir("navig", "navig"))
+    except ImportError:
+        return Path.home() / ".navig" / "cache"
+
+
+def _legacy_windows_platformdirs_root() -> Path:
+    """Return the nested legacy Windows platformdirs NAVIG root (pre-migration)."""
+    try:
+        import platformdirs
+        return Path(platformdirs.user_data_dir("NAVIG", "navig"))
+    except ImportError:
+        import os
+        local = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+        return Path(local) / "navig" / "NAVIG"
+
+
+def _write_init_log(message: str) -> None:
+    """Append *message* to the NAVIG init log file."""
+    log_dir = _local_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "init.log"
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(message + "\n")
+
+
+def _ensure_dirs() -> None:
+    """Create all required NAVIG runtime directories."""
+    _DEFAULT_NAVIG_DIR.mkdir(parents=True, exist_ok=True)
+    _local_log_dir().mkdir(parents=True, exist_ok=True)
+
+
+def _migrate_legacy_documents_dir(target_dir: Path) -> None:
+    """Move config files from the legacy Documents/.navig path to *target_dir*.
+
+    Raises :class:`click.exceptions.Exit` if a path conflict is detected so
+    that the caller can abort without clobbering existing data.
+    """
+    import click
+
+    source_dir = _legacy_documents_config_dir()
+    if not source_dir.exists():
+        return
+
+    # Detect conflicts: any item that already exists in the target
+    conflicts = [item.name for item in source_dir.iterdir() if (target_dir / item.name).exists()]
+    if conflicts:
+        _write_init_log(
+            f"legacy migration failed: conflict detected in {', '.join(conflicts)}"
+        )
+        raise click.exceptions.Exit(1)
+
+    # Move each top-level item from source to target
+    for item in source_dir.iterdir():
+        item.rename(target_dir / item.name)
+
+    # Remove the now-empty source directory (and parent if also empty)
+    try:
+        source_dir.rmdir()
+        parent = source_dir.parent
+        if not any(parent.iterdir()):
+            parent.rmdir()
+    except OSError:
+        pass
+
+    _write_init_log(f"legacy migration: moved {source_dir} -> {target_dir}")
+
+
+def _migrate_legacy_windows_runtime_layout() -> None:
+    """Flatten the nested legacy Windows platformdirs layout into canonical dirs.
+
+    Old layout (created by old platformdirs):
+        AppData/Local/navig/NAVIG/Logs/…
+        AppData/Local/navig/NAVIG/memory/…
+        AppData/Local/navig/NAVIG/Cache/…
+
+    New canonical layout:
+        user_log_dir/…
+        user_state_dir/memory/…
+        user_cache_dir/…
+    """
+    legacy_root = _legacy_windows_platformdirs_root()
+    if not legacy_root.exists():
+        return
+
+    log_dir = _local_log_dir()
+    state_dir = _local_state_dir()
+    cache_dir = _cache_dir()
+
+    # Map legacy sub-dir name → (canonical destination root, keep subdir name?)
+    MOVES = [
+        ("Logs",   log_dir,   False),   # Logs/*   → log_dir/*
+        ("memory", state_dir, True),    # memory/* → state_dir/memory/*
+        ("Cache",  cache_dir, False),   # Cache/*  → cache_dir/*
+    ]
+
+    for sub_name, dest_root, keep_subdir in MOVES:
+        src_sub = legacy_root / sub_name
+        if not src_sub.exists():
+            continue
+
+        actual_dest = dest_root / sub_name if keep_subdir else dest_root
+        actual_dest.mkdir(parents=True, exist_ok=True)
+
+        for item in list(src_sub.iterdir()):
+            dest = actual_dest / item.name
+            if dest.exists() and item.is_file():
+                # Append conflicting files (e.g. rolling log files)
+                try:
+                    existing = dest.read_text(encoding="utf-8")
+                    new_content = item.read_text(encoding="utf-8")
+                    dest.write_text(existing + "\n" + new_content, encoding="utf-8")
+                    item.unlink()
+                except Exception:
+                    pass
+            else:
+                item.rename(dest)
+
+        try:
+            src_sub.rmdir()
+        except OSError:
+            pass
+
+    # Remove legacy root if now empty
+    try:
+        legacy_root.rmdir()
+    except OSError:
+        pass
+
+
+def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") -> None:
+    """Initialize NAVIG global directories and run first-time setup."""
+    import click
+
+    try:
+        _ensure_dirs()
+    except PermissionError as e:
+        _write_init_log(f"init failed: {e}")
+        raise click.exceptions.Exit(1)

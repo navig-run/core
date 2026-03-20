@@ -142,7 +142,7 @@ list       → installed + running apps
 |---------|-------|-------|
 | `Memory Compression` | Windows NT KERNEL | Cannot kill. 9–23 GB = normal under load. |
 | `language_server_windows_x64` | **Antigravity** (Google's VS Code fork) | 4 instances, ~10 GB paged combined. Restart Antigravity to reclaim. |
-| `Antigravity.exe` | Google's VS Code fork | `C:\Users\subdose\AppData\Local\Programs\Antigravity\` |
+| `Antigravity.exe` | Google's VS Code fork | `%LOCALAPPDATA%\Programs\Antigravity\` |
 | `msedge` PID 64928 | Microsoft Edge | `--type=renderer --extension-process`, 18k handles, 9 GB paged — restart Edge |
 | `ctfmon.exe` | Windows Text Services Framework | Paged pool grows after long uptimes — restart safely |
 | `vmmem` | WSL2 / Hyper-V | Grows when Docker/WSL active — `wsl --shutdown` reclaims |

@@ -25,8 +25,8 @@
 - 🔄 **Mesh Phase 1 stabilisation** — peer registration, proxy routing, graceful degradation to local
 - 🔄 **Learning system** — improved error pattern detection, personalised recommendations
 - 🔄 **Matrix gateway** — bridge stability, better event handling
-- 🔄 **Plugin system** — extensibility framework for custom commands and integrations
-- 🔄 **Packs system** — community-contributed runbooks, checklists, workflow templates
+- 🔄 **Packages system** — extensibility framework for custom commands and integrations
+- 🔄 **Store system** — community-contributed runbooks, checklists, skills, workflow templates
 - 🔄 **Test coverage** — maintain ≥65% coverage as surface area grows
 
 ---
@@ -35,7 +35,7 @@
 
 - **Multi-user support** — shared configurations for small teams
 - **Backup improvements** — encrypted backups, remote storage backends (S3, Backblaze B2)
-- **Health dashboard** — lightweight web UI for multi-server monitoring
+- **Health dashboard** — lightweight UI for multi-server monitoring
 - **Enhanced AI context** — better project awareness, improved command suggestions
 - **Docker Compose management** — multi-container orchestration workflows
 - **Mesh Phase 2** — WAN-capable with secure mesh token auth
