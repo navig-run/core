@@ -149,7 +149,8 @@ vault.salt                  # Vault salt file
 # NAVIG Configuration
 # .navig/ is project-local runtime state (plans, wiki, apps, logs) — user-specific, NOT for VCS
 # ~/.navig/ is the global user store — absolute path, not relevant as a gitignore rule
-.navig/                     # Project-local NAVIG state — never commit
+.navig/*                    # Project-local NAVIG state — keep only profile.json
+!.navig/profile.json        # MVP allowlist — keep profile only
 .archive/                   # Local archive / cleanup staging
 nohup.out                   # Background process output
 
@@ -194,6 +195,25 @@ site/                       # MkDocs build directory
 # Documentation and Tests (tracked — essential to the project)
 # docs/
 # tests/
+
+# Scripts — keep only public install/bootstrap entrypoints tracked
+scripts/*
+!scripts/bootstrap_navig_linux.sh
+!scripts/github-bootstrap.sh
+!scripts/install_navig_factory_server.sh
+!scripts/install_navig_linux.sh
+!scripts/install_navig_linux_enhanced.sh
+!scripts/install_navig_macos.sh
+!scripts/install_navig_windows.ps1
+!scripts/install_navig_windows_enhanced.ps1
+!scripts/install_matrix_synapse_windows.cmd
+!scripts/install_matrix_synapse_windows.ps1
+!scripts/navig_quick_setup.ps1
+!scripts/navig_quick_setup.sh
+!scripts/navig-tunnel.service
+!scripts/navig-tunnel.sh
+!scripts/bridge-tunnel.service
+!scripts/README.md
 
 # ===============================================
 # OS-Specific
