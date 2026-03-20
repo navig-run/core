@@ -81,7 +81,7 @@ function Show-Usage {
 NAVIG Installer for Windows
 
 Usage:
-  irm https://navig.run/install.ps1 | iex
+    irm https://navig.run/install.ps1 | iex
   .\install.ps1 [OPTIONS]
 
 Options:
