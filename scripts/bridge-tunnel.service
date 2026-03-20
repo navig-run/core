@@ -1,0 +1,58 @@
+﻿# ─────────────────────────────────────────────────────────────────
+# NAVIG Bridge LLM Tunnel — systemd unit
+#
+# Maintains a persistent SSH reverse-tunnel from Ubuntu (daemon) to
+# Windows (VS Code Bridge LLM server on port 43821).
+#
+# Install:
+#   1. Edit User, AUTOSSH_*, and ExecStart to match your setup
+#   2. sudo cp bridge-tunnel.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now bridge-tunnel
+#
+# Verify:
+#   systemctl status bridge-tunnel
+#   curl -s http://127.0.0.1:43821/vscode-llm/health
+# ─────────────────────────────────────────────────────────────────
+[Unit]
+Description=NAVIG Bridge LLM SSH Tunnel (autossh)
+Documentation=https://github.com/navig-run/core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=navig
+
+# autossh monitoring port (0 = use ServerAliveInterval instead)
+Environment=AUTOSSH_PORT=0
+# Suppress noisy logs
+Environment=AUTOSSH_LOGFILE=/var/log/navig-bridge-tunnel.log
+Environment=AUTOSSH_PIDFILE=/run/navig-bridge-tunnel.pid
+
+# ──────────────────────────────────────────────────────────────
+# EDIT THESE:
+#   -L 43821:127.0.0.1:43821   = forward local:43821 → remote:43821
+#   -i /home/navig/.ssh/id_ed25519  = SSH key
+#   user@windows-host             = your Windows machine
+# ──────────────────────────────────────────────────────────────
+ExecStart=/usr/bin/autossh -M 0 -N \
+    -o "ServerAliveInterval 15" \
+    -o "ServerAliveCountMax 3" \
+    -o "ExitOnForwardFailure yes" \
+    -o "StrictHostKeyChecking accept-new" \
+    -L 43821:127.0.0.1:43821 \
+    -i /home/navig/.ssh/id_ed25519 \
+    user@windows-host
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
