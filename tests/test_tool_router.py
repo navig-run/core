@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for navig.tools — Tool Router, Registry, Schemas, and Packs.
 
 Test structure:
@@ -210,7 +210,7 @@ class TestToolRegistry:
         reg = _fresh_registry()
         reg.register(ToolMeta(
             name="system_info", domain=ToolDomain.SYSTEM,
-            module_path="navig.tools.packs.system_pack",
+            module_path="navig.tools.domains.system_pack",
             handler_name="_system_info",
             status=ToolStatus.AVAILABLE,
         ))
@@ -347,7 +347,7 @@ class TestToolPacks:
     def test_web_pack_registers_three_tools(self):
         """Web pack registers web_search, web_fetch, docs_search."""
         reg = _fresh_registry()
-        from navig.tools.packs.web_pack import register_tools
+        from navig.tools.domains.web_pack import register_tools
         register_tools(reg)
         assert reg.get_tool("web_search") is not None
         assert reg.get_tool("web_fetch") is not None
@@ -356,7 +356,7 @@ class TestToolPacks:
     def test_image_pack_registers_image_generate(self):
         """Image pack registers image_generate."""
         reg = _fresh_registry()
-        from navig.tools.packs.image_pack import register_tools
+        from navig.tools.domains.image_pack import register_tools
         register_tools(reg)
         tool = reg.get_tool("image_generate")
         assert tool is not None
@@ -365,7 +365,7 @@ class TestToolPacks:
     def test_code_pack_registers_code_sandbox(self):
         """Code pack registers code_sandbox as DANGEROUS."""
         reg = _fresh_registry()
-        from navig.tools.packs.code_pack import register_tools
+        from navig.tools.domains.code_pack import register_tools
         register_tools(reg)
         tool = reg.get_tool("code_sandbox")
         assert tool is not None
@@ -374,7 +374,7 @@ class TestToolPacks:
     def test_system_pack_registers_system_tools(self):
         """System pack registers system_info and file_read."""
         reg = _fresh_registry()
-        from navig.tools.packs.system_pack import register_tools
+        from navig.tools.domains.system_pack import register_tools
         register_tools(reg)
         assert reg.get_tool("system_info") is not None
         assert reg.get_tool("file_read") is not None
@@ -382,14 +382,14 @@ class TestToolPacks:
     def test_data_pack_registers_json_parse(self):
         """Data pack registers json_parse."""
         reg = _fresh_registry()
-        from navig.tools.packs.data_pack import register_tools
+        from navig.tools.domains.data_pack import register_tools
         register_tools(reg)
         assert reg.get_tool("json_parse") is not None
 
     def test_system_info_handler_returns_platform(self):
         """system_info handler returns valid platform data."""
         reg = _fresh_registry()
-        from navig.tools.packs.system_pack import register_tools
+        from navig.tools.domains.system_pack import register_tools
         register_tools(reg)
         handler = reg.get_handler("system_info")
         result = handler()
@@ -400,7 +400,7 @@ class TestToolPacks:
     def test_json_parse_handler_valid(self):
         """json_parse handler parses valid JSON."""
         reg = _fresh_registry()
-        from navig.tools.packs.data_pack import register_tools
+        from navig.tools.domains.data_pack import register_tools
         register_tools(reg)
         handler = reg.get_handler("json_parse")
         result = handler(text='{"key": "value"}')
@@ -409,7 +409,7 @@ class TestToolPacks:
     def test_json_parse_handler_invalid(self):
         """json_parse handler returns error for invalid JSON."""
         reg = _fresh_registry()
-        from navig.tools.packs.data_pack import register_tools
+        from navig.tools.domains.data_pack import register_tools
         register_tools(reg)
         handler = reg.get_handler("json_parse")
         result = handler(text="not json")
@@ -516,7 +516,7 @@ class TestIntegration:
     def test_system_info_end_to_end(self):
         """End-to-end: system_info tool with real handler."""
         reg = _fresh_registry()
-        from navig.tools.packs.system_pack import register_tools
+        from navig.tools.domains.system_pack import register_tools
         register_tools(reg)
         router = ToolRouter(registry=reg)
 

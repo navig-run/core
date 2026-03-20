@@ -61,47 +61,47 @@ HOOK_EVENT_TYPES = {
     "command:before_execute": "Before a command is executed",
     "command:after_execute": "After a command completes",
     "command:error": "When a command fails",
-    
+
     # Session lifecycle
     "session": "General session events",
     "session:start": "When a session starts",
     "session:end": "When a session ends",
     "session:context_update": "When session context is updated",
-    
+
     # Agent events
     "agent": "General agent events",
     "agent:bootstrap": "When an agent is bootstrapped",
     "agent:message": "When an agent receives a message",
     "agent:response": "When an agent sends a response",
     "agent:tool_call": "When an agent makes a tool call",
-    
+
     # Plugin events
     "plugin": "General plugin events",
     "plugin:load": "When a plugin is loaded",
     "plugin:unload": "When a plugin is unloaded",
     "plugin:error": "When a plugin encounters an error",
-    
+
     # Gateway events
     "gateway": "General gateway events",
     "gateway:request": "When a gateway request is received",
     "gateway:response": "When a gateway response is sent",
-    
+
     # Memory events
     "memory": "General memory events",
     "memory:index": "When files are indexed",
     "memory:search": "When memory is searched",
-    
+
     # Security events
     "security": "General security events",
     "security:audit": "When a security audit runs",
     "security:violation": "When a security violation is detected",
-    
+
     # SSH/Remote events
     "ssh": "General SSH events",
     "ssh:connect": "When SSH connection is established",
     "ssh:disconnect": "When SSH connection is closed",
     "ssh:command": "When an SSH command is executed",
-    
+
     # Automation events
     "automation": "General automation events",
     "automation:workflow_start": "When a workflow starts",
@@ -131,12 +131,12 @@ class HookEvent:
     messages: List[str] = field(default_factory=list)
     cancel: bool = False
     data: Dict[str, Any] = field(default_factory=dict)
-    
+
     @property
     def event_key(self) -> str:
         """Get the full event key (type:action)."""
         return f"{self.type}:{self.action}"
-    
+
     def __repr__(self) -> str:
         return f"HookEvent({self.event_key}, cancel={self.cancel})"
 
@@ -155,11 +155,11 @@ class HookRegistry:
     - Async and sync handlers
     - Error isolation (one handler failure doesn't break others)
     """
-    
+
     def __init__(self):
         self._handlers: Dict[str, List[tuple[int, HookHandler]]] = {}
         self._disabled_hooks: Set[str] = set()
-    
+
     def register(
         self,
         event_key: str,
@@ -176,13 +176,13 @@ class HookRegistry:
         """
         if event_key not in self._handlers:
             self._handlers[event_key] = []
-        
+
         self._handlers[event_key].append((priority, handler))
         # Sort by priority (stable sort preserves registration order for same priority)
         self._handlers[event_key].sort(key=lambda x: x[0])
-        
+
         logger.debug(f"Registered hook: {event_key} (priority={priority})")
-    
+
     def unregister(self, event_key: str, handler: HookHandler) -> bool:
         """
         Unregister a specific hook handler.
@@ -196,21 +196,21 @@ class HookRegistry:
         """
         if event_key not in self._handlers:
             return False
-        
+
         original_len = len(self._handlers[event_key])
         self._handlers[event_key] = [
             (p, h) for p, h in self._handlers[event_key] if h != handler
         ]
-        
+
         # Clean up empty lists
         if not self._handlers[event_key]:
             del self._handlers[event_key]
-        
+
         removed = len(self._handlers.get(event_key, [])) < original_len
         if removed:
             logger.debug(f"Unregistered hook: {event_key}")
         return removed
-    
+
     def clear(self, event_key: Optional[str] = None) -> None:
         """
         Clear registered hooks.
@@ -225,25 +225,25 @@ class HookRegistry:
         else:
             self._handlers.clear()
             logger.debug("Cleared all hooks")
-    
+
     def disable(self, event_key: str) -> None:
         """Temporarily disable hooks for an event key."""
         self._disabled_hooks.add(event_key)
-    
+
     def enable(self, event_key: str) -> None:
         """Re-enable hooks for an event key."""
         self._disabled_hooks.discard(event_key)
-    
+
     def get_handlers(self, event_key: str) -> List[HookHandler]:
         """Get all handlers for an event key (in priority order)."""
         if event_key in self._disabled_hooks:
             return []
         return [h for _, h in self._handlers.get(event_key, [])]
-    
+
     def get_event_keys(self) -> List[str]:
         """Get all registered event keys."""
         return list(self._handlers.keys())
-    
+
     def handler_count(self, event_key: Optional[str] = None) -> int:
         """Get count of registered handlers."""
         if event_key:
@@ -290,7 +290,7 @@ def register_hook(
     if handler is not None:
         _registry.register(event_key, handler, priority)
         return None
-    
+
     # Return decorator
     def decorator(fn: HookHandler) -> HookHandler:
         _registry.register(event_key, fn, priority)
@@ -351,23 +351,23 @@ async def trigger_hook(
     """
     if context is None:
         context = {}
-    
+
     event = HookEvent(
         type=event_type,
         action=action,
         context=context,
         **kwargs
     )
-    
+
     # Get handlers for both general type and specific action
     type_handlers = _registry.get_handlers(event_type)
     action_handlers = _registry.get_handlers(event.event_key) if action else []
-    
+
     all_handlers = type_handlers + action_handlers
-    
+
     if not all_handlers:
         return event
-    
+
     for handler in all_handlers:
         try:
             result = handler(event)
@@ -379,7 +379,7 @@ async def trigger_hook(
                 f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}"
             )
             # Continue with other handlers
-    
+
     return event
 
 
@@ -398,19 +398,19 @@ def trigger_hook_sync(
     """
     if context is None:
         context = {}
-    
+
     event = HookEvent(
         type=event_type,
         action=action,
         context=context,
         **kwargs
     )
-    
+
     type_handlers = _registry.get_handlers(event_type)
     action_handlers = _registry.get_handlers(event.event_key) if action else []
-    
+
     all_handlers = type_handlers + action_handlers
-    
+
     for handler in all_handlers:
         try:
             result = handler(event)
@@ -423,7 +423,7 @@ def trigger_hook_sync(
             logger.error(
                 f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}"
             )
-    
+
     return event
 
 

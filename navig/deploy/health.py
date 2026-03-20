@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from navig.deploy.models import HealthConfig
 
@@ -110,6 +110,6 @@ class HealthChecker:
         """Run an arbitrary remote command as health check (exit 0 = healthy)."""
         result = self._remote.execute_command(self._cfg.command, self._server)
         if result.returncode == 0:
-            return True, f"command exit 0"
+            return True, "command exit 0"
         detail = (result.stderr or result.stdout or "").strip()[:200]
         return False, f"command exit {result.returncode}: {detail}"

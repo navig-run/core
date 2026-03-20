@@ -1,11 +1,11 @@
 
 
-import typer
-from navig.cli import show_subcommand_help, deprecation_warning
-from typing import Optional, List, Dict, Any, Tuple
-from pathlib import Path
-from navig import console_helper as ch
+from typing import Optional
 
+import typer
+
+from navig import console_helper as ch
+from navig.cli import show_subcommand_help
 
 log_app = typer.Typer(
     help="Log viewing and management",

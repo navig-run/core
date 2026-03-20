@@ -1,0 +1,45 @@
+agent:
+  enabled: true
+  mode: supervised
+  workspace: ~/.navig/agent/workspace
+  brain:
+    model: openrouter:anthropic/claude-3.5-sonnet
+    temperature: 0.7
+    max_tokens: 4096
+  eyes:
+    monitoring_interval: 60
+    disk_threshold: 85
+    memory_threshold: 90
+    cpu_threshold: 80
+    log_paths: []
+  ears:
+    telegram:
+      enabled: true
+      allowed_users: []  # add your Telegram user ID here
+    mcp:
+      enabled: true
+      port: 8765
+    email_accounts:
+      - enabled: false
+        provider: gmail
+        address: ${NAVIG_EMAIL_PERSONAL_ADDRESS}
+        password: ${NAVIG_EMAIL_PERSONAL_PASSWORD}
+        label: Personal
+        category: personal
+        check_interval: 120
+      - enabled: false
+        provider: gmail
+        address: ${NAVIG_EMAIL_WORK_ADDRESS}
+        password: ${NAVIG_EMAIL_WORK_PASSWORD}
+        label: Work
+        category: work
+        check_interval: 60
+  hands:
+    command_timeout: 300
+    safe_mode: true
+  heart:
+    heartbeat_interval: 300
+  personality:
+    profile: friendly
+    name: NAVIG
+    proactive: true

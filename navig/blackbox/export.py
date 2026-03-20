@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from .bundle import write_bundle
 from .types import Bundle
@@ -37,8 +36,8 @@ def export_bundle(
 
     # Encrypt with vault master key via CryptoEngine.seal()
     try:
-        from navig.vault.crypto import CryptoEngine
         from navig.vault.core_v2 import get_vault_v2
+        from navig.vault.crypto import CryptoEngine
 
         v2      = get_vault_v2()
         master  = v2.engine().derive_key()  # machine fingerprint

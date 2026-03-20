@@ -1,0 +1,162 @@
+type: playbook
+id: usb-tools-pack
+name: USB Portable Tools
+version: "1.0.0"
+description: >
+  Portable tools on USB drive — CLI-capable tools exposed as navig commands.
+  Covers networking (iperf3, rclone), system (nssm, vivetool, procmon),
+  iOS (futurerestore), productivity (notionai), and more.
+author: navig-user
+navig_min_version: "1.0"
+
+# Auto-discover available tools at runtime
+discovery:
+  type: python_cli
+  command: python {pack_root}/scripts/usb_tools/cli.py manifest
+  refresh_on_start: true
+
+# Static tool declarations for offline/fast access
+tools:
+  - id: usb-iperf3
+    name: iPerf3
+    description: Network bandwidth testing — client or server mode
+    category: network
+    icon: 📡
+    platform: [windows, linux]
+    commands:
+      - name: bandwidth_test
+        description: Run a bandwidth test to a remote iperf3 server
+        shell_windows: "{usb_root}\\tools--network--iperf3\\iperf3.exe -c {host} -p {port} -t {duration}"
+        shell_linux: "iperf3 -c {host} -p {port} -t {duration}"
+        args:
+          host:
+            type: string
+            required: true
+            description: Server hostname or IP address
+          port:
+            type: int
+            default: 5201
+          duration:
+            type: int
+            default: 10
+            description: Test duration in seconds
+
+  - id: usb-nssm
+    name: NSSM Service Manager
+    description: Install, start, stop or remove Windows services from any executable
+    category: system
+    icon: ⚙️
+    platform: [windows]
+    commands:
+      - name: install_service
+        description: Install a program as a Windows service
+        shell_windows: "{usb_root}\\tools--system--nssm\\win64\\nssm.exe install {service_name} {program_path}"
+        args:
+          service_name: { type: string, required: true }
+          program_path: { type: string, required: true }
+      - name: start_service
+        description: Start an nssm-managed service
+        shell_windows: "{usb_root}\\tools--system--nssm\\win64\\nssm.exe start {service_name}"
+        args:
+          service_name: { type: string, required: true }
+      - name: stop_service
+        description: Stop an nssm-managed service
+        shell_windows: "{usb_root}\\tools--system--nssm\\win64\\nssm.exe stop {service_name}"
+        args:
+          service_name: { type: string, required: true }
+
+  - id: usb-vivetool
+    name: ViVeTool
+    description: Enable or disable hidden Windows feature flags by numeric ID
+    category: system
+    icon: 🔧
+    platform: [windows]
+    commands:
+      - name: enable_feature
+        description: Enable a Windows feature flag
+        shell_windows: "{usb_root}\\tools--system--vivetool\\ViVeTool.exe /enable /id:{feature_id}"
+        args:
+          feature_id: { type: int, required: true, description: "Numeric Windows feature ID" }
+      - name: disable_feature
+        description: Disable a Windows feature flag
+        shell_windows: "{usb_root}\\tools--system--vivetool\\ViVeTool.exe /disable /id:{feature_id}"
+        args:
+          feature_id: { type: int, required: true }
+
+  - id: usb-rclone
+    name: rclone
+    description: Sync files between local and cloud storage (Dropbox, S3, SFTP…)
+    category: storage
+    icon: ☁️
+    platform: [windows, linux, mac]
+    commands:
+      - name: list_remote
+        description: List files in a configured rclone remote
+        shell_windows: "{usb_root}\\tools--storage--rclone-browser\\rclone\\rclone.exe ls {remote}:{path}"
+        shell_linux:   "{usb_root}/tools--storage--rclone-browser/rclone/rclone ls {remote}:{path}"
+        shell_mac:     "{usb_root}/tools--storage--rclone-browser/rclone/rclone ls {remote}:{path}"
+        args:
+          remote: { type: string, required: true, description: "rclone remote name (as configured)" }
+          path:   { type: string, default: "" }
+      - name: sync
+        description: Sync source to destination
+        shell_windows: "{usb_root}\\tools--storage--rclone-browser\\rclone\\rclone.exe sync {source} {destination}"
+        shell_linux:   "{usb_root}/tools--storage--rclone-browser/rclone/rclone sync {source} {destination}"
+        args:
+          source:      { type: string, required: true }
+          destination: { type: string, required: true }
+
+  - id: usb-procmon
+    name: Process Monitor (silent capture)
+    description: Capture a process/file/registry/network trace silently to a PML file
+    category: monitor
+    icon: 🔍
+    platform: [windows]
+    commands:
+      - name: capture
+        description: Start a silent trace saved to a PML log file
+        shell_windows: >
+          {usb_root}\Procmon64.exe /Quiet /Minimized /BackingFile "{log_file}"
+        args:
+          log_file: { type: string, required: true, description: "Destination .pml file path" }
+
+  - id: usb-futurerestore
+    name: FutureRestore
+    description: Restore iOS devices to unsigned firmware using saved SHSH2 blobs
+    category: ios
+    icon: 📱
+    platform: [windows]
+    commands:
+      - name: restore
+        description: Restore device using a blob and IPSW file
+        shell_windows: >
+          {usb_root}\tools--ios--futurerestore\futurerestore.exe --use-pwndfu -t "{blob}" "{ipsw}"
+        args:
+          blob: { type: string, required: true, description: "Path to .shsh2 blob" }
+          ipsw: { type: string, required: true, description: "Path to firmware .ipsw" }
+
+  - id: usb-nvidia-check
+    name: Tiny NVIDIA Update Checker
+    description: Check if a newer NVIDIA driver is available
+    category: system
+    icon: 🖥️
+    platform: [windows]
+    commands:
+      - name: check
+        description: Check for a newer NVIDIA driver silently
+        shell_windows: "{usb_root}\\TinyNvidiaUpdateChecker.exe --no-browser"
+        args: {}
+
+  - id: usb-backup
+    name: USB Backup
+    description: Backup the entire USB drive contents to .backups/ with a timestamp
+    category: utility
+    icon: 💾
+    platform: [windows, linux, mac]
+    commands:
+      - name: backup
+        description: Create a timestamped backup of USB root
+        shell_windows: "python {usb_root}\\scripts\\usb_tools\\cli.py backup"
+        shell_linux:   "python3 {usb_root}/scripts/usb_tools/cli.py backup"
+        shell_mac:     "python3 {usb_root}/scripts/usb_tools/cli.py backup"
+        args: {}

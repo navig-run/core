@@ -5,10 +5,11 @@ Automatically detect server configuration, services, and environment details.
 The Schema sees all. Catalogues all. Knows all.
 """
 
-import subprocess
 import re
-from typing import Dict, List, Optional, Any, Tuple
+import subprocess
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 from navig import console_helper as ch
 
 # Lazy paramiko import - deferred until SSH operations are actually needed
@@ -58,24 +59,24 @@ class ServerDiscovery:
         self.debug_logger = debug_logger
 
         self.discovered_data = {}
-    
+
     def _build_ssh_command(self, remote_command: str) -> List[str]:
         """Build SSH command with proper authentication."""
         cmd = ['ssh', '-p', str(self.port)]
-        
+
         # Disable strict host key checking for automation
         cmd.extend(['-o', 'StrictHostKeyChecking=no'])
         cmd.extend(['-o', 'UserKnownHostsFile=/dev/null'])
         cmd.extend(['-o', 'LogLevel=ERROR'])  # Suppress warnings
-        
+
         if self.ssh_key:
             cmd.extend(['-i', str(Path(self.ssh_key).expanduser())])
-        
+
         cmd.append(f"{self.user}@{self.host}")
         cmd.append(remote_command)
-        
+
         return cmd
-    
+
     def _execute_ssh(self, command: str) -> Tuple[bool, str, str]:
         """
         Execute SSH command and return (success, stdout, stderr).
@@ -88,7 +89,7 @@ class ServerDiscovery:
             return self._execute_ssh_paramiko(command)
         else:
             return self._execute_ssh_subprocess(command)
-    
+
     def _execute_ssh_paramiko(self, command: str) -> Tuple[bool, str, str]:
         """Execute SSH command using paramiko with connection pooling."""
         import time
@@ -107,7 +108,7 @@ class ServerDiscovery:
         try:
             # Use connection pool for better performance
             from navig.connection_pool import SSHConnectionPool
-            
+
             ssh_config = {
                 'host': self.host,
                 'port': self.port,
@@ -115,7 +116,7 @@ class ServerDiscovery:
                 'ssh_key': self.ssh_key,
                 'ssh_password': self.ssh_password,
             }
-            
+
             pool = SSHConnectionPool.get_instance()
             conn = pool.get_connection(ssh_config)
             success, stdout_text, stderr_text = conn.execute(command, timeout=30)
@@ -151,7 +152,7 @@ class ServerDiscovery:
                 )
 
             return (False, "", error_msg)
-    
+
     def _execute_ssh_subprocess(self, command: str) -> Tuple[bool, str, str]:
         """Execute SSH command using subprocess (key auth only)."""
         import time
@@ -223,12 +224,12 @@ class ServerDiscovery:
                 )
 
             return (False, "", error_msg)
-    
+
     def test_connection(self) -> bool:
         """Test if SSH connection works."""
         success, stdout, stderr = self._execute_ssh("echo 'NAVIG_TEST'")
         return success and "NAVIG_TEST" in stdout
-    
+
     def discover_os(self, progress: bool = True) -> Dict[str, str]:
         """Detect operating system and version."""
         if progress:
@@ -257,7 +258,7 @@ class ServerDiscovery:
         if progress:
             ch.success(f"OS: {os_info['os']}")
         return os_info
-    
+
     def discover_databases(self, progress: bool = True) -> Dict[str, Any]:
         """Detect installed databases and their configurations."""
         if progress:
@@ -283,7 +284,7 @@ class ServerDiscovery:
             ch.dim("  No databases detected")
 
         return {'databases': databases}
-    
+
     def _discover_mysql(self) -> Optional[Dict[str, Any]]:
         """Detect MySQL/MariaDB installation."""
         # First check if process is running
@@ -306,7 +307,7 @@ class ServerDiscovery:
             'root_user': 'root',
             'root_password': None,
         }
-        
+
         # Get MySQL/MariaDB version - try multiple methods
         version_commands = [
             'mysql --version',
@@ -344,14 +345,14 @@ class ServerDiscovery:
                 if match:
                     mysql_info['version'] = match.group(1)
                     break
-        
+
         # Try to detect port from listening sockets
         success, stdout, _ = self._execute_ssh("ss -tlnp 2>/dev/null | grep -E 'mysqld|mariadb' || netstat -tlnp 2>/dev/null | grep -E 'mysqld|mariadb'")
         if success and stdout:
             match = re.search(r':(\d+)', stdout)
             if match:
                 mysql_info['port'] = int(match.group(1))
-        
+
         # Try to auto-detect root credentials
         root_creds = self._discover_mysql_root_credentials()
         if root_creds:
@@ -422,23 +423,23 @@ class ServerDiscovery:
         success, stdout, _ = self._execute_ssh("systemctl is-active postgresql 2>/dev/null")
         if not success or stdout != 'active':
             return None
-        
+
         postgres_info = {
             'type': 'postgresql',
             'port': 5432,  # Default
             'version': 'Unknown',
             'service_name': 'postgresql',
         }
-        
+
         # Get PostgreSQL version
         success, stdout, _ = self._execute_ssh("psql --version 2>/dev/null")
         if success:
             match = re.search(r'(\d+\.\d+)', stdout)
             if match:
                 postgres_info['version'] = match.group(1)
-        
+
         return postgres_info
-    
+
     def discover_web_servers(self, progress: bool = True) -> Dict[str, Any]:
         """Detect web servers (Nginx, Apache)."""
         if progress:
@@ -464,28 +465,28 @@ class ServerDiscovery:
             ch.dim("  No web servers detected")
 
         return {'web_servers': web_servers}
-    
+
     def _discover_nginx(self) -> Optional[Dict[str, Any]]:
         """Detect Nginx installation."""
         # First check if process is running
         success, stdout, _ = self._execute_ssh("ps aux | grep nginx | grep -v grep")
         process_running = success and 'nginx' in stdout
-        
+
         # Check service status
         success, stdout, _ = self._execute_ssh("systemctl is-active nginx 2>/dev/null")
         service_active = success and stdout == 'active'
-        
+
         # If neither process nor service, no Nginx
         if not process_running and not service_active:
             return None
-        
+
         nginx_info = {
             'type': 'nginx',
             'version': 'Unknown',
             'config_path': '/etc/nginx',
             'sites_path': '/etc/nginx/sites-available',
         }
-        
+
         # Get Nginx version - try multiple methods
         for cmd in ['nginx -v', '/usr/sbin/nginx -v', '/usr/local/nginx/sbin/nginx -v']:
             success, stdout, stderr = self._execute_ssh(f"{cmd} 2>&1")
@@ -495,7 +496,7 @@ class ServerDiscovery:
                 if match:
                     nginx_info['version'] = match.group(1)
                     break
-        
+
         # Try to detect config path from process
         if process_running:
             success, stdout, _ = self._execute_ssh("ps aux | grep 'nginx: master process' | grep -v grep")
@@ -504,30 +505,30 @@ class ServerDiscovery:
                 match = re.search(r'-c\s+(\S+)', stdout)
                 if match:
                     nginx_info['config_path'] = match.group(1).replace('/nginx.conf', '')
-        
+
         return nginx_info
-    
+
     def _discover_apache(self) -> Optional[Dict[str, Any]]:
         """Detect Apache installation."""
         success, stdout, _ = self._execute_ssh("systemctl is-active apache2 2>/dev/null || systemctl is-active httpd 2>/dev/null")
         if not success or stdout != 'active':
             return None
-        
+
         apache_info = {
             'type': 'apache',
             'version': 'Unknown',
             'config_path': '/etc/apache2',
         }
-        
+
         # Get Apache version
         success, stdout, _ = self._execute_ssh("apache2 -v 2>/dev/null || httpd -v 2>/dev/null")
         if success:
             match = re.search(r'Apache/(\d+\.\d+\.\d+)', stdout)
             if match:
                 apache_info['version'] = match.group(1)
-        
+
         return apache_info
-    
+
     def discover_php(self, progress: bool = True) -> Dict[str, Any]:
         """Detect PHP version and configuration."""
         if progress:
@@ -562,7 +563,7 @@ class ServerDiscovery:
             ch.dim("  PHP not detected")
 
         return php_info
-    
+
     def discover_application_paths(self, progress: bool = True, skip_web_root: bool = False) -> Dict[str, Any]:
         """
         Detect common application paths.
@@ -627,7 +628,7 @@ class ServerDiscovery:
                 paths['log_paths'].append(log_path)
 
         return paths
-    
+
     def _discover_laravel_apps(self) -> List[str]:
         """Find Laravel installations."""
         # Look for artisan files (indicator of Laravel)
@@ -639,7 +640,7 @@ class ServerDiscovery:
                 apps.append(app_path)
             return apps
         return []
-    
+
     def discover_all(self, progress: bool = True, skip_web_root: bool = False) -> Dict[str, Any]:
         """
         Run all discovery tasks and return complete server profile.
@@ -675,7 +676,7 @@ class ServerDiscovery:
             ch.success_panel("Discovery Complete")
 
         return discovered
-    
+
     def format_for_config(self, discovered: Dict[str, Any]) -> Dict[str, Any]:
         """
         Format discovered data for server configuration.
@@ -702,7 +703,7 @@ class ServerDiscovery:
                 'cache': 'redis-server',
             },
         }
-        
+
         # Extract database info
         databases = discovered.get('databases', [])
         if databases:
@@ -717,7 +718,7 @@ class ServerDiscovery:
             }
             config['services']['database'] = db['service_name']
             config['metadata']['mysql_version'] = db.get('version', 'Unknown')
-        
+
         # Extract web server info
         web_servers = discovered.get('web_servers', [])
         if web_servers:
@@ -725,7 +726,7 @@ class ServerDiscovery:
             config['services']['web'] = web['type']
             if web['type'] == 'nginx':
                 config['paths']['nginx_config'] = web.get('sites_path', '/etc/nginx/sites-available')
-        
+
         # Extract PHP info
         php_info = discovered.get('php_info', {})
         if php_info and php_info.get('installed'):
@@ -733,17 +734,17 @@ class ServerDiscovery:
             config['services']['php'] = php_info.get('fpm_service', 'php-fpm')
             if php_info.get('config_path'):
                 config['paths']['php_config'] = php_info['config_path']
-        
+
         # Extract paths
         if discovered.get('web_root'):
             config['paths']['web_root'] = discovered['web_root']
-        
+
         log_paths = discovered.get('log_paths', [])
         if log_paths:
             config['paths']['logs'] = log_paths[0]  # Use first log path
-        
+
         return config
-    
+
     def discover_templates(self, progress: bool = True) -> Dict[str, Dict[str, Any]]:
         """
         Auto-detect installed templates on the server.
@@ -793,7 +794,7 @@ class ServerDiscovery:
             ch.dim("No templates detected")
 
         return detected_templates
-    
+
     def _detect_n8n(self) -> Dict[str, Any]:
         """
         Detect n8n workflow automation platform.
@@ -811,18 +812,18 @@ class ServerDiscovery:
             'services': [],
             'ports': []
         }
-        
+
         # Check for systemd service
         success, stdout, _ = self._execute_ssh("systemctl is-active n8n 2>/dev/null")
         if success or "active" in stdout:
             info['detected'] = True
             info['services'].append('n8n.service')
-        
+
         # Check for n8n process
         success, stdout, _ = self._execute_ssh("pgrep -f 'n8n' 2>/dev/null")
         if success and stdout:
             info['detected'] = True
-        
+
         # Check for n8n binary and get version - try multiple methods
         version_commands = [
             "n8n --version",
@@ -842,12 +843,12 @@ class ServerDiscovery:
                 if version_match:
                     info['version'] = version_match.group(1)
                     break
-        
+
         # Check for listening port
         success, stdout, _ = self._execute_ssh("ss -tlnp 2>/dev/null | grep -E ':5678\\s'")
         if success and stdout:
             info['ports'].append(5678)
-        
+
         # Check for n8n home directory
         success, stdout, _ = self._execute_ssh("test -d ~/.n8n && echo 'exists' || echo 'missing'")
         if success and "exists" in stdout:
@@ -857,16 +858,16 @@ class ServerDiscovery:
                 info['paths']['n8n_home'] = f"{home_path.strip()}/.n8n"
                 info['paths']['workflows_dir'] = f"{home_path.strip()}/.n8n/workflows"
                 info['paths']['credentials_dir'] = f"{home_path.strip()}/.n8n/credentials"
-        
+
         # Check common installation paths
         for path in ['/opt/n8n', '/usr/local/n8n', '/var/lib/n8n']:
             success, stdout, _ = self._execute_ssh(f"test -d {path} && echo 'exists'")
             if success and "exists" in stdout:
                 info['paths']['install_dir'] = path
                 break
-        
+
         return info
-    
+
     def _detect_hestiacp(self) -> Dict[str, Any]:
         """
         Detect HestiaCP control panel.
@@ -884,7 +885,7 @@ class ServerDiscovery:
             'services': [],
             'ports': []
         }
-        
+
         # Check for Hestia installation directory
         success, stdout, _ = self._execute_ssh("test -d /usr/local/hestia && echo 'exists'")
         if success and "exists" in stdout:
@@ -893,12 +894,12 @@ class ServerDiscovery:
             info['paths']['hestia_bin'] = '/usr/local/hestia/bin'
             info['paths']['hestia_conf'] = '/usr/local/hestia/conf'
             info['paths']['hestia_data'] = '/usr/local/hestia/data'
-        
+
         # Check for Hestia CLI
         success, stdout, _ = self._execute_ssh("which v-list-users 2>/dev/null")
         if success and stdout:
             info['detected'] = True
-        
+
         # Get Hestia version - try multiple methods
         version_commands = [
             "/usr/local/hestia/bin/v-list-sys-info json 2>/dev/null",
@@ -927,31 +928,31 @@ class ServerDiscovery:
                 if version_match:
                     info['version'] = version_match.group(1)
                     break
-        
+
         # Check for Hestia service
         success, stdout, _ = self._execute_ssh("systemctl is-active hestia 2>/dev/null")
         if success or "active" in stdout:
             info['services'].append('hestia')
-        
+
         # Check for web interface port
         success, stdout, _ = self._execute_ssh("ss -tlnp 2>/dev/null | grep -E ':8083\\s'")
         if success and stdout:
             info['ports'].append(8083)
-        
+
         # Check for common Hestia paths
         common_paths = {
             'web_root': '/home',
             'backup_dir': '/backup',
             'log_dir': '/var/log/hestia'
         }
-        
+
         for key, path in common_paths.items():
             success, stdout, _ = self._execute_ssh(f"test -d {path} && echo 'exists'")
             if success and "exists" in stdout:
                 info['paths'][key] = path
-        
+
         return info
-    
+
     def _detect_gitea(self) -> Dict[str, Any]:
         """
         Detect Gitea self-hosted Git service.
@@ -970,13 +971,13 @@ class ServerDiscovery:
             'services': [],
             'ports': []
         }
-        
+
         # Check for systemd service
         success, stdout, _ = self._execute_ssh("systemctl is-active gitea 2>/dev/null")
         if success or "active" in stdout:
             info['detected'] = True
             info['services'].append('gitea.service')
-        
+
         # Check for Gitea binary and get version
         success, stdout, _ = self._execute_ssh("gitea --version 2>/dev/null")
         if success and stdout:
@@ -985,7 +986,7 @@ class ServerDiscovery:
             version_match = re.search(r'version\s+(\d+\.\d+\.\d+)', stdout, re.IGNORECASE)
             if version_match:
                 info['version'] = version_match.group(1)
-        
+
         # Check common binary locations
         for bin_path in ['/usr/local/bin/gitea', '/usr/bin/gitea', '/opt/gitea/gitea']:
             success, stdout, _ = self._execute_ssh(f"test -f {bin_path} && echo 'exists'")
@@ -993,32 +994,32 @@ class ServerDiscovery:
                 info['detected'] = True
                 info['paths']['gitea_binary'] = bin_path
                 break
-        
+
         # Check for listening port
         success, stdout, _ = self._execute_ssh("ss -tlnp 2>/dev/null | grep -E ':3000\\s'")
         if success and stdout:
             info['ports'].append(3000)
-        
+
         # Check common installation paths
         for install_path in ['/var/lib/gitea', '/home/git/gitea', '/opt/gitea']:
             success, stdout, _ = self._execute_ssh(f"test -d {install_path} && echo 'exists'")
             if success and "exists" in stdout:
                 info['paths']['gitea_root'] = install_path
-                
+
                 # Try to find common subdirectories
                 for subdir in ['repositories', 'data', 'log', 'custom']:
                     success2, stdout2, _ = self._execute_ssh(f"test -d {install_path}/{subdir} && echo 'exists'")
                     if success2 and "exists" in stdout2:
                         info['paths'][f'gitea_{subdir}'] = f"{install_path}/{subdir}"
-                
+
                 break
-        
+
         # Check for config file
         for config_path in ['/etc/gitea/app.ini', '/var/lib/gitea/custom/conf/app.ini']:
             success, stdout, _ = self._execute_ssh(f"test -f {config_path} && echo 'exists'")
             if success and "exists" in stdout:
                 info['paths']['gitea_config'] = config_path
                 break
-        
+
         return info
 

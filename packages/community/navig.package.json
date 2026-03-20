@@ -1,0 +1,10 @@
+{
+  "id": "community",
+  "name": "Community Packs",
+  "version": "1.0.0",
+  "description": "Community-contributed workflows: backup procedures, deployment checklists, devops shortcuts, Docker health checks, security audits.",
+  "author": "navig",
+  "license": "MIT",
+  "provides": ["workflows"],
+  "depends_on": {}
+}

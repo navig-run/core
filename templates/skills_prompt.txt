@@ -1,9 +1,0 @@
-You have access to the following tools/skills:
-
-{% for skill in skills %}
-[{{skill.id}}] {{skill.name}} — {{skill.summary}}
-Commands:
-{% for cmd in skill.commands %}
-- {{cmd.signature}} : {{cmd.description}}
-{% endfor %}
-{% endfor %}

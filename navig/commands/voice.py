@@ -1,7 +1,9 @@
 
-import typer
 from pathlib import Path
 from typing import Optional
+
+import typer
+
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
@@ -22,11 +24,12 @@ def speak_command(
 ):
     """Synthesize speech from text."""
     import asyncio
-    from navig.voice.tts import get_tts, TTSProvider
-    
+
+    from navig.voice.tts import TTSProvider, get_tts
+
     async def _run():
         tts = get_tts()
-        
+
         # Resolve provider
         prov_enum = None
         if provider:
@@ -34,21 +37,21 @@ def speak_command(
                 prov_enum = TTSProvider(provider.lower())
             except ValueError:
                 ch.warning(f"Unknown provider '{provider}', using default")
-        
+
         ch.info(f"Synthesizing: '{text}'...")
-        
+
         result = await tts.synthesize(
             text,
             provider=prov_enum,
             voice=voice,
             output_path=output
         )
-        
+
         if result.success:
             ch.success(f"Audio saved to: {result.audio_path}")
             if result.provider:
                  ch.info(f"Provider: {result.provider.value}, Voice: {result.voice}")
-            
+
             if play and result.audio_path:
                 try:
                     from navig.voice.playback import play_sound
@@ -70,11 +73,12 @@ def transcribe_command(
 ):
     """Transcribe audio file to text."""
     import asyncio
-    from navig.voice.stt import get_stt, STTProvider
-    
+
+    from navig.voice.stt import STTProvider, get_stt
+
     async def _run():
         stt = get_stt()
-        
+
         prov_enum = None
         if provider:
             try:
@@ -85,7 +89,7 @@ def transcribe_command(
 
         ch.info(f"Transcribing {file}...")
         result = await stt.transcribe(file, provider=prov_enum)
-        
+
         if result.success:
             ch.success("Transcription complete:")
             ch.console.print(f"[bold]{result.text}[/bold]")
@@ -103,8 +107,9 @@ def list_voices(
 ):
     """List available voices for a provider."""
     import asyncio
-    from navig.voice.tts import get_tts, TTSProvider
-    
+
+    from navig.voice.tts import TTSProvider, get_tts
+
     async def _run():
         tts = get_tts()
         try:
@@ -114,20 +119,20 @@ def list_voices(
             return
 
         voices = await tts.list_voices(prov_enum)
-        
+
         if not voices:
             ch.warning("No voices found or provider not configured.")
             return
-            
+
         from rich.table import Table
         table = Table(title=f"Voices for {provider}")
         table.add_column("ID", style="cyan")
         table.add_column("Name", style="green")
         table.add_column("Language", style="yellow")
-        
+
         for v in voices:
             table.add_row(v["id"], v["name"], v["language"])
-            
+
         ch.console.print(table)
 
     asyncio.run(_run())

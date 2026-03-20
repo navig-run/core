@@ -29,6 +29,7 @@ from loguru import logger
 # Single canonical upstream reference used throughout the codebase.
 UPSTREAM_REPO = "navig-run/core"
 from navig.platform.paths import config_dir as _navig_config_dir
+
 UPSTREAM_URL = f"https://github.com/{UPSTREAM_REPO}.git"
 _GITHUB_API = "https://api.github.com"
 _CORE_REPO_DIR = _navig_config_dir() / "core-repo"

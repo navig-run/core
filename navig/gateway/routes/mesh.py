@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import web
+
     from navig.gateway.server import NavigGateway
 
 try:
@@ -82,9 +83,11 @@ def _ping(gw: "NavigGateway"):
 async def _bootstrap_peer(url: str, gw: "NavigGateway") -> dict | None:
     """Fetch /health then /mesh/peers from a manually-specified peer URL."""
     try:
-        import aiohttp
-        from navig.mesh.registry import NodeRecord, get_registry
         import time
+
+        import aiohttp
+
+        from navig.mesh.registry import NodeRecord, get_registry
 
         async with aiohttp.ClientSession() as session:
             # Quick health check

@@ -1,5 +1,7 @@
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
+
 
 class CommandParameter(BaseModel):
     type: str
@@ -35,7 +37,7 @@ class SkillManifest(BaseModel):
     tags: List[str] = []
     navig_commands: List[NavigCommand] = Field(alias="navig-commands", default=[])
     examples: List[SkillExample] = []
-    
+
     class Config:
         populate_by_name = True
 
@@ -53,6 +55,6 @@ class NavigPack(BaseModel):
     type: str = "runbook" # runbook, checklist, workflow
     tags: List[str] = []
     steps: List[PackStep] = []
-    
+
     class Config:
         populate_by_name = True

@@ -1,5 +1,5 @@
-import json
-from typing import Dict, Any, List
+from typing import Any, Dict
+
 
 def register(server: Any) -> None:
     """Register memory (key facts) tools."""
@@ -89,7 +89,7 @@ def register(server: Any) -> None:
             }
         }
     })
-    
+
     server._tool_handlers.update({
         "memory.key_facts.remember": _tool_memory_remember,
         "memory.key_facts.forget": _tool_memory_forget,
@@ -149,8 +149,8 @@ def _tool_memory_retrieve(server: Any, args: Dict[str, Any]) -> Any:
     import logging as _logging
     _log = _logging.getLogger("navig.mcp.memory.retrieve")
     try:
-        from navig.memory.key_facts import KeyFactStore
         from navig.memory.fact_retriever import FactRetriever
+        from navig.memory.key_facts import KeyFactStore
         query = args.get("query", "").strip()
         if not query:
             return []

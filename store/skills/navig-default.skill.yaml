@@ -1,0 +1,41 @@
+id: navig-default-skill
+version: "1.0.0"
+manifest:
+  name: "NAVIG Default Skill"
+  description: |
+    The baseline shipped skill that provides NAVIG's core cognitive loop:
+    understand → plan → execute → verify. Used as the root skill when no
+    other skill is matched.
+  author: navig-core
+  license: Apache-2.0
+  category: core
+  tags: [core, system, default]
+
+soul_hint: |
+  Read CURRENT_PHASE.md before acting. Map requests to the workspace layout.
+  Verify after each significant change. Update plans when work is complete.
+
+input_schema:
+  request:
+    type: string
+    description: "The user's natural language request or task description"
+    required: true
+  context:
+    type: object
+    description: "Optional key-value context to inject (e.g., active_host, current_app)"
+
+output_spec:
+  result: string
+  actions_taken:
+    type: array
+    items: string
+  verification_passed: boolean
+
+triggers:
+  - type: default
+    when: "no other skill matched"
+
+permissions:
+  - read_file
+  - run_command
+  - list_files

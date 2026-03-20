@@ -12,7 +12,7 @@ Usage:
     store.save(profile)
 """
 
-from navig.identity.models import UserProfile, SocialLink
+from navig.identity.models import SocialLink, UserProfile
 from navig.identity.store import IdentityStore, get_identity_store
 
 __all__ = [

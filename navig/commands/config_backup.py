@@ -12,7 +12,8 @@ import tarfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from navig import console_helper as ch
 
 
@@ -33,7 +34,7 @@ def _collect_configs(include_global: bool = True) -> Dict[str, Any]:
         Dictionary containing all configuration data
     """
     from navig.config import get_config_manager
-    
+
     config_manager = get_config_manager()
     data = {
         'version': '1.0',
@@ -41,14 +42,14 @@ def _collect_configs(include_global: bool = True) -> Dict[str, Any]:
         'hosts': {},
         'apps': {},
     }
-    
+
     # Include global config
     if include_global:
         data['global_config'] = config_manager.global_config.copy()
         # Remove sensitive data from global config
         if 'openrouter_api_key' in data['global_config']:
             data['global_config']['openrouter_api_key'] = '[REDACTED]'
-    
+
     # Collect host configs
     for host_name in config_manager.list_hosts():
         try:
@@ -61,7 +62,7 @@ def _collect_configs(include_global: bool = True) -> Dict[str, Any]:
             data['hosts'][host_name] = safe_config
         except Exception as e:
             ch.warning(f"Could not load host config '{host_name}': {e}")
-    
+
     # Collect app configs
     for host_name in config_manager.list_hosts():
         data['apps'][host_name] = {}
@@ -76,7 +77,7 @@ def _collect_configs(include_global: bool = True) -> Dict[str, Any]:
                 data['apps'][host_name][app_name] = safe_config
             except Exception as e:
                 ch.warning(f"Could not load app config '{app_name}': {e}")
-    
+
     return data
 
 
@@ -92,12 +93,12 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> bool:
         True if successful
     """
     from navig.config import get_config_manager
-    
+
     config_manager = get_config_manager()
-    
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        
+
         # Create manifest
         manifest = {
             'version': '1.0',
@@ -105,57 +106,57 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> bool:
             'include_secrets': include_secrets,
             'contents': [],
         }
-        
+
         # Copy hosts directory
         hosts_dir = config_manager.config_dir / "hosts"
         if hosts_dir.exists():
             dst_hosts = tmpdir_path / "hosts"
             shutil.copytree(hosts_dir, dst_hosts)
             manifest['contents'].append('hosts')
-        
+
         # Copy apps directory
         apps_dir = config_manager.config_dir / "apps"
         if apps_dir.exists():
             dst_apps = tmpdir_path / "apps"
             shutil.copytree(apps_dir, dst_apps)
             manifest['contents'].append('apps')
-        
+
         # Copy global config
         global_config_file = config_manager.config_dir / "config.yaml"
         if global_config_file.exists():
             shutil.copy(global_config_file, tmpdir_path / "config.yaml")
             manifest['contents'].append('config.yaml')
-        
+
         # Redact secrets if not including them
         if not include_secrets:
             _redact_secrets_in_dir(tmpdir_path)
-        
+
         # Write manifest
         manifest_path = tmpdir_path / "manifest.json"
         with open(manifest_path, 'w') as f:
             json.dump(manifest, f, indent=2)
-        
+
         # Create tarball
         with tarfile.open(output_path, "w:gz") as tar:
             tar.add(tmpdir_path, arcname="navig-config")
-    
+
     return True
 
 
 def _redact_secrets_in_dir(dir_path: Path):
     """Redact sensitive data in all YAML files in a directory."""
     import yaml
-    
+
     sensitive_keys = ['password', 'api_key', 'openrouter_api_key', 'secret', 'token']
-    
+
     for yaml_file in dir_path.rglob("*.yaml"):
         try:
             with open(yaml_file, 'r') as f:
                 data = yaml.safe_load(f)
-            
+
             if data:
                 _redact_dict(data, sensitive_keys)
-                
+
                 with open(yaml_file, 'w') as f:
                     yaml.dump(data, f, default_flow_style=False, sort_keys=False)
         except Exception:
@@ -166,7 +167,7 @@ def _redact_dict(d: Dict, sensitive_keys: List[str]):
     """Recursively redact sensitive keys in a dictionary."""
     if not isinstance(d, dict):
         return
-    
+
     for key, value in d.items():
         if any(sk in key.lower() for sk in sensitive_keys):
             d[key] = '[REDACTED]'
@@ -186,15 +187,16 @@ def _encrypt_file(file_path: Path, password: str) -> Path:
         Path to encrypted file
     """
     try:
+        import base64
+
         from cryptography.fernet import Fernet
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        import base64
     except ImportError:
         ch.error("Encryption requires 'cryptography' package.")
         ch.info("Install with: pip install cryptography")
         raise
-    
+
     # Generate key from password
     salt = os.urandom(16)
     kdf = PBKDF2HMAC(
@@ -205,18 +207,18 @@ def _encrypt_file(file_path: Path, password: str) -> Path:
     )
     key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
     fernet = Fernet(key)
-    
+
     # Read and encrypt file
     with open(file_path, 'rb') as f:
         data = f.read()
-    
+
     encrypted = fernet.encrypt(data)
-    
+
     # Write encrypted file with salt prefix
     encrypted_path = file_path.with_suffix(file_path.suffix + '.enc')
     with open(encrypted_path, 'wb') as f:
         f.write(salt + encrypted)
-    
+
     return encrypted_path
 
 
@@ -232,23 +234,24 @@ def _decrypt_file(file_path: Path, password: str) -> Path:
         Path to decrypted file
     """
     try:
+        import base64
+
         from cryptography.fernet import Fernet
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        import base64
     except ImportError:
         ch.error("Decryption requires 'cryptography' package.")
         ch.info("Install with: pip install cryptography")
         raise
-    
+
     # Read encrypted file
     with open(file_path, 'rb') as f:
         content = f.read()
-    
+
     # Extract salt and encrypted data
     salt = content[:16]
     encrypted = content[16:]
-    
+
     # Regenerate key from password
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -258,15 +261,15 @@ def _decrypt_file(file_path: Path, password: str) -> Path:
     )
     key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
     fernet = Fernet(key)
-    
+
     # Decrypt
     decrypted = fernet.decrypt(encrypted)
-    
+
     # Write decrypted file
     decrypted_path = file_path.with_suffix('')  # Remove .enc suffix
     with open(decrypted_path, 'wb') as f:
         f.write(decrypted)
-    
+
     return decrypted_path
 
 
@@ -286,20 +289,20 @@ def export_config(options: Dict[str, Any]):
         password: Encryption password (prompted if encrypt=True and not provided)
     """
     from navig.config import get_config_manager
-    
+
     config_manager = get_config_manager()
-    
+
     output = options.get('output')
     fmt = options.get('format', 'archive')
     include_secrets = options.get('include_secrets', False)
     encrypt = options.get('encrypt', False)
     password = options.get('password')
     json_output = options.get('json', False)
-    
+
     # Generate default output path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir = _get_backup_dir()
-    
+
     if output is None:
         if fmt == 'json':
             output = backup_dir / f"navig-config-{timestamp}.json"
@@ -307,10 +310,10 @@ def export_config(options: Dict[str, Any]):
             output = backup_dir / f"navig-config-{timestamp}.tar.gz"
     else:
         output = Path(output)
-    
+
     # Ensure output directory exists
     output.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Check for confirmation if including secrets
     if include_secrets:
         if not ch.confirm_operation(
@@ -322,7 +325,7 @@ def export_config(options: Dict[str, Any]):
         ):
             ch.warning("Export cancelled.")
             return
-    
+
     # Get password for encryption
     if encrypt and not password:
         password = ch.prompt_input("Enter encryption password", password=True)
@@ -330,28 +333,28 @@ def export_config(options: Dict[str, Any]):
         if password != confirm_password:
             ch.error("Passwords do not match.")
             return
-    
+
     if not json_output:
         ch.info("Exporting NAVIG configuration...")
-    
+
     try:
         if fmt == 'json':
             # Export as JSON
             data = _collect_configs(include_global=True)
-            
+
             if include_secrets:
                 # Re-collect without redaction
                 from navig.config import get_config_manager
-                
+
                 config_manager = get_config_manager()
-                
+
                 # Override with unredacted data
                 for host_name in config_manager.list_hosts():
                     try:
                         data['hosts'][host_name] = config_manager.load_host_config(host_name)
                     except Exception:
                         pass
-                
+
                 for host_name in config_manager.list_hosts():
                     for app_name in config_manager.list_apps(host_name):
                         try:
@@ -360,23 +363,23 @@ def export_config(options: Dict[str, Any]):
                             data['apps'][host_name][app_name] = config_manager.load_app_config(host_name, app_name)
                         except Exception:
                             pass
-            
+
             with open(output, 'w') as f:
                 json.dump(data, f, indent=2)
         else:
             # Export as archive
             _create_archive(output, include_secrets=include_secrets)
-        
+
         # Encrypt if requested
         if encrypt:
             encrypted_path = _encrypt_file(output, password)
             os.remove(output)  # Remove unencrypted file
             output = encrypted_path
-        
+
         # Count items for summary
         hosts = config_manager.list_hosts()
         app_count = sum(len(config_manager.list_apps(h)) for h in hosts)
-        
+
         if json_output:
             ch.raw_print(json.dumps({
                 "success": True,
@@ -394,7 +397,7 @@ def export_config(options: Dict[str, Any]):
                 ch.dim("  Encrypted: Yes")
             if include_secrets:
                 ch.warning("  ⚠ Includes unredacted secrets")
-    
+
     except Exception as e:
         if json_output:
             ch.raw_print(json.dumps({"success": False, "error": str(e)}))
@@ -415,23 +418,24 @@ def import_config(options: Dict[str, Any]):
         merge: If True, merge with existing config; if False, replace
         password: Decryption password (prompted if file is encrypted)
     """
-    from navig.config import get_config_manager
     import yaml
-    
+
+    from navig.config import get_config_manager
+
     config_manager = get_config_manager()
-    
+
     input_file = Path(options.get('file'))
     merge = options.get('merge', True)
     password = options.get('password')
     json_output = options.get('json', False)
-    
+
     if not input_file.exists():
         ch.error(f"File not found: {input_file}")
         return
-    
+
     # Check if encrypted
     is_encrypted = input_file.suffix == '.enc'
-    
+
     # Decrypt if needed
     if is_encrypted:
         if not password:
@@ -442,14 +446,14 @@ def import_config(options: Dict[str, Any]):
             ch.error(f"Decryption failed: {e}")
             ch.info("Check your password and try again.")
             return
-    
+
     try:
         # Determine format
         if input_file.suffix == '.json':
             # JSON format
             with open(input_file, 'r') as f:
                 data = json.load(f)
-            
+
             hosts_data = data.get('hosts', {})
             apps_data = data.get('apps', {})
         else:
@@ -457,9 +461,9 @@ def import_config(options: Dict[str, Any]):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with tarfile.open(input_file, 'r:gz') as tar:
                     tar.extractall(tmpdir)
-                
+
                 extract_path = Path(tmpdir) / "navig-config"
-                
+
                 # Load hosts
                 hosts_data = {}
                 hosts_dir = extract_path / "hosts"
@@ -467,7 +471,7 @@ def import_config(options: Dict[str, Any]):
                     for yaml_file in hosts_dir.glob("*.yaml"):
                         with open(yaml_file, 'r') as f:
                             hosts_data[yaml_file.stem] = yaml.safe_load(f)
-                
+
                 # Load apps
                 apps_data = {}
                 apps_dir = extract_path / "apps"
@@ -478,7 +482,7 @@ def import_config(options: Dict[str, Any]):
                             for yaml_file in host_dir.glob("*.yaml"):
                                 with open(yaml_file, 'r') as f:
                                     apps_data[host_dir.name][yaml_file.stem] = yaml.safe_load(f)
-        
+
         # Confirm import
         if not ch.confirm_operation(
             operation_name="Import NAVIG configuration",
@@ -489,7 +493,7 @@ def import_config(options: Dict[str, Any]):
         ):
             ch.warning("Import cancelled.")
             return
-        
+
         # Import hosts
         imported_hosts = 0
         for host_name, host_config in hosts_data.items():
@@ -498,7 +502,7 @@ def import_config(options: Dict[str, Any]):
                 continue
             config_manager.save_host_config(host_name, host_config)
             imported_hosts += 1
-        
+
         # Import apps
         imported_apps = 0
         for host_name, apps in apps_data.items():
@@ -508,7 +512,7 @@ def import_config(options: Dict[str, Any]):
                     continue
                 config_manager.save_app_config(host_name, app_name, app_config)
                 imported_apps += 1
-        
+
         if json_output:
             ch.raw_print(json.dumps({
                 "success": True,
@@ -520,11 +524,11 @@ def import_config(options: Dict[str, Any]):
             ch.success("✓ Configuration imported successfully")
             ch.dim(f"  Imported hosts: {imported_hosts}")
             ch.dim(f"  Imported apps: {imported_apps}")
-        
+
         # Cleanup decrypted file if we created one
         if is_encrypted and input_file.exists():
             os.remove(input_file)
-    
+
     except Exception as e:
         ch.error(f"Import failed: {e}")
         # Cleanup decrypted file on error
@@ -609,19 +613,19 @@ def inspect_export(options: Dict[str, Any]):
         password: Decryption password if encrypted
     """
     import yaml
-    
+
     input_file = Path(options.get('file'))
     password = options.get('password')
     json_output = options.get('json', False)
-    
+
     if not input_file.exists():
         ch.error(f"File not found: {input_file}")
         return
-    
+
     # Check if encrypted
     is_encrypted = input_file.suffix == '.enc'
     decrypted_file = None
-    
+
     try:
         # Decrypt if needed
         if is_encrypted:
@@ -629,7 +633,7 @@ def inspect_export(options: Dict[str, Any]):
                 password = ch.prompt_input("Enter decryption password", password=True)
             decrypted_file = _decrypt_file(input_file, password)
             input_file = decrypted_file
-        
+
         # Read contents
         if input_file.suffix == '.json' or str(input_file).endswith('.json'):
             with open(input_file, 'r') as f:
@@ -639,16 +643,16 @@ def inspect_export(options: Dict[str, Any]):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with tarfile.open(input_file, 'r:gz') as tar:
                     tar.extractall(tmpdir)
-                
+
                 extract_path = Path(tmpdir) / "navig-config"
-                
+
                 # Read manifest
                 manifest_path = extract_path / "manifest.json"
                 manifest = {}
                 if manifest_path.exists():
                     with open(manifest_path, 'r') as f:
                         manifest = json.load(f)
-                
+
                 # Collect data from files
                 data = {
                     'version': manifest.get('version', 'unknown'),
@@ -656,13 +660,13 @@ def inspect_export(options: Dict[str, Any]):
                     'hosts': {},
                     'apps': {},
                 }
-                
+
                 hosts_dir = extract_path / "hosts"
                 if hosts_dir.exists():
                     for yaml_file in hosts_dir.glob("*.yaml"):
                         with open(yaml_file, 'r') as f:
                             data['hosts'][yaml_file.stem] = yaml.safe_load(f)
-                
+
                 apps_dir = extract_path / "apps"
                 if apps_dir.exists():
                     for host_dir in apps_dir.iterdir():
@@ -671,17 +675,17 @@ def inspect_export(options: Dict[str, Any]):
                             for yaml_file in host_dir.glob("*.yaml"):
                                 with open(yaml_file, 'r') as f:
                                     data['apps'][host_dir.name][yaml_file.stem] = yaml.safe_load(f)
-        
+
         if json_output:
             ch.raw_print(json.dumps(data, indent=2, default=str))
             return
-        
+
         # Display summary
         ch.header(f"Export: {options.get('file')}")
         ch.dim(f"Version: {data.get('version', 'unknown')}")
         ch.dim(f"Exported: {data.get('exported_at', 'unknown')}")
         ch.console.print()
-        
+
         # List hosts
         hosts = data.get('hosts', {})
         ch.subheader(f"Hosts ({len(hosts)})")
@@ -689,9 +693,9 @@ def inspect_export(options: Dict[str, Any]):
             host_addr = host_config.get('host', 'N/A')
             user = host_config.get('user', 'N/A')
             ch.info(f"  {host_name}: {user}@{host_addr}")
-        
+
         ch.console.print()
-        
+
         # List apps
         apps = data.get('apps', {})
         total_apps = sum(len(a) for a in apps.values())
@@ -699,10 +703,10 @@ def inspect_export(options: Dict[str, Any]):
         for host_name, host_apps in apps.items():
             for app_name in host_apps:
                 ch.info(f"  {host_name}/{app_name}")
-    
+
     except Exception as e:
         ch.error(f"Failed to inspect export: {e}")
-    
+
     finally:
         # Cleanup decrypted file
         if decrypted_file and decrypted_file.exists():
@@ -725,11 +729,11 @@ def delete_export(options: Dict[str, Any]):
     """
     input_file = Path(options.get('file'))
     json_output = options.get('json', False)
-    
+
     if not input_file.exists():
         ch.error(f"File not found: {input_file}")
         return
-    
+
     if not ch.confirm_operation(
         operation_name=f"Delete export: {input_file.name}",
         operation_type='standard',
@@ -738,7 +742,7 @@ def delete_export(options: Dict[str, Any]):
     ):
         ch.warning("Cancelled.")
         return
-    
+
     try:
         os.remove(input_file)
         if json_output:

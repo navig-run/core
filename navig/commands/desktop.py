@@ -134,7 +134,7 @@ def _get_client() -> _DesktopClient:
         return _DesktopClient()
     except Exception as exc:
         typer.echo(f"error: could not start desktop agent: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 def _emit(data: object, json_output: bool) -> None:
@@ -176,7 +176,7 @@ def desktop_ping(
         _emit(result, json_output)
     except _AgentError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     finally:
         client.close()
 
@@ -213,7 +213,7 @@ def desktop_find(
                 typer.echo(f"  [{handle}] {ct} — {elem_name!r}  rect={rect}")
     except _AgentError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     finally:
         client.close()
 
@@ -239,7 +239,7 @@ def desktop_click(
         _emit(result, json_output)
     except _AgentError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     finally:
         client.close()
 
@@ -266,7 +266,7 @@ def desktop_set(
         _emit(result, json_output)
     except _AgentError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     finally:
         client.close()
 
@@ -290,7 +290,7 @@ def desktop_tree(
             _print_tree(tree, indent=0)
     except _AgentError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     finally:
         client.close()
 
@@ -335,7 +335,7 @@ def desktop_ahk(
             script = candidate.read_text(encoding="utf-8")
         except Exception as exc:
             typer.echo(f"error: could not read script file: {exc}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
     client = _get_client()
     try:
@@ -353,6 +353,6 @@ def desktop_ahk(
                 raise typer.Exit(exit_code)
     except _AgentError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     finally:
         client.close()

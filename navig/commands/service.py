@@ -67,11 +67,11 @@ def service_install(
         navig service install --method nssm
         navig service install --gateway --scheduler
     """
-    from navig.daemon.entry import save_default_config
-    from navig.daemon import service_manager as sm
-
     # Save config
     import json
+
+    from navig.daemon import service_manager as sm
+    from navig.daemon.entry import save_default_config
     config_path = save_default_config()
     cfg = json.loads(config_path.read_text(encoding="utf-8"))
     cfg["telegram_bot"] = bot
@@ -139,6 +139,7 @@ def service_start(
         daemon_main()
     else:
         import subprocess
+
         from navig.daemon.service_manager import _pythonw_exe
         # Use pythonw.exe on Windows — completely invisible, no console window
         exe = _pythonw_exe()
@@ -206,9 +207,10 @@ def service_restart():
     Examples:
         navig service restart
     """
-    from navig.daemon.supervisor import NavigDaemon
     import subprocess
     import time
+
+    from navig.daemon.supervisor import NavigDaemon
 
     if NavigDaemon.is_running():
         ch.info("Stopping daemon...")
@@ -254,9 +256,10 @@ def service_status(
         navig service status
         navig service status --json
     """
+    import json
+
     from navig.daemon import service_manager as sm
     from navig.daemon.supervisor import NavigDaemon
-    import json
 
     if json_output:
         state = NavigDaemon.read_state()
@@ -384,8 +387,9 @@ def service_config(
         navig service config
         navig service config --edit
     """
-    from navig.daemon.entry import save_default_config, DAEMON_CONFIG
     import json
+
+    from navig.daemon.entry import save_default_config
 
     config_path = save_default_config()
 

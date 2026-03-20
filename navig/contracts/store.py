@@ -10,15 +10,14 @@ Thread safety: single-process access assumed (asyncio-friendly reads/writes).
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from navig.contracts.node import Node, NodeStatus
-from navig.contracts.mission import Mission, MissionStatus, TERMINAL_STATES
-from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
 from navig.contracts.capability import TrustScore
+from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
+from navig.contracts.mission import Mission, MissionStatus
+from navig.contracts.node import Node, NodeStatus
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()

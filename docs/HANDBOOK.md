@@ -342,10 +342,10 @@ py -3 -c "import subprocess; r = subprocess.run(['grep', '-r', '.lab/', 'navig/'
 
 ---
 
-## Adding a New Tool Pack
+## Adding a New Tool Domain
 
-1. Create `navig/tools/packs/my_pack.py` with a `register_tools(registry)` function.
-2. Add `"navig.tools.packs.my_pack"` to `_load_builtin_packs()` in `navig/tools/router.py`.
+1. Create `navig/tools/domains/my_pack.py` with a `register_tools(registry)` function.
+2. Add `"navig.tools.domains.my_pack"` to `_load_builtin_packs()` in `navig/tools/router.py`.
 3. Each tool is a `ToolMeta` + handler registered via `registry.register(meta, handler=fn)`.
 4. Add tests in `tests/test_my_pack.py`.
 
@@ -1266,3 +1266,31 @@ set_setting("ai.model", "gpt-4o", layer="project")
 ```
 
 `${BLACKBOX:key}` references resolved via vault at read time; kept as-is if vault unavailable.
+
+---
+
+## Extensibility Reference (Canonical Structure)
+
+This table is the single source of truth after the March 2026 consolidation.
+Removed: root `packs/` (superseded by `packages/`), root `plugins/` (superseded by `packages/`), root `workflows/` (runtime reads `navig/resources/workflows/`).
+
+| Directory | Format | Loaded By | Purpose |
+|-----------|--------|-----------|---------|
+| `skills/<category>/<name>/SKILL.md` | Markdown + YAML frontmatter | `navig/skills/loader.py`, `navig/commands/skills.py` | AI agent natural-language instructions |
+| `skills/official/` | SKILL.md subtree | same | Official built-in skills by domain |
+| `navig/skills/builtin/` | SKILL.md | `navig/skills/loader.py` | Always-available inline skills |
+| `templates/<app>/template.yaml` | YAML | `navig/template_manager.py` | Server app definitions (paths, services, commands) |
+| `packages/<id>/navig.package.json` | JSON manifest | `navig/commands/package.py` | Installable content units (commands, tools, telegram, workflows) |
+| `navig/tools/domains/*.py` | Python module with `register_tools(registry)` | `navig/tools/router.py` | Internal ToolRouter domain registrations |
+| `navig/resources/workflows/*.yaml` | YAML step sequences | `navig/commands/workflow.py` | Built-in workflow templates |
+| `navig/plugins/` | Python classes | `navig/plugins/__init__.py`, `navig/core/kernel.py` | Runtime Python-level plugin manager |
+
+### Adding Content
+
+| Want to add... | Do this |
+|---|---|
+| AI skill for a new tool/service | `skills/<category>/<name>/SKILL.md` |
+| Server app template (paths, services, env) | `templates/<appname>/template.yaml` |
+| Installable extension (commands, Telegram, workflows) | `packages/<id>/navig.package.json` + content |
+| New ToolRouter tool domain | `navig/tools/domains/<name>_pack.py` + `router.py` entry |
+| Built-in workflow | `navig/resources/workflows/<name>.yaml` |

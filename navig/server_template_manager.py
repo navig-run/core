@@ -5,13 +5,15 @@ Manages per-server template configurations with template-based initialization,
 auto-detection, customization, and sync capabilities.
 """
 
-import yaml
 import copy
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
+
 from navig import console_helper as ch
-from navig.config import get_config_manager, ConfigManager
+from navig.config import ConfigManager, get_config_manager
 from navig.template_manager import TemplateManager
 
 
@@ -33,8 +35,8 @@ class ServerTemplateManager:
                 ├── gitea.yaml
                 └── hestiacp.yaml
     """
-    
-    def __init__(self, config_manager: Optional[ConfigManager] = None, 
+
+    def __init__(self, config_manager: Optional[ConfigManager] = None,
                  template_manager: Optional[TemplateManager] = None):
         """
         Initialize ServerTemplateManager.
@@ -45,22 +47,21 @@ class ServerTemplateManager:
         """
         self.config_manager = config_manager or get_config_manager()
         self.template_manager = template_manager or TemplateManager()
-        
+
         # Discover available templates
         self.template_manager.discover_templates()
-    
+
     def _get_server_template_dir(self, server_name: str) -> Path:
         """Get the template directory for a specific server."""
         server_dir = self.config_manager.apps_dir / server_name
         template_dir = server_dir / "templates"
-        print(f"\n+++ SERVER TEMPLATE DIR = {template_dir} +++\n")
         return template_dir
-    
+
     def _ensure_server_template_dir(self, server_name: str):
         """Create server template directory if it doesn't exist."""
         template_dir = self._get_server_template_dir(server_name)
         template_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def initialize_templates_from_detection(
         self,
         server_name: str,
@@ -78,20 +79,20 @@ class ServerTemplateManager:
             Dict mapping template names to initialization success status
         """
         ch.step(f"Initializing templates for server '{server_name}'...")
-        
+
         results = {}
-        
+
         # Load server config
         try:
             server_config = self.config_manager.load_server_config(server_name)
         except FileNotFoundError:
             ch.error(f"Server '{server_name}' not found")
             return results
-        
+
         # Initialize templates section if not exists
         if 'templates' not in server_config:
             server_config['templates'] = {}
-        
+
         # Process each detected template
         for template_name, detection_info in detected_templates.items():
             # Check if template template exists
@@ -100,7 +101,7 @@ class ServerTemplateManager:
                 ch.warning(f"No template found for detected template '{template_name}'")
                 results[template_name] = False
                 continue
-            
+
             # Initialize template config in server YAML
             server_config['templates'][template_name] = {
                 'enabled': True,  # Auto-enable detected templates
@@ -115,15 +116,15 @@ class ServerTemplateManager:
                     'ports': detection_info.get('ports', [])
                 }
             }
-            
+
             results[template_name] = True
             ch.success(f"Initialized template '{template_name}'")
-        
+
         # Save updated server config
         self.config_manager.save_server_config(server_name, server_config)
-        
+
         return results
-    
+
     def initialize_template_manually(
         self,
         server_name: str,
@@ -146,23 +147,23 @@ class ServerTemplateManager:
         if not template:
             ch.error(f"Template template '{template_name}' not found")
             return False
-        
+
         # Load server config
         try:
             server_config = self.config_manager.load_server_config(server_name)
         except FileNotFoundError:
             ch.error(f"Server '{server_name}' not found")
             return False
-        
+
         # Initialize templates section if not exists
         if 'templates' not in server_config:
             server_config['templates'] = {}
-        
+
         # Check if already initialized
         if template_name in server_config['templates']:
             ch.warning(f"Template '{template_name}' already initialized for server '{server_name}'")
             return True
-        
+
         # Initialize template config
         server_config['templates'][template_name] = {
             'enabled': enabled,
@@ -171,13 +172,13 @@ class ServerTemplateManager:
             'auto_detected': False,
             'customized': False
         }
-        
+
         # Save updated server config
         self.config_manager.save_server_config(server_name, server_config)
-        
+
         ch.success(f"Initialized template '{template_name}' for server '{server_name}'")
         return True
-    
+
     def get_template_config(
         self,
         server_name: str,
@@ -206,21 +207,21 @@ class ServerTemplateManager:
         except FileNotFoundError:
             ch.error(f"Server '{server_name}' not found")
             return None
-        
+
         # Check if template is initialized for this server
         templates = server_config.get('templates', {})
         if template_name not in templates:
             return None
-        
+
         template_state = templates[template_name]
-        
+
         # Start with template if requested
         if include_template:
             template = self.template_manager.get_template(template_name)
             if not template:
                 ch.error(f"Template template '{template_name}' not found")
                 return None
-            
+
             # Deep copy template metadata (paths, services, env_vars, etc.)
             merged_config = {
                 'paths': copy.deepcopy(template.get_paths()),
@@ -228,45 +229,45 @@ class ServerTemplateManager:
                 'env_vars': copy.deepcopy(template.get_env_vars()),
                 'commands': copy.deepcopy(template.get_commands()),
             }
-            
+
             # Include API config if present
             if 'api' in template.metadata:
                 merged_config['api'] = copy.deepcopy(template.metadata['api'])
         else:
             merged_config = {}
-        
+
         # Apply detection info overrides
         if template_state.get('auto_detected') and 'detection_info' in template_state:
             detection = template_state['detection_info']
-            
+
             # Merge detected paths (override template)
             if detection.get('paths'):
                 if 'paths' not in merged_config:
                     merged_config['paths'] = {}
                 merged_config['paths'].update(detection['paths'])
-        
+
         # Apply custom overrides from file (check YAML first, then JSON for backwards compat)
         yaml_config_file = self._get_server_template_dir(server_name) / f"{template_name}.yaml"
         json_config_file = self._get_server_template_dir(server_name) / f"{template_name}.json"
-        
+
         custom_config_file = None
         if yaml_config_file.exists():
             custom_config_file = yaml_config_file
         elif json_config_file.exists():
             custom_config_file = json_config_file
-        
+
         if custom_config_file:
             try:
                 with open(custom_config_file, 'r', encoding='utf-8') as f:
                     custom_config = yaml.safe_load(f)
-                
+
                 # Deep merge custom config
                 merged_config = self._deep_merge(merged_config, custom_config)
             except Exception as e:
                 ch.warning(f"Failed to load custom config for '{template_name}': {e}")
-        
+
         return merged_config
-    
+
     def set_template_custom_value(
         self,
         server_name: str,
@@ -295,20 +296,20 @@ class ServerTemplateManager:
         except FileNotFoundError:
             ch.error(f"Server '{server_name}' not found")
             return False
-        
+
         # Check if template is initialized
         templates = server_config.get('templates', {})
         if template_name not in templates:
             ch.error(f"Template '{template_name}' not initialized for server '{server_name}'")
             return False
-        
+
         # Ensure template directory exists
         self._ensure_server_template_dir(server_name)
-        
+
         # Load or create custom config (prefer YAML, migrate JSON if exists)
         yaml_config_file = self._get_server_template_dir(server_name) / f"{template_name}.yaml"
         json_config_file = self._get_server_template_dir(server_name) / f"{template_name}.json"
-        
+
         custom_config = {}
         if yaml_config_file.exists():
             with open(yaml_config_file, 'r', encoding='utf-8') as f:
@@ -318,7 +319,7 @@ class ServerTemplateManager:
             with open(json_config_file, 'r', encoding='utf-8') as f:
                 import json
                 custom_config = json.load(f)
-        
+
         # Set value using key path
         keys = key_path.split('.')
         current = custom_config
@@ -327,19 +328,19 @@ class ServerTemplateManager:
                 current[key] = {}
             current = current[key]
         current[keys[-1]] = value
-        
+
         # Save custom config as YAML
         with open(yaml_config_file, 'w', encoding='utf-8') as f:
             yaml.dump(custom_config, f, default_flow_style=False, sort_keys=False)
-        
+
         # Mark as customized in server YAML
         server_config['templates'][template_name]['customized'] = True
         server_config['templates'][template_name]['last_modified'] = datetime.now().isoformat()
         self.config_manager.save_server_config(server_name, server_config)
-        
+
         ch.success(f"Set {key_path} = {value} for template '{template_name}'")
         return True
-    
+
     def enable_template(self, server_name: str, template_name: str) -> bool:
         """Enable an template for a specific server."""
         try:
@@ -347,23 +348,23 @@ class ServerTemplateManager:
         except FileNotFoundError:
             ch.error(f"Server '{server_name}' not found")
             return False
-        
+
         templates = server_config.get('templates', {})
         if template_name not in templates:
             ch.error(f"Template '{template_name}' not initialized. Initialize it first.")
             return False
-        
+
         if templates[template_name].get('enabled'):
             ch.warning(f"Template '{template_name}' already enabled")
             return True
-        
+
         templates[template_name]['enabled'] = True
         templates[template_name]['last_enabled'] = datetime.now().isoformat()
         self.config_manager.save_server_config(server_name, server_config)
-        
+
         ch.success(f"Enabled template '{template_name}' for server '{server_name}'")
         return True
-    
+
     def disable_template(self, server_name: str, template_name: str) -> bool:
         """Disable an template for a specific server."""
         try:
@@ -371,23 +372,23 @@ class ServerTemplateManager:
         except FileNotFoundError:
             ch.error(f"Server '{server_name}' not found")
             return False
-        
+
         templates = server_config.get('templates', {})
         if template_name not in templates:
             ch.warning(f"Template '{template_name}' not initialized for this server")
             return True
-        
+
         if not templates[template_name].get('enabled'):
             ch.warning(f"Template '{template_name}' already disabled")
             return True
-        
+
         templates[template_name]['enabled'] = False
         templates[template_name]['last_disabled'] = datetime.now().isoformat()
         self.config_manager.save_server_config(server_name, server_config)
-        
+
         ch.success(f"Disabled template '{template_name}' for server '{server_name}'")
         return True
-    
+
     def list_server_templates(self, server_name: str, enabled_only: bool = False) -> List[Dict[str, Any]]:
         """
         List all template configurations for a server.
@@ -403,14 +404,14 @@ class ServerTemplateManager:
             server_config = self.config_manager.load_server_config(server_name)
         except FileNotFoundError:
             return []
-        
+
         templates = server_config.get('templates', {})
         result = []
-        
+
         for template_name, template_state in templates.items():
             if enabled_only and not template_state.get('enabled'):
                 continue
-            
+
             result.append({
                 'name': template_name,
                 'enabled': template_state.get('enabled', False),
@@ -419,9 +420,9 @@ class ServerTemplateManager:
                 'customized': template_state.get('customized', False),
                 'last_synced': template_state.get('last_synced')
             })
-        
+
         return sorted(result, key=lambda x: x['name'])
-    
+
     def sync_template_from_template(
         self,
         server_name: str,
@@ -448,39 +449,39 @@ class ServerTemplateManager:
         except FileNotFoundError:
             ch.error(f"Server '{server_name}' not found")
             return False
-        
+
         # Check if template is initialized
         templates = server_config.get('templates', {})
         if template_name not in templates:
             ch.error(f"Template '{template_name}' not initialized for server '{server_name}'")
             return False
-        
+
         # Get current template
         template = self.template_manager.get_template(template_name)
         if not template:
             ch.error(f"Template template '{template_name}' not found")
             return False
-        
+
         # Update version and sync timestamp
         old_version = templates[template_name].get('template_version', 'unknown')
         new_version = template.metadata.get('version', '1.0.0')
-        
+
         templates[template_name]['template_version'] = new_version
         templates[template_name]['last_synced'] = datetime.now().isoformat()
-        
+
         # Save server config
         self.config_manager.save_server_config(server_name, server_config)
-        
+
         if old_version != new_version:
             ch.success(f"Synced template '{template_name}' from template (v{old_version} -> v{new_version})")
         else:
             ch.success(f"Synced template '{template_name}' from template (v{new_version})")
-        
+
         if preserve_custom:
             ch.dim("Custom overrides preserved")
-        
+
         return True
-    
+
     def _deep_merge(self, base: Dict, overlay: Dict) -> Dict:
         """
         Deep merge two dictionaries.
@@ -489,12 +490,12 @@ class ServerTemplateManager:
         Recursively merges nested dicts.
         """
         result = copy.deepcopy(base)
-        
+
         for key, value in overlay.items():
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._deep_merge(result[key], value)
             else:
                 result[key] = copy.deepcopy(value)
-        
+
         return result
 

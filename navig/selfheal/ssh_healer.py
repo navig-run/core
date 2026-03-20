@@ -13,7 +13,6 @@ their own error handling.
 from __future__ import annotations
 
 import asyncio
-import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -290,11 +289,11 @@ class SSHHealer:
         probe_cmd = [
             "ssh",
             "-o", "BatchMode=yes",
-            "-o", f"ConnectTimeout=8",
+            "-o", "ConnectTimeout=8",
             "-o", "ServerAliveInterval=5",
             "-o", "ServerAliveCountMax=1",
             "-v",
-            f"-p", str(port),
+            "-p", str(port),
             f"probe@{host}",     # user doesn't matter for transport diagnosis
             "exit 0",
         ]

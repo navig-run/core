@@ -18,12 +18,11 @@ Usage::
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
-
 
 # ---------------------------------------------------------------------------
 # Security
@@ -123,9 +122,9 @@ class Skill:
             name=self.name,
             version=self.version,
             description=self.description,
-            # For now tools are just defined as strings, 
+            # For now tools are just defined as strings,
             # we'd instantiate actual ToolSpecs if we parsed them
-            tools=[] 
+            tools=[]
         )
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -329,10 +328,10 @@ def get_skill_dirs() -> list[Path]:
     # Platform roots (builtin store, user store, packages)
     try:
         from navig.platform.paths import (
-            builtin_store_dir,
-            store_dir,
             builtin_packages_dir,
+            builtin_store_dir,
             packages_dir,
+            store_dir,
         )
         for root_fn in (builtin_store_dir, store_dir):
             try:

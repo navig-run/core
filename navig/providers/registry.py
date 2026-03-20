@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Literal, Optional
-from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 ProviderTier = Literal["cloud", "local", "proxy"]
 
@@ -286,7 +286,7 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         env_vars=[],
         vault_keys=["bridge/token"],
         requires_key=False,
-        local_probe="127.0.0.1:42070",
+        local_probe=f"127.0.0.1:{BRIDGE_DEFAULT_PORT}",
         models=["copilot-gpt-4o", "copilot-claude-3.5-sonnet"],
         emoji="⚡",
         auth_mode="token",

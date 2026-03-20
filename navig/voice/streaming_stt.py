@@ -38,14 +38,13 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import struct
 import tempfile
 import time
 import wave
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 logger = logging.getLogger("navig.voice.streaming_stt")
 
@@ -223,12 +222,12 @@ class StreamingSTT:
         fallback without re-reading the microphone.
         """
         try:
-            import websockets
-        except ImportError:
+            import websockets  # noqa: F401
+        except ImportError as exc:
             raise RuntimeError(
                 "websockets library required for streaming STT. "
                 "Install with: pip install websockets"
-            )
+            ) from exc
 
         params = {
             "model":         self.config.deepgram_model,
@@ -305,16 +304,19 @@ class StreamingSTT:
         async def _sender(ws) -> None:
             """Read from audio_queue and send PCM frames to Deepgram."""
             try:
-                async with asyncio.timeout(self.config.session_timeout):
-                    while True:
-                        chunk = await audio_queue.get()
-                        if chunk is None:  # end-of-audio
-                            # Send Close Frame to signal end of audio
-                            await ws.send(json.dumps({"type": "CloseStream"}))
-                            break
-                        buffer_sink.append(chunk)
-                        await ws.send(chunk)
-            except TimeoutError:
+                # Python 3.10 compatible timeout
+                loop = asyncio.get_running_loop()
+                end_time = loop.time() + self.config.session_timeout
+                while True:
+                    rem = max(0.1, end_time - loop.time())
+                    chunk = await asyncio.wait_for(audio_queue.get(), timeout=rem)
+                    if chunk is None:  # end-of-audio
+                        # Send Close Frame to signal end of audio
+                        await ws.send(json.dumps({"type": "CloseStream"}))
+                        break
+                    buffer_sink.append(chunk)
+                    await ws.send(chunk)
+            except asyncio.TimeoutError:
                 logger.warning("Deepgram streaming session timeout hit")
                 await ws.send(json.dumps({"type": "CloseStream"}))
             except Exception as tx_exc:
@@ -458,7 +460,8 @@ async def transcribe_session_audio(
     Returns the final transcript string or None on failure.
     """
     from navig.voice.session_manager import VoiceSession as _VS
-    assert isinstance(session, _VS), "session must be a VoiceSession instance"
+    if not isinstance(session, _VS):
+        raise TypeError("session must be a VoiceSession instance")
 
     if not session.audio_chunks:
         logger.warning("Session %s has no audio chunks to transcribe", session.id)
@@ -472,8 +475,4 @@ async def transcribe_session_audio(
     return None
 
 
-# ---------------------------------------------------------------------------
-# Imports that are only needed at module load for type annotations
-# ---------------------------------------------------------------------------
-from typing import Any  # noqa: E402 (after Any usage in type hints above)
 

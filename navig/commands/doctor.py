@@ -7,11 +7,9 @@ Checks: config, cache, formations, skills, gateway, API keys, browser agent.
 from __future__ import annotations
 
 import importlib
-import json
 import logging
 import os
 import socket
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -153,14 +151,14 @@ def check_storage() -> List[Tuple[str, bool, str]]:
     """Check if the system has enough free disk space for NAVIG databases and operations."""
     import shutil
     results = []
-    
+
     navig_dir = Path.home() / ".navig"
     navig_dir.mkdir(exist_ok=True, parents=True)
-    
+
     try:
         usage = shutil.disk_usage(navig_dir)
         free_gb = usage.free / (1024 ** 3)
-        
+
         # Invariant: Must have at least 1GB free to safely run SQLite WAL, migrations, and model caches.
         if free_gb < 1.0:
             results.append(_check("Disk Space", False, f"FATAL: Only {free_gb:.2f}GB free. NAVIG requires >1GB to prevent DB corruption."))
@@ -170,14 +168,14 @@ def check_storage() -> List[Tuple[str, bool, str]]:
             results.append(_check("Disk Space", True, f"{free_gb:.1f}GB free (OK)"))
     except Exception as e:
         results.append(_check("Disk Space", False, f"Failed to stat volume: {e}"))
-        
+
     return results
 
 
 def check_sockets(target_port: int = 8789) -> List[Tuple[str, bool, str]]:
     """Check if critical ports are available or correctly bound."""
     results = []
-    
+
     # Try binding to see if the port is strictly available for a new daemon.
     # If it's not available, it should be the running gateway.
     import socket
@@ -191,7 +189,7 @@ def check_sockets(target_port: int = 8789) -> List[Tuple[str, bool, str]]:
                 results.append(_check("Port Occupation", True, f"Port {target_port} is available for binding"))
     except Exception as e:
         results.append(_check("Port Occupation", False, f"Socket error on port {target_port}: {e}"))
-        
+
     return results
 
 
@@ -354,9 +352,9 @@ def doctor(
     """Run self-diagnostics on the NAVIG installation."""
 
     try:
+        from rich import print as rprint
         from rich.console import Console
         from rich.table import Table
-        from rich import print as rprint
         console = Console()
         _has_rich = True
     except ImportError:

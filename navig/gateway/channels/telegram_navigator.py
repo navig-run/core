@@ -30,9 +30,9 @@ import logging
 import re
 import textwrap
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Coroutine, Optional
-import uuid
 
 logger = logging.getLogger(__name__)
 

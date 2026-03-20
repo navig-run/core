@@ -9,19 +9,19 @@ Central 24/7 service that coordinates:
 - Background task management
 """
 
-from .server import NavigGateway, GatewayConfig
-from .session_manager import SessionManager, Session, NavigSessionKey
+from .audit_log import AuditLog
 from .channel_router import ChannelRouter
 from .config_watcher import ConfigWatcher, WorkspaceManager
-from .policy_gate import PolicyGate, PolicyDecision, PolicyResult, PolicyConfig, PolicyRule
-from .audit_log import AuditLog
 from .cooldown import CooldownTracker
+from .policy_gate import PolicyConfig, PolicyDecision, PolicyGate, PolicyResult, PolicyRule
+from .server import GatewayConfig, NavigGateway
+from .session_manager import NavigSessionKey, Session, SessionManager
 from .system_events import (
-    SystemEventQueue, 
-    SystemEvent, 
-    EventPriority, 
+    EventPriority,
     EventTypes,
     SmartNotificationFilter,
+    SystemEvent,
+    SystemEventQueue,
 )
 
 __all__ = [

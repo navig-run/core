@@ -59,7 +59,7 @@ class BashExecTool(BaseTool):
     max_output       : int     — Truncate combined stdout+stderr to this many chars
     requires_approval: bool    — If True, the command does not run unless allowed
     """
-    
+
     name = "bash_exec"
     description = "Execute a shell command locally in the daemon environment."
     owner_only = True

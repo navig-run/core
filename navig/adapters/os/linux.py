@@ -7,7 +7,7 @@ Supports Debian/Ubuntu (apt) and RHEL/CentOS (yum/dnf).
 import os
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from navig.adapters.os.base import OSAdapter, PackageInfo
 
@@ -21,7 +21,7 @@ class LinuxAdapter(OSAdapter):
     - dnf/yum for RHEL/CentOS/Fedora
     - pacman for Arch Linux
     """
-    
+
     def __init__(self, distro: Optional[str] = None):
         """
         Initialize Linux adapter.
@@ -31,17 +31,17 @@ class LinuxAdapter(OSAdapter):
         """
         self._distro = distro
         self._package_manager: Optional[str] = None
-    
+
     @property
     def name(self) -> str:
         return "linux"
-    
+
     @property
     def display_name(self) -> str:
         if self._distro:
             return f"Linux ({self._distro})"
         return "Linux"
-    
+
     @property
     def package_manager(self) -> str:
         """Detect and cache the package manager."""
@@ -54,9 +54,9 @@ class LinuxAdapter(OSAdapter):
             else:
                 self._package_manager = 'apt'  # Default fallback
         return self._package_manager
-    
+
     # ==================== Package Management ====================
-    
+
     def get_package_list_command(self) -> str:
         """List installed packages based on detected package manager."""
         commands = {
@@ -68,11 +68,11 @@ class LinuxAdapter(OSAdapter):
             'apk': 'apk list --installed'
         }
         return commands.get(self.package_manager, commands['apt'])
-    
+
     def parse_package_list(self, output: str) -> List[PackageInfo]:
         """Parse package list output based on package manager format."""
         packages = []
-        
+
         if self.package_manager in ['apt', 'dpkg']:
             # dpkg-query format: name\tversion\tdescription
             for line in output.strip().split('\n'):
@@ -84,7 +84,7 @@ class LinuxAdapter(OSAdapter):
                         description=parts[2] if len(parts) > 2 else None,
                         source='apt'
                     ))
-        
+
         elif self.package_manager in ['dnf', 'yum']:
             # Format: package-name.arch  version  repo
             for line in output.strip().split('\n'):
@@ -96,7 +96,7 @@ class LinuxAdapter(OSAdapter):
                         version=parts[1],
                         source=self.package_manager
                     ))
-        
+
         elif self.package_manager == 'pacman':
             # Format: package-name version
             for line in output.strip().split('\n'):
@@ -107,7 +107,7 @@ class LinuxAdapter(OSAdapter):
                         version=parts[1],
                         source='pacman'
                     ))
-        
+
         elif self.package_manager == 'apk':
             # Format: package-name-version - description
             for line in output.strip().split('\n'):
@@ -118,9 +118,9 @@ class LinuxAdapter(OSAdapter):
                         version=match.group(2),
                         source='apk'
                     ))
-        
+
         return packages
-    
+
     def get_package_install_command(self, package: str) -> str:
         commands = {
             'apt': f'apt-get install -y {package}',
@@ -131,7 +131,7 @@ class LinuxAdapter(OSAdapter):
             'apk': f'apk add {package}'
         }
         return commands.get(self.package_manager, commands['apt'])
-    
+
     def get_package_remove_command(self, package: str) -> str:
         commands = {
             'apt': f'apt-get remove -y {package}',
@@ -142,7 +142,7 @@ class LinuxAdapter(OSAdapter):
             'apk': f'apk del {package}'
         }
         return commands.get(self.package_manager, commands['apt'])
-    
+
     def get_package_update_command(self) -> str:
         commands = {
             'apt': 'apt-get update && apt-get upgrade -y',
@@ -153,107 +153,107 @@ class LinuxAdapter(OSAdapter):
             'apk': 'apk upgrade'
         }
         return commands.get(self.package_manager, commands['apt'])
-    
+
     # ==================== System Paths ====================
-    
+
     def get_hosts_file_path(self) -> Path:
         return Path("/etc/hosts")
-    
+
     def get_temp_directory(self) -> Path:
         return Path(os.environ.get('TMPDIR', '/tmp'))
-    
+
     def get_home_directory(self) -> Path:
         return Path(os.environ.get('HOME', '/root'))
-    
+
     def get_config_directory(self) -> Path:
         xdg_config = os.environ.get('XDG_CONFIG_HOME')
         if xdg_config:
             return Path(xdg_config) / 'navig'
         return self.get_home_directory() / '.navig'
-    
+
     # ==================== System Information ====================
-    
+
     def get_system_info_command(self) -> str:
         return "uname -a && cat /etc/os-release 2>/dev/null || cat /etc/*-release 2>/dev/null"
-    
+
     def parse_system_info(self, output: str) -> Dict[str, Any]:
         """Parse Linux system info output."""
         info = {}
-        
+
         # Parse uname
         lines = output.strip().split('\n')
         if lines:
             info['kernel'] = lines[0]
-        
+
         # Parse os-release style
         for line in lines[1:]:
             if '=' in line:
                 key, _, value = line.partition('=')
                 info[key.strip()] = value.strip().strip('"')
-        
+
         return info
-    
+
     def get_resource_usage_command(self) -> str:
         return '''echo "=== CPU ===" && top -bn1 | head -5 && echo "=== MEMORY ===" && free -h && echo "=== DISK ===" && df -h'''
-    
+
     # ==================== Security ====================
-    
+
     def check_admin_privileges(self) -> bool:
         """Check if running as root on Linux."""
         return os.geteuid() == 0
-    
+
     def get_firewall_status_command(self) -> str:
         # Try multiple firewall tools
         return '''command -v ufw >/dev/null && ufw status || command -v firewall-cmd >/dev/null && firewall-cmd --state || iptables -L -n 2>/dev/null | head -20'''
-    
+
     def get_open_ports_command(self) -> str:
         return "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null"
-    
+
     def get_running_services_command(self) -> str:
         return "systemctl list-units --type=service --state=running --no-pager 2>/dev/null || service --status-all 2>/dev/null"
-    
+
     # ==================== File Operations ====================
-    
+
     def get_file_editor_command(self, file_path: Path) -> str:
         """Open file in nano or vim."""
         editor = os.environ.get('EDITOR', 'nano')
         return f'{editor} "{file_path}"'
-    
+
     def get_file_permissions_command(self, file_path: Path) -> str:
         return f'ls -la "{file_path}" && stat "{file_path}"'
-    
+
     def get_set_permissions_command(self, file_path: Path, permissions: str) -> str:
         return f'chmod {permissions} "{file_path}"'
-    
+
     # ==================== Process Management ====================
-    
+
     def get_process_list_command(self) -> str:
         return 'ps aux'
-    
+
     def get_kill_process_command(self, pid: int) -> str:
         return f'kill -9 {pid}'
-    
+
     # ==================== Network ====================
-    
+
     def get_network_interfaces_command(self) -> str:
         return 'ip addr show 2>/dev/null || ifconfig -a'
-    
+
     def get_dns_lookup_command(self, hostname: str) -> str:
         return f'dig {hostname} 2>/dev/null || nslookup {hostname} 2>/dev/null || host {hostname}'
-    
+
     def get_ping_command(self, host: str, count: int = 4) -> str:
         return f'ping -c {count} {host}'
-    
+
     # ==================== Shell ====================
-    
+
     @property
     def default_shell(self) -> str:
         return os.environ.get('SHELL', '/bin/bash')
-    
+
     @property
     def path_separator(self) -> str:
         return "/"
-    
+
     @property
     def line_ending(self) -> str:
         return "\n"

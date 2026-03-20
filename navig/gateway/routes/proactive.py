@@ -1,6 +1,8 @@
 """Proactive agent routes: /proactive/status, start, stop, check, /engagement/status, /engagement/tick."""
 from __future__ import annotations
+
 import asyncio
+
 try:
     from aiohttp import web
 except ImportError:

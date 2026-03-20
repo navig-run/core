@@ -234,14 +234,25 @@ def generate(user_id: int, user_message: Optional[str] = None) -> str:
     msg_seed = _seed_hash(user_id, user_message or "")
     day_seed = _seed_hash(user_id)
 
-    opener = _pick(OPENERS, msg_seed, offset=0)
+    # Derive independent per-component seeds via SHA-256 to avoid cross-pool
+    # hash collisions that make different messages produce identical output.
+    import hashlib as _hl
+    def _derive(tag: str) -> int:
+        raw = f"{user_id}:{msg_seed}:{tag}"
+        return int(_hl.sha256(raw.encode()).hexdigest()[:12], 16)
+
+    opener_seed   = _derive("opener")
+    middle_seed   = _derive("middle")
+    question_seed = _derive("question") ^ day_seed
+
+    opener = _pick(OPENERS, opener_seed, offset=0)
 
     # Alternate between a story and a clue based on day seed
     if day_seed % 3 == 0:
-        middle = _pick(CLUES, msg_seed, offset=7)
+        middle = _pick(CLUES, middle_seed, offset=7)
     else:
-        middle = _pick(STORIES, msg_seed, offset=3)
+        middle = _pick(STORIES, middle_seed, offset=3)
 
-    question = _pick(QUESTIONS, day_seed, offset=5)
+    question = _pick(QUESTIONS, question_seed, offset=5)
 
     return _sanitize_decoy_text(f"{opener}\n\n{middle}\n\n{question}")

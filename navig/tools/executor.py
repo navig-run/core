@@ -1,18 +1,13 @@
 import asyncio
 import logging
 import time
-from typing import Any, AsyncGenerator, Callable, Dict, Optional
+from typing import Any, AsyncGenerator, Callable
 
 from navig.tools.interfaces import (
-    EndState,
-    EventPhase,
     ExecutionEvent,
     ExecutionRequest,
-    ExecutionResult,
-    StreamChunk,
     StreamError,
     StreamFinal,
-    StreamStatus,
     ToolSpec,
 )
 
@@ -37,7 +32,7 @@ class ToolExecutor:
         and guarantees a StreamFinal or StreamError as the terminal event.
         """
         start_time = time.time()
-        
+
         # 1. Dispatch Check
         if request.is_cancelled:
             yield StreamError("Execution cancelled before start", code="cancelled")
@@ -60,18 +55,18 @@ class ToolExecutor:
         try:
             # We wrap the invocation to enforce timeouts
             coro = self._invoke_handler(request)
-            
+
             # Allow graceful cancellation
             if request.cancellation_token:
                 cancel_task = asyncio.create_task(request.cancellation_token.wait())
                 exec_task = asyncio.create_task(coro)
-                
+
                 done, pending = await asyncio.wait(
-                    [cancel_task, exec_task], 
+                    [cancel_task, exec_task],
                     timeout=request.timeout_s,
                     return_when=asyncio.FIRST_COMPLETED
                 )
-                
+
                 if cancel_task in done:
                     exec_task.cancel()
                     yield StreamError("Execution cancelled", code="cancelled")
@@ -89,7 +84,7 @@ class ToolExecutor:
             else:
                 # No cancel token, just timeout
                 output = await asyncio.wait_for(coro, timeout=request.timeout_s)
-                
+
             # 5. Finalize
             yield StreamFinal(output=output)
 
@@ -105,7 +100,7 @@ class ToolExecutor:
         """Enforces schema, permissions, and gates."""
         if self.spec.owner_only and not request.context.owner_only:
             raise PermissionError(f"Tool {self.spec.id} requires owner privileges.")
-        
+
         # In a full implementation, validate request.args against self.spec.parameters
         if not self.spec.validate_args(request.args):
             raise ValueError(f"Invalid arguments for tool {self.spec.id}")
@@ -115,11 +110,11 @@ class ToolExecutor:
         # Provide context if the handler asks for it, otherwise just pass args
         import inspect
         sig = inspect.signature(self.handler)
-        
+
         kwargs = dict(request.args)
         if "context" in sig.parameters:
             kwargs["context"] = request.context
-            
+
         if inspect.iscoroutinefunction(self.handler):
             return await self.handler(**kwargs)
         else:

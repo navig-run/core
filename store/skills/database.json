@@ -1,0 +1,24 @@
+{
+  "id": "database",
+  "name": "Database — PostgreSQL / SQLite",
+  "summary": "List, query, and inspect databases on this server. Use command.run.",
+  "commands": [
+    {
+      "name": "list",
+      "signature": "command.run(cmd=\"navig db list\")",
+      "description": "List available databases. Use for: 'show databases', 'list DBs', 'what databases exist'.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"navig db list\"}, \"description\": \"List databases\"}], \"message\": \"Listing databases\"}"
+    },
+    {
+      "name": "query",
+      "signature": "command.run(cmd=\"navig db query '<db>' '<SQL>'\")",
+      "description": "Run a read-only SQL query against a named database.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"navig db query 'mydb' 'SELECT COUNT(*) FROM users'\"}, \"description\": \"Query database\"}], \"message\": \"Querying database\"}"
+    },
+    {
+      "name": "size",
+      "signature": "command.run(cmd=\"navig db list --size\")",
+      "description": "Show database sizes on disk."
+    }
+  ]
+}

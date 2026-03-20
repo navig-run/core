@@ -4,7 +4,7 @@ NAVIG Provider Verifier
 Runs a multi-layer validity check on every registered provider and surfaces
 failures explicitly.  Called by:
 
-  - ``navig providers verify`` CLI command (TODO: wire in commands/)
+  - ``navig providers verify`` CLI command (commands directory layout)
   - Integration tests (tests/providers/test_registry.py)
   - Telegram ``/providers`` handler (status badges)
 

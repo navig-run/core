@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import json as _json_mod
 import os
-import sys
 from typing import Optional
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
 stats_app = typer.Typer(
     name="stats",
@@ -110,7 +109,7 @@ def stats(
     # Wrap in panel
     panel = Panel(
         table,
-        title=f"[bold cyan]NAVIG Install Statistics[/bold cyan]",
+        title="[bold cyan]NAVIG Install Statistics[/bold cyan]",
         subtitle=f"[dim]Total installs: {total:,}[/dim]",
         border_style="cyan",
         expand=False,

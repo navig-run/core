@@ -23,11 +23,11 @@ def _substitute_env_vars(value: Any) -> Any:
     """Substitute ${VAR} patterns with environment variables."""
     if isinstance(value, str):
         pattern = r'\$\{([^}]+)\}'
-        
+
         def replacer(match):
             var_name = match.group(1)
             return os.environ.get(var_name, match.group(0))
-        
+
         return re.sub(pattern, replacer, value)
     elif isinstance(value, dict):
         return {k: _substitute_env_vars(v) for k, v in value.items()}
@@ -39,12 +39,12 @@ def _substitute_env_vars(value: Any) -> Any:
 @dataclass
 class BrainConfig:
     """Brain (AI) configuration."""
-    
+
     model: str = "openrouter:google/gemini-2.5-flash"
     temperature: float = 0.7
     max_tokens: int = 4096
     reasoning_enabled: bool = True
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'BrainConfig':
         return cls(
@@ -58,14 +58,14 @@ class BrainConfig:
 @dataclass
 class EyesConfig:
     """Eyes (monitoring) configuration."""
-    
+
     monitoring_interval: int = 60  # seconds
     disk_threshold: int = 85  # percent
     memory_threshold: int = 90
     cpu_threshold: int = 80
     log_paths: List[str] = field(default_factory=list)
     watch_paths: List[str] = field(default_factory=list)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'EyesConfig':
         return cls(
@@ -81,12 +81,12 @@ class EyesConfig:
 @dataclass
 class TelegramConfig:
     """Telegram integration configuration."""
-    
+
     enabled: bool = False
     bot_token: Optional[str] = None
     allowed_users: List[int] = field(default_factory=list)
     admin_users: List[int] = field(default_factory=list)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TelegramConfig':
         return cls(
@@ -100,11 +100,11 @@ class TelegramConfig:
 @dataclass
 class MCPConfig:
     """MCP server configuration."""
-    
+
     enabled: bool = True
     port: int = 8765
     host: str = "127.0.0.1"
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MCPConfig':
         return cls(
@@ -117,13 +117,13 @@ class MCPConfig:
 @dataclass
 class WebhooksConfig:
     """Webhook receiver configuration."""
-    
+
     enabled: bool = False
     port: int = 9000
     host: str = "127.0.0.1"
     secret: Optional[str] = None
     endpoints: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'WebhooksConfig':
         return cls(
@@ -138,7 +138,7 @@ class WebhooksConfig:
 @dataclass
 class EmailAccountConfig:
     """Single email account configuration."""
-    
+
     enabled: bool = True
     provider: str = "gmail"  # gmail, outlook, fastmail, imap
     address: str = ""
@@ -150,7 +150,7 @@ class EmailAccountConfig:
     imap_port: int = 993
     smtp_port: int = 465
     check_interval: int = 60  # seconds between checks
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         d: Dict[str, Any] = {
@@ -192,14 +192,14 @@ class EmailAccountConfig:
 @dataclass
 class EarsConfig:
     """Ears (input listeners) configuration."""
-    
+
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
     webhooks: WebhooksConfig = field(default_factory=WebhooksConfig)
     email_accounts: List[EmailAccountConfig] = field(default_factory=list)
     api_enabled: bool = True
     api_port: int = 8790
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'EarsConfig':
         email_list = data.get('email_accounts', [])
@@ -217,7 +217,7 @@ class EarsConfig:
 @dataclass
 class HandsConfig:
     """Hands (execution) configuration."""
-    
+
     command_timeout: int = 300  # seconds
     require_confirmation: List[str] = field(default_factory=lambda: [
         'restart', 'delete', 'drop', 'rm -rf', 'shutdown', 'reboot',
@@ -226,7 +226,7 @@ class HandsConfig:
     safe_mode: bool = True  # Extra safety checks
     sudo_allowed: bool = False
     max_concurrent_commands: int = 5
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'HandsConfig':
         return cls(
@@ -241,12 +241,12 @@ class HandsConfig:
 @dataclass
 class HeartConfig:
     """Heart (orchestrator) configuration."""
-    
+
     heartbeat_interval: int = 300  # seconds
     component_restart_delay: int = 5
     max_restart_attempts: int = 3
     health_check_interval: int = 60
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'HeartConfig':
         return cls(
@@ -260,12 +260,12 @@ class HeartConfig:
 @dataclass
 class MemoryConfig:
     """Memory configuration."""
-    
+
     storage_path: Path = field(default_factory=lambda: Path.home() / '.navig' / 'agent' / 'memory.db')
     max_history_messages: int = 1000
     context_window: int = 50
     enable_embeddings: bool = False
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MemoryConfig':
         storage = data.get('storage', str(cls().storage_path))
@@ -280,7 +280,7 @@ class MemoryConfig:
 @dataclass
 class PersonalityConfig:
     """Personality/Soul configuration."""
-    
+
     name: str = "NAVIG"
     profile: str = "friendly"  # professional, friendly, witty, paranoid
     system_prompt: str = ""
@@ -289,7 +289,7 @@ class PersonalityConfig:
     proactive: bool = True
     emoji_enabled: bool = True
     verbosity: str = "normal"  # minimal, normal, verbose
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'PersonalityConfig':
         return cls(
@@ -302,24 +302,24 @@ class PersonalityConfig:
             emoji_enabled=data.get('emoji_enabled', cls.emoji_enabled),
             verbosity=data.get('verbosity', cls.verbosity),
         )
-    
+
     @classmethod
     def load_profile(cls, profile_name: str, profiles_dir: Path) -> 'PersonalityConfig':
         """Load a personality profile from file."""
         profile_path = profiles_dir / f"{profile_name}.yaml"
-        
+
         if not profile_path.exists():
             # Try built-in profiles
             builtin_dir = Path(__file__).parent / 'personalities'
             profile_path = builtin_dir / f"{profile_name}.yaml"
-        
+
         if profile_path.exists():
             with open(profile_path) as f:
                 data = yaml.safe_load(f)
             config = cls.from_dict(data)
             config.profile = profile_name
             return config
-        
+
         # Return default with profile name
         config = cls()
         config.profile = profile_name
@@ -329,11 +329,11 @@ class PersonalityConfig:
 @dataclass
 class AgentConfig:
     """Complete agent configuration."""
-    
+
     enabled: bool = True
     mode: str = "autonomous"  # autonomous, supervised, observe-only
     workspace: Path = field(default_factory=lambda: Path.home() / '.navig' / 'agent' / 'workspace')
-    
+
     brain: BrainConfig = field(default_factory=BrainConfig)
     eyes: EyesConfig = field(default_factory=EyesConfig)
     ears: EarsConfig = field(default_factory=EarsConfig)
@@ -341,19 +341,19 @@ class AgentConfig:
     heart: HeartConfig = field(default_factory=HeartConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     personality: PersonalityConfig = field(default_factory=PersonalityConfig)
-    
+
     # Resource limits
     max_cpu_percent: float = 10.0
     max_memory_mb: int = 512
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AgentConfig':
         """Create config from dictionary (with env var substitution)."""
         data = _substitute_env_vars(data)
         agent_data = data.get('agent', data)
-        
+
         workspace = agent_data.get('workspace', str(cls().workspace))
-        
+
         return cls(
             enabled=agent_data.get('enabled', True),
             mode=agent_data.get('mode', 'autonomous'),
@@ -368,26 +368,26 @@ class AgentConfig:
             max_cpu_percent=agent_data.get('max_cpu_percent', cls.max_cpu_percent),
             max_memory_mb=agent_data.get('max_memory_mb', cls.max_memory_mb),
         )
-    
+
     @classmethod
     def load(cls, config_path: Optional[Path] = None) -> 'AgentConfig':
         """Load configuration from ConfigManager."""
         from navig.config import get_config_manager
-        
+
         # Use ConfigManager to get the 'agent' section from global config
         manager = get_config_manager()
         agent_data = manager.global_config.get('agent', {})
-        
+
         return cls.from_dict(agent_data)
-    
+
     def save(self, config_path: Optional[Path] = None) -> None:
         """Save configuration to ConfigManager."""
         from navig.config import get_config_manager
-        
+
         manager = get_config_manager()
         data = self.to_dict()
         manager.update_global_config({'agent': data})
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {

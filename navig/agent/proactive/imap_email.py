@@ -8,13 +8,13 @@ Works with Gmail, Outlook, Fastmail, self-hosted mail servers, etc.
 import asyncio
 import email
 from datetime import datetime
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from imaplib import IMAP4_SSL
 from smtplib import SMTP_SSL
 from typing import List, Optional
 
-from navig.agent.proactive.providers import EmailProvider, EmailMessage
+from navig.agent.proactive.providers import EmailMessage, EmailProvider
 
 
 class IMAPEmailProvider(EmailProvider):
@@ -29,7 +29,7 @@ class IMAPEmailProvider(EmailProvider):
             password="app-password-here"  # Use app passwords for Gmail
         )
     """
-    
+
     def __init__(
         self,
         imap_host: str,
@@ -56,7 +56,7 @@ class IMAPEmailProvider(EmailProvider):
         self.password = password
         self.imap_port = imap_port
         self.smtp_port = smtp_port
-        
+
     async def list_unread(self, limit: int = 10) -> List[EmailMessage]:
         """
         Fetch unread emails from inbox.
@@ -69,27 +69,27 @@ class IMAPEmailProvider(EmailProvider):
         """
         def _fetch():
             messages = []
-            
+
             with IMAP4_SSL(self.imap_host, self.imap_port) as imap:
                 imap.login(self.email_address, self.password)
                 imap.select('INBOX')
-                
+
                 # Search for unread messages
                 status, data = imap.search(None, 'UNSEEN')
                 if status != 'OK':
                     return messages
-                    
+
                 message_ids = data[0].split()
-                
+
                 # Get most recent messages up to limit
                 for msg_id in message_ids[-limit:][::-1]:
                     status, msg_data = imap.fetch(msg_id, '(RFC822)')
                     if status != 'OK':
                         continue
-                        
+
                     raw_email = msg_data[0][1]
                     msg = email.message_from_bytes(raw_email)
-                    
+
                     # Extract date
                     date_str = msg.get('Date', '')
                     try:
@@ -97,10 +97,10 @@ class IMAPEmailProvider(EmailProvider):
                         received_at = parsedate_to_datetime(date_str)
                     except Exception:
                         received_at = datetime.now()
-                    
+
                     # Extract snippet from body
                     snippet = self._extract_snippet(msg)
-                    
+
                     messages.append(EmailMessage(
                         id=msg_id.decode('utf-8'),
                         subject=msg.get('Subject', '(No Subject)'),
@@ -109,16 +109,16 @@ class IMAPEmailProvider(EmailProvider):
                         received_at=received_at,
                         read=False
                     ))
-                    
+
             return messages
-        
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _fetch)
-    
+
     async def draft_email(
-        self, 
-        to: List[str], 
-        subject: str, 
+        self,
+        to: List[str],
+        subject: str,
         body: str
     ) -> str:
         """
@@ -139,14 +139,14 @@ class IMAPEmailProvider(EmailProvider):
             msg['To'] = ', '.join(to)
             msg['Subject'] = subject
             msg.attach(MIMEText(body, 'plain'))
-            
+
             with IMAP4_SSL(self.imap_host, self.imap_port) as imap:
                 imap.login(self.email_address, self.password)
-                
+
                 # Find drafts folder
                 status, folders = imap.list()
                 drafts_folder = 'Drafts'
-                
+
                 for folder in folders:
                     folder_name = folder.decode('utf-8')
                     if '\\Drafts' in folder_name or 'Drafts' in folder_name:
@@ -155,7 +155,7 @@ class IMAPEmailProvider(EmailProvider):
                         if len(parts) >= 2:
                             drafts_folder = parts[-2]
                             break
-                
+
                 # Append to drafts
                 result = imap.append(
                     drafts_folder,
@@ -163,12 +163,12 @@ class IMAPEmailProvider(EmailProvider):
                     None,
                     msg.as_bytes()
                 )
-                
+
                 return f"draft-{datetime.now().timestamp()}"
-        
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _create_draft)
-    
+
     async def send_email(
         self,
         to: List[str],
@@ -193,24 +193,24 @@ class IMAPEmailProvider(EmailProvider):
             msg['From'] = self.email_address
             msg['To'] = ', '.join(to)
             msg['Subject'] = subject
-            
+
             msg.attach(MIMEText(body, 'plain'))
             if html_body:
                 msg.attach(MIMEText(html_body, 'html'))
-            
+
             with SMTP_SSL(self.smtp_host, self.smtp_port) as smtp:
                 smtp.login(self.email_address, self.password)
                 smtp.send_message(msg)
-                
+
             return True
-        
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _send)
-    
+
     def _extract_snippet(self, msg, max_length: int = 150) -> str:
         """Extract plain text snippet from email."""
         body = ""
-        
+
         if msg.is_multipart():
             for part in msg.walk():
                 content_type = part.get_content_type()
@@ -225,19 +225,19 @@ class IMAPEmailProvider(EmailProvider):
                 body = msg.get_payload(decode=True).decode('utf-8', errors='replace')
             except Exception:
                 body = ""
-        
+
         # Clean up and truncate
         body = body.strip().replace('\r\n', ' ').replace('\n', ' ')
         if len(body) > max_length:
             body = body[:max_length] + '...'
-            
+
         return body
 
 
 # Pre-configured providers for common services
 class GmailProvider(IMAPEmailProvider):
     """Gmail-specific provider with default settings."""
-    
+
     def __init__(self, email_address: str, app_password: str):
         """
         Initialize Gmail provider.
@@ -257,7 +257,7 @@ class GmailProvider(IMAPEmailProvider):
 
 class OutlookProvider(IMAPEmailProvider):
     """Outlook/Office 365 provider with default settings."""
-    
+
     def __init__(self, email_address: str, password: str):
         super().__init__(
             imap_host="outlook.office365.com",
@@ -271,7 +271,7 @@ class OutlookProvider(IMAPEmailProvider):
 
 class FastmailProvider(IMAPEmailProvider):
     """Fastmail provider with default settings."""
-    
+
     def __init__(self, email_address: str, app_password: str):
         super().__init__(
             imap_host="imap.fastmail.com",

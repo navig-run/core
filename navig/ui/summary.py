@@ -11,9 +11,9 @@ from __future__ import annotations
 import sys
 from typing import Optional
 
-from navig.ui.models import SummaryResult
-from navig.ui.theme import SAFE_MODE, STYLE_COMMAND, STYLE_AI, console
 from navig.ui.icons import icon
+from navig.ui.models import SummaryResult
+from navig.ui.theme import SAFE_MODE, STYLE_AI, console
 
 
 def render_next_step(

@@ -27,10 +27,9 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 from navig.storage.pragma_profiles import (
-    BALANCED,
     PragmaProfile,
     profile_for_db,
 )

@@ -4,11 +4,11 @@ NAVIG Vault Type Definitions
 Core dataclasses for credential storage and management.
 """
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
-import uuid
 
 
 class CredentialType(str, Enum):

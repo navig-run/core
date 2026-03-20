@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional, Union
 
 from navig.comms.types import (
     CommsChannel,

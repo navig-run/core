@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import re
 import time
-from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from navig.platform.paths import config_dir

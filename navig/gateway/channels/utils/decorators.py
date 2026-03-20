@@ -13,18 +13,18 @@ class RateLimiter:
         self.max_requests = max_requests
         self.window = timedelta(minutes=window_minutes)
         self.requests = defaultdict(list)
-    
+
     def is_allowed(self, user_id: int) -> bool:
         now = datetime.now()
         user_requests = self.requests[user_id]
-        
+
         # Clean old requests
-        self.requests[user_id] = [req_time for req_time in user_requests 
+        self.requests[user_id] = [req_time for req_time in user_requests
                                  if now - req_time < self.window]
-        
+
         if len(self.requests[user_id]) >= self.max_requests:
             return False
-            
+
         self.requests[user_id].append(now)
         return True
 
@@ -59,7 +59,7 @@ def rate_limited(func: Callable) -> Callable:
         user_id = kwargs.get('user_id')
         if user_id is None and len(args) >= 1 and isinstance(args[0], int):
             user_id = args[0]  # user_id is often passed as a positional arg
-            
+
         if user_id and not _get_global_limiter().is_allowed(user_id):
             logger.warning("Rate limit exceeded", extra={"user_id": user_id})
             # Try to send a warning if we have chat_id
@@ -69,7 +69,7 @@ def rate_limited(func: Callable) -> Callable:
             if chat_id and hasattr(self, 'send_message'):
                 await self.send_message(chat_id, "🚫 Please wait a moment between requests. Try again shortly.")
             return
-            
+
         return await func(self, update_or_chat_id, *args, **kwargs)
     return wrapper
 
@@ -87,10 +87,10 @@ def error_handled(func: Callable) -> Callable:
             chat_id = kwargs.get('chat_id')
             if chat_id is None and isinstance(update_or_chat_id, int):
                 chat_id = update_or_chat_id
-                
+
             if chat_id and hasattr(self, 'send_message'):
                 await self.send_message(
-                    chat_id, 
+                    chat_id,
                     "⚠️ Something went wrong. Our team has been notified. Please try again in a moment."
                 )
     return wrapper
@@ -101,7 +101,7 @@ def typing_context(func: Callable) -> Callable:
         chat_id = kwargs.get('chat_id')
         if chat_id is None and isinstance(update_or_chat_id, int):
             chat_id = update_or_chat_id
-            
+
         typing_task = None
         if chat_id and hasattr(self, '_api_call'):
             async def keep_typing():
@@ -117,7 +117,7 @@ def typing_context(func: Callable) -> Callable:
                     except Exception:
                         await asyncio.sleep(4)
             typing_task = asyncio.create_task(keep_typing())
-            
+
         try:
             return await func(self, update_or_chat_id, *args, **kwargs)
         finally:

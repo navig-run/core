@@ -13,9 +13,9 @@ Provides integration with Telegram Bot API for:
 import asyncio
 import logging
 import random
-from typing import Any, Awaitable, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 # Lazy imports
 aiohttp = None
@@ -27,11 +27,11 @@ except ImportError:
 # Inline keyboard system
 try:
     from navig.gateway.channels.telegram_keyboards import (
-        ResponseKeyboardBuilder,
         CallbackHandler,
-        get_callback_store,
-        build_settings_keyboard,
+        ResponseKeyboardBuilder,
         _settings_header_text,
+        build_settings_keyboard,
+        get_callback_store,
     )
     HAS_KEYBOARDS = True
 except ImportError:
@@ -40,10 +40,10 @@ except ImportError:
 # Session management
 try:
     from navig.gateway.channels.telegram_sessions import (
-        get_session_manager,
-        get_mention_gate,
+        MentionGate,
         SessionManager,
-        MentionGate
+        get_mention_gate,
+        get_session_manager,
     )
     HAS_SESSIONS = True
 except ImportError:
@@ -76,9 +76,9 @@ except ImportError:
 try:
     from navig.gateway.channels.telegram_mode_classifier import (
         classify_mode,
+        extract_url,
         mode_to_llm_tier,
         select_tools_for_text,
-        extract_url,
     )
     HAS_CLASSIFIER = True
 except ImportError:
@@ -86,8 +86,12 @@ except ImportError:
 
 # Voice STT/TTS pipeline
 try:
-    from navig.voice.stt import STT as _STT, STTProvider as _STTProvider, STTConfig as _STTConfig
-    from navig.voice.tts import TTS as _TTS, TTSProvider as _TTSProvider, TTSConfig as _TTSConfig
+    from navig.voice.stt import STT as _STT
+    from navig.voice.stt import STTConfig as _STTConfig
+    from navig.voice.stt import STTProvider as _STTProvider
+    from navig.voice.tts import TTS as _TTS
+    from navig.voice.tts import TTSConfig as _TTSConfig
+    from navig.voice.tts import TTSProvider as _TTSProvider
     HAS_VOICE = True
 except ImportError:
     HAS_VOICE = False
@@ -106,7 +110,7 @@ class TelegramMessage:
     is_group: bool = False
     reply_to_message_id: Optional[int] = None
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     def to_metadata(self) -> Dict[str, Any]:
         return {
             'chat_id': self.chat_id,
@@ -129,7 +133,7 @@ class TelegramChannel:
     - Inline keyboards
     - Command handling
     """
-    
+
     def __init__(
         self,
         bot_token: str,
@@ -154,7 +158,7 @@ class TelegramChannel:
         self.require_auth = require_auth
         self.webhook_url = webhook_url
         self.webhook_secret = webhook_secret
-        
+
         self._running = False
         self._session: Optional[aiohttp.ClientSession] = None
         self._last_update_id = 0
@@ -201,10 +205,10 @@ class TelegramChannel:
         if aiohttp is None:
             logger.error("aiohttp not installed. Cannot start Telegram channel.")
             return
-            
+
         self._session = aiohttp.ClientSession()
         self._running = True
-        
+
         # Get bot info
         try:
             me = await self._api_call("getMe")
@@ -223,7 +227,7 @@ class TelegramChannel:
 
                 # Register slash commands with Telegram
                 await self._register_commands()
-                
+
                 # Send startup notification to allowed users
                 from navig.boot_messages import get_boot_message
                 boot_msg = get_boot_message()
@@ -236,11 +240,11 @@ class TelegramChannel:
                         )
                     except Exception:
                         pass
-                        
+
         except Exception as e:
             logger.error(f"Failed to connect to Telegram: {e}")
             return
-            
+
         # Start notifications if enabled
         if self.enable_notifications and self.allowed_users:
             await self._start_notifier()
@@ -250,15 +254,15 @@ class TelegramChannel:
             await self._setup_webhook()
         else:
             self._poll_task = asyncio.create_task(self._poll_updates())
-        
+
     async def _start_notifier(self):
         """Start the notification system."""
         try:
             from navig.gateway.notifications import TelegramNotifier
-            
+
             # Use first allowed user as default notification target
             default_chat = list(self.allowed_users)[0] if self.allowed_users else None
-            
+
             if default_chat:
                 self._notifier = TelegramNotifier(self, default_chat)
                 await self._notifier.start()
@@ -266,11 +270,11 @@ class TelegramChannel:
         except Exception as e:
             logger.error(f"Failed to start notifier: {e}")
 
-        
+
     async def stop(self):
         """Stop the Telegram channel."""
         self._running = False
-        
+
         # Stop notifier
         if self._notifier:
             try:
@@ -285,25 +289,25 @@ class TelegramChannel:
                 logger.info("Telegram webhook removed")
             except Exception:
                 pass
-        
+
         if self._poll_task:
             self._poll_task.cancel()
             try:
                 await self._poll_task
             except asyncio.CancelledError:
                 pass
-                
+
         if self._session:
             await self._session.close()
 
-            
+
     async def _api_call(self, method: str, data: Optional[Dict] = None) -> Optional[Dict]:
         """Make an API call to Telegram."""
         if not self._session:
             return None
-            
+
         url = f"{self.base_url}/{method}"
-        
+
         try:
             async with self._session.post(url, json=data or {}) as resp:
                 result = await resp.json()
@@ -315,7 +319,7 @@ class TelegramChannel:
         except Exception as e:
             logger.error(f"Telegram API call failed: {e}")
             return None
-            
+
     async def _poll_updates(self):
         """Long-poll for updates from Telegram."""
         while self._running:
@@ -325,12 +329,12 @@ class TelegramChannel:
                     "timeout": 30,
                     "allowed_updates": ["message", "callback_query"]
                 })
-                
+
                 if updates:
                     for update in updates:
                         self._last_update_id = update['update_id']
                         await self._process_update(update)
-                        
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -383,7 +387,7 @@ class TelegramChannel:
         except Exception as e:
             logger.error(f"Webhook update processing error: {e}")
             return False
-                
+
     async def _process_update(self, update: Dict):
         """Process a single update from Telegram."""
         # ── Handle callback queries (inline button presses) ──
@@ -405,11 +409,11 @@ class TelegramChannel:
         message = update.get('message', {})
         if not message:
             return
-            
+
         chat = message.get('chat', {})
         sender = message.get('from', {})
         text = message.get('text', '')
-        
+
         chat_id = chat.get('id')
         user_id = sender.get('id')
         username = sender.get('username', str(user_id))
@@ -472,13 +476,13 @@ class TelegramChannel:
         # Use caption as text for media with captions (photos, videos with text)
         if not text and message.get('caption'):
             text = message.get('caption', '')
-        
+
         # Check if replying to a bot message
         is_reply_to_bot = False
         if reply_to_msg:
             reply_from = reply_to_msg.get('from', {})
             is_reply_to_bot = reply_from.get('is_bot', False)
-        
+
         # ── Access control ──
         # When require_auth is True (default), only listed users get through.
         # An empty allowed_users list with require_auth = deny everyone.
@@ -500,13 +504,13 @@ class TelegramChannel:
                     except Exception as e:
                         logger.debug("Decoy responder error: %s", e)
             return
-        
+
         # Session management
         session = None
         if HAS_SESSIONS:
             session_manager = get_session_manager()
             session = session_manager.get_session(chat_id, user_id, is_group)
-            
+
             # Mention gating for groups
             if is_group and hasattr(self, '_bot_username'):
                 mention_gate = get_mention_gate(self._bot_username)
@@ -518,14 +522,14 @@ class TelegramChannel:
                     session=session,
                     reply_to_message_id=reply_to_message_id
                 )
-                
+
                 if not should_respond:
                     logger.debug(f"Skipping group message (no mention): {text[:50]}")
                     return
-                
+
                 # Strip mention from text
                 text = mention_gate.strip_mention(text)
-            
+
             # Record user message in session
             session = session_manager.add_user_message(
                 chat_id=chat_id,
@@ -536,7 +540,7 @@ class TelegramChannel:
                 is_group=is_group,
                 username=username
             )
-                
+
         # Build message object
         telegram_msg = TelegramMessage(
             chat_id=chat_id,
@@ -547,7 +551,7 @@ class TelegramChannel:
             is_group=is_group,
             reply_to_message_id=reply_to_message_id,
         )
-        
+
         # Add session context to metadata
         metadata = telegram_msg.to_metadata()
         if session:
@@ -555,7 +559,7 @@ class TelegramChannel:
             metadata['context_messages'] = session.get_context_messages(limit=10)
         if _voice_lang:
             metadata['detected_language'] = _voice_lang
-        
+
         # Dispatch to handler
         if self.on_message:
             try:
@@ -677,7 +681,7 @@ class TelegramChannel:
                     session_manager=session_manager if HAS_SESSIONS else None,
                     is_group=is_group,
                 )
-                    
+
             except Exception as e:
                 import traceback
                 logger.error(f"Message handler error: {e}\n{traceback.format_exc()}")
@@ -689,7 +693,7 @@ class TelegramChannel:
                 ])
                 await self.send_message(chat_id, f"❌ {err_msg}", parse_mode=None)
 
-                
+
     async def _keep_typing(self, chat_id: int, interval: float = 4.0):
         """Re-send 'typing' indicator every ``interval`` seconds until cancelled."""
         try:
@@ -1506,14 +1510,13 @@ class TelegramChannel:
 
     async def _handle_providers(self, chat_id: int) -> None:
         """AI Provider Hub — live registry status, Bridge probe, interactive keyboard."""
-        import os
         import socket as _socket
 
         # ── Bridge probe ──
         bridge_port = 42070
         try:
-            from navig.providers.bridge_grid_reader import get_llm_port
-            bridge_port = get_llm_port() or 42070
+            from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT, get_llm_port
+            bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
         except Exception:
             pass
         try:
@@ -1676,8 +1679,8 @@ class TelegramChannel:
 
     async def _handle_debug(self, chat_id: int) -> None:
         """Show daemon debug info (/debug)."""
-        import sys
         import os
+        import sys
         lines = ["🛠 *Debug*\n"]
         lines.append(f"Python: `{sys.version.split()[0]}`")
         try:
@@ -1689,8 +1692,8 @@ class TelegramChannel:
         except Exception as e:
             lines.append(f"navig: ❌ `{e}`")
         try:
-            from navig.vault import get_vault_v2
             from navig.platform import paths as _paths
+            from navig.vault import get_vault_v2
             _vpath = str(_paths.vault_dir())
             v = get_vault_v2()
             items = v.list() if hasattr(v, "list") else []
@@ -1710,13 +1713,13 @@ class TelegramChannel:
                 lines.append(f"sessions: `{len(s_list)} loaded`")
             except Exception:
                 lines.append("sessions: ❌")
-        lines.append(f"HAS\_VOICE: `{HAS_VOICE}`")
-        lines.append(f"HAS\_KEYBOARDS: `{HAS_KEYBOARDS}`")
-        lines.append(f"HAS\_SESSIONS: `{HAS_SESSIONS}`")
+        lines.append(rf"HAS\_VOICE: `{HAS_VOICE}`")
+        lines.append(rf"HAS\_KEYBOARDS: `{HAS_KEYBOARDS}`")
+        lines.append(rf"HAS\_SESSIONS: `{HAS_SESSIONS}`")
         pp = os.environ.get("PYTHONPATH", "_(not set)_")
         lines.append(f"PYTHONPATH: `{pp}`")
         dg = os.environ.get("DEEPGRAM_KEY") or os.environ.get("DEEPGRAM_API_KEY")
-        lines.append(f"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
+        lines.append(rf"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
         await self.send_message(chat_id, "\n".join(lines))
 
     async def _handle_trace(self, chat_id: int, user_id: int) -> None:
@@ -1727,20 +1730,23 @@ class TelegramChannel:
         """
         import json as _json
         import os as _os
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
 
         SEP = "━━━━━━━━━━━━━━━━━━━━━━"
         now_utc = _dt.now(_tz.utc).strftime("%H:%M UTC")
         lines: list = [f"🔍 *Recent Trace* — {now_utc}", SEP]
 
         # ── Active Backend ─────────────────────────────────────────────────────
-        # Check Bridge (VS Code MCP on :42070) first
+        # Check Bridge (VS Code MCP) first
         _bridge_active = False
         try:
             import socket as _sock
+
+            from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT as _BRIDGE_PORT
             _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
             _s.settimeout(0.3)
-            _bridge_active = _s.connect_ex(("127.0.0.1", 42070)) == 0
+            _bridge_active = _s.connect_ex(("127.0.0.1", _BRIDGE_PORT)) == 0
             _s.close()
         except Exception:
             pass
@@ -2026,21 +2032,21 @@ class TelegramChannel:
         elif 8 <= hour < 12:
             greeting = random.choice([
                 f"hey {name}! what are we working on?",
-                f"morning. what do you need?",
+                "morning. what do you need?",
             ])
         elif 12 <= hour < 18:
             greeting = random.choice([
-                f"hey! what's on your mind?",
+                "hey! what's on your mind?",
                 f"yo {name}, what can I do for you?",
             ])
         elif 18 <= hour < 22:
             greeting = random.choice([
                 f"hey {name}. still at it?",
-                f"evening. what do you need?",
+                "evening. what do you need?",
             ])
         else:
             greeting = random.choice([
-                f"late one, huh? what's up?",
+                "late one, huh? what's up?",
                 f"hey {name}. burning the midnight oil?",
             ])
         await self.send_message(chat_id, greeting, parse_mode=None)
@@ -2222,14 +2228,15 @@ class TelegramChannel:
 
     async def _handle_briefing(self, chat_id: int, user_id: int, metadata: Dict):
         """Real-data system briefing — no AI, no invented teams/sprints."""
+        import json as _json
         import os as _os
         import socket as _sock
         import subprocess as _sp
-        import json as _json
 
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
         try:
-            from datetime import datetime as _dt, timezone as _tz
+            from datetime import datetime as _dt
+            from datetime import timezone as _tz
             now = _dt.now(_tz.utc)
             lines: list = [
                 f"📊 *System Briefing* — {now.strftime('%H:%M UTC, %d %b')}",
@@ -2259,8 +2266,8 @@ class TelegramChannel:
             # ── Bridge ──
             bridge_port = 42070
             try:
-                from navig.providers.bridge_grid_reader import get_llm_port
-                bridge_port = get_llm_port() or 42070
+                from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT, get_llm_port
+                bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
             except Exception:
                 pass
             try:
@@ -2551,8 +2558,9 @@ class TelegramChannel:
     def _get_deck_url(self) -> Optional[str]:
         """Resolve the Deck WebApp URL from config."""
         try:
-            import yaml
             import os
+
+            import yaml
             # Try project config first, then global
             for cfg_path in [".navig/config.yaml", os.path.expanduser("~/.navig/config.yaml")]:
                 if os.path.exists(cfg_path):
@@ -2580,28 +2588,28 @@ class TelegramChannel:
         }
         if parse_mode:
             data["parse_mode"] = parse_mode
-        
+
         if reply_to_message_id:
             data["reply_to_message_id"] = reply_to_message_id
-            
+
         if keyboard:
             data["reply_markup"] = {
                 "inline_keyboard": keyboard
             }
-            
+
         result = await self._api_call("sendMessage", data)
         if result is None and parse_mode:
             retry_data = {k: v for k, v in data.items() if k != "parse_mode"}
             result = await self._api_call("sendMessage", retry_data)
         return result
-        
+
     async def send_typing(self, chat_id: int):
         """Send typing indicator."""
         await self._api_call("sendChatAction", {
             "chat_id": chat_id,
             "action": "typing"
         })
-        
+
     async def edit_message(
         self,
         chat_id: int,
@@ -2641,7 +2649,7 @@ class TelegramChannel:
         # Collapse multiple blank lines introduced by removal
         text = _re.sub(r'\n{3,}', '\n\n', text)
         return text.strip()
-        
+
     async def delete_message(self, chat_id: int, message_id: int) -> bool:
         """Delete a message."""
         result = await self._api_call("deleteMessage", {
@@ -2700,7 +2708,7 @@ def create_telegram_channel(
     if not bot_token:
         logger.error("Telegram bot_token not configured")
         return None
-        
+
     async def handle_message(channel, user_id, message, metadata):
         """Route message through gateway."""
         return await gateway.router.route_message(

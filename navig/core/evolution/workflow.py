@@ -1,17 +1,18 @@
-from pathlib import Path
-from typing import Any, Optional
 import os
 import re
+from pathlib import Path
+from typing import Any, Optional
 
 import yaml
 
-from navig.core.evolution.base import BaseEvolver
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, success
+from navig.core.evolution.base import BaseEvolver
+
 
 class WorkflowEvolver(BaseEvolver):
     """Evolves cross-platform YAML workflows."""
-    
+
     def __init__(self):
         super().__init__()
         # AUDIT self-check: Correct implementation? yes - restores valid prompt string syntax.
@@ -67,15 +68,15 @@ Constraints:
         self._workflows_dir = Path(__file__).parent.parent.parent.parent / "workflows"
 
     def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
-        
+
         prompt = f"Goal: {goal}\n\n"
-        
+
         if previous_artifact:
             prompt += f"Previous attempt failed:\nError: {error_msg}\n\n"
             prompt += f"Refine this YAML:\n{previous_artifact}\n"
         else:
             prompt += "Generate a new workflow YAML."
-            
+
         if os.environ.get("NAVIG_MOCK_AI"):
             return """
 name: mock_workflow
@@ -84,18 +85,18 @@ steps:
     args:
       seconds: 1.0
 """
-            
+
         response = ask_ai_with_context(prompt, system_prompt=self._system_prompt)
-        
+
         # Extract YAML
         match = re.search(r"```yaml\n(.*?)\n```", response, re.DOTALL)
         if match:
             return match.group(1).strip()
-            
+
         match = re.search(r"```\n(.*?)\n```", response, re.DOTALL)
         if match:
             return match.group(1).strip()
-            
+
         return response # Fallback if no block
 
     def _validate(self, artifact: str, context: Any) -> Optional[str]:
@@ -112,23 +113,23 @@ steps:
             # Check for known actions (optional, but good for validation)
             # This list should stay in sync with ActionRegistry or similar
             known_actions = {
-                'open_app', 'click', 'type', 'send', 'move_window', 
-                'resize_window', 'maximize_window', 'minimize_window', 
-                'activate_window', 'close_window', 'snap_window', 
-                'wait', 'wait_for', 'get_focused_window', 
+                'open_app', 'click', 'type', 'send', 'move_window',
+                'resize_window', 'maximize_window', 'minimize_window',
+                'activate_window', 'close_window', 'snap_window',
+                'wait', 'wait_for', 'get_focused_window',
                 'run_command', 'read_text', 'scroll', 'double_click'
             }
 
             for i, step in enumerate(data['steps']):
                 if not isinstance(step, dict):
                     return f"Step {i+1} must be a dictionary"
-                
+
                 if 'action' not in step:
                     return f"Step {i+1} missing 'action'"
-                
+
                 action = step['action']
                 if action not in known_actions and not action.startswith('custom_'):
-                    # Warning only? Or strict? 
+                    # Warning only? Or strict?
                     # Let's be strict for core actions to prevent hallucinations
                     return f"Step {i+1}: Unknown action '{action}'"
 
@@ -139,17 +140,17 @@ steps:
                 if 'platform' in step:
                     if not isinstance(step['platform'], dict):
                         return f"Step {i+1}: 'platform' must be a dictionary"
-                    
+
                     for plat, override in step['platform'].items():
                         if plat not in ['windows', 'linux', 'macos']:
                             return f"Step {i+1}: Unknown platform '{plat}'"
-                        
+
                         if not isinstance(override, dict):
                             return f"Step {i+1}: Platform override for '{plat}' must be a dictionary"
-                        
+
                         if 'action' in override and override['action'] not in known_actions:
                              return f"Step {i+1} ({plat}): Unknown action '{override['action']}'"
-            
+
             return None # Valid
         except yaml.YAMLError as e:
             return f"YAML Syntax Error: {e}"
@@ -163,11 +164,11 @@ steps:
             name = data.get('name', 'unnamed_workflow')
             # Sanitize name
             name = "".join([c if c.isalnum() else "_" for c in name])
-            
+
             path = self._workflows_dir / f"{name}.yaml"
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(artifact)
-            
+
             success(f"Workflow saved to {path}")
         except Exception as e:
             error(f"Failed to save workflow: {e}")

@@ -12,9 +12,9 @@ Performance Impact:
 
 import threading
 import time
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
 from collections import OrderedDict
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 # Lazy paramiko import
 _paramiko = None
@@ -34,7 +34,7 @@ def _get_paramiko():
 
 class SSHConnection:
     """Wrapper for a pooled SSH connection with metadata."""
-    
+
     def __init__(self, client, host: str, port: int, user: str):
         self.client = client
         self.host = host
@@ -44,22 +44,22 @@ class SSHConnection:
         self.last_used = time.time()
         self.use_count = 0
         self._lock = threading.Lock()
-    
+
     @property
     def key(self) -> str:
         """Unique identifier for this connection."""
         return f"{self.user}@{self.host}:{self.port}"
-    
+
     @property
     def age_seconds(self) -> float:
         """How long this connection has existed."""
         return time.time() - self.created_at
-    
+
     @property
     def idle_seconds(self) -> float:
         """How long since last use."""
         return time.time() - self.last_used
-    
+
     def is_alive(self) -> bool:
         """Check if the connection is still active."""
         try:
@@ -69,7 +69,7 @@ class SSHConnection:
             return transport.is_active()
         except Exception:
             return False
-    
+
     def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
         """
         Execute a command on this connection.
@@ -80,17 +80,17 @@ class SSHConnection:
         with self._lock:
             self.last_used = time.time()
             self.use_count += 1
-            
+
             try:
                 stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
                 stdout_text = stdout.read().decode('utf-8', errors='ignore').strip()
                 stderr_text = stderr.read().decode('utf-8', errors='ignore').strip()
                 exit_status = stdout.channel.recv_exit_status()
-                
+
                 return (exit_status == 0, stdout_text, stderr_text)
             except Exception as e:
                 return (False, "", str(e))
-    
+
     def close(self):
         """Close the underlying SSH connection."""
         try:
@@ -126,17 +126,17 @@ class SSHConnectionPool:
         # Or explicitly release
         pool.release(conn)
     """
-    
+
     # Default configuration
     DEFAULT_MAX_CONNECTIONS = 10
     DEFAULT_MAX_AGE_SECONDS = 300  # 5 minutes
     DEFAULT_MAX_IDLE_SECONDS = 60  # 1 minute
     DEFAULT_CONNECT_TIMEOUT = 30
-    
+
     # Singleton instance
     _instance: Optional["SSHConnectionPool"] = None
     _instance_lock = threading.Lock()
-    
+
     def __init__(
         self,
         max_connections: int = DEFAULT_MAX_CONNECTIONS,
@@ -157,11 +157,11 @@ class SSHConnectionPool:
         self.max_age_seconds = max_age_seconds
         self.max_idle_seconds = max_idle_seconds
         self.connect_timeout = connect_timeout
-        
+
         # Connection storage (LRU order)
         self._connections: OrderedDict[str, SSHConnection] = OrderedDict()
         self._lock = threading.RLock()
-        
+
         # Statistics
         self._stats = {
             "hits": 0,
@@ -170,7 +170,7 @@ class SSHConnectionPool:
             "connections_closed": 0,
             "errors": 0,
         }
-    
+
     @classmethod
     def get_instance(cls) -> "SSHConnectionPool":
         """Get the singleton pool instance."""
@@ -179,7 +179,7 @@ class SSHConnectionPool:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
-    
+
     @classmethod
     def reset_instance(cls):
         """Reset the singleton instance (for testing)."""
@@ -187,29 +187,29 @@ class SSHConnectionPool:
             if cls._instance is not None:
                 cls._instance.close_all()
                 cls._instance = None
-    
+
     def _make_key(self, ssh_config: Dict[str, Any]) -> str:
         """Create a unique key for the connection."""
         host = ssh_config.get("host", "")
         port = ssh_config.get("port", 22)
         user = ssh_config.get("user", "")
         return f"{user}@{host}:{port}"
-    
+
     def _create_connection(self, ssh_config: Dict[str, Any]) -> SSHConnection:
         """Create a new SSH connection."""
         paramiko = _get_paramiko()
         if not paramiko:
             raise RuntimeError("paramiko is not installed")
-        
+
         host = ssh_config["host"]
         port = ssh_config.get("port", 22)
         user = ssh_config["user"]
         ssh_key = ssh_config.get("ssh_key")
         ssh_password = ssh_config.get("ssh_password")
-        
+
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         connect_kwargs = {
             "hostname": host,
             "port": port,
@@ -218,21 +218,21 @@ class SSHConnectionPool:
             "look_for_keys": False,
             "allow_agent": False,
         }
-        
+
         if ssh_password:
             connect_kwargs["password"] = ssh_password
         elif ssh_key:
             connect_kwargs["key_filename"] = str(Path(ssh_key).expanduser())
-        
+
         client.connect(**connect_kwargs)
-        
+
         self._stats["connections_created"] += 1
         return SSHConnection(client, host, port, user)
-    
+
     def _cleanup_expired(self):
         """Remove expired and dead connections."""
         to_remove = []
-        
+
         for key, conn in self._connections.items():
             if (
                 conn.age_seconds > self.max_age_seconds
@@ -240,13 +240,13 @@ class SSHConnectionPool:
                 or not conn.is_alive()
             ):
                 to_remove.append(key)
-        
+
         for key in to_remove:
             conn = self._connections.pop(key, None)
             if conn:
                 conn.close()
                 self._stats["connections_closed"] += 1
-    
+
     def _evict_oldest(self):
         """Remove the oldest (LRU) connection if at capacity."""
         if len(self._connections) >= self.max_connections:
@@ -254,7 +254,7 @@ class SSHConnectionPool:
             key, conn = self._connections.popitem(last=False)
             conn.close()
             self._stats["connections_closed"] += 1
-    
+
     def get_connection(self, ssh_config: Dict[str, Any]) -> SSHConnection:
         """
         Get a pooled connection or create a new one.
@@ -270,15 +270,15 @@ class SSHConnectionPool:
             Exception: On connection failure
         """
         key = self._make_key(ssh_config)
-        
+
         with self._lock:
             # Cleanup expired connections first
             self._cleanup_expired()
-            
+
             # Check for existing connection
             if key in self._connections:
                 conn = self._connections[key]
-                
+
                 # Validate connection is still alive
                 if conn.is_alive():
                     # Move to end (most recently used)
@@ -290,13 +290,13 @@ class SSHConnectionPool:
                     del self._connections[key]
                     conn.close()
                     self._stats["connections_closed"] += 1
-            
+
             # Need to create new connection
             self._stats["misses"] += 1
-            
+
             # Evict oldest if at capacity
             self._evict_oldest()
-            
+
             try:
                 conn = self._create_connection(ssh_config)
                 self._connections[key] = conn
@@ -304,7 +304,7 @@ class SSHConnectionPool:
             except Exception:
                 self._stats["errors"] += 1
                 raise
-    
+
     def release(self, conn: SSHConnection):
         """
         Release a connection back to the pool.
@@ -314,17 +314,17 @@ class SSHConnectionPool:
         """
         # Connection stays in pool, just update last_used
         conn.last_used = time.time()
-    
+
     def close_connection(self, ssh_config: Dict[str, Any]):
         """Explicitly close and remove a connection from the pool."""
         key = self._make_key(ssh_config)
-        
+
         with self._lock:
             conn = self._connections.pop(key, None)
             if conn:
                 conn.close()
                 self._stats["connections_closed"] += 1
-    
+
     def close_all(self):
         """Close all connections in the pool."""
         with self._lock:
@@ -332,7 +332,7 @@ class SSHConnectionPool:
                 conn.close()
                 self._stats["connections_closed"] += 1
             self._connections.clear()
-    
+
     @property
     def stats(self) -> Dict[str, Any]:
         """Get pool statistics."""
@@ -346,13 +346,13 @@ class SSHConnectionPool:
                     else 0.0
                 ),
             }
-    
+
     @property
     def active_count(self) -> int:
         """Get the number of active connections."""
         with self._lock:
             return len(self._connections)
-    
+
     def get_connection_info(self) -> list[Dict[str, Any]]:
         """Get info about all active connections."""
         with self._lock:

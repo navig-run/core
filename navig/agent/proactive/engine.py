@@ -8,14 +8,12 @@ Inspired by proactive assistance loop patterns.
 """
 
 import asyncio
-from typing import Optional
 from datetime import datetime, timedelta
+from typing import Optional
 
 from navig import console_helper as ch
-from navig.core.hooks import register_hook, trigger_hook, HookEvent
-from navig.agent.proactive.providers import (
-    CalendarProvider, EmailProvider, MockCalendar, MockEmail
-)
+from navig.agent.proactive.providers import CalendarProvider, EmailProvider, MockCalendar, MockEmail
+from navig.core.hooks import HookEvent, register_hook, trigger_hook
 
 
 class ProactiveEngine:
@@ -28,13 +26,13 @@ class ProactiveEngine:
     3. Generating 'Proactive Events' (reminders, drafts)
     4. Running engagement evaluation ticks (greetings, check-ins, feature discovery)
     """
-    
+
     def __init__(self):
         self.calendar: Optional[CalendarProvider] = MockCalendar()
         self.email: Optional[EmailProvider] = MockEmail()
         self.email_providers: dict = {}  # label -> EmailProvider (multi-account)
         self.running = False
-        
+
         # Initialize TriggerManager
         from navig.commands.triggers import TriggerManager
         self.trigger_manager = TriggerManager()
@@ -45,10 +43,12 @@ class ProactiveEngine:
         self.last_error: Optional[str] = None
         self.is_checking: bool = False
         self.provider_status: dict = {"calendar": "mock", "email": "mock"}
-        
+
         # Engagement coordinator (lazy-loaded)
         self._engagement = None
         self._engagement_tick_counter = 0
+        # Strong references to background tasks to prevent silent GC before completion.
+        self._background_tasks: set = set()
 
     def set_calendar_provider(self, provider: CalendarProvider):
         """Set real calendar provider (e.g., GoogleCalendar)."""
@@ -62,31 +62,31 @@ class ProactiveEngine:
         """Start the proactive loop."""
         self.running = True
         ch.info("[Proactive] Engine started. Polling every 60s...")
-        
+
         # Register core hooks
         register_hook("proactive:check", self.run_checks)
-        
+
         while self.running:
             await self.run_checks(None)
             await asyncio.sleep(60)
-            
+
     async def stop(self):
         """Stop the proactive loop."""
         self.running = False
         ch.info("[Proactive] Engine stopped.")
-        
+
     async def run_checks(self, event: Optional[HookEvent]):
         """Run all proactive checks."""
         if self.is_checking:
             return
-        
+
         self.is_checking = True
         self.last_check = datetime.now()
         self.last_error = None
-        
+
         try:
             from navig.commands.triggers import TriggerEvent, TriggerType
-            
+
             # Check Calendar
             if self.calendar and not isinstance(self.calendar, MockCalendar):
                 self.provider_status["calendar"] = "checking"
@@ -101,9 +101,12 @@ class ProactiveEngine:
                                 "proactive:alert",
                                 action="notify",
                                 context={"source": "calendar", "event": evt.title},
-                                messages=[f"Upcoming event: {evt.title} at {evt.start.strftime('%H:%M')}"]
+                                messages=[
+                                    f"Upcoming event: {evt.title} at "
+                                    f"{evt.start.strftime('%H:%M')}"
+                                ]
                             )
-                            
+
                             # 2. Fire TriggerManager event (for configured automation)
                             try:
                                 # TriggerEvent requires type, source, data
@@ -126,14 +129,14 @@ class ProactiveEngine:
                     ch.warning(f"Error checking calendar: {e}")
             else:
                 self.provider_status["calendar"] = "mock"
-            
+
             # Check Email (multi-account)
             email_sources = {}
             if self.email_providers:
                 email_sources = self.email_providers
             elif self.email and not isinstance(self.email, MockEmail):
                 email_sources = {"default": self.email}
-            
+
             for label, email_prov in email_sources.items():
                 prov_key = f"email:{label}"
                 self.provider_status[prov_key] = "checking"
@@ -143,14 +146,21 @@ class ProactiveEngine:
                     if messages:
                         for msg in messages:
                             if msg.read: continue
-                            
+
                             # 1. Fire hook
-                            await trigger_hook("proactive:alert", 
+                            await trigger_hook("proactive:alert",
                                 action="notify",
-                                context={"source": "email", "account": label, "subject": msg.subject},
-                                messages=[f"[{label}] Unread email from {msg.sender}: {msg.subject}"]
+                                context={
+                                    "source": "email",
+                                    "account": label,
+                                    "subject": msg.subject,
+                                },
+                                messages=[
+                                    f"[{label}] Unread email from "
+                                    f"{msg.sender}: {msg.subject}"
+                                ]
                             )
-                            
+
                             # 2. Fire TriggerManager event
                             try:
                                 te = TriggerEvent(
@@ -171,10 +181,10 @@ class ProactiveEngine:
                 except Exception as e:
                     self.provider_status[prov_key] = f"error: {str(e)}"
                     ch.warning(f"Error checking email ({label}): {e}")
-            
+
             if not email_sources:
                 self.provider_status["email"] = "mock"
-            
+
             self.last_check_status = "success"
 
         except Exception as e:
@@ -183,22 +193,23 @@ class ProactiveEngine:
             ch.error(f"Proactive check failed: {e}")
         finally:
             self.is_checking = False
-        
+
         # Run engagement tick (every 15th polling cycle ≈ 15 min at 60s interval)
         self._engagement_tick_counter += 1
         if self._engagement_tick_counter >= 15:
             self._engagement_tick_counter = 0
             self._run_engagement_tick()
-    
+
     def _run_engagement_tick(self):
         """Run a proactive engagement evaluation."""
         try:
             coordinator = self._get_engagement_coordinator()
             result = coordinator.engagement_tick()
             if result:
-                # Fire a hook so Telegram/other channels can pick it up
+                # Schedule as a tracked task so it cannot be silently GC'd.
                 import asyncio
-                asyncio.ensure_future(
+                loop = asyncio.get_event_loop()
+                task = loop.create_task(
                     trigger_hook(
                         "proactive:engagement",
                         action=result.action.value,
@@ -206,16 +217,24 @@ class ProactiveEngine:
                         messages=[result.message],
                     )
                 )
+                self._background_tasks.add(task)
+
+                def _on_done(t: asyncio.Task) -> None:
+                    self._background_tasks.discard(t)
+                    if not t.cancelled() and t.exception():
+                        ch.warning(f"Engagement hook failed: {t.exception()}")
+
+                task.add_done_callback(_on_done)
         except Exception as e:
             ch.warning(f"Engagement tick error: {e}")
-    
+
     def _get_engagement_coordinator(self):
         """Lazy-load the engagement coordinator."""
         if self._engagement is None:
             from navig.agent.proactive.engagement import EngagementCoordinator
             self._engagement = EngagementCoordinator()
         return self._engagement
-    
+
     def record_user_message(self, message_type: str = "chat", command: Optional[str] = None):
         """
         Record a user interaction for engagement tracking.
@@ -230,13 +249,14 @@ class ProactiveEngine:
 
     def init_providers(self):
         """Initialize providers from configuration."""
-        from navig.config import get_config_manager
-        from navig.agent.proactive.google_calendar import GoogleCalendar
-        from navig.agent.proactive.imap_email import get_email_provider
         import os
 
+        from navig.agent.proactive.google_calendar import GoogleCalendar
+        from navig.agent.proactive.imap_email import get_email_provider
+        from navig.config import get_config_manager
+
         cm = get_config_manager()
-        
+
         # Calendar
         cal_conf = cm.global_config.get('calendar', {})
         provider_name = cal_conf.get('provider')
@@ -245,7 +265,7 @@ class ProactiveEngine:
                 self.calendar = GoogleCalendar()
             except Exception as e:
                 ch.warning(f"Failed to init Google Calendar: {e}")
-        
+
         # Email (single provider from global config)
         email_conf = cm.global_config.get('email', {})
         email_provider_name = email_conf.get('provider')
@@ -255,9 +275,9 @@ class ProactiveEngine:
             provider_key = str(email_provider_name).strip().lower()
 
             # AUDIT DECISION:
-            # Is this the correct implementation? Yes — vault-first keeps secrets out of flat config.
-            # Does it break any existing callers? No — env and legacy config passwords still resolve.
-            # Is there a simpler alternative? Yes, but it would keep relying on plaintext secrets.
+            # Correct: vault-first keeps secrets out of flat config.
+            # Non-breaking: env and legacy config passwords still resolve as fallback.
+            # Simpler alternatives would keep relying on plaintext secrets.
             try:
                 if provider_key:
                     from navig.vault import get_vault
@@ -285,8 +305,8 @@ class ProactiveEngine:
             if addr and pwd:
                 try:
                     self.email = get_email_provider(
-                        email_provider_name, 
-                        addr, 
+                        email_provider_name,
+                        addr,
                         pwd,
                         host=email_conf.get('host'),
                         port=email_conf.get('port')

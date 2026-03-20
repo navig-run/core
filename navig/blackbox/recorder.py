@@ -7,8 +7,7 @@ Rotation: File rotated when it exceeds 50 MB (old renamed to events.jsonl.1).
 from __future__ import annotations
 
 import json
-import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 

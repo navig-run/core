@@ -12,10 +12,10 @@ Automatic notification system for:
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, time
-from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
+from datetime import datetime, time
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class Notification:
     priority: NotificationPriority = NotificationPriority.NORMAL
     created_at: datetime = field(default_factory=datetime.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_telegram_message(self) -> str:
         """Format for Telegram."""
         emoji_map = {
@@ -47,17 +47,17 @@ class Notification:
             'heartbeat': '💓',
             'reminder': '⏰',
         }
-        
+
         priority_prefix = {
             NotificationPriority.CRITICAL: '🔴 ',
             NotificationPriority.HIGH: '🟡 ',
             NotificationPriority.NORMAL: '',
             NotificationPriority.LOW: '',
         }
-        
+
         emoji = emoji_map.get(self.type, '📢')
         prefix = priority_prefix.get(self.priority, '')
-        
+
         return f"{prefix}{emoji} **{self.title}**\n\n{self.message}"
 
 
@@ -114,7 +114,7 @@ class TelegramNotifier(ChannelNotifier):
     - Batched low-priority notifications
     - Proactive engagement (greetings, check-ins, feature discovery)
     """
-    
+
     def __init__(
         self,
         telegram_channel,  # TelegramChannel instance
@@ -122,27 +122,27 @@ class TelegramNotifier(ChannelNotifier):
     ):
         self.channel = telegram_channel
         self.chat_id = chat_id
-        
+
         # Notification queue
         self.queue: List[Notification] = []
         self._queue_lock = asyncio.Lock()
-        
+
         # 30-second batching window for non-critical notifications
         self._batch_window_sec = 30
         self._batch_buffer: List[Notification] = []
         self._batch_timer: Optional[asyncio.Task] = None
-        
+
         # Scheduled tasks
         self.scheduled_tasks: List[ScheduledTask] = []
         self._scheduler_task: Optional[asyncio.Task] = None
         self._running = False
-        
+
         # Proactive engagement coordinator
         self._engagement = None  # Lazy-loaded
-        
+
         # Configure default schedules
         self._setup_default_schedules()
-        
+
     def _setup_default_schedules(self):
         """Set up default scheduled notifications."""
         # Morning briefing at 7:00 AM
@@ -152,7 +152,7 @@ class TelegramNotifier(ChannelNotifier):
             func=self._morning_briefing,
             days=[0, 1, 2, 3, 4],  # Weekdays
         ))
-        
+
         # Evening summary at 6:00 PM
         self.scheduled_tasks.append(ScheduledTask(
             name="evening_summary",
@@ -160,27 +160,27 @@ class TelegramNotifier(ChannelNotifier):
             func=self._evening_summary,
             days=[0, 1, 2, 3, 4],  # Weekdays
         ))
-        
+
         # Heartbeat check every 30 minutes (handled separately)
         self.scheduled_tasks.append(ScheduledTask(
             name="heartbeat_check",
             time=time(0, 0),  # Runs on interval, not specific time
             func=self._heartbeat_check,
         ))
-        
+
         # Proactive engagement tick (runs alongside heartbeat interval)
         self.scheduled_tasks.append(ScheduledTask(
             name="engagement_tick",
             time=time(0, 0),  # Runs on interval, not specific time
             func=self._engagement_tick,
         ))
-        
+
     async def start(self):
         """Start the notification system."""
         self._running = True
         self._scheduler_task = asyncio.create_task(self._scheduler_loop())
         logger.info("Telegram notifier started")
-        
+
     async def stop(self):
         """Stop the notification system."""
         self._running = False
@@ -190,41 +190,41 @@ class TelegramNotifier(ChannelNotifier):
                 await self._scheduler_task
             except asyncio.CancelledError:
                 pass
-                
+
     async def _scheduler_loop(self):
         """Main scheduler loop."""
         heartbeat_interval = 30 * 60  # 30 minutes
         engagement_interval = 15 * 60  # 15 minutes (more frequent than heartbeat)
         last_heartbeat = datetime.now()
         last_engagement = datetime.now()
-        
+
         while self._running:
             try:
                 now = datetime.now()
-                
+
                 # Check scheduled tasks
                 for task in self.scheduled_tasks:
                     if not task.enabled:
                         continue
-                        
+
                     # Special handling for heartbeat
                     if task.name == "heartbeat_check":
                         if (now - last_heartbeat).total_seconds() >= heartbeat_interval:
                             await self._run_task(task)
                             last_heartbeat = now
                         continue
-                    
+
                     # Special handling for engagement tick
                     if task.name == "engagement_tick":
                         if (now - last_engagement).total_seconds() >= engagement_interval:
                             await self._run_task(task)
                             last_engagement = now
                         continue
-                    
+
                     # Time-based tasks
                     if now.weekday() not in task.days:
                         continue
-                        
+
                     # Check if it's time to run
                     task_time = now.replace(
                         hour=task.time.hour,
@@ -232,25 +232,25 @@ class TelegramNotifier(ChannelNotifier):
                         second=0,
                         microsecond=0
                     )
-                    
+
                     # Run if within 1 minute window and not already run today
                     if (abs((now - task_time).total_seconds()) < 60 and
                         (task.last_run is None or task.last_run.date() != now.date())):
                         await self._run_task(task)
                         task.last_run = now
-                
+
                 # Process notification queue
                 await self._process_queue()
-                
+
                 # Sleep for 30 seconds
                 await asyncio.sleep(30)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Scheduler error: {e}")
                 await asyncio.sleep(60)
-                
+
     async def _run_task(self, task: ScheduledTask):
         """Run a scheduled task."""
         try:
@@ -259,40 +259,40 @@ class TelegramNotifier(ChannelNotifier):
                 await self.send(notification)
         except Exception as e:
             logger.error(f"Task {task.name} failed: {e}")
-            
+
     async def _process_queue(self):
         """Process pending notifications."""
         async with self._queue_lock:
             if not self.queue:
                 return
-                
+
             # Group by priority
             critical = [n for n in self.queue if n.priority == NotificationPriority.CRITICAL]
             high = [n for n in self.queue if n.priority == NotificationPriority.HIGH]
             normal = [n for n in self.queue if n.priority == NotificationPriority.NORMAL]
             low = [n for n in self.queue if n.priority == NotificationPriority.LOW]
-            
+
             # Send critical immediately
             for n in critical:
                 await self._send_notification(n)
                 self.queue.remove(n)
-                
+
             # Send high priority
             for n in high:
                 await self._send_notification(n)
                 self.queue.remove(n)
-                
+
             # Batch low priority (send if more than 3 or older than 30 min)
             if len(low) >= 3 or (low and (datetime.now() - low[0].created_at).seconds > 1800):
                 await self._send_batched(low)
                 for n in low:
                     self.queue.remove(n)
-                    
+
             # Send normal priority
             for n in normal:
                 await self._send_notification(n)
                 self.queue.remove(n)
-                
+
     async def _send_notification(self, notification: Notification):
         """Send a single notification (with quiet-hours gating)."""
         try:
@@ -304,16 +304,16 @@ class TelegramNotifier(ChannelNotifier):
             await self.channel.send_message(self.chat_id, message)
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")
-            
+
     async def _send_batched(self, notifications: List[Notification]):
         """Send batched notifications."""
         if not notifications:
             return
-            
+
         lines = ["📬 **Batched Updates**\n"]
         for n in notifications:
             lines.append(f"• {n.title}")
-            
+
         message = "\n".join(lines)
         try:
             await self.channel.send_message(self.chat_id, message)
@@ -328,7 +328,7 @@ class TelegramNotifier(ChannelNotifier):
             return tracker.should_suppress_notification(notification.priority.value)
         except Exception:
             return False
-            
+
     async def send(self, notification: Notification):
         """Queue a notification for sending with 30s batching window."""
         if notification.priority == NotificationPriority.CRITICAL:
@@ -343,7 +343,7 @@ class TelegramNotifier(ChannelNotifier):
             self._batch_buffer.append(notification)
             if self._batch_timer is None or self._batch_timer.done():
                 self._batch_timer = asyncio.create_task(self._flush_batch_after_delay())
-                
+
     async def send_alert(
         self,
         title: str,
@@ -373,11 +373,11 @@ class TelegramNotifier(ChannelNotifier):
             await self._send_notification(batch[0])
         else:
             await self._send_batched(batch)
-        
+
     # ========================================================================
     # Scheduled Task Implementations
     # ========================================================================
-    
+
     async def _morning_briefing(self) -> Optional[Notification]:
         """Generate morning briefing."""
         now = datetime.now()
@@ -399,7 +399,7 @@ class TelegramNotifier(ChannelNotifier):
             message='\n'.join(lines),
             priority=NotificationPriority.NORMAL,
         )
-        
+
     async def _evening_summary(self) -> Optional[Notification]:
         """Generate evening summary — NAVIG lore-flavored, day/hour-aware."""
         import random
@@ -457,7 +457,7 @@ class TelegramNotifier(ChannelNotifier):
             message='\n'.join(lines),
             priority=NotificationPriority.LOW,
         )
-        
+
     async def _heartbeat_check(self) -> Optional[Notification]:
         """Lightweight in-process health check.
 
@@ -488,7 +488,7 @@ class TelegramNotifier(ChannelNotifier):
         except Exception as e:
             logger.error("Heartbeat check error: %s", e)
             return None
-    
+
     async def _engagement_tick(self) -> Optional[Notification]:
         """
         Run proactive engagement evaluation.
@@ -500,10 +500,10 @@ class TelegramNotifier(ChannelNotifier):
         try:
             coordinator = self._get_engagement_coordinator()
             result = coordinator.engagement_tick()
-            
+
             if result is None:
                 return None
-            
+
             # Map engagement actions to notification types
             type_map = {
                 'greeting': 'routine',
@@ -516,7 +516,7 @@ class TelegramNotifier(ChannelNotifier):
                 'celebration': 'routine',
                 'heartbeat_report': 'heartbeat',
             }
-            
+
             # Map engagement priority (1-10) to notification priority
             if result.priority >= 8:
                 priority = NotificationPriority.HIGH
@@ -524,7 +524,7 @@ class TelegramNotifier(ChannelNotifier):
                 priority = NotificationPriority.NORMAL
             else:
                 priority = NotificationPriority.LOW
-            
+
             return Notification(
                 type=type_map.get(result.action.value, 'routine'),
                 title=f"NAVIG — {result.action.value.replace('_', ' ').title()}",
@@ -535,14 +535,14 @@ class TelegramNotifier(ChannelNotifier):
         except Exception as e:
             logger.error(f"Engagement tick failed: {e}")
             return None
-    
+
     def _get_engagement_coordinator(self):
         """Lazy-load the engagement coordinator."""
         if self._engagement is None:
             from navig.agent.proactive.engagement import EngagementCoordinator
             self._engagement = EngagementCoordinator()
         return self._engagement
-    
+
     def record_user_interaction(
         self,
         message_type: str = "chat",
@@ -574,23 +574,23 @@ class NotificationManager:
     - Email (future)
     - Push notifications (future)
     """
-    
+
     _instance = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-        
+
     def __init__(self):
         if self._initialized:
             return
-            
+
         self._initialized = True
         self.telegram: Optional[TelegramNotifier] = None
         self._channels: Dict[str, ChannelNotifier] = {}
-        
+
     def configure_telegram(self, telegram_channel, chat_id: int):
         """Configure Telegram notifications."""
         self.telegram = TelegramNotifier(telegram_channel, chat_id)
@@ -620,7 +620,7 @@ class NotificationManager:
             bot, room_id, priority_room_id=priority_room_id,
         )
         self._channels["matrix"] = notifier
-        
+
     async def start_all(self):
         """Start all notification channels."""
         for name, channel in self._channels.items():
@@ -629,7 +629,7 @@ class NotificationManager:
                 logger.info(f"Started {name} notifications")
             except Exception as e:
                 logger.error(f"Failed to start {name}: {e}")
-                
+
     async def stop_all(self):
         """Stop all notification channels."""
         for name, channel in self._channels.items():
@@ -637,7 +637,7 @@ class NotificationManager:
                 await channel.stop()
             except Exception:
                 pass
-                
+
     async def broadcast_alert(
         self,
         title: str,

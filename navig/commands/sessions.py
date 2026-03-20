@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -379,8 +377,8 @@ def _cmd_list(
     show_empty: bool = typer.Option(False, "--empty", help="Include sessions with no turns"),
 ):
     """List all Copilot chat sessions."""
-    from rich.table import Table
     from rich import box
+    from rich.table import Table
 
     all_s = _all_sessions_or_die(workspace, fast=True)
     if not show_empty:
@@ -433,9 +431,10 @@ def _cmd_stats(
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """Show storage statistics for all chat sessions."""
-    from rich.table import Table
-    from rich import box
     from collections import defaultdict
+
+    from rich import box
+    from rich.table import Table
 
     all_s = _discover_all_sessions(fast=True)
     if not all_s:
@@ -467,7 +466,7 @@ def _cmd_stats(
         return
 
     ch.console.print()
-    ch.console.print(f"[bold cyan]Copilot Session Statistics[/]")
+    ch.console.print("[bold cyan]Copilot Session Statistics[/]")
     ch.console.print()
     ch.console.print(f"  Sessions:  [bright_cyan]{len(all_s):,}[/]  [dim]({empty} empty)[/]")
     ch.console.print(f"  Total size:[bright_cyan]{_human_size(total_bytes)}[/]")
@@ -511,7 +510,7 @@ def _cmd_view(
 
     sess = matches[0]
     if len(matches) > 1:
-        ch.warning(f"Multiple matches — showing first. Use more specific ID.")
+        ch.warning("Multiple matches — showing first. Use more specific ID.")
 
     ch.console.print()
     ch.console.print(f"[bold cyan]Session:[/] [bright_blue]{sess.session_id}[/]")
@@ -526,7 +525,6 @@ def _cmd_view(
         return
 
     from rich.panel import Panel
-    from rich.text import Text
 
     for turn in sess.turns:
         if turn.role == "user":
@@ -558,8 +556,6 @@ def _cmd_search(
     context_chars: int = typer.Option(150, "--context", help="Characters of context to show"),
 ):
     """Search across all chat sessions for a query string."""
-    from rich.table import Table
-    from rich import box
 
     all_s = _all_sessions_or_die(workspace, fast=False)
     q = query.lower()
@@ -606,7 +602,7 @@ def _cmd_search(
         ch.console.print(f"  [dim]  → Session: {sess.session_id}[/]")
         ch.console.print()
 
-    ch.dim(f"Tip: navig copilot sessions view <SESSION_ID>")
+    ch.dim("Tip: navig copilot sessions view <SESSION_ID>")
     ch.console.print()
 
 

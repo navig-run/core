@@ -4,8 +4,9 @@ NAVIG Gateway CLI Commands
 Commands for managing the autonomous agent gateway server.
 """
 
+from typing import Any, Dict, Optional
+
 import typer
-from typing import Dict, Any, Optional
 
 from navig.lazy_loader import lazy_import
 
@@ -77,7 +78,7 @@ def gateway_start(
     ch.info(f"Starting NAVIG Gateway on {host}:{port}...")
 
     try:
-        from navig.gateway import NavigGateway, GatewayConfig
+        from navig.gateway import GatewayConfig, NavigGateway
 
         # Build config dict for GatewayConfig
         raw_config = {
@@ -195,7 +196,8 @@ def gateway_status(
     tg_online = False
     if tg_token:
         try:
-            import urllib.request, json as _j
+            import json as _j
+            import urllib.request
             tok = tg_cfg["bot_token"]
             with urllib.request.urlopen(
                 f"https://api.telegram.org/bot{tok}/getMe", timeout=5
@@ -321,7 +323,6 @@ def gateway_test(
         navig gateway test matrix   --target "#alerts:navig.local"
         navig gateway test all      --target @username
     """
-    import typer as _typer
 
     channels_to_test = (
         ["telegram", "matrix"] if channel == "all" else [channel.lower()]

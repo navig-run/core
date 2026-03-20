@@ -10,9 +10,9 @@ Public API:
     status()        → ProviderStatus (availability, models, health)
 """
 
-from navig.routing.router import UnifiedRouter, get_router
+from navig.routing.capabilities import CAPABILITY_TAGS, MODE_CAPABILITIES
 from navig.routing.detect import detect_mode
-from navig.routing.capabilities import MODE_CAPABILITIES, CAPABILITY_TAGS
+from navig.routing.router import UnifiedRouter, get_router
 from navig.routing.trace import RouteTrace
 
 __all__ = [

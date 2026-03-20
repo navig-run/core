@@ -11,8 +11,8 @@ Reference: docs/concepts/memory.md
 """
 
 from navig.memory.conversation import (
-    Message,
     ConversationStore,
+    Message,
     SessionInfo,
 )
 from navig.memory.embeddings import (
@@ -20,68 +20,68 @@ from navig.memory.embeddings import (
     LocalEmbeddingProvider,
     OpenAIEmbeddingProvider,
 )
+from navig.memory.fact_extractor import (
+    ExtractionResult,
+    FactExtractor,
+    extract_rules,
+)
+from navig.memory.fact_retriever import (
+    FactRetrievalResult,
+    FactRetriever,
+    RankedFact,
+    RetrievalConfig,
+)
+from navig.memory.indexer import (
+    ChunkConfig,
+    IndexResult,
+    MemoryIndexer,
+)
+from navig.memory.key_facts import (
+    VALID_CATEGORIES,
+    KeyFact,
+    KeyFactStore,
+    get_key_fact_store,
+    reset_key_fact_store,
+)
 from navig.memory.knowledge_base import (
     KnowledgeBase,
     KnowledgeEntry,
-)
-from navig.memory.rag import (
-    RAGPipeline,
-    RAGConfig,
-    RetrievalResult,
-)
-from navig.memory.user_profile import (
-    UserProfile,
-    MemoryNote,
-    get_profile,
-    reload_profile,
-)
-from navig.memory.storage import (
-    MemoryStorage,
-    MemoryChunk,
-    FileMetadata,
-)
-from navig.memory.indexer import (
-    MemoryIndexer,
-    IndexResult,
-    ChunkConfig,
-)
-from navig.memory.search import (
-    HybridSearch,
-    SearchResult,
-    SearchResponse,
-    SearchConfig,
 )
 from navig.memory.manager import (
     MemoryManager,
     get_memory_manager,
     reload_memory_manager,
 )
+from navig.memory.project_indexer import (
+    ProjectIndexConfig,
+    ProjectIndexer,
+    ProjectSearchResult,
+)
+from navig.memory.rag import (
+    RAGConfig,
+    RAGPipeline,
+    RetrievalResult,
+)
+from navig.memory.search import (
+    HybridSearch,
+    SearchConfig,
+    SearchResponse,
+    SearchResult,
+)
+from navig.memory.storage import (
+    FileMetadata,
+    MemoryChunk,
+    MemoryStorage,
+)
+from navig.memory.user_profile import (
+    MemoryNote,
+    UserProfile,
+    get_profile,
+    reload_profile,
+)
 from navig.memory.watcher import (
     MemoryWatcher,
     WatcherContext,
-)
-from navig.memory.project_indexer import (
-    ProjectIndexer,
-    ProjectIndexConfig,
-    ProjectSearchResult,
-)
-from navig.memory.key_facts import (
-    KeyFact,
-    KeyFactStore,
-    get_key_fact_store,
-    reset_key_fact_store,
-    VALID_CATEGORIES,
-)
-from navig.memory.fact_extractor import (
-    FactExtractor,
-    ExtractionResult,
-    extract_rules,
-)
-from navig.memory.fact_retriever import (
-    FactRetriever,
-    FactRetrievalResult,
-    RankedFact,
-    RetrievalConfig,
 )
 
 __all__ = [

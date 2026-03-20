@@ -4,7 +4,7 @@ NAVIG Cron CLI Commands
 Commands for managing persistent job scheduling via the gateway.
 """
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 import typer
 
@@ -140,7 +140,7 @@ def cron_run(
 ):
     """Run a job immediately."""
     ch.info(f"Running job {job_id}...")
-    
+
     try:
         import requests
         response = requests.post(
@@ -217,11 +217,11 @@ def cron_status():
         if response.status_code == 200:
             data = response.json()
             cron = data.get("cron", {})
-            
+
             # Cron is running if gateway is up and jobs exist
             total_jobs = cron.get("jobs", cron.get("total_jobs", 0))
             enabled_jobs = cron.get("enabled_jobs", 0)
-            
+
             if data.get("status") == "running":
                 ch.success("Cron service is running")
                 ch.info(f"  Total jobs: {total_jobs}")
@@ -259,10 +259,10 @@ def add_cmd(name: str, ctx: Dict[str, Any]) -> None:
     will need to prompt for schedule and command separately.
     """
     from rich.prompt import Prompt
-    
+
     schedule = Prompt.ask("Schedule (e.g., 'every 30 minutes', '0 * * * *')")
     command = Prompt.ask("Command to run")
-    
+
     if schedule and command:
         cron_add(name, schedule, command, disabled=False)
     else:

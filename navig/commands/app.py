@@ -5,15 +5,17 @@ Manage apps on remote hosts. Each host can have multiple apps.
 """
 
 import os
-import shlex
 import platform
+import shlex
 import subprocess
-from typing import Dict, Any
 from pathlib import Path
-from navig.config import get_config_manager
-from navig import console_helper as ch
-from rich.console import Console
+from typing import Any, Dict
+
 import yaml
+from rich.console import Console
+
+from navig import console_helper as ch
+from navig.config import get_config_manager
 
 config_manager = get_config_manager()
 console = Console()
@@ -350,15 +352,15 @@ def add_app(options: Dict[str, Any]) -> None:
     """Add new app to a host configuration."""
     app_name = options.get('app_name')
     host_name = options.get('host')
-    
+
     if not app_name:
         ch.error("App name is required")
         return
-    
+
     # Get active host if not specified
     if not host_name:
         host_name = config_manager.get_active_host()
-    
+
     if not host_name:
         ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
         return
@@ -439,15 +441,15 @@ def add_app(options: Dict[str, Any]) -> None:
         ch.dim("App Root: Project root directory (contains source code)")
         ch.dim("Web Root: Public directory served by web server (e.g., /public)")
         ch.newline()
-        
+
         app_root = ch.prompt_input("App Root Path", default=f"/var/www/{app_name}")
-        
+
         # Suggest web_root based on app_root
         suggested_web_root = app_root
         if webserver_type == 'nginx':
             # Common patterns for different frameworks
             suggested_web_root = f"{app_root}/public"  # Laravel, Symfony
-        
+
         web_root = ch.prompt_input("Web Root Path", default=suggested_web_root)
         log_path = ch.prompt_input("Log Path", default=f"/var/log/{app_name}")
 
@@ -621,7 +623,7 @@ def edit_app(options: Dict[str, Any]) -> None:
     # Try to find individual app file first (new format)
     config_file = None
     app_file = config_manager.apps_dir / f"{app_name}.yaml"
-    
+
     if app_file.exists():
         config_file = app_file
         file_type = "individual app file"
@@ -1028,12 +1030,11 @@ def migrate_apps(options: Dict[str, Any]) -> None:
 
 
 
-import typer
-from navig.cli import show_subcommand_help, deprecation_warning
-from typing import Optional, List, Dict, Any, Tuple
-from pathlib import Path
-from navig import console_helper as ch
+from typing import Any, Dict, Optional
 
+import typer
+
+from navig.cli import deprecation_warning, show_subcommand_help
 
 app_app = typer.Typer(
     help="Manage apps on hosts",

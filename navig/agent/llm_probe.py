@@ -22,6 +22,7 @@ from typing import NamedTuple
 
 from loguru import logger
 
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -156,7 +157,7 @@ def _probe_free_cloud() -> ProbeResult | None:
 # T2 — Bridge (mcp_bridge / VS Code Copilot tunnel)
 # ---------------------------------------------------------------------------
 
-_BRIDGE_PORT = 6175  # navig-bridge default MCP WebSocket port
+_BRIDGE_PORT = BRIDGE_DEFAULT_PORT  # navig-bridge default MCP WebSocket port
 
 
 async def _probe_bridge() -> ProbeResult | None:
@@ -171,7 +172,7 @@ async def _probe_bridge() -> ProbeResult | None:
                     reachable=True,
                     tier="T2",
                     model="bridge-copilot",
-                    note="Bridge (VS Code Copilot) active on port 6175",
+                    note=f"Bridge (VS Code Copilot) active on port {BRIDGE_DEFAULT_PORT}",
                 )
     except (httpx.ConnectError, httpx.TimeoutException):
         pass

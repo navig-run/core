@@ -29,9 +29,9 @@ def _ensure_rich():
     """Ensure rich module is available."""
     try:
         from rich.console import Console
-        from rich.table import Table
         from rich.panel import Panel
         from rich.syntax import Syntax
+        from rich.table import Table
         return Console(), Table, Panel, Syntax
     except ImportError:
         ch.error("Rich library required for this command")
@@ -52,14 +52,14 @@ def system_info(options: dict):
     """
     console, Table, Panel, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     info = local_ops.get_system_info()
-    
+
     if options.get('json_output'):
         import json
         console.print(json.dumps(info.to_dict(), indent=2))
         return
-    
+
     if options.get('plain'):
         print(f"hostname={info.hostname}")
         print(f"os={info.os_name}")
@@ -68,18 +68,18 @@ def system_info(options: dict):
         print(f"home={info.home_directory}")
         print(f"config={info.config_directory}")
         return
-    
+
     # Rich display
     table = Table(title="🖥️  Local System Information", show_header=False)
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="white")
-    
+
     table.add_row("Hostname", info.hostname)
     table.add_row("Operating System", info.os_display_name)
     table.add_row("Admin Privileges", "✓ Yes" if info.is_admin else "✗ No")
     table.add_row("Home Directory", str(info.home_directory))
     table.add_row("Config Directory", str(info.config_directory))
-    
+
     console.print()
     console.print(table)
     console.print()
@@ -94,15 +94,15 @@ def resource_usage(options: dict):
     """
     console, _, Panel, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     console.print("\n[cyan]═══ Resource Usage ═══[/cyan]\n")
-    
+
     result = local_ops.get_resource_usage()
-    
+
     if result.exit_code != 0:
         ch.error(f"Failed to get resource usage: {result.stderr}")
         return
-    
+
     console.print(result.stdout)
 
 
@@ -118,10 +118,10 @@ def hosts_view(options: dict):
     """
     console, _, Panel, Syntax = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     hosts_path = local_ops.get_hosts_file_path()
     content = local_ops.read_hosts_file()
-    
+
     if options.get('json_output'):
         import json
         # Parse hosts file into structured data
@@ -140,23 +140,23 @@ def hosts_view(options: dict):
             'entries': entries
         }, indent=2))
         return
-    
+
     if options.get('plain'):
         print(f"# Path: {hosts_path}")
         print(content)
         return
-    
+
     # Rich display with syntax highlighting
     console.print(f"\n[cyan]📄 Hosts File: {hosts_path}[/cyan]\n")
-    
+
     if content.startswith("Permission denied") or content.startswith("Hosts file not found"):
         ch.error(content)
         return
-    
+
     # Use Syntax for highlighting
     syntax = Syntax(content, "ini", theme="monokai", line_numbers=True)
     console.print(syntax)
-    
+
     console.print()
     if not local_ops.can_edit_hosts_file():
         ch.warning("Note: Admin privileges required to edit hosts file")
@@ -173,16 +173,16 @@ def hosts_edit(options: dict):
     """
     console, _, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     hosts_path = local_ops.get_hosts_file_path()
-    
+
     if not local_ops.can_edit_hosts_file():
         ch.warning(f"Admin privileges required to edit {hosts_path}")
         ch.info("Please run NAVIG as Administrator/root to edit the hosts file.")
-        
+
         # Show the path so user can manually edit
         console.print(f"\n[cyan]Hosts file location:[/cyan] {hosts_path}")
-        
+
         os_adapter = local_ops.os_adapter
         if os_adapter.name == 'windows':
             console.print("\n[dim]To edit manually:[/dim]")
@@ -192,10 +192,10 @@ def hosts_edit(options: dict):
             console.print("\n[dim]To edit manually:[/dim]")
             console.print(f"  sudo nano {hosts_path}")
         return
-    
+
     ch.info(f"Opening {hosts_path} in editor...")
     result = local_ops.open_hosts_in_editor()
-    
+
     if result.exit_code != 0 and result.stderr:
         ch.error(f"Failed to open editor: {result.stderr}")
 
@@ -210,31 +210,31 @@ def hosts_add(ip: str, hostname: str, options: dict):
         options: Command options
     """
     local_ops = _get_local_ops()
-    
+
     if not local_ops.can_edit_hosts_file():
         ch.error("Admin privileges required to modify hosts file")
         return
-    
+
     hosts_path = local_ops.get_hosts_file_path()
     content = local_ops.read_hosts_file()
-    
+
     if content.startswith("Permission denied"):
         ch.error(content)
         return
-    
+
     # Check if entry already exists
     for line in content.split('\n'):
         if hostname in line.split() and not line.strip().startswith('#'):
             ch.warning(f"Hostname '{hostname}' already exists in hosts file")
             return
-    
+
     # Add new entry
     new_entry = f"{ip}\t{hostname}"
-    
+
     if options.get('dry_run'):
         ch.info(f"DRY RUN: Would add entry: {new_entry}")
         return
-    
+
     try:
         with open(hosts_path, 'a') as f:
             f.write(f"\n{new_entry}")
@@ -262,39 +262,39 @@ def software_list(options: dict):
     """
     console, Table, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     ch.info(f"Listing installed packages ({local_ops.os_adapter.display_name})...")
-    
+
     packages = local_ops.list_packages()
-    
+
     if not packages:
         ch.warning("No packages found or package manager not available")
         return
-    
+
     # Apply limit if specified
     limit = options.get('limit')
     if limit and isinstance(limit, int):
         packages = packages[:limit]
-    
+
     if options.get('json_output'):
         import json
         console.print(json.dumps([p.to_dict() for p in packages], indent=2))
         return
-    
+
     if options.get('plain'):
         for pkg in packages:
             print(f"{pkg.name}\t{pkg.version}")
         return
-    
+
     # Rich table display
     table = Table(title=f"📦 Installed Packages ({len(packages)} shown)")
     table.add_column("Package", style="cyan")
     table.add_column("Version", style="green")
     table.add_column("Source", style="dim")
-    
+
     for pkg in packages:
         table.add_row(pkg.name, pkg.version, pkg.source or '')
-    
+
     console.print()
     console.print(table)
     console.print()
@@ -310,35 +310,35 @@ def software_search(query: str, options: dict):
     """
     console, Table, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     packages = local_ops.list_packages()
-    
+
     # Filter by query
     query_lower = query.lower()
     matches = [p for p in packages if query_lower in p.name.lower()]
-    
+
     if not matches:
         ch.info(f"No packages matching '{query}' found")
         return
-    
+
     if options.get('json_output'):
         import json
         console.print(json.dumps([p.to_dict() for p in matches], indent=2))
         return
-    
+
     if options.get('plain'):
         for pkg in matches:
             print(f"{pkg.name}\t{pkg.version}")
         return
-    
+
     # Rich table
     table = Table(title=f"🔍 Packages matching '{query}'")
     table.add_column("Package", style="cyan")
     table.add_column("Version", style="green")
-    
+
     for pkg in matches:
         table.add_row(pkg.name, pkg.version)
-    
+
     console.print()
     console.print(table)
 
@@ -361,34 +361,34 @@ def security_audit(options: dict):
     """
     console, Table, Panel, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     console.print("\n[cyan]═══ Local Security Audit ═══[/cyan]\n")
-    
+
     checks = local_ops.run_security_audit()
-    
+
     if options.get('json_output'):
         import json
         console.print(json.dumps([c.to_dict() for c in checks], indent=2))
         return
-    
+
     # Display results
     table = Table(title="Security Checks")
     table.add_column("Category", style="cyan")
     table.add_column("Status")
     table.add_column("Message")
-    
+
     for check in checks:
         status_style = {
             'ok': '[green]✓ OK[/green]',
             'warning': '[yellow]⚠ Warning[/yellow]',
             'critical': '[red]✗ Critical[/red]'
         }.get(check.status, check.status)
-        
+
         table.add_row(check.category.title(), status_style, check.message)
-    
+
     console.print(table)
     console.print()
-    
+
     # Verbose mode: show more details
     if options.get('verbose'):
         console.print("[cyan]═══ Open Ports ═══[/cyan]\n")
@@ -397,7 +397,7 @@ def security_audit(options: dict):
             console.print(ports_result.stdout)
         else:
             ch.warning("Could not list open ports")
-        
+
         console.print("\n[cyan]═══ Running Services ═══[/cyan]\n")
         services_result = local_ops.get_running_services()
         if services_result.exit_code == 0:
@@ -406,7 +406,7 @@ def security_audit(options: dict):
             if len(output) > 3000:
                 output = output[:3000] + "\n... (truncated)"
             console.print(output)
-    
+
     # AI analysis if requested
     if options.get('ai'):
         _run_ai_security_analysis(checks, local_ops, options)
@@ -415,16 +415,16 @@ def security_audit(options: dict):
 def _run_ai_security_analysis(checks, local_ops, options: dict):
     """Run AI-powered security analysis."""
     console, _, Panel, _ = _ensure_rich()
-    
+
     console.print("\n[cyan]═══ AI Security Analysis ═══[/cyan]\n")
-    
+
     try:
         from navig.ai import query_ai
-        
+
         # Gather context
         system_info = local_ops.get_system_info()
         ports_result = local_ops.get_open_ports()
-        
+
         context = f"""
 Local System Security Audit:
 - OS: {system_info.os_display_name}
@@ -437,7 +437,7 @@ Security Checks:
 Open Ports:
 {ports_result.stdout[:1500] if ports_result.exit_code == 0 else 'Not available'}
 """
-        
+
         prompt = """Analyze this local system security audit and provide:
 1. Overall security assessment (1-10 scale)
 2. Top 3 security concerns (if any)
@@ -445,15 +445,15 @@ Open Ports:
 4. Any immediate actions needed
 
 Be concise and actionable."""
-        
+
         ch.info("Querying AI for security analysis...")
         response = query_ai(prompt, context=context)
-        
+
         if response:
             console.print(Panel(response, title="🤖 AI Security Analysis", border_style="cyan"))
         else:
             ch.warning("AI analysis not available")
-            
+
     except ImportError:
         ch.warning("AI module not available for security analysis")
     except Exception as e:
@@ -469,15 +469,15 @@ def security_ports(options: dict):
     """
     console, _, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     console.print("\n[cyan]═══ Open Ports ═══[/cyan]\n")
-    
+
     result = local_ops.get_open_ports()
-    
+
     if result.exit_code != 0:
         ch.error(f"Failed to list ports: {result.stderr}")
         return
-    
+
     if options.get('plain'):
         print(result.stdout)
     else:
@@ -493,16 +493,16 @@ def security_firewall(options: dict):
     """
     console, _, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     console.print("\n[cyan]═══ Firewall Status ═══[/cyan]\n")
-    
+
     result = local_ops.get_firewall_status()
-    
+
     if result.exit_code != 0:
         ch.warning(f"Could not get firewall status: {result.stderr}")
         ch.info("This may require admin privileges or the firewall service may not be running.")
         return
-    
+
     if options.get('plain'):
         print(result.stdout)
     else:
@@ -521,15 +521,15 @@ def network_interfaces(options: dict):
     """
     console, _, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     console.print("\n[cyan]═══ Network Interfaces ═══[/cyan]\n")
-    
+
     result = local_ops.get_network_interfaces()
-    
+
     if result.exit_code != 0:
         ch.error(f"Failed to list interfaces: {result.stderr}")
         return
-    
+
     console.print(result.stdout)
 
 
@@ -545,11 +545,11 @@ def network_ping(host: str, count: int = 4, options: dict = None):
     options = options or {}
     console, _, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     console.print(f"\n[cyan]Pinging {host}...[/cyan]\n")
-    
+
     result = local_ops.ping(host, count)
-    
+
     if options.get('plain'):
         print(result.stdout)
         if result.stderr:
@@ -571,13 +571,13 @@ def network_dns(hostname: str, options: dict = None):
     options = options or {}
     console, _, _, _ = _ensure_rich()
     local_ops = _get_local_ops()
-    
+
     console.print(f"\n[cyan]DNS lookup: {hostname}[/cyan]\n")
-    
+
     result = local_ops.dns_lookup(hostname)
-    
+
     if result.exit_code != 0:
         ch.warning(f"DNS lookup failed: {result.stderr}")
         return
-    
+
     console.print(result.stdout)

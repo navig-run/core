@@ -1,0 +1,65 @@
+# n8n Template Configuration
+# Workflow automation platform integration with service management and webhook configurations
+
+name: n8n
+version: 1.0.0
+description: n8n workflow automation platform integration with service management and webhook configurations
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  n8n_home: /root/.n8n
+  n8n_data: /root/.n8n
+  workflows_dir: /root/.n8n/workflows
+  credentials_dir: /root/.n8n/credentials
+  log_dir: /var/log/n8n
+
+services:
+  automation: n8n
+  n8n_service: n8n.service
+
+commands:
+  - name: start_n8n
+    description: Start n8n service
+    command: systemctl start n8n
+
+  - name: stop_n8n
+    description: Stop n8n service
+    command: systemctl stop n8n
+
+  - name: restart_n8n
+    description: Restart n8n service
+    command: systemctl restart n8n
+
+  - name: status_n8n
+    description: Check n8n service status
+    command: systemctl status n8n
+
+  - name: n8n_logs
+    description: View n8n logs
+    command: journalctl -u n8n -f
+
+  - name: export_workflows
+    description: Export all workflows
+    command: n8n export:workflow --all --output=/tmp/n8n-workflows.json
+
+  - name: import_workflows
+    description: Import workflows from file
+    command: n8n import:workflow --input=/tmp/n8n-workflows.json
+
+env_vars:
+  N8N_HOST: 0.0.0.0
+  N8N_PORT: "5678"
+  N8N_PROTOCOL: https
+  WEBHOOK_URL: https://your-domain.com
+  N8N_ENCRYPTION_KEY: change-this-encryption-key
+
+api:
+  endpoint: http://localhost:5678/api/v1/
+  webhook_url: https://your-domain.com/webhook/
+  auth_method: api_key
+  doc_url: https://docs.n8n.io/api/
+
+default_port: 5678
+systemd_service: /etc/systemd/system/n8n.service

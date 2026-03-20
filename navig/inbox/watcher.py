@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from pathlib import Path
 from typing import Callable, List, Optional, Set
 
@@ -59,8 +58,8 @@ class _WatchfilesBackend:
     def run(self) -> None:
         try:
             from watchfiles import watch as _watch
-        except ImportError:
-            raise RuntimeError("watchfiles not installed")
+        except ImportError as _exc:
+            raise RuntimeError("watchfiles not installed") from _exc
 
         logger.info("Inbox watcher started (watchfiles) on: %s", self._dirs)
         for changes in _watch(*self._dirs, stop_event=self._stop_event):

@@ -24,7 +24,7 @@ from navig.debug_logger import DebugLogger
 
 class RemediationType(Enum):
     """Types of remediation actions."""
-    
+
     COMPONENT_RESTART = "component_restart"
     CONNECTION_RETRY = "connection_retry"
     CONFIG_ROLLBACK = "config_rollback"
@@ -34,7 +34,7 @@ class RemediationType(Enum):
 
 class RemediationStatus(Enum):
     """Status of remediation attempt."""
-    
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     SUCCESS = "success"
@@ -45,7 +45,7 @@ class RemediationStatus(Enum):
 @dataclass
 class RemediationAction:
     """A remediation action to be performed."""
-    
+
     id: str
     type: RemediationType
     component: str
@@ -57,7 +57,7 @@ class RemediationAction:
     backoff_seconds: List[int] = field(default_factory=lambda: [1, 2, 4, 8, 16, 60])
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
@@ -96,7 +96,7 @@ class RemediationEngine:
     Monitors component health and automatically attempts recovery
     when failures are detected.
     """
-    
+
     def __init__(
         self,
         config_dir: Optional[Path] = None,
@@ -107,25 +107,25 @@ class RemediationEngine:
         self.backup_dir = self.config_dir / 'config-backup'
         self.actions_file = self.config_dir / 'remediation_actions.json'
         self.remediation_log = self.log_dir / 'remediation.log'
-        
+
         # Ensure directories exist
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.backup_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.logger = DebugLogger()
         self._actions: Dict[str, RemediationAction] = {}
         self._load_actions()
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._heart = None  # Will be set by Heart after initialization
-    
+
     async def start(self) -> None:
         """Start the remediation engine."""
         self._running = True
         self._task = asyncio.create_task(self._process_loop())
         self._log("Remediation engine started")
-    
+
     async def stop(self) -> None:
         """Stop the remediation engine."""
         self._running = False
@@ -137,7 +137,7 @@ class RemediationEngine:
                 pass
         self._save_actions()
         self._log("Remediation engine stopped")
-    
+
     def schedule_restart_sync(
         self,
         component: str,
@@ -230,7 +230,7 @@ class RemediationEngine:
             )
         except Exception as e:
             self._log(f"Failed to save remediation actions: {e}", level="warning")
-    
+
     async def rollback_config(self, component: str, reason: str) -> bool:
         """
         Rollback configuration to last known good state.
@@ -244,29 +244,29 @@ class RemediationEngine:
                 key=lambda p: p.stat().st_mtime,
                 reverse=True
             )
-            
+
             if not backups:
                 self._log(f"No backup found for {component}, cannot rollback", level="warning")
                 return False
-            
+
             latest_backup = backups[0]
             current_config = self.config_dir / 'config.yaml'
-            
+
             # Create backup of current (failed) config
             failed_backup = self.backup_dir / f"{component}-config-failed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.yaml"
             if current_config.exists():
                 shutil.copy2(current_config, failed_backup)
-            
+
             # Restore from backup
             shutil.copy2(latest_backup, current_config)
-            
+
             self._log(f"Rolled back {component} config to {latest_backup.name}")
             return True
-            
+
         except Exception as e:
             self._log(f"Config rollback failed for {component}: {e}", level="error")
             return False
-    
+
     async def _process_loop(self) -> None:
         """Main processing loop for remediation actions."""
         while self._running:
@@ -276,7 +276,7 @@ class RemediationEngine:
                 for action_id, action in list(self._actions.items()):
                     if action.status == RemediationStatus.PENDING:
                         await self._execute_action(action)
-                    
+
                     # Clean up completed/failed actions after 1 hour
                     if action.status in (RemediationStatus.SUCCESS, RemediationStatus.FAILED, RemediationStatus.SKIPPED):
                         if (datetime.now() - action.timestamp) > timedelta(hours=1):
@@ -285,13 +285,13 @@ class RemediationEngine:
 
                 if removed_any:
                     self._save_actions()
-                
+
                 await asyncio.sleep(5)  # Check every 5 seconds
-                
+
             except Exception as e:
                 self._log(f"Error in remediation loop: {e}", level="error")
                 await asyncio.sleep(10)
-    
+
     async def _execute_action(self, action: RemediationAction) -> None:
         """Execute a remediation action."""
         if action.attempts >= action.max_attempts:
@@ -304,12 +304,12 @@ class RemediationEngine:
         action.status = RemediationStatus.IN_PROGRESS
         action.attempts += 1
         self._save_actions()
-        
+
         # Calculate backoff
         backoff = action.backoff_seconds[min(action.attempts - 1, len(action.backoff_seconds) - 1)]
-        
+
         self._log(f"Executing {action.type.value} for {action.component} (attempt {action.attempts}/{action.max_attempts})")
-        
+
         try:
             if action.type == RemediationType.COMPONENT_RESTART:
                 success = await self._restart_component(action)
@@ -322,7 +322,7 @@ class RemediationEngine:
                 action.status = RemediationStatus.SKIPPED
                 self._save_actions()
                 return
-            
+
             if success:
                 action.status = RemediationStatus.SUCCESS
                 self._save_actions()
@@ -332,14 +332,14 @@ class RemediationEngine:
                 self._save_actions()
                 self._log(f"Remediation attempt {action.attempts} failed, will retry after {backoff}s")
                 await asyncio.sleep(backoff)
-                
+
         except Exception as e:
             action.error = str(e)
             action.status = RemediationStatus.PENDING  # Retry
             self._save_actions()
             self._log(f"Remediation error for {action.component}: {e}", level="error")
             await asyncio.sleep(backoff)
-    
+
     async def _restart_component(self, action: RemediationAction) -> bool:
         """
         Restart a component.
@@ -351,16 +351,16 @@ class RemediationEngine:
             if not hasattr(self, '_heart') or not self._heart:
                 self._log(f"Cannot restart {action.component}: Heart not set", level="warning")
                 return False
-            
+
             component = self._heart._components.get(action.component)
             if not component:
                 self._log(f"Component {action.component} not found", level="error")
                 return False
-            
+
             # Attempt restart
             self._log(f"Restarting component {action.component}...")
             await component.restart()
-            
+
             # Verify component is running
             if component.is_running:
                 self._log(f"Component {action.component} restart successful")
@@ -368,11 +368,11 @@ class RemediationEngine:
             else:
                 self._log(f"Component {action.component} is not running after restart", level="warning")
                 return False
-                
+
         except Exception as e:
             self._log(f"Failed to restart {action.component}: {e}", level="error")
             return False
-    
+
     async def _retry_connection(self, action: RemediationAction) -> bool:
         """
         Retry a connection.
@@ -383,12 +383,12 @@ class RemediationEngine:
         service = action.metadata.get('service', 'unknown')
         self._log(f"Connection retry requested for {action.component}/{service}")
         return True
-    
+
     def get_action_status(self, action_id: str) -> Optional[Dict[str, Any]]:
         """Get status of a remediation action."""
         action = self._actions.get(action_id)
         return action.to_dict() if action else None
-    
+
     def get_all_actions(self) -> List[Dict[str, Any]]:
         """Get all remediation actions."""
         return [action.to_dict() for action in self._actions.values()]
@@ -420,18 +420,18 @@ class RemediationEngine:
             f"(reset_attempts={reset_attempts})"
         )
         return True
-    
+
     def _log(self, message: str, level: str = "info") -> None:
         """Log remediation activity."""
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         log_entry = f"[{timestamp}] [{level.upper()}] {message}\n"
-        
+
         # Append to remediation log
         try:
             with open(self.remediation_log, 'a', encoding='utf-8') as f:
                 f.write(log_entry)
         except Exception:
             pass  # Fail silently if logging fails
-        
+
         # Also log to debug logger
         self.logger.log_operation("remediation", {"message": message, "level": level})

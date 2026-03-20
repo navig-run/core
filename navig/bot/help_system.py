@@ -7,8 +7,8 @@ Provides:
 - Command search functionality
 """
 
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -409,7 +409,7 @@ def get_all_commands() -> Dict[str, CommandInfo]:
             category='utilities',
             related=['remind'],
         ),
-        
+
         # AI Status
         'ai_persona': CommandInfo(
             name='/ai_persona',
@@ -429,7 +429,7 @@ def get_all_commands() -> Dict[str, CommandInfo]:
             category='utilities',
             related=['ai_persona'],
         ),
-        
+
         # Extra Utilities
         'crypto': CommandInfo(
             name='/crypto',
@@ -627,21 +627,21 @@ def get_commands_by_category() -> Dict[str, Dict[str, Any]]:
     """
     all_commands = get_all_commands()
     grouped = {}
-    
+
     for cat_id, cat_info in CATEGORIES.items():
         grouped[cat_id] = {
             'info': cat_info,
             'commands': {},
         }
-    
+
     for cmd_id, cmd in all_commands.items():
         category = cmd.category
         if category in grouped:
             grouped[category]['commands'][cmd_id] = cmd
-    
+
     # Remove empty categories
     grouped = {k: v for k, v in grouped.items() if v['commands']}
-    
+
     return grouped
 
 
@@ -655,53 +655,53 @@ def search_commands(query: str) -> List[CommandInfo]:
     """Search commands by text in name, description, or examples."""
     query_lower = query.lower()
     results = []
-    
+
     for cmd in get_all_commands().values():
         if (query_lower in cmd.name.lower() or
             query_lower in cmd.short_desc.lower() or
             query_lower in cmd.description.lower() or
             any(query_lower in ex.lower() for ex in cmd.examples)):
             results.append(cmd)
-    
+
     return results
 
 
 def format_command_help(cmd: CommandInfo, detailed: bool = False) -> str:
     """Format a command's help text."""
     text = f"**{cmd.name}** - {cmd.short_desc}\n\n"
-    
+
     if detailed:
         text += f"{cmd.description}\n\n"
         text += f"**Syntax:** `{cmd.syntax}`\n\n"
-        
+
         if cmd.examples:
             text += "**Examples:**\n"
             for ex in cmd.examples:
                 text += f"  `{ex}`\n"
-        
+
         if cmd.related:
             text += f"\n**Related:** {', '.join(f'/{r}' for r in cmd.related)}"
-    
+
     return text
 
 
 def format_category_help(category_id: str) -> str:
     """Format help text for a category."""
     grouped = get_commands_by_category()
-    
+
     if category_id not in grouped:
         return f"Unknown category: {category_id}"
-    
+
     cat = grouped[category_id]
     info = cat['info']
-    
+
     text = f"{info['emoji']} **{info['name']}**\n\n"
     text += f"{info['description']}\n\n"
     text += "**Commands:**\n\n"
-    
+
     for cmd_id, cmd in cat['commands'].items():
         text += f"• `{cmd.name}` - {cmd.short_desc}\n"
-    
+
     return text
 
 
@@ -710,17 +710,17 @@ def format_main_help() -> str:
     text = "**NAVIG Bot** 🦑\n\n"
     text += "I'm not just for servers—I'm your personal assistant!\n\n"
     text += "**📚 Command Categories:**\n"
-    
+
     grouped = get_commands_by_category()
     for cat_id, cat in grouped.items():
         info = cat['info']
         cmd_count = len(cat['commands'])
         text += f"{info['emoji']} **{info['name']}** ({cmd_count} commands)\n"
-    
+
     text += "\n**💬 Or just ask naturally:**\n"
     text += "• \"Search the web for Docker tips\"\n"
     text += "• \"What's the price of Bitcoin?\"\n"
     text += "• \"Remind me in 30 min to check logs\"\n"
     text += "• \"Explain this error message\"\n"
-    
+
     return text

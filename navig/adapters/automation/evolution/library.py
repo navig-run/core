@@ -2,10 +2,11 @@
 Script Library for AHK Automation
 """
 import json
-from dataclasses import dataclass, asdict
-from pathlib import Path
-from typing import List, Optional, Dict
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
 
 @dataclass
 class ScriptEntry:
@@ -16,7 +17,7 @@ class ScriptEntry:
     success_count: int = 0
     last_used: str = ""
     tags: List[str] = None
-    
+
     def to_dict(self):
         return asdict(self)
 
@@ -27,13 +28,13 @@ class ScriptLibrary:
             self.storage_dir = Path.home() / ".navig" / "ahk_library"
         else:
             self.storage_dir = storage_dir
-            
+
         self.index_file = self.storage_dir / "index.json"
-        
+
         # Ensure directories
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         (self.storage_dir / "scripts").mkdir(exist_ok=True)
-        
+
         self._index: Dict[str, ScriptEntry] = {}
         self._load_index()
 
@@ -55,10 +56,10 @@ class ScriptLibrary:
     def save_script(self, goal: str, script: str, tags: List[str] = None) -> str:
         """Save a new script to the library."""
         import hashlib
-        
+
         # ID is hash of goal (normalized)
         script_id = hashlib.md5(goal.lower().encode()).hexdigest()[:8]
-        
+
         entry = ScriptEntry(
             id=script_id,
             goal=goal,
@@ -68,22 +69,22 @@ class ScriptLibrary:
             last_used=datetime.now().isoformat(),
             tags=tags or []
         )
-        
+
         # Save script file
         script_path = self.storage_dir / "scripts" / f"{script_id}.ahk"
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(script)
-            
+
         # Update index
         self._index[script_id] = entry
         self._save_index()
-        
+
         return script_id
 
     def find_script(self, goal: str) -> Optional[ScriptEntry]:
         """Find a script matching the goal (exact match for now)."""
         # AUDIT: MANUAL REVIEW REQUIRED — fuzzy retrieval strategy requires benchmarked ranking design and corpus migration.
-        # TODO: Fuzzy match or embeddings
+        # Consider fuzzy match or semantic embeddings here for larger libraries
         import hashlib
         script_id = hashlib.md5(goal.lower().encode()).hexdigest()[:8]
         return self._index.get(script_id)

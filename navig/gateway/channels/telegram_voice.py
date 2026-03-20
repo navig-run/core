@@ -90,13 +90,21 @@ except ImportError:
 try:
     from navig.voice.stt import (
         STT as _STT,
-        STTProvider as _STTProvider,
+    )
+    from navig.voice.stt import (
         STTConfig as _STTConfig,
+    )
+    from navig.voice.stt import (
+        STTProvider as _STTProvider,
     )
     from navig.voice.tts import (
         TTS as _TTS,
-        TTSProvider as _TTSProvider,
+    )
+    from navig.voice.tts import (
         TTSConfig as _TTSConfig,
+    )
+    from navig.voice.tts import (
+        TTSProvider as _TTSProvider,
     )
     _HAS_VOICE = True
 except ImportError:
@@ -393,17 +401,18 @@ class TelegramVoiceMixin:
         """Generate a short contextual title for the voice message."""
         if not text or len(text.strip()) < 3:
             return "NAVIG Voice"
-            
+
         try:
-            from navig.llm_generate import run_llm
             import asyncio
             import logging
-            
+
+            from navig.llm_generate import run_llm
+
             prompt = f"Extract or generate a 2-4 word title for this text. Reply ONLY with the title without any quotes or punctuation.\n\nText: {text[:1000]}"
             def _get():
                 res = run_llm(
-                    messages=[{"role": "user", "content": prompt}], 
-                    mode="fast", 
+                    messages=[{"role": "user", "content": prompt}],
+                    mode="fast",
                     temperature=0.3,
                     max_tokens=15,
                     timeout=5.0
@@ -411,7 +420,7 @@ class TelegramVoiceMixin:
                 if res and res.content:
                     return res.content.strip(' "\'\n*\r\t.-')
                 return "NAVIG Voice"
-                
+
             title = await asyncio.to_thread(_get)
             return title if title else "NAVIG Voice"
         except Exception as e:
@@ -700,7 +709,7 @@ class TelegramVoiceMixin:
         size_str = f"{file_size // 1024:,} KB" if file_size else "—"
 
         if kind == "voice_recording":
-            header = f"🎤 *Voice recording*"
+            header = "🎤 *Voice recording*"
         elif kind == "music":
             header = f"🎵 *{title}*"
             if performer:
@@ -768,7 +777,9 @@ class TelegramVoiceMixin:
             logger.warning("_transcribe_audio_file: get_file_path failed: %s", exc)
             return None
 
-        import tempfile, os
+        import os
+        import tempfile
+
         import aiohttp
         dl_url = self._build_file_url(file_path)
         suffix = "." + file_path.rsplit(".", 1)[-1] if "." in file_path else ".audio"
@@ -802,7 +813,7 @@ class TelegramVoiceMixin:
             from navig.voice.stt import STT as _STT2
             stt = _STT2()
             result = await stt.transcribe(tmp_path, is_voice=is_voice)
-            
+
             if task_view:
                 task_view.set_step("stt", StepState.DONE if result.success else StepState.FAILED)
                 task_view.set_step("finalize", StepState.ACTIVE)
@@ -828,8 +839,8 @@ class TelegramVoiceMixin:
         Falls back to ``sendAudio`` when the user has restricted voice note
         reception (Telegram privacy: Settings → Privacy → Voice Messages).
         """
-        import os
         import mimetypes
+        import os
 
         with open(file_path, "rb") as f:
             audio_data = f.read()

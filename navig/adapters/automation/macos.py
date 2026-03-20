@@ -3,8 +3,9 @@ macOS Automation Adapter using AppleScript and osascript
 """
 import subprocess
 import sys
-from typing import Optional
 from dataclasses import dataclass
+from typing import Optional
+
 
 @dataclass
 class ExecutionResult:
@@ -26,7 +27,7 @@ class WindowInfo:
     class_name: str = ""
     is_maximized: bool = False
     is_minimized: bool = False
-    
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -44,32 +45,32 @@ class WindowInfo:
 
 class MacOSAdapter:
     """Automation adapter for macOS using AppleScript and cliclick."""
-    
+
     def __init__(self):
         self._available = None
         self._has_cliclick = None
-        
+
     def is_available(self) -> bool:
         """Check if running on macOS."""
         if self._available is not None:
             return self._available
-            
+
         if sys.platform != 'darwin':
             self._available = False
             return False
-            
+
         # Check for cliclick (optional but helpful)
         self._has_cliclick = self._check_command('cliclick')
         self._available = True
         return True
-        
+
     def _check_command(self, cmd: str) -> bool:
         try:
             result = subprocess.run(['which', cmd], capture_output=True, text=True)
             return result.returncode == 0
-        except:
+        except Exception:
             return False
-            
+
     def _run_applescript(self, script: str) -> ExecutionResult:
         """Execute AppleScript."""
         try:
@@ -89,7 +90,7 @@ class MacOSAdapter:
             return ExecutionResult(False, stderr="Command timeout")
         except Exception as e:
             return ExecutionResult(False, stderr=str(e))
-            
+
     def _run_command(self, cmd: list) -> ExecutionResult:
         """Run shell command."""
         try:
@@ -104,7 +105,7 @@ class MacOSAdapter:
             return ExecutionResult(False, stderr="Command timeout")
         except Exception as e:
             return ExecutionResult(False, stderr=str(e))
-            
+
     def open_app(self, target: str) -> ExecutionResult:
         """Open application or URL."""
         if target.startswith('http'):
@@ -117,7 +118,7 @@ class MacOSAdapter:
                 # Try as path
                 return self._run_command(['open', target])
             return result
-            
+
     def click(self, x: int, y: int, button: str = "left") -> ExecutionResult:
         """Click at coordinates."""
         if self._has_cliclick:
@@ -132,7 +133,7 @@ class MacOSAdapter:
             end tell
             '''
             return self._run_applescript(script)
-            
+
     def type_text(self, text: str, delay: int = 50) -> ExecutionResult:
         """Type text."""
         # Escape quotes
@@ -143,7 +144,7 @@ class MacOSAdapter:
         end tell
         '''
         return self._run_applescript(script)
-        
+
     def send_keys(self, keys: str) -> ExecutionResult:
         """Send key sequence (AppleScript key codes)."""
         # Convert common keys to AppleScript
@@ -154,14 +155,14 @@ class MacOSAdapter:
         end tell
         '''
         return self._run_applescript(script)
-        
+
     def mouse_move(self, x: int, y: int, speed: int = 2) -> ExecutionResult:
         """Move mouse."""
         if self._has_cliclick:
             return self._run_command(['cliclick', f'm:{x},{y}'])
         else:
             return ExecutionResult(False, stderr="Mouse move requires cliclick (brew install cliclick)")
-            
+
     def get_focused_window(self) -> Optional[WindowInfo]:
         """Get currently focused window."""
         script = '''
@@ -179,7 +180,7 @@ class MacOSAdapter:
         result = self._run_applescript(script)
         if not result.success:
             return None
-            
+
         try:
             parts = result.stdout.split('|')
             return WindowInfo(
@@ -192,9 +193,9 @@ class MacOSAdapter:
                 pid=0,
                 process_name=parts[0]
             )
-        except:
+        except Exception:
             return None
-            
+
     def activate_window(self, selector: str) -> ExecutionResult:
         """Activate window by title or app name."""
         script = f'''
@@ -210,7 +211,7 @@ class MacOSAdapter:
             '''
             result = self._run_applescript(script)
         return result
-        
+
     def close_window(self, selector: str) -> ExecutionResult:
         """Close window."""
         script = f'''
@@ -219,7 +220,7 @@ class MacOSAdapter:
         end tell
         '''
         return self._run_applescript(script)
-        
+
     def move_window(self, selector: str, x: int, y: int, width: int = None, height: int = None) -> ExecutionResult:
         """Move and resize window."""
         if width and height:
@@ -235,7 +236,7 @@ class MacOSAdapter:
             end tell
             '''
         return self._run_applescript(script)
-        
+
     def maximize_window(self, selector: str) -> ExecutionResult:
         """Maximize window (zoom)."""
         script = f'''
@@ -246,7 +247,7 @@ class MacOSAdapter:
         end tell
         '''
         return self._run_applescript(script)
-        
+
     def minimize_window(self, selector: str) -> ExecutionResult:
         """Minimize window."""
         script = f'''
@@ -255,7 +256,7 @@ class MacOSAdapter:
         end tell
         '''
         return self._run_applescript(script)
-        
+
     def snap_window(self, selector: str, position: str) -> ExecutionResult:
         """Snap window to screen position."""
         # Get screen dimensions
@@ -268,9 +269,9 @@ class MacOSAdapter:
         screen_result = self._run_applescript(script)
         if not screen_result.success:
             return ExecutionResult(False, stderr="Failed to get screen size")
-            
+
         screen_w, screen_h = map(int, screen_result.stdout.split(','))
-        
+
         # Calculate position
         positions = {
             'left': (0, 0, screen_w // 2, screen_h),
@@ -278,18 +279,18 @@ class MacOSAdapter:
             'top': (0, 0, screen_w, screen_h // 2),
             'bottom': (0, screen_h // 2, screen_w, screen_h // 2),
         }
-        
+
         if position not in positions:
             return ExecutionResult(False, stderr=f"Unknown position: {position}")
-            
+
         x, y, w, h = positions[position]
         return self.move_window(selector, x, y, w, h)
-        
+
     def get_clipboard(self) -> str:
         """Get clipboard content."""
         result = self._run_command(['pbpaste'])
         return result.stdout if result.success else ""
-        
+
     def set_clipboard(self, text: str) -> ExecutionResult:
         """Set clipboard content."""
         try:
@@ -298,7 +299,7 @@ class MacOSAdapter:
             return ExecutionResult(success=proc.returncode == 0)
         except Exception as e:
             return ExecutionResult(False, stderr=str(e))
-            
+
     def get_all_windows(self):
         """Get list of all windows."""
         script = '''
@@ -321,7 +322,7 @@ class MacOSAdapter:
         result = self._run_applescript(script)
         if not result.success:
             return []
-            
+
         windows = []
         for line in result.stdout.split(','):
             if not line.strip():
@@ -339,7 +340,7 @@ class MacOSAdapter:
                         pid=0,
                         process_name=parts[0]
                     ))
-            except:
+            except Exception:
                 continue
-                
+
         return windows

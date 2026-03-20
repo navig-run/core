@@ -13,10 +13,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
-from typing import Annotated
 
 from navig.lazy_loader import lazy_import
 
@@ -328,7 +327,7 @@ def token_set(
         ch.success(f"GitHub token saved to {cfg_path}")
     except Exception as exc:
         ch.error(f"Failed to save token: {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 @token_app.command("show")

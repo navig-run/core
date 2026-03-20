@@ -37,7 +37,7 @@ class ModelCost:
     output: float = 0.0
     cache_read: float = 0.0
     cache_write: float = 0.0
-    
+
     def to_dict(self) -> Dict[str, float]:
         return {
             "input": self.input,
@@ -69,7 +69,7 @@ class ModelDefinition:
     max_tokens: int = 8192
     headers: Dict[str, str] = field(default_factory=dict)
     compat: Optional[ModelCompatConfig] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -97,7 +97,7 @@ class ProviderConfig:
     models: List[ModelDefinition] = field(default_factory=list)
     enabled: bool = True
     priority: int = 100  # Lower = higher priority for fallback
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
@@ -121,7 +121,7 @@ class ProvidersConfig:
     default_model: Optional[str] = None
     providers: Dict[str, ProviderConfig] = field(default_factory=dict)
     fallback_order: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "mode": self.mode,
@@ -145,7 +145,7 @@ class ApiKeyCredential:
     type: str = field(default="api_key", init=False)
 
 
-@dataclass  
+@dataclass
 class TokenCredential:
     """Static bearer token credential."""
     provider: str

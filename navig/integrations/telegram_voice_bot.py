@@ -36,7 +36,7 @@ import logging
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Optional, Set
 
 logger = logging.getLogger("navig.integrations.telegram_voice_bot")
 
@@ -135,9 +135,9 @@ class TelegramVoiceBot:
         try:
             from telegram.ext import (
                 Application,
+                CallbackQueryHandler,
                 CommandHandler,
                 MessageHandler,
-                CallbackQueryHandler,
                 filters,
             )
         except ImportError as exc:
@@ -370,22 +370,43 @@ class TelegramVoiceBot:
             # Echo the transcript as a subtle confirmation
             await msg.reply_text(f"🎙 _{transcript}_", parse_mode="Markdown")
 
-            # ── 3. LLM ────────────────────────────────────────────────
+            # ── 3. Intent Parsing (Voice-to-Action) ───────────────────
             if self.config.send_chat_action:
                 await context.bot.send_chat_action(
                     chat_id=msg.chat_id,
                     action="typing",
                 )
 
-            response_text = await self._call_llm(transcript)
-            if not response_text:
-                await msg.reply_text("⚠️ I couldn't generate a response. Please try again.")
-                return
+            # Try intent parser first to trigger real actions from voice
+            try:
+                from navig.bot import NLP_AVAILABLE, IntentParser
+                if NLP_AVAILABLE and IntentParser is not None:
+                    parser = IntentParser()
+                    intent = await parser.parse(transcript)
+                    if intent and intent.command:
+                        # Execute the parsed command
+                        from navig.bot import COMMAND_HANDLER_MAP
+                        handler = COMMAND_HANDLER_MAP.get(intent.command)
+                        if handler:
+                            result = await handler(intent)
+                            if result:
+                                response_text = str(result)
+                                # Skip general LLM since action was handled
+                                goto_tts = True
+            except Exception as intent_exc:
+                logger.debug("Voice intent parser error (falling back to LLM): %s", intent_exc)
 
-            # ── 4. TTS ────────────────────────────────────────────────
+            # ── 4. Generative LLM fallback ────────────────────────────
+            if "goto_tts" not in locals():
+                response_text = await self._call_llm(transcript)
+                if not response_text:
+                    await msg.reply_text("⚠️ I couldn't generate a response. Please try again.")
+                    return
+
+            # ── 5. TTS Output ─────────────────────────────────────────
             audio_path = await self._call_tts(response_text)
 
-            # ── 5. Reply ──────────────────────────────────────────────
+            # ── 6. Reply ──────────────────────────────────────────────
             if audio_path and Path(audio_path).exists():
                 # Send voice note first, then text caption
                 with open(audio_path, "rb") as audio_fh:
@@ -430,7 +451,7 @@ class TelegramVoiceBot:
 
         # Try intent parser first (navig.bot.IntentParser)
         try:
-            from navig.bot import IntentParser, NLP_AVAILABLE
+            from navig.bot import NLP_AVAILABLE, IntentParser
             if NLP_AVAILABLE and IntentParser is not None:
                 parser = IntentParser()
                 intent = await parser.parse(text)
@@ -516,22 +537,17 @@ class TelegramVoiceBot:
         return None
 
     async def _call_llm(self, text: str) -> Optional[str]:
-        """Route text through navig-core's LLM router."""
+        """Route text through navig-core's UnifiedRouter."""
         try:
-            from navig.llm_router import get_router
+            from navig.routing.router import RouteRequest, get_router
             router = get_router()
             messages = [
                 {"role": "system", "content": self.config.system_prompt},
                 {"role": "user",   "content": text},
             ]
-            response = await router.complete(messages=messages, stream=False)
-            if isinstance(response, str):
-                return response.strip()
-            for attr in ("text", "content"):
-                v = getattr(response, attr, None)
-                if v:
-                    return str(v).strip()
-            return str(response).strip()
+            request = RouteRequest(messages=messages, entrypoint="telegram_voice_bot")
+            response_text, _trace = await router.run(request)
+            return response_text.strip() if response_text else None
         except Exception as exc:
             logger.error("LLM routing error: %s", exc)
             return None

@@ -12,7 +12,6 @@ from __future__ import annotations
 import random
 import sys
 import time
-from typing import Optional
 
 # ── Constants ──────────────────────────────────────────────────────────────
 _HEX   = "0123456789ABCDEF"

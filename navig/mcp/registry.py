@@ -1,11 +1,12 @@
 """MCP Client Manager and Tool Registry."""
 
 import asyncio
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from navig.debug_logger import get_debug_logger
+
 from .client import MCPClient, MCPClientConfig
-from .protocol import MCPTool, MCPResource
+from .protocol import MCPResource, MCPTool
 
 if TYPE_CHECKING:
     pass
@@ -44,22 +45,22 @@ class MCPClientManager:
         
         await manager.stop()
     """
-    
+
     def __init__(self, config: dict = None):
         self.config = config or {}
         self._clients: Dict[str, MCPClient] = {}
         self._reconnect_tasks: Dict[str, asyncio.Task] = {}
         self._started = False
-    
+
     @property
     def clients(self) -> Dict[str, MCPClient]:
         """Get all registered clients."""
         return self._clients
-    
+
     def get_connected_clients(self) -> List[MCPClient]:
         """Get all connected clients."""
         return [c for c in self._clients.values() if c.is_connected]
-    
+
     def get_all_tools(self) -> List[MCPTool]:
         """Get tools from all connected clients."""
         tools = []
@@ -67,7 +68,7 @@ class MCPClientManager:
             if client.is_connected:
                 tools.extend(client.tools)
         return tools
-    
+
     def get_all_resources(self) -> List[MCPResource]:
         """Get resources from all connected clients."""
         resources = []
@@ -75,7 +76,7 @@ class MCPClientManager:
             if client.is_connected:
                 resources.extend(client.resources)
         return resources
-    
+
     def find_tool(self, name: str) -> Optional[Tuple[MCPClient, MCPTool]]:
         """
         Find tool by name across all clients.
@@ -88,7 +89,7 @@ class MCPClientManager:
                     if tool.name == name:
                         return client, tool
         return None
-    
+
     async def call_tool(self, name: str, arguments: Dict[str, Any] = None) -> Any:
         """
         Call a tool, routing to the correct client.
@@ -107,10 +108,10 @@ class MCPClientManager:
         if not result:
             available = [t.name for t in self.get_all_tools()]
             raise ValueError(f"Tool not found: {name} (available: {available})")
-        
+
         client, tool = result
         return await client.call_tool(name, arguments)
-    
+
     async def add_client(self, config: MCPClientConfig) -> MCPClient:
         """
         Add a new MCP client.
@@ -120,23 +121,23 @@ class MCPClientManager:
         """
         client = MCPClient(config)
         self._clients[config.id] = client
-        
+
         if self._started and config.auto_connect:
             await self._connect_with_retry(client)
-        
+
         return client
-    
+
     async def remove_client(self, client_id: str):
         """Remove and disconnect a client."""
         client = self._clients.pop(client_id, None)
         if client:
             await client.disconnect()
-        
+
         # Cancel any reconnect task
         task = self._reconnect_tasks.pop(client_id, None)
         if task:
             task.cancel()
-    
+
     async def start(self):
         """
         Start manager and auto-connect configured clients.
@@ -145,43 +146,43 @@ class MCPClientManager:
         """
         if self._started:
             return
-        
+
         self._started = True
-        
+
         # Load clients from config
         mcp_config = self.config.get('mcp', {}).get('clients', {})
-        
+
         for client_id, client_cfg in mcp_config.items():
             if not client_cfg.get('enabled', True):
                 continue
-            
+
             config = MCPClientConfig.from_dict(client_id, client_cfg)
             client = MCPClient(config)
             self._clients[client_id] = client
-            
+
             if config.auto_connect:
                 # Connect in background to not block startup
                 asyncio.create_task(self._connect_with_retry(client))
-        
+
         logger.info(f"MCP Client Manager started with {len(self._clients)} clients")
-    
+
     async def stop(self):
         """Stop all clients."""
         self._started = False
-        
+
         # Cancel reconnect tasks
         for task in self._reconnect_tasks.values():
             task.cancel()
         self._reconnect_tasks.clear()
-        
+
         # Disconnect all clients
         disconnect_tasks = [client.disconnect() for client in self._clients.values()]
         if disconnect_tasks:
             await asyncio.gather(*disconnect_tasks, return_exceptions=True)
-        
+
         self._clients.clear()
         logger.info("MCP Client Manager stopped")
-    
+
     async def connect_client(self, client_id: str) -> bool:
         """
         Connect a specific client.
@@ -191,10 +192,10 @@ class MCPClientManager:
         client = self._clients.get(client_id)
         if not client:
             raise ValueError(f"Client not found: {client_id}")
-        
+
         await self._connect_with_retry(client, max_attempts=1)
         return client.is_connected
-    
+
     async def disconnect_client(self, client_id: str) -> bool:
         """
         Disconnect a specific client.
@@ -204,15 +205,15 @@ class MCPClientManager:
         client = self._clients.get(client_id)
         if not client:
             return False
-        
+
         # Cancel reconnect task if any
         task = self._reconnect_tasks.pop(client_id, None)
         if task:
             task.cancel()
-        
+
         await client.disconnect()
         return True
-    
+
     async def reconnect_client(self, client_id: str) -> bool:
         """
         Reconnect a specific client.
@@ -222,11 +223,11 @@ class MCPClientManager:
         client = self._clients.get(client_id)
         if not client:
             raise ValueError(f"Client not found: {client_id}")
-        
+
         await client.disconnect()
         await self._connect_with_retry(client, max_attempts=1)
         return client.is_connected
-    
+
     def get_status(self) -> Dict[str, Any]:
         """
         Get status of all clients.
@@ -242,13 +243,13 @@ class MCPClientManager:
                 "resources_count": len(client.resources) if client.is_connected else 0,
                 "server_info": client._server_info if client.is_connected else None,
             })
-        
+
         return {
             "clients": clients,
             "total_tools": len(self.get_all_tools()),
             "total_resources": len(self.get_all_resources()),
         }
-    
+
     async def _connect_with_retry(
         self,
         client: MCPClient,
@@ -265,18 +266,18 @@ class MCPClientManager:
                 logger.warning(f"MCP client {client.id} connect failed (attempt {attempt + 1}/{max_attempts}): {e}")
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay * (attempt + 1))
-        
+
         logger.error(f"MCP client {client.id} failed to connect after {max_attempts} attempts")
-    
+
     async def _schedule_reconnect(self, client: MCPClient, delay: float = 30.0):
         """Schedule reconnection attempt for a client."""
         if client.id in self._reconnect_tasks:
             return
-        
+
         async def reconnect():
             await asyncio.sleep(delay)
             if not client.is_connected and self._started:
                 await self._connect_with_retry(client)
             self._reconnect_tasks.pop(client.id, None)
-        
+
         self._reconnect_tasks[client.id] = asyncio.create_task(reconnect())

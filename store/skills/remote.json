@@ -1,0 +1,24 @@
+{
+  "id": "remote",
+  "name": "Remote — Named Hosts via SSH",
+  "summary": "Run commands on a NAMED remote host via SSH. Always include the 'host' param. Never use navig.run without host for local questions.",
+  "commands": [
+    {
+      "name": "run_on_host",
+      "signature": "navig.run(cmd=\"<command>\", host=\"<hostname>\")",
+      "description": "SSH to a named host and run a command. 'host' must be a name from navig config (e.g. 'ubuntu-node', 'ubuntu-node-vps'). Use for: 'disk on ubuntu-node', 'check server X', 'run X on Y host'.",
+      "example": "{\"plan\": [{\"action\": \"navig.run\", \"params\": {\"cmd\": \"df -h\", \"host\": \"ubuntu-node\"}, \"description\": \"Disk on ubuntu-node\"}], \"message\": \"Checking ubuntu-node disk\"}"
+    },
+    {
+      "name": "list_hosts",
+      "signature": "command.run(cmd=\"navig host list\")",
+      "description": "List all configured remote hosts / nodes / VPS / servers. Use for: 'what hosts do I have', 'show servers', 'list nodes', 'list machines'.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"navig host list\"}, \"description\": \"List all configured hosts\"}], \"message\": \"Listing your hosts\"}"
+    },
+    {
+      "name": "check_host",
+      "signature": "command.run(cmd=\"navig host check\")",
+      "description": "Test SSH connectivity to the active host."
+    }
+  ]
+}

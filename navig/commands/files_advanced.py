@@ -1,9 +1,11 @@
 """Advanced File Operation Commands - SECURE VERSION WITH COMMAND INJECTION PROTECTION"""
-from navig import console_helper as ch
-from pathlib import Path
-from typing import Dict, Any, Optional
 import json
 import shlex  # CRITICAL: Import shlex for secure shell escaping
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from navig import console_helper as ch
+
 
 def delete_file_cmd(remote: str, options: Dict[str, Any]):
     """Delete remote file or directory.
@@ -14,24 +16,24 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
-    
+
     server_config = config_manager.load_server_config(server_name)
-    
+
     # SECURITY: Quote remote path to prevent command injection
     remote_quoted = shlex.quote(remote)
-    
+
     # Check if path exists
     check_cmd = f"test -e {remote_quoted} && echo 'exists' || echo 'not_found'"
     result = remote_ops.execute_command(check_cmd, server_config)
-    
+
     if 'not_found' in result.stdout:
         msg = f"Path not found: {remote}"
         if options.get('json'):
@@ -39,12 +41,12 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
         else:
             ch.error(msg)
         return False
-    
+
     # Determine if directory
     is_dir_cmd = f"test -d {remote_quoted} && echo 'dir' || echo 'file'"
     result = remote_ops.execute_command(is_dir_cmd, server_config)
     is_directory = 'dir' in result.stdout
-    
+
     # Build delete command
     if is_directory:
         if not options.get('recursive'):
@@ -57,7 +59,7 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
         delete_cmd = f"rm -rf {remote_quoted}"
     else:
         delete_cmd = f"rm -f {remote_quoted}"
-    
+
     # Dry run mode
     if options.get('dry_run'):
         msg = f"Would delete: {remote} ({'directory' if is_directory else 'file'})"
@@ -66,7 +68,7 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
-    
+
     # Confirm unless forced
     if not options.get('force'):
         if not options.get('json'):
@@ -78,10 +80,10 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
             # JSON mode: always require --force
             ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
             return False
-    
+
     # Execute delete
     result = remote_ops.execute_command(delete_cmd, server_config)
-    
+
     if result.returncode == 0:
         msg = f"Deleted: {remote}"
         if options.get('json'):
@@ -107,34 +109,34 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
-    
+
     server_config = config_manager.load_server_config(server_name)
-    
+
     # SECURITY: Validate and quote mode
     mode = options.get('mode', '755')
     if not mode.isdigit() or len(mode) not in [3, 4]:
         ch.error("Invalid mode. Use numeric format like '755' or '0644'")
         return False
     mode_quoted = shlex.quote(mode)
-    
+
     # SECURITY: Quote remote path
     remote_quoted = shlex.quote(remote)
-    
+
     # Build mkdir command
     mkdir_flags = []
     if options.get('parents'):
         mkdir_flags.append('-p')
-    
+
     mkdir_cmd = f"mkdir {' '.join(mkdir_flags)} -m {mode_quoted} {remote_quoted}"
-    
+
     # Dry run mode
     if options.get('dry_run'):
         msg = f"Would create: {remote} (mode: {mode})"
@@ -143,10 +145,10 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
-    
+
     # Execute mkdir
     result = remote_ops.execute_command(mkdir_cmd, server_config)
-    
+
     if result.returncode == 0:
         msg = f"Created directory: {remote}"
         if options.get('json'):
@@ -173,17 +175,17 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
-    
+
     server_config = config_manager.load_server_config(server_name)
-    
+
     # SECURITY: Validate mode format
     if not mode.isdigit() or len(mode) not in [3, 4]:
         msg = "Invalid mode. Use numeric format like '755' or '0644'"
@@ -192,18 +194,18 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
         else:
             ch.error(msg)
         return False
-    
+
     # SECURITY: Quote all parameters
     mode_quoted = shlex.quote(mode)
     remote_quoted = shlex.quote(remote)
-    
+
     # Build chmod command
     chmod_flags = []
     if options.get('recursive'):
         chmod_flags.append('-R')
-    
+
     chmod_cmd = f"chmod {' '.join(chmod_flags)} {mode_quoted} {remote_quoted}"
-    
+
     # Dry run mode
     if options.get('dry_run'):
         msg = f"Would set permissions: {remote} -> {mode}"
@@ -212,10 +214,10 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
-    
+
     # Execute chmod
     result = remote_ops.execute_command(chmod_cmd, server_config)
-    
+
     if result.returncode == 0:
         msg = f"Permissions set: {remote} -> {mode}"
         if options.get('json'):
@@ -242,28 +244,28 @@ def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
-    
+
     server_config = config_manager.load_server_config(server_name)
-    
+
     # SECURITY: Quote all parameters to prevent command injection
     owner_quoted = shlex.quote(owner)
     remote_quoted = shlex.quote(remote)
-    
+
     # Build chown command
     chown_flags = []
     if options.get('recursive'):
         chown_flags.append('-R')
-    
+
     chown_cmd = f"chown {' '.join(chown_flags)} {owner_quoted} {remote_quoted}"
-    
+
     # Dry run mode
     if options.get('dry_run'):
         msg = f"Would change owner: {remote} -> {owner}"
@@ -272,10 +274,10 @@ def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
-    
+
     # Execute chown
     result = remote_ops.execute_command(chown_cmd, server_config)
-    
+
     if result.returncode == 0:
         msg = f"Owner changed: {remote} -> {owner}"
         if options.get('json'):
@@ -307,20 +309,20 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
     """
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     host_name = options.get('host') or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
-    
+
     host_config = config_manager.load_host_config(host_name)
-    
+
     # SECURITY: Quote remote path
     remote_quoted = shlex.quote(remote)
-    
+
     # Parse lines parameter - could be single number or range
     start_line = None
     end_line = None
@@ -350,7 +352,7 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
             except ValueError:
                 ch.error(f"Invalid line number: {lines}", "Use an integer or range (e.g., 100-200)")
                 return
-    
+
     # Build command based on options
     if start_line and end_line:
         # Range specified - use sed
@@ -363,11 +365,11 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
         cmd = f"head -n {line_count} {remote_quoted}"
     else:
         cmd = f"cat {remote_quoted}"
-    
+
     # Check if file exists first
     check_cmd = f"test -f {remote_quoted} && echo 'exists' || echo 'not_found'"
     result = remote_ops.execute_command(check_cmd, host_config)
-    
+
     if 'not_found' in result.stdout:
         if options.get('json'):
             ch.raw_print(
@@ -448,25 +450,26 @@ def write_file_cmd(
         mode: Set file permissions after writing
         owner: Set file owner after writing
     """
-    from navig.config import get_config_manager
-    from navig.remote import RemoteOperations
+    import os
     import sys
     import tempfile
-    import os
-    
+
+    from navig.config import get_config_manager
+    from navig.remote import RemoteOperations
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     host_name = options.get('host') or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return False
-    
+
     host_config = config_manager.load_host_config(host_name)
-    
+
     # Resolve content from the appropriate source
     final_content = None
-    
+
     if stdin:
         # Read from stdin
         if sys.stdin.isatty():
@@ -484,11 +487,11 @@ def write_file_cmd(
     else:
         ch.error("No content provided.", "Use --content, --stdin, or --from-file.")
         return False
-    
+
     if not final_content:
         ch.error("Content is empty.")
         return False
-    
+
     # Confirm write operation
     if not ch.confirm_operation(
         operation_name=f"Write to: {remote}",
@@ -500,58 +503,58 @@ def write_file_cmd(
     ):
         ch.warning("Cancelled.")
         return False
-    
+
     # Strategy: Write content to a temp file locally, upload via SCP, then move to final destination
     # This is more reliable than trying to escape content for shell commands
-    
+
     try:
         # Create temp file with content
         with tempfile.NamedTemporaryFile(mode='w', suffix='.tmp', delete=False, encoding='utf-8') as tf:
             tf.write(final_content)
             temp_path = Path(tf.name)
-        
+
         # Determine temp remote path
         remote_temp = f"/tmp/.navig_write_{os.getpid()}.tmp"
-        
+
         if not options.get('quiet'):
             ch.info(f"Writing to {remote}...")
-        
+
         # Upload to temp location
         success = remote_ops.upload_file(temp_path, remote_temp, host_config)
-        
+
         if not success:
             ch.error("Failed to upload content to server.")
             return False
-        
+
         # Move to final destination (or append)
         remote_quoted = shlex.quote(remote)
-        
+
         if append:
             move_cmd = f"cat {shlex.quote(remote_temp)} >> {remote_quoted} && rm -f {shlex.quote(remote_temp)}"
         else:
             move_cmd = f"mv -f {shlex.quote(remote_temp)} {remote_quoted}"
-        
+
         result = remote_ops.execute_command(move_cmd, host_config)
-        
+
         if result.returncode != 0:
             ch.error(f"Failed to write file: {result.stderr}")
             return False
-        
+
         # Set permissions if specified
         if mode:
             chmod_result = remote_ops.execute_command(f"chmod {shlex.quote(mode)} {remote_quoted}", host_config)
             if chmod_result.returncode != 0:
                 ch.warning(f"Failed to set permissions: {chmod_result.stderr}")
-        
+
         # Set owner if specified
         if owner:
             chown_result = remote_ops.execute_command(f"chown {shlex.quote(owner)} {remote_quoted}", host_config)
             if chown_result.returncode != 0:
                 ch.warning(f"Failed to set owner: {chown_result.stderr}")
-        
+
         ch.success(f"✓ Written {len(final_content)} bytes to {remote}")
         return True
-        
+
     finally:
         # Clean up local temp file
         if temp_path.exists():
@@ -573,20 +576,20 @@ def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: 
     """
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     host_name = options.get('host') or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
-    
+
     host_config = config_manager.load_host_config(host_name)
-    
+
     # SECURITY: Quote remote path
     remote_quoted = shlex.quote(remote)
-    
+
     # Build ls command
     flags = []
     if long:
@@ -595,12 +598,12 @@ def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: 
         flags.append('a')
     if human:
         flags.append('h')
-    
+
     if flags:
         cmd = f"ls -{''.join(flags)} {remote_quoted}"
     else:
         cmd = f"ls {remote_quoted}"
-    
+
     if options.get('json'):
         # Prefer a structured listing from find. Fallback to ls -1.
         # %y: file type (f,d,l,...) %s: size bytes %TY-%Tm-%Td %TH:%TM:%TS: mtime
@@ -671,37 +674,37 @@ def tree_cmd(remote: str, options: Dict[str, Any], depth: int = 2, dirs_only: bo
     """
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     host_name = options.get('host') or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
-    
+
     host_config = config_manager.load_host_config(host_name)
-    
+
     # SECURITY: Quote remote path
     remote_quoted = shlex.quote(remote)
-    
+
     # Build tree command (fallback to find if tree not installed)
     cmd_parts = ["tree"]
     cmd_parts.append(f"-L {depth}")
     if dirs_only:
         cmd_parts.append("-d")
     cmd_parts.append(remote_quoted)
-    
+
     tree_cmd = " ".join(cmd_parts)
-    
+
     # Fallback using find if tree is not installed
     fallback_cmd = f"find {remote_quoted} -maxdepth {depth} -print | sort | head -100"
-    
+
     full_cmd = f"command -v tree >/dev/null 2>&1 && {tree_cmd} || ({fallback_cmd})"
-    
+
     if not options.get('quiet') and not options.get('raw'):
         ch.info(f"Tree view of {remote}:")
         ch.console.print()
-    
+
     remote_ops.execute_command(full_cmd, host_config, capture_output=False)
 

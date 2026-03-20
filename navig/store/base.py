@@ -22,11 +22,9 @@ from __future__ import annotations
 import logging
 import platform
 import sqlite3
-import sys
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

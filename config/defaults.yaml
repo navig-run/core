@@ -1,0 +1,156 @@
+# NAVIG default configuration values
+# ─────────────────────────────────────────────────────────────────────────────
+# These are the factory defaults.  Override any value in ~/.navig/config.yaml
+# or in .navig/config.yaml (project-local).
+#
+# Every key here should have a corresponding config.get() call in the codebase.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Task executor
+executor:
+  # Maximum seconds to wait for a shell command step before raising TimeoutExpired.
+  command_timeout_seconds: 60
+
+# LLM / AI model configuration
+llm:
+  # Model used for high-reasoning / complex tasks (e.g. complete_with_fallback)
+  fallback_model: "gpt-4o-mini"
+
+# Media engine (image analysis)
+media_engine:
+  # Vision model used for GPT-based image description
+  vision_model: "gpt-4o"
+  # Maximum tokens returned by the vision API call
+  vision_max_tokens: 300
+
+# Gateway / Telegram bot
+gateway:
+  # TCP port the NAVIG local gateway server listens on.
+  # Override in ~/.navig/config.yaml: gateway.port
+  # Override via environment: no env override — edit config.yaml instead
+  # (all command modules read this value via config; do not hardcode elsewhere)
+  port: 8789
+  rate_limit:
+    # Sliding-window rate limiter: max requests per window
+    max_requests_per_minute: 20
+    # Window length in minutes
+    window_minutes: 1
+  # Seconds between typing-indicator heartbeats (Telegram clears after 5s)
+  # Kept for backward compat — canonical location is telegram.typing_interval_seconds
+  typing_interval_seconds: 4
+
+# Telegram bot  [configure with: navig init — stores token in vault]
+telegram:
+  # Polling or webhook mode. Set automatically by navig init.
+  mode: polling
+  # Telegram user IDs allowed to send commands to the bot.
+  # Empty list = allow all (NOT recommended — set during navig init).
+  allowed_users: []
+  # Telegram group/channel IDs allowed (empty = none)
+  allowed_groups: []
+  # Reject messages from unknown users when allowed_users is non-empty
+  require_auth: true
+  # Typing indicator mode: instant | message | never
+  #   instant: show typing as soon as processing starts
+  #   message: show typing only while the LLM is generating
+  #   never:   disable typing indicators entirely
+  typing_mode: instant
+  # Seconds between typing-indicator heartbeats (Telegram clears after ~5s)
+  typing_interval_seconds: 4
+
+# Daemon / host process settings
+daemon:
+  # TCP port the NAVIG browser automation daemon listens on.
+  # Also used by: navig webhook, navig integrations browser_orchestrator
+  # Override in ~/.navig/config.yaml: daemon.browser_port
+  browser_port: 7421
+
+# Mesh / multi-node coordination  [OPTIONAL capability — ships disabled]
+mesh:
+  # Set true to activate mesh node coordination (requires multiple NAVIG nodes).
+  # See .navig/plans/MVP2_FEATURES.md §2 for reactivation path.
+  enabled: false
+  # HTTP endpoint for yielding mesh leadership before shutdown (used only when enabled).
+  # This value derives from gateway.port — update together if you change the port.
+  election_endpoint: "http://127.0.0.1:8789/mesh/election/yield"
+
+# Matrix channel  [OPTIONAL capability — ships disabled]
+matrix:
+  # Set true to activate the Matrix control channel.
+  # Also requires: pip install navig[matrix]
+  # See .navig/plans/MVP2_FEATURES.md §8 for reactivation path.
+  enabled: false
+  # Enable E2EE only after base Matrix channel is stable.
+  e2ee: false
+
+# Proactive engine  [OPTIONAL capability — ships disabled by default]
+proactive:
+  # Engagement tick (user_state + engagement.py) runs regardless via try-import guards.
+  # This key gates the external provider connections (calendar, email, etc.).
+  # See .navig/plans/MVP2_FEATURES.md §6 for provider reactivation path.
+  enabled: false
+
+# OAuth / authentication
+oauth:
+  # Local redirect URI used by all OAuth flows
+  redirect_uri: "http://127.0.0.1:1455/auth/callback"
+
+# Deploy system
+deploy:
+  # Create a remote snapshot before every push (highly recommended)
+  default_backup: true
+  # Health check: number of retries before declaring failure
+  default_health_retries: 5
+  # Seconds between health check retries
+  default_health_interval_seconds: 5
+  # Total seconds before a single health check attempt times out
+  default_health_timeout_seconds: 30
+  # Seconds to wait after service restart before first health check
+  restart_settle_seconds: 2
+  # Files/dirs always excluded from push (merged with per-project excludes)
+  default_push_excludes:
+    - ".env"
+    - ".env.*"
+    - ".git/"
+    - "node_modules/"
+    - ".venv/"
+    - "venv/"
+    - "__pycache__/"
+    - "*.pyc"
+    - "*.pyo"
+    - ".DS_Store"
+  # Number of remote snapshots to keep per app
+  snapshot_keep_last: 5
+  # Max deploy history entries kept in deploy_history.jsonl
+  history_keep: 50
+
+# Identity & telemetry presentation
+identity:
+  # Host probed for latency measurement displayed in `navig status`.
+  # Must be reachable from the machine running NAVIG.
+  # Override: NAVIG_LATENCY_PROBE_HOST env var (takes precedence over this key)
+  latency_probe_host: "8.8.8.8"
+
+# Self-update system (navig update)
+update:
+  # Default release channel: stable | beta | nightly
+  channel: stable
+  # Version source used to discover latest available release
+  source:
+    type: pypi        # pypi | github | git-repo | artifact-url | local-file
+    package: navig    # PyPI package name (used when type=pypi)
+  # Pin previous version before installing so rollback is possible
+  backup_before_update: true
+  # Max entries kept in update_history.jsonl
+  history_keep: 50
+  # Max parallel SSH update workers (1 = sequential)
+  concurrency: 1
+  # Host names that require explicit --yes confirmation before updating
+  require_confirmation_for_hosts: []
+
+# Named host groups (navig update run --group <name>)
+# Example:
+#   groups:
+#     staging: [web-staging, db-staging]
+#     prod:    [web-prod-1, web-prod-2, db-primary]
+groups: {}

@@ -15,7 +15,6 @@ Usage
 from __future__ import annotations
 
 import json
-import sys
 from typing import Optional
 
 import typer
@@ -60,9 +59,9 @@ def tools_list(
     if domain:
         try:
             domain_enum = ToolDomain(domain.lower())
-        except ValueError:
+        except ValueError as _exc:
             typer.echo(f"Unknown domain '{domain}'. Valid: {[d.value for d in ToolDomain]}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from _exc
 
     tools = registry.list_tools(available_only=available_only, domain=domain_enum)
 
@@ -80,9 +79,9 @@ def tools_list(
 
     # Default: Rich table
     try:
+        from rich import box as rich_box
         from rich.console import Console
         from rich.table import Table
-        from rich import box as rich_box
 
         console = Console()
         title = f"Tools ({len(tools)})"

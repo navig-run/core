@@ -1,0 +1,9 @@
+﻿{
+  "id": "node",
+  "version": "1.0.0",
+  "description": "Show info about the current node.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

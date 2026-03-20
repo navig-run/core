@@ -5,7 +5,6 @@ from typing import Optional
 
 import typer
 
-
 context_app = typer.Typer(
     help="Manage host/app context for current project",
     invoke_without_command=True,
@@ -81,8 +80,10 @@ def index_scan(
 ):
     """Scan and index project source code for BM25 search."""
     from pathlib import Path
-    from navig.memory.project_indexer import ProjectIndexer
+
     from rich.console import Console as _Con
+
+    from navig.memory.project_indexer import ProjectIndexer
 
     console = _Con()
     project_root = Path(root) if root else Path.cwd()
@@ -109,8 +110,10 @@ def index_search(
 ):
     """Search the project index using BM25 ranking."""
     from pathlib import Path
-    from navig.memory.project_indexer import ProjectIndexer
+
     from rich.console import Console as _Con
+
+    from navig.memory.project_indexer import ProjectIndexer
 
     console = _Con()
     project_root = Path(root) if root else Path.cwd()
@@ -143,8 +146,10 @@ def index_stats(
     """Show project index statistics."""
     import json
     from pathlib import Path
-    from navig.memory.project_indexer import ProjectIndexer
+
     from rich.console import Console as _Con
+
+    from navig.memory.project_indexer import ProjectIndexer
 
     console = _Con()
     project_root = Path(root) if root else Path.cwd()
@@ -166,8 +171,10 @@ def index_drop(
 ):
     """Drop the project index (removes SQLite database)."""
     from pathlib import Path
-    from navig.memory.project_indexer import ProjectIndexer
+
     from rich.console import Console as _Con
+
+    from navig.memory.project_indexer import ProjectIndexer
 
     console = _Con()
     project_root = Path(root) if root else Path.cwd()

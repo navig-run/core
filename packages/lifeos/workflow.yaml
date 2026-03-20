@@ -1,0 +1,44 @@
+name: lifeos
+description: "Personal life operating system — daily workflows, routines, and productivity sequences."
+version: "1.0.0"
+author: navig
+type: runbook
+
+steps:
+  - name: morning-priorities
+    description: "Pick the top 3 priorities for the day"
+    command: task next
+    continue_on_error: true
+
+  - name: review-context
+    description: "Search knowledge base for relevant project context"
+    command: know.search
+    continue_on_error: true
+
+  - name: add-task
+    description: "Capture a new to-do item"
+    command: task add
+    continue_on_error: true
+
+  - name: capture-note
+    description: "Quick note capture to the knowledge base"
+    command: know.capture
+    continue_on_error: true
+
+  - name: log-expense
+    description: "Record an expense entry in the finance ledger"
+    command: finance.record
+    continue_on_error: true
+
+  - name: check-balance
+    description: "Review current financial balance and net worth"
+    command: finance.balance
+    continue_on_error: true
+
+  - name: close-tasks
+    description: "Mark completed tasks as done to close open loops"
+    command: task done
+    continue_on_error: true
+
+
+

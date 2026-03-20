@@ -14,8 +14,8 @@ if sys.platform == 'win32':
         from .ahk import (
             AHKAdapter,
             AHKError,
-            AHKNotFoundError,
             AHKExecutionError,
+            AHKNotFoundError,
             AHKSafetyError,
         )
         __all__ = [
@@ -25,7 +25,7 @@ if sys.platform == 'win32':
             'AHKExecutionError',
             'AHKSafetyError',
         ]
-        
+
         # Also export AI module if available
         try:
             from .ahk_ai import AHKAIGenerator, AHKScriptArchive

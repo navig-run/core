@@ -1,0 +1,22 @@
+﻿{
+  "id": "navig-commands-core",
+  "version": "1.1.0",
+  "name": "NAVIG Commands Core",
+  "description": "Transport-agnostic command handlers shared by all NAVIG channels.",
+  "author": "navig",
+  "license": "MIT",
+  "homepage": "https://github.com/navig-run/core",
+  "entry": "handler.py",
+  "provides": ["commands"],
+  "hooks": ["on_load", "on_unload"],
+  "depends_on": {
+    "packages": {},
+    "skills": [],
+    "pip": ["dnspython>=2.4.0"]
+  },
+  "recommends": {},
+  "install_hooks": {
+    "post_install": "",
+    "post_remove": ""
+  }
+}

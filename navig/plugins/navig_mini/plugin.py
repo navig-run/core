@@ -69,7 +69,7 @@ def _get(url: str, path: str, timeout: int = 5) -> Optional[dict]:
         return json.loads(resp.read())
     except URLError as exc:
         console.print(f"[red]✗ Agent unreachable:[/red] {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 def _post(url: str, path: str, secret: str, payload: dict, timeout: int = 35) -> dict:
@@ -85,7 +85,7 @@ def _post(url: str, path: str, secret: str, payload: dict, timeout: int = 35) ->
         return json.loads(urlopen(req, timeout=timeout).read())
     except URLError as exc:
         console.print(f"[red]✗ Agent POST error:[/red] {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 def _ping(url: str, timeout: int = 3) -> Optional[dict]:
@@ -229,7 +229,7 @@ def cmd_deploy(
         time.sleep(3)
         console.print("  [green]✓[/green]")
 
-    console.print(f"\n  [bold green]Deploy complete![/bold green]")
+    console.print("\n  [bold green]Deploy complete![/bold green]")
     url_port = cfg["url"].rsplit(":", 1)[-1] if ":" in cfg["url"] else "9191"
     console.print(f"  Verify: [cyan]navig mini status --url http://DEVICE_IP:{url_port}[/cyan]\n")
 
@@ -288,7 +288,7 @@ def cmd_restart(
     elif service == "monitor":
         cmd = f"pkill -f {remote_dir}/monitor.py 2>/dev/null; echo done"
         r   = subprocess.run(["navig", "run", cmd, "--host", ssh_host], capture_output=True, text=True)
-        console.print(f"  [green]✓[/green] Monitor stopped (cron will restart it within 5 min)")
+        console.print("  [green]✓[/green] Monitor stopped (cron will restart it within 5 min)")
 
     else:
         # Delegate to agent /run endpoint

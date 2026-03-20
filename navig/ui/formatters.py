@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from typing import List, Optional, Tuple
 
-from navig.ui.theme import STYLE_COMMAND, STYLE_DIM, console
+from navig.ui.theme import console
 
 _LABEL_WIDTH = 22
 _CMD_WIDTH = 28

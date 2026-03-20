@@ -40,10 +40,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +138,7 @@ class MatrixHitLChannel(HitLChannel):
         """
         import uuid
         corr = str(uuid.uuid4())[:6]
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[corr] = future
 
         try:
@@ -476,11 +475,11 @@ def get_comms_router() -> CommsRouter:
         cfg = get_config()
 
         # Get the default room from config or KG
-        matrix_room = getattr(cfg, "matrix_hitp_room", "") or ""
+        matrix_room = getattr(cfg, "matrix_hitl_room", "") or ""
         if not matrix_room:
             try:
                 from navig.memory.knowledge_graph import get_knowledge_graph
-                facts = get_knowledge_graph().recall("user", predicate="matrix_hitp_room")
+                facts = get_knowledge_graph().recall("user", predicate="matrix_hitl_room")
                 matrix_room = facts[0].object if facts else ""
             except Exception:
                 pass
@@ -505,8 +504,8 @@ def get_comms_router() -> CommsRouter:
 
     # ── 3. SMS via Twilio (fallback 2) ────────────────────────────────────────
     try:
-        from navig.vault import get_vault
         from navig.memory.knowledge_graph import get_knowledge_graph
+        from navig.vault import get_vault
         vault = get_vault()
         twilio_creds = vault.list(provider="twilio")
         if twilio_creds:

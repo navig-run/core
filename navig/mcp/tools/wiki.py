@@ -1,5 +1,5 @@
-import json
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 
 def register(server: Any) -> None:
     """Register wiki manipulation tools."""
@@ -52,7 +52,7 @@ def register(server: Any) -> None:
             }
         }
     })
-    
+
     server._tool_handlers.update({
         "navig_search_wiki": _tool_search_wiki,
         "navig_list_wiki_pages": _tool_list_wiki_pages,
@@ -61,29 +61,29 @@ def register(server: Any) -> None:
 
 def _tool_search_wiki(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Search wiki pages."""
-    from navig.commands.wiki import search_wiki, get_wiki_path
-    
+    from navig.commands.wiki import get_wiki_path, search_wiki
+
     wiki_path = get_wiki_path(server._config)
     if not wiki_path.exists():
         return [{"error": "Wiki not initialized"}]
-    
+
     query = args.get("query", "")
     limit = args.get("limit", 10)
-    
+
     results = search_wiki(wiki_path, query)
     return results[:limit]
 
 def _tool_list_wiki_pages(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     """List wiki pages."""
-    from navig.commands.wiki import list_wiki_pages, get_wiki_path
-    
+    from navig.commands.wiki import get_wiki_path, list_wiki_pages
+
     wiki_path = get_wiki_path(server._config)
     if not wiki_path.exists():
         return [{"error": "Wiki not initialized"}]
-    
+
     folder = args.get("folder")
     pages = list_wiki_pages(wiki_path, folder)
-    
+
     return [
         {
             "path": p["path"],
@@ -97,17 +97,17 @@ def _tool_list_wiki_pages(server: Any, args: Dict[str, Any]) -> List[Dict[str, A
 def _tool_read_wiki_page(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Read a wiki page."""
     from navig.commands.wiki import get_wiki_path, resolve_wiki_link
-    
+
     wiki_path = get_wiki_path(server._config)
     if not wiki_path.exists():
         return {"error": "Wiki not initialized"}
-    
+
     page_path = args.get("path", "")
     resolved = resolve_wiki_link(wiki_path, page_path)
-    
+
     if not resolved:
         return {"error": f"Page not found: {page_path}"}
-    
+
     content = resolved.read_text(encoding="utf-8")
     return {
         "path": str(resolved.relative_to(wiki_path)),

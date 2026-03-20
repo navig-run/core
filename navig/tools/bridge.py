@@ -25,13 +25,13 @@ Usage::
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from navig.tools.registry import BaseTool, ToolRegistry as BaseRegistry
-    from navig.tools.router import ToolMeta, ToolRegistry as RouterRegistry
+    from navig.tools.registry import BaseTool
+    from navig.tools.registry import ToolRegistry as BaseRegistry
+    from navig.tools.router import ToolRegistry as RouterRegistry
 
 logger = logging.getLogger("navig.tools.bridge")
 
@@ -73,7 +73,7 @@ def adapt_base_tool(base_tool: "BaseTool") -> tuple:
     If *base_tool* exposes any of these attributes directly, they are used:
     ``domain``, ``safety``, ``description``, ``tags``, ``parameters_schema``.
     """
-    from navig.tools.router import ToolMeta, ToolDomain, SafetyLevel
+    from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 
     name = base_tool.name
     description = getattr(base_tool, "description", None) or (
