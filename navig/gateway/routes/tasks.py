@@ -1,5 +1,6 @@
 """Task queue routes: /tasks list/add/stats/get/cancel."""
 from __future__ import annotations
+
 try:
     from aiohttp import web
 except ImportError:

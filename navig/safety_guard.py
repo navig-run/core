@@ -174,11 +174,11 @@ def _prompt_confirmation(action: str, pattern: str) -> bool:
             title="Safety Guard",
         ))
     except ImportError:
-        print(f"\n⚠️  DESTRUCTIVE ACTION DETECTED")
+        print("\n⚠️  DESTRUCTIVE ACTION DETECTED")
         print(f"Pattern: {pattern}")
         print(f"Action: {_truncate(action, 200)}")
-        print(f"\nThis action was from an uncensored model.")
-        print(f"Type YES to confirm execution.\n")
+        print("\nThis action was from an uncensored model.")
+        print("Type YES to confirm execution.\n")
 
     try:
         response = input("Confirm (YES/no): ").strip()

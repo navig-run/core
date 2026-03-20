@@ -34,16 +34,16 @@ class EmailMessage:
 
 class CalendarProvider(ABC):
     """Abstract interface for Calendar integration."""
-    
+
     @abstractmethod
     async def list_events(
-        self, 
-        start: datetime, 
+        self,
+        start: datetime,
         end: datetime
     ) -> List[CalendarEvent]:
         """List events in range."""
         pass
-    
+
     @abstractmethod
     async def create_event(self, event: CalendarEvent) -> str:
         """Create new event, return ID."""
@@ -52,17 +52,17 @@ class CalendarProvider(ABC):
 
 class EmailProvider(ABC):
     """Abstract interface for Email integration."""
-    
+
     @abstractmethod
     async def list_unread(self, limit: int = 10) -> List[EmailMessage]:
         """Get unread messages."""
         pass
-    
+
     @abstractmethod
     async def draft_email(
-        self, 
-        to: List[str], 
-        subject: str, 
+        self,
+        to: List[str],
+        subject: str,
         body: str
     ) -> str:
         """Create draft email, return ID."""
@@ -71,7 +71,7 @@ class EmailProvider(ABC):
 
 class MockCalendar(CalendarProvider):
     """Mock implementation for testing."""
-    
+
     async def list_events(self, start: datetime, end: datetime) -> List[CalendarEvent]:
         # Return a fake meeting
         return [
@@ -83,7 +83,7 @@ class MockCalendar(CalendarProvider):
                 attendees=["alice@example.com", "bob@example.com"]
             )
         ]
-    
+
     async def create_event(self, event: CalendarEvent) -> str:
         print(f"[MOCK] Created event: {event.title}")
         return "mock-event-id"
@@ -91,7 +91,7 @@ class MockCalendar(CalendarProvider):
 
 class MockEmail(EmailProvider):
     """Mock implementation for testing."""
-    
+
     async def list_unread(self, limit: int = 10) -> List[EmailMessage]:
         return [
             EmailMessage(

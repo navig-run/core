@@ -10,9 +10,9 @@ from __future__ import annotations
 import sys
 from typing import List, Optional
 
-from navig.ui.models import ActionItem
-from navig.ui.theme import SAFE_MODE, STYLE_COMMAND, STYLE_DIM, console
 from navig.ui.icons import icon
+from navig.ui.models import ActionItem
+from navig.ui.theme import console
 
 _RISK_STYLE = {
     "low":    "green",

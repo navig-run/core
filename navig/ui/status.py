@@ -10,7 +10,7 @@ import sys
 from typing import List
 
 from navig.ui.models import StatusChip
-from navig.ui.theme import SAFE_MODE, SEVERITY_STYLE, COLOR_STYLE, console
+from navig.ui.theme import COLOR_STYLE, SAFE_MODE, console
 
 
 def render_status_header(chips: List[StatusChip], *, sep: str = "  ·  ") -> None:

@@ -10,11 +10,15 @@ New Architecture (v2.0):
 - Legacy format (~/.navig/apps/*.yaml) still supported for backward compatibility
 """
 
-import yaml
-from pathlib import Path
-from typing import Dict, Optional, Any, Tuple, Union
-from datetime import datetime
+import logging
 import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
+
+import yaml
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,10 +77,10 @@ class ConfigManager:
             verbose: If True, print diagnostic information about configuration locations.
         """
         self.verbose = verbose
-        
+
         # Global config directory (always ~/.navig)
         self.global_config_dir = Path.home() / ".navig"
-        
+
         # Explicit config dir tracking
         self._explicit_config_dir = config_dir
         self._paths_resolved = False
@@ -95,14 +99,14 @@ class ConfigManager:
         # to ensure any filesystem or permission failures crash the app immediately
         # (fail-fast) instead of delaying errors until mid-operation deep in async code.
         self._resolve_paths()
-        
+
     def _resolve_paths(self):
         if self._paths_resolved:
             return
-            
+
         self.app_config_dir = None
         self._app_root = None
-        
+
         if self._explicit_config_dir:
             self.base_dir = self._explicit_config_dir
             if self.verbose:
@@ -131,7 +135,7 @@ class ConfigManager:
                         ch.info(f"✓ Using global config: {self.global_config_dir}")
                     except Exception:
                         pass
-        
+
         self.config_dir = self.base_dir
         self.config_file = self.base_dir / "config.yaml"
         self.hosts_dir = self.base_dir / "hosts"
@@ -145,7 +149,7 @@ class ConfigManager:
         self.active_server_file = self.cache_dir / "active_server.txt"
         self.tunnels_file = self.cache_dir / "tunnels.json"
         self.db_file = self.base_dir / "navig.db"
-        
+
         if self.verbose:
             try:
                 from navig import console_helper as ch
@@ -155,7 +159,7 @@ class ConfigManager:
 
         self._ensure_directories()
         self._paths_resolved = True
-    
+
     # ------------------------------------------------------------------
     # Lazy global_config – defers _load_global_config() until first use
     # ------------------------------------------------------------------
@@ -219,7 +223,7 @@ class ConfigManager:
                 return None
 
             current = parent
-    
+
     def _is_directory_accessible(self, directory: Path) -> bool:
         """
         Check if a directory is accessible (can read/write).
@@ -278,7 +282,7 @@ class ConfigManager:
             ch.error(f"Global config directory not accessible: {self.global_config_dir}")
 
         return directories
-    
+
     def _ensure_directories(self, _recursion_depth: int = 0):
         """
         Create directory structure if it doesn't exist.
@@ -334,7 +338,7 @@ class ConfigManager:
                         raise RuntimeError(
                             "Cannot create config directories even after fallback to global config. "
                             "Check permissions on your home directory."
-                        )
+                        ) from e
                     return self._ensure_directories(_recursion_depth=_recursion_depth + 1)
                 else:
                     # Critical error - cannot create global config
@@ -351,7 +355,7 @@ class ConfigManager:
             if self.verbose:
                 from navig import console_helper as ch
                 ch.warning(f"Cannot create AI prompt file: {e}")
-    
+
     def _create_default_ai_prompt(self):
         """Create default AI system prompt file."""
         default_prompt = """You are NAVIG — the Living Octopus‑Mind: a persistent, evolving digital companion with deep expertise across three domains:
@@ -386,7 +390,7 @@ Context provided with each query:
         # AUDIT self-check: Break callers? no - output content/path are unchanged.
         # AUDIT self-check: Simpler alternative? yes - add encoding directly to write_text call.
         self.ai_prompt_file.write_text(default_prompt.strip(), encoding="utf-8")
-    
+
     def ensure_local_host(self) -> Path:
         """
         Ensure a 'local' host configuration exists for local machine management.
@@ -399,23 +403,23 @@ Context provided with each query:
         """
         import platform
         import socket
-        
+
         local_host_file = self.hosts_dir / "local.yaml"
-        
+
         if local_host_file.exists():
             return local_host_file
-        
+
         # Auto-detect OS
         os_name = platform.system().lower()
         if os_name == 'darwin':
             os_name = 'macos'
-        
+
         # Get hostname
         try:
             hostname = socket.gethostname()
         except Exception:
             hostname = 'localhost'
-        
+
         # Create local host configuration
         local_config = {
             'hostname': hostname,
@@ -425,16 +429,16 @@ Context provided with each query:
             'created': datetime.now().isoformat(),
             'tags': ['local', os_name],
         }
-        
+
         # Ensure hosts directory exists
         self.hosts_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Write configuration
         with open(local_host_file, 'w') as f:
             yaml.dump(local_config, f, default_flow_style=False, sort_keys=False)
-        
+
         return local_host_file
-    
+
     def is_local_host(self, host_name: str) -> bool:
         """
         Check if a host is the local machine.
@@ -447,13 +451,13 @@ Context provided with each query:
         """
         if host_name == 'local':
             return True
-        
+
         try:
             host_config = self.load_host_config(host_name)
             return host_config.get('type', '').lower() == 'local'
         except (FileNotFoundError, KeyError):
             return False
-    
+
     def _load_global_config_cached(self) -> dict:
         """
         QUANTUM VELOCITY K2 — Pickle binary config cache with Shadow Execution.
@@ -466,7 +470,6 @@ Context provided with each query:
         Falls back silently to the slow path on any cache error.
         """
         import pickle
-        import hashlib
 
         global_config_file = self.global_config_dir / "config.yaml"
         cache_file = self.global_config_dir / ".config_cache.pkl"
@@ -490,7 +493,6 @@ Context provided with each query:
 
                     def _shadow_verify(fr: dict, cfg_file: Path, cfgmgr: "ConfigManager") -> None:
                         try:
-                            import json as _json
                             slow_result = cfgmgr._load_global_config(validate=False)
                             # Compare top-level keys as a lightweight diff
                             fr_keys = set(fr.keys()) - {"_mtime", "_config"}
@@ -558,21 +560,21 @@ Context provided with each query:
                       still applied).
         """
         global_config_file = self.global_config_dir / "config.yaml"
-        
+
         if not global_config_file.exists():
             return self._create_default_global_config()
-        
+
         try:
             from navig.core.config_loader import load_config
             from navig.core.migrations import migrate_config
-            
+
             # 1. Load configuration (with includes & env vars)
             config = load_config(
                 global_config_file,
                 schema_type=None, # Don't validate yet, schema might define new fields
                 strict=False
             )
-            
+
             # 2. Apply migrations
             try:
                 config, modified = migrate_config(config)
@@ -590,16 +592,16 @@ Context provided with each query:
                 if self.verbose:
                     from navig import console_helper as ch
                     ch.warning(f"Migration failed: {e}")
-            
+
             # 3. Validate against current schema (optional — saves ~285ms pydantic import)
             if validate:
                 from navig.core.config_schema import validate_global_config
                 validated = validate_global_config(config, strict=False)
                 if validated:
                     return validated.model_dump()
-                
+
             return config
-            
+
         except ImportError:
             # Fallback if loader/migration module issues
             with open(global_config_file, 'r', encoding='utf-8') as f:  # P1-3
@@ -632,11 +634,11 @@ Context provided with each query:
                 except Exception:
                     pass
             return {}
-    
+
     def _create_default_global_config(self) -> Dict[str, Any]:
         """Create default global configuration."""
         from navig.core.migrations import CURRENT_VERSION
-        
+
         default_config = {
             'version': CURRENT_VERSION,  # Current config version (prevents unnecessary migrations)
             'openrouter_api_key': '',  # User must set this
@@ -655,11 +657,21 @@ Context provided with each query:
                 'mode': 'interactive',  # 'interactive' or 'auto'
                 'confirmation_level': 'standard',  # 'critical', 'standard', or 'verbose'
             },
+            'voice': {
+                'keyword': 'hey_jarvis',
+                'threshold': 0.45,
+                'stt_primary': 'deepgram',
+                'stt_fallback': 'whisper_api',
+                'language': 'en',
+                'tts_provider': 'edge',
+                'silence_timeout': 2.0,
+                'max_listen_seconds': 30.0,
+            },
         }
-        
+
         self._save_global_config(default_config)
         return default_config
-    
+
     def _save_global_config(self, config: Dict[str, Any]):
         """Save global configuration to file (always to ~/.navig/config.yaml)."""
         global_config_file = self.global_config_dir / "config.yaml"
@@ -679,26 +691,26 @@ Context provided with each query:
             tmp.replace(cache_file)  # atomic rename
         except Exception:
             pass  # Cache update failure is non-fatal
-    
+
     def get_global_config(self) -> Dict[str, Any]:
         """Get global configuration."""
         return self.global_config
-    
+
     def update_global_config(self, updates: Dict[str, Any]):
         """Update global configuration."""
         self.global_config.update(updates)
         self._save_global_config(self.global_config)
-        
+
     def get_agent_config(self) -> 'AgentConfig':
         """Get the parsed agent configuration section."""
         from navig.agent.config import AgentConfig
         agent_dict = self.global_config.get('agent', {})
         return AgentConfig.from_dict(agent_dict)
-    
+
     # ========================================================================
     # EXECUTION MODE CONFIGURATION
     # ========================================================================
-    
+
     def get_execution_mode(self) -> str:
         """
         Get the current execution mode.
@@ -719,11 +731,11 @@ Context provided with each query:
                         return execution['mode']
             except Exception:
                 pass
-        
+
         # Fall back to global config
         execution = self.global_config.get('execution', {})
         return execution.get('mode', 'interactive')
-    
+
     def set_execution_mode(self, mode: str) -> None:
         """
         Set the execution mode.
@@ -737,12 +749,12 @@ Context provided with each query:
         valid_modes = ['interactive', 'auto']
         if mode not in valid_modes:
             raise ValueError(f"Invalid mode '{mode}'. Must be one of: {', '.join(valid_modes)}")
-        
+
         if 'execution' not in self.global_config:
             self.global_config['execution'] = {}
         self.global_config['execution']['mode'] = mode
         self._save_global_config(self.global_config)
-    
+
     def get_confirmation_level(self) -> str:
         """
         Get the current confirmation level.
@@ -763,11 +775,11 @@ Context provided with each query:
                         return execution['confirmation_level']
             except Exception:
                 pass
-        
+
         # Fall back to global config
         execution = self.global_config.get('execution', {})
         return execution.get('confirmation_level', 'standard')
-    
+
     def set_confirmation_level(self, level: str) -> None:
         """
         Set the confirmation level.
@@ -781,12 +793,12 @@ Context provided with each query:
         valid_levels = ['critical', 'standard', 'verbose']
         if level not in valid_levels:
             raise ValueError(f"Invalid level '{level}'. Must be one of: {', '.join(valid_levels)}")
-        
+
         if 'execution' not in self.global_config:
             self.global_config['execution'] = {}
         self.global_config['execution']['confirmation_level'] = level
         self._save_global_config(self.global_config)
-    
+
     def get_execution_settings(self) -> Dict[str, str]:
         """
         Get all execution settings.
@@ -799,7 +811,7 @@ Context provided with each query:
             'mode': execution.get('mode', 'interactive'),
             'confirmation_level': execution.get('confirmation_level', 'standard'),
         }
-    
+
     def get_active_server(self) -> Optional[str]:
         """
         Get currently active server name.
@@ -809,7 +821,7 @@ Context provided with each query:
         """
         # Delegate to the new host-based method for backwards compatibility
         return self.get_active_host()
-    
+
     def set_active_server(self, name: str):
         """
         Set active server.
@@ -818,7 +830,7 @@ Context provided with each query:
         This method now delegates to set_active_host() for backwards compatibility.
         """
         self.set_active_host(name)
-    
+
     def server_exists(self, name: str) -> bool:
         """
         Check if server configuration exists.
@@ -827,7 +839,7 @@ Context provided with each query:
         This method now delegates to host_exists() for backwards compatibility.
         """
         return self.host_exists(name)
-    
+
     def list_servers(self) -> list:
         """
         List all configured servers.
@@ -835,7 +847,7 @@ Context provided with each query:
         DEPRECATED: Use list_hosts() instead.
         """
         return self.list_hosts()
-    
+
     def load_server_config(self, name: str) -> Dict[str, Any]:
         """
         Load server configuration.
@@ -843,7 +855,7 @@ Context provided with each query:
         DEPRECATED: Use load_host_config() instead.
         """
         return self.load_host_config(name)
-    
+
     def save_server_config(self, name: str, config: Dict[str, Any]):
         """
         Save server configuration.
@@ -851,7 +863,7 @@ Context provided with each query:
         DEPRECATED: Use save_host_config() instead.
         """
         self.save_host_config(name, config)
-    
+
     def delete_server_config(self, name: str):
         """
         Delete server configuration.
@@ -859,7 +871,7 @@ Context provided with each query:
         DEPRECATED: Use delete_host_config() instead.
         """
         self.delete_host_config(name)
-    
+
     def create_server_config(
         self,
         name: str,
@@ -909,16 +921,16 @@ Context provided with each query:
                 'created_at': datetime.now().isoformat(),
             },
         }
-        
+
         self.save_server_config(name, config)
         return config
-    
+
     def get_ai_system_prompt(self) -> str:
         """Get AI system prompt."""
         if not self.ai_prompt_file.exists():
             self._create_default_ai_prompt()
         return self.ai_prompt_file.read_text()
-    
+
     def update_server_metadata(self, name: str, metadata: Dict[str, Any]):
         """Update server metadata (from inspection)."""
         config = self.load_server_config(name)
@@ -971,7 +983,7 @@ Context provided with each query:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False)
         except Exception as e:
             logger.error("Failed to write local config %s: %s", local_config_file, e)
-            raise PermissionError(f"Cannot write local config file: {e}")
+            raise PermissionError(f"Cannot write local config file: {e}") from e
 
     # =========================================================================
     # Context Management (Hosts and Apps)
@@ -1379,7 +1391,7 @@ Context provided with each query:
         """
         # Check cache validity based on hosts directory mtime
         config_dirs = self._get_config_directories()
-        
+
         # Build a signature from mtimes + file count.
         # Directory mtimes can be too coarse on some platforms (notably Windows),
         # so include YAML file mtimes to reliably detect changes.
@@ -1406,13 +1418,13 @@ Context provided with each query:
                         pass
 
         signature = (max_mtime, file_count)
-        
+
         # Return cached result if still valid
         if self._hosts_list_cache is not None:
             cached_hosts, cached_signature = self._hosts_list_cache
             if cached_signature == signature:
                 return cached_hosts.copy()
-        
+
         hosts = set()
 
         # Collect hosts from all accessible config directories
@@ -1556,9 +1568,9 @@ Context provided with each query:
         # Check cache first
         if use_cache and host_name in self._host_config_cache:
             return self._host_config_cache[host_name]
-        
+
         config_dirs = self._get_config_directories()
-        
+
         try:
             from navig.core.config_loader import load_config
         except ImportError:
@@ -1582,7 +1594,7 @@ Context provided with each query:
                 # Expand user paths (config_loader doesn't do ~/ expansion)
                 if 'ssh_key' in config and config['ssh_key']:
                     config['ssh_key'] = os.path.expanduser(config['ssh_key'])
-                
+
                 if self.verbose:
                     from navig import console_helper as ch
                     source = "app" if config_dir == self.app_config_dir else "global"
@@ -1608,7 +1620,7 @@ Context provided with each query:
                 # Expand user paths
                 if 'ssh_key' in config and config['ssh_key']:
                     config['ssh_key'] = os.path.expanduser(config['ssh_key'])
-                
+
                 if self.verbose:
                     from navig import console_helper as ch
                     source = "app" if config_dir == self.app_config_dir else "global"
@@ -1698,7 +1710,7 @@ Context provided with each query:
         if host_name in self._host_config_cache:
             del self._host_config_cache[host_name]
         self._hosts_list_cache = None  # Invalidate hosts list cache
-        
+
         # Determine where to save (app-specific or global)
         if self.app_config_dir:
             host_file = self.app_config_dir / "hosts" / f"{host_name}.yaml"
@@ -1715,7 +1727,7 @@ Context provided with each query:
 
         with open(host_file, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
-        
+
         if self.verbose:
             from navig import console_helper as ch
             location = "app" if self.app_config_dir else "global"
@@ -1771,10 +1783,10 @@ Context provided with each query:
         # Invalidate caches
         self._host_config_cache.pop(host_name, None)
         self._hosts_list_cache = None  # Invalidate hosts list cache
-        
+
         deleted = False
         config_dirs = self._get_config_directories()
-        
+
         for config_dir in config_dirs:
             # Delete from new format
             host_file = config_dir / "hosts" / f"{host_name}.yaml"
@@ -1898,7 +1910,7 @@ Context provided with each query:
 
             return app_config
         except yaml.YAMLError as e:
-            raise ValueError(f"Invalid YAML in app file {app_file}: {e}")
+            raise ValueError(f"Invalid YAML in app file {app_file}: {e}") from e
 
     def save_app_to_file(self, app_name: str, app_config: Dict[str, Any], navig_dir: Optional[Path] = None):
         """
@@ -2084,18 +2096,18 @@ def get_config_manager(config_dir: Optional[Path] = None, verbose: bool = False,
         - Subsequent calls: ~0.01ms (cached instance return)
     """
     global _config_manager_instance, _config_manager_config_dir
-    
+
     # Check if we need a new instance
     needs_new = (
         force_new or
         _config_manager_instance is None or
         config_dir != _config_manager_config_dir
     )
-    
+
     if needs_new:
         _config_manager_instance = ConfigManager(config_dir=config_dir, verbose=verbose)
         _config_manager_config_dir = config_dir
-    
+
     return _config_manager_instance
 
 

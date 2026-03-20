@@ -16,8 +16,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from navig.gateway.channels.telegram import TelegramChannel
@@ -104,7 +104,7 @@ class StatusRenderer:
 
         conclusion_block = _format_conclusion(conclusion, title, footer)
         full_text = self._build_frame(final=True, conclusion_block=conclusion_block)
-        
+
         success = await self._edit(full_text, keyboard=keyboard)
         if not success:
             # Fall back to a new message if the edit failed (e.g. string too large or deleted sentinel)

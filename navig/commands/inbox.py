@@ -265,7 +265,6 @@ def filter_cmd(
     results = engine.scan_and_filter(dry_run=dry_run)
 
     if json_output:
-        import dataclasses
         typer.echo(
             __import__("json").dumps(
                 [
@@ -398,13 +397,13 @@ def add_url_cmd(
     """
     import hashlib
     import re
-    import urllib.request
-    import urllib.error
     import time
+    import urllib.error
+    import urllib.request
 
     from navig.inbox.classifier import Classifier
     from navig.inbox.router import InboxRouter, RouteMode
-    from navig.inbox.store import InboxStore, InboxEvent, RoutingDecision
+    from navig.inbox.store import InboxEvent, InboxStore, RoutingDecision
 
     typer.echo(f"Fetching: {url}")
 
@@ -417,7 +416,7 @@ def add_url_cmd(
             content = raw.decode("utf-8", errors="replace")
     except Exception as exc:
         typer.secho(f"Fetch failed: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     # Derive a filename from URL
     path_part = url.rstrip("/").split("/")[-1] or "index"
@@ -433,7 +432,6 @@ def add_url_cmd(
     result = classifier.classify(text, filename=filename, extra_context=url)
 
     if json_output:
-        import dataclasses
         typer.echo(json.dumps({
             "url": url,
             "filename": filename,
@@ -523,8 +521,8 @@ def ui_cmd(
       [y] Route now   [n] Keep in inbox   [q] Quit   [?] Details
     """
     from navig.inbox.classifier import Classifier
-    from navig.inbox.router import InboxRouter, RouteMode, ConflictStrategy
-    from navig.inbox.store import InboxStore, InboxEvent, RoutingDecision
+    from navig.inbox.router import InboxRouter, RouteMode
+    from navig.inbox.store import InboxEvent, InboxStore, RoutingDecision
 
     project_root = Path(path).resolve() if path else _find_project_root()
     inbox_dir = project_root / ".navig" / "wiki" / "inbox"

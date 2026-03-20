@@ -1,5 +1,6 @@
 """MCP routes: /mcp/clients, tools, tools/{name}/call, connect, disconnect."""
 from __future__ import annotations
+
 try:
     from aiohttp import web
 except ImportError:

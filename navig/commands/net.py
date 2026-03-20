@@ -8,7 +8,6 @@ CLI surface:
 from __future__ import annotations
 
 import json
-import sys
 from typing import Optional
 
 import typer
@@ -86,7 +85,7 @@ def speedtest_cmd(
         w = _backend()
     except Exception as exc:
         typer.echo(f"[ERROR] Could not load speedtest worker: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     summary: dict = {}
 

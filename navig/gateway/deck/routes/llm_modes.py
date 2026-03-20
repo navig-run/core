@@ -1,6 +1,6 @@
 """LLM Modes selection endpoints for the Deck API."""
-import os
 import logging
+import os
 
 try:
     from aiohttp import web

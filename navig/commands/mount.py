@@ -22,10 +22,8 @@ Helper script
 from __future__ import annotations
 
 import json
-import os
 import platform
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -395,9 +393,9 @@ def _generate_ps1(drives: Dict[str, Any]) -> str:
             f'if (-not (Test-Path "{target}")) {{',
             f'    Write-Host "Creating junction: {label}"',
             f'    cmd /c mklink /J "{target}" "{source}"',
-            f'}} else {{',
+            '} else {',
             f'    Write-Host "Junction already exists: {label}"',
-            f'}}',
+            '}',
             "",
         ]
 

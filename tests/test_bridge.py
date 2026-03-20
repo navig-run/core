@@ -17,8 +17,8 @@ import pytest
 # ── Fixtures ────────────────────────────────────────────────────────
 
 @pytest.fixture
-def forge_response():
-    """A typical Forge ChatResponse JSON payload."""
+def bridge_response():
+    """A typical Bridge ChatResponse JSON payload."""
     return {
         "text": "Hello! I'm happy to help.",
         "metadata": {
@@ -36,7 +36,7 @@ def forge_response():
 
 @pytest.fixture
 def health_response():
-    """A typical Forge health endpoint response."""
+    """A typical Bridge health endpoint response."""
     return {
         "status": "ready",
         "model": "copilot - GPT 4o",
@@ -197,7 +197,7 @@ class TestAIClientDetection:
                 result = client._detect_best_provider()
                 assert result == "github_models"
 
-    def test_openrouter_fallback_when_no_forge_no_github(self):
+    def test_openrouter_fallback_when_no_bridge_no_github(self):
         client = self._make_client(_navig_api_key="sk-or-xxx")
         with patch.object(client, '_get_bridge_mcp_url', return_value=""):
             with patch.object(client, '_get_github_models_token', return_value=""):

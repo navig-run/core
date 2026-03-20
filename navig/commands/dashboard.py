@@ -11,25 +11,25 @@ A real-time operations dashboard for NAVIG Core. Features:
 - Responsive layout for all terminal sizes
 - Fast boot animation
 """
-import os
-import sys
-import time
 import json
-import subprocess
+import os
 import platform
-import threading
 import shutil
-from pathlib import Path
+import subprocess
+import sys
+import threading
+import time
 from datetime import datetime
-from typing import Dict, Any, Optional, List
-from rich.console import Console
-from rich.live import Live
-from rich.table import Table
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.text import Text
-from rich.align import Align
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+from rich.align import Align
+from rich.console import Console
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 console = Console()
 
@@ -293,7 +293,9 @@ class KeyReader:
                 time.sleep(0.05)
 
     def _read_unix(self):
-        import termios, tty, select
+        import select
+        import termios
+        import tty
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         try:

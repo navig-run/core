@@ -1,5 +1,5 @@
-import json
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 
 def register(server: Any) -> None:
     """Register inventory tools (hosts and apps)."""
@@ -61,7 +61,7 @@ def register(server: Any) -> None:
             }
         }
     })
-    
+
     server._tool_handlers.update({
         "navig_list_hosts": _tool_list_hosts,
         "navig_list_apps": _tool_list_apps,
@@ -73,7 +73,7 @@ def _tool_list_hosts(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     """List all configured hosts."""
     hosts = server._config.get_hosts()
     filter_pattern = args.get("filter", "").lower()
-    
+
     result = []
     for name, config in hosts.items():
         if filter_pattern and filter_pattern not in name.lower():
@@ -86,7 +86,7 @@ def _tool_list_hosts(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
             "key": config.get("key"),
             "apps": list(config.get("apps", {}).keys()) if config.get("apps") else []
         })
-    
+
     return result
 
 def _tool_list_apps(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -94,9 +94,9 @@ def _tool_list_apps(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     host_filter = args.get("host")
     apps = server._config.get_apps()
     hosts = server._config.get_hosts()
-    
+
     result = []
-    
+
     # Apps from global apps config
     for name, config in apps.items():
         app_host = config.get("host")
@@ -109,7 +109,7 @@ def _tool_list_apps(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
             "path": config.get("path"),
             "url": config.get("url")
         })
-    
+
     # Apps embedded in hosts
     for host_name, host_config in hosts.items():
         if host_filter and host_name != host_filter:
@@ -122,17 +122,17 @@ def _tool_list_apps(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "path": app_config.get("path"),
                 "url": app_config.get("url")
             })
-    
+
     return result
 
 def _tool_host_info(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Get detailed host information."""
     name = args.get("name")
     hosts = server._config.get_hosts()
-    
+
     if name not in hosts:
         return {"error": f"Host not found: {name}"}
-    
+
     return {
         "name": name,
         **hosts[name]
@@ -142,10 +142,10 @@ def _tool_app_info(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Get detailed app information."""
     name = args.get("name")
     apps = server._config.get_apps()
-    
+
     if name in apps:
         return {"name": name, **apps[name]}
-    
+
     # Search in host apps
     hosts = server._config.get_hosts()
     for host_name, host_config in hosts.items():
@@ -155,5 +155,5 @@ def _tool_app_info(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
                 "host": host_name,
                 **host_config["apps"][name]
             }
-    
+
     return {"error": f"App not found: {name}"}

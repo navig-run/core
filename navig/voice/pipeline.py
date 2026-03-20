@@ -26,10 +26,9 @@ For programmatic (non-mic) use — e.g., processing a Telegram voice note:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -40,21 +39,33 @@ logger = logging.getLogger("navig.voice.pipeline")
 # Configuration
 # ---------------------------------------------------------------------------
 
+from dataclasses import dataclass, field
+from navig.config import ConfigManager
+
+def _get_voice_setting(key: str, default: Any) -> Any:
+    # Safe fetch from global config at instantiation time
+    try:
+        mgr = ConfigManager()
+        cfg = mgr.get_global_config().get("voice", {})
+        return cfg.get(key, default)
+    except Exception:
+        return default
+
 @dataclass
 class PipelineConfig:
     """Unified configuration for the VoicePipeline."""
 
     # Wake word
-    keyword:   str   = "hey_jarvis"
-    threshold: float = 0.45
+    keyword:   str   = field(default_factory=lambda: _get_voice_setting("keyword", "hey_jarvis"))
+    threshold: float = field(default_factory=lambda: _get_voice_setting("threshold", 0.45))
 
     # STT
-    stt_primary:  str = "deepgram"    # "deepgram" | "whisper_api" | "whisper_local"
-    stt_fallback: str = "whisper_api"
-    language:     str = "en"
+    stt_primary:  str = field(default_factory=lambda: _get_voice_setting("stt_primary", "deepgram"))
+    stt_fallback: str = field(default_factory=lambda: _get_voice_setting("stt_fallback", "whisper_api"))
+    language:     str = field(default_factory=lambda: _get_voice_setting("language", "en"))
 
     # LLM
-    llm_model:   Optional[str] = None   # None = use navig-core's configured default
+    llm_model:   Optional[str] = field(default_factory=lambda: _get_voice_setting("llm_model", None))
     llm_system_prompt: Optional[str] = (
         "You are NAVIG, an intelligent voice assistant. "
         "Be concise — responses are spoken aloud. "
@@ -62,12 +73,12 @@ class PipelineConfig:
     )
 
     # TTS
-    tts_provider: str = "edge"       # "edge" | "openai" | "elevenlabs" | "deepgram"
-    tts_voice:    Optional[str] = None
+    tts_provider: str = field(default_factory=lambda: _get_voice_setting("tts_provider", "edge"))
+    tts_voice:    Optional[str] = field(default=None)
 
     # Session settings
-    silence_timeout:    float = 2.0
-    max_listen_seconds: float = 30.0
+    silence_timeout:    float = field(default_factory=lambda: _get_voice_setting("silence_timeout", 2.0))
+    max_listen_seconds: float = field(default_factory=lambda: _get_voice_setting("max_listen_seconds", 30.0))
 
     # navig-echo bridge (optional)
     echo_bridge_url: Optional[str] = None
@@ -126,11 +137,10 @@ class VoicePipeline:
             return
 
         from navig.voice.session_manager import SessionConfig, VoiceSessionManager
-        from navig.voice.wake_word import WakeWordConfig, WakeWordEngine
-        from navig.voice.streaming_stt import StreamingSTT, StreamingSTTConfig
 
         # ── Build STT callables ───────────────────────────────────────
-        from navig.voice.streaming_stt import StreamingProvider
+        from navig.voice.streaming_stt import StreamingProvider, StreamingSTT, StreamingSTTConfig
+        from navig.voice.wake_word import WakeWordConfig, WakeWordEngine
         _primary  = StreamingProvider(self.config.stt_primary)
         _fallback = StreamingProvider(self.config.stt_fallback)
 
@@ -289,9 +299,9 @@ class VoicePipeline:
     # ------------------------------------------------------------------ #
 
     async def _call_llm(self, transcript: str) -> str:
-        """Route transcript through navig-core's LLM router."""
+        """Route transcript through navig-core's UnifiedRouter."""
         try:
-            from navig.routing.router import get_router
+            from navig.routing.router import RouteRequest, get_router
             router = get_router()
 
             messages = []
@@ -299,23 +309,13 @@ class VoicePipeline:
                 messages.append({"role": "system", "content": self.config.llm_system_prompt})
             messages.append({"role": "user", "content": transcript})
 
-            kwargs = {}
+            kwargs: dict = {}
             if self.config.llm_model:
-                kwargs["model"] = self.config.llm_model
+                kwargs["model_override"] = self.config.llm_model
 
-            response = await router.complete(
-                messages=messages,
-                stream=False,
-                **kwargs,
-            )
-            # navig-core router returns different shapes; handle both
-            if isinstance(response, str):
-                return response
-            if hasattr(response, "text"):
-                return response.text
-            if hasattr(response, "content"):
-                return response.content
-            return str(response)
+            request = RouteRequest(messages=messages, entrypoint="voice_pipeline", **kwargs)
+            response_text, _trace = await router.run(request)
+            return response_text or "I'm sorry, I couldn't process that request right now. Please try again."
 
         except Exception as exc:
             logger.error("LLM routing error: %s", exc)

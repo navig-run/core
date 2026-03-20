@@ -8,9 +8,9 @@ Coordinates all four modules of the intelligent AI assistant system:
 4. AI Copilot Integration
 """
 
-from typing import Dict, Any
-from datetime import datetime
 import json
+from datetime import datetime
+from typing import Any, Dict
 
 from navig import console_helper as ch
 from navig.assistant_utils import ensure_navig_directory
@@ -23,7 +23,7 @@ class ProactiveAssistant:
     
     Integrates all four modules and provides a unified interface.
     """
-    
+
     def __init__(self, config_manager: ConfigManager):
         """
         Initialize the proactive assistant.
@@ -34,20 +34,20 @@ class ProactiveAssistant:
         self.config = config_manager
         self.navig_dir = ensure_navig_directory()
         self.ai_context_dir = self.navig_dir / 'ai_context'
-        
+
         # Load assistant configuration
         self.assistant_config = self._load_assistant_config()
-        
+
         # Initialize modules (lazy loading)
         self._auto_detection = None
         self._proactive_display = None
         self._error_resolution = None
         self._context_generator = None
-    
+
     def _load_assistant_config(self) -> Dict[str, Any]:
         """Load assistant configuration from config.yaml."""
         global_config = self.config.global_config
-        
+
         # Default configuration
         default_config = {
             'enabled': True,
@@ -69,7 +69,7 @@ class ProactiveAssistant:
                 'mysql': '/var/log/mysql/error.log'
             }
         }
-        
+
         # Merge with user configuration if exists
         if 'proactive_assistant' in global_config:
             user_config = global_config['proactive_assistant']
@@ -79,9 +79,9 @@ class ProactiveAssistant:
                     default_config[key].update(value)
                 else:
                     default_config[key] = value
-        
+
         return default_config
-    
+
     @property
     def auto_detection(self):
         """Lazy load auto-detection module."""
@@ -89,7 +89,7 @@ class ProactiveAssistant:
             from navig.modules.auto_detection import AutoDetection
             self._auto_detection = AutoDetection(self)
         return self._auto_detection
-    
+
     @property
     def proactive_display(self):
         """Lazy load proactive display module."""
@@ -97,7 +97,7 @@ class ProactiveAssistant:
             from navig.modules.proactive_display import ProactiveDisplay
             self._proactive_display = ProactiveDisplay(self)
         return self._proactive_display
-    
+
     @property
     def error_resolution(self):
         """Lazy load error resolution module."""
@@ -105,7 +105,7 @@ class ProactiveAssistant:
             from navig.modules.error_resolution import ErrorResolution
             self._error_resolution = ErrorResolution(self)
         return self._error_resolution
-    
+
     @property
     def context_generator(self):
         """Lazy load context generator module."""
@@ -113,23 +113,23 @@ class ProactiveAssistant:
             from navig.modules.context_generator import ContextGenerator
             self._context_generator = ContextGenerator(self)
         return self._context_generator
-    
+
     def is_enabled(self) -> bool:
         """Check if assistant is enabled."""
         return self.assistant_config.get('enabled', True)
-    
+
     def get_suggestion_level(self) -> str:
         """Get current suggestion level (minimal/normal/verbose)."""
         return self.assistant_config.get('suggestion_level', 'normal')
-    
+
     def should_auto_analyze(self) -> bool:
         """Check if automatic analysis is enabled."""
         return self.assistant_config.get('auto_analysis', True)
-    
+
     def requires_confirmation(self) -> bool:
         """Check if high-risk operations require confirmation."""
         return self.assistant_config.get('confirmation_required', True)
-    
+
     def log_audit(self, action: str, details: Dict[str, Any]):
         """
         Log assistant action to audit log.
@@ -139,14 +139,14 @@ class ProactiveAssistant:
             details: Additional details about the action
         """
         audit_file = self.ai_context_dir / 'assistant_audit.log'
-        
+
         try:
             timestamp = datetime.now().isoformat()
             log_entry = f"[{timestamp}] {action}: {json.dumps(details)}\n"
-            
+
             with open(audit_file, 'a') as f:
                 f.write(log_entry)
-                
+
         except Exception as e:
             ch.dim(f"Could not write to audit log: {e}")
 

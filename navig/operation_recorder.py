@@ -10,9 +10,9 @@ Records all CLI operations with full context for:
 Storage: ~/.navig/history/operations.jsonl (JSON Lines format)
 """
 
-import json
 import hashlib
-from dataclasses import dataclass, field, asdict
+import json
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -61,45 +61,45 @@ class OperationRecord:
     """
     # Unique identifier
     id: str = ""
-    
+
     # When
     timestamp: str = ""
     duration_ms: float = 0
-    
+
     # What
     command: str = ""  # Full CLI command
     operation_type: OperationType = OperationType.OTHER
-    
+
     # Context
     host: Optional[str] = None
     app: Optional[str] = None
     working_dir: str = ""
-    
+
     # Result
     status: OperationStatus = OperationStatus.PENDING
     output: str = ""
     error: str = ""
     exit_code: int = 0
-    
+
     # For replay
     args: Dict[str, Any] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
-    
+
     # For undo
     reversible: bool = False
     undo_data: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Metadata
     tags: List[str] = field(default_factory=list)
     notes: str = ""
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         d = asdict(self)
         d['operation_type'] = self.operation_type.value
         d['status'] = self.status.value
         return d
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OperationRecord':
         """Create from dictionary."""
@@ -121,9 +121,9 @@ class OperationRecorder:
     - Fast querying with in-memory index
     - Export to various formats
     """
-    
+
     DEFAULT_MAX_ENTRIES = 10000
-    
+
     def __init__(
         self,
         history_dir: Optional[Path] = None,
@@ -140,41 +140,41 @@ class OperationRecorder:
             from navig.config import get_config_manager
             config = get_config_manager()
             history_dir = config.base_dir / "history"
-        
+
         self.history_dir = Path(history_dir)
         self.history_file = self.history_dir / "operations.jsonl"
         self.max_entries = max_entries
-        
+
         # Ensure directory exists
         self.history_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # In-memory index for fast queries
         self._index_loaded = False
         self._operation_ids: List[str] = []
         self._operations_by_id: Dict[str, int] = {}  # id -> line number
-    
+
     def _generate_id(self) -> str:
         """Generate unique operation ID."""
         timestamp = datetime.now(timezone.utc).isoformat()
         random_bits = hashlib.sha256(f"{timestamp}{id(self)}".encode()).hexdigest()[:8]
         return f"op-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{random_bits}"
-    
+
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO 8601 format."""
         return datetime.now(timezone.utc).isoformat()
-    
+
     def _load_index(self):
         """Load operation IDs into memory for fast lookup."""
         if self._index_loaded:
             return
-        
+
         self._operation_ids = []
         self._operations_by_id = {}
-        
+
         if not self.history_file.exists():
             self._index_loaded = True
             return
-        
+
         try:
             with open(self.history_file, 'r', encoding='utf-8') as f:
                 for line_num, line in enumerate(f):
@@ -190,9 +190,9 @@ class OperationRecorder:
                         continue
         except (IOError, OSError):
             pass
-        
+
         self._index_loaded = True
-    
+
     def record(self, record: OperationRecord) -> str:
         """
         Record an operation.
@@ -206,31 +206,31 @@ class OperationRecorder:
         # Generate ID if not set
         if not record.id:
             record.id = self._generate_id()
-        
+
         # Set timestamp if not set
         if not record.timestamp:
             record.timestamp = self._get_timestamp()
-        
+
         # Write to file
         try:
             with open(self.history_file, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(record.to_dict()) + '\n')
-            
+
             # Update index
             self._load_index()
             self._operation_ids.append(record.id)
             self._operations_by_id[record.id] = len(self._operation_ids) - 1
-            
+
             # Check for rotation
             if len(self._operation_ids) > self.max_entries:
                 self._rotate()
-                
+
         except (IOError, OSError) as e:
             from navig import console_helper as ch
             ch.dim(f"Could not record operation: {e}")
-        
+
         return record.id
-    
+
     def start_operation(
         self,
         command: str,
@@ -263,7 +263,7 @@ class OperationRecorder:
             status=OperationStatus.PENDING,
         )
         return record
-    
+
     def complete_operation(
         self,
         record: OperationRecord,
@@ -294,10 +294,10 @@ class OperationRecorder:
         record.error = error
         record.exit_code = exit_code
         record.duration_ms = duration_ms
-        
+
         if undo_data:
             record.undo_data = undo_data
-        
+
         # Dual-write: also log to audit.db (best-effort)
         try:
             from navig.store.audit import get_audit_store
@@ -313,59 +313,59 @@ class OperationRecorder:
             )
         except Exception:
             pass  # Never let audit failure block operation recording
-        
+
         return self.record(record)
-    
+
     def _truncate_output(self, output: str, max_bytes: int = 10240) -> str:
         """Truncate output to prevent huge history files."""
         if not output:
             return output
-        
+
         output_bytes = output.encode('utf-8', errors='replace')
         if len(output_bytes) <= max_bytes:
             return output
-        
+
         truncated = output_bytes[:max_bytes].decode('utf-8', errors='replace')
         return f"{truncated}\n... [TRUNCATED - {len(output_bytes)} bytes total]"
-    
+
     def _rotate(self):
         """Rotate history file, keeping most recent entries."""
         try:
             # Read all entries
             entries = list(self.iter_operations())
-            
+
             # Keep only recent entries
             keep_count = self.max_entries // 2  # Keep 50% on rotation
             recent_entries = entries[-keep_count:]
-            
+
             # Write back
             backup_file = self.history_file.with_suffix('.jsonl.bak')
             self.history_file.rename(backup_file)
-            
+
             with open(self.history_file, 'w', encoding='utf-8') as f:
                 for entry in recent_entries:
                     f.write(json.dumps(entry.to_dict()) + '\n')
-            
+
             # Update index
             self._index_loaded = False
             self._load_index()
-            
+
             # Remove backup
             backup_file.unlink()
-            
+
         except (IOError, OSError) as e:
             from navig import console_helper as ch
             ch.warning(f"Could not rotate history: {e}")
-    
+
     def get_operation(self, op_id: str) -> Optional[OperationRecord]:
         """Get a specific operation by ID."""
         self._load_index()
-        
+
         if op_id not in self._operations_by_id:
             return None
-        
+
         line_num = self._operations_by_id[op_id]
-        
+
         try:
             with open(self.history_file, 'r', encoding='utf-8') as f:
                 for i, line in enumerate(f):
@@ -373,9 +373,9 @@ class OperationRecorder:
                         return OperationRecord.from_dict(json.loads(line))
         except (IOError, OSError, json.JSONDecodeError):
             pass
-        
+
         return None
-    
+
     def iter_operations(
         self,
         limit: int = 100,
@@ -405,23 +405,23 @@ class OperationRecorder:
         """
         if not self.history_file.exists():
             return
-        
+
         try:
             # Read all lines
             with open(self.history_file, 'r', encoding='utf-8') as f:
                 lines = [line for line in f if line.strip()]
-            
+
             if reverse:
                 lines = reversed(lines)
-            
+
             count = 0
             skipped = 0
-            
+
             for line in lines:
                 try:
                     data = json.loads(line)
                     record = OperationRecord.from_dict(data)
-                    
+
                     # Apply filters
                     if operation_type and record.operation_type != operation_type:
                         continue
@@ -433,32 +433,32 @@ class OperationRecorder:
                         continue
                     if search and search.lower() not in record.command.lower():
                         continue
-                    
+
                     # Handle offset
                     if skipped < offset:
                         skipped += 1
                         continue
-                    
+
                     yield record
                     count += 1
-                    
+
                     if count >= limit:
                         break
-                        
+
                 except json.JSONDecodeError:
                     continue
-                    
+
         except (IOError, OSError):
             pass
-    
+
     def get_last_n(self, n: int = 10) -> List[OperationRecord]:
         """Get the last N operations."""
         return list(self.iter_operations(limit=n, reverse=True))
-    
+
     def get_by_command(self, command_pattern: str, limit: int = 10) -> List[OperationRecord]:
         """Find operations matching a command pattern."""
         return list(self.iter_operations(limit=limit, search=command_pattern))
-    
+
     def export_json(self, output_file: Path, **filters) -> int:
         """
         Export operations to JSON file.
@@ -467,12 +467,12 @@ class OperationRecorder:
             Number of operations exported
         """
         operations = list(self.iter_operations(limit=100000, **filters))
-        
+
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump([op.to_dict() for op in operations], f, indent=2)
-        
+
         return len(operations)
-    
+
     def export_csv(self, output_file: Path, **filters) -> int:
         """
         Export operations to CSV file.
@@ -481,18 +481,18 @@ class OperationRecorder:
             Number of operations exported
         """
         import csv
-        
+
         operations = list(self.iter_operations(limit=100000, **filters))
-        
+
         if not operations:
             return 0
-        
+
         fieldnames = ['timestamp', 'command', 'operation_type', 'host', 'status', 'duration_ms', 'exit_code']
-        
+
         with open(output_file, 'w', encoding='utf-8', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
-            
+
             for op in operations:
                 writer.writerow({
                     'timestamp': op.timestamp,
@@ -503,9 +503,9 @@ class OperationRecorder:
                     'duration_ms': op.duration_ms,
                     'exit_code': op.exit_code,
                 })
-        
+
         return len(operations)
-    
+
     def clear_history(self) -> int:
         """
         Clear all history.
@@ -515,15 +515,15 @@ class OperationRecorder:
         """
         self._load_index()
         count = len(self._operation_ids)
-        
+
         if self.history_file.exists():
             self.history_file.unlink()
-        
+
         self._operation_ids = []
         self._operations_by_id = {}
-        
+
         return count
-    
+
     def count(self, **filters) -> int:
         """Count operations matching filters."""
         return sum(1 for _ in self.iter_operations(limit=100000, **filters))
@@ -561,7 +561,7 @@ class RecordedOperation:
             rec.output = result
             # success is auto-detected from exceptions
     """
-    
+
     def __init__(
         self,
         command: str,
@@ -579,19 +579,19 @@ class RecordedOperation:
         self.args = args
         self.reversible = reversible
         self.tags = tags
-        
+
         # Results (can be set during execution)
         self.success: Optional[bool] = None
         self.output: str = ""
         self.error: str = ""
         self.exit_code: int = 0
         self.undo_data: Optional[Dict[str, Any]] = None
-        
+
         # Timing
         self._start_time: Optional[float] = None
         self._record: Optional[OperationRecord] = None
         self._recorder = get_operation_recorder()
-    
+
     def __enter__(self) -> 'RecordedOperation':
         import time
         self._start_time = time.time()
@@ -605,21 +605,21 @@ class RecordedOperation:
             tags=self.tags,
         )
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         import time
-        
+
         duration_ms = (time.time() - self._start_time) * 1000 if self._start_time else 0
-        
+
         # Auto-detect success from exceptions if not explicitly set
         if self.success is None:
             self.success = exc_type is None
-        
+
         # Capture exception info
         if exc_type is not None and not self.error:
             self.error = str(exc_val) if exc_val else exc_type.__name__
             self.exit_code = 1
-        
+
         # Record the operation
         self._recorder.complete_operation(
             record=self._record,
@@ -630,7 +630,7 @@ class RecordedOperation:
             duration_ms=duration_ms,
             undo_data=self.undo_data,
         )
-        
+
         # Don't suppress exceptions
         return False
 
@@ -651,7 +651,7 @@ def record_operation(
             ...
     """
     from functools import wraps
-    
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -659,7 +659,7 @@ def record_operation(
             full_command = command
             if kwargs:
                 full_command += " " + " ".join(f"--{k}={v}" for k, v in kwargs.items() if v is not None)
-            
+
             with RecordedOperation(
                 command=full_command,
                 op_type=op_type,
@@ -677,7 +677,7 @@ def record_operation(
                     rec.success = False
                     rec.error = str(e)
                     raise
-        
+
         return wrapper
     return decorator
 

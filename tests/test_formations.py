@@ -314,7 +314,7 @@ class TestDiscovery:
         from pathlib import Path
 
         # Point formation roots at the real built-in formations
-        builtin = Path(__file__).parent.parent / "formations"
+        builtin = Path(__file__).parent.parent / "store" / "formations"
         if not builtin.exists():
             pytest.skip("Built-in formations dir not found")
 
@@ -336,7 +336,7 @@ class TestDiscovery:
         )
         from pathlib import Path
 
-        builtin = Path(__file__).parent.parent / "formations"
+        builtin = Path(__file__).parent.parent / "store" / "formations"
         if not builtin.exists():
             pytest.skip("Built-in formations dir not found")
 
@@ -364,7 +364,7 @@ class TestDiscovery:
 class TestBuiltinFormations:
     """Validate the 4 built-in formations shipped with NAVIG."""
 
-    FORMATIONS_DIR = Path(__file__).parent.parent / "formations"
+    FORMATIONS_DIR = Path(__file__).parent.parent / "store" / "formations"
 
     @pytest.mark.parametrize(
         "formation_id,expected_agents",

@@ -1,11 +1,12 @@
 import json
 import os
-import re
 import platform
+import re
 import subprocess
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 
 def register(server: Any) -> None:
     """Register agent monitoring and control tools."""
@@ -195,7 +196,7 @@ def register(server: Any) -> None:
             }
         }
     })
-    
+
     server._tool_handlers.update({
         "navig_agent_status_get": _tool_agent_status_get,
         "navig_agent_goal_list": _tool_agent_goal_list,

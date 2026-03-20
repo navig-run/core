@@ -74,27 +74,29 @@ Commands:
 # ─────────────────────────────────────────────────────────────
 
 def _get_skills_dirs() -> List[Path]:
-    """Get all directories where skills may live."""
-    dirs = []
+    """Get all directories where skills may live.
 
-    # Project-level skills
+    Delegates to ``navig.skills.loader.get_skill_dirs()`` so renderer and
+    loader always search the same roots (builtin store, user store, packages).
+    Falls back to a minimal path list when the loader is unavailable.
+    """
     try:
-        from navig.config import get_config_manager
-        cm = get_config_manager()
-        if hasattr(cm, "base_dir"):
-            dirs.append(Path(cm.base_dir) / "skills")
+        from navig.skills.loader import get_skill_dirs
+        return get_skill_dirs()
     except Exception:
         pass
 
-    # Workspace-level skills
-    cwd = Path.cwd()
-    dirs.append(cwd / "skills")
-
-    # Package-level skills (navig-core/skills)
-    pkg = Path(__file__).parent.parent / "skills"
-    if pkg.exists():
-        dirs.append(pkg)
-
+    # Minimal fallback when loader is not importable
+    dirs: list[Path] = []
+    try:
+        from navig.platform.paths import builtin_store_dir
+        d = builtin_store_dir() / "skills"
+        if d.exists():
+            dirs.append(d)
+    except Exception:
+        pkg = Path(__file__).resolve().parent.parent / "store" / "skills"
+        if pkg.exists():
+            dirs.append(pkg)
     return dirs
 
 
@@ -281,7 +283,12 @@ def render_skills_prompt(
 
 
 def _load_template() -> Optional[str]:
-    """Try to load the skills template from templates/skills_prompt.txt."""
+    """Try to load the skills template from store/templates/skills_prompt.txt.
+
+    Walks up from each skill root (e.g. store/skills/ → store/) and checks
+    for a sibling templates/skills_prompt.txt. Falls back to
+    navig/scaffold-templates/skills_prompt.txt if none found.
+    """
     for d in _get_skills_dirs():
         parent = d.parent
         p = parent / "templates" / "skills_prompt.txt"

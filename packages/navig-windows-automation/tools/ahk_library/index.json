@@ -1,0 +1,11 @@
+{
+  "5f9dc576": {
+    "id": "5f9dc576",
+    "goal": "auto evolution test",
+    "script": "#Requires AutoHotkey v2.0\n#SingleInstance Force\nFileAppend \"Mock Success\", \"*\"\nExitApp 0",
+    "created_at": "2026-02-09T01:43:29.249508",
+    "success_count": 0,
+    "last_used": "2026-02-09T01:43:29.249508",
+    "tags": []
+  }
+}

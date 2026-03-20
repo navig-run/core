@@ -13,16 +13,12 @@ from __future__ import annotations
 import sys
 from typing import List, Optional
 
-from rich.panel import Panel
-from rich.text import Text
-from rich import box
-
-from navig.ui.models import Metric, CauseScore, SummaryResult
+from navig.ui.models import CauseScore, Metric
 from navig.ui.theme import (
-    SAFE_MODE, SEVERITY_STYLE, STYLE_DIM, STYLE_STATUS_OK,
-    STYLE_STATUS_WARN, STYLE_STATUS_FAIL, STYLE_COMMAND, console,
+    SAFE_MODE,
+    SEVERITY_STYLE,
+    console,
 )
-from navig.ui.icons import icon
 
 
 def render_primary_state(

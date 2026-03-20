@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 class ThoughtType(Enum):
     """Types of thoughts the brain can have."""
-    
+
     OBSERVATION = auto()   # Noting something
     ANALYSIS = auto()      # Analyzing data
     PLAN = auto()          # Planning actions
@@ -45,13 +45,13 @@ class ThoughtType(Enum):
 @dataclass
 class Thought:
     """A thought from the brain."""
-    
+
     type: ThoughtType
     content: str
     context: Dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.8
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'type': self.type.name,
@@ -65,7 +65,7 @@ class Thought:
 @dataclass
 class Plan:
     """A plan of action."""
-    
+
     goal: str
     steps: List[str]
     reasoning: str
@@ -74,7 +74,7 @@ class Plan:
     status: str = "pending"  # pending, in_progress, completed, failed
     current_step: int = 0
     created_at: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'goal': self.goal,
@@ -91,14 +91,14 @@ class Plan:
 @dataclass
 class Decision:
     """A decision made by the brain."""
-    
+
     question: str
     choice: str
     alternatives: List[str]
     reasoning: str
     confidence: float
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'question': self.question,
@@ -121,7 +121,7 @@ class Brain(Component):
     - Delegates execution to Hands
     - Learns from outcomes
     """
-    
+
     # System prompt for the AI
     DEFAULT_SYSTEM_PROMPT = """You are an intelligent operations assistant for both systems and life management.
 Your role is to help manage computer infrastructure AND personal productivity workflows.
@@ -188,7 +188,7 @@ Guidelines:
 - Use cross-platform automation when the user asks about GUI tasks
 """
 
-    
+
     def __init__(
         self,
         config: BrainConfig,
@@ -200,24 +200,24 @@ Guidelines:
         self.config = config
         self.agent_config = agent_config
         self._soul = soul  # Soul component for personality injection
-        
+
         # State
         self._thoughts: List[Thought] = []
         self._plans: List[Plan] = []
         self._decisions: List[Decision] = []
         self._context: Dict[str, Any] = {}
-        
+
         # Processing
         self._thinking = False
         self._current_plan: Optional[Plan] = None
-        
+
         # AI client
         self._ai_client = None
-    
+
     def set_soul(self, soul: 'Soul') -> None:
         """Set the Soul component for personality injection."""
         self._soul = soul
-    
+
     async def _on_start(self) -> None:
         """Initialize the brain."""
         # Subscribe to relevant events
@@ -225,21 +225,21 @@ Guidelines:
             self.nervous_system.subscribe(EventType.MESSAGE_RECEIVED, self._on_message)
             self.nervous_system.subscribe(EventType.ALERT_TRIGGERED, self._on_alert)
             self.nervous_system.subscribe(EventType.METRIC_COLLECTED, self._on_metrics)
-        
+
         # Initialize AI client if possible
         try:
             from navig.ai import get_ai_client
             self._ai_client = get_ai_client()
         except ImportError:
             pass
-    
+
     async def _on_stop(self) -> None:
         """Cleanup brain resources."""
         if self.nervous_system:
             self.nervous_system.unsubscribe(EventType.MESSAGE_RECEIVED, self._on_message)
             self.nervous_system.unsubscribe(EventType.ALERT_TRIGGERED, self._on_alert)
             self.nervous_system.unsubscribe(EventType.METRIC_COLLECTED, self._on_metrics)
-    
+
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for brain."""
         return {
@@ -250,13 +250,13 @@ Guidelines:
             'has_ai_client': self._ai_client is not None,
             'current_plan': self._current_plan.goal if self._current_plan else None,
         }
-    
+
     async def _on_message(self, event: Event) -> None:
         """Handle incoming message."""
         message_data = event.data.get('message', {})
         content = message_data.get('content', '')
         source = message_data.get('source', 'unknown')
-        
+
         # Create observation thought
         thought = Thought(
             type=ThoughtType.OBSERVATION,
@@ -264,41 +264,41 @@ Guidelines:
             context={'source': source, 'full_content': content},
         )
         self._record_thought(thought)
-        
+
         # Process the message
         await self.think(content, context={'source': source})
-    
+
     async def _on_alert(self, event: Event) -> None:
         """Handle system alert."""
         alert = event.data.get('alert', {})
-        
+
         thought = Thought(
             type=ThoughtType.WARNING,
             content=f"Alert: {alert.get('message', 'Unknown alert')}",
             context=alert,
         )
         self._record_thought(thought)
-        
+
         # Analyze the alert
         if alert.get('level') == 'critical':
             await self.analyze_and_respond(
                 f"Critical alert: {alert.get('message')}",
                 context=alert
             )
-    
+
     async def _on_metrics(self, event: Event) -> None:
         """Handle collected metrics."""
         metrics = event.data.get('metrics', {})
         self._context['last_metrics'] = metrics
-    
+
     def _record_thought(self, thought: Thought) -> None:
         """Record a thought."""
         self._thoughts.append(thought)
-        
+
         # Keep last 100 thoughts
         if len(self._thoughts) > 100:
             self._thoughts = self._thoughts[-100:]
-    
+
     async def think(
         self,
         prompt: str,
@@ -315,7 +315,7 @@ Guidelines:
         """
         self._thinking = True
         context = context or {}
-        
+
         try:
             # Record analysis thought
             thought = Thought(
@@ -324,10 +324,10 @@ Guidelines:
                 context=context,
             )
             self._record_thought(thought)
-            
+
             # Build context for AI
             ai_context = self._build_context(prompt, context)
-            
+
             # Get AI response if available
             response = None
             if self._ai_client:
@@ -335,7 +335,7 @@ Guidelines:
                     response = await self._query_ai(prompt, ai_context)
                 except Exception:
                     pass
-            
+
             if response:
                 # Emit thought event
                 await self.emit(
@@ -346,20 +346,20 @@ Guidelines:
                         'context': context,
                     }
                 )
-            
+
             return response
-            
+
         finally:
             self._thinking = False
-    
+
     async def _query_ai(self, prompt: str, context: str) -> Optional[str]:
         """Query the AI model."""
         if not self._ai_client:
             return None
-        
+
         # Get system prompt - prioritize Soul's personality-enhanced prompt
         system_prompt = self.DEFAULT_SYSTEM_PROMPT
-        
+
         if self._soul:
             # Use Soul's system prompt which includes SOUL.md if present
             soul_prompt = self._soul.get_system_prompt()
@@ -367,9 +367,9 @@ Guidelines:
                 system_prompt = f"{self.DEFAULT_SYSTEM_PROMPT}\n\n{soul_prompt}"
         elif self.agent_config and self.agent_config.personality.system_prompt:
             system_prompt = self.agent_config.personality.system_prompt
-        
+
         full_prompt = f"{context}\n\nUser: {prompt}"
-        
+
         try:
             response = await asyncio.to_thread(
                 self._ai_client.generate,
@@ -381,30 +381,30 @@ Guidelines:
             return response
         except Exception:
             return None
-    
+
     def _build_context(self, prompt: str, context: Dict[str, Any]) -> str:
         """Build context string for AI."""
         parts = []
-        
+
         # Add system metrics if available
         if 'last_metrics' in self._context:
             metrics = self._context['last_metrics']
             parts.append(f"System Status: CPU {metrics.get('cpu_percent', 0):.1f}%, "
                         f"Memory {metrics.get('memory_percent', 0):.1f}%, "
                         f"Disk {metrics.get('disk_percent', 0):.1f}%")
-        
+
         # Add recent thoughts
         if self._thoughts:
             recent = self._thoughts[-5:]
             thoughts_str = "\n".join([f"- {t.content}" for t in recent])
             parts.append(f"Recent thoughts:\n{thoughts_str}")
-        
+
         # Add any context passed in
         if context:
             parts.append(f"Context: {json.dumps(context, default=str)}")
-        
+
         return "\n\n".join(parts)
-    
+
     async def create_plan(
         self,
         goal: str,
@@ -416,11 +416,11 @@ Guidelines:
         Uses AI to break down the goal into steps.
         """
         context = context or {}
-        
+
         # Use AI to create plan if available
         steps = []
         reasoning = "Direct execution"
-        
+
         if self._ai_client:
             try:
                 prompt = f"""Create a step-by-step plan to achieve this goal:
@@ -435,7 +435,7 @@ Respond with a JSON object containing:
 - estimated_duration: optional time estimate
 """
                 response = await self._query_ai(prompt, "")
-                
+
                 if response:
                     # Try to parse JSON from response
                     try:
@@ -448,31 +448,31 @@ Respond with a JSON object containing:
                             reasoning = data.get('reasoning', reasoning)
                     except json.JSONDecodeError:
                         # If not JSON, treat as plain steps
-                        steps = [line.strip() for line in response.split('\n') 
+                        steps = [line.strip() for line in response.split('\n')
                                 if line.strip() and not line.startswith('#')]
             except Exception:
                 pass
-        
+
         if not steps:
             steps = [goal]  # Single-step plan
-        
+
         plan = Plan(
             goal=goal,
             steps=steps,
             reasoning=reasoning,
         )
-        
+
         self._plans.append(plan)
         self._current_plan = plan
-        
+
         # Emit plan event
         await self.emit(
             EventType.PLAN_CREATED,
             {'plan': plan.to_dict()}
         )
-        
+
         return plan
-    
+
     async def make_decision(
         self,
         question: str,
@@ -483,12 +483,12 @@ Respond with a JSON object containing:
         Make a decision between options.
         """
         context = context or {}
-        
+
         # Default to first option
         choice = options[0] if options else "unknown"
         reasoning = "Default selection"
         confidence = 0.5
-        
+
         if self._ai_client and len(options) > 1:
             try:
                 prompt = f"""Make a decision:
@@ -503,7 +503,7 @@ Respond with JSON:
 - confidence: 0.0-1.0
 """
                 response = await self._query_ai(prompt, "")
-                
+
                 if response:
                     try:
                         start = response.find('{')
@@ -518,7 +518,7 @@ Respond with JSON:
                         pass
             except Exception:
                 pass
-        
+
         decision = Decision(
             question=question,
             choice=choice,
@@ -526,17 +526,17 @@ Respond with JSON:
             reasoning=reasoning,
             confidence=confidence,
         )
-        
+
         self._decisions.append(decision)
-        
+
         # Emit decision event
         await self.emit(
             EventType.DECISION_MADE,
             {'decision': decision.to_dict()}
         )
-        
+
         return decision
-    
+
     async def analyze_and_respond(
         self,
         situation: str,
@@ -553,26 +553,26 @@ Respond with JSON:
             context=context or {},
         )
         self._record_thought(thought)
-        
+
         response = await self.think(
             f"Analyze this situation and recommend action: {situation}",
             context=context
         )
-        
+
         return response
-    
+
     def get_thoughts(self, limit: int = 10) -> List[Thought]:
         """Get recent thoughts."""
         return self._thoughts[-limit:]
-    
+
     def get_plans(self) -> List[Plan]:
         """Get all plans."""
         return self._plans
-    
+
     def get_decisions(self, limit: int = 10) -> List[Decision]:
         """Get recent decisions."""
         return self._decisions[-limit:]
-    
+
     def get_current_plan(self) -> Optional[Plan]:
         """Get the current active plan."""
         return self._current_plan

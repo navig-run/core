@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 import os
 import signal
 from pathlib import Path
 
 from navig.config import get_config_manager
 from navig.daemon.entry import NAVIG_HOME
-from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
+from navig.gateway.channels.matrix import MatrixChannelAdapter
 from navig.gateway.channels.telegram import create_telegram_channel
 from navig.gateway.server import NavigGateway
-from navig.gateway.channels.matrix import MatrixChannelAdapter
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 
 def _load_env() -> None:
@@ -81,7 +81,7 @@ def _mcp_bridge_config() -> dict:
         "mcp_url": (
             os.getenv("NAVIG_BRIDGE_MCP_URL")
             or bridge_cfg.get("mcp_url")
-            or "ws://127.0.0.1:42070"
+            or f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
         ),
         "token": (
             os.getenv("NAVIG_BRIDGE_LLM_TOKEN")
@@ -100,6 +100,7 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
     gateway's own while-loop, since our _run() manages the event loop.
     """
     import logging
+
     from aiohttp import web
 
     logger = logging.getLogger(__name__)
@@ -201,7 +202,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     _load_env()
     config = _telegram_config()
     if not config.get("bot_token"):
-        raise RuntimeError("TELEGRAM_BOT_TOKEN not configured")
+        logger.info("TELEGRAM_BOT_TOKEN not configured; Telegram bot will be disabled")
 
     deck_cfg = _deck_config()
     matrix_cfg = _matrix_config()
@@ -210,11 +211,13 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     gateway = NavigGateway()
     if port is not None:
         gateway.config.port = int(port)
-    channel = create_telegram_channel(gateway, config)
-    if channel is None:
-        raise RuntimeError("Failed to initialize Telegram channel")
-
-    gateway.channels["telegram"] = channel
+    channel = None
+    if config.get("bot_token"):
+        channel = create_telegram_channel(gateway, config)
+        if channel is None:
+            logger.error("Failed to initialize Telegram channel")
+        else:
+            gateway.channels["telegram"] = channel
 
     # ── Matrix channel (optional) ──
     matrix_adapter = None
@@ -250,11 +253,12 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
         await _start_gateway_http(gateway, config, deck_cfg)
 
     # Start Telegram channel
-    await channel.start()
+    if channel:
+        await channel.start()
 
     logger.info(
         "Telegram bot + Deck running as single unit (bot=%s, deck=%s, port=%d, matrix=%s, mcp=%s)",
-        "active",
+        "active" if channel else "disabled",
         "enabled" if deck_cfg.get("enabled") else "disabled",
         gateway.config.port,
         "active" if matrix_adapter else "off",
@@ -291,7 +295,8 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
                 pass
 
         # Tightly coupled shutdown: stop bot → stop matrix → stop deck/HTTP → done
-        await channel.stop()
+        if channel:
+            await channel.stop()
         if matrix_adapter:
             try:
                 await matrix_adapter.stop()

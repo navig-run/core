@@ -110,8 +110,8 @@ class SiteCheckTool(BaseTool):
 
 async def _get_cert_expiry(hostname: str) -> Optional[str]:
     """Return TLS cert expiry date string, or None on failure."""
-    import datetime
     import asyncio
+    import datetime
 
     def _sync_check() -> Optional[str]:
         ctx = ssl.create_default_context()

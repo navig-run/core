@@ -5,10 +5,11 @@ Cross-platform directory management and helper functions for the AI assistant sy
 """
 
 import functools
+import json
 import os
 import sys
 from pathlib import Path
-import json
+
 from navig import console_helper as ch
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,9 +89,9 @@ def ensure_navig_directory() -> Path:
 
 def _initialize_json_files(navig_dir: Path):
     """Initialize JSON storage files with proper schemas."""
-    
+
     ai_context_dir = navig_dir / 'ai_context'
-    
+
     # Define initial schemas for each JSON file
     json_files = {
         'command_history.json': [],
@@ -103,10 +104,10 @@ def _initialize_json_files(navig_dir: Path):
         'config_rules.json': _get_default_config_rules(),
         'assistant_audit.log': ''  # Text file, not JSON
     }
-    
+
     for filename, default_content in json_files.items():
         file_path = ai_context_dir / filename
-        
+
         if not file_path.exists():
             try:
                 if filename.endswith('.log'):
@@ -116,7 +117,7 @@ def _initialize_json_files(navig_dir: Path):
                     # JSON file
                     with open(file_path, 'w') as f:
                         json.dump(default_content, f, indent=2)
-                
+
                 if not _IS_WINDOWS:
                     os.chmod(file_path, 0o644)
 

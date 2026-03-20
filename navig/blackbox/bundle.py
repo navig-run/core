@@ -8,7 +8,6 @@ A .navbox file is a standard ZIP archive containing:
 """
 from __future__ import annotations
 
-import io
 import json
 import uuid
 import zipfile

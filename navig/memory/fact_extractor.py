@@ -18,9 +18,9 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Callable, List, Optional
 
-from navig.memory.key_facts import KeyFact, KeyFactStore, VALID_CATEGORIES
+from navig.memory.key_facts import VALID_CATEGORIES, KeyFact, KeyFactStore
 
 logger = logging.getLogger("navig.memory.fact_extractor")
 

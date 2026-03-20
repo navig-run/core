@@ -1,28 +1,30 @@
 """File Operation Commands"""
-from navig import console_helper as ch
-from pathlib import Path
-from typing import Dict, Any, Optional
 import json
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from navig import console_helper as ch
+
 
 def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any]):
     """Upload file/directory."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     if not local.exists():
         ch.error(f"Local file not found: {local}")
         return
-    
+
     json_enabled = options.get('json', False)
-    
+
     # Smart path detection
     if remote is None:
         server_config = config_manager.load_server_config(server_name)
@@ -30,7 +32,7 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
         remote = f"{web_root}/{local.name}"
         if not json_enabled:
             ch.dim(f"Auto-detected remote path: {remote}")
-    
+
     # Check if upload requires confirmation (uploads are state-changing)
     if not ch.confirm_operation(
         operation_name=f"Upload: {local.name} → {remote}",
@@ -42,19 +44,19 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
     ):
         ch.warning("Cancelled.")
         return
-    
+
     if not json_enabled:
         ch.info(f"Uploading: {local} -> {remote}")
-    
+
     server_config = config_manager.load_server_config(server_name)
-    
+
     # Show progress for uploads
     if json_enabled:
         success = remote_ops.upload_file(local, remote, server_config)
     else:
         with ch.create_spinner("Transferring file..."):
             success = remote_ops.upload_file(local, remote, server_config)
-    
+
     if success:
         if json_enabled:
             ch.raw_print(json.dumps({"success": True, "local": str(local), "remote": remote, "size_bytes": local.stat().st_size}))
@@ -79,27 +81,27 @@ def download_file_cmd(remote: str, local: Optional[Path], options: Dict[str, Any
     """Download file/directory."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     if local is None:
         local = Path.cwd() / Path(remote).name
         ch.dim(f"Auto-detected local path: {local}")
-    
+
     ch.info(f"Downloading: {remote} -> {local}")
-    
+
     server_config = config_manager.load_server_config(server_name)
-    
+
     # Show progress for downloads
     with ch.create_spinner("Transferring file..."):
         success = remote_ops.download_file(remote, local, server_config)
-    
+
     if success:
         ch.success(f"✓ Download complete: {local}")
     else:
@@ -117,18 +119,18 @@ def list_remote_directory(remote_path: str, options: Dict[str, Any]):
     """List remote directory contents."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     server_config = config_manager.load_server_config(server_name)
     result = remote_ops.execute_command(f"ls -lah {remote_path}", server_config)
-    
+
     if result.returncode == 0:
         ch.raw_print(result.stdout)
     else:
@@ -137,12 +139,12 @@ def list_remote_directory(remote_path: str, options: Dict[str, Any]):
 
 
 
-import typer
-from navig.cli import show_subcommand_help, deprecation_warning
-from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
-from navig import console_helper as ch
+from typing import Any, Dict, Optional
 
+import typer
+
+from navig.cli import show_subcommand_help
 
 file_app = typer.Typer(
     help="File operations (upload, download, list, edit, remove)",
@@ -236,7 +238,7 @@ def file_edit(
     """Edit remote file (write content, change permissions/owner)."""
     if content or stdin or from_file:
         from navig.commands.files_advanced import write_file_cmd
-        write_file_cmd(remote, content, ctx.obj, stdin=stdin, local_file=from_file, 
+        write_file_cmd(remote, content, ctx.obj, stdin=stdin, local_file=from_file,
                        append=append, mode=mode, owner=owner)
     elif mode:
         from navig.commands.files_advanced import chmod_cmd

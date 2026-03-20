@@ -3,14 +3,16 @@ System Maintenance Commands for Navig
 Handles package updates, cache cleaning, log rotation, and system cleanup
 """
 
-from navig.config import get_config_manager
-from navig.remote import RemoteOperations
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
 import json
 import time
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+
+from navig.config import get_config_manager
+from navig.remote import RemoteOperations
 
 console = Console()
 
@@ -28,33 +30,33 @@ def update_packages(options: dict) -> None:
     """
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     # Get active server configuration
     active_server = config_manager.get_active_server()
     if not active_server:
         console.print("[red]✗ No active server configured[/red]")
         return
-    
+
     server_config = config_manager.load_server_config(active_server)
-    
+
     dry_run = options.get('dry_run', False)
     json_output = options.get('json', False)
-    
+
     result_data = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "action": "update-packages",
         "dry_run": dry_run,
         "tasks": []
     }
-    
+
     if not json_output:
         console.print("\n[bold cyan]═══ Package Update & Upgrade ═══[/bold cyan]\n")
-    
+
     try:
         # Update package lists
         if not json_output:
             console.print("📦 Updating package lists...")
-        
+
         update_cmd = "sudo apt-get update"
         if dry_run:
             if not json_output:
@@ -68,7 +70,7 @@ def update_packages(options: dict) -> None:
                 "success": success,
                 "output": result.stdout
             })
-            
+
             if success:
                 if not json_output:
                     console.print("[green]✓ Package lists updated[/green]")
@@ -77,25 +79,25 @@ def update_packages(options: dict) -> None:
                     console.print("[red]✗ Failed to update package lists[/red]")
                     console.print(f"[red]{result.stderr}[/red]")
                 return
-        
+
         # Check for upgradable packages
         if not json_output:
             console.print("\n🔍 Checking for upgradable packages...")
-        
+
         check_cmd = "apt list --upgradable 2>/dev/null | grep -v 'Listing' | wc -l"
         if not dry_run:
             result = remote_ops.execute_command(check_cmd, server_config)
             upgradable_count = int(result.stdout.strip())
-            
+
             if upgradable_count > 0:
                 if not json_output:
                     console.print(f"[yellow]Found {upgradable_count} upgradable packages[/yellow]")
-                
+
                 # Get list of upgradable packages
                 list_cmd = "apt list --upgradable 2>/dev/null | grep -v 'Listing'"
                 list_result = remote_ops.execute_command(list_cmd, server_config)
                 upgradable_packages = list_result.stdout.strip().split("\n")
-                
+
                 # Show first 10 packages
                 if not json_output:
                     console.print("\n[cyan]Upgradable packages (first 10):[/cyan]")
@@ -104,13 +106,13 @@ def update_packages(options: dict) -> None:
                             console.print(f"  • {pkg.split('/')[0]}")
                     if len(upgradable_packages) > 10:
                         console.print(f"  ... and {len(upgradable_packages) - 10} more")
-                
+
                 # Perform upgrade
                 if not json_output:
                     console.print("\n⬆️  Upgrading packages...")
-                
+
                 upgrade_cmd = "DEBIAN_FRONTEND=noninteractive sudo apt-get upgrade -y"
-                
+
                 with Progress(
                     SpinnerColumn(),
                     TextColumn("[progress.description]{task.description}"),
@@ -119,14 +121,14 @@ def update_packages(options: dict) -> None:
                     task = progress.add_task("Upgrading packages...", total=None)
                     upgrade_result = remote_ops.execute_command(upgrade_cmd, server_config)
                     progress.update(task, completed=True)
-                
+
                 success = upgrade_result.returncode == 0
                 result_data["tasks"].append({
                     "task": "apt-upgrade",
                     "success": success,
                     "packages_upgraded": upgradable_count
                 })
-                
+
                 if success:
                     if not json_output:
                         console.print(f"[green]✓ {upgradable_count} packages upgraded successfully[/green]")
@@ -146,10 +148,10 @@ def update_packages(options: dict) -> None:
             if not json_output:
                 console.print("[yellow][DRY RUN] Would check for upgradable packages and upgrade[/yellow]")
             result_data["tasks"].append({"task": "apt-upgrade", "dry_run": True})
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
-        
+
     except Exception as e:
         if json_output:
             result_data["error"] = str(e)
@@ -170,33 +172,33 @@ def clean_packages(options: dict) -> None:
     """
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     # Get active server configuration
     active_server = config_manager.get_active_server()
     if not active_server:
         console.print("[red]✗ No active server configured[/red]")
         return
-    
+
     server_config = config_manager.load_server_config(active_server)
-    
+
     dry_run = options.get('dry_run', False)
     json_output = options.get('json', False)
-    
+
     result_data = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "action": "clean-packages",
         "dry_run": dry_run,
         "tasks": []
     }
-    
+
     if not json_output:
         console.print("\n[bold cyan]═══ Package Cache Cleanup ═══[/bold cyan]\n")
-    
+
     try:
         # Clean package cache
         if not json_output:
             console.print("🧹 Cleaning package cache...")
-        
+
         clean_cmd = "sudo apt-get clean"
         if dry_run:
             if not json_output:
@@ -206,18 +208,18 @@ def clean_packages(options: dict) -> None:
             result = remote_ops.execute_command(clean_cmd, server_config)
             success = result.returncode == 0
             result_data["tasks"].append({"task": "apt-clean", "success": success})
-            
+
             if success:
                 if not json_output:
                     console.print("[green]✓ Package cache cleaned[/green]")
             else:
                 if not json_output:
                     console.print("[red]✗ Failed to clean package cache[/red]")
-        
+
         # Remove orphaned packages
         if not json_output:
             console.print("\n🗑️  Removing unused packages...")
-        
+
         autoremove_cmd = "sudo apt-get autoremove -y"
         if dry_run:
             if not json_output:
@@ -227,17 +229,17 @@ def clean_packages(options: dict) -> None:
             result = remote_ops.execute_command(autoremove_cmd, server_config)
             success = result.returncode == 0
             result_data["tasks"].append({"task": "apt-autoremove", "success": success})
-            
+
             if success:
                 if not json_output:
                     console.print("[green]✓ Unused packages removed[/green]")
             else:
                 if not json_output:
                     console.print("[red]✗ Failed to remove unused packages[/red]")
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
-        
+
     except Exception as e:
         if json_output:
             result_data["error"] = str(e)
@@ -258,32 +260,32 @@ def rotate_logs(options: dict) -> None:
     """
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     # Get active server configuration
     active_server = config_manager.get_active_server()
     if not active_server:
         console.print("[red]✗ No active server configured[/red]")
         return
-    
+
     server_config = config_manager.load_server_config(active_server)
-    
+
     dry_run = options.get('dry_run', False)
     json_output = options.get('json', False)
-    
+
     result_data = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "action": "rotate-logs",
         "dry_run": dry_run,
         "tasks": []
     }
-    
+
     if not json_output:
         console.print("\n[bold cyan]═══ Log Rotation ═══[/bold cyan]\n")
-    
+
     try:
         if not json_output:
             console.print("📋 Rotating log files...")
-        
+
         rotate_cmd = "sudo logrotate -f /etc/logrotate.conf"
         if dry_run:
             if not json_output:
@@ -297,7 +299,7 @@ def rotate_logs(options: dict) -> None:
                 "success": success,
                 "output": result.stdout
             })
-            
+
             if success:
                 if not json_output:
                     console.print("[green]✓ Logs rotated successfully[/green]")
@@ -305,10 +307,10 @@ def rotate_logs(options: dict) -> None:
                 if not json_output:
                     console.print("[red]✗ Log rotation failed[/red]")
                     console.print(f"[red]{result.stderr}[/red]")
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
-        
+
     except Exception as e:
         if json_output:
             result_data["error"] = str(e)
@@ -329,33 +331,33 @@ def cleanup_temp(options: dict) -> None:
     """
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     # Get active server configuration
     active_server = config_manager.get_active_server()
     if not active_server:
         console.print("[red]✗ No active server configured[/red]")
         return
-    
+
     server_config = config_manager.load_server_config(active_server)
-    
+
     dry_run = options.get('dry_run', False)
     json_output = options.get('json', False)
-    
+
     result_data = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "action": "cleanup-temp",
         "dry_run": dry_run,
         "tasks": []
     }
-    
+
     if not json_output:
         console.print("\n[bold cyan]═══ Temporary Files Cleanup ═══[/bold cyan]\n")
-    
+
     try:
         # Clean /tmp (files older than 7 days)
         if not json_output:
             console.print("🗑️  Cleaning /tmp (files older than 7 days)...")
-        
+
         tmp_cmd = "find /tmp -type f -atime +7 -delete 2>/dev/null || true"
         if dry_run:
             if not json_output:
@@ -365,14 +367,14 @@ def cleanup_temp(options: dict) -> None:
             result = remote_ops.execute_command(tmp_cmd, server_config)
             # Always consider successful (|| true handles errors)
             result_data["tasks"].append({"task": "cleanup-tmp", "success": True})
-            
+
             if not json_output:
                 console.print("[green]✓ Temporary files cleaned[/green]")
-        
+
         # Clean apt cache
         if not json_output:
             console.print("\n🧹 Cleaning apt cache...")
-        
+
         apt_cmd = "sudo apt-get clean"
         if dry_run:
             if not json_output:
@@ -382,14 +384,14 @@ def cleanup_temp(options: dict) -> None:
             result = remote_ops.execute_command(apt_cmd, server_config)
             success = result.returncode == 0
             result_data["tasks"].append({"task": "apt-clean", "success": success})
-            
+
             if success:
                 if not json_output:
                     console.print("[green]✓ Apt cache cleaned[/green]")
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
-        
+
     except Exception as e:
         if json_output:
             result_data["error"] = str(e)
@@ -410,39 +412,39 @@ def check_filesystem(options: dict) -> None:
     """
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     # Get active server configuration
     active_server = config_manager.get_active_server()
     if not active_server:
         console.print("[red]✗ No active server configured[/red]")
         return
-    
+
     server_config = config_manager.load_server_config(active_server)
-    
+
     json_output = options.get('json', False)
-    
+
     result_data = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "action": "check-filesystem",
         "disk_usage": [],
         "large_files": []
     }
-    
+
     if not json_output:
         console.print("\n[bold cyan]═══ Filesystem Check ═══[/bold cyan]\n")
-    
+
     try:
         # Check disk usage
         if not json_output:
             console.print("💾 Checking disk usage...\n")
-        
+
         df_cmd = "df -h"
         result = remote_ops.execute_command(df_cmd, server_config)
-        
+
         if result.returncode == 0:
             disk_output = result.stdout
             lines = disk_output.strip().split("\n")
-            
+
             if not json_output:
                 # Create Rich table
                 table = Table(show_header=True, header_style="bold cyan")
@@ -451,13 +453,13 @@ def check_filesystem(options: dict) -> None:
                     headers = lines[0].split()
                     for header in headers:
                         table.add_column(header)
-                    
+
                     # Parse data rows
                     for line in lines[1:]:
                         if line.strip():
                             parts = line.split()
                             table.add_row(*parts)
-                            
+
                             # Add to result data
                             if len(parts) >= 6:
                                 result_data["disk_usage"].append({
@@ -468,23 +470,23 @@ def check_filesystem(options: dict) -> None:
                                     "use_percent": parts[4],
                                     "mounted_on": parts[5]
                                 })
-                
+
                 console.print(table)
                 console.print()
-        
+
         # Find large files
         if not json_output:
             console.print("🔍 Finding large files (>100MB) in /var/log and /tmp...")
-        
+
         large_files_cmd = "find /var/log /tmp -type f -size +100M -exec ls -lh {} \\; 2>/dev/null || true"
         result = remote_ops.execute_command(large_files_cmd, server_config)
-        
+
         large_files_output = result.stdout.strip()
-        
+
         if large_files_output:
             lines = large_files_output.split("\n")
             result_data["large_files"] = lines
-            
+
             if not json_output:
                 console.print(f"\n[yellow]⚠️  Found {len(lines)} large files:[/yellow]\n")
                 for line in lines[:10]:  # Show first 10
@@ -495,12 +497,12 @@ def check_filesystem(options: dict) -> None:
         else:
             if not json_output:
                 console.print("[green]✓ No large files found[/green]")
-        
+
         result_data["success"] = True
-        
+
         if json_output:
             console.print(json.dumps(result_data, indent=2))
-        
+
     except Exception as e:
         if json_output:
             result_data["error"] = str(e)
@@ -523,7 +525,7 @@ def system_maintenance(options: dict) -> None:
     - Generates summary report
     """
     json_output = options.get('json', False)
-    
+
     if not json_output:
         console.print("\n[bold cyan]═══ Comprehensive System Maintenance ═══[/bold cyan]\n")
         console.print("[yellow]This will perform all maintenance tasks:[/yellow]")
@@ -533,41 +535,41 @@ def system_maintenance(options: dict) -> None:
         console.print("  4. Check filesystem")
         console.print("  5. Clean temporary files")
         console.print()
-    
+
     start_time = time.time()
-    
+
     try:
         # Task 1: Update packages
         if not json_output:
             console.rule("[bold]1. Package Updates[/bold]")
         update_packages(options)
-        
+
         # Task 2: Clean packages
         if not json_output:
             console.rule("[bold]2. Package Cleanup[/bold]")
         clean_packages(options)
-        
+
         # Task 3: Rotate logs
         if not json_output:
             console.rule("[bold]3. Log Rotation[/bold]")
         rotate_logs(options)
-        
+
         # Task 4: Check filesystem
         if not json_output:
             console.rule("[bold]4. Filesystem Check[/bold]")
         check_filesystem(options)
-        
+
         # Task 5: Clean temporary files
         if not json_output:
             console.rule("[bold]5. Temporary Files Cleanup[/bold]")
         cleanup_temp(options)
-        
+
         elapsed_time = time.time() - start_time
-        
+
         if not json_output:
             console.print("\n[bold green]═══ System Maintenance Complete ═══[/bold green]")
             console.print(f"Time elapsed: {elapsed_time:.1f} seconds")
-        
+
     except Exception as e:
         if not json_output:
             console.print(f"\n[red]✗ Error during maintenance: {str(e)}[/red]")
@@ -588,19 +590,19 @@ def system_info(options: dict) -> None:
     """
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
-    
+
     # Get active server configuration
     active_server = config_manager.get_active_server()
     if not active_server:
         console.print("[red]✗ No active server configured[/red]")
         return
-    
+
     server_config = config_manager.load_server_config(active_server)
     json_output = options.get('json', False)
-    
+
     if not json_output:
         console.print(f"\n[bold cyan]═══ System Information: {active_server} ═══[/bold cyan]\n")
-    
+
     try:
         # Gather system info via SSH
         info_commands = {
@@ -617,12 +619,12 @@ def system_info(options: dict) -> None:
             "memory_free": "free -h 2>/dev/null | awk '/^Mem:/ {print $4}'",
             "disk_root": "df -h / 2>/dev/null | awk 'NR==2 {print $3\"/\"$2\" (\"$5\" used)\"}'",
         }
-        
+
         info_data = {}
         for key, cmd in info_commands.items():
             result = remote_ops.run_command(server_config, cmd)
             info_data[key] = result.strip() if result else "N/A"
-        
+
         if json_output:
             console.print(json.dumps(info_data, indent=2))
         else:
@@ -630,7 +632,7 @@ def system_info(options: dict) -> None:
             table = Table(show_header=False, box=None, padding=(0, 2))
             table.add_column("Property", style="cyan")
             table.add_column("Value", style="white")
-            
+
             table.add_row("Hostname", info_data.get("hostname", "N/A"))
             table.add_row("OS", info_data.get("os", "N/A"))
             table.add_row("Kernel", info_data.get("kernel", "N/A"))
@@ -646,9 +648,9 @@ def system_info(options: dict) -> None:
             table.add_row("Memory Free", info_data.get("memory_free", "N/A"))
             table.add_row("", "")
             table.add_row("Disk (root)", info_data.get("disk_root", "N/A"))
-            
+
             console.print(Panel(table, title=f"[bold]{active_server}[/bold]", border_style="cyan"))
-            
+
     except Exception as e:
         if not json_output:
             console.print(f"[red]✗ Error gathering system info: {str(e)}[/red]")

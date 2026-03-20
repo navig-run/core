@@ -87,7 +87,7 @@ if PYDANTIC_AVAILABLE:
         confirmation_level: ConfirmationLevel = ConfirmationLevel.STANDARD
         auto_confirm_safe: bool = False
         timeout_seconds: int = Field(default=60, ge=1, le=3600)
-    
+
     class AIModelSlotConfig(BaseModel):
         """Per-slot (small/big/coder_big) model configuration."""
         provider: str = ""
@@ -145,7 +145,7 @@ if PYDANTIC_AVAILABLE:
         max_tokens: int = Field(default=4096, ge=1, le=128000)
         api_key: Optional[str] = None  # Should use ${ENV_VAR} syntax
         routing: AIRoutingConfig = Field(default_factory=AIRoutingConfig)
-        
+
         @field_validator('api_key')
         @classmethod
         def check_api_key_security(cls, v: Optional[str]) -> Optional[str]:
@@ -157,13 +157,13 @@ if PYDANTIC_AVAILABLE:
                     "Consider using environment variables: ${OPENROUTER_API_KEY}"
                 )
             return v
-    
+
     class TunnelConfig(BaseModel):
         """SSH tunnel configuration."""
         auto_cleanup: bool = True
         port_range: tuple[int, int] = Field(default=(3307, 3399))
         default_timeout: int = Field(default=300, ge=30, le=86400)
-        
+
         @field_validator('port_range')
         @classmethod
         def validate_port_range(cls, v):
@@ -176,7 +176,7 @@ if PYDANTIC_AVAILABLE:
                     )
                 return (start, end)
             raise ValueError("Port range must be a tuple of (start, end)")
-    
+
     class LoggingConfig(BaseModel):
         """Logging configuration."""
         level: LogLevel = LogLevel.INFO
@@ -185,7 +185,7 @@ if PYDANTIC_AVAILABLE:
         redact_sensitive: bool = True
         max_file_size_mb: int = Field(default=10, ge=1, le=100)
         backup_count: int = Field(default=5, ge=1, le=20)
-    
+
     class MemoryConfig(BaseModel):
         """Memory system configuration."""
         enabled: bool = True
@@ -202,7 +202,7 @@ if PYDANTIC_AVAILABLE:
                 "Example: {'infra.metrics.node_status': {'store': true, 'retention': '24h'}}"
             ),
         )
-    
+
     class GatewayConfig(BaseModel):
         """Gateway configuration."""
         enabled: bool = False
@@ -268,7 +268,7 @@ if PYDANTIC_AVAILABLE:
     # =============================================================================
     # Main Config Models
     # =============================================================================
-    
+
     class GlobalConfig(BaseModel):
         """
         Global NAVIG configuration schema.
@@ -283,48 +283,48 @@ if PYDANTIC_AVAILABLE:
             default=None,
             description="OpenRouter API key (use ${OPENROUTER_API_KEY})"
         )
-        
+
         # Default server
         default_server: Optional[str] = Field(
             default=None,
             description="Default server to use when none specified"
         )
-        
+
         # Logging
         log_level: LogLevel = LogLevel.INFO
         logging: LoggingConfig = Field(default_factory=LoggingConfig)
-        
+
         # Execution
         execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
-        
+
         # AI Configuration
         ai: AIConfig = Field(default_factory=AIConfig)
         ai_model_preference: Optional[List[str]] = None  # Legacy field
-        
+
         # Tunnel
         tunnel_auto_cleanup: bool = True
         tunnel_port_range: tuple[int, int] = (3307, 3399)
         tunnel: TunnelConfig = Field(default_factory=TunnelConfig)
-        
+
         # Memory
         memory: MemoryConfig = Field(default_factory=MemoryConfig)
-        
+
         # Gateway
         gateway: GatewayConfig = Field(default_factory=GatewayConfig)
-        
+
         # Telegram
         telegram: TelegramConfig = Field(default_factory=TelegramConfig)
-        
+
         # Deck (Telegram Mini App — lifecycle tied to Telegram bot)
         deck: DeckConfig = Field(default_factory=DeckConfig)
-        
+
         # Tools (Tool Router & Registry)
         tools: ToolsConfig = Field(default_factory=ToolsConfig)
-        
+
         # Advanced
         debug_mode: bool = False
         allow_insecure: bool = False
-        
+
         @model_validator(mode='after')
         def handle_legacy_fields(self):
             """Migrate legacy field names."""
@@ -332,7 +332,7 @@ if PYDANTIC_AVAILABLE:
             if self.ai_model_preference and not self.ai.model_preference:
                 self.ai.model_preference = self.ai_model_preference
             return self
-        
+
         @field_validator('openrouter_api_key')
         @classmethod
         def check_openrouter_key(cls, v):
@@ -344,7 +344,7 @@ if PYDANTIC_AVAILABLE:
                         "OpenRouter API keys typically start with 'sk-or-'"
                     )
             return v
-    
+
     class HostConfig(BaseModel):
         """
         Host/Server configuration schema.
@@ -355,7 +355,7 @@ if PYDANTIC_AVAILABLE:
         hostname: str = Field(..., description="SSH hostname or IP")
         port: int = Field(default=22, ge=1, le=65535)
         username: str = Field(..., description="SSH username")
-        
+
         # Authentication
         auth_method: AuthMethod = AuthMethod.KEY
         ssh_key: Optional[str] = Field(
@@ -366,23 +366,23 @@ if PYDANTIC_AVAILABLE:
             default=None,
             description="SSH password (use ${ENV_VAR} or key auth)"
         )
-        
+
         # Display
         display_name: Optional[str] = None
         description: Optional[str] = None
         tags: List[str] = Field(default_factory=list)
-        
+
         # Connection settings
         connect_timeout: int = Field(default=30, ge=5, le=300)
         keepalive_interval: int = Field(default=30, ge=0, le=300)
-        
+
         # Features
         allow_agent_forwarding: bool = False
         default_working_dir: Optional[str] = None
-        
+
         # OS/Platform
         os_type: str = "linux"
-        
+
         @field_validator('ssh_key')
         @classmethod
         def validate_ssh_key(cls, v):
@@ -393,7 +393,7 @@ if PYDANTIC_AVAILABLE:
                     import logging
                     logging.getLogger('navig.config').debug(f"SSH key not found: {expanded}")
             return v
-        
+
         @field_validator('password')
         @classmethod
         def warn_hardcoded_password(cls, v):
@@ -405,7 +405,7 @@ if PYDANTIC_AVAILABLE:
                     "Consider using SSH keys or ${SSH_PASSWORD} syntax."
                 )
             return v
-        
+
         @model_validator(mode='after')
         def validate_auth(self):
             """Ensure at least one auth method is configured."""
@@ -428,18 +428,18 @@ if PYDANTIC_AVAILABLE:
 
 class ConfigValidationError(Exception):
     """Configuration validation error with detailed context."""
-    
+
     def __init__(self, errors: List[Dict[str, Any]], config_type: str = "config"):
         self.errors = errors
         self.config_type = config_type
-        
+
         # Build user-friendly message
         messages = []
         for error in errors:
             loc = ".".join(str(x) for x in error.get("loc", []))
             msg = error.get("msg", "Unknown error")
             messages.append(f"  - {loc}: {msg}")
-        
+
         super().__init__(
             f"Invalid {config_type}:\n" + "\n".join(messages)
         )
@@ -470,12 +470,12 @@ def validate_global_config(
             "Install with: pip install pydantic"
         )
         return None
-    
+
     try:
         return GlobalConfig.model_validate(raw)
     except PydanticValidationError as e:
         if strict:
-            raise ConfigValidationError(e.errors(), "global config")
+            raise ConfigValidationError(e.errors(), "global config") from e
         return None
 
 
@@ -500,12 +500,12 @@ def validate_host_config(
     """
     if not PYDANTIC_AVAILABLE:
         return None
-    
+
     try:
         return HostConfig.model_validate(raw)
     except PydanticValidationError as e:
         if strict:
-            raise ConfigValidationError(e.errors(), f"host config ({host_name})")
+            raise ConfigValidationError(e.errors(), f"host config ({host_name})") from e
         return None
 
 
@@ -523,7 +523,7 @@ def get_config_schema(config_type: str = "global") -> Optional[Dict[str, Any]]:
     """
     if not PYDANTIC_AVAILABLE:
         return None
-    
+
     if config_type == "global":
         return GlobalConfig.model_json_schema()
     elif config_type == "host":
@@ -549,10 +549,10 @@ def validate_config_dict(
         Tuple of (is_valid, list of issue strings)
     """
     issues = []
-    
+
     if not PYDANTIC_AVAILABLE:
         return True, ["Pydantic not installed - validation skipped"]
-    
+
     try:
         GlobalConfig.model_validate(config)
         return True, []

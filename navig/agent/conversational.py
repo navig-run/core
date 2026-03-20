@@ -11,11 +11,11 @@ This module provides a conversational AI interface that:
 import json
 import logging
 import re
-from datetime import datetime
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
+from datetime import datetime
 from enum import Enum, auto
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class Task:
     created_at: datetime = field(default_factory=datetime.now)
     completed_at: Optional[datetime] = None
     final_result: Optional[str] = None
-    
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -352,12 +352,12 @@ For conversation, respond naturally without JSON.
         parts.append(self._CHAT_RULES)
 
         return "\n\n".join(parts)
-        
+
     async def _notify(self, message: str):
         """Send status update to user."""
         if self.on_status_update:
             await self.on_status_update(message)
-            
+
     async def chat(self, message: str, tier_override: str = "") -> str:
         """
         Process a natural language message and respond.
@@ -381,21 +381,21 @@ For conversation, respond naturally without JSON.
 
         # Add to conversation history
         self.conversation_history.append({"role": "user", "content": message})
-        
+
         # Keep history manageable
         if len(self.conversation_history) > 20:
             self.conversation_history = self.conversation_history[-20:]
-        
+
         # Get AI response
         response = await self._get_ai_response(message)
-        
+
         # Post-process: strip any CJK leakage for Russian users
         if lang == "ru":
             response = self._strip_cjk(response)
 
         # Check if response contains a plan
         plan_data = self._extract_plan(response)
-        
+
         if plan_data:
             # Start autonomous execution
             result = await self._execute_plan(plan_data)
@@ -415,7 +415,7 @@ For conversation, respond naturally without JSON.
         """Remove CJK characters from text, preserving everything else."""
         import re as _re
         return _re.sub(r'[\u4E00-\u9FFF\u3400-\u4DBF\u3000-\u303F]+', '', text).strip()
-            
+
     async def _get_ai_response(self, message: str) -> str:
         """Query AI for response via the unified router (all entrypoints)."""
         if not self.ai_client:
@@ -437,7 +437,7 @@ For conversation, respond naturally without JSON.
 
             # ── Unified Router (primary — all entrypoints) ──
             try:
-                from navig.routing.router import get_router, RouteRequest
+                from navig.routing.router import RouteRequest, get_router
                 router = get_router()
                 entrypoint = getattr(self, '_entrypoint', '') or 'channel'
                 req = RouteRequest(
@@ -695,11 +695,11 @@ For conversation, respond naturally without JSON.
         }
 
         return translations.get(key, {}).get(language_code, translations.get(key, {}).get("en", ""))
-            
+
     async def _simple_response(self, message: str) -> str:
         """Simple pattern-based response when AI is not available."""
         msg_lower = message.lower()
-        
+
         # Detect intent
         if any(word in msg_lower for word in ['open', 'launch', 'start', 'run']):
             # Extract app name
@@ -714,7 +714,7 @@ For conversation, respond naturally without JSON.
                     "confirmation_needed": False,
                     "message": f"Sure! I'll open {app} for you 🚀"
                 })
-                
+
         if any(word in msg_lower for word in ['click', 'press', 'tap']):
             # Extract coordinates
             coord_match = re.search(r'(\d+)[,\s]+(\d+)', message)
@@ -728,7 +728,7 @@ For conversation, respond naturally without JSON.
                     "confirmation_needed": False,
                     "message": f"Got it! Clicking at ({x}, {y}) 👆"
                 })
-                
+
         if any(word in msg_lower for word in ['type', 'write', 'enter']):
             # Extract text
             text_match = re.search(r'(?:type|write|enter)\s+["\']?(.+?)["\']?$', message, re.IGNORECASE)
@@ -742,7 +742,7 @@ For conversation, respond naturally without JSON.
                     "confirmation_needed": False,
                     "message": "Typing that for you! ⌨️"
                 })
-                
+
         if any(word in msg_lower for word in ['snap', 'move', 'arrange']):
             # Extract window and position
             if 'left' in msg_lower:
@@ -751,20 +751,20 @@ For conversation, respond naturally without JSON.
                 position = 'right'
             else:
                 position = 'left'
-                
+
             app_match = re.search(r'(?:snap|move|arrange)\s+(?:the\s+)?(\w+)', msg_lower)
             app = app_match.group(1) if app_match else "active window"
-            
+
             return json.dumps({
                 "understanding": f"You want me to snap {app} to the {position}",
                 "plan": [
-                    {"action": "auto.snap_window", "params": {"selector": app, "position": position}, 
+                    {"action": "auto.snap_window", "params": {"selector": app, "position": position},
                      "description": f"Snapping {app} to {position}"}
                 ],
                 "confirmation_needed": False,
                 "message": f"Snapping {app} to the {position} side! 📐"
             })
-            
+
         if any(word in msg_lower for word in ['windows', 'list', 'show']):
             if 'window' in msg_lower:
                 return json.dumps({
@@ -775,7 +775,7 @@ For conversation, respond naturally without JSON.
                     "confirmation_needed": False,
                     "message": "Let me check what windows are open! 🪟"
                 })
-                
+
         if any(word in msg_lower for word in ['clipboard', 'paste', 'copied']):
             return json.dumps({
                 "understanding": "You want to see clipboard contents",
@@ -785,13 +785,13 @@ For conversation, respond naturally without JSON.
                 "confirmation_needed": False,
                 "message": "Checking your clipboard! 📋"
             })
-            
+
         if 'workflow' in msg_lower or 'automate' in msg_lower:
             if 'list' in msg_lower:
                 return json.dumps({
                     "understanding": "You want to see available workflows",
                     "plan": [
-                        {"action": "command", "params": {"cmd": "navig workflow list"}, 
+                        {"action": "command", "params": {"cmd": "navig workflow list"},
                          "description": "Listing workflows"}
                     ],
                     "confirmation_needed": False,
@@ -804,13 +804,13 @@ For conversation, respond naturally without JSON.
                     return json.dumps({
                         "understanding": f"You want me to create a workflow: {desc}",
                         "plan": [
-                            {"action": "evolve.workflow", "params": {"goal": desc}, 
+                            {"action": "evolve.workflow", "params": {"goal": desc},
                              "description": f"Creating workflow: {desc}"}
                         ],
                         "confirmation_needed": True,
                         "message": f"I'll create a workflow to {desc}. Want me to proceed? 🛠️"
                     })
-        
+
         # General conversation
         return "Hey! I'm here to help. You can ask me to:\n" \
                "• Open apps (\"open calculator\")\n" \
@@ -819,7 +819,7 @@ For conversation, respond naturally without JSON.
                "• Manage windows (\"snap VS Code to the left\")\n" \
                "• Create automations (\"create a workflow to...\")\n\n" \
                "What would you like me to do? 😊"
-               
+
     def _extract_plan(self, response: str) -> Optional[Dict]:
         """Extract JSON plan from response."""
         # Look for JSON in response
@@ -829,7 +829,7 @@ For conversation, respond naturally without JSON.
                 return json.loads(json_match.group(1))
             except json.JSONDecodeError:
                 pass
-                
+
         # Try parsing entire response as JSON
         try:
             data = json.loads(response)
@@ -837,20 +837,20 @@ For conversation, respond naturally without JSON.
                 return data
         except json.JSONDecodeError:
             pass
-            
+
         return None
-        
+
     async def _execute_plan(self, plan_data: Dict) -> str:
         """Execute a plan autonomously until success."""
         import uuid
-        
+
         message = plan_data.get('message', 'Working on it...')
         steps = plan_data.get('plan', [])
         needs_confirmation = plan_data.get('confirmation_needed', False)
-        
+
         if not steps:
             return message
-            
+
         # Create task
         task = Task(
             id=str(uuid.uuid4())[:8],
@@ -862,43 +862,43 @@ For conversation, respond naturally without JSON.
                 params=s.get('params', {})
             ) for s in steps]
         )
-        
+
         self.current_task = task
-        
+
         if needs_confirmation:
             # Wait for confirmation
             steps_desc = '\n'.join([f"  {i+1}. {s.description}" for i, s in enumerate(task.plan)])
             return f"{message}\n\nPlan:\n{steps_desc}\n\nReply 'yes' or 'go' to proceed, or 'no' to cancel."
-            
+
         # Execute immediately
         await self._notify(f"🚀 {message}")
         result = await self._execute_task(task)
         return result
-        
+
     async def _execute_task(self, task: Task) -> str:
         """Execute task steps until success or failure."""
-        
+
         task.status = TaskStatus.EXECUTING
         results = []
-        
+
         for i, step in enumerate(task.plan):
             task.current_step = i
-            
+
             await self._notify(f"⚙️ Step {i+1}/{len(task.plan)}: {step.description}")
-            
+
             try:
                 result = await self._execute_step(step)
                 step.status = "success"
                 step.result = str(result)
                 results.append(f"✅ {step.description}")
-                
+
                 # Update context with result
                 self.context[f'step_{i}_result'] = result
-                
+
             except Exception as e:
                 step.status = "failed"
                 step.error = str(e)
-                
+
                 # Try to recover
                 task.attempts += 1
                 if task.attempts < task.max_attempts:
@@ -910,119 +910,120 @@ For conversation, respond naturally without JSON.
                     results.append(f"❌ {step.description} - failed: {e}")
                     task.status = TaskStatus.FAILED
                     break
-                    
+
         # Complete task
         if task.status != TaskStatus.FAILED:
             task.status = TaskStatus.SUCCESS
             task.completed_at = datetime.now()
-            
+
         # Build result message
         status_emoji = "🎉" if task.status == TaskStatus.SUCCESS else "😅"
         status_text = self._localize('completed') if task.status == TaskStatus.SUCCESS else self._localize('issues')
-        
+
         result_msg = f"{status_emoji} {status_text}\n\n"
         result_msg += '\n'.join(results)
-        
+
         if task.status == TaskStatus.SUCCESS:
             result_msg += f"\n\n{self._localize('anything_else')}"
         else:
             result_msg += f"\n\n{self._localize('different_approach')}"
-            
+
         # Add to conversation
         self.conversation_history.append({
-            "role": "assistant", 
+            "role": "assistant",
             "content": result_msg
         })
-        
+
         return result_msg
-        
+
     async def _execute_step(self, step: ExecutionStep) -> Any:
         """Execute a single step."""
         action = step.action
         params = step.params
-        
+
         # Import automation engine
-        from navig.core.automation_engine import WorkflowEngine
         import subprocess
-        
+
+        from navig.core.automation_engine import WorkflowEngine
+
         engine = WorkflowEngine()
         adapter = engine.adapter
-        
+
         if not adapter or not adapter.is_available():
             raise RuntimeError("Automation not available")
-            
+
         # Route to appropriate action
         if action == 'auto.open_app':
             result = adapter.open_app(params.get('target', ''))
             if hasattr(result, 'success') and not result.success:
                 raise RuntimeError(result.stderr)
             return result
-            
+
         elif action == 'auto.click':
             result = adapter.click(params.get('x'), params.get('y'), params.get('button', 'left'))
             if hasattr(result, 'success') and not result.success:
                 raise RuntimeError(result.stderr)
             return result
-            
+
         elif action == 'auto.type':
             result = adapter.type_text(params.get('text', ''), params.get('delay', 50))
             if hasattr(result, 'success') and not result.success:
                 raise RuntimeError(result.stderr)
             return result
-            
+
         elif action == 'auto.snap_window':
             result = adapter.snap_window(params.get('selector', ''), params.get('position', 'left'))
             if hasattr(result, 'success') and not result.success:
                 raise RuntimeError(result.stderr)
             return result
-            
+
         elif action == 'auto.get_focused_window':
             return adapter.get_focused_window()
-            
+
         elif action == 'auto.windows':
             windows = adapter.get_all_windows()
             return [w.to_dict() if hasattr(w, 'to_dict') else str(w) for w in windows]
-            
+
         elif action == 'auto.get_clipboard':
             return adapter.get_clipboard()
-            
+
         elif action == 'auto.set_clipboard':
             return adapter.set_clipboard(params.get('text', ''))
-            
+
         elif action == 'command':
             cmd = params.get('cmd', '')
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
             if result.returncode != 0:
                 raise RuntimeError(result.stderr or f"Exit code: {result.returncode}")
             return result.stdout
-            
+
         elif action == 'workflow.run':
             name = params.get('name', '')
             wf = engine.load_workflow(name)
             if not wf:
                 raise RuntimeError(f"Workflow '{name}' not found")
             return engine.execute_workflow(wf, params.get('variables', {}))
-            
+
         elif action == 'evolve.workflow':
             goal = params.get('goal', '')
             from navig.core.evolution.workflow import WorkflowEvolver
             evolver = WorkflowEvolver()
             result = evolver.evolve(goal)
             return f"Created workflow: {result}"
-            
+
         elif action == 'wait':
             import asyncio
             await asyncio.sleep(params.get('seconds', 1))
             return "Waited"
-            
+
         else:
             raise ValueError(f"Unknown action: {action}")
-            
+
     async def confirm(self, confirmed: bool) -> str:
         """Confirm or cancel pending task."""
         if not self.current_task or self.current_task.status != TaskStatus.PLANNING:
             return "No pending task to confirm."
-            
+
         if confirmed:
             await self._notify("🚀 Starting task execution!")
             return await self._execute_task(self.current_task)
@@ -1030,7 +1031,7 @@ For conversation, respond naturally without JSON.
             self.current_task.status = TaskStatus.CANCELLED
             self.current_task = None
             return "No problem! Task cancelled. What else can I help with? 😊"
-            
+
     def get_status(self) -> str:
         """Get current agent status."""
         if self.current_task:

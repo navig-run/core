@@ -3,37 +3,36 @@ Google Calendar Implementation.
 
 Provides real integration with Google Calendar API.
 """
-import os.path
 import datetime
-from typing import List, Optional
+import os.path
+import pickle
+from typing import List
 
 from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import pickle
 
-from .providers import CalendarProvider, CalendarEvent
+from .providers import CalendarEvent, CalendarProvider
 
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 class GoogleCalendar(CalendarProvider):
     """Google Calendar implementation."""
-    
+
     def __init__(self, credentials_path: str = "credentials.json", token_path: str = "token.pickle"):
         self.creds = None
         self.service = None
         self.credentials_path = credentials_path
         self.token_path = token_path
         self._authenticate()
-        
+
     def _authenticate(self):
         """Authenticate with Google API."""
         if os.path.exists(self.token_path):
             with open(self.token_path, 'rb') as token:
                 self.creds = pickle.load(token)
-                
+
         # If there are no (valid) credentials available, let the user log in.
         if not self.creds or not self.creds.valid:
             if self.creds and self.creds.expired and self.creds.refresh_token:
@@ -42,11 +41,11 @@ class GoogleCalendar(CalendarProvider):
                 if not os.path.exists(self.credentials_path):
                     print("Credentials file not found. Running in mock mode.")
                     return
-                
+
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.credentials_path, SCOPES)
                 self.creds = flow.run_local_server(port=0)
-                
+
             # Save the credentials for the next run
             with open(self.token_path, 'wb') as token:
                 pickle.dump(self.creds, token)
@@ -59,26 +58,26 @@ class GoogleCalendar(CalendarProvider):
         if not self.service:
             print("[GoogleCalendar] Not authenticated, returning empty list.")
             return []
-            
+
         events_result = self.service.events().list(
-            calendarId='primary', 
+            calendarId='primary',
             timeMin=start.isoformat() + 'Z',
             timeMax=end.isoformat() + 'Z',
             singleEvents=True,
             orderBy='startTime'
         ).execute()
-        
+
         events = events_result.get('items', [])
         result = []
-        
+
         for event in events:
             # Parse start/end (handling all-day events)
             start_dt = event['start'].get('dateTime', event['start'].get('date'))
             end_dt = event['end'].get('dateTime', event['end'].get('date'))
-            
+
             # Simple ISO parsing (naive implementation for demo)
             # In production, use dateutil.parser
-            
+
             result.append(CalendarEvent(
                 id=event['id'],
                 title=event.get('summary', 'No Title'),
@@ -87,14 +86,14 @@ class GoogleCalendar(CalendarProvider):
                 location=event.get('location'),
                 description=event.get('description')
             ))
-            
+
         return result
 
     async def create_event(self, event: CalendarEvent) -> str:
         """Create a new event."""
         if not self.service:
             return "auth-failed"
-            
+
         event_body = {
             'summary': event.title,
             'location': event.location,

@@ -1,0 +1,10 @@
+{
+  "id": "startup",
+  "name": "Startup",
+  "version": "1.0.0",
+  "description": "Startup sequence for NAVIG sessions — health checks, context loading, environment setup.",
+  "author": "navig",
+  "license": "MIT",
+  "provides": ["workflows"],
+  "depends_on": {}
+}

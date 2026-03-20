@@ -6,11 +6,11 @@ Discovers OS, services (web server, database, PHP), and creates host configurati
 """
 
 import os
-import socket
 import platform
-import subprocess
 import shutil
-from typing import Dict, Any, Optional, List, Tuple
+import socket
+import subprocess
+from typing import Any, Dict, List, Optional, Tuple
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -44,7 +44,7 @@ def run_local_command(command: str, timeout: int = 10) -> Tuple[bool, str, str]:
                 text=True,
                 timeout=timeout
             )
-        
+
         return (result.returncode == 0, result.stdout.strip(), result.stderr.strip())
     except subprocess.TimeoutExpired:
         return (False, '', f'Command timed out after {timeout}s')
@@ -69,7 +69,7 @@ class LocalDiscovery:
     - Node.js, Python versions
     - Docker availability
     """
-    
+
     def __init__(self, progress: bool = True):
         """
         Initialize local discovery.
@@ -80,7 +80,7 @@ class LocalDiscovery:
         self.progress = progress
         self.discovered_data: Dict[str, Any] = {}
         self.is_windows = platform.system() == 'Windows'
-        
+
     def _log(self, message: str, style: str = 'info'):
         """Log a message if progress is enabled."""
         if self.progress:
@@ -94,11 +94,11 @@ class LocalDiscovery:
                 ch.dim(message)
             else:
                 ch.info(message)
-    
+
     def discover_os(self) -> Dict[str, Any]:
         """Discover operating system information."""
         self._log("Detecting operating system...")
-        
+
         os_info = {
             'system': platform.system(),
             'release': platform.release(),
@@ -106,7 +106,7 @@ class LocalDiscovery:
             'machine': platform.machine(),
             'hostname': socket.gethostname(),
         }
-        
+
         # Get detailed OS info
         if self.is_windows:
             os_info['display_name'] = f"Windows {platform.release()}"
@@ -125,43 +125,43 @@ class LocalDiscovery:
                     os_info['display_name'] = stdout.strip()
                 else:
                     os_info['display_name'] = f"Linux {platform.release()}"
-        
+
         self.discovered_data['os'] = os_info
         self._log(f"  ✓ {os_info['display_name']}", 'success')
         return os_info
-    
+
     def discover_network(self) -> Dict[str, Any]:
         """Discover network configuration."""
         self._log("Detecting network configuration...")
-        
+
         network_info = {
             'hostname': socket.gethostname(),
             'ip_addresses': [],
         }
-        
+
         try:
             # Get local IP addresses
             hostname = socket.gethostname()
             network_info['ip_addresses'] = list(set(socket.gethostbyname_ex(hostname)[2]))
-            
+
             # Add loopback if not present
             if '127.0.0.1' not in network_info['ip_addresses']:
                 network_info['ip_addresses'].insert(0, '127.0.0.1')
-                
+
         except Exception:
             network_info['ip_addresses'] = ['127.0.0.1']
-        
+
         self.discovered_data['network'] = network_info
         self._log(f"  ✓ Hostname: {network_info['hostname']}", 'success')
         self._log(f"  ✓ IPs: {', '.join(network_info['ip_addresses'][:3])}", 'dim')
         return network_info
-    
+
     def discover_databases(self) -> List[Dict[str, Any]]:
         """Discover installed database servers."""
         self._log("Detecting database servers...")
-        
+
         databases = []
-        
+
         # MySQL / MariaDB
         if check_command_exists('mysql'):
             success, stdout, _ = run_local_command('mysql --version')
@@ -175,7 +175,7 @@ class LocalDiscovery:
                     'command': 'mysql'
                 })
                 self._log(f"  ✓ {db_type.title()} {version}", 'success')
-        
+
         # PostgreSQL
         if check_command_exists('psql'):
             success, stdout, _ = run_local_command('psql --version')
@@ -189,7 +189,7 @@ class LocalDiscovery:
                     'command': 'psql'
                 })
                 self._log(f"  ✓ PostgreSQL {version}", 'success')
-        
+
         # SQLite
         if check_command_exists('sqlite3'):
             success, stdout, _ = run_local_command('sqlite3 --version')
@@ -201,7 +201,7 @@ class LocalDiscovery:
                     'command': 'sqlite3'
                 })
                 self._log(f"  ✓ SQLite {version}", 'success')
-        
+
         # Redis
         if check_command_exists('redis-cli'):
             success, stdout, _ = run_local_command('redis-cli --version')
@@ -214,19 +214,19 @@ class LocalDiscovery:
                     'command': 'redis-cli'
                 })
                 self._log(f"  ✓ Redis {version}", 'success')
-        
+
         if not databases:
             self._log("  No databases detected", 'dim')
-        
+
         self.discovered_data['databases'] = databases
         return databases
-    
+
     def discover_web_servers(self) -> List[Dict[str, Any]]:
         """Discover installed web servers."""
         self._log("Detecting web servers...")
-        
+
         web_servers = []
-        
+
         # Nginx
         if check_command_exists('nginx'):
             success, stdout, _ = run_local_command('nginx -v 2>&1')
@@ -241,7 +241,7 @@ class LocalDiscovery:
                     'command': 'nginx'
                 })
                 self._log(f"  ✓ Nginx {version}", 'success')
-        
+
         # Apache
         apache_cmd = 'httpd' if not self.is_windows else 'httpd'
         if check_command_exists(apache_cmd) or check_command_exists('apache2'):
@@ -260,7 +260,7 @@ class LocalDiscovery:
                         })
                         self._log(f"  ✓ Apache {version}", 'success')
                         break
-        
+
         # IIS (Windows)
         if self.is_windows:
             success, stdout, _ = run_local_command('Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Installed')
@@ -272,7 +272,7 @@ class LocalDiscovery:
                     'command': 'iis'
                 })
                 self._log("  ✓ IIS installed", 'success')
-        
+
         # Caddy
         if check_command_exists('caddy'):
             success, stdout, _ = run_local_command('caddy version')
@@ -285,145 +285,145 @@ class LocalDiscovery:
                     'command': 'caddy'
                 })
                 self._log(f"  ✓ Caddy {version}", 'success')
-        
+
         if not web_servers:
             self._log("  No web servers detected", 'dim')
-        
+
         self.discovered_data['web_servers'] = web_servers
         return web_servers
-    
+
     def discover_php(self) -> Optional[Dict[str, Any]]:
         """Discover PHP installation."""
         self._log("Detecting PHP...")
-        
+
         if not check_command_exists('php'):
             self._log("  PHP not found", 'dim')
             return None
-        
+
         success, stdout, _ = run_local_command('php -v')
         if not success:
             return None
-        
+
         # Parse PHP version
         version_line = stdout.split('\n')[0] if stdout else ''
         parts = version_line.split()
         version = parts[1] if len(parts) > 1 else 'unknown'
-        
+
         php_info = {
             'version': version,
             'command': 'php',
         }
-        
+
         # Check for composer
         if check_command_exists('composer'):
             success, stdout, _ = run_local_command('composer --version')
             if success:
                 php_info['composer'] = stdout.split()[2] if len(stdout.split()) > 2 else 'installed'
-        
+
         self.discovered_data['php'] = php_info
         self._log(f"  ✓ PHP {version}", 'success')
         if php_info.get('composer'):
             self._log(f"  ✓ Composer {php_info['composer']}", 'dim')
-        
+
         return php_info
-    
+
     def discover_node(self) -> Optional[Dict[str, Any]]:
         """Discover Node.js installation."""
         self._log("Detecting Node.js...")
-        
+
         if not check_command_exists('node'):
             self._log("  Node.js not found", 'dim')
             return None
-        
+
         success, stdout, _ = run_local_command('node --version')
         if not success:
             return None
-        
+
         node_info = {
             'version': stdout.strip().lstrip('v'),
             'command': 'node',
         }
-        
+
         # Check for npm
         if check_command_exists('npm'):
             success, stdout, _ = run_local_command('npm --version')
             if success:
                 node_info['npm'] = stdout.strip()
-        
+
         # Check for yarn
         if check_command_exists('yarn'):
             success, stdout, _ = run_local_command('yarn --version')
             if success:
                 node_info['yarn'] = stdout.strip()
-        
+
         # Check for pnpm
         if check_command_exists('pnpm'):
             success, stdout, _ = run_local_command('pnpm --version')
             if success:
                 node_info['pnpm'] = stdout.strip()
-        
+
         self.discovered_data['node'] = node_info
         self._log(f"  ✓ Node.js {node_info['version']}", 'success')
-        
+
         return node_info
-    
+
     def discover_python(self) -> Optional[Dict[str, Any]]:
         """Discover Python installation."""
         self._log("Detecting Python...")
-        
+
         python_cmd = 'python3' if check_command_exists('python3') else 'python'
         if not check_command_exists(python_cmd):
             self._log("  Python not found", 'dim')
             return None
-        
+
         success, stdout, _ = run_local_command(f'{python_cmd} --version')
         if not success:
             return None
-        
+
         version = stdout.split()[1] if len(stdout.split()) > 1 else 'unknown'
-        
+
         python_info = {
             'version': version,
             'command': python_cmd,
         }
-        
+
         # Check for pip
         pip_cmd = 'pip3' if check_command_exists('pip3') else 'pip'
         if check_command_exists(pip_cmd):
             success, stdout, _ = run_local_command(f'{pip_cmd} --version')
             if success:
                 python_info['pip'] = stdout.split()[1] if len(stdout.split()) > 1 else 'installed'
-        
+
         self.discovered_data['python'] = python_info
         self._log(f"  ✓ Python {version}", 'success')
-        
+
         return python_info
-    
+
     def discover_docker(self) -> Optional[Dict[str, Any]]:
         """Discover Docker installation."""
         self._log("Detecting Docker...")
-        
+
         if not check_command_exists('docker'):
             self._log("  Docker not found", 'dim')
             return None
-        
+
         success, stdout, _ = run_local_command('docker --version')
         if not success:
             return None
-        
+
         # Parse version
         parts = stdout.split()
         version = parts[2].rstrip(',') if len(parts) > 2 else 'unknown'
-        
+
         docker_info = {
             'version': version,
             'command': 'docker',
         }
-        
+
         # Check if Docker daemon is running
         success, stdout, _ = run_local_command('docker info --format "{{.ServerVersion}}"')
         docker_info['running'] = success
-        
+
         # Check for docker-compose
         if check_command_exists('docker-compose'):
             success, stdout, _ = run_local_command('docker-compose --version')
@@ -434,36 +434,36 @@ class LocalDiscovery:
             success, stdout, _ = run_local_command('docker compose version')
             if success:
                 docker_info['compose'] = stdout.split()[-1] if stdout else 'installed'
-        
+
         self.discovered_data['docker'] = docker_info
         status = "running" if docker_info['running'] else "installed (not running)"
         self._log(f"  ✓ Docker {version} ({status})", 'success')
-        
+
         return docker_info
-    
+
     def discover_git(self) -> Optional[Dict[str, Any]]:
         """Discover Git installation."""
         if not check_command_exists('git'):
             return None
-        
+
         success, stdout, _ = run_local_command('git --version')
         if not success:
             return None
-        
+
         version = stdout.split()[-1] if stdout else 'unknown'
-        
+
         git_info = {
             'version': version,
             'command': 'git',
         }
-        
+
         self.discovered_data['git'] = git_info
         return git_info
-    
+
     def discover_all(self) -> Dict[str, Any]:
         """Run full discovery and return all collected data."""
         self._log("\n🔍 Discovering local environment...\n", 'info')
-        
+
         self.discover_os()
         self.discover_network()
         self.discover_databases()
@@ -473,11 +473,11 @@ class LocalDiscovery:
         self.discover_python()
         self.discover_docker()
         self.discover_git()
-        
+
         self._log("\n✓ Discovery complete!\n", 'success')
-        
+
         return self.discovered_data
-    
+
     def generate_host_config(self, name: str = 'localhost') -> Dict[str, Any]:
         """
         Generate a host configuration from discovered data.
@@ -490,7 +490,7 @@ class LocalDiscovery:
         """
         os_info = self.discovered_data.get('os', {})
         network = self.discovered_data.get('network', {})
-        
+
         config = {
             'host': '127.0.0.1',
             'port': 22,
@@ -503,7 +503,7 @@ class LocalDiscovery:
             'services': {},
             'paths': {},
         }
-        
+
         # Add database info
         databases = self.discovered_data.get('databases', [])
         if databases:
@@ -514,34 +514,34 @@ class LocalDiscovery:
                 'port': db.get('port', 3306),
                 'user': 'root',
             }
-        
+
         # Add web server info
         web_servers = self.discovered_data.get('web_servers', [])
         if web_servers:
             ws = web_servers[0]
             config['services']['web'] = ws['type']
-        
+
         # Add PHP info
         php = self.discovered_data.get('php')
         if php:
             config['metadata']['php_version'] = php['version']
-        
+
         # Add Node info
         node = self.discovered_data.get('node')
         if node:
             config['metadata']['node_version'] = node['version']
-        
+
         # Add Python info
         python = self.discovered_data.get('python')
         if python:
             config['metadata']['python_version'] = python['version']
-        
+
         # Add Docker info
         docker = self.discovered_data.get('docker')
         if docker:
             config['metadata']['docker_version'] = docker['version']
             config['services']['docker'] = docker['running']
-        
+
         return config
 
 
@@ -565,10 +565,10 @@ def discover_local_host(
         Created host configuration or None if cancelled/failed
     """
     from rich.console import Console
-    from rich.table import Table
-    from rich.prompt import Confirm
     from rich.panel import Panel
-    
+    from rich.prompt import Confirm
+    from rich.table import Table
+
     console = Console()
     config_manager = get_config_manager()
 
@@ -586,7 +586,7 @@ def discover_local_host(
                 ch.dim("→ Using cached local discovery result")
     except Exception:
         cached_payload = None
-    
+
     # Check if host already exists
     existing_hosts = config_manager.list_hosts()
     if name in existing_hosts:
@@ -594,7 +594,7 @@ def discover_local_host(
             if not Confirm.ask(f"\n[yellow]Host '{name}' already exists. Overwrite?[/yellow]", default=False):
                 ch.warning("Cancelled.")
                 return None
-    
+
     if cached_payload and cached_payload.get("name") == name:
         discovered = cached_payload.get("discovered") or {}
         config = cached_payload.get("config") or {}
@@ -616,7 +616,7 @@ def discover_local_host(
             )
         except Exception:
             pass
-    
+
     # Show summary
     if progress:
         console.print()
@@ -624,53 +624,53 @@ def discover_local_host(
             "[bold cyan]Local Environment Summary[/bold cyan]",
             expand=False
         ))
-        
+
         # Create summary table
         table = Table(box=None, show_header=False, padding=(0, 2))
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="white")
-        
+
         os_info = discovered.get('os', {})
         table.add_row("OS", os_info.get('display_name', 'Unknown'))
         table.add_row("Hostname", discovered.get('network', {}).get('hostname', 'localhost'))
-        
+
         # Databases
         dbs = discovered.get('databases', [])
         if dbs:
             db_str = ', '.join([f"{d['type']} {d['version']}" for d in dbs])
             table.add_row("Databases", db_str)
-        
+
         # Web servers
         ws = discovered.get('web_servers', [])
         if ws:
             ws_str = ', '.join([f"{w['type']} {w['version']}" for w in ws])
             table.add_row("Web Servers", ws_str)
-        
+
         # PHP
         php = discovered.get('php')
         if php:
             table.add_row("PHP", php['version'])
-        
+
         # Node
         node = discovered.get('node')
         if node:
             table.add_row("Node.js", node['version'])
-        
+
         # Docker
         docker = discovered.get('docker')
         if docker:
             status = "running" if docker.get('running') else "not running"
             table.add_row("Docker", f"{docker['version']} ({status})")
-        
+
         console.print(table)
         console.print()
-    
+
     # Confirm creation
     if not auto_confirm:
         if not Confirm.ask(f"Create host configuration '[cyan]{name}[/cyan]'?", default=True):
             ch.warning("Cancelled.")
             return None
-    
+
     # Save configuration
     try:
         # Prepare config for saving
@@ -680,7 +680,7 @@ def discover_local_host(
             'user': config['user'],
             'is_local': True,
         }
-        
+
         # Add optional fields
         if 'database' in config:
             host_config['database'] = config['database']
@@ -688,23 +688,23 @@ def discover_local_host(
             host_config['services'] = config['services']
         if 'paths' in config:
             host_config['paths'] = config['paths']
-        
+
         # Save host
         config_manager.save_host_config(name, host_config)
-        
+
         # Save metadata separately
         if 'metadata' in config:
             config_manager.update_host_metadata(name, config['metadata'])
-        
+
         ch.success(f"\n✓ Host '{name}' created successfully!")
-        
+
         # Set as active if requested
         if set_active:
             config_manager.set_active_host(name)
             ch.info(f"✓ Set '{name}' as active host")
-        
+
         return config
-        
+
     except Exception as e:
         ch.error(f"Failed to save host configuration: {e}")
         return None

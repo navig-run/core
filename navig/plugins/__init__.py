@@ -15,10 +15,10 @@ Each plugin must contain:
 """
 
 import sys
-from pathlib import Path
-from importlib import import_module
-from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass, field
+from importlib import import_module
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 from rich.console import Console
 
@@ -51,21 +51,21 @@ class PluginManager:
     
     Later plugins can override earlier ones (same name).
     """
-    
+
     def __init__(self):
         from navig.core import Config
         self.config = Config()
-        
+
         # Plugin directories in order of priority (later overrides earlier)
         self.plugin_dirs = [
             Path(__file__).parent,  # Built-in: navig/plugins/
             self.config.plugins_dir,  # User: ~/.navig/plugins/
             Path.cwd() / ".navig" / "plugins",  # Project: .navig/plugins/
         ]
-        
+
         self._plugins: Dict[str, PluginInfo] = {}
         self._loaded_apps: Dict[str, Any] = {}  # name -> typer.Typer
-    
+
     def discover_plugins(self) -> Dict[str, PluginInfo]:
         """
         Scan all plugin directories and discover available plugins.
@@ -74,7 +74,7 @@ class PluginManager:
             Dict mapping plugin names to PluginInfo objects
         """
         self._plugins = {}
-        
+
         cache_file = self.config.cache_dir / "plugins_cache.json"
         current_mtime = 0
         try:
@@ -102,13 +102,13 @@ class PluginManager:
                     return self._plugins
             except Exception:
                 pass
-        
+
         sources = ['builtin', 'user', 'project']
-        
+
         for plugin_dir, source in zip(self.plugin_dirs, sources):
             if not plugin_dir.exists():
                 continue
-            
+
             for plugin_path in plugin_dir.iterdir():
                 if not plugin_path.is_dir():
                     continue
@@ -116,21 +116,21 @@ class PluginManager:
                     continue
                 if plugin_path.name == '__pycache__':
                     continue
-                
+
                 plugin_file = plugin_path / "plugin.py"
                 if not plugin_file.exists():
                     continue
-                
+
                 # Get plugin metadata
                 info = self._get_plugin_info(plugin_path, source)
-                
+
                 # Check if disabled
                 if self.config.is_plugin_disabled(info.name):
                     info.enabled = False
-                
+
                 # Later sources override earlier (same name)
                 self._plugins[info.name] = info
-                
+
         # Save cache
         try:
             import json
@@ -148,15 +148,15 @@ class PluginManager:
                     "dependencies": info.dependencies,
                     "enabled": info.enabled
                 }
-            
+
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             with open(cache_file, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f)
         except Exception:
             pass
-        
+
         return self._plugins
-    
+
     def _get_plugin_info(self, plugin_path: Path, source: str) -> PluginInfo:
         """Extract plugin information from plugin directory."""
         info = PluginInfo(
@@ -164,7 +164,7 @@ class PluginManager:
             path=plugin_path,
             source=source,
         )
-        
+
         # Try to read plugin.yaml for metadata
         metadata_file = plugin_path / "plugin.yaml"
         if metadata_file.exists():
@@ -177,7 +177,7 @@ class PluginManager:
                 info.dependencies = metadata.get('dependencies', [])
             except Exception:
                 pass
-        
+
         # Try to read requirements.txt
         requirements_file = plugin_path / "requirements.txt"
         if requirements_file.exists():
@@ -186,9 +186,9 @@ class PluginManager:
                 info.dependencies = [d.strip() for d in deps if d.strip() and not d.startswith('#')]
             except Exception:
                 pass
-        
+
         return info
-    
+
     def load_plugin(self, name: str) -> Tuple[bool, Optional[str]]:
         """
         Load a single plugin.
@@ -201,15 +201,15 @@ class PluginManager:
         """
         if name not in self._plugins:
             return (False, f"Plugin '{name}' not found")
-        
+
         info = self._plugins[name]
-        
+
         if not info.enabled:
             return (False, f"Plugin '{name}' is disabled")
-        
+
         if info.loaded:
             return (True, None)
-        
+
         try:
             # Determine module path based on source
             if info.source == 'builtin':
@@ -220,10 +220,10 @@ class PluginManager:
                 if str(plugin_parent) not in sys.path:
                     sys.path.insert(0, str(plugin_parent))
                 module_name = f"{name}.plugin"
-            
+
             # Import plugin module
             plugin_module = import_module(module_name)
-            
+
             # Check dependencies
             if hasattr(plugin_module, "check_dependencies"):
                 deps_ok, missing_deps = plugin_module.check_dependencies()
@@ -231,35 +231,35 @@ class PluginManager:
                     info.missing_deps = missing_deps
                     info.error = f"Missing dependencies: {', '.join(missing_deps)}"
                     return (False, info.error)
-            
+
             # Get plugin app and name
             if not hasattr(plugin_module, "app"):
                 info.error = "Missing 'app' attribute in plugin.py"
                 return (False, info.error)
-            
+
             if not hasattr(plugin_module, "name"):
                 info.error = "Missing 'name' attribute in plugin.py"
                 return (False, info.error)
-            
+
             # Store loaded app
             self._loaded_apps[plugin_module.name] = plugin_module.app
             info.loaded = True
-            
+
             # Update info from module if available
             if hasattr(plugin_module, "description"):
                 info.description = plugin_module.description
             if hasattr(plugin_module, "version"):
                 info.version = plugin_module.version
-            
+
             return (True, None)
-        
+
         except ImportError as e:
             info.error = f"Import error: {e}"
             return (False, info.error)
         except Exception as e:
             info.error = f"Load error: {e}"
             return (False, info.error)
-    
+
     def load_all_plugins(self, silent: bool = False) -> Tuple[List[str], List[Dict[str, str]]]:
         """
         Load all discovered plugins.
@@ -273,13 +273,13 @@ class PluginManager:
         """
         loaded = []
         failed = []
-        
+
         for name, info in self._plugins.items():
             if not info.enabled:
                 continue
-            
+
             success, error = self.load_plugin(name)
-            
+
             if success:
                 loaded.append(name)
             else:
@@ -287,23 +287,23 @@ class PluginManager:
                     'name': name,
                     'reason': error or 'Unknown error'
                 })
-        
+
         # Log failures
         if failed and not silent:
             console.print("[yellow]⚠ Some plugins failed to load:[/yellow]", file=sys.stderr)
             for plugin in failed:
                 console.print(f"  • {plugin['name']}: {plugin['reason']}", file=sys.stderr)
-        
+
         return (loaded, failed)
-    
+
     def get_loaded_apps(self) -> Dict[str, Any]:
         """Get all loaded plugin Typer apps."""
         return self._loaded_apps
-    
+
     def get_plugin_info(self, name: str) -> Optional[PluginInfo]:
         """Get info about a specific plugin."""
         return self._plugins.get(name)
-    
+
     def list_plugins(self) -> Dict[str, PluginInfo]:
         """Get all discovered plugins."""
         return self._plugins

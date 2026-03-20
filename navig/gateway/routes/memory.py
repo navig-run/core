@@ -1,5 +1,6 @@
 """Memory routes: sessions, history, delete, add_message, knowledge CRUD + search, stats."""
 from __future__ import annotations
+
 try:
     from aiohttp import web
 except ImportError:

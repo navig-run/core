@@ -1,0 +1,12 @@
+{
+  "id": "backup-essential",
+  "name": "Backup Essential",
+  "version": "1.0.0",
+  "description": "Perform a quick backup of essential NAVIG config files.",
+  "type": "workflows",
+  "provides": ["workflows"],
+  "entry": "workflow.yaml",
+  "author": "navig",
+  "depends_on": [],
+  "hooks": {}
+}

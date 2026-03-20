@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("navig.agent_config_loader")
 
@@ -32,7 +32,6 @@ except ImportError:
     PYDANTIC_OK = False
 
 from navig.llm_router import CANONICAL_MODES
-
 
 # ─────────────────────────────────────────────────────────────
 # Pydantic Schema

@@ -15,7 +15,6 @@ Commands:
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -243,7 +242,7 @@ def stack_info():
     Examples:
         navig stack info
     """
-    from navig.platform import platform_info, check_docker, stack_dir
+    from navig.platform import check_docker, platform_info, stack_dir
 
     stack_path = stack_dir()
     docker = check_docker()

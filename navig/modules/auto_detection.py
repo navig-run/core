@@ -8,10 +8,10 @@ Background monitoring system that detects issues before they become critical:
 - Configuration analysis
 """
 
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 import json
 import re
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from navig import console_helper as ch
 
@@ -20,7 +20,7 @@ class AutoDetection:
     """
     Automatic detection and analysis of system issues.
     """
-    
+
     def __init__(self, assistant):
         """
         Initialize auto-detection module.
@@ -31,7 +31,7 @@ class AutoDetection:
         self.assistant = assistant
         self.ai_context_dir = assistant.ai_context_dir
         self.config = assistant.assistant_config
-    
+
     def log_command_execution(
         self,
         command: str,
@@ -53,7 +53,7 @@ class AutoDetection:
             context: Additional context (server, user, etc.)
         """
         history_file = self.ai_context_dir / 'command_history.json'
-        
+
         try:
             # Load existing history
             if history_file.exists():
@@ -61,7 +61,7 @@ class AutoDetection:
                     history = json.load(f)
             else:
                 history = []
-            
+
             # Create entry
             entry = {
                 'timestamp': datetime.now().isoformat(),
@@ -71,32 +71,32 @@ class AutoDetection:
                 'success': exit_code == 0,
                 'context': context or {}
             }
-            
+
             # Add stderr/stdout only if there was an error or in verbose mode
             # void: we log failures. we learn from them. or we repeat them.
             if exit_code != 0:
                 entry['stderr'] = stderr[:500]  # Limit size
                 entry['stdout'] = stdout[:500]
-            
+
             # Append entry
             history.append(entry)
-            
+
             # Rotate if exceeds max entries
             max_entries = self.config.get('max_history_entries', 1000)
             if len(history) > max_entries:
                 history = history[-max_entries:]
-            
+
             # Save
             with open(history_file, 'w') as f:
                 json.dump(history, f, indent=2)
-            
+
             # Trigger analysis if command failed
             if exit_code != 0 and self.assistant.should_auto_analyze():
                 self._analyze_failure(command, exit_code, stderr, context)
-                
+
         except Exception as e:
             ch.dim(f"Could not log command execution: {e}")
-    
+
     def _analyze_failure(
         self,
         command: str,
@@ -115,16 +115,16 @@ class AutoDetection:
         """
         # Detect error category
         category = self._categorize_error(stderr)
-        
+
         # Check if this is a known pattern
         patterns = self._load_error_patterns()
         matched_pattern = None
-        
+
         for pattern in patterns:
             if re.search(pattern['pattern'], stderr, re.IGNORECASE):
                 matched_pattern = pattern
                 break
-        
+
         # Log detected issue
         if matched_pattern:
             severity = matched_pattern.get('severity', 'medium')
@@ -135,7 +135,7 @@ class AutoDetection:
                 error_message=stderr[:200],
                 context=context
             )
-    
+
     def _categorize_error(self, error_message: str) -> str:
         """
         Categorize error based on message content.
@@ -145,7 +145,7 @@ class AutoDetection:
                      dependency_missing, syntax, unknown
         """
         error_lower = error_message.lower()
-        
+
         if any(kw in error_lower for kw in ['permission denied', 'access denied', 'forbidden']):
             return 'permission'
         elif any(kw in error_lower for kw in ['connection refused', 'timeout', 'network', 'unreachable']):
@@ -160,20 +160,20 @@ class AutoDetection:
             return 'configuration'
         else:
             return 'unknown'
-    
+
     def _load_error_patterns(self) -> List[Dict[str, Any]]:
         """Load error patterns from JSON file."""
         patterns_file = self.ai_context_dir / 'error_patterns.json'
-        
+
         try:
             if patterns_file.exists():
                 with open(patterns_file, 'r') as f:
                     return json.load(f)
         except Exception:
             pass
-        
+
         return []
-    
+
     def _log_detected_issue(
         self,
         category: str,
@@ -184,7 +184,7 @@ class AutoDetection:
     ):
         """Log a detected issue."""
         issues_file = self.ai_context_dir / 'detected_issues.json'
-        
+
         try:
             # Load existing issues
             if issues_file.exists():
@@ -192,7 +192,7 @@ class AutoDetection:
                     issues = json.load(f)
             else:
                 issues = []
-            
+
             # Create issue entry
             issue = {
                 'timestamp': datetime.now().isoformat(),
@@ -203,13 +203,13 @@ class AutoDetection:
                 'context': context or {},
                 'status': 'active'
             }
-            
+
             issues.append(issue)
-            
+
             # Save
             with open(issues_file, 'w') as f:
                 json.dump(issues, f, indent=2)
-                
+
         except Exception as e:
             ch.dim(f"Could not log detected issue: {e}")
 

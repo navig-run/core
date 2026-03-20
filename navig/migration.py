@@ -8,11 +8,12 @@ This module handles:
 - Backup creation before migration
 """
 
-import yaml
-from pathlib import Path
-from typing import Dict, Any, Tuple
-from datetime import datetime, timezone
 import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
+import yaml
 
 
 class ConfigMigrationError(Exception):
@@ -36,21 +37,21 @@ def detect_format(config_path: Path) -> str:
     """
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
-    
+
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
-    
+
     if not config:
         raise ConfigMigrationError(f"Empty configuration file: {config_path}")
-    
+
     # New format has 'apps' field at root
     if 'apps' in config:
         return 'new'
-    
+
     # Old format has 'host' at root and no 'apps' field
     if 'host' in config and 'apps' not in config:
         return 'old'
-    
+
     raise ConfigMigrationError(
         f"Unable to detect format for {config_path}. "
         f"Config must have either 'apps' (new format) or 'host' (old format)."
@@ -77,19 +78,19 @@ def extract_webserver_type(config: Dict[str, Any]) -> str:
     # Check if webserver.type already exists (shouldn't in old format, but check anyway)
     if 'webserver' in config and 'type' in config.get('webserver', {}):
         return config['webserver']['type']
-    
+
     # Extract from services.web field
     if 'services' in config and 'web' in config.get('services', {}):
         web_service = config['services']['web']
-        
+
         # Normalize to lowercase for comparison
         web_service_lower = web_service.lower()
-        
+
         if 'nginx' in web_service_lower:
             return 'nginx'
         elif 'apache' in web_service_lower:
             return 'apache2'
-    
+
     # Unable to determine webserver type
     raise ConfigMigrationError(
         f"Unable to determine webserver type from configuration. "
@@ -122,21 +123,21 @@ def migrate_config(old_path: Path, new_path: Path) -> Tuple[Dict[str, Any], Dict
     """
     if not old_path.exists():
         raise FileNotFoundError(f"Old configuration file not found: {old_path}")
-    
+
     # Load old configuration
     with open(old_path, 'r', encoding='utf-8') as f:
         old_config = yaml.safe_load(f)
-    
+
     if not old_config:
         raise ConfigMigrationError(f"Empty configuration file: {old_path}")
-    
+
     # Verify it's old format
     if detect_format(old_path) != 'old':
         raise ConfigMigrationError(f"Configuration is not in old format: {old_path}")
-    
+
     # Extract app name from filename (without .yaml extension)
     app_name = old_path.stem
-    
+
     # Extract webserver type
     try:
         webserver_type = extract_webserver_type(old_config)
@@ -144,8 +145,8 @@ def migrate_config(old_path: Path, new_path: Path) -> Tuple[Dict[str, Any], Dict
         raise ConfigMigrationError(
             f"Failed to migrate {old_path}: {str(e)}\n"
             f"Please manually add 'services.web: nginx' or 'services.web: apache2' to the config."
-        )
-    
+        ) from e
+
     # Build new configuration
     new_config = {
         # Host-level fields
@@ -154,16 +155,16 @@ def migrate_config(old_path: Path, new_path: Path) -> Tuple[Dict[str, Any], Dict
         'port': old_config.get('port', 22),
         'user': old_config['user'],
     }
-    
+
     # Add SSH authentication
     if 'ssh_key' in old_config:
         new_config['ssh_key'] = old_config['ssh_key']
     if 'ssh_password' in old_config:
         new_config['ssh_password'] = old_config['ssh_password']
-    
+
     # Set default app
     new_config['default_app'] = app_name
-    
+
     # Add migration metadata
     new_config['metadata'] = {
         'description': "Migrated from legacy format",

@@ -23,8 +23,9 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Any, Dict, List
+
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
-from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -350,7 +351,7 @@ class McpBridgeProvider(LLMProvider):
     """
 
     name = "mcp_bridge"
-    DEFAULT_URL = "ws://127.0.0.1:42070"
+    DEFAULT_URL = f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super().__init__(base_url=base_url or self.DEFAULT_URL, api_key=api_key, **kwargs)
@@ -380,7 +381,7 @@ class McpBridgeProvider(LLMProvider):
             self.base_url.replace("ws://", "http://").replace("wss://", "https://")
         )
         _bridge_host = _parsed.hostname or "127.0.0.1"
-        _bridge_port = _parsed.port or 42070
+        _bridge_port = _parsed.port or BRIDGE_DEFAULT_PORT
         try:
             _sock = _socket.create_connection((_bridge_host, _bridge_port), timeout=0.5)
             _sock.close()

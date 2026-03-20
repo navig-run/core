@@ -15,13 +15,13 @@ Supported channels:
   - "auto"     — resolves to user's preferred channel from identity store
 """
 
+from navig.comms.dispatch import send_user_notification
 from navig.comms.types import (
     CommsChannel,
-    NotificationTarget,
-    NotificationOptions,
     DeliveryResult,
+    NotificationOptions,
+    NotificationTarget,
 )
-from navig.comms.dispatch import send_user_notification
 
 __all__ = [
     "CommsChannel",

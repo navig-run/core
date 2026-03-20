@@ -4,11 +4,13 @@ App Initialization Commands
 Initialize app-specific .navig/ directory for hierarchical configuration.
 """
 
-import yaml
 import shutil
-from pathlib import Path
-from typing import Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict
+
+import yaml
+
 from navig import console_helper as ch
 
 
@@ -90,22 +92,22 @@ def init_app(options: Dict[str, Any]) -> None:
     quiet = options.get('quiet', False)
     copy_global = options.get('copy_global', False)
     auto_yes = options.get('yes', False)
-    
+
     # Check if .navig/ already exists
     navig_dir = Path.cwd() / ".navig"
-    
+
     if navig_dir.exists():
         ch.error(
             "App already initialized",
             f".navig/ directory already exists in {Path.cwd()}"
         )
         return
-    
+
     if not quiet:
         ch.header("Initializing NAVIG App")
         ch.info(f"Location: {Path.cwd()}")
         ch.newline()
-    
+
     try:
         # Create .navig/ directory structure with proper permissions
         import os
@@ -117,8 +119,8 @@ def init_app(options: Dict[str, Any]) -> None:
         # Set permissions on Windows (full control for current user)
         if os.name == 'nt':
             try:
-                import subprocess
                 import getpass
+                import subprocess
                 username = getpass.getuser()
                 # Grant full control to current user
                 subprocess.run(
@@ -158,7 +160,7 @@ def init_app(options: Dict[str, Any]) -> None:
             ch.error(f"WARNING: Created directory but cannot access it: {e}")
             ch.info("You may need to fix permissions manually.")
             ch.info("Run: scripts/fix-navig-permissions.ps1 -Fix")
-        
+
         # Create config.yaml with app metadata
         app_name = Path.cwd().name
         config_data = {
@@ -168,7 +170,7 @@ def init_app(options: Dict[str, Any]) -> None:
                 'version': '1.0',
             }
         }
-        
+
         config_file = navig_dir / "config.yaml"
         with open(config_file, 'w', encoding='utf-8') as f:
             yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
@@ -191,7 +193,7 @@ def init_app(options: Dict[str, Any]) -> None:
                 ch.info("  .github/instructions/")
                 ch.info("  └── navig.instructions.md  (AI assistant guide)")
             ch.newline()
-        
+
         # Optionally copy global configs to app
         # Only prompt if there are actual configs to copy
         if copy_global:
@@ -218,11 +220,11 @@ def init_app(options: Dict[str, Any]) -> None:
                 # No configs to copy - skip prompt entirely
                 if not quiet:
                     ch.dim("No global configurations found to copy")
-        
+
         # Prompt for local discovery if no hosts are configured
         if not quiet and not auto_yes:
             _prompt_local_discovery(navig_dir)
-        
+
         if not quiet:
             ch.success("✓ App initialized successfully!")
             ch.newline()
@@ -233,7 +235,7 @@ def init_app(options: Dict[str, Any]) -> None:
             ch.info("  4. Add .navig/ to .gitignore if it contains sensitive data")
             ch.newline()
             ch.dim("Note: App-specific configs take precedence over global configs")
-    
+
     except Exception as e:
         ch.error("Failed to initialize app", str(e))
         # Clean up partial creation
@@ -296,7 +298,7 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
         if not quiet:
             ch.dim("No global configuration directory found (~/.navig/)")
         return
-    
+
     copied_hosts = 0
     copied_apps = 0
     failed_hosts = 0
@@ -376,13 +378,13 @@ def _prompt_local_discovery(navig_dir: Path) -> None:
         navig_dir: Path to the .navig/ directory
     """
     from navig.config import get_config_manager
-    
+
     config_manager = get_config_manager()
     hosts = config_manager.list_hosts()
-    
+
     # Check if there are any hosts (excluding 'localhost' which might already exist)
     non_local_hosts = [h for h in hosts if h not in ('localhost', 'local', 'local-dev')]
-    
+
     if len(hosts) == 0:
         # No hosts at all - definitely offer local discovery
         ch.newline()
@@ -390,7 +392,7 @@ def _prompt_local_discovery(navig_dir: Path) -> None:
         ch.info("No hosts configured. Would you like to auto-discover your local environment?")
         ch.dim("This will detect installed databases, web servers, PHP, Node.js, etc.")
         ch.newline()
-        
+
         if ch.confirm_action("Discover local environment?", default=True):
             from navig.commands.local_discovery import discover_local_host
             discover_local_host(
@@ -583,4 +585,4 @@ def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") ->
         _ensure_dirs()
     except PermissionError as e:
         _write_init_log(f"init failed: {e}")
-        raise click.exceptions.Exit(1)
+        raise click.exceptions.Exit(1) from e

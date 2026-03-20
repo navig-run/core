@@ -1,0 +1,78 @@
+# Netdata Template Configuration
+# Real-time performance and health monitoring
+
+name: netdata
+version: 1.0.0
+description: Real-time performance and health monitoring for systems and applications
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  config_dir: /etc/netdata
+  config_file: /etc/netdata/netdata.conf
+  stream_conf: /etc/netdata/stream.conf
+  health_conf_dir: /etc/netdata/health.d
+  data_dir: /var/cache/netdata
+  log_dir: /var/log/netdata
+  plugins_dir: /usr/libexec/netdata/plugins.d
+  web_dir: /usr/share/netdata/web
+
+services:
+  netdata: netdata
+  netdata_service: netdata.service
+
+commands:
+  - name: start
+    description: Start Netdata service
+    command: systemctl start netdata
+
+  - name: stop
+    description: Stop Netdata service
+    command: systemctl stop netdata
+
+  - name: restart
+    description: Restart Netdata service
+    command: systemctl restart netdata
+
+  - name: status
+    description: Check Netdata service status
+    command: systemctl status netdata
+
+  - name: logs
+    description: View Netdata logs
+    command: tail -f /var/log/netdata/error.log
+
+  - name: reload
+    description: Reload Netdata configuration
+    command: killall -USR2 netdata
+
+  - name: alarms
+    description: Show active alarms
+    command: curl -s http://localhost:19999/api/v1/alarms | jq
+
+  - name: info
+    description: Show Netdata info
+    command: curl -s http://localhost:19999/api/v1/info | jq
+
+  - name: charts
+    description: List all available charts
+    command: curl -s http://localhost:19999/api/v1/charts | jq '.charts | keys'
+
+  - name: health_check
+    description: Check health status
+    command: netdatacli health-check
+
+env_vars:
+  NETDATA_PORT: "19999"
+  NETDATA_CLAIM_TOKEN: ""
+  NETDATA_CLAIM_ROOMS: ""
+  NETDATA_CLAIM_URL: "https://app.netdata.cloud"
+
+api:
+  endpoint: http://localhost:19999/api/v1
+  auth_method: none
+  doc_url: https://learn.netdata.cloud/docs/agent/web/api
+
+default_port: 19999
+systemd_service: /lib/systemd/system/netdata.service

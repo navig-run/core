@@ -6,7 +6,6 @@ CLI commands for managing Telegram bot sessions.
 
 import json
 from datetime import datetime
-from pathlib import Path
 
 import typer
 
@@ -27,36 +26,36 @@ def list_sessions(
     except ImportError:
         ch.error("Session management not available")
         return
-    
+
     manager = get_session_manager()
     sessions = manager.list_sessions()
-    
+
     if json_output:
         data = [s.to_dict() for s in sessions]
         ch.raw_print(json.dumps(data, indent=2, default=str))
         return
-    
+
     if not sessions:
         ch.info("No active sessions")
         return
-    
+
     table = ch.Table(title="Telegram Sessions")
     table.add_column("Type", style="cyan")
     table.add_column("User/Group", style="yellow")
     table.add_column("Username", style="green")
     table.add_column("Messages", style="magenta")
     table.add_column("Last Active", style="white")
-    
+
     for session in sessions:
         session_type = "Group" if session.is_group else "DM"
         identifier = str(session.chat_id if session.is_group else session.user_id)
-        
+
         try:
             last = datetime.fromisoformat(session.last_active)
             last_str = last.strftime("%Y-%m-%d %H:%M")
-        except:
+        except Exception:
             last_str = session.last_active[:16]
-        
+
         table.add_row(
             session_type,
             identifier,
@@ -64,7 +63,7 @@ def list_sessions(
             str(session.message_count),
             last_str
         )
-    
+
     ch.console.print(table)
     ch.dim(f"\nTotal: {len(sessions)} sessions")
 
@@ -80,20 +79,20 @@ def show_session(
     except ImportError:
         ch.error("Session management not available")
         return
-    
+
     manager = get_session_manager()
-    
+
     # Find session
     session = None
     for s in manager.list_sessions():
         if s.session_key == session_key:
             session = s
             break
-    
+
     if not session:
         ch.error(f"Session not found: {session_key}")
         return
-    
+
     ch.info(f"Session: {session.session_key}")
     ch.console.print()
     ch.console.print(f"  User ID: {session.user_id}")
@@ -104,7 +103,7 @@ def show_session(
     ch.console.print(f"  Last Active: {session.last_active[:16]}")
     ch.console.print(f"  Message Count: {session.message_count}")
     ch.console.print()
-    
+
     # Show recent messages
     if session.messages:
         ch.info(f"Recent Messages (last {messages}):")
@@ -125,27 +124,27 @@ def clear_session(
     except ImportError:
         ch.error("Session management not available")
         return
-    
+
     manager = get_session_manager()
-    
+
     # Find session to get details
     session = None
     for s in manager.list_sessions():
         if s.session_key == session_key:
             session = s
             break
-    
+
     if not session:
         ch.error(f"Session not found: {session_key}")
         return
-    
+
     if not force:
         confirm = typer.confirm(
             f"Clear {session.message_count} messages from {session.session_key}?"
         )
         if not confirm:
             return
-    
+
     manager.clear_session(session.chat_id, session.user_id, session.is_group)
     ch.success(f"Session cleared: {session_key}")
 
@@ -161,14 +160,14 @@ def delete_session(
     except ImportError:
         ch.error("Session management not available")
         return
-    
+
     manager = get_session_manager()
-    
+
     if not force:
         confirm = typer.confirm(f"Delete session {session_key}? This cannot be undone.")
         if not confirm:
             return
-    
+
     manager.delete_session(session_key)
     ch.success(f"Session deleted: {session_key}")
 
@@ -184,38 +183,38 @@ def prune_sessions(
     except ImportError:
         ch.error("Session management not available")
         return
-    
+
     manager = SessionManager(session_timeout_days=days)
     sessions = manager.list_sessions()
-    
+
     # Count sessions that would be pruned
     from datetime import timedelta
     cutoff = datetime.now() - timedelta(days=days)
     to_prune = []
-    
+
     for s in sessions:
         try:
             last = datetime.fromisoformat(s.last_active)
             if last < cutoff:
                 to_prune.append(s)
-        except:
+        except Exception:
             pass
-    
+
     if not to_prune:
         ch.info(f"No sessions inactive for more than {days} days")
         return
-    
+
     ch.info(f"Found {len(to_prune)} inactive sessions:")
     for s in to_prune[:5]:
         ch.console.print(f"  - {s.session_key} (last: {s.last_active[:10]})")
     if len(to_prune) > 5:
         ch.console.print(f"  ... and {len(to_prune) - 5} more")
-    
+
     if not force:
         confirm = typer.confirm("Delete these sessions?")
         if not confirm:
             return
-    
+
     removed = manager.prune_inactive()
     ch.success(f"Removed {removed} inactive sessions")
 
@@ -224,36 +223,36 @@ def prune_sessions(
 def telegram_status():
     """Show Telegram bot status."""
     from navig.config import get_config_manager
-    
+
     cm = get_config_manager()
     config = cm._load_global_config()
-    
+
     tg_config = config.get("telegram", {})
-    
+
     ch.info("Telegram Bot Status")
     ch.console.print()
-    
+
     if tg_config.get("bot_token"):
         ch.console.print("  [green]✓[/green] Bot token configured")
     else:
         ch.console.print("  [red]✗[/red] Bot token missing")
         ch.dim("    Configure with: navig init")
         return
-    
+
     allowed = tg_config.get("allowed_users", [])
     ch.console.print(f"  Users: {len(allowed)} allowed")
-    
+
     groups = tg_config.get("allowed_groups", [])
     ch.console.print(f"  Groups: {len(groups)} allowed")
-    
+
     # Session stats
     try:
         from navig.gateway.channels.telegram_sessions import get_session_manager
         manager = get_session_manager()
         sessions = manager.list_sessions()
         ch.console.print(f"  Sessions: {len(sessions)} active")
-    except:
+    except Exception:
         pass
-    
+
     ch.console.print()
     ch.info("Start bot with: navig gateway start")

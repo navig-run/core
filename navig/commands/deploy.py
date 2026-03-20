@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -160,20 +159,20 @@ class _ProgressRenderer:
         elapsed = f"{result.elapsed:.1f}s" if result.finished_at else "?"
 
         if result.rolled_back:
-            console.print(f"\n[yellow]Health check failed. Rolled back to previous state.[/yellow]")
+            console.print("\n[yellow]Health check failed. Rolled back to previous state.[/yellow]")
             console.print(f"[red]Deploy failed[/red] in {elapsed}. Exit code 1.")
         elif result.success:
             snap_msg = ""
             if result.snapshot:
                 snap_msg = f"\n  Snapshot: [dim]{result.snapshot.path}[/dim]"
-                snap_msg += f"\n  To rollback: [bold]navig deploy rollback[/bold]"
+                snap_msg += "\n  To rollback: [bold]navig deploy rollback[/bold]"
             if result.git_ref:
                 snap_msg += f"\n  Git ref: [dim]{result.git_ref}[/dim]"
             console.print(f"\n[green]Deploy complete[/green] in {elapsed}.{snap_msg}")
         else:
             console.print(f"\n[red]Deploy failed[/red] in {elapsed}. Error: {result.error}")
             if result.snapshot:
-                console.print(f"  To rollback: [bold]navig deploy rollback[/bold]")
+                console.print("  To rollback: [bold]navig deploy rollback[/bold]")
 
 
 # ============================================================================
@@ -213,7 +212,7 @@ def deploy_run(
         server_cfg = cm.load_server_config(host_name)
     except Exception as exc:
         console.print(f"[red]Host '{host_name}' not found:[/red] {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     # Build deploy config
     deploy_cfg = DeployConfig.from_dict(raw_yaml)
@@ -265,10 +264,10 @@ def deploy_rollback(
 ):
     """Restore the previous deploy snapshot."""
     from navig.config import get_config_manager
-    from navig.deploy.models import BackupConfig, RestartConfig, HealthConfig, DeployConfig, PushConfig, ApplyConfig
-    from navig.deploy.rollback import RollbackManager
     from navig.deploy.adapters import build_adapter
     from navig.deploy.health import HealthChecker
+    from navig.deploy.models import DeployConfig
+    from navig.deploy.rollback import RollbackManager
     from navig.remote import RemoteOperations
 
     cm = get_config_manager()
@@ -281,7 +280,7 @@ def deploy_rollback(
         server_cfg = cm.load_server_config(host_name)
     except Exception as exc:
         console.print(f"[red]Host '{host_name}' not found:[/red] {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     deploy_cfg = DeployConfig.from_dict(raw_yaml)
     deploy_cfg.host = host_name
@@ -478,8 +477,8 @@ def deploy_init(
     active_host = cm.get_active_host() or ""
     active_app  = cm.get_active_app() or ""
 
-    host_in = typer.prompt(f"Target host name", default=active_host) if not active_host else active_host
-    app_in  = typer.prompt(f"App name",         default=active_app)  if not active_app  else active_app
+    host_in = typer.prompt("Target host name", default=active_host) if not active_host else active_host
+    app_in  = typer.prompt("App name",         default=active_app)  if not active_app  else active_app
 
     # Gather push source
     default_source = hints.get("build_dir", "./dist/")
@@ -508,7 +507,7 @@ def deploy_init(
         restart_cmd = typer.prompt("Restart command")
 
     # Health check URL
-    health_url = typer.prompt("Health check URL (leave empty to skip)", default=f"http://localhost/health")
+    health_url = typer.prompt("Health check URL (leave empty to skip)", default="http://localhost/health")
 
     # Apply commands
     default_apply = hints.get("apply_commands", [])

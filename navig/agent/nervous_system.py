@@ -21,13 +21,13 @@ from uuid import uuid4
 
 class EventType(Enum):
     """Types of events in the agent system."""
-    
+
     # Lifecycle events
     AGENT_STARTING = auto()
     AGENT_STARTED = auto()
     AGENT_STOPPING = auto()
     AGENT_STOPPED = auto()
-    
+
     # Component events
     COMPONENT_STARTING = auto()
     COMPONENT_STARTED = auto()
@@ -35,24 +35,24 @@ class EventType(Enum):
     COMPONENT_STOPPED = auto()
     COMPONENT_ERROR = auto()
     COMPONENT_DEGRADED = auto()
-    
+
     # Heart (orchestrator) events
     HEARTBEAT = auto()
     HEALTH_CHECK = auto()
-    
+
     # Eyes (monitoring) events
     METRIC_COLLECTED = auto()
     ALERT_TRIGGERED = auto()
     ANOMALY_DETECTED = auto()
     LOG_ENTRY = auto()
     FILE_CHANGED = auto()
-    
+
     # Ears (input) events
     MESSAGE_RECEIVED = auto()
     COMMAND_RECEIVED = auto()
     WEBHOOK_RECEIVED = auto()
     USER_INPUT = auto()
-    
+
     # Hands (execution) events
     COMMAND_STARTED = auto()
     COMMAND_COMPLETED = auto()
@@ -60,35 +60,35 @@ class EventType(Enum):
     ACTION_PENDING = auto()
     ACTION_APPROVED = auto()
     ACTION_REJECTED = auto()
-    
+
     # Brain (thinking) events
     THOUGHT = auto()
     DECISION_MADE = auto()
     PLAN_CREATED = auto()
     LEARNING = auto()
     REASONING = auto()
-    
+
     # Memory events
     CONTEXT_UPDATED = auto()
     MEMORY_STORED = auto()
     MEMORY_RECALLED = auto()
-    
+
     # Soul (personality) events
     MOOD_CHANGED = auto()
     RESPONSE_GENERATED = auto()
-    
+
     # System events
     SYSTEM_INFO = auto()
     SYSTEM_WARNING = auto()
     SYSTEM_ERROR = auto()
-    
+
     # Custom/plugin events
     CUSTOM = auto()
 
 
 class EventPriority(Enum):
     """Event priority levels."""
-    
+
     LOW = 0
     NORMAL = 1
     HIGH = 2
@@ -98,14 +98,14 @@ class EventPriority(Enum):
 @dataclass
 class Event:
     """An event in the agent system."""
-    
+
     type: EventType
     source: str
     data: Dict[str, Any] = field(default_factory=dict)
     priority: EventPriority = EventPriority.NORMAL
     timestamp: datetime = field(default_factory=datetime.now)
     id: str = field(default_factory=lambda: str(uuid4())[:8])
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
@@ -115,7 +115,7 @@ class Event:
             'priority': self.priority.name,
             'timestamp': self.timestamp.isoformat(),
         }
-    
+
     def __repr__(self) -> str:
         return f"<Event {self.type.name} from={self.source} id={self.id}>"
 
@@ -134,7 +134,7 @@ class NervousSystem:
     - Emit events for other components
     - React to system-wide events
     """
-    
+
     def __init__(self):
         self._handlers: Dict[EventType, List[EventHandler]] = {}
         self._global_handlers: List[EventHandler] = []
@@ -144,7 +144,7 @@ class NervousSystem:
         self._pending_events: asyncio.Queue[Event] = asyncio.Queue()
         self._running = False
         self._event_loop_task: Optional[asyncio.Task] = None
-    
+
     def subscribe(
         self,
         event_type: EventType,
@@ -154,11 +154,11 @@ class NervousSystem:
         if event_type not in self._handlers:
             self._handlers[event_type] = []
         self._handlers[event_type].append(handler)
-    
+
     def subscribe_all(self, handler: EventHandler) -> None:
         """Subscribe to all events."""
         self._global_handlers.append(handler)
-    
+
     def unsubscribe(
         self,
         event_type: EventType,
@@ -170,14 +170,14 @@ class NervousSystem:
                 self._handlers[event_type].remove(handler)
             except ValueError:
                 pass
-    
+
     def unsubscribe_all(self, handler: EventHandler) -> None:
         """Unsubscribe from all events."""
         try:
             self._global_handlers.remove(handler)
         except ValueError:
             pass
-    
+
     async def emit(
         self,
         event_type: EventType,
@@ -192,32 +192,32 @@ class NervousSystem:
             data=data or {},
             priority=priority,
         )
-        
+
         # Store in history
         self._event_history.append(event)
         if len(self._event_history) > self._max_history:
             self._event_history = self._event_history[-self._max_history:]
-        
+
         if self._paused:
             await self._pending_events.put(event)
             return event
-        
+
         # Dispatch to handlers
         await self._dispatch(event)
-        
+
         return event
-    
+
     async def _dispatch(self, event: Event) -> None:
         """Dispatch event to all relevant handlers."""
         handlers: List[EventHandler] = []
-        
+
         # Add global handlers
         handlers.extend(self._global_handlers)
-        
+
         # Add type-specific handlers
         if event.type in self._handlers:
             handlers.extend(self._handlers[event.type])
-        
+
         # Call handlers concurrently
         if handlers:
             async def safe_call(handler: EventHandler) -> None:
@@ -231,27 +231,27 @@ class NervousSystem:
                     logging.getLogger('navig.agent.nervous_system').error(
                         f"Error in event handler: {e}", exc_info=True
                     )
-            
+
             await asyncio.gather(
                 *[safe_call(h) for h in handlers],
                 return_exceptions=True
             )
-    
+
     def pause(self) -> None:
         """Pause event dispatching (events are queued)."""
         self._paused = True
-    
+
     async def resume(self) -> None:
         """Resume event dispatching and process queued events."""
         self._paused = False
-        
+
         while not self._pending_events.empty():
             try:
                 event = self._pending_events.get_nowait()
                 await self._dispatch(event)
             except asyncio.QueueEmpty:
                 break
-    
+
     def get_history(
         self,
         event_type: Optional[EventType] = None,
@@ -260,29 +260,29 @@ class NervousSystem:
     ) -> List[Event]:
         """Get event history with optional filtering."""
         events = self._event_history
-        
+
         if event_type:
             events = [e for e in events if e.type == event_type]
-        
+
         if source:
             events = [e for e in events if e.source == source]
-        
+
         return events[-limit:]
-    
+
     def clear_history(self) -> None:
         """Clear event history."""
         self._event_history.clear()
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get nervous system statistics."""
         type_counts: Dict[str, int] = {}
         source_counts: Dict[str, int] = {}
-        
+
         for event in self._event_history:
             type_name = event.type.name
             type_counts[type_name] = type_counts.get(type_name, 0) + 1
             source_counts[event.source] = source_counts.get(event.source, 0) + 1
-        
+
         return {
             'total_events': len(self._event_history),
             'handler_count': sum(len(h) for h in self._handlers.values()),
@@ -292,7 +292,7 @@ class NervousSystem:
             'events_by_type': type_counts,
             'events_by_source': source_counts,
         }
-    
+
     def list_subscriptions(self) -> Dict[str, int]:
         """List all event subscriptions."""
         return {
@@ -307,14 +307,14 @@ class EventEmitter:
     
     Provides convenient methods for emitting common event types.
     """
-    
+
     def __init__(self, name: str, nervous_system: Optional[NervousSystem] = None):
         self._emitter_name = name
         self._nervous_system = nervous_system
-    
+
     def set_nervous_system(self, ns: NervousSystem) -> None:
         self._nervous_system = ns
-    
+
     async def emit(
         self,
         event_type: EventType,
@@ -329,20 +329,20 @@ class EventEmitter:
                 priority=priority,
             )
         return None
-    
+
     async def emit_info(self, message: str, **data: Any) -> Optional[Event]:
         return await self.emit(
             EventType.SYSTEM_INFO,
             data={'message': message, **data}
         )
-    
+
     async def emit_warning(self, message: str, **data: Any) -> Optional[Event]:
         return await self.emit(
             EventType.SYSTEM_WARNING,
             data={'message': message, **data},
             priority=EventPriority.HIGH
         )
-    
+
     async def emit_error(self, message: str, error: Optional[Exception] = None, **data: Any) -> Optional[Event]:
         return await self.emit(
             EventType.SYSTEM_ERROR,

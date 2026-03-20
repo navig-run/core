@@ -36,25 +36,25 @@ class SandboxStatus(Enum):
 @dataclass
 class SandboxConfig:
     """Configuration for sandbox environment."""
-    
+
     # Resource limits
     memory_limit: str = "512m"       # Memory limit (e.g., "512m", "1g")
     cpu_limit: float = 1.0           # CPU cores limit
     disk_limit: str = "1g"           # Disk space limit
-    
+
     # Timeouts
     execution_timeout: int = 300     # Max execution time in seconds
     startup_timeout: int = 30        # Container startup timeout
-    
+
     # Network
     network_enabled: bool = False    # Allow network access
     network_mode: str = "none"       # "none", "bridge", "host"
-    
+
     # Security
     read_only_root: bool = True      # Read-only root filesystem
     no_new_privileges: bool = True   # Prevent privilege escalation
     cap_drop: List[str] = field(default_factory=lambda: ["ALL"])
-    
+
     # Image settings
     default_image: str = "python:3.11-slim"  # Default container image
     allowed_images: List[str] = field(default_factory=lambda: [
@@ -64,11 +64,11 @@ class SandboxConfig:
         "ubuntu:22.04",
         "alpine:latest",
     ])
-    
+
     # Paths
     workspace_mount: Optional[str] = None  # Host path to mount as workspace
     output_dir: Optional[str] = None       # Directory for output files
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SandboxConfig':
         """Create config from dictionary."""
@@ -100,7 +100,7 @@ class SandboxResult:
     container_id: Optional[str] = None
     error: Optional[str] = None
     output_files: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "execution_id": self.execution_id,
@@ -123,7 +123,7 @@ class DockerSandbox:
         sandbox = DockerSandbox()
         result = await sandbox.execute("python script.py", image="python:3.11-slim")
     """
-    
+
     def __init__(self, config: Optional[SandboxConfig] = None):
         """
         Initialize Docker sandbox.
@@ -133,12 +133,12 @@ class DockerSandbox:
         """
         self.config = config or SandboxConfig()
         self._docker_available: Optional[bool] = None
-    
+
     async def is_available(self) -> bool:
         """Check if Docker is available."""
         if self._docker_available is not None:
             return self._docker_available
-        
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 "docker", "version",
@@ -149,9 +149,9 @@ class DockerSandbox:
             self._docker_available = proc.returncode == 0
         except Exception:
             self._docker_available = False
-        
+
         return self._docker_available
-    
+
     async def execute(
         self,
         command: str,
@@ -177,7 +177,7 @@ class DockerSandbox:
         """
         import uuid
         execution_id = str(uuid.uuid4())[:8]
-        
+
         # Check Docker availability
         if not await self.is_available():
             return SandboxResult(
@@ -185,7 +185,7 @@ class DockerSandbox:
                 status=SandboxStatus.ERROR,
                 error="Docker is not available",
             )
-        
+
         # Validate image
         image = image or self.config.default_image
         if self.config.allowed_images and image not in self.config.allowed_images:
@@ -194,10 +194,10 @@ class DockerSandbox:
                 status=SandboxStatus.ERROR,
                 error=f"Image '{image}' not in allowed list",
             )
-        
+
         # Create temporary workspace
         temp_dir = tempfile.mkdtemp(prefix=f"navig-sandbox-{execution_id}-")
-        
+
         try:
             # Write files to workspace
             if files:
@@ -205,7 +205,7 @@ class DockerSandbox:
                     filepath = Path(temp_dir) / filename
                     filepath.parent.mkdir(parents=True, exist_ok=True)
                     filepath.write_text(content)
-            
+
             # Build docker run command
             docker_cmd = self._build_docker_command(
                 execution_id=execution_id,
@@ -215,28 +215,28 @@ class DockerSandbox:
                 working_dir=working_dir,
                 env=env,
             )
-            
+
             logger.debug(f"Sandbox command: {' '.join(docker_cmd)}")
-            
+
             # Execute with timeout
             start_time = datetime.now()
             exec_timeout = timeout or self.config.execution_timeout
-            
+
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *docker_cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                
+
                 try:
                     stdout, stderr = await asyncio.wait_for(
                         proc.communicate(),
                         timeout=exec_timeout,
                     )
-                    
+
                     execution_time = (datetime.now() - start_time).total_seconds()
-                    
+
                     return SandboxResult(
                         execution_id=execution_id,
                         status=SandboxStatus.COMPLETED,
@@ -246,11 +246,11 @@ class DockerSandbox:
                         execution_time=execution_time,
                         container_id=f"navig-sandbox-{execution_id}",
                     )
-                    
+
                 except asyncio.TimeoutError:
                     # Kill the container
                     await self._kill_container(execution_id)
-                    
+
                     return SandboxResult(
                         execution_id=execution_id,
                         status=SandboxStatus.TIMEOUT,
@@ -258,24 +258,24 @@ class DockerSandbox:
                         execution_time=exec_timeout,
                         container_id=f"navig-sandbox-{execution_id}",
                     )
-                    
+
             except Exception as e:
                 return SandboxResult(
                     execution_id=execution_id,
                     status=SandboxStatus.ERROR,
                     error=str(e),
                 )
-                
+
         finally:
             # Cleanup temporary workspace
             try:
                 shutil.rmtree(temp_dir)
             except Exception as e:
                 logger.warning(f"Failed to cleanup temp dir: {e}")
-            
+
             # Cleanup container (in case it's still running)
             await self._cleanup_container(execution_id)
-    
+
     def _build_docker_command(
         self,
         execution_id: str,
@@ -290,48 +290,48 @@ class DockerSandbox:
             "docker", "run",
             "--rm",  # Remove container after execution
             "--name", f"navig-sandbox-{execution_id}",
-            
+
             # Resource limits
             "--memory", self.config.memory_limit,
             "--cpus", str(self.config.cpu_limit),
-            
+
             # Security options
             "--security-opt", "no-new-privileges:true" if self.config.no_new_privileges else "no-new-privileges:false",
         ]
-        
+
         # Read-only root
         if self.config.read_only_root:
             cmd.extend(["--read-only"])
             # Need tmpfs for temp files
             cmd.extend(["--tmpfs", "/tmp:size=100M"])
-        
+
         # Drop capabilities
         for cap in self.config.cap_drop:
             cmd.extend(["--cap-drop", cap])
-        
+
         # Network
         if not self.config.network_enabled:
             cmd.extend(["--network", "none"])
         elif self.config.network_mode != "bridge":
             cmd.extend(["--network", self.config.network_mode])
-        
+
         # Mount workspace
         cmd.extend([
             "-v", f"{workspace_path}:{working_dir}",
             "-w", working_dir,
         ])
-        
+
         # Environment variables
         if env:
             for key, value in env.items():
                 cmd.extend(["-e", f"{key}={value}"])
-        
+
         # Image and command
         cmd.append(image)
         cmd.extend(["sh", "-c", command])
-        
+
         return cmd
-    
+
     async def _kill_container(self, execution_id: str):
         """Kill a running container."""
         try:
@@ -343,7 +343,7 @@ class DockerSandbox:
             await proc.wait()
         except Exception as e:
             logger.warning(f"Failed to kill container: {e}")
-    
+
     async def _cleanup_container(self, execution_id: str):
         """Remove a container if it exists."""
         try:
@@ -355,7 +355,7 @@ class DockerSandbox:
             await proc.wait()
         except Exception:
             pass  # Container might not exist
-    
+
     async def execute_script(
         self,
         script_content: str,
@@ -392,7 +392,7 @@ class DockerSandbox:
                 status=SandboxStatus.ERROR,
                 error=f"Unsupported language: {language}",
             )
-        
+
         return await self.execute(
             command=command,
             image=kwargs.get("image", image),

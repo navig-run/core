@@ -32,8 +32,8 @@ import time
 from typing import Optional
 
 from navig.debug_logger import get_debug_logger
-from navig.mesh.auth import attach_hmac, verify_payload, HMAC_FIELD, load_secret
-from navig.mesh.registry import NodeRegistry, NodeRecord, _detect_os
+from navig.mesh.auth import attach_hmac, verify_payload
+from navig.mesh.registry import NodeRecord, NodeRegistry
 
 logger = get_debug_logger()
 

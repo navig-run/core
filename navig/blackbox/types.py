@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
-import uuid
 
 __all__ = ["EventType", "BlackboxEvent", "Bundle"]
 

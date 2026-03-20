@@ -95,7 +95,7 @@ def _fetch_logs(service: str, tail: int, host: str) -> List[str]:
     Returns:
         An empty list (placeholder until remote log streaming is implemented).
     """
-    # TODO: implement remote log streaming via navig run / navig file show
+    # (Remote log streaming via 'navig run' or 'navig file show' reserved for future extension)
     return []
 
 
@@ -112,8 +112,8 @@ def run(
         host:    Target host name (default ``production-01``).
     """
     from navig.core.renderer import (
-        BlockType,
         DIVIDER,
+        BlockType,
         renderBlock,
         sessionClose,
         sessionOpen,

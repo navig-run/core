@@ -1,0 +1,17 @@
+{
+  "id": "navig-windows-automation",
+  "name": "NAVIG Windows Automation",
+  "version": "1.0.0",
+  "description": "Windows UI automation — AutoHotkey v2 library, screen capture, OCR, and UI scripting.",
+  "author": "navig",
+  "license": "MIT",
+  "entry": "handler.py",
+  "provides": ["tools", "skills"],
+  "hooks": ["on_load", "on_unload"],
+  "depends_on": {
+    "packages": {},
+    "skills": [],
+    "pip": []
+  },
+  "recommends": {}
+}

@@ -13,27 +13,27 @@ logger = get_debug_logger()
 
 class MCPTransport(ABC):
     """Abstract base for MCP transports."""
-    
+
     @abstractmethod
     async def connect(self):
         """Establish connection."""
         pass
-    
+
     @abstractmethod
     async def disconnect(self):
         """Close connection."""
         pass
-    
+
     @abstractmethod
     async def send(self, data: str) -> Optional[str]:
         """Send request and wait for response (if request has ID)."""
         pass
-    
+
     @abstractmethod
     async def send_notification(self, data: str):
         """Send notification (no response expected)."""
         pass
-    
+
     @abstractmethod
     def is_connected(self) -> bool:
         """Check if transport is connected."""
@@ -47,7 +47,7 @@ class StdioTransport(MCPTransport):
     Spawns subprocess and communicates via stdin/stdout.
     Uses JSON-RPC over newline-delimited JSON.
     """
-    
+
     def __init__(
         self,
         command: str,
@@ -59,12 +59,12 @@ class StdioTransport(MCPTransport):
         self.args = args or []
         self.env = env
         self.cwd = cwd
-        
+
         self._process: Optional[asyncio.subprocess.Process] = None
         self._pending: Dict[Any, asyncio.Future] = {}
         self._reader_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
-    
+
     async def connect(self):
         """Start subprocess."""
         # Merge environment
@@ -76,9 +76,9 @@ class StdioTransport(MCPTransport):
                     env_var = value[2:-1]
                     value = os.environ.get(env_var, '')
                 full_env[key] = value
-        
+
         logger.debug(f"Starting MCP server: {self.command} {' '.join(self.args)}")
-        
+
         try:
             self._process = await asyncio.create_subprocess_exec(
                 self.command,
@@ -89,20 +89,20 @@ class StdioTransport(MCPTransport):
                 env=full_env,
                 cwd=self.cwd,
             )
-            
+
             # Start reader task
             self._reader_task = asyncio.create_task(self._read_loop())
-            
+
             # Start stderr reader for debugging
             asyncio.create_task(self._read_stderr())
-            
+
             logger.info(f"MCP stdio transport connected: {self.command}")
-            
-        except FileNotFoundError:
-            raise RuntimeError(f"MCP server command not found: {self.command}")
+
+        except FileNotFoundError as _exc:
+            raise RuntimeError(f"MCP server command not found: {self.command}") from _exc
         except Exception as e:
-            raise RuntimeError(f"Failed to start MCP server: {e}")
-    
+            raise RuntimeError(f"Failed to start MCP server: {e}") from e
+
     async def disconnect(self):
         """Stop subprocess."""
         if self._reader_task:
@@ -111,7 +111,7 @@ class StdioTransport(MCPTransport):
                 await self._reader_task
             except asyncio.CancelledError:
                 pass
-        
+
         if self._process:
             self._process.terminate()
             try:
@@ -119,64 +119,64 @@ class StdioTransport(MCPTransport):
             except asyncio.TimeoutError:
                 self._process.kill()
                 await self._process.wait()
-        
+
         # Cancel pending futures
         for future in self._pending.values():
             if not future.done():
                 future.cancel()
-        
+
         self._pending.clear()
         self._process = None
         logger.info("MCP stdio transport disconnected")
-    
+
     async def send(self, data: str) -> Optional[str]:
         """Send request and wait for response."""
         if not self._process or not self._process.stdin:
             raise RuntimeError("Transport not connected")
-        
+
         # Parse to get request ID
         parsed = json.loads(data)
         request_id = parsed.get("id")
-        
+
         async with self._lock:
             # Create future for response if this is a request (has ID)
             if request_id is not None:
                 loop = asyncio.get_event_loop()
                 future = loop.create_future()
                 self._pending[request_id] = future
-            
+
             # Send request
             message = data + "\n"
             self._process.stdin.write(message.encode())
             await self._process.stdin.drain()
-        
+
         # Wait for response if request
         if request_id is not None:
             try:
                 response = await asyncio.wait_for(future, timeout=30)
                 return response
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as _exc:
                 self._pending.pop(request_id, None)
-                raise RuntimeError(f"Request timeout: {request_id}")
+                raise RuntimeError(f"Request timeout: {request_id}") from _exc
             finally:
                 self._pending.pop(request_id, None)
-        
+
         return None
-    
+
     async def send_notification(self, data: str):
         """Send notification (no response expected)."""
         if not self._process or not self._process.stdin:
             raise RuntimeError("Transport not connected")
-        
+
         async with self._lock:
             message = data + "\n"
             self._process.stdin.write(message.encode())
             await self._process.stdin.drain()
-    
+
     def is_connected(self) -> bool:
         """Check if process is running."""
         return self._process is not None and self._process.returncode is None
-    
+
     async def _read_loop(self):
         """Read responses from stdout."""
         while self._process and self._process.stdout:
@@ -185,15 +185,15 @@ class StdioTransport(MCPTransport):
                 if not line:
                     logger.warning("MCP server stdout closed")
                     break
-                
+
                 data = line.decode().strip()
                 if not data:
                     continue
-                
+
                 try:
                     parsed = json.loads(data)
                     request_id = parsed.get("id")
-                    
+
                     if request_id is not None and request_id in self._pending:
                         future = self._pending[request_id]
                         if not future.done():
@@ -201,16 +201,16 @@ class StdioTransport(MCPTransport):
                     else:
                         # Notification from server
                         logger.debug(f"MCP notification: {data[:100]}")
-                        
+
                 except json.JSONDecodeError:
                     logger.warning(f"Invalid JSON from MCP server: {data[:100]}")
-                    
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"MCP reader error: {e}")
                 break
-    
+
     async def _read_stderr(self):
         """Read and log stderr for debugging."""
         while self._process and self._process.stderr:
@@ -218,11 +218,11 @@ class StdioTransport(MCPTransport):
                 line = await self._process.stderr.readline()
                 if not line:
                     break
-                
+
                 text = line.decode().strip()
                 if text:
                     logger.debug(f"MCP stderr: {text}")
-                    
+
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -235,7 +235,7 @@ class SSETransport(MCPTransport):
     
     Connects to HTTP endpoint for sending and receives via SSE.
     """
-    
+
     def __init__(
         self,
         url: str,
@@ -243,21 +243,21 @@ class SSETransport(MCPTransport):
     ):
         self.url = url
         self.headers = headers or {}
-        
+
         self._session = None
         self._sse_task: Optional[asyncio.Task] = None
         self._pending: Dict[Any, asyncio.Future] = {}
-    
+
     async def connect(self):
         """Create HTTP session and start SSE listener."""
         try:
             import aiohttp
-        except ImportError:
-            raise ImportError("aiohttp required for SSE transport: pip install aiohttp")
-        
+        except ImportError as _exc:
+            raise ImportError("aiohttp required for SSE transport: pip install aiohttp") from _exc
+
         self._session = aiohttp.ClientSession(headers=self.headers)
         logger.info(f"MCP SSE transport connected: {self.url}")
-    
+
     async def disconnect(self):
         """Close HTTP session."""
         if self._sse_task:
@@ -266,23 +266,23 @@ class SSETransport(MCPTransport):
                 await self._sse_task
             except asyncio.CancelledError:
                 pass
-        
+
         if self._session:
             await self._session.close()
             self._session = None
-        
+
         for future in self._pending.values():
             if not future.done():
                 future.cancel()
-        
+
         self._pending.clear()
         logger.info("MCP SSE transport disconnected")
-    
+
     async def send(self, data: str) -> Optional[str]:
         """Send request via HTTP POST."""
         if not self._session:
             raise RuntimeError("Transport not connected")
-        
+
         async with self._session.post(
             self.url,
             data=data,
@@ -291,13 +291,13 @@ class SSETransport(MCPTransport):
             if response.status != 200:
                 error = await response.text()
                 raise RuntimeError(f"MCP request failed: {response.status} {error}")
-            
+
             return await response.text()
-    
+
     async def send_notification(self, data: str):
         """Send notification via HTTP POST."""
         await self.send(data)
-    
+
     def is_connected(self) -> bool:
         """Check if session is active."""
         return self._session is not None and not self._session.closed

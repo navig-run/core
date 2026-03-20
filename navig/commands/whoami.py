@@ -12,9 +12,9 @@ from __future__ import annotations
 
 
 def run_whoami() -> None:
-    from navig.identity.sigil_store import load_entity
     from navig.identity.entity import derive_entity
     from navig.identity.renderer import render_sigil_card
+    from navig.identity.sigil_store import load_entity
 
     data = load_entity()
     if not data:

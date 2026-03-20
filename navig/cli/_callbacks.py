@@ -6,8 +6,8 @@ from typing import Optional
 import typer
 
 from navig import __version__
-from navig.lazy_loader import lazy_import
 from navig.cli.help_dictionaries import HELP_REGISTRY
+from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
 _HACKER_QUOTES: list | None = None
@@ -84,6 +84,7 @@ def _schema_callback(value: bool):
     """Output machine-readable command schema as JSON and exit."""
     if value:
         import json as _json
+
         from navig.cli.registry import get_schema
         schema = get_schema()
         typer.echo(_json.dumps(schema, indent=2))

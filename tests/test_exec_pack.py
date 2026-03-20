@@ -1,4 +1,4 @@
-"""tests/test_exec_pack.py — Tests for the bash_exec tool pack."""
+﻿"""tests/test_exec_pack.py — Tests for the bash_exec tool pack."""
 from __future__ import annotations
 
 import sys
@@ -83,7 +83,7 @@ def test_truncate_middle_preserves_head_and_tail():
 
 @pytest.mark.asyncio
 async def test_run_shell_simple_command():
-    from navig.tools.packs.exec_pack import _run_shell
+    from navig.tools.domains.exec_pack import _run_shell
 
     # Use a cross-platform command
     cmd = "echo hello"
@@ -96,7 +96,7 @@ async def test_run_shell_simple_command():
 
 @pytest.mark.asyncio
 async def test_run_shell_nonzero_exit():
-    from navig.tools.packs.exec_pack import _run_shell
+    from navig.tools.domains.exec_pack import _run_shell
 
     if sys.platform == "win32":
         cmd = "exit 1"
@@ -110,7 +110,7 @@ async def test_run_shell_nonzero_exit():
 
 @pytest.mark.asyncio
 async def test_run_shell_timeout():
-    from navig.tools.packs.exec_pack import _run_shell
+    from navig.tools.domains.exec_pack import _run_shell
 
     # Use a command that sleeps; timeout well before it finishes
     if sys.platform == "win32":
@@ -127,7 +127,7 @@ async def test_run_shell_timeout():
 async def test_run_shell_output_truncation():
     import os
     import tempfile
-    from navig.tools.packs.exec_pack import _run_shell, _OUTPUT_CAP
+    from navig.tools.domains.exec_pack import _run_shell, _OUTPUT_CAP
 
     # Write a temp script to avoid Windows quoting issues with the Python path
     script = f"import sys\nsys.stdout.write('X' * {_OUTPUT_CAP + 10000})\n"
@@ -147,7 +147,7 @@ async def test_run_shell_output_truncation():
 
 @pytest.mark.asyncio
 async def test_run_shell_env_injection():
-    from navig.tools.packs.exec_pack import _run_shell
+    from navig.tools.domains.exec_pack import _run_shell
 
     if sys.platform == "win32":
         cmd = "echo %TEST_NAVIG_VAR%"

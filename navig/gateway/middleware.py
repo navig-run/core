@@ -13,8 +13,8 @@ Usage (in _start_http_server):
 """
 from __future__ import annotations
 
-import time
 import logging
+import time
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 

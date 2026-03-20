@@ -91,7 +91,6 @@ def migrate_from_legacy(
     # Check legacy VaultStorage uses the old Fernet encryption; we need to
     # import it so we can decrypt the blobs before re-encrypting.
     try:
-        from navig.vault.storage import VaultStorage  # type: ignore[import]
         from navig.vault.core import CredentialsVault  # type: ignore[import]
 
         legacy_vault = CredentialsVault(db_path=src)

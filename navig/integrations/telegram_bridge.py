@@ -37,13 +37,19 @@ logger = logging.getLogger(__name__)
 
 def _import_bot():
     try:
-        from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-        from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+        from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+        from telegram.ext import (
+            Application,
+            CallbackQueryHandler,
+            CommandHandler,
+            MessageHandler,
+            filters,
+        )
         return Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-    except ImportError:
+    except ImportError as _exc:
         raise RuntimeError(
             "python-telegram-bot not installed. Run: pip install python-telegram-bot"
-        )
+        ) from _exc
 
 
 # ─────────────────────────── bridge class ────────────────────────────────────
@@ -66,6 +72,7 @@ class TelegramBridge:
         self._timeout = timeout_seconds
         self._pending: Dict[str, asyncio.Future] = {}  # correlation_id → Future
         self._app = None  # telegram Application (started lazily)
+        self._stop_event: Optional[asyncio.Event] = None
 
     # ─────────────────────── public API ────────────────────────────────────
 
@@ -121,7 +128,7 @@ class TelegramBridge:
         markup = InlineKeyboardMarkup(keyboard)
 
         bot = Bot(token=self._token)
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[corr] = future
 
         async with bot:
@@ -167,7 +174,7 @@ class TelegramBridge:
         corr = str(uuid.uuid4())[:8]
 
         bot = Bot(token=self._token)
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[f"2fa:{corr}"] = future
 
         async with bot:
@@ -281,12 +288,26 @@ class TelegramBridge:
 
         logger.info("Telegram bridge listener started (chat_id=%s)", self._chat_id)
 
+        self._stop_event = asyncio.Event()
+        self._app = app
+
         async with app:
             await app.start()
-            await app.updater.start_polling()
-            await asyncio.Event().wait()  # run forever
+            await app.updater.start_polling(
+                allowed_updates=["message", "callback_query"],
+                drop_pending_updates=True,
+            )
+            await self._stop_event.wait()  # run until stop() called
             await app.updater.stop()
             await app.stop()
+
+        self._stop_event = None
+        self._app = None
+
+    async def stop(self) -> None:
+        """Signal the listener loop to stop gracefully."""
+        if self._stop_event is not None:
+            self._stop_event.set()
 
 
 # ─────────────────────────── singleton ───────────────────────────────────────
@@ -303,8 +324,8 @@ def get_telegram_bridge() -> TelegramBridge:
     """
     global _bridge_instance
     if _bridge_instance is None:
-        from navig.vault import get_vault
         from navig.memory.knowledge_graph import get_knowledge_graph
+        from navig.vault import get_vault
 
         vault = get_vault()
         cred_list = vault.list(provider="telegram")

@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict, Optional
 
 from navig.update.models import VersionInfo
-from navig.update.sources import _BaseSource, SourceError
+from navig.update.sources import SourceError, _BaseSource
 
 
 class VersionChecker:
@@ -33,7 +33,6 @@ class VersionChecker:
     def check_local(self) -> VersionInfo:
         """Check local install version."""
         from pathlib import Path
-        import subprocess
 
         try:
             import navig as _navig

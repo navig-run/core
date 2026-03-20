@@ -4,8 +4,9 @@ Assistant Commands
 CLI commands for the proactive AI assistant system.
 """
 
-from typing import Dict, Any, Optional
 import json
+from typing import Any, Dict, Optional
+
 import pyperclip
 
 from navig import console_helper as ch
@@ -18,36 +19,36 @@ def status_cmd(ctx_obj: Dict[str, Any]):
     """Display assistant health and statistics."""
     config = get_config_manager()
     assistant = ProactiveAssistant(config)
-    
+
     ch.header("🤖 Proactive Assistant Status")
-    
+
     # Configuration
     ch.info("\n📋 Configuration:")
     ch.dim(f"  Enabled: {assistant.is_enabled()}")
     ch.dim(f"  Suggestion Level: {assistant.get_suggestion_level()}")
     ch.dim(f"  Auto Analysis: {assistant.should_auto_analyze()}")
     ch.dim(f"  Confirmation Required: {assistant.requires_confirmation()}")
-    
+
     # Statistics
     ch.info("\n📊 Statistics:")
-    
+
     # Command history
     history_file = assistant.ai_context_dir / 'command_history.json'
     if history_file.exists():
         with open(history_file, 'r') as f:
             history = json.load(f)
         ch.dim(f"  Commands Logged: {len(history)}")
-    
+
     # Error statistics
     if hasattr(assistant, 'error_resolution'):
         stats = assistant.error_resolution.get_error_statistics(hours=24)
         ch.dim(f"  Errors (24h): {stats.get('total_errors', 0)}")
-        
+
         if stats.get('by_category'):
             ch.dim("  Error Categories:")
             for cat, count in stats['by_category'].items():
                 ch.dim(f"    - {cat}: {count}")
-    
+
     # Active issues
     issues_file = assistant.ai_context_dir / 'detected_issues.json'
     if issues_file.exists():
@@ -55,7 +56,7 @@ def status_cmd(ctx_obj: Dict[str, Any]):
             issues = json.load(f)
         active_issues = [i for i in issues if i.get('status') == 'active']
         ch.dim(f"  Active Issues: {len(active_issues)}")
-    
+
     ch.success("\n✓ Assistant is operational")
 
 
@@ -219,7 +220,7 @@ def reset_cmd(ctx_obj: Dict[str, Any]):
         if confirm.lower() != 'yes':
             ch.info("Reset cancelled")
             return
-    
+
     try:
         # Clear JSON files
         files_to_clear = [
@@ -229,21 +230,21 @@ def reset_cmd(ctx_obj: Dict[str, Any]):
             'performance_baselines.json',
             'workflow_patterns.json'
         ]
-        
+
         for filename in files_to_clear:
             file_path = assistant.ai_context_dir / filename
             if file_path.exists():
                 with open(file_path, 'w') as f:
                     json.dump([], f)
-        
+
         # Clear baselines directory
         baselines_dir = assistant.navig_dir / 'baselines'
         if baselines_dir.exists():
             for baseline_file in baselines_dir.glob('*.json'):
                 baseline_file.unlink()
-        
+
         ch.success("✓ Assistant data reset successfully")
-        
+
     except Exception as e:
         ch.error(f"Reset failed: {e}")
 

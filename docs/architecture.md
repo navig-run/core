@@ -1,4 +1,4 @@
-# NAVIG Execution Engine — Architecture
+﻿# NAVIG Execution Engine — Architecture
 
 ## Overview
 
@@ -206,7 +206,7 @@ All new modules are pure Python standard-library only (no new dependencies).
 | Module | Role |
 |--------|------|
 | `navig.tools.hooks` | `HookRegistry` — sync pub/sub for `BEFORE_EXECUTE`, `AFTER_EXECUTE`, `DENIED`, `ERROR`, `NOT_FOUND` |
-| `navig.tools.packs.exec_pack` | `bash_exec` — sandboxed shell execution (DANGEROUS, 50k output cap) |
+| `navig.tools.domains.exec_pack` | `bash_exec` — sandboxed shell execution (DANGEROUS, 50k output cap) |
 | `navig.tools.bridge` | `bridge_all(base_reg, router_reg)` — adapts BaseTool to ToolRouter without modifying either registry |
 | `navig.skills.eligibility` | `SkillEligibilityContext`, `filter_skills()` — enforce platform/safety/user_invocable gates at injection time |
 
@@ -232,7 +232,7 @@ All new modules are pure Python standard-library only (no new dependencies).
 
 ```
 navig.tools.hooks            <- no navig deps (stdlib only)
-navig.tools.packs.exec_pack  <- navig.tools.router (ToolMeta, ToolDomain, SafetyLevel)
+navig.tools.domains.exec_pack  <- navig.tools.router (ToolMeta, ToolDomain, SafetyLevel)
 navig.tools.bridge           <- navig.tools.registry + navig.tools.router
 navig.skills.eligibility     <- navig.skills.loader (Skill)
 navig.tools.router           <- navig.tools.hooks [new]

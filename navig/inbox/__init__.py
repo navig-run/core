@@ -10,8 +10,8 @@ Global cross-platform file/URL inbox with:
 """
 
 from navig.inbox.classifier import Classifier, ClassifyResult
+from navig.inbox.hooks import HookEvent, HookSystem
 from navig.inbox.router import InboxRouter, RouteMode, RouteResult
-from navig.inbox.hooks import HookSystem, HookEvent
 from navig.inbox.store import InboxStore
 
 __all__ = [

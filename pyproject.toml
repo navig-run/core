@@ -107,6 +107,34 @@ navig = ["*.txt", "*.md", "help/*.md", "schemas/*.json"]
 "navig.resources" = ["workflows/*.yaml", "*.md"]
 "navig.agent.context" = ["*.md"]
 "navig_sdk" = ["*.md"]
+# Root content trees included in wheel/sdist
+"" = [
+    "store/skills/**/*.md",
+    "store/skills/**/*.json",
+    "store/skills/**/*.txt",
+    "store/skills/**/*.yaml",
+    "store/skills/**/*.py",
+    "store/templates/**/*.yaml",
+    "store/templates/**/*.yml",
+    "store/templates/**/*.txt",
+    "store/formations/**/*.json",
+    "store/formations/**/*.md",
+    "store/actions/**/*.yaml",
+    "store/actions/**/*.json",
+    "store/agents/**/*.json",
+    "store/agents/**/*.md",
+    "store/prompts/**/*.md",
+    "store/prompts/**/*.txt",
+    "store/stacks/**/*.yaml",
+    "store/stacks/**/*.yml",
+    "store/workflows/**/*.yaml",
+    "store/workflows/**/*.json",
+    "packages/**/*.json",
+    "packages/**/*.yaml",
+    "packages/**/*.yml",
+    "packages/**/*.md",
+    "packages/**/*.py",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
 from navig.formations.schema import (
@@ -37,21 +37,28 @@ _FORMATIONS_ROOTS: List[Path] = []
 
 def _get_formations_roots() -> List[Path]:
     """Get all directories to scan for formations.
-    
-    Searches:
-    1. <project-root>/formations/  (shipped with NAVIG)
-    2. ~/.navig/formations/        (user-installed formations)
+
+    Searches (in order):
+    1. <project-root>/store/formations/  (built-in content store)
+    2. <project-root>/formations/        (legacy fallback)
+    3. ~/.navig/formations/              (user-installed formations)
     """
     if _FORMATIONS_ROOTS:
         return _FORMATIONS_ROOTS
 
     roots: List[Path] = []
 
-    # Project-level formations (shipped with NAVIG)
     project_root = Path(__file__).resolve().parent.parent.parent
-    project_formations = project_root / "formations"
-    if project_formations.is_dir():
-        roots.append(project_formations)
+
+    # Built-in store (canonical location)
+    store_formations = project_root / "store" / "formations"
+    if store_formations.is_dir():
+        roots.append(store_formations)
+
+    # Legacy root-level formations (fallback for older installs / forks)
+    legacy_formations = project_root / "formations"
+    if legacy_formations.is_dir() and legacy_formations not in roots:
+        roots.append(legacy_formations)
 
     # User-level formations (community-installed)
     user_formations = Path.home() / ".navig" / "formations"
@@ -98,7 +105,7 @@ def discover_formations() -> Dict[str, Path]:
             try:
                 data = json.loads(manifest.read_text(encoding="utf-8"))
                 formation_id = data.get("id", subdir.name)
-                
+
                 # Primary key: formation ID
                 if formation_id not in formation_map:
                     formation_map[formation_id] = subdir

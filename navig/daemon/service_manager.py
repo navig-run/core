@@ -15,7 +15,6 @@ So the supervisor daemon starts and manages subsystems internally.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess

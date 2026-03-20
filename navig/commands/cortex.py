@@ -27,8 +27,8 @@ from typing import Optional
 import typer
 
 from navig import console_helper as ch
-from navig.browser.router import get_browser
 from navig.browser.orchestrator import CortexOrchestrator
+from navig.browser.router import get_browser
 
 cortex_app = typer.Typer(
     name="cortex",

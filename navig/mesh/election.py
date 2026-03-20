@@ -42,13 +42,10 @@ Failure coverage:
 from __future__ import annotations
 
 import asyncio
-import socket
-import time
 from typing import TYPE_CHECKING, Dict, Optional
 
 from navig.debug_logger import get_debug_logger
 from navig.mesh.discovery import (
-    ELECT_ACK,
     ELECT_PROMOTE,
     ELECT_PROPOSE,
     ELECT_YIELD,

@@ -44,7 +44,8 @@ class PyPISource(_BaseSource):
         return f"PyPI{suffix}"
 
     def latest_version(self) -> str:
-        import urllib.request, json
+        import json
+        import urllib.request
         url = f"https://pypi.org/pypi/{self._package}/json"
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
@@ -95,7 +96,8 @@ class GitHubSource(_BaseSource):
         return f"GitHub ({self._repo})"
 
     def latest_version(self) -> str:
-        import urllib.request, json
+        import json
+        import urllib.request
         url = f"https://api.github.com/repos/{self._repo}/releases/latest"
         req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
                                                     "User-Agent": "navig-update/1.0"})
@@ -137,10 +139,10 @@ class GitRepoSource(_BaseSource):
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
             if r.returncode != 0:
                 raise SourceError(f"git command failed: {r.stderr.strip()[:120]}")
-        except FileNotFoundError:
-            raise SourceError("git not found in PATH")
-        except subprocess.TimeoutExpired:
-            raise SourceError("git command timed out")
+        except FileNotFoundError as _exc:
+            raise SourceError("git not found in PATH") from _exc
+        except subprocess.TimeoutExpired as _exc:
+            raise SourceError("git command timed out") from _exc
 
         lines = r.stdout.strip().splitlines()
         version_tags = []
@@ -170,7 +172,8 @@ class ArtifactURLSource(_BaseSource):
         return f"artifact ({self._url[:40]}...)"
 
     def latest_version(self) -> str:
-        import urllib.request, json as _json
+        import json as _json
+        import urllib.request
         try:
             with urllib.request.urlopen(self._url, timeout=10) as resp:
                 body = resp.read().decode("utf-8", errors="replace")

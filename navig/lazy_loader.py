@@ -14,9 +14,9 @@ Performance impact:
 - Heavy dependencies only loaded when actually used
 """
 
-from typing import Any, Callable, Dict, Optional, TypeVar
 import importlib
 import sys
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 # Cache for already-imported lazy modules
 _lazy_cache: Dict[str, Any] = {}
@@ -33,43 +33,43 @@ class LazyModule:
         # Module not loaded yet
         response = requests.get('https://example.com')  # Now it's loaded
     """
-    
+
     __slots__ = ('_module_name', '_module', '_loaded')
-    
+
     def __init__(self, module_name: str):
         object.__setattr__(self, '_module_name', module_name)
         object.__setattr__(self, '_module', None)
         object.__setattr__(self, '_loaded', False)
-    
+
     def _load(self) -> Any:
         """Load the actual module if not already loaded."""
         if not object.__getattribute__(self, '_loaded'):
             module_name = object.__getattribute__(self, '_module_name')
-            
+
             # Check cache first
             if module_name in _lazy_cache:
                 module = _lazy_cache[module_name]
             else:
                 module = importlib.import_module(module_name)
                 _lazy_cache[module_name] = module
-            
+
             object.__setattr__(self, '_module', module)
             object.__setattr__(self, '_loaded', True)
-        
+
         return object.__getattribute__(self, '_module')
-    
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._load(), name)
-    
+
     def __setattr__(self, name: str, value: Any) -> None:
         setattr(self._load(), name, value)
-    
+
     def __repr__(self) -> str:
         loaded = object.__getattribute__(self, '_loaded')
         module_name = object.__getattribute__(self, '_module_name')
         status = "loaded" if loaded else "not loaded"
         return f"<LazyModule '{module_name}' ({status})>"
-    
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Support for modules that are callable (rare but possible)."""
         return self._load()(*args, **kwargs)
@@ -117,15 +117,15 @@ def lazy_callable(module_name: str, callable_name: str) -> Callable:
         else:
             module = importlib.import_module(module_name)
             _lazy_cache[module_name] = module
-        
+
         callable_obj = getattr(module, callable_name)
         return callable_obj(*args, **kwargs)
-    
+
     # Preserve some metadata
     wrapper.__name__ = callable_name
     wrapper.__qualname__ = f"{module_name}.{callable_name}"
     wrapper.__doc__ = f"Lazy-loaded callable from {module_name}.{callable_name}"
-    
+
     return wrapper
 
 
@@ -147,7 +147,7 @@ def lazy_class(module_name: str, class_name: str) -> type:
     class LazyClass:
         """Proxy class for lazy loading."""
         _real_class: Optional[type] = None
-        
+
         def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls._real_class is None:
                 if module_name in _lazy_cache:
@@ -157,7 +157,7 @@ def lazy_class(module_name: str, class_name: str) -> type:
                     _lazy_cache[module_name] = module
                 cls._real_class = getattr(module, class_name)
             return cls._real_class(*args, **kwargs)
-        
+
         @classmethod
         def __class_getitem__(cls, item: Any) -> Any:
             """Support for generic types like Class[T]."""
@@ -166,11 +166,11 @@ def lazy_class(module_name: str, class_name: str) -> type:
                 _lazy_cache[module_name] = module
                 cls._real_class = getattr(module, class_name)
             return cls._real_class[item]
-    
+
     LazyClass.__name__ = class_name
     LazyClass.__qualname__ = f"{module_name}.{class_name}"
     LazyClass.__doc__ = f"Lazy-loaded class from {module_name}.{class_name}"
-    
+
     return LazyClass
 
 

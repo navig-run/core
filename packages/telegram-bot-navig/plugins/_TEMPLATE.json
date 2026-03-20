@@ -1,0 +1,9 @@
+{
+  "id": "myplugin",
+  "version": "1.0.0",
+  "description": "One-line description of what this plugin does.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

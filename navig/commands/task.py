@@ -12,7 +12,6 @@ Usage:
 from __future__ import annotations
 
 import typer
-from typing import Optional
 
 task_app = typer.Typer(
     name="task",
@@ -46,9 +45,10 @@ def task_run(
         navig task "Check server health on production"
         navig task "Summarise last 10 commits" --json
     """
+    import time
+
     from navig.providers.task_bridge import TaskBridge, build_default_providers
     from navig.ui import renderer
-    import time
 
     providers = build_default_providers()
     bridge = TaskBridge(providers)

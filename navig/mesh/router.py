@@ -37,8 +37,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, Optional
 
 from navig.debug_logger import get_debug_logger
 from navig.mesh.registry import NodeRecord, get_registry

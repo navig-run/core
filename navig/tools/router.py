@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tool Router & Registry - Central dispatch for LLM-requested tool calls.
 
 Mirrors the ChannelRegistry pattern (navig.gateway.channels.registry)
@@ -24,7 +24,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from navig.tools.schemas import (
     ToolCallAction,
@@ -198,13 +198,13 @@ class ToolRegistry:
     def _load_builtin_packs(self) -> None:
         """Load tool metadata from builtin packs modules."""
         pack_modules = [
-            "navig.tools.packs.web_pack",
-            "navig.tools.packs.image_pack",
-            "navig.tools.packs.code_pack",
-            "navig.tools.packs.exec_pack",
-            "navig.tools.packs.system_pack",
-            "navig.tools.packs.data_pack",
-            "navig.tools.packs.api_pack",
+            "navig.tools.domains.web_pack",
+            "navig.tools.domains.image_pack",
+            "navig.tools.domains.code_pack",
+            "navig.tools.domains.exec_pack",
+            "navig.tools.domains.system_pack",
+            "navig.tools.domains.data_pack",
+            "navig.tools.domains.api_pack",
         ]
         for mod_path in pack_modules:
             try:
@@ -421,7 +421,7 @@ class ToolRouter:
         # 1. Normalize
         canonical = self.registry.normalize_tool_name(tool_name)
         if canonical is None:
-            from navig.tools.hooks import get_hook_registry, ToolEvent
+            from navig.tools.hooks import ToolEvent, get_hook_registry
             get_hook_registry().fire(ToolEvent.NOT_FOUND, tool=tool_name)
             return ToolResult(
                 tool=tool_name,
@@ -526,7 +526,7 @@ class ToolRouter:
             )
 
         # 6. Execute
-        from navig.tools.hooks import get_hook_registry, ToolEvent
+        from navig.tools.hooks import ToolEvent, get_hook_registry
         _hooks = get_hook_registry()
         _hooks.fire(ToolEvent.BEFORE_EXECUTE, tool=canonical)
         try:

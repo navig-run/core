@@ -15,8 +15,8 @@ import logging
 import os
 import threading
 import time
-from typing import Dict, List, Optional
 from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ aiohttp = None
 class AIMessage:
     role: str  # 'system', 'user', 'assistant'
     content: str
-    
+
     def to_dict(self) -> Dict[str, str]:
         return {"role": self.role, "content": self.content}
 
@@ -48,7 +48,7 @@ class AIClient:
     2. AirLLM for local inference if configured
     3. Falls back to pattern matching
     """
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -58,17 +58,17 @@ class AIClient:
     ):
         # Load from NAVIG config first
         self._load_navig_config()
-        
+
         # Override with explicit params if provided
         self.api_key = api_key or self._navig_api_key
         self.model = model or self._navig_model
         self.provider = provider
         self.base_url = base_url
-        
+
         # Determine best provider if auto
         if provider == "auto":
             self.provider = self._detect_best_provider()
-            
+
         self._session = None
         self._fallback_manager = None
 
@@ -112,11 +112,11 @@ class AIClient:
         self._navig_api_key = None
         self._navig_model = "google/gemini-2.5-flash"
         self._airllm_config = None
-        
+
         try:
             from navig.config import get_config_manager
             config = get_config_manager()
-            
+
             # Try vault first (updates last_used_at for auditing)
             api_key = None
             try:
@@ -127,16 +127,16 @@ class AIClient:
                     api_key = secret.reveal().strip()
             except Exception:
                 pass
-            
+
             # Fall back to config
             if not api_key:
                 api_key = config.global_config.get('openrouter_api_key', '')
             if api_key and api_key.strip():
                 self._navig_api_key = api_key.strip()
-            
+
             # Get model preference
             models = config.global_config.get('ai_model_preference', [])
-            
+
             # Handle JSON string format
             if isinstance(models, str):
                 try:
@@ -144,10 +144,10 @@ class AIClient:
                     models = json.loads(models)
                 except Exception:
                     models = [models]  # Treat as single model string
-            
+
             if models and isinstance(models, list) and len(models) > 0:
                 self._navig_model = models[0]
-                
+
             # Get AirLLM config
             airllm_model = config.global_config.get('airllm_model_path')
             airllm_compression = config.global_config.get('airllm_compression')
@@ -156,11 +156,11 @@ class AIClient:
                     'model_path': airllm_model,
                     'compression': airllm_compression,
                 }
-                
+
         except Exception:
             # Fall back to env vars
             self._navig_api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-            
+
     def _detect_best_provider(self) -> str:
         """Detect the best available provider.
         
@@ -172,9 +172,11 @@ class AIClient:
             try:
                 import socket
                 from urllib.parse import urlparse
+
+                from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT as _BDP
                 parsed = urlparse(mcp_bridge_url.replace("ws://", "http://").replace("wss://", "https://"))
                 host = parsed.hostname or "127.0.0.1"
-                port = parsed.port or 42070
+                port = parsed.port or _BDP
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(1.0)
                 result = sock.connect_ex((host, port))
@@ -192,7 +194,7 @@ class AIClient:
         # ③ OpenRouter if API key is set
         if self._navig_api_key:
             return "openrouter"
-            
+
         # Check for AirLLM
         if self._airllm_config:
             try:
@@ -201,7 +203,7 @@ class AIClient:
                     return "airllm"
             except ImportError:
                 pass
-                
+
         # Check for Ollama/local
         try:
             import socket
@@ -212,7 +214,7 @@ class AIClient:
                 return "local"
         except Exception:
             pass
-            
+
         # Default to pattern matching (no LLM available)
         return "none"
 
@@ -227,7 +229,7 @@ class AIClient:
         """
         # ① Live port from navig-bridge heartbeat file (most reliable)
         try:
-            from navig.providers.bridge_grid_reader import get_llm_port
+            from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT, get_llm_port
             live_port = get_llm_port()
             if live_port:
                 return f"ws://127.0.0.1:{live_port}"
@@ -250,7 +252,11 @@ class AIClient:
         except Exception:
             pass
 
-        return "ws://127.0.0.1:42070"
+        try:
+            from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
+            return f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
+        except Exception:
+            return "ws://127.0.0.1:42070"
 
     def _get_bridge_token(self) -> str:
         """Read Bridge LLM bearer token from config or env."""
@@ -288,7 +294,7 @@ class AIClient:
             return cfg.get("github_models", {}).get("token", "")
         except Exception:
             return ""
-        
+
     def _get_fallback_manager(self):
         """Lazy-load the fallback manager for multi-provider support."""
         if self._fallback_manager is None:
@@ -298,7 +304,7 @@ class AIClient:
             except ImportError:
                 pass
         return self._fallback_manager
-        
+
     def _trim_messages_for_retry(self, messages: list, keep_recent: int = 4) -> list:
         """Keep system message + last keep_recent messages to reduce context on retry."""
         if not messages:
@@ -312,16 +318,16 @@ class AIClient:
         if aiohttp is None:
             import aiohttp as _aiohttp
             aiohttp = _aiohttp
-            
+
         if self._session is None:
             self._session = aiohttp.ClientSession()
         return self._session
-        
+
     async def close(self):
         if self._session:
             await self._session.close()
             self._session = None
-            
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -338,7 +344,7 @@ class AIClient:
             max_tokens: Maximum tokens to generate.
             model: Optional model override (used by router).
         """
-        
+
         # Try using the full provider system first
         if self.provider in ("openrouter", "openai", "airllm", "mcp_bridge", "github_models"):
             fallback_mgr = self._get_fallback_manager()
@@ -351,15 +357,15 @@ class AIClient:
                     if self.provider == "airllm":
                         # AirLLM error - try direct
                         return await self._chat_airllm(messages, temperature, max_tokens)
-                        
+
         # Direct API call for OpenRouter/OpenAI
         if self.provider in ("openrouter", "openai") and self.api_key:
             return await self._chat_api(messages, temperature, max_tokens)
-            
+
         # AirLLM local inference
         if self.provider == "airllm":
             return await self._chat_airllm(messages, temperature, max_tokens)
-            
+
         # Ollama/local
         if self.provider == "local":
             return await self._chat_local(
@@ -373,7 +379,7 @@ class AIClient:
         # GitHub Models — free tier via GitHub PAT
         if self.provider == "github_models":
             return await self._chat_github_models(messages, temperature, max_tokens, model=model)
-            
+
         # No provider available
         raise RuntimeError(
             "No AI provider available. Set openrouter_api_key in ~/.navig/config.yaml, "
@@ -400,7 +406,7 @@ class AIClient:
         Args:
             tier_override: "small", "big", "coder_big" — skip rules.
         """
-        from navig.agent.model_router import RoutingTelemetry, FALLBACK_NOTE
+        from navig.agent.model_router import FALLBACK_NOTE, RoutingTelemetry
 
         router = self._model_router
         msg_text = user_message or self._extract_user_message(messages)
@@ -556,7 +562,7 @@ class AIClient:
             if msg.get("role") == "user":
                 return msg.get("content", "")
         return ""
-            
+
     async def _chat_with_providers(
         self,
         fallback_mgr,
@@ -565,25 +571,25 @@ class AIClient:
         max_tokens: int,
     ) -> str:
         """Use the full provider system with fallback."""
-        from navig.providers import Message, CompletionRequest
-        
+        from navig.providers import CompletionRequest, Message
+
         # Convert messages
         provider_messages = [
-            Message(role=m["role"], content=m["content"]) 
+            Message(role=m["role"], content=m["content"])
             for m in messages
         ]
-        
+
         request = CompletionRequest(
             messages=provider_messages,
             model=self.model,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        
+
         # Run with fallback
         result = await fallback_mgr.run_with_fallback(request)
         return result.response.content
-        
+
     async def _chat_api(
         self,
         messages: List[Dict[str, str]],
@@ -592,28 +598,28 @@ class AIClient:
     ) -> str:
         """Direct API call to OpenRouter/OpenAI."""
         session = await self._get_session()
-        
+
         if self.provider == "openrouter":
             base_url = self.base_url or "https://openrouter.ai/api/v1"
         else:
             base_url = self.base_url or "https://api.openai.com/v1"
-            
+
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
-        
+
         if self.provider == "openrouter":
             headers["HTTP-Referer"] = "https://navig.run"
             headers["X-Title"] = "NAVIG Autonomous Agent"
-            
+
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        
+
         try:
             async with session.post(
                 f"{base_url}/chat/completions",
@@ -640,13 +646,13 @@ class AIClient:
                 if response.status != 200:
                     error_text = await response.text()
                     raise RuntimeError(f"AI API error ({response.status}): {error_text}")
-                    
+
                 data = await response.json()
                 return data["choices"][0]["message"]["content"]
-                
+
         except Exception as e:
-            raise RuntimeError(f"AI request failed: {e}")
-            
+            raise RuntimeError(f"AI request failed: {e}") from e
+
     async def _chat_airllm(
         self,
         messages: List[Dict[str, str]],
@@ -655,36 +661,36 @@ class AIClient:
     ) -> str:
         """Use AirLLM for local inference."""
         try:
+            from navig.providers import CompletionRequest, Message
             from navig.providers.airllm import AirLLMClient, AirLLMConfig
-            from navig.providers import Message, CompletionRequest
-            
+
             # Create config from NAVIG settings
             config = AirLLMConfig(
                 model_path=self._airllm_config.get('model_path'),
                 compression=self._airllm_config.get('compression'),
             )
-            
+
             client = AirLLMClient(airllm_config=config)
-            
+
             # Convert messages
             provider_messages = [
-                Message(role=m["role"], content=m["content"]) 
+                Message(role=m["role"], content=m["content"])
                 for m in messages
             ]
-            
+
             request = CompletionRequest(
                 messages=provider_messages,
                 model=config.model_path,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            
+
             result = await client.complete(request)
             return result.content
-            
+
         except Exception as e:
-            raise RuntimeError(f"AirLLM inference failed: {e}")
-            
+            raise RuntimeError(f"AirLLM inference failed: {e}") from e
+
     async def _chat_mcp_bridge(
         self,
         messages: List[Dict[str, str]],
@@ -749,16 +755,16 @@ class AIClient:
     ) -> str:
         """Use local Ollama or LM Studio."""
         session = await self._get_session()
-        
+
         base_url = self.base_url or "http://localhost:11434/v1"
-        
+
         payload = {
             "model": model or self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        
+
         try:
             async with session.post(
                 f"{base_url}/chat/completions",
@@ -769,13 +775,13 @@ class AIClient:
                 if response.status != 200:
                     error_text = await response.text()
                     raise RuntimeError(f"Local AI error ({response.status}): {error_text}")
-                    
+
                 data = await response.json()
                 return data["choices"][0]["message"]["content"]
-                
+
         except Exception as e:
-            raise RuntimeError(f"Local AI request failed: {e}")
-            
+            raise RuntimeError(f"Local AI request failed: {e}") from e
+
     async def complete(
         self,
         prompt: str,
@@ -784,14 +790,14 @@ class AIClient:
     ) -> str:
         """Simple completion with optional system prompt."""
         messages = []
-        
+
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-            
+
         messages.append({"role": "user", "content": prompt})
-        
+
         return await self.chat(messages, **kwargs)
-        
+
     def is_available(self) -> bool:
         """Check if any AI provider is available."""
         return self.provider != "none"

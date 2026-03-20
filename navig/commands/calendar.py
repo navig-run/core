@@ -6,9 +6,10 @@ List, view, and manage calendar events from configured providers.
 
 import asyncio
 import json
-import typer
 from datetime import datetime, timedelta
 from typing import Optional
+
+import typer
 
 from navig import console_helper as ch
 
@@ -27,27 +28,27 @@ def list_events(
     Fetches events from your configured calendar provider(s).
     """
     async def _fetch():
-        from navig.config import get_config_manager
         from navig.agent.proactive import (
-            MockCalendar, 
-            GoogleCalendar, 
+            CalDAVProvider,
+            GoogleCalendar,
             ICSCalendarProvider,
-            CalDAVProvider
+            MockCalendar,
         )
-        
+        from navig.config import get_config_manager
+
         cm = get_config_manager()
         config = cm._load_global_config()
-        
+
         proactive_cfg = config.get("proactive", {})
         calendar_cfg = proactive_cfg.get("calendar", {})
-        
+
         if not calendar_cfg.get("enabled", False):
             if not json_output:
                 ch.warning("Calendar not configured. Using mock data.")
             provider = MockCalendar()
         else:
             provider_type = calendar_cfg.get("provider", "mock")
-            
+
             if provider_type == "google":
                 creds_path = calendar_cfg.get("credentials_path")
                 provider = GoogleCalendar(credentials_path=creds_path)
@@ -61,15 +62,15 @@ def list_events(
                 provider = CalDAVProvider(url=url, username=username, password=password)
             else:
                 provider = MockCalendar()
-        
+
         start = datetime.now()
         end = start + timedelta(hours=hours)
         events = await provider.list_events(start, end)
-        
+
         return events[:limit]
-    
+
     events = asyncio.run(_fetch())
-    
+
     if json_output:
         # Convert to JSON-serializable format
         events_data = [
@@ -88,10 +89,10 @@ def list_events(
         if not events:
             ch.info("No upcoming events")
             return
-        
+
         ch.info(f"Upcoming Events (next {hours} hours)")
         ch.console.print()
-        
+
         for event in events:
             time_str = event.start.strftime("%a %b %d, %I:%M %p")
             ch.console.print(f"  [cyan]•[/cyan] {event.title}")
@@ -113,24 +114,24 @@ def authenticate(
     async def _auth():
         if provider == "google":
             from navig.agent.proactive import GoogleCalendar
-            
+
             ch.info("Google Calendar Authentication")
             ch.console.print("This will open your browser to authorize NAVIG.")
             ch.console.print()
-            
+
             creds_path = "~/.navig/credentials/google_calendar.json"
             cal = GoogleCalendar(credentials_path=creds_path)
-            
+
             # This should trigger the OAuth flow
             start = datetime.now()
             end = start + timedelta(days=1)
             await cal.list_events(start, end)
-            
+
             ch.success("✓ Authentication successful!")
             ch.info(f"Credentials saved to {creds_path}")
         else:
             ch.error(f"Unknown provider: {provider}")
-    
+
     asyncio.run(_auth())
 
 
@@ -147,38 +148,38 @@ def add_event(
     Requires a calendar provider that supports write operations (CalDAV).
     """
     async def _add():
-        from navig.config import get_config_manager
         from navig.agent.proactive import CalDAVProvider
-        
+        from navig.config import get_config_manager
+
         cm = get_config_manager()
         config = cm._load_global_config()
-        
+
         proactive_cfg = config.get("proactive", {})
         calendar_cfg = proactive_cfg.get("calendar", {})
-        
+
         provider_type = calendar_cfg.get("provider", "mock")
-        
+
         if provider_type != "caldav":
             ch.error("Adding events requires CalDAV provider")
             ch.info("Configure with: navig agent proactive setup --calendar caldav")
             return
-        
+
         url = calendar_cfg.get("url")
         username = calendar_cfg.get("username")
         password = calendar_cfg.get("password")
-        
+
         provider = CalDAVProvider(url=url, username=username, password=password)
-        
+
         # Parse start time
         if start:
             start_dt = datetime.fromisoformat(start)
         else:
             start_dt = datetime.now()
-        
+
         end_dt = start_dt + timedelta(minutes=duration)
-        
+
         from navig.agent.proactive.models import CalendarEvent
-        
+
         event = CalendarEvent(
             id="",  # Will be generated
             title=title,
@@ -187,10 +188,10 @@ def add_event(
             location=location or "",
             description=""
         )
-        
+
         await provider.add_event(event)
         ch.success(f"✓ Event added: {title}")
-    
+
     asyncio.run(_add())
 
 

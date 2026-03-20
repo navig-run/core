@@ -9,7 +9,7 @@ The VS Code extension writes `~/.navig/heartbeat.json` every 30 seconds while a 
 **How it works:**
 1. Extension writes heartbeat with `active`, `formation_id`, `agents`, `workspace_path`, `timestamp`
 2. Bot checks the file every `HEARTBEAT_INTERVAL` seconds (default 60)
-3. If active + fresh: scans for inbox briefs, next-step markers, or TODO items
+3. If active + fresh: scans for inbox briefs, next-step markers, or outstanding task items
 4. If actionable: sends ONE short message, then waits `HEARTBEAT_WINDOW` seconds (default 300)
 5. If idle/closed: stays completely silent
 

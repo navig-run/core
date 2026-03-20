@@ -1,5 +1,6 @@
 """Billing event log routes: GET /billing"""
 from __future__ import annotations
+
 from navig.gateway.routes.common import json_ok, require_bearer_auth
 
 

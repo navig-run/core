@@ -9,7 +9,7 @@ Handles:
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.session_manager import NavigSessionKey
@@ -33,40 +33,40 @@ class ChannelRouter:
     incoming user interaction so the EngagementCoordinator
     can infer operator state and make proactive decisions.
     """
-    
+
     def __init__(self, gateway: 'NavigGateway'):
         self.gateway = gateway
         self.config_manager = gateway.config_manager
-        
+
         # Cache for agent bindings
         self._bindings_cache: Optional[Dict] = None
         self._bindings_cache_time: Optional[datetime] = None
-        
+
         # Engagement tracker (lazy-loaded)
         self._engagement_tracker = None
-    
+
     def _get_bindings(self) -> list:
         """Get agent bindings from config (cached)."""
         # Refresh cache every minute
         now = datetime.now()
         if (
-            self._bindings_cache is not None 
-            and self._bindings_cache_time 
+            self._bindings_cache is not None
+            and self._bindings_cache_time
             and (now - self._bindings_cache_time).total_seconds() < 60
         ):
             return self._bindings_cache
-        
+
         config = self.config_manager.global_config
         agents_cfg = config.get('agents', {})
-        
+
         self._bindings_cache = agents_cfg.get('bindings', [])
         self._bindings_cache_time = now
-        
+
         return self._bindings_cache
-    
+
     def _resolve_agent(
-        self, 
-        channel: str, 
+        self,
+        channel: str,
         user_id: str,
         metadata: Dict[str, Any]
     ) -> str:
@@ -79,21 +79,21 @@ class ChannelRouter:
         3. Default agent
         """
         bindings = self._get_bindings()
-        
+
         # Check for specific peer binding
         for binding in bindings:
             if binding.get('channel') == channel:
                 if binding.get('peer') == user_id:
                     return binding.get('agentId', 'default')
-        
+
         # Check for channel binding
         for binding in bindings:
             if binding.get('channel') == channel and not binding.get('peer'):
                 return binding.get('agentId', 'default')
-        
+
         # Return default agent
         return self.gateway.config.default_agent
-    
+
     async def route_message(
         self,
         channel: str,
@@ -114,13 +114,13 @@ class ChannelRouter:
             Agent response
         """
         metadata = metadata or {}
-        
+
         # Record interaction for proactive engagement tracking
         self._record_engagement_interaction(message)
-        
+
         # Resolve agent
         agent_id = self._resolve_agent(channel, user_id, metadata)
-        
+
         # Build session key
         if metadata.get('group_id'):
             session_key = NavigSessionKey.for_group(
@@ -134,21 +134,21 @@ class ChannelRouter:
                 channel=channel,
                 user_id=user_id
             )
-        
+
         # Add host context if provided
         if metadata.get('host'):
             session_key = NavigSessionKey.for_host_context(
                 base_key=session_key,
                 host_name=metadata['host']
             )
-        
+
         logger.debug("Routing message", extra={
             "channel": channel,
             "user_id": user_id,
             "agent_id": agent_id,
             "session_key": session_key,
         })
-        
+
         # Check for NAVIG command patterns
         response = await self._handle_message(
             agent_id=agent_id,
@@ -156,9 +156,9 @@ class ChannelRouter:
             message=message,
             metadata=metadata
         )
-        
+
         return response
-    
+
     async def _handle_message(
         self,
         agent_id: str,
@@ -168,27 +168,27 @@ class ChannelRouter:
     ) -> str:
         """Handle message with NAVIG-aware processing and natural language understanding."""
         msg_lower = message.lower().strip()
-        
+
         # Check for direct NAVIG commands
         if message.strip().startswith('navig ') or message.strip().startswith('/navig '):
             return await self._execute_navig_command(message, metadata)
-        
+
         # Check for quick commands
         quick_response = await self._check_quick_commands(message, metadata)
         if quick_response:
             return quick_response
-        
+
         # Check for confirmation responses
         if msg_lower in ('yes', 'go', 'proceed', 'do it', 'ok', 'sure', 'yep', 'yeah'):
             agent = self._get_conversational_agent(session_key)
             if agent.current_task:
                 return await agent.confirm(True)
-        
+
         if msg_lower in ('no', 'cancel', 'stop', 'nevermind', 'nope', 'nah'):
             agent = self._get_conversational_agent(session_key)
             if agent.current_task:
                 return await agent.confirm(False)
-        
+
         # Use conversational agent for natural language processing
         agent = self._get_conversational_agent(session_key)
 
@@ -198,16 +198,16 @@ class ChannelRouter:
                 user_id=str(metadata.get("user_id", "")),
                 username=metadata.get("username", ""),
             )
-        
+
         # Set up status callback to send updates via WebSocket
         async def send_status(msg):
             await self._broadcast_status(session_key, msg)
-        
+
         agent.on_status_update = send_status
 
         # Extract tier override from metadata (set by Telegram /big /small /coder)
         tier_override = metadata.get("tier_override", "")
-        
+
         # Try conversational processing first
         try:
             response = await agent.chat(message, tier_override=tier_override)
@@ -215,14 +215,14 @@ class ChannelRouter:
                 return response
         except Exception as e:
             logger.error(f"Conversational agent error: {e}")
-        
+
         # Fallback to full AI processing
         return await self.gateway.run_agent_turn(
             agent_id=agent_id,
             session_key=session_key,
             message=message,
         )
-    
+
     def _get_conversational_agent(self, session_key: str):
         """Get or create conversational agent for session."""
         if not hasattr(self, '_conv_agents'):
@@ -239,7 +239,7 @@ class ChannelRouter:
 
         if session_key not in self._conv_agents:
             from navig.agent.conversational import ConversationalAgent
-            
+
             # Try to get AI client
             ai_client = None
             try:
@@ -247,15 +247,15 @@ class ChannelRouter:
                 ai_client = get_ai_client()
             except Exception:
                 pass
-                
+
             self._conv_agents[session_key] = ConversationalAgent(
                 ai_client=ai_client,
                 soul_content=self._soul_content,
             )
-            
+
         return self._conv_agents[session_key]
 
-    
+
     def _record_engagement_interaction(self, message: str):
         """Record user interaction for proactive engagement state tracking."""
         try:
@@ -263,7 +263,7 @@ class ChannelRouter:
                 from navig.agent.proactive.engine import get_proactive_engine
                 engine = get_proactive_engine()
                 self._engagement_tracker = engine
-            
+
             # Detect message type
             msg_stripped = message.strip()
             if msg_stripped.startswith('navig ') or msg_stripped.startswith('/'):
@@ -275,14 +275,14 @@ class ChannelRouter:
             else:
                 msg_type = 'chat'
                 cmd = None
-            
+
             self._engagement_tracker.record_user_message(
                 message_type=msg_type,
                 command=cmd,
             )
         except Exception:
             pass  # Non-critical — never block message routing
-    
+
     async def _broadcast_status(self, session_key: str, message: str):
         """Broadcast status update to session."""
         # This will send real-time updates via WebSocket
@@ -300,27 +300,26 @@ class ChannelRouter:
         except Exception:
             pass
 
-    
+
     async def _execute_navig_command(
-        self, 
-        message: str, 
+        self,
+        message: str,
         metadata: Dict[str, Any]
     ) -> str:
         """Execute a direct NAVIG CLI command."""
-        import subprocess
-        
+
         # Extract command
         command = message.strip()
         if command.startswith('/navig '):
             command = command[7:]
         elif command.startswith('navig '):
             command = command[6:]
-        
+
         logger.info(f"Executing NAVIG command: {command}")
-        
+
         try:
-            import shlex
             import asyncio as _asyncio
+            import shlex
             proc = await _asyncio.create_subprocess_exec(
                 "navig", *shlex.split(command),
                 stdout=_asyncio.subprocess.PIPE,
@@ -345,56 +344,56 @@ class ChannelRouter:
 
         except Exception as e:
             return f"❌ Error: {e}"
-    
+
     async def _check_quick_commands(
-        self, 
+        self,
         message: str,
         metadata: Dict[str, Any]
     ) -> Optional[str]:
         """Check for quick commands that don't need full AI."""
         msg_lower = message.lower().strip()
-        
+
         # Status check
         if msg_lower in ('status', '/status'):
             return await self._get_status()
-        
+
         # Help
         if msg_lower in ('help', '/help'):
             return self._get_help()
-        
+
         # Ping
         if msg_lower in ('ping', '/ping'):
             return "🏓 Pong! Gateway is running."
-        
+
         # Automation status
         if msg_lower in ('auto', '/auto', 'automation', '/automation'):
             return await self._execute_navig_command('navig auto status', metadata)
-        
+
         # Windows list
         if msg_lower in ('windows', '/windows'):
             return await self._execute_navig_command('navig auto windows', metadata)
-        
+
         # Clipboard
         if msg_lower in ('clipboard', '/clipboard'):
             return await self._execute_navig_command('navig auto clipboard', metadata)
-        
+
         # Workflows
         if msg_lower in ('workflows', '/workflows'):
             return await self._execute_navig_command('navig workflow list', metadata)
-        
+
         # Scripts
         if msg_lower in ('scripts', '/scripts'):
             return await self._execute_navig_command('navig script list', metadata)
-        
+
         return None
-    
+
     async def _get_status(self) -> str:
         """Get gateway status summary."""
         gateway = self.gateway
-        
+
         # Session count
         session_count = len(gateway.sessions.sessions)
-        
+
         # Heartbeat status
         heartbeat_status = "disabled"
         if gateway.heartbeat_runner:
@@ -402,12 +401,12 @@ class ChannelRouter:
                 heartbeat_status = f"running (next in ~{gateway.heartbeat_runner.get_time_until_next()})"
             else:
                 heartbeat_status = "stopped"
-        
+
         # Cron jobs
         cron_count = 0
         if gateway.cron_service:
             cron_count = len(gateway.cron_service.jobs)
-        
+
         # Uptime
         uptime = "unknown"
         if gateway.start_time:
@@ -415,7 +414,7 @@ class ChannelRouter:
             hours = int(delta.total_seconds() / 3600)
             minutes = int((delta.total_seconds() % 3600) / 60)
             uptime = f"{hours}h {minutes}m"
-        
+
         return f"""🤖 **NAVIG Gateway Status**
 
 📊 **System**
@@ -431,7 +430,7 @@ class ChannelRouter:
 🔌 **Channels**
 • Configured: {len(gateway.channels)}
 """
-    
+
     def _get_help(self) -> str:
         """Get help message."""
         return """🤖 **Hey! I'm NAVIG, your friendly AI assistant!**

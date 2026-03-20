@@ -26,8 +26,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)

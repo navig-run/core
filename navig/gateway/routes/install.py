@@ -19,12 +19,12 @@ Usage:
 
 from __future__ import annotations
 
-import platform
 import textwrap
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import web
+
     from navig.gateway.server import NavigGateway
 
 try:

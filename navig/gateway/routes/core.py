@@ -1,5 +1,6 @@
 """Core gateway routes: /health, /status, /shutdown, /message, /event, /sessions, /ws."""
 from __future__ import annotations
+
 import asyncio
 import json
 import sys
@@ -8,16 +9,17 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import web
+
     from navig.gateway.server import NavigGateway  # noqa: F401
 try:
-    from aiohttp import web
     import aiohttp
+    from aiohttp import web
 except ImportError:
     pass
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
-    envelope_ok,
     envelope_error,
+    envelope_ok,
     json_error_response,
     json_ok,
     require_bearer_auth,

@@ -7,7 +7,7 @@ Based on multi-provider architecture.
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
 
 if TYPE_CHECKING:
     pass
@@ -43,7 +43,7 @@ class ToolDefinition:
     name: str
     description: str
     parameters: Dict[str, Any]
-    
+
     def to_openai_format(self) -> Dict[str, Any]:
         """Convert to OpenAI function format."""
         return {
@@ -54,7 +54,7 @@ class ToolDefinition:
                 "parameters": self.parameters,
             }
         }
-    
+
     def to_anthropic_format(self) -> Dict[str, Any]:
         """Convert to Anthropic tool format."""
         return {
@@ -85,7 +85,7 @@ class ToolCall:
     arguments: str  # JSON string
 
 
-@dataclass 
+@dataclass
 class CompletionResponse:
     """Response from chat completion."""
     content: Optional[str] = None
@@ -94,7 +94,7 @@ class CompletionResponse:
     usage: Optional[Dict[str, int]] = None
     model: Optional[str] = None
     provider: Optional[str] = None
-    
+
     @property
     def has_tool_calls(self) -> bool:
         return bool(self.tool_calls)
@@ -108,14 +108,14 @@ class ProviderError(Exception):
     error_type: Optional[str] = None  # "auth", "rate_limit", "billing", "invalid_request"
     provider: Optional[str] = None
     retryable: bool = False
-    
+
     def __str__(self):
         return f"[{self.provider}] {self.message} (status={self.status_code})"
 
 
 class BaseProviderClient(ABC):
     """Abstract base class for provider clients."""
-    
+
     def __init__(
         self,
         config: ProviderConfig,
@@ -126,50 +126,50 @@ class BaseProviderClient(ABC):
         self.api_key = api_key
         self.timeout = timeout
         self._client = None  # Optional[httpx.AsyncClient]
-    
+
     @property
     def name(self) -> str:
         return self.config.name
-    
+
     @property
     def base_url(self) -> str:
         return self.config.base_url.rstrip("/")
-    
+
     async def _get_client(self):
         """Get or create HTTP client."""
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required for provider clients. Install: pip install httpx")
-        
+
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout),
                 headers=self._build_headers(),
             )
         return self._client
-    
+
     def _build_headers(self) -> Dict[str, str]:
         """Build request headers."""
         headers = {
             "Content-Type": "application/json",
             **self.config.headers,
         }
-        
+
         if self.api_key and self.config.auth_header:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        
+
         return headers
-    
+
     async def close(self):
         """Close the HTTP client."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
-    
+
     @abstractmethod
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Execute a chat completion request."""
         pass
-    
+
     async def complete_stream(
         self, request: CompletionRequest
     ) -> AsyncIterator[CompletionResponse]:
@@ -178,11 +178,11 @@ class BaseProviderClient(ABC):
         request.stream = False
         result = await self.complete(request)
         yield result
-    
+
     def get_available_models(self) -> List[ModelDefinition]:
         """Get list of available models for this provider."""
         return self.config.models
-    
+
     def _parse_error(self, status_code: int, response_body: str) -> ProviderError:
         """Parse error response into ProviderError."""
         try:
@@ -198,10 +198,10 @@ class BaseProviderClient(ABC):
         except (json.JSONDecodeError, AttributeError, TypeError):
             message = response_body
             error_type = None
-        
+
         # Determine if retryable and classify error
         retryable = status_code in (429, 500, 502, 503, 504)
-        
+
         if status_code == 401:
             error_type = "auth"
         elif status_code == 429:
@@ -212,7 +212,7 @@ class BaseProviderClient(ABC):
         elif status_code >= 500:
             error_type = "server_error"
             retryable = True
-        
+
         return ProviderError(
             message=message,
             status_code=status_code,
@@ -224,11 +224,11 @@ class BaseProviderClient(ABC):
 
 class OpenAIClient(BaseProviderClient):
     """Client for OpenAI and OpenAI-compatible APIs."""
-    
+
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Execute chat completion using OpenAI API."""
         client = await self._get_client()
-        
+
         # Build request body
         body: Dict[str, Any] = {
             "model": request.model,
@@ -240,28 +240,28 @@ class OpenAIClient(BaseProviderClient):
             "max_tokens": request.max_tokens,
             "stream": request.stream,
         }
-        
+
         if request.tools:
             body["tools"] = [t.to_openai_format() for t in request.tools]
             if request.tool_choice:
                 body["tool_choice"] = request.tool_choice
-        
+
         if request.stop:
             body["stop"] = request.stop
-        
+
         try:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=body,
             )
-            
+
             if response.status_code != 200:
                 raise self._parse_error(response.status_code, response.text)
-            
+
             data = response.json()
             choice = data.get("choices", [{}])[0]
             message = choice.get("message", {})
-            
+
             # Parse tool calls
             tool_calls = None
             if message.get("tool_calls"):
@@ -273,7 +273,7 @@ class OpenAIClient(BaseProviderClient):
                     )
                     for tc in message.get("tool_calls", [])
                 ]
-            
+
             return CompletionResponse(
                 content=message.get("content"),
                 tool_calls=tool_calls,
@@ -282,18 +282,18 @@ class OpenAIClient(BaseProviderClient):
                 model=data.get("model"),
                 provider=self.name,
             )
-            
+
         except httpx.HTTPError as e:
             raise ProviderError(
                 message=str(e),
                 provider=self.name,
                 retryable=True,
-            )
+            ) from e
 
 
 class AnthropicClient(BaseProviderClient):
     """Client for Anthropic Claude API."""
-    
+
     def _build_headers(self) -> Dict[str, str]:
         """Build Anthropic-specific headers."""
         headers = {
@@ -301,16 +301,16 @@ class AnthropicClient(BaseProviderClient):
             "anthropic-version": "2023-06-01",
             **self.config.headers,
         }
-        
+
         if self.api_key:
             headers["x-api-key"] = self.api_key
-        
+
         return headers
-    
+
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Execute chat completion using Anthropic API."""
         client = await self._get_client()
-        
+
         # Separate system message
         system_content = None
         messages = []
@@ -319,17 +319,17 @@ class AnthropicClient(BaseProviderClient):
                 system_content = m.content
             else:
                 messages.append({"role": m.role, "content": m.content})
-        
+
         # Build request body
         body: Dict[str, Any] = {
             "model": request.model,
             "messages": messages,
             "max_tokens": request.max_tokens,
         }
-        
+
         if system_content:
             body["system"] = system_content
-        
+
         if request.tools:
             body["tools"] = [t.to_anthropic_format() for t in request.tools]
             if request.tool_choice:
@@ -339,25 +339,25 @@ class AnthropicClient(BaseProviderClient):
                     body["tool_choice"] = {"type": "none"}
                 else:
                     body["tool_choice"] = {"type": "tool", "name": request.tool_choice}
-        
+
         if request.stop:
             body["stop_sequences"] = request.stop
-        
+
         try:
             response = await client.post(
                 f"{self.base_url}/v1/messages",
                 json=body,
             )
-            
+
             if response.status_code != 200:
                 raise self._parse_error(response.status_code, response.text)
-            
+
             data = response.json()
-            
+
             # Parse content blocks
             content_text = None
             tool_calls = []
-            
+
             for block in data.get("content", []):
                 if block.get("type") == "text":
                     content_text = block.get("text")
@@ -367,7 +367,7 @@ class AnthropicClient(BaseProviderClient):
                         name=block.get("name", ""),
                         arguments=json.dumps(block.get("input", {})),
                     ))
-            
+
             return CompletionResponse(
                 content=content_text,
                 tool_calls=tool_calls if tool_calls else None,
@@ -383,13 +383,13 @@ class AnthropicClient(BaseProviderClient):
                 model=data.get("model"),
                 provider=self.name,
             )
-            
+
         except httpx.HTTPError as e:
             raise ProviderError(
                 message=str(e),
                 provider=self.name,
                 retryable=True,
-            )
+            ) from e
 
 
 # Client factory mapping
@@ -421,18 +421,18 @@ def create_client(
     # Special handling for AirLLM provider
     if config.name.lower() == "airllm":
         from .airllm import AirLLMClient, AirLLMConfig
-        
+
         if airllm_config is None:
             airllm_config = AirLLMConfig.from_env()
         elif isinstance(airllm_config, dict):
             airllm_config = AirLLMConfig.from_dict(airllm_config)
-        
+
         return AirLLMClient(
             config=config,
             airllm_config=airllm_config,
             timeout=timeout,
         )
-    
+
     client_class = CLIENT_CLASSES.get(config.api, OpenAIClient)
     return client_class(config, api_key=api_key, timeout=timeout)
 

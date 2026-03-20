@@ -12,7 +12,6 @@ all        Run all steps in dependency order (idempotent)
 from __future__ import annotations
 
 import typer
-from typing import Optional
 
 from navig import console_helper as ch
 
@@ -91,6 +90,7 @@ def migrate_config_cmd(
 def _builtin_config_migration(dry_run: bool) -> None:
     """Lightweight built-in fallback if the scripts/ version is absent."""
     import shutil
+
     from navig.platform.paths import config_dir, legacy_documents_config_dir
 
     source = legacy_documents_config_dir()
@@ -137,7 +137,9 @@ def migrate_addons_cmd(
         return
 
     try:
-        from navig.migrations.migrate_addons_to_templates import AddonToTemplateMigration  # noqa: PLC0415
+        from navig.migrations.migrate_addons_to_templates import (
+            AddonToTemplateMigration,  # noqa: PLC0415
+        )
         ok = AddonToTemplateMigration(dry_run=dry_run, force=force).run()
     except Exception as exc:
         ch.error(f"Migration '{step}' failed: {exc}")

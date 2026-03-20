@@ -13,12 +13,10 @@ Users must explicitly approve every submission — no silent auto-PRs.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any, Optional
 
 import typer
-from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
@@ -162,7 +160,7 @@ def scan_cmd(
             "  [cyan]navig vault provider set github_contribute[/cyan]\n"
             "  or export NAVIG_GITHUB_TOKEN=<your-pat>"
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     # ------------------------------------------------------------------
     # Fork + clone/sync
@@ -176,7 +174,7 @@ def scan_cmd(
                 sync_fork(repo_path)
             except Exception as exc:  # noqa: BLE001
                 _console.print(f"[red]Git setup failed:[/red] {exc}")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from exc
     else:
         repo_path = _CORE_REPO_DIR
         _console.print("[dim]Dry-run mode: skipping fork/sync.[/dim]")
@@ -199,7 +197,7 @@ def scan_cmd(
             findings = scan_files(scan_target, cfg_typed.to_dict())
         except Exception as exc:  # noqa: BLE001
             _console.print(f"[red]Scan failed:[/red] {exc}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
     if not findings:
         _console.print("[green]✓ No issues found above the confidence threshold.[/green]")

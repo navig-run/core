@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 import os
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -113,6 +112,23 @@ class STT:
     def __init__(self, config: Optional[STTConfig] = None):
         self.config = config or STTConfig()
 
+    @staticmethod
+    def _resolve_api_key(vault_label: str, env_var: str) -> Optional[str]:
+        """Try VaultV2 first, fall back to os.environ.
+
+        This aligns stt.py with the vault-first pattern used in streaming_stt.py.
+        A missing vault entry is not fatal — the env-var fallback preserves
+        backwards compatibility for deployments that haven't migrated to the vault.
+        """
+        try:
+            from navig.vault import get_vault_v2
+            key = get_vault_v2().get_secret(vault_label)
+            if key:
+                return key
+        except Exception:
+            pass
+        return os.environ.get(env_var)
+
     async def transcribe(
         self,
         audio_path: str | Path,
@@ -143,11 +159,17 @@ class STT:
         if size_mb > self.config.max_audio_size_mb:
             return STTResult(
                 success=False,
-                error=f"Audio file too large: {size_mb:.1f}MB (max {self.config.max_audio_size_mb}MB)"
+                error=(
+                    f"Audio file too large: {size_mb:.1f}MB"
+                    f" (max {self.config.max_audio_size_mb}MB)"
+                )
             )
 
         lang = language or self.config.language
-        providers = [provider] if provider else [self.config.provider] + self.config.fallback_providers
+        providers = (
+            [provider] if provider
+            else [self.config.provider] + self.config.fallback_providers
+        )
 
         last_error = None
         for prov in providers:
@@ -201,7 +223,7 @@ class STT:
         except ImportError:
             return STTResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("DEEPGRAM_API_KEY")
+        api_key = self._resolve_api_key("deepgram/api-key", "DEEPGRAM_API_KEY")
         if not api_key:
             return STTResult(success=False, error="DEEPGRAM_API_KEY not set")
 
@@ -270,7 +292,7 @@ class STT:
         except ImportError:
             return STTResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = self._resolve_api_key("openai/api-key", "OPENAI_API_KEY")
         if not api_key:
             return STTResult(success=False, error="OPENAI_API_KEY not set")
 

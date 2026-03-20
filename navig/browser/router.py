@@ -18,8 +18,8 @@ Usage:
 
 from typing import Optional, Union
 
-from navig.browser.controller import BrowserController, BrowserConfig
-from navig.browser.stealth import StealthController, StealthConfig
+from navig.browser.controller import BrowserConfig, BrowserController
+from navig.browser.stealth import StealthConfig, StealthController
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()

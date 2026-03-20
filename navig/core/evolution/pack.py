@@ -1,16 +1,18 @@
 
-from typing import Any, Optional
-import yaml
-from pathlib import Path
 import os
+from pathlib import Path
+from typing import Any, Optional
 
-from navig.core.evolution.base import BaseEvolver
+import yaml
+
 from navig.ai import ask_ai_with_context
-from navig.console_helper import success, error
+from navig.console_helper import error, success
+from navig.core.evolution.base import BaseEvolver
+
 
 class PackEvolver(BaseEvolver):
     """Evolves Packs (collections of skills/workflows)."""
-    
+
     def __init__(self):
         super().__init__()
         self._packs_dir = Path("packs") # Assume relative to CWD for now
@@ -38,12 +40,12 @@ Constraints:
 """
 
     def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
-        
+
         prompt = f"Goal: Create a pack for {goal}\n\n"
-        
+
         if previous_artifact:
             prompt += f"Previous attempt failed:\nError: {error_msg}\n\nRefine this YAML."
-            
+
         if os.environ.get("NAVIG_MOCK_AI"):
             return """
 name: mock_pack
@@ -53,7 +55,7 @@ skills:
 workflows:
   - mock_workflow
 """
-            
+
         return ask_ai_with_context(prompt, system_prompt=self._system_prompt)
 
     def _validate(self, artifact: str, context: Any) -> Optional[str]:
@@ -63,7 +65,7 @@ workflows:
             import re
             match = re.search(r"```yaml\n(.*?)\n```", artifact, re.DOTALL)
             code = match.group(1).strip() if match else artifact
-            
+
             data = yaml.safe_load(code)
             if not isinstance(data, dict):
                 return "Root must be dictionary"
@@ -71,7 +73,7 @@ workflows:
                 return "Missing 'name'"
             if 'skills' not in data and 'workflows' not in data:
                 return "Must contain skills or workflows"
-                
+
             return None
         except Exception as e:
             return f"Validation Error: {e}"
@@ -83,15 +85,15 @@ workflows:
             match = re.search(r"```yaml\n(.*?)\n```", artifact, re.DOTALL)
             code = match.group(1).strip() if match else artifact
             data = yaml.safe_load(code)
-            
+
             name = data.get('name', 'unnamed_pack')
             pack_dir = self._packs_dir / name
             pack_dir.mkdir(parents=True, exist_ok=True)
-            
+
             path = pack_dir / "pack.yaml"
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(code)
-                
+
             success(f"Pack saved to {path}")
         except Exception as e:
             error(f"Failed to save pack: {e}")

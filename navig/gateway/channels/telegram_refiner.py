@@ -454,7 +454,7 @@ class RefinementEngine:
 
     async def _send_confirmation(self, session: ClarifySession) -> None:
         """Send the Q&A summary with confirm/re-answer keyboard."""
-        lines = [f"✅ *Your answers:*\n"]
+        lines = ["✅ *Your answers:*\n"]
         for i, q in enumerate(session.questions):
             ans = session.answers.get(str(i), "_(skipped)_")
             lines.append(f"*Q{i + 1}:* {q}\n*A:* {ans}\n")

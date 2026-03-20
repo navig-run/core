@@ -258,7 +258,6 @@ class VaultV2:
         # Update session with new master key
         session = SessionStore.get()
         if session is not None:
-            from dataclasses import replace  # type: ignore[attr-defined]
             SessionStore.set(VaultSession(
                 master_key=new_master,
                 unlocked_at=session.unlocked_at,

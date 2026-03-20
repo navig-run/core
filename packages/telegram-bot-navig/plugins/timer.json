@@ -1,0 +1,9 @@
+﻿{
+  "id": "timer",
+  "version": "1.0.0",
+  "description": "Set a countdown timer and get notified when it fires.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

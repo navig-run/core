@@ -1,7 +1,8 @@
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 
 class StepState(str, Enum):
     PENDING = "pending"
@@ -135,9 +136,9 @@ async def send_task_card(channel: Any, chat_id: int, view: TaskView) -> Optional
     """Send initial status card via NAVIG Telegram channel"""
     await channel._api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
     res = await channel.send_message(
-        chat_id, 
-        render(view), 
-        parse_mode="HTML", 
+        chat_id,
+        render(view),
+        parse_mode="HTML",
         reply_markup=build_keyboard(view),
         disable_web_page_preview=True
     )
@@ -155,7 +156,7 @@ async def update_task_card(channel: Any, chat_id: int, view: TaskView, force: bo
         return
     try:
         await channel._api_call(
-            "editMessageText", 
+            "editMessageText",
             {
                 "chat_id": chat_id,
                 "message_id": view.message_id,

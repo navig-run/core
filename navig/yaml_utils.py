@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Tuple, Union
 
 import yaml
 
-
 YamlPathItem = Union[str, int]
 YamlPath = Tuple[YamlPathItem, ...]
 

@@ -17,15 +17,14 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # ---------------------------------------------------------------------------
 # Capability detection — single source of truth lives in onboard.py
 # ---------------------------------------------------------------------------
 from navig.commands.onboard import (
-    _terminal_supports_tui,
-    _TEXTUAL_AVAILABLE,
     _auto_install_textual,
+    _terminal_supports_tui,
 )
 
 # ---------------------------------------------------------------------------
@@ -180,10 +179,16 @@ def _run_tui_menu() -> None:  # noqa: C901
     try:
         from textual.app import App, ComposeResult
         from textual.binding import Binding
+        from textual.containers import Horizontal, ScrollableContainer, Vertical
         from textual.widgets import (
-            Footer, Header, Static, Label, Input, ListView, ListItem,
+            Footer,
+            Header,
+            Input,
+            Label,
+            ListItem,
+            ListView,
+            Static,
         )
-        from textual.containers import Horizontal, Vertical, ScrollableContainer
     except ImportError:
         _run_plain_menu()
         return
@@ -474,28 +479,28 @@ def _dispatch(command: str) -> None:  # noqa: C901
     try:
         from navig.commands.interactive import (  # type: ignore[attr-defined]
             MenuState,
-            show_host_management_menu,
-            show_file_operations_menu,
-            show_database_menu,
-            show_webserver_menu,
-            show_docker_menu,
-            show_maintenance_menu,
-            show_monitoring_security_menu,
-            show_app_management_menu,
-            execute_remote_command_menu,
-            show_tunnel_menu,
-            show_flow_menu,
-            show_local_menu,
-            show_agent_gateway_menu,
-            show_mcp_menu,
-            show_assistant_menu,
-            execute_wiki_menu,
-            show_backup_menu,
-            show_configuration_menu,
-            show_command_history,
-            show_quick_help,
             _launch_copilot_sessions,
             _launch_memory_menu,
+            execute_remote_command_menu,
+            execute_wiki_menu,
+            show_agent_gateway_menu,
+            show_app_management_menu,
+            show_assistant_menu,
+            show_backup_menu,
+            show_command_history,
+            show_configuration_menu,
+            show_database_menu,
+            show_docker_menu,
+            show_file_operations_menu,
+            show_flow_menu,
+            show_host_management_menu,
+            show_local_menu,
+            show_maintenance_menu,
+            show_mcp_menu,
+            show_monitoring_security_menu,
+            show_quick_help,
+            show_tunnel_menu,
+            show_webserver_menu,
         )
         from navig.config import get_config_manager
         state = MenuState(get_config_manager())

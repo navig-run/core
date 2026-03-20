@@ -50,8 +50,8 @@ def council_run(
         navig council run "Best approach for scaling the database?" --rounds 2
         navig council run "Transfer budget allocation" --json
     """
-    from navig.formations.loader import get_active_formation
     from navig.formations.council import run_council
+    from navig.formations.loader import get_active_formation
 
     formation = get_active_formation()
     if formation is None:
@@ -85,7 +85,7 @@ def council_run(
         print(f"confidence={result.get('overall_confidence', 0)}")
         print(f"duration_ms={result.get('total_duration_ms', 0)}")
         print(f"agents={result.get('agents_count', 0)}")
-        print(f"---")
+        print("---")
         print(result.get("final_decision", ""))
         return
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import os
 import shutil
@@ -118,7 +119,9 @@ def _step_plugins():
 
 def _reload_version():
     try:
-        import importlib, navig as _nav
+        import importlib
+
+        import navig as _nav
         importlib.reload(_nav)
         return _nav.__version__
     except Exception:
@@ -295,10 +298,10 @@ def update_check(
     json_out: bool = typer.Option(False, "--json", help="Output JSON."),
 ) -> None:
     """Check current vs. latest available version (no changes made)."""
-    from navig.update.targets import TargetResolver
-    from navig.update.sources import build_source
-    from navig.update.lifecycle import UpdateEngine
     from navig.config import get_config_manager
+    from navig.update.lifecycle import UpdateEngine
+    from navig.update.sources import build_source
+    from navig.update.targets import TargetResolver
 
     cm = get_config_manager()
     src_cfg = cm.get("update.source", {"type": "pypi", "package": "navig"}) or {}
@@ -309,13 +312,13 @@ def update_check(
         source = build_source(src_cfg, channel)
     except Exception as exc:
         typer.echo(f"Error building source: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     try:
         targets = TargetResolver(cm).resolve(host=host, group=group, all_hosts=all_hosts)
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     engine = UpdateEngine(targets=targets, source=source)
     plan = engine.plan(force=False)
@@ -357,10 +360,10 @@ def update_run(
     json_out: bool = typer.Option(False, "--json", help="Output JSON result."),
 ) -> None:
     """Apply updates to one or more nodes."""
-    from navig.update.targets import TargetResolver
-    from navig.update.sources import build_source
-    from navig.update.lifecycle import UpdateEngine
     from navig.config import get_config_manager
+    from navig.update.lifecycle import UpdateEngine
+    from navig.update.sources import build_source
+    from navig.update.targets import TargetResolver
 
     cm = get_config_manager()
     src_cfg = cm.get("update.source", {"type": "pypi", "package": "navig"}) or {}
@@ -371,13 +374,13 @@ def update_run(
         source = build_source(src_cfg, channel)
     except Exception as exc:
         typer.echo(f"Error building source: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     try:
         targets = TargetResolver(cm).resolve(host=host, group=group, all_hosts=all_hosts)
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     con = _con()
     if dry_run:
@@ -426,15 +429,15 @@ def update_rollback(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
 ) -> None:
     """Roll back NAVIG to a specific version."""
-    from navig.update.targets import TargetResolver
     from navig.config import get_config_manager
+    from navig.update.targets import TargetResolver
 
     cm = get_config_manager()
     try:
         targets = TargetResolver(cm).resolve(host=host)
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     target = targets[0]
     con = _con()
@@ -453,7 +456,7 @@ def update_rollback(
         engine._rollback_node(target, version)
     except Exception as exc:
         _p(con, f"[red]Rollback failed: {exc}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     _p(con, f"[green]✓[/green]  Rolled back to v[cyan]{version}[/cyan]")
 
@@ -479,19 +482,19 @@ def update_status(
     channel = cm.get("update.channel", "stable") or "stable"
 
     if host and host not in ("local", "localhost"):
+        from navig.update.sources import build_source
         from navig.update.targets import TargetResolver
-        from navig.update.sources import build_source, SourceError
         try:
             targets = TargetResolver(cm).resolve(host=host)
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
         target = targets[0]
         try:
             source = build_source(src_cfg if isinstance(src_cfg, dict) else {"type": str(src_cfg)}, channel)
         except Exception as exc:
             typer.echo(f"Error: {exc}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
         from navig.update.checker import VersionChecker
         vi = VersionChecker(source).check_ssh(target.node_id, target.server_config or {})
         if json_out:

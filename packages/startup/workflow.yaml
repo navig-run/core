@@ -1,0 +1,44 @@
+name: startup
+description: "Startup sequence for NAVIG sessions — health checks, context loading, environment setup."
+version: "1.0.0"
+author: navig
+type: runbook
+
+steps:
+  - name: check-hosts
+    description: "List all configured hosts and verify the active host is set"
+    command: navig host list
+    continue_on_error: true
+
+  - name: test-host-connection
+    description: "Test SSH connectivity to the active host"
+    command: navig host test
+    continue_on_error: true
+
+  - name: check-containers
+    description: "Check running Docker services on the active host"
+    command: navig docker ps
+    continue_on_error: true
+
+  - name: check-disk
+    description: "Check disk usage on the active host"
+    command: navig run "df -h"
+    continue_on_error: true
+
+  - name: check-resources
+    description: "Check CPU/memory/load on the active host"
+    command: navig host monitor show --resources
+    continue_on_error: true
+
+  - name: review-prs
+    description: "List open pull requests for review"
+    command: gh pr list
+    continue_on_error: true
+
+  - name: check-ci
+    description: "List recent CI/CD workflow runs"
+    command: gh run list
+    continue_on_error: true
+
+
+

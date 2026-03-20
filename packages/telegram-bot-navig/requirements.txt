@@ -1,0 +1,7 @@
+# telegram-bot-navig requirements
+# Install with: pip install -r requirements.txt
+
+python-telegram-bot>=20.0
+pyyaml>=6.0
+watchdog>=4.0
+yt-dlp>=2024.1.0

@@ -16,13 +16,13 @@ VS Code Integration:
     Add to .vscode/mcp.json or VS Code settings
 """
 
-import json
-import sys
 import asyncio
+import json
 import secrets
+import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Callable
-from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, Optional
 
 from navig import console_helper as ch
 from navig.config import ConfigManager
@@ -30,7 +30,7 @@ from navig.config import ConfigManager
 
 class MCPProtocolHandler:
     """Handles MCP JSON-RPC protocol over stdio."""
-    
+
     def __init__(self):
         self.tools: Dict[str, Dict[str, Any]] = {}
         self.resources: Dict[str, Dict[str, Any]] = {}
@@ -38,12 +38,12 @@ class MCPProtocolHandler:
         self._handlers: Dict[str, Callable] = {}
         self._running = False
         self._config = ConfigManager()
-        
+
         # Register built-in methods
         self._setup_protocol_handlers()
         self._setup_navig_tools()
         self._setup_navig_resources()
-    
+
     def _setup_protocol_handlers(self):
         """Setup MCP protocol method handlers."""
         self._handlers = {}
@@ -56,7 +56,7 @@ class MCPProtocolHandler:
         self._handlers["prompts/list"] = self._handle_prompts_list
         self._handlers["prompts/get"] = self._handle_prompts_get
         self._handlers["ping"] = self._handle_ping
-    
+
     def _setup_navig_tools(self):
         """Register NAVIG tools for MCP."""
         self.tools = {}
@@ -171,11 +171,11 @@ class MCPProtocolHandler:
                 "mimeType": "application/json"
             }
         }
-    
+
     # =========================================================================
     # MCP Protocol Handlers
     # =========================================================================
-    
+
     def _handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP initialize request."""
         return {
@@ -190,32 +190,32 @@ class MCPProtocolHandler:
                 "version": "1.0.0"
             }
         }
-    
+
     def _handle_initialized(self, params: Dict[str, Any]) -> None:
         """Handle MCP initialized notification."""
         return None
-    
+
     def _handle_ping(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle ping request."""
         return {}
-    
+
     def _handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return list of available tools."""
         return {
             "tools": list(self.tools.values())
         }
-    
+
     def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a tool call."""
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
-        
+
         if tool_name not in self.tools:
             return {
                 "isError": True,
                 "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}]
             }
-        
+
         try:
             result = self._execute_tool(tool_name, arguments)
             return {
@@ -226,23 +226,23 @@ class MCPProtocolHandler:
                 "isError": True,
                 "content": [{"type": "text", "text": f"Tool error: {str(e)}"}]
             }
-    
+
     def _handle_resources_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return list of available resources."""
         return {
             "resources": list(self.resources.values())
         }
-    
+
     def _handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Read a resource."""
         uri = params.get("uri")
-        
+
         if uri not in self.resources:
             return {
                 "isError": True,
                 "content": [{"type": "text", "text": f"Unknown resource: {uri}"}]
             }
-        
+
         try:
             content = self._read_resource(uri)
             return {
@@ -257,19 +257,19 @@ class MCPProtocolHandler:
                 "isError": True,
                 "content": [{"type": "text", "text": f"Resource error: {str(e)}"}]
             }
-    
+
     def _handle_prompts_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return list of available prompts."""
         return {"prompts": []}
-    
+
     def _handle_prompts_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get a specific prompt."""
         return {"messages": []}
-    
+
     # =========================================================================
     # Tool Implementations
     # =========================================================================
-    
+
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute a tool and return result."""
         handler = getattr(self, "_tool_handlers", {}).get(tool_name)
@@ -319,17 +319,17 @@ class MCPProtocolHandler:
             return json.dumps([r.to_dict() for r in store.list_receipts(limit=50)], indent=2)
         else:
             raise ValueError(f"Unknown resource: {uri}")
-    
+
     # =========================================================================
     # Server Loop
     # =========================================================================
-    
+
     def handle_message(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Handle a single JSON-RPC message."""
         method = message.get("method")
         params = message.get("params", {})
         msg_id = message.get("id")
-        
+
         if method not in self._handlers:
             if msg_id is not None:
                 return {
@@ -341,7 +341,7 @@ class MCPProtocolHandler:
                     }
                 }
             return None
-        
+
         try:
             result = self._handlers[method](params)
             if msg_id is not None:
@@ -362,29 +362,29 @@ class MCPProtocolHandler:
                     }
                 }
             return None
-    
+
     def run_stdio(self):
         """Run MCP server in stdio mode."""
         self._running = True
-        
+
         while self._running:
             try:
                 line = sys.stdin.readline()
                 if not line:
                     break
-                
+
                 message = json.loads(line)
                 response = self.handle_message(message)
-                
+
                 if response:
                     sys.stdout.write(json.dumps(response) + "\n")
                     sys.stdout.flush()
-                    
+
             except json.JSONDecodeError as e:
                 sys.stderr.write(f"JSON decode error: {e}\n")
             except Exception as e:
                 sys.stderr.write(f"Error: {e}\n")
-    
+
     def stop(self):
         """Stop the server."""
         self._running = False
@@ -399,7 +399,7 @@ def start_mcp_server(mode: str = "stdio", port: int = 3001, token: Optional[str]
         token: Optional auth token; auto-generated if None in websocket mode
     """
     handler = MCPProtocolHandler()
-    
+
     if mode == "stdio":
         handler.run_stdio()
     elif mode == "websocket":
@@ -421,10 +421,10 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
     try:
         import websockets
         import websockets.asyncio.server
-    except ImportError:
+    except ImportError as _exc:
         ch.error("WebSocket mode requires the 'websockets' package.")
         ch.info("Install with:  pip install websockets")
-        raise SystemExit(1)
+        raise SystemExit(1) from _exc
 
     # Generate a session token if not provided
     session_token = token or secrets.token_urlsafe(32)
@@ -550,7 +550,7 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
 
     async def _handle_client(websocket):
         client_id = id(websocket)
-        
+
         # Check auth header first
         auth_header = websocket.request.headers.get("Authorization", "")
         if auth_header == f"Bearer {session_token}":
@@ -659,9 +659,9 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
 def generate_vscode_mcp_config() -> Dict[str, Any]:
     """Generate VS Code MCP configuration for Copilot integration."""
     import sys
-    
+
     python_path = sys.executable
-    
+
     return {
         "mcpServers": {
             "navig": {
@@ -676,9 +676,9 @@ def generate_vscode_mcp_config() -> Dict[str, Any]:
 def generate_claude_mcp_config() -> Dict[str, Any]:
     """Generate Claude Desktop MCP configuration."""
     import sys
-    
+
     python_path = sys.executable
-    
+
     return {
         "mcpServers": {
             "navig": {

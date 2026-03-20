@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     import httpx
@@ -69,26 +69,26 @@ class ImageStyle(Enum):
 @dataclass
 class ImageGenerationConfig:
     """Configuration for image generation."""
-    
+
     # Provider settings
     provider: ImageProvider = ImageProvider.OPENAI
     openai_api_key: Optional[str] = None
     stability_api_key: Optional[str] = None
     local_api_url: str = "http://localhost:7860"  # A1111/ComfyUI
-    
+
     # Default generation parameters
     default_size: ImageSize = ImageSize.SQUARE_LARGE
     default_quality: ImageQuality = ImageQuality.STANDARD
     default_style: ImageStyle = ImageStyle.VIVID
-    
+
     # Output settings
     output_dir: str = "~/.navig/images"
     save_locally: bool = True
-    
+
     # Rate limiting
     max_concurrent: int = 2
     rate_limit_delay: float = 1.0
-    
+
     @classmethod
     def from_env(cls) -> 'ImageGenerationConfig':
         """Create config from environment variables."""
@@ -98,7 +98,7 @@ class ImageGenerationConfig:
             stability_api_key=os.environ.get("STABILITY_API_KEY"),
             local_api_url=os.environ.get("LOCAL_IMAGE_API_URL", "http://localhost:7860"),
         )
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ImageGenerationConfig':
         """Create config from dictionary."""
@@ -122,18 +122,18 @@ class GeneratedImage:
     revised_prompt: Optional[str]  # Provider's enhanced prompt
     provider: ImageProvider
     size: str
-    
+
     # Image data (one of these will be set)
     url: Optional[str] = None      # Remote URL
     b64_data: Optional[str] = None  # Base64 encoded data
     local_path: Optional[str] = None  # Local file path
-    
+
     # Metadata
     generation_time: float = 0.0
     model: Optional[str] = None
     seed: Optional[int] = None
     created_at: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "prompt": self.prompt,
@@ -147,7 +147,7 @@ class GeneratedImage:
             "seed": self.seed,
             "created_at": self.created_at.isoformat(),
         }
-    
+
     async def save_to_file(self, filepath: str) -> str:
         """
         Save image to file.
@@ -160,14 +160,14 @@ class GeneratedImage:
         """
         path = Path(filepath).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         if self.b64_data:
             # Decode and save
             data = base64.b64decode(self.b64_data)
             path.write_bytes(data)
             self.local_path = str(path)
             return str(path)
-        
+
         elif self.url and HTTPX_AVAILABLE:
             # Download from URL
             async with httpx.AsyncClient() as client:
@@ -176,7 +176,7 @@ class GeneratedImage:
                 path.write_bytes(response.content)
                 self.local_path = str(path)
                 return str(path)
-        
+
         raise ValueError("No image data available to save")
 
 
@@ -188,7 +188,7 @@ class ImageGenerator:
         generator = ImageGenerator()
         image = await generator.generate("A sunset over mountains")
     """
-    
+
     def __init__(self, config: Optional[ImageGenerationConfig] = None):
         """
         Initialize image generator.
@@ -198,23 +198,23 @@ class ImageGenerator:
         """
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required for image generation. Install: pip install httpx")
-        
+
         self.config = config or ImageGenerationConfig.from_env()
         self._client: Optional[httpx.AsyncClient] = None
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent)
-    
+
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(timeout=120.0)
         return self._client
-    
+
     async def close(self):
         """Close HTTP client."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
-    
+
     async def generate(
         self,
         prompt: str,
@@ -244,7 +244,7 @@ class ImageGenerator:
         size = size or self.config.default_size
         quality = quality or self.config.default_quality
         style = style or self.config.default_style
-        
+
         async with self._semaphore:
             if provider == ImageProvider.OPENAI:
                 images = await self._generate_openai(prompt, size, quality, style, n)
@@ -254,24 +254,24 @@ class ImageGenerator:
                 images = await self._generate_local(prompt, size, n)
             else:
                 raise ValueError(f"Unsupported provider: {provider}")
-        
+
         # Save locally if requested
         if save and self.config.save_locally:
             output_dir = Path(self.config.output_dir).expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
             for i, img in enumerate(images):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"image_{timestamp}_{i}.png"
                 filepath = output_dir / filename
-                
+
                 try:
                     await img.save_to_file(str(filepath))
                 except Exception as e:
                     logger.warning(f"Failed to save image: {e}")
-        
+
         return images
-    
+
     async def _generate_openai(
         self,
         prompt: str,
@@ -284,11 +284,11 @@ class ImageGenerator:
         api_key = self.config.openai_api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OpenAI API key not configured")
-        
+
         client = await self._get_client()
-        
+
         start_time = datetime.now()
-        
+
         response = await client.post(
             "https://api.openai.com/v1/images/generations",
             headers={
@@ -305,12 +305,12 @@ class ImageGenerator:
                 "response_format": "url",
             },
         )
-        
+
         response.raise_for_status()
         data = response.json()
-        
+
         generation_time = (datetime.now() - start_time).total_seconds()
-        
+
         images = []
         for item in data.get("data", []):
             images.append(GeneratedImage(
@@ -322,16 +322,16 @@ class ImageGenerator:
                 generation_time=generation_time,
                 model="dall-e-3",
             ))
-        
+
         # DALL-E 3 only generates 1 image, so loop for multiple
         if n > 1:
             for _ in range(n - 1):
                 await asyncio.sleep(self.config.rate_limit_delay)
                 more = await self._generate_openai(prompt, size, quality, style, 1)
                 images.extend(more)
-        
+
         return images
-    
+
     async def _generate_stability(
         self,
         prompt: str,
@@ -342,14 +342,14 @@ class ImageGenerator:
         api_key = self.config.stability_api_key or os.environ.get("STABILITY_API_KEY")
         if not api_key:
             raise ValueError("Stability API key not configured")
-        
+
         client = await self._get_client()
-        
+
         # Parse size
         width, height = map(int, size.value.split("x"))
-        
+
         start_time = datetime.now()
-        
+
         response = await client.post(
             "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
             headers={
@@ -366,12 +366,12 @@ class ImageGenerator:
                 "steps": 30,
             },
         )
-        
+
         response.raise_for_status()
         data = response.json()
-        
+
         generation_time = (datetime.now() - start_time).total_seconds()
-        
+
         images = []
         for item in data.get("artifacts", []):
             images.append(GeneratedImage(
@@ -384,9 +384,9 @@ class ImageGenerator:
                 model="stable-diffusion-xl-1024-v1-0",
                 seed=item.get("seed"),
             ))
-        
+
         return images
-    
+
     async def _generate_local(
         self,
         prompt: str,
@@ -395,12 +395,12 @@ class ImageGenerator:
     ) -> List[GeneratedImage]:
         """Generate images using local model (Automatic1111 API)."""
         client = await self._get_client()
-        
+
         # Parse size
         width, height = map(int, size.value.split("x"))
-        
+
         start_time = datetime.now()
-        
+
         response = await client.post(
             f"{self.config.local_api_url}/sdapi/v1/txt2img",
             json={
@@ -413,12 +413,12 @@ class ImageGenerator:
                 "cfg_scale": 7,
             },
         )
-        
+
         response.raise_for_status()
         data = response.json()
-        
+
         generation_time = (datetime.now() - start_time).total_seconds()
-        
+
         images = []
         for b64_img in data.get("images", []):
             images.append(GeneratedImage(
@@ -430,9 +430,9 @@ class ImageGenerator:
                 generation_time=generation_time,
                 model="local",
             ))
-        
+
         return images
-    
+
     async def edit(
         self,
         image_path: str,
@@ -454,35 +454,35 @@ class ImageGenerator:
         api_key = self.config.openai_api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OpenAI API key required for image editing")
-        
+
         client = await self._get_client()
-        
+
         # Read image file
         image_data = Path(image_path).read_bytes()
-        
+
         files = {
             "image": ("image.png", image_data, "image/png"),
             "prompt": (None, prompt),
             "size": (None, self.config.default_size.value),
         }
-        
+
         if mask_path:
             mask_data = Path(mask_path).read_bytes()
             files["mask"] = ("mask.png", mask_data, "image/png")
-        
+
         start_time = datetime.now()
-        
+
         response = await client.post(
             "https://api.openai.com/v1/images/edits",
             headers={"Authorization": f"Bearer {api_key}"},
             files=files,
         )
-        
+
         response.raise_for_status()
         data = response.json()
-        
+
         generation_time = (datetime.now() - start_time).total_seconds()
-        
+
         item = data.get("data", [{}])[0]
         return GeneratedImage(
             prompt=prompt,
@@ -517,7 +517,7 @@ async def generate_image(
     """
     config = ImageGenerationConfig.from_env()
     config.provider = ImageProvider(provider)
-    
+
     generator = ImageGenerator(config)
     try:
         images = await generator.generate(
@@ -535,11 +535,11 @@ def is_image_generation_available() -> bool:
     """Check if image generation is available."""
     if not HTTPX_AVAILABLE:
         return False
-    
+
     # Check for API keys
     if os.environ.get("OPENAI_API_KEY"):
         return True
     if os.environ.get("STABILITY_API_KEY"):
         return True
-    
+
     return False
