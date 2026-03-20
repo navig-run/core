@@ -621,7 +621,7 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
                 if response:
                     await websocket.send(json.dumps(response, default=str))
         except websockets.exceptions.ConnectionClosed:
-            pass
+            pass  # connection closed normally
         finally:
             authenticated_clients.discard(client_id)
             authenticated_websockets.discard(websocket)

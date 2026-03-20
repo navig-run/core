@@ -258,8 +258,8 @@ class PluginLoader:
             if candidate.exists():
                 try:
                     return json.loads(candidate.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
         return {}
 
     def _install_pip_deps(self, plugin_file: Path, manifest: dict | None = None) -> None:

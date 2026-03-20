@@ -50,8 +50,8 @@ def render_diff_preview(
             for line in diff.lines[:max_lines]:
                 prefix = {"add": "+", "remove": "-", "context": " "}.get(line.op, " ")
                 print(f"  {prefix} {line.content}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def diff_lines_from_text(before: str, after: str) -> List[DiffLine]:

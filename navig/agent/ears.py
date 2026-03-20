@@ -113,7 +113,7 @@ class TelegramListener(InputListener):
             self._running = True
 
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
     async def stop(self) -> None:
         """Stop Telegram bot."""
@@ -123,7 +123,7 @@ class TelegramListener(InputListener):
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
 
 class MCPListener(InputListener):
@@ -146,8 +146,8 @@ class MCPListener(InputListener):
         try:
             # Integration with existing MCP server
             self._running = True
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     async def stop(self) -> None:
         """Stop MCP server."""
@@ -185,8 +185,8 @@ class APIListener(InputListener):
         except ImportError:
             # aiohttp not installed
             pass
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     async def stop(self) -> None:
         """Stop API server."""
@@ -258,7 +258,7 @@ class EmailListener(InputListener):
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
     async def _poll_loop(self) -> None:
         """Poll for new unread emails on a timer."""
@@ -331,9 +331,9 @@ class WebhookListener(InputListener):
             self._running = True
 
         except ImportError:
-            pass
-        except Exception:
-            pass
+            pass  # optional dependency not installed; feature disabled
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     async def stop(self) -> None:
         """Stop webhook server."""
@@ -442,16 +442,16 @@ class Ears(Component):
         for name, listener in self._listeners.items():
             try:
                 await listener.start()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def _on_stop(self) -> None:
         """Stop all listeners."""
         for listener in self._listeners.values():
             try:
                 await listener.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for ears."""

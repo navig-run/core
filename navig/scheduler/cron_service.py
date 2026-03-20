@@ -364,7 +364,7 @@ class CronService:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         self._save_jobs()
         logger.info("Cron service stopped")

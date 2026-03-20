@@ -26,8 +26,8 @@ def _check_token() -> str | None:
             token = cfg.get("telegram", {}).get("bot_token", "")
             if token:
                 return token
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     # 3. .navig/config.json (project-local)
     config_json = Path(".navig") / "config.json"
@@ -38,8 +38,8 @@ def _check_token() -> str | None:
             token = cfg.get("telegram", {}).get("bot_token", "")
             if token:
                 return token
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     return None
 

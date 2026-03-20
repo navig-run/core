@@ -112,8 +112,8 @@ class _StmtCache:
         for c in self._cache.values():
             try:
                 c.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         self._cache.clear()
 
 
@@ -493,12 +493,12 @@ class Engine:
         try:
             if platform.system() == "Windows":
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         try:
             conn.close()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     def __repr__(self) -> str:
         n_conns = len(getattr(self._local, "conns", {}))

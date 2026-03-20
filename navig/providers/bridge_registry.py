@@ -133,7 +133,4 @@ def reset_bridge_registry() -> None:
         _registry = None
 
 
-# Backward-compat aliases
-ForgeBridgeRegistry = BridgeRegistry
-get_forge_bridge_registry = get_bridge_registry
-reset_forge_bridge_registry = reset_bridge_registry
+

@@ -352,8 +352,8 @@ def export_config(options: Dict[str, Any]):
                 for host_name in config_manager.list_hosts():
                     try:
                         data['hosts'][host_name] = config_manager.load_host_config(host_name)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
 
                 for host_name in config_manager.list_hosts():
                     for app_name in config_manager.list_apps(host_name):
@@ -361,8 +361,8 @@ def export_config(options: Dict[str, Any]):
                             if host_name not in data['apps']:
                                 data['apps'][host_name] = {}
                             data['apps'][host_name][app_name] = config_manager.load_app_config(host_name, app_name)
-                        except Exception:
-                            pass
+                        except Exception:  # noqa: BLE001
+                            pass  # best-effort; failure is non-critical
 
             with open(output, 'w') as f:
                 json.dump(data, f, indent=2)
@@ -535,8 +535,8 @@ def import_config(options: Dict[str, Any]):
         if is_encrypted and input_file.exists():
             try:
                 os.remove(input_file)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
 
 # ============================================================================
@@ -712,8 +712,8 @@ def inspect_export(options: Dict[str, Any]):
         if decrypted_file and decrypted_file.exists():
             try:
                 os.remove(decrypted_file)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
 
 # ============================================================================

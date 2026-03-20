@@ -58,4 +58,4 @@ def save_config(user_id: int, cfg: AudioConfig) -> None:
     try:
         _store_path(user_id).write_text(json.dumps(asdict(cfg), indent=2))
     except OSError:
-        pass
+        pass  # best-effort cleanup

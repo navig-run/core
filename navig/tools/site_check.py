@@ -126,8 +126,8 @@ async def _get_cert_expiry(hostname: str) -> Optional[str]:
                 if not_after:
                     dt = datetime.datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
                     return dt.strftime("%Y-%m-%d")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return None
 
     return await asyncio.get_event_loop().run_in_executor(None, _sync_check)

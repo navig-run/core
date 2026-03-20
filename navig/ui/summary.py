@@ -28,8 +28,8 @@ def render_next_step(
     except Exception:
         try:
             print(f"\n  >> {label}: {command}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_summary(
@@ -62,8 +62,8 @@ def render_summary(
             print(f"  Recommend:  {result.recommendation}", file=sys.stdout)
             if result.action_prompt:
                 print(f"  >> {result.action_prompt}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_ai_response(
@@ -83,5 +83,5 @@ def render_ai_response(
             if title:
                 print(f"\n  {title}", file=sys.stdout)
             print(text, file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

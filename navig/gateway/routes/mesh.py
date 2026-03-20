@@ -19,8 +19,10 @@ if TYPE_CHECKING:
 
 try:
     from aiohttp import web
-except ImportError:
-    pass
+except ImportError as _exc:
+    raise RuntimeError(
+        "aiohttp is required for gateway routes (pip install aiohttp)"
+    ) from _exc
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import json_error_response, json_ok, require_bearer_auth
@@ -153,7 +155,7 @@ def _route(gw: "NavigGateway"):
             flags = body.get("flags", {})
             metadata = {"scope": scope, "flags": flags, "source": "mesh_fallback"}
             response_text = await gw.router.route_message(
-                channel="http", user_id="forge", message=text, metadata=metadata
+                channel="http", user_id="bridge", message=text, metadata=metadata
             )
             return json_ok({"text": response_text or "", "routed_via": None,
                             "metadata": {"provider": "local"}})

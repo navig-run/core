@@ -273,8 +273,8 @@ class TelegramCommandsMixin:
                 try:
                     all_s = sm.get_all_sessions_for_user(user_id)
                     lines.append(f"📝 Sessions: {len(all_s)}")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             except Exception as _e:
                 logger.debug("_handle_user session fetch failed: %s", _e)
 
@@ -300,8 +300,8 @@ class TelegramCommandsMixin:
                     sm = get_session_manager()
                     session = sm.get_or_create_session(chat_id, _uid)
                     current = session.focus_mode
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             for mid, mp in MOOD_REGISTRY.items():
                 active_marker = " <b>- active</b>" if mid == current else ""
                 lines.append(
@@ -325,8 +325,8 @@ class TelegramCommandsMixin:
             try:
                 from navig.agent.proactive.user_state import get_user_state_tracker
                 get_user_state_tracker().set_preference("chat_mode", "auto")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             await self.send_message(chat_id, "- auto. reading the room.", parse_mode=None)
             return
 
@@ -350,8 +350,8 @@ class TelegramCommandsMixin:
         try:
             from navig.agent.proactive.user_state import get_user_state_tracker
             get_user_state_tracker().set_preference("chat_mode", mood.id)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         await self.send_message(chat_id, mood.transition_message, parse_mode=None)
 
@@ -383,8 +383,8 @@ class TelegramCommandsMixin:
                         return True, f"{host}:{port}"
                     except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
                         return False, f"{host}:{port}"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         try:
             from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT, get_llm_port
@@ -453,8 +453,8 @@ class TelegramCommandsMixin:
                 for chain_name, models in GitHubModelsProvider.FALLBACK_CHAINS.items():
                     model_list = " - ".join(m.split(":")[-1] for m in models)
                     lines.append(f"  - {chain_name.replace('_', ' ')}: {model_list}")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             user_pref = self._user_model_prefs.get(user_id, "")
             check = lambda t: " -" if user_pref == t else ""  # noqa: E731
@@ -490,8 +490,8 @@ class TelegramCommandsMixin:
                     m = lr.modes.get("big_tasks")
                     if m and getattr(m, "provider", None):
                         active_prov = m.provider
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         try:
             from navig.providers.registry import list_enabled_providers
@@ -573,8 +573,8 @@ class TelegramCommandsMixin:
                         live = [m["name"] for m in data.get("models", []) if m.get("name")]
                         if live:
                             models = live
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             if not models:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
 
@@ -593,8 +593,8 @@ class TelegramCommandsMixin:
                     slot = router.cfg.slot_for_tier(tier)
                     if slot.provider == prov_id:
                         current[tier] = f"`{slot.model}`"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         lines = [
             f"{emoji} *{name}* - assign model to tier",
@@ -727,8 +727,8 @@ class TelegramCommandsMixin:
             try:
                 sm = get_session_manager()
                 all_sessions_count = len(sm.sessions)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         lines.append(f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)")
         lines.append(SEP)
@@ -753,8 +753,8 @@ class TelegramCommandsMixin:
                             ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
                 lines.append(f"  {ts_prefix}{arrow} {actor}: {preview}")
         else:
             lines.append("  _(no recent activity)_")
@@ -768,8 +768,8 @@ class TelegramCommandsMixin:
             from navig.config import get_config_manager
             _gcfg = get_config_manager().global_config or {}
             active_host = _gcfg.get("active_host") or _gcfg.get("default_host") or "?"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         voice_label = "?"
         if _HAS_SESSIONS:
@@ -779,8 +779,8 @@ class TelegramCommandsMixin:
                 _s = sm.sessions.get(_sk)
                 if _s is not None:
                     voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         lines.append(f"-  *Session* - tier: `{tier_label}` - host: `{active_host}` - voice: `{voice_label}`")
         lines.append(SEP)
@@ -810,7 +810,7 @@ class TelegramCommandsMixin:
                 ]
                 break
             except OSError:
-                pass
+                pass  # best-effort cleanup
 
         if daemon_issues:
             lines.append("- *Daemon Warnings*")
@@ -856,16 +856,16 @@ class TelegramCommandsMixin:
                 raw_session = sm.sessions.get(sk)
                 if raw_session is not None:
                     return list(raw_session.messages or [])
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         try:
             from navig.agent.memory import get_memory
             mem = get_memory()
             if hasattr(mem, "get_recent"):
                 return mem.get_recent(user_id=str(user_id), limit=8) or []
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         trace_file = msg_trace_path()
         if not trace_file.exists():
@@ -880,8 +880,8 @@ class TelegramCommandsMixin:
                             "role": entry.get("role") or entry.get("type", "?"),
                             "content": entry.get("content") or entry.get("text") or "",
                         })
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
             return messages
         except Exception:
             return []
@@ -1167,15 +1167,15 @@ class TelegramCommandsMixin:
             v = get_vault_v2()
             key_count = len(v.list()) if hasattr(v, "list") else "?"
             lines.append(f"- *Vault:* {key_count} keys stored")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
                 lines.append(f"- *Sessions:* {len(sm.sessions)} active")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         try:
             p = await asyncio.wait_for(
@@ -1188,8 +1188,8 @@ class TelegramCommandsMixin:
             )
             stdout, _ = await p.communicate()
             lines.append(f"- *Server:* {stdout.decode().strip()}")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         try:
             p = await asyncio.wait_for(
@@ -1206,8 +1206,8 @@ class TelegramCommandsMixin:
                 parts = dfl[1].split()
                 if len(parts) >= 3:
                     lines.append(f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         lines.append("-" * 22)
 
@@ -1223,10 +1223,10 @@ class TelegramCommandsMixin:
                             content = str(e.get("content") or e.get("text") or "")[:60]
                             if role in ("user", "human") and content.startswith("/"):
                                 recent.append(f"  - `{content}`")
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                        except Exception:  # noqa: BLE001
+                            pass  # best-effort; failure is non-critical
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if recent:
             lines.append("*Recent commands:*")
@@ -1291,8 +1291,8 @@ class TelegramCommandsMixin:
                     f"- Skill `{skill_id}` not found.\n\nAvailable:\n{available}",
                 )
                 return
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         tool_args: dict = {"skill_id": skill_id, "command": command, "extra_args": extra_args}
         await self.send_typing(chat_id)

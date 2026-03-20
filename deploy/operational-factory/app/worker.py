@@ -27,8 +27,8 @@ if __name__ == "__main__":
     if os.getenv("SEED_DEMO_TASKS", "1") == "1":
         try:
             enqueue_demo_tasks(queue)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     worker = Worker([queue], connection=redis)
     worker.work(with_scheduler=True)

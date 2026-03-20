@@ -110,7 +110,7 @@ class SyncManager:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
         logger.info("[sync] SyncManager stopped")
 
     # ── Main loop ─────────────────────────────────────────────────────────────

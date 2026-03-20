@@ -112,8 +112,8 @@ def package_list(
             mgr = get_plugin_manager()
             mgr.discover_plugins()
             loaded_state = mgr.list_plugins()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     if json_out:
         import sys

@@ -134,7 +134,7 @@ class VaultStorage:
 
             os.chmod(self.vault_path, 0o600)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
     def save(self, credential: Credential) -> None:
         """

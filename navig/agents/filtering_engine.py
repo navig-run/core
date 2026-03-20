@@ -281,7 +281,7 @@ class FilteringEngine:
                     md_path.resolve().relative_to(inbox_abs)
                     continue  # it's inside the inbox — skip
                 except ValueError:
-                    pass
+                    pass  # malformed value; skip
 
                 result = self.filter_file(md_path, dry_run=dry_run)
 
@@ -353,7 +353,7 @@ class FilteringEngine:
                     p.resolve().relative_to(inbox_abs)
                     continue  # inside inbox — skip
                 except ValueError:
-                    pass
+                    pass  # malformed value; skip
                 files.append(p)
         return files
 

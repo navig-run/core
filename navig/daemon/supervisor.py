@@ -166,8 +166,8 @@ class ChildProcess:
             self.process.kill()
             try:
                 self.process.wait(timeout=5)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         except Exception as exc:
             logger.error("Error stopping %s: %s", self.name, exc)
         self._close_log()
@@ -194,8 +194,8 @@ class ChildProcess:
         if fh:
             try:
                 fh.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             self._log_fh = None
 
     @property
@@ -384,8 +384,8 @@ class NavigDaemon:
         }
         try:
             STATE_FILE.write_text(json.dumps(state, indent=2))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     @staticmethod
     def read_state() -> Optional[Dict[str, Any]]:
@@ -448,7 +448,7 @@ class NavigDaemon:
         try:
             asyncio.run(self._supervisor_loop())
         except KeyboardInterrupt:
-            pass
+            pass  # user interrupted; clean exit
         finally:
             self._shutdown()
 

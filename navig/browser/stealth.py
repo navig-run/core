@@ -281,8 +281,8 @@ class StealthController:
         """Wait for network idle. Silently accepts timeout."""
         try:
             await self._page.wait_for_load_state("networkidle", timeout=timeout_ms)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     async def get_a11y_tree(self) -> str:
         """Return ARIA snapshot text (Playwright 1.46+ Locator API)."""

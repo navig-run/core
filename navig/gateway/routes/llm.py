@@ -32,8 +32,10 @@ if TYPE_CHECKING:
 
 try:
     from aiohttp import web
-except ImportError:
-    pass
+except ImportError as _exc:
+    raise RuntimeError(
+        "aiohttp is required for gateway routes (pip install aiohttp)"
+    ) from _exc
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import json_error_response, json_ok, require_bearer_auth

@@ -115,7 +115,7 @@ class Eyes(Component):
             import psutil
             self._psutil = psutil
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
     async def _on_start(self) -> None:
         """Start monitoring tasks."""
@@ -135,7 +135,7 @@ class Eyes(Component):
                 try:
                     await task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # task cancelled; expected during shutdown
 
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for eyes."""
@@ -168,8 +168,8 @@ class Eyes(Component):
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def collect_metrics(self) -> SystemMetrics:
         """Collect current system metrics."""
@@ -202,8 +202,8 @@ class Eyes(Component):
                 # Processes
                 metrics.process_count = len(self._psutil.pids())
 
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         metrics.timestamp = datetime.now()
         return metrics
@@ -300,13 +300,13 @@ class Eyes(Component):
                                         break
 
                             positions[str(path)] = f.tell()
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def _file_watcher_loop(self) -> None:
         """Watch for file changes."""
@@ -326,8 +326,8 @@ class Eyes(Component):
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def _check_file_change(self, path: Path) -> None:
         """Check if a file has changed."""
@@ -347,8 +347,8 @@ class Eyes(Component):
                     )
 
             self._watched_files[path_str] = mtime
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     def get_metrics(self) -> Optional[SystemMetrics]:
         """Get latest metrics."""
@@ -376,7 +376,7 @@ class Eyes(Component):
                 info['cpu_count_logical'] = self._psutil.cpu_count(logical=True)
                 mem = self._psutil.virtual_memory()
                 info['memory_total_gb'] = mem.total / (1024 ** 3)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         return info

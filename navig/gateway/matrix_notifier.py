@@ -90,7 +90,7 @@ class MatrixNotifier(ChannelNotifier):
             try:
                 await self._flush_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
         logger.info("Matrix notifier stopped")
 
     async def send(self, notification: Notification) -> None:

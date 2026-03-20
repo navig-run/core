@@ -368,7 +368,7 @@ def _is_system_service() -> bool:
             if user == "navig":
                 return True
         except (ImportError, KeyError):
-            pass
+            pass  # optional platform info unavailable
 
     # Systemd detection
     if os.environ.get("INVOCATION_ID"):  # Set by systemd
@@ -410,7 +410,7 @@ def platform_info() -> Dict[str, Any]:
                         info["distro"] = line.split("=", 1)[1].strip().strip('"')
                         break
         except FileNotFoundError:
-            pass
+            pass  # file already gone; expected
 
     return info
 
@@ -448,7 +448,7 @@ def check_docker() -> Dict[str, Any]:
             if "version" in ver_text.lower():
                 result["version"] = ver_text.split("version")[-1].split(",")[0].strip()
     except (FileNotFoundError, _sp.TimeoutExpired):
-        pass
+        pass  # tool absent or timed out; optional check
 
     if result["available"]:
         try:
@@ -457,6 +457,6 @@ def check_docker() -> Dict[str, Any]:
                 result["compose"] = True
                 result["compose_version"] = proc.stdout.strip()
         except (FileNotFoundError, _sp.TimeoutExpired):
-            pass
+            pass  # tool absent or timed out; optional check
 
     return result

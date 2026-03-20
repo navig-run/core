@@ -44,10 +44,10 @@ try:
                         print(f"Coordinates: x={center_x}, y={center_y}")
                         print(f"Bounds: left={rect.left}, top={rect.top}, right={rect.right}, bottom={rect.bottom}")
                         sys.exit(0)
-                except:
-                    pass
-        except:
-            pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; suppress all errors
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; suppress all errors
     
     print(f"Not found: '{search_text}'")
     sys.exit(1)

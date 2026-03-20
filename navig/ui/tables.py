@@ -49,8 +49,8 @@ def render_findings_table(
             print(f"  {title}", file=sys.stdout)
             for f in findings:
                 print(f"  [{f.severity}] {f.confidence}%  {f.description}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_fleet_table(
@@ -96,5 +96,5 @@ def render_fleet_table(
             print(f"  {title}", file=sys.stdout)
             for node in nodes:
                 print("  " + "  ".join(str(v) for v in node.values()), file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

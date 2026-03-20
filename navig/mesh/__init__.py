@@ -6,7 +6,7 @@ Architecture:
 - Each node is identified by a stable node_id derived at daemon start
 - NodeRegistry holds live peer state in-memory, persisted to mesh_peers.json
 - MeshRouter proxies cross-node requests via existing HTTP gateway
-- GET /mesh/peers exposes the registry to Forge and any client
+- GET /mesh/peers exposes the registry to Bridge and any client
 
 Phase scope: LAN only. Internet/blockchain routing is Phase 2.
 Each node remains fully functional if the mesh is unreachable.

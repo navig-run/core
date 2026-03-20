@@ -59,8 +59,8 @@ async def push_matrix_stats(
             matrix_cfg = cfg.get("comms", {}).get("matrix", {})
             endpoint = endpoint or matrix_cfg.get("stats_endpoint", "")
             secret = secret or matrix_cfg.get("stats_secret", "")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     if not endpoint or not secret:
         logger.debug("Matrix stats webhook: no endpoint/secret configured, skip")

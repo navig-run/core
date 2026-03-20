@@ -233,8 +233,7 @@ See [`docs/user/CONFIG_SCHEMA.md`](docs/user/CONFIG_SCHEMA.md) and [`docs/user/U
 | **Handbook** | [`docs/user/HANDBOOK.md`](docs/user/HANDBOOK.md) |
 | **Troubleshooting** | [`docs/user/troubleshooting.md`](docs/user/troubleshooting.md) |
 | **Telegram** | [`docs/features/TELEGRAM.md`](docs/features/TELEGRAM.md) |
-| **Architecture** | [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) |
-| **Plugin development** | [`docs/dev/PLUGIN_DEVELOPMENT.md`](docs/dev/PLUGIN_DEVELOPMENT.md) |
+| **Plugin / pack development** | [navig-community](https://github.com/navig-run/community) |
 | **Production deployment** | [`docs/dev/PRODUCTION_DEPLOYMENT.md`](docs/dev/PRODUCTION_DEPLOYMENT.md) |
 | **Migration guide** | [`docs/dev/MIGRATION_GUIDE.md`](docs/dev/MIGRATION_GUIDE.md) |
 
@@ -259,7 +258,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution workflow.
 |---|---|
 | Bug reports & features | [GitHub Issues](https://github.com/navig-run/core/issues) |
 | Ideas & discussion | [GitHub Discussions](https://github.com/navig-run/core/discussions) |
-| Telegram | [t.me/navig-run](https://t.me/navig-run?direct) |
+| Telegram channel | [t.me/navigrun](https://t.me/navigrun) — news & announcements |
+| Telegram community | [t.me/+OyFMwN66c3M0NTk0](https://t.me/+OyFMwN66c3M0NTk0) — group for people running NAVIG |
 | Security reports | [SECURITY.md](SECURITY.md) |
 
 ---

@@ -192,7 +192,7 @@ class Trigger:
                 if datetime.now() - last < timedelta(seconds=self.cooldown_seconds):
                     return False
             except ValueError:
-                pass
+                pass  # malformed value; skip
         return True
 
     def to_dict(self) -> Dict[str, Any]:
@@ -778,8 +778,8 @@ class TriggerManager:
                             continue
 
                         history.append(entry)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # Return most recent first
         return list(reversed(history[-limit:]))

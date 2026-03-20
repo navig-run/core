@@ -64,13 +64,13 @@ class Session:
             try:
                 created_at = datetime.fromisoformat(data['created_at'])
             except (ValueError, TypeError):
-                pass
+                pass  # malformed or missing value; skip
 
         if data.get('updated_at'):
             try:
                 updated_at = datetime.fromisoformat(data['updated_at'])
             except (ValueError, TypeError):
-                pass
+                pass  # malformed or missing value; skip
 
         return cls(
             key=data.get('key', ''),
@@ -90,7 +90,7 @@ class NavigSessionKey:
     Examples:
         - agent:default:telegram:default:dm:123456789
         - agent:default:discord:default:group:987654321
-        - agent:navig:telegram:default:dm:123:host:example-vps
+        - agent:navig:telegram:default:dm:123:host:myserver
     """
 
     @staticmethod

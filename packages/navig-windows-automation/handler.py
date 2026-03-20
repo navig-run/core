@@ -34,7 +34,7 @@ def on_unload(ctx: dict) -> None:
         for name in ("ahk_run", "ahk_type", "ahk_click"):
             CommandRegistry.deregister(name)
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
 
 def on_event(event: str, ctx: dict) -> dict | None:

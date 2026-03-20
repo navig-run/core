@@ -377,7 +377,7 @@ def backup_all_databases(name: Optional[str], compress: str, options: Dict[str, 
         try:
             os.unlink(config_file)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
     # Save metadata
     metadata = {

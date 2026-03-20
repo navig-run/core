@@ -488,8 +488,8 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> Dict[str, 
             _ollama_model_cache = models
             _ollama_cache_ts = now
             return models
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     _ollama_model_cache = {}
     _ollama_cache_ts = now
@@ -510,8 +510,8 @@ def _resolve_api_key(provider: str) -> Optional[str]:
         key = vault.get_api_key(provider)
         if key:
             return key
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     # For github_models, also check config.yaml
     if provider == "github_models":
         try:
@@ -520,8 +520,8 @@ def _resolve_api_key(provider: str) -> Optional[str]:
             token = cfg.get("github_models", {}).get("token", "")
             if token:
                 return token
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     return None
 
 

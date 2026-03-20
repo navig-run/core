@@ -120,8 +120,8 @@ def _workspace_label(ws_path: Path) -> str:
                 # Extract just the basename after last /
                 name = folder.rstrip("/\\").split("/")[-1].split("\\")[-1]
                 return name or folder[-40:]
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     return ws_path.name[:12]
 
 
@@ -207,8 +207,8 @@ def _parse_session(
                                         sess.created_at = datetime.fromisoformat(
                                             str(raw_ts).rstrip("Z")
                                         ).replace(tzinfo=timezone.utc)
-                                except Exception:
-                                    pass
+                                except Exception:  # noqa: BLE001
+                                    pass  # best-effort; failure is non-critical
                             # Inline requests in header
                             reqs = v.get("requests", [])
                             n_inline = len(reqs) if isinstance(reqs, list) else 0
@@ -235,7 +235,7 @@ def _parse_session(
                                 for _ in range(approx_turns - len(sess.turns)):
                                     sess.turns.append(ChatTurn("user", ""))
                 except json.JSONDecodeError:
-                    pass
+                    pass  # malformed JSON; skip line
         except Exception as exc:
             sess.parse_error = str(exc)
         return sess
@@ -252,7 +252,7 @@ def _parse_session(
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError:
-                continue
+                continue  # malformed JSON; skip line
 
             kind = obj.get("kind", -1)
             v = obj.get("v", {})
@@ -273,8 +273,8 @@ def _parse_session(
                                 sess.created_at = datetime.fromisoformat(
                                     str(raw_ts).rstrip("Z")
                                 ).replace(tzinfo=timezone.utc)
-                        except Exception:
-                            pass
+                        except Exception:  # noqa: BLE001
+                            pass  # best-effort; failure is non-critical
                     reqs = v.get("requests", [])
                     if isinstance(reqs, list):
                         all_requests.extend(reqs)

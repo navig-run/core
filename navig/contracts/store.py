@@ -200,22 +200,22 @@ class RuntimeStore:
                 try:
                     n = Node.from_dict(raw)
                     self._nodes[n.node_id] = n
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             for raw in self._read_file("missions.json"):
                 try:
                     m = Mission.from_dict(raw)
                     self._missions[m.mission_id] = m
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             for raw in self._read_file("receipts.json"):
                 try:
                     r = ExecutionReceipt.from_dict(raw)
                     self._receipts[r.receipt_id] = r
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
         except Exception as e:
             logger.debug(f"[RuntimeStore] Load skipped: {e}")
 

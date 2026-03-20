@@ -97,7 +97,7 @@ class ConversationalAgent:
                             def cb(event: StatusEvent, _cb: Callable = _legacy) -> None:  # noqa: E731
                                 _cb(event.message)
             except (ValueError, TypeError):
-                pass
+                pass  # malformed or missing value; skip
         self._on_status_update = cb  # type: ignore[assignment]
         # Sync executor if already initialised (handles post-__init__ assignment)
         if hasattr(self, '_executor'):

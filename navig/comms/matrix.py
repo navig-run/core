@@ -22,7 +22,7 @@ try:
     import olm  # noqa: F401
     HAS_OLM = True
 except ImportError:
-    pass
+    pass  # optional dependency not installed; feature disabled
 
 
 def get_matrix_bot() -> Optional["NavigMatrixBot"]:
@@ -177,7 +177,7 @@ class NavigMatrixBot:
             try:
                 await self._sync_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
         if self._client:
             await self._client.close()
             self._client = None

@@ -98,8 +98,8 @@ class ConversationalAgent:
             soul_candidates.append(
                 (home / ".navig" / "workspace" / "SOUL.md", "workspace")
             )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # 2. Rich default SOUL (navig/resources/SOUL.default.md)
         pkg_root = Path(__file__).parent.parent  # navig/
@@ -121,8 +121,8 @@ class ConversationalAgent:
                     if text:
                         raw_parts.append(text)
                         sources.append(tag)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if not raw_parts:
             return ""
@@ -313,8 +313,8 @@ For conversation, respond naturally without JSON.
             tracker = get_user_state_tracker()
             mode = tracker.get_preference("chat_mode", "work")
             parts.append(f"Current focus mode: {mode}.")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return "\n".join(parts)
 
@@ -828,7 +828,7 @@ For conversation, respond naturally without JSON.
             try:
                 return json.loads(json_match.group(1))
             except json.JSONDecodeError:
-                pass
+                pass  # malformed JSON; skip line
 
         # Try parsing entire response as JSON
         try:
@@ -836,7 +836,7 @@ For conversation, respond naturally without JSON.
             if 'plan' in data:
                 return data
         except json.JSONDecodeError:
-            pass
+            pass  # malformed JSON; skip line
 
         return None
 

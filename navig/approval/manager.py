@@ -151,7 +151,7 @@ class ApprovalManager:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         # Cancel all pending futures
         for future in self._futures.values():

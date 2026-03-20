@@ -262,7 +262,7 @@ def _count_global_configs() -> tuple[int, int]:
             try:
                 host_count = len(list(global_hosts_dir.glob("*.yaml")))
             except (PermissionError, OSError):
-                pass
+                pass  # best-effort cleanup; ignore access/IO errors
 
         # Count legacy app configs
         global_apps_dir = global_config_dir / "apps"
@@ -274,9 +274,9 @@ def _count_global_configs() -> tuple[int, int]:
                     if '.backup.' not in f.name
                 ])
             except (PermissionError, OSError):
-                pass
+                pass  # best-effort cleanup; ignore access/IO errors
     except (PermissionError, OSError):
-        pass
+        pass  # best-effort cleanup; ignore access/IO errors
 
     return host_count, app_count
 
@@ -510,7 +510,7 @@ def _migrate_legacy_documents_dir(target_dir: Path) -> None:
         if not any(parent.iterdir()):
             parent.rmdir()
     except OSError:
-        pass
+        pass  # best-effort cleanup
 
     _write_init_log(f"legacy migration: moved {source_dir} -> {target_dir}")
 
@@ -560,21 +560,21 @@ def _migrate_legacy_windows_runtime_layout() -> None:
                     new_content = item.read_text(encoding="utf-8")
                     dest.write_text(existing + "\n" + new_content, encoding="utf-8")
                     item.unlink()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             else:
                 item.rename(dest)
 
         try:
             src_sub.rmdir()
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
     # Remove legacy root if now empty
     try:
         legacy_root.rmdir()
     except OSError:
-        pass
+        pass  # best-effort cleanup
 
 
 def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") -> None:

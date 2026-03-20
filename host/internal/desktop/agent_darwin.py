@@ -99,8 +99,8 @@ def _ax_attr(elem: Any, attr: str) -> Optional[Any]:
         err, val = AXUIElementCopyAttributeValue(elem, attr, None)
         if err == 0:
             return val
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     return None
 
 
@@ -198,8 +198,8 @@ def _method_find_element(params: _Params) -> _Result:
                 match = False
             if match and (name or role_filter):
                 results.append(_elem_to_dict(elem))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         for child in _ax_children(elem):
             _visit(child, current_depth - 1)
@@ -222,8 +222,8 @@ def _method_click(params: _Params) -> _Result:
         err = AXUIElementPerformAction(elem, kAXPressAction)
         if err == 0:
             return {"clicked": True, "method": "ax_press"}
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Fallback: CGEventPost synthetic mouse click at element center
     if _has_quartz:
@@ -256,14 +256,14 @@ def _method_set_value(params: _Params) -> _Result:
         err = AXUIElementSetAttributeValue(elem, kAXValueAttribute, value)
         if err == 0:
             return {"method": "ax_set_value"}
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Fallback: focus + osascript keystroke
     try:
         AXUIElementPerformAction(elem, kAXFocusedAttribute)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     script = f'tell application "System Events" to keystroke "{value}"'
     result = subprocess.run(
@@ -345,8 +345,8 @@ def _method_get_action_tree(params: _Params) -> _Result:
                 detail += f" (rect: {rect['left']},{rect['top']} - {rect['right']},{rect['bottom']})"
                 lines.append(f"[{idx[0]}] {role} \"{title}\"{detail}  <!-- handle:{handle} -->")
                 idx[0] += 1
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         for child in _ax_children(elem):
             _visit_interactive(child, current_depth - 1)

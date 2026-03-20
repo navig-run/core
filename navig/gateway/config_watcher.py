@@ -146,7 +146,7 @@ class ConfigWatcher:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         logger.info("Config watcher stopped")
 

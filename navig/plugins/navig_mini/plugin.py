@@ -49,8 +49,8 @@ def _navig_get(key: str, default: str = "") -> str:
         val = r.stdout.strip()
         if val and "not found" not in val.lower() and "error" not in val.lower():
             return val
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     return os.environ.get(key.replace(".", "_").upper(), default)
 
 

@@ -270,7 +270,7 @@ class RuntimeStore(BaseStore):
                                     tuple(row[c] for c in shared_cols),
                                 )
                             except sqlite3.IntegrityError:
-                                pass
+                                pass  # duplicate row; skip
         finally:
             src.close()
 

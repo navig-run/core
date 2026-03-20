@@ -79,8 +79,8 @@ class PluginManager:
         current_mtime = 0
         try:
             current_mtime = max(p.stat().st_mtime for p in self.plugin_dirs if p.exists())
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         if cache_file.exists():
             try:
@@ -100,8 +100,8 @@ class PluginManager:
                         info.enabled = data.get("enabled", True)
                         self._plugins[name] = info
                     return self._plugins
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         sources = ['builtin', 'user', 'project']
 
@@ -152,8 +152,8 @@ class PluginManager:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             with open(cache_file, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return self._plugins
 
@@ -175,8 +175,8 @@ class PluginManager:
                 info.version = metadata.get('version', '1.0.0')
                 info.description = metadata.get('description', '')
                 info.dependencies = metadata.get('dependencies', [])
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Try to read requirements.txt
         requirements_file = plugin_path / "requirements.txt"
@@ -184,8 +184,8 @@ class PluginManager:
             try:
                 deps = requirements_file.read_text().strip().split('\n')
                 info.dependencies = [d.strip() for d in deps if d.strip() and not d.startswith('#')]
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         return info
 

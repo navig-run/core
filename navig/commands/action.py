@@ -89,16 +89,16 @@ def _load_all_actions() -> list[Dict[str, Any]]:
             if root.exists():
                 for pkg in root.iterdir():
                     _absorb_dir(pkg / "actions")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Legacy: ~/.navig/quick_actions.yaml
     try:
         from navig.config import get_config_manager
         config_dir = Path(get_config_manager().global_config_dir)
         _absorb_file(config_dir / "quick_actions.yaml")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     return results
 

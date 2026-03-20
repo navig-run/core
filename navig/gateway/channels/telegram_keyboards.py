@@ -721,7 +721,7 @@ class CallbackHandler:
                 try:
                     await typing_task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # task cancelled; expected during shutdown
             return
 
         # ── Auto-Heal action buttons (heal_*) ───────────────────────────────────
@@ -817,16 +817,16 @@ class CallbackHandler:
                 if router and tier:
                     slot = router.cfg.slot_for_tier(tier)
                     model_name = f" — {slot.model} ({slot.provider})"
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             await self._answer(cb_id, f"✅ Switched to {label}")
 
             # Update the original message with refreshed keyboard
             try:
                 await self.channel._handle_models_command(chat_id, user_id)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             # Send brief confirmation
             await self.channel.send_message(
@@ -873,8 +873,8 @@ class CallbackHandler:
             await self._answer(cb_id, f"✅ Provider preference: {prov_label}")
             try:
                 await self.channel._handle_models_command(chat_id, user_id)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             await self.channel.send_message(
                 chat_id,
                 f"✅ Provider locked to *{prov_label}*\n"
@@ -901,8 +901,8 @@ class CallbackHandler:
                     "deleteMessage",
                     {"chat_id": chat_id, "message_id": message_id},
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             return
 
         if cb_data == "prov_noai":
@@ -910,7 +910,7 @@ class CallbackHandler:
             await self._answer(cb_id, "🚫 Raw mode — no AI on next message", show_alert=True)
             return
 
-        if cb_data == "prov_forge":
+        if cb_data == "prov_bridge":
             online, url = await self.channel._probe_bridge_grid()
             status = f"online at {url}" if online else f"offline ({url})"
             await self._answer(cb_id, f"⚡ Bridge Grid: {status}", show_alert=True)
@@ -976,8 +976,8 @@ class CallbackHandler:
                 )
                 await self._answer(cb_id, toast, show_alert=True)
                 return
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         await self._answer(cb_id, f"Provider info unavailable for '{prov_id}'")
 
@@ -1035,8 +1035,8 @@ class CallbackHandler:
                 manifest = PROV_INDEX.get(prov_id)
                 if manifest:
                     models = list(manifest.models)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if model_idx >= len(models):
             await self._answer(cb_id, "⚠️ Model index out of range")
@@ -1151,8 +1151,8 @@ class CallbackHandler:
                 await self.channel._api_call(
                     "deleteMessage", {"chat_id": chat_id, "message_id": message_id}
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             await self._answer(cb_id, "")
             return
 
@@ -1340,8 +1340,8 @@ class CallbackHandler:
                     "chat_id": chat_id,
                     "message_id": message_id,
                 })
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             return
 
         # Map callback → (field, value) or toggle
@@ -1433,8 +1433,8 @@ class CallbackHandler:
         # Persist
         try:
             sm._save_session(session)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         toast = _TOAST.get(cb_data, lambda _: "✅ Updated")(session)
         await self._answer(cb_id, toast)

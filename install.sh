@@ -327,13 +327,13 @@ check_ssh() {
     echo -e "${SUCCESS}✓${NC} SSH client installed"
 }
 
-# ── autossh (persistent SSH tunnels for Forge) ────────────────
+# ── autossh (persistent SSH tunnels for Bridge) ────────────────
 check_autossh() {
     if command -v autossh &>/dev/null; then
         echo -e "${SUCCESS}✓${NC} autossh available"
         return 0
     fi
-    echo -e "${WARN}→${NC} Installing autossh (required for persistent Forge tunnels)..."
+    echo -e "${WARN}→${NC} Installing autossh (required for persistent Bridge tunnels)..."
     if [[ "$OS" == "macos" ]]; then
         if command -v brew &>/dev/null; then
             brew install autossh
@@ -358,7 +358,7 @@ check_autossh() {
     if command -v autossh &>/dev/null; then
         echo -e "${SUCCESS}✓${NC} autossh installed"
     else
-        echo -e "${WARN}!${NC} autossh install failed — Forge tunnel auto-reconnect won't work"
+        echo -e "${WARN}!${NC} autossh install failed — Bridge tunnel auto-reconnect won't work"
     fi
 }
 
@@ -623,7 +623,7 @@ main() {
     # Step 5: SSH client
     check_ssh
 
-    # Step 5.5: autossh (for persistent Forge tunnels)
+    # Step 5.5: autossh (for persistent Bridge tunnels)
     check_autossh
 
     # Step 6: Install NAVIG

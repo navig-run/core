@@ -317,8 +317,8 @@ class UpdateEngine:
         }
         try:
             self._history.append(record)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     # ------------------------------------------------------------------
     # Utility
@@ -335,5 +335,5 @@ class UpdateEngine:
         if cb:
             try:
                 cb(node_id, step, status, message)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical

@@ -220,8 +220,8 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                     val = os.environ.get(var, "").strip()
                     if val:
                         return val
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         # Fallback: check common vars by ID
         _COMMON = {
             "openai": ["OPENAI_API_KEY"],
@@ -635,7 +635,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
                     if 0 <= idx < len(available):
                         chosen.append(available[idx])
                 except ValueError:
-                    pass
+                    pass  # malformed value; skip
 
         try:
             import yaml  # type: ignore[import]

@@ -428,7 +428,7 @@ class ChannelRegistry:
         try:
             return ChannelId(key)
         except ValueError:
-            pass
+            pass  # malformed value; skip
 
         return None
 

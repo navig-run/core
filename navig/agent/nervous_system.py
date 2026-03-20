@@ -169,14 +169,14 @@ class NervousSystem:
             try:
                 self._handlers[event_type].remove(handler)
             except ValueError:
-                pass
+                pass  # malformed value; skip
 
     def unsubscribe_all(self, handler: EventHandler) -> None:
         """Unsubscribe from all events."""
         try:
             self._global_handlers.remove(handler)
         except ValueError:
-            pass
+            pass  # malformed value; skip
 
     async def emit(
         self,

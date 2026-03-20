@@ -88,8 +88,8 @@ class DeployEngine:
             if on_progress:
                 try:
                     on_progress(phase, status, msg)
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         result = DeployResult(
             success=False,
@@ -514,8 +514,8 @@ class DeployEngine:
                     .get("deploy", {})
                     .get("history_keep", 50)
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             history = DeployHistory(cache_dir=self._cache_dir, keep=keep)
             history.append(result.to_dict())
         except Exception as exc:

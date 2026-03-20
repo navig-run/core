@@ -84,7 +84,7 @@ def _validate(output: Any, schema: Dict[str, Any]) -> Tuple[bool, Optional[str]]
             logger.warning("output_validator: invalid schema definition: %s", exc)
             return True, None  # don't punish the tool for a bad schema
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
     # 2. Naive fallback — checks top-level ``type`` and ``required`` only
     return _naive_check(output, schema)

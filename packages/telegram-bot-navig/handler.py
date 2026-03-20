@@ -67,8 +67,8 @@ def on_unload(ctx: dict[str, Any]) -> None:  # noqa: ARG001
     global _BOT_TOKEN, _CHAT_ID, _logger
     try:
         _logger and _logger.info("telegram-bot-navig unloaded")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     _BOT_TOKEN = _CHAT_ID = _logger = None
 
 

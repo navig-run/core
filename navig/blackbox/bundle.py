@@ -59,7 +59,7 @@ def create_bundle(
                 lines = lp.read_text(encoding="utf-8", errors="replace").splitlines()
                 log_tails[lp.name] = "\n".join(lines[-_LOG_TAIL_LINES:])
             except OSError:
-                pass
+                pass  # best-effort cleanup
 
     # NAVIG version
     try:
@@ -110,15 +110,15 @@ def inspect_bundle(path: Path) -> Bundle:
                     continue
                 try:
                     events.append(BlackboxEvent.from_dict(json.loads(line)))
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         for name in names:
             if name.startswith("crashes/") and name.endswith(".json"):
                 try:
                     crash_reports.append(json.loads(zf.read(name).decode()))
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             if name.startswith("logs/"):
                 log_name = name.removeprefix("logs/")
                 log_tails[log_name] = zf.read(name).decode(errors="replace")

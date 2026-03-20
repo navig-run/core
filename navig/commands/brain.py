@@ -7,7 +7,7 @@ agent system-prompt files stored at:
   Global:         ~/.navig/brain/prompts/<slug>.md
 
 Project-local files shadow global ones (same slug → project wins).
-Forge calls `navig brain prompts get <slug>` to fetch a prompt
+navig-bridge calls `navig brain prompts get <slug>` to fetch a prompt
 without hard-coding prompt strings in TypeScript.
 """
 from __future__ import annotations
@@ -115,7 +115,7 @@ def prompts_get(
     slug: str = typer.Argument(..., help="Prompt slug (filename without .md)."),
     json_output: bool = typer.Option(False, "--json", help="Wrap output in JSON envelope."),
 ) -> None:
-    """Output prompt content — intended for programmatic consumption by forge/CLI."""
+    """Output prompt content — intended for programmatic consumption by navig-bridge/CLI."""
     filepath = _resolve(slug)
     if filepath is None:
         typer.echo(f"Prompt not found: {slug}", err=True)

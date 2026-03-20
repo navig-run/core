@@ -125,8 +125,8 @@ class AIClient:
                 secret = vault.get_secret("openrouter", "api_key", caller="ai_client")
                 if secret:
                     api_key = secret.reveal().strip()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             # Fall back to config
             if not api_key:
@@ -183,8 +183,8 @@ class AIClient:
                 sock.close()
                 if result == 0:
                     return "mcp_bridge"
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # ① GitHub Models — free tier, needs GITHUB_TOKEN
         gh_token = self._get_github_models_token()
@@ -202,7 +202,7 @@ class AIClient:
                 if is_airllm_available():
                     return "airllm"
             except ImportError:
-                pass
+                pass  # optional dependency not installed; feature disabled
 
         # Check for Ollama/local
         try:
@@ -212,8 +212,8 @@ class AIClient:
             sock.close()
             if result == 0:
                 return "local"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # Default to pattern matching (no LLM available)
         return "none"
@@ -233,8 +233,8 @@ class AIClient:
             live_port = get_llm_port()
             if live_port:
                 return f"ws://127.0.0.1:{live_port}"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # ② Explicit env override
         env_url = os.getenv("NAVIG_BRIDGE_MCP_URL")
@@ -249,8 +249,8 @@ class AIClient:
             url = bridge_cfg.get("mcp_url")
             if url:
                 return url
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         try:
             from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
@@ -285,8 +285,8 @@ class AIClient:
                 val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
                 if val:
                     return val
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         # ③ Config file
         try:
             from navig.config import get_config_manager
@@ -302,7 +302,7 @@ class AIClient:
                 from navig.providers import FallbackManager
                 self._fallback_manager = FallbackManager()
             except ImportError:
-                pass
+                pass  # optional dependency not installed; feature disabled
         return self._fallback_manager
 
     def _trim_messages_for_retry(self, messages: list, keep_recent: int = 4) -> list:
@@ -699,7 +699,7 @@ class AIClient:
         model: Optional[str] = None,
         purpose: Optional[str] = None,
     ) -> str:
-        """Route through the MCP Forge bridge (VS Code Copilot via MCP WebSocket).
+        """Route through the navig-bridge MCP (VS Code Copilot via MCP WebSocket).
 
         Args:
             purpose: Task purpose hint (coding/small_talk/big_tasks/summarize/research).

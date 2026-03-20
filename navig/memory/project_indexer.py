@@ -169,8 +169,8 @@ def _load_ignore_rules(project_root: Path) -> List[str]:
                     line = line.strip()
                     if line and not line.startswith("#"):
                         patterns.append(line)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
     return patterns
 
 
@@ -847,8 +847,8 @@ class ProjectIndexer:
         if self._conn:
             try:
                 self._conn.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             self._conn = None
 
     def drop_index(self) -> None:

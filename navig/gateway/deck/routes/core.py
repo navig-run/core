@@ -73,8 +73,8 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
                 hours = int(delta.total_seconds() // 3600)
                 mins = int((delta.total_seconds() % 3600) // 60)
                 uptime = f"{hours}h {mins}m"
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     return web.json_response({
         "avatar_state": avatar_state,

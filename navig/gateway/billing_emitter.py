@@ -106,5 +106,5 @@ class BillingEmitter:
             try:
                 records.append(json.loads(line))
             except json.JSONDecodeError:
-                pass
+                pass  # malformed JSON; skip line
         return records[-n:]

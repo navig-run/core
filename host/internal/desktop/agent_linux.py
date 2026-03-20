@@ -126,8 +126,8 @@ def _walk_tree(acc: Any, depth: int, index: Optional[list] = None) -> Dict[str, 
                 child = acc.getChildAtIndex(i)
                 if child:
                     children.append(_walk_tree(child, depth - 1, index))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         node["children"] = children
 
     return node
@@ -171,15 +171,15 @@ def _method_find_element(params: _Params) -> _Result:
                 match = False
             if match and (name or role_filter):
                 results.append(_acc_to_dict(acc))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         try:
             for i in range(acc.childCount):
                 child = acc.getChildAtIndex(i)
                 if child:
                     _visit(child, current_depth - 1)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     _visit(desktop, depth)
     return results
@@ -201,8 +201,8 @@ def _method_click(params: _Params) -> _Result:
             if action.getName(i).lower() in ("click", "press", "activate"):
                 action.doAction(i)
                 return {"clicked": True, "method": "atspi_action"}
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Fallback: use xdotool to click the bounding box center
     rect = _get_bounding_box(acc)
@@ -232,14 +232,14 @@ def _method_set_value(params: _Params) -> _Result:
         etext = acc.queryEditableText()
         etext.setTextContents(value)
         return {"method": "atspi_editable_text"}
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Fallback: focus the element and use xdotool type
     try:
         acc.grabFocus()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Clear existing content then type
     _xdotool("key", "ctrl+a")
@@ -289,7 +289,7 @@ def _method_run_script(params: _Params) -> _Result:
         try:
             os.unlink(tmp_path)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
 
 def _method_get_action_tree(params: _Params) -> _Result:
@@ -335,24 +335,24 @@ def _method_get_action_tree(params: _Params) -> _Result:
                 try:
                     txt = acc.queryText()
                     value = txt.getText(0, txt.characterCount)[:40]
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
                 detail = f" value=\"{value}\"" if value else ""
                 detail += f" (rect: {rect['left']},{rect['top']} - {rect['right']},{rect['bottom']})"
                 lines.append(f"[{idx[0]}] {role} \"{name}\"{detail}  <!-- handle:{handle} -->")
                 idx[0] += 1
 
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         try:
             for i in range(acc.childCount):
                 child = acc.getChildAtIndex(i)
                 if child:
                     _visit_interactive(child, current_depth - 1)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     _visit_interactive(desktop, depth)
 

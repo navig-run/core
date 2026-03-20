@@ -189,7 +189,7 @@ class TelegramNotifier(ChannelNotifier):
             try:
                 await self._scheduler_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
     async def _scheduler_loop(self):
         """Main scheduler loop."""
@@ -363,7 +363,7 @@ class TelegramNotifier(ChannelNotifier):
         try:
             await asyncio.sleep(self._batch_window_sec)
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
         # Drain buffer
         batch = list(self._batch_buffer)
         self._batch_buffer.clear()
@@ -635,8 +635,8 @@ class NotificationManager:
         for name, channel in self._channels.items():
             try:
                 await channel.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def broadcast_alert(
         self,

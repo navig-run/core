@@ -9,7 +9,7 @@ name = "navig_nlp"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.24.1", features = ["extension-module"] }
 regex = "1.10"
 ahash = "0.8"
 rayon = "1.9"

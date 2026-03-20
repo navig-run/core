@@ -40,5 +40,5 @@ def render_event_timeline(
                 print(f"  {title}", file=sys.stdout)
             for ev in events:
                 print(f"  {ev.timestamp}  {ev.icon_safe if SAFE_MODE else ev.icon}  {ev.label}  {ev.detail}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

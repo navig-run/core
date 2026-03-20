@@ -142,8 +142,8 @@ class AHKAdapter:
             )
             if process.returncode == 0:
                 return process.stdout.strip()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return "Unknown"
 
     def get_status(self) -> AHKStatus:
@@ -449,8 +449,8 @@ NAVIG will automatically detect it in standard locations.
             try:
                 w, h = map(int, res.stdout.split("|"))
                 return (w, h)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return (1920, 1080) # Default fallback
 
     def read_text(self, selector: str, control_id: str = "") -> str:
@@ -528,8 +528,8 @@ NAVIG will automatically detect it in standard locations.
                     height=data.get('h', 0),
                     process_name=""
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return None
 
     def snap_window(self, selector: str, position: str) -> ExecutionResult:
@@ -691,8 +691,8 @@ NAVIG will automatically detect it in standard locations.
             try:
                 data = json.loads(res.stdout)
                 return {k: bool(v) for k, v in data.items()}
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return {"exists": False}
 
     # === Notifications ===
@@ -803,8 +803,8 @@ NAVIG will automatically detect it in standard locations.
                     height=data.get('h', 0),
                     process_name=""
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return None
 
     def find_windows(self, title_pattern: str = "", class_pattern: str = "") -> List[WindowInfo]:
@@ -853,7 +853,7 @@ NAVIG will automatically detect it in standard locations.
                     height=w.get('h', 0),
                     process_name=""
                 ) for w in data]
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return []
 

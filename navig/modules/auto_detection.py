@@ -169,8 +169,8 @@ class AutoDetection:
             if patterns_file.exists():
                 with open(patterns_file, 'r') as f:
                     return json.load(f)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return []
 

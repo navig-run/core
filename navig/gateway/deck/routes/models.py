@@ -18,8 +18,8 @@ async def handle_deck_models(request: "web.Request") -> "web.Response":
             tg = gateway.channels.get('telegram')
             if tg and hasattr(tg, '_user_model_prefs'):
                 user_tier_override = tg._user_model_prefs.get(user_id, "")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     llm_mode_routing = False
     llm_mode_summary = {}
@@ -36,8 +36,8 @@ async def handle_deck_models(request: "web.Request") -> "web.Response":
                         "provider": mc.provider,
                         "model": mc.model,
                     }
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     try:
         from navig.agent.ai_client import get_ai_client
@@ -110,8 +110,8 @@ async def handle_deck_models_set(request: "web.Request") -> "web.Response":
             slot = router.cfg.slot_for_tier(tier)
             model_info["model"] = slot.model
             model_info["provider"] = slot.provider
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     return web.json_response({
         "ok": applied,
@@ -146,8 +146,8 @@ async def handle_deck_models_available(request: "web.Request") -> "web.Response"
         key = cfg.global_config.get("openrouter_api_key", "")
         if key and len(key) > 10:
             has_openrouter = True
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     return web.json_response({
         "available": available,

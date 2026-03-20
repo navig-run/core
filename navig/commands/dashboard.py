@@ -169,15 +169,15 @@ def _detect_daemon_status() -> Dict[str, Any]:
                 info["status"] = "dead"
                 info["pid"] = pid
         except (ValueError, OSError):
-            pass
+            pass  # best-effort cleanup
 
     if DAEMON_STATE_FILE.exists():
         try:
             state = json.loads(DAEMON_STATE_FILE.read_text())
             info["children"] = state.get("children", [])
             info["started_at"] = state.get("started_at")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     return info
 
@@ -287,8 +287,8 @@ class KeyReader:
             if msvcrt.kbhit():
                 try:
                     self._push(msvcrt.getwch())
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             else:
                 time.sleep(0.05)
 
@@ -305,8 +305,8 @@ class KeyReader:
                 if r:
                     try:
                         self._push(sys.stdin.read(1))
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -484,8 +484,8 @@ def make_services_panel(op_state: Dict[str, Any], cols: int = 120) -> Panel:
         try:
             dt = datetime.fromisoformat(daemon["started_at"].replace("Z", "+00:00"))
             d_info = f"since {dt.strftime('%H:%M')}"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     if compact:
         table.add_row("🐙 Daemon", _st(daemon.get("status", "stopped")))
     else:
@@ -570,8 +570,8 @@ def make_tunnels_panel(tunnels: List[Dict[str, Any]], cols: int = 120) -> Panel:
             try:
                 dt = datetime.fromisoformat(t["started_at"].replace("Z", "+00:00"))
                 since = dt.strftime("%H:%M")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if compact:
             table.add_row(t.get("server", "?")[:12], port, st)
@@ -783,8 +783,8 @@ def _bg_update_hosts(config_manager, state: DashboardState):
                     state.hosts_status[h] = check_host_connectivity(hc)
                 except Exception:
                     state.hosts_status[h] = {"status": "failed", "latency": None}
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         state.last_hosts_check = time.time()
     threading.Thread(target=_work, daemon=True).start()
 
@@ -807,8 +807,8 @@ def _bg_update_services(state: DashboardState):
 
             # SSH pool
             state.op_state["pool"] = _detect_pool_stats()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         state.last_service_check = time.time()
     threading.Thread(target=_work, daemon=True).start()
 
@@ -849,8 +849,8 @@ def run_dashboard(
     active_app = None
     try:
         active_app = config_manager.get_active_app()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Initial background scans
     _bg_update_hosts(config_manager, state)
@@ -970,7 +970,7 @@ def run_dashboard(
                 time.sleep(0.05)
 
     except KeyboardInterrupt:
-        pass
+        pass  # user interrupted; clean exit
     finally:
         keys.stop()
         console.print("\n[dim cyan]🐙 The Kraken retreats to the deep…[/dim cyan]\n")
@@ -987,8 +987,8 @@ def run_dashboard_simple() -> None:
     active_app = None
     try:
         active_app = config_manager.get_active_app()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     cols, rows = _get_terminal_size()
 

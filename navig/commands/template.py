@@ -55,8 +55,8 @@ def list_templates_cmd(options: Dict[str, Any]):
                     ]
                 },
             )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     if not templates:
         ch.warning("No templates found in templates/ directory")

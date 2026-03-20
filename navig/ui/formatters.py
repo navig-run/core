@@ -36,8 +36,8 @@ def render_kv_diagnostics(
                 print(f"  {title}", file=sys.stdout)
             for key, value in pairs:
                 print(f"  {key}: {value}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_command_row(
@@ -55,8 +55,8 @@ def render_command_row(
     except Exception:
         try:
             print(f"  {label}: {command}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_section_divider(title: str = "") -> None:
@@ -69,5 +69,5 @@ def render_section_divider(title: str = "") -> None:
     except Exception:
         try:
             print(f"  ── {title} ──" if title else "  ──────────", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

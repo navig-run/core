@@ -78,8 +78,8 @@ class UpdateHistory:
                 continue
             try:
                 entries.append(json.loads(line))
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         target = node_id or host
         if target:

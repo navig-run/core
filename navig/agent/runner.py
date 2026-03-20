@@ -131,7 +131,7 @@ class Agent:
             try:
                 await self._main_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         # Stop heart (which stops all components)
         await self.heart.stop()
@@ -252,7 +252,7 @@ def main():
     try:
         asyncio.run(run_agent())
     except KeyboardInterrupt:
-        pass
+        pass  # user interrupted; clean exit
 
 
 if __name__ == '__main__':

@@ -40,9 +40,9 @@ def create_mysql_config_file(user: str, password: str) -> str:
         try:
             os.close(fd)
         except OSError:
-            pass
+            pass  # best-effort cleanup
         try:
             os.unlink(config_path)
         except OSError:
-            pass
+            pass  # best-effort cleanup
         raise RuntimeError(f"Failed to create secure MySQL config file: {exc}") from exc

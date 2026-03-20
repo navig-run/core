@@ -482,8 +482,8 @@ class SetupWizard:
         try:
             os.chmod(self.config_file, 0o600)
             print("  ✅ File permissions set (600)")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     def _print_summary(self):
         """Print setup summary."""

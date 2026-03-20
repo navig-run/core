@@ -398,7 +398,7 @@ class StreamingSTT:
             try:
                 tmp_path.unlink()
             except OSError:
-                pass
+                pass  # best-effort cleanup
 
     def _chunks_to_wav(self, chunks: List[bytes]) -> bytes:
         """Pack raw PCM int16 chunks into an in-memory WAV file."""

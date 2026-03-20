@@ -29,7 +29,7 @@ def _create_mysql_config_file(user: str, password: str) -> str:
         try:
             os.unlink(config_path)
         except OSError:
-            pass
+            pass  # best-effort cleanup
         raise
 
 
@@ -117,7 +117,7 @@ def execute_sql(query: str, options: Dict[str, Any]):
         try:
             os.unlink(config_file)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
 
 def execute_sql_file(file: Path, options: Dict[str, Any]):
@@ -215,7 +215,7 @@ def backup_database(path: Optional[Path], options: Dict[str, Any]):
         try:
             os.unlink(config_file)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
 
 def restore_database(file: Path, options: Dict[str, Any]):
@@ -357,7 +357,7 @@ def restore_database(file: Path, options: Dict[str, Any]):
         try:
             os.unlink(config_file)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
 
 def _calculate_file_checksum(file_path: Path, algorithm: str = 'sha256') -> str:

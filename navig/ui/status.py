@@ -35,5 +35,5 @@ def render_status_header(chips: List[StatusChip], *, sep: str = "  ·  ") -> Non
                 ico = chip.icon_safe
                 val = f"  {chip.value}" if chip.value else ""
                 print(f"{ico} {chip.label}{val}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

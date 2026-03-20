@@ -61,7 +61,7 @@ def discover_local_ssh_keys(*, no_cache: bool = False, ttl_seconds: int = 300) -
     payload = {"keys": keys, "count": len(keys)}
     try:
         write_json_cache("ssh_keys.json", payload)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     return payload

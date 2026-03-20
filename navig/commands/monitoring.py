@@ -126,7 +126,7 @@ def monitor_resources(options: Dict[str, Any]) -> None:
             if cpu_usage > 80:
                 alerts.append(f"High CPU usage: {cpu_usage}%")
         except (ValueError, IndexError):
-            pass
+            pass  # malformed value; skip
 
         # Memory
         try:
@@ -144,7 +144,7 @@ def monitor_resources(options: Dict[str, Any]) -> None:
             if mem_usage > 80:
                 alerts.append(f"High memory usage: {mem_usage}%")
         except (ValueError, IndexError):
-            pass
+            pass  # malformed value; skip
 
         # Disk
         try:
@@ -159,7 +159,7 @@ def monitor_resources(options: Dict[str, Any]) -> None:
             if disk_usage > 80:
                 alerts.append(f"High disk usage: {disk_usage}%")
         except (ValueError, IndexError):
-            pass
+            pass  # malformed value; skip
 
         # Scalar metrics
         if _sections.get("LOAD"):
@@ -527,11 +527,11 @@ def monitor_network(options: Dict[str, Any]) -> None:
         try:
             metrics["listening_ports"] = int((_net_sections.get("LISTEN", ["0"])[0] or "0").strip())
         except ValueError:
-            pass
+            pass  # malformed value; skip
         try:
             metrics["established_connections"] = int((_net_sections.get("ESTAB", ["0"])[0] or "0").strip())
         except ValueError:
-            pass
+            pass  # malformed value; skip
         if _net_sections.get("IFACE"):
             metrics["interfaces"] = [l for l in _net_sections["IFACE"] if l.strip()]
 

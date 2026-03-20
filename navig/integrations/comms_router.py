@@ -431,7 +431,7 @@ class CommsRouter:
         try:
             self._preferred_idx = self._channels.index(channel)
         except ValueError:
-            pass
+            pass  # malformed value; skip
 
     def status(self) -> List[Dict[str, Any]]:
         """Return status of all channels."""
@@ -481,8 +481,8 @@ def get_comms_router() -> CommsRouter:
                 from navig.memory.knowledge_graph import get_knowledge_graph
                 facts = get_knowledge_graph().recall("user", predicate="matrix_hitl_room")
                 matrix_room = facts[0].object if facts else ""
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if matrix_room:
             ch_matrix = MatrixHitLChannel(get_matrix_bot, matrix_room)
@@ -541,8 +541,8 @@ def get_comms_router() -> CommsRouter:
                 if ch.name == preferred_name:
                     # Will be promoted on first use
                     break
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     _router_instance = CommsRouter(channels)
     return _router_instance

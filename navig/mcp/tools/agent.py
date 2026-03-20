@@ -272,8 +272,8 @@ def _resolve_goal_storage_dir() -> Path:
         if cfg_path.exists():
             cfg = AgentConfig.load(cfg_path)
             candidates.append(cfg.workspace)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     candidates.append(Path.home() / '.navig' / 'workspace')
     if not candidates:
@@ -458,7 +458,7 @@ def _tool_agent_learning_run(server: Any, args: Dict[str, Any]) -> Dict[str, Any
                         if line_ts < cutoff:
                             continue
                     except ValueError:
-                        pass
+                        pass  # malformed value; skip
 
                 for pattern_name, pattern in patterns.items():
                     if re.search(pattern, line, re.IGNORECASE):

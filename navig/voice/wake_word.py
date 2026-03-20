@@ -193,7 +193,7 @@ class WakeWordEngine:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
         logger.info("WakeWordEngine stopped")
 
     async def trigger(self, score: float = 1.0) -> WakeWordDetection:

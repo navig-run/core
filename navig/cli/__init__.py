@@ -10382,7 +10382,7 @@ def _register_external_commands(*, register_all: bool = False):
             from navig.commands.ahk import ahk_app
             app.add_typer(ahk_app, name="ahk")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
         return
 
     # ------------------------------------------------------------------
@@ -10412,7 +10412,7 @@ def _register_external_commands(*, register_all: bool = False):
             from navig.commands.ahk import ahk_app
             app.add_typer(ahk_app, name="ahk")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
 
 

@@ -59,7 +59,7 @@ class KeyFact:
         tags:            Free-form topic tags for filtering
         confidence:      0.0–1.0 extraction confidence / relevance score
         source_conversation_id:  Session key where fact was extracted
-        source_platform:         Platform of origin (forge, gistium, telegram, core)
+        source_platform:         Platform of origin (bridge, gistium, telegram, core)
         created_at:      First extraction timestamp
         updated_at:      Last update timestamp
         superseded_by:   ID of the fact that replaces this one (soft-delete chain)
@@ -432,8 +432,8 @@ class KeyFactStore:
         if self.embedding_provider:
             try:
                 fact.embedding = self.embedding_provider.embed_text(new_content)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         with self._write_lock:
             self._update_row(fact)
             self._update_fts(fact)

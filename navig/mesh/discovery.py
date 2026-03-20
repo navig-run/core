@@ -140,7 +140,7 @@ def _create_receiver_socket() -> socket.socket:
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)  # Linux only
     except AttributeError:
-        pass
+        pass  # attribute absent; skip
     sock.bind(("", MCAST_PORT))
     mreq = struct.pack("4sL", socket.inet_aton(MCAST_GROUP), socket.INADDR_ANY)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
@@ -224,14 +224,14 @@ class MeshDiscovery:
                 try:
                     await task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # task cancelled; expected during shutdown
 
         for sock in (self._sender, self._receiver):
             if sock:
                 try:
                     sock.close()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         logger.info("[mesh.discovery] Stopped")
 
@@ -258,7 +258,7 @@ class MeshDiscovery:
                 await asyncio.sleep(HEARTBEAT_INTERVAL)
                 await self._send("heartbeat")
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
 
     async def _probe_loop(self) -> None:
         """
@@ -283,7 +283,7 @@ class MeshDiscovery:
                     await self._probe_peer(peer)
                 await asyncio.sleep(PROBE_INTERVAL)
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
 
     async def _probe_peer(self, peer) -> None:
         """HTTP GET /health on one peer; update registry with result."""
@@ -331,7 +331,7 @@ class MeshDiscovery:
                     if self._running:
                         logger.debug(f"[mesh.discovery] Recv error: {e}")
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
 
     def _recv_once(self):
         """Blocking recv with 1s timeout — called in executor."""

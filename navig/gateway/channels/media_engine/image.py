@@ -112,8 +112,8 @@ def _stage_classify(file_bytes: bytes) -> dict:
                 else:
                     try:
                         named[tag] = str(value)[:200]
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
             result["exif"] = named
             result["camera"] = named.get("Model") or named.get("Make")
             result["taken_at"] = named.get("DateTimeOriginal") or named.get("DateTime")
@@ -130,8 +130,8 @@ def _stage_classify(file_bytes: bytes) -> dict:
                     lat = _to_deg(gps_raw["GPSLatitude"], gps_raw.get("GPSLatitudeRef", "N"))
                     lon = _to_deg(gps_raw["GPSLongitude"], gps_raw.get("GPSLongitudeRef", "E"))
                     result["gps"] = {"lat": lat, "lon": lon}
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
     except Exception as exc:
         logger.debug("Pillow classify: %s", exc)
     return result
@@ -211,7 +211,7 @@ async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> Optional[str]
             budget.charge("openai_vision")
             return description
     except BudgetExceeded:
-        pass
+        pass  # budget limit reached; skip provider
     except Exception as exc:
         logger.debug("GPT-4o Vision error: %s", exc)
     return None
@@ -272,7 +272,7 @@ async def _stage_serpapi(file_bytes: bytes, budget: BudgetGuard) -> Optional[lis
                 for m in matches
             ]
     except BudgetExceeded:
-        pass
+        pass  # budget limit reached; skip provider
     except Exception as exc:
         logger.debug("SerpAPI Lens error: %s", exc)
     return None
@@ -328,7 +328,7 @@ async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> Optional[li
     except asyncio.TimeoutError:
         logger.debug("Google Vision timed out")
     except BudgetExceeded:
-        pass
+        pass  # budget limit reached; skip provider
     except ImportError:
         logger.debug("google-cloud-vision not installed, landmark detection skipped")
     except Exception as exc:

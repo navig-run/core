@@ -142,8 +142,8 @@ def tray_stop():
         # Clean up lock file
         try:
             LOCK_FILE.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         ch.success(f"NAVIG Tray stopped (PID {pid})")
     except Exception as e:

@@ -270,7 +270,7 @@ class UnifiedProviderFactory:
                 provider = create_provider(provider_name, **kwargs)
                 return LLMProviderAdapter(provider)
         except (ImportError, ValueError):
-            pass
+            pass  # optional provider not available or invalid config; skip
         try:
             from navig.providers.auth import resolve_auth
             from navig.providers.clients import create_client, get_builtin_provider
@@ -293,8 +293,8 @@ class UnifiedProviderFactory:
         for client in self._cache.values():
             try:
                 await client.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         self._cache.clear()
 
 

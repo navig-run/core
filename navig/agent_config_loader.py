@@ -133,8 +133,8 @@ def load_agent_json(
         base = Path(cm.base_dir) if hasattr(cm, "base_dir") else None
         if base:
             paths_to_check.append(base / "agents" / agent_id / "agent.json")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Workspace paths
     cwd = Path.cwd()

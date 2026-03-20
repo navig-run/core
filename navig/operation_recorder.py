@@ -187,9 +187,9 @@ class OperationRecorder:
                             self._operation_ids.append(op_id)
                             self._operations_by_id[op_id] = line_num
                     except json.JSONDecodeError:
-                        continue
+                        continue  # malformed JSON; skip line
         except (IOError, OSError):
-            pass
+            pass  # best-effort cleanup
 
         self._index_loaded = True
 
@@ -372,7 +372,7 @@ class OperationRecorder:
                     if i == line_num and line.strip():
                         return OperationRecord.from_dict(json.loads(line))
         except (IOError, OSError, json.JSONDecodeError):
-            pass
+            pass  # file unreadable or malformed; skip record
 
         return None
 
@@ -446,10 +446,10 @@ class OperationRecorder:
                         break
 
                 except json.JSONDecodeError:
-                    continue
+                    continue  # malformed JSON; skip line
 
         except (IOError, OSError):
-            pass
+            pass  # best-effort cleanup
 
     def get_last_n(self, n: int = 10) -> List[OperationRecord]:
         """Get the last N operations."""

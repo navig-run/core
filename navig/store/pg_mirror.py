@@ -211,8 +211,8 @@ class PgMirror:
         if self._conn:
             try:
                 self._conn.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             self._conn = None
 
     def __repr__(self) -> str:

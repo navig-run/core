@@ -175,7 +175,7 @@ async def _probe_bridge() -> ProbeResult | None:
                     note=f"Bridge (VS Code Copilot) active on port {BRIDGE_DEFAULT_PORT}",
                 )
     except (httpx.ConnectError, httpx.TimeoutException):
-        pass
+        pass  # service unreachable; skip probe
     except Exception as exc:  # noqa: BLE001
         logger.debug("llm_probe: Bridge check error: {}", exc)
 

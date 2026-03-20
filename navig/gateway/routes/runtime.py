@@ -38,8 +38,10 @@ if TYPE_CHECKING:
 
 try:
     from aiohttp import web
-except ImportError:
-    pass
+except ImportError as _exc:
+    raise RuntimeError(
+        "aiohttp is required for gateway routes (pip install aiohttp)"
+    ) from _exc
 
 logger = get_debug_logger()
 

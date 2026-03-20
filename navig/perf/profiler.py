@@ -181,8 +181,8 @@ def load_recent_samples(days: int = 7) -> List[Dict[str, Any]]:
                     line = line.strip()
                     if line:
                         samples.append(json.loads(line))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     return samples
 
 

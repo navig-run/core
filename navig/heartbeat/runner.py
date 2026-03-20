@@ -140,7 +140,7 @@ class HeartbeatRunner:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         logger.info("Heartbeat runner stopped")
 

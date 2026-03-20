@@ -49,8 +49,8 @@ def _resolve_github_token() -> Optional[str]:
         secret = vault.get("github_token", caller="farmore")
         if secret and getattr(secret, "value", None):
             return secret.value
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # 2 — env var
     token = os.environ.get("GITHUB_TOKEN", "").strip()
@@ -66,8 +66,8 @@ def _resolve_github_token() -> Optional[str]:
             token = cfg.get("github", {}).get("token", "").strip()
             if token:
                 return token
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     return None
 
@@ -109,7 +109,7 @@ def _run_farmore(args: list[str], token: Optional[str]) -> None:
         if result.returncode != 0:
             raise typer.Exit(result.returncode)
     except KeyboardInterrupt:
-        pass
+        pass  # user interrupted; clean exit
 
 
 # ---------------------------------------------------------------------------
@@ -350,8 +350,8 @@ def token_show():
             if s and getattr(s, "value", None) == token:
                 ch.info("Source: navig vault")
                 return
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         if os.environ.get("GITHUB_TOKEN", "").strip() == token:
             ch.info("Source: GITHUB_TOKEN env var")
         else:
@@ -383,8 +383,8 @@ def token_remove():
             vault.delete(secret.id)
             ch.success("GitHub token removed from navig vault.")
             removed = True
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Config file
     try:
@@ -397,8 +397,8 @@ def token_remove():
                 cfg_path.write_text(yaml.dump(cfg, default_flow_style=False))
                 ch.success(f"GitHub token removed from {cfg_path}")
                 removed = True
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     if not removed:
         ch.info("No stored GitHub token found.")

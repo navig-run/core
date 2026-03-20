@@ -110,7 +110,7 @@ class StdioTransport(MCPTransport):
             try:
                 await self._reader_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if self._process:
             self._process.terminate()
@@ -265,7 +265,7 @@ class SSETransport(MCPTransport):
             try:
                 await self._sse_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if self._session:
             await self._session.close()

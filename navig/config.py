@@ -52,7 +52,7 @@ class ConfigManager:
         ├── config.yaml                  # Global configuration
         ├── hosts/                       # NEW: Host configurations (two-tier hierarchy)
         │   ├── myhost.yaml            # Host with multiple apps
-        │   ├── example-vps.yaml
+        │   ├── vps.yaml
         │   └── local.yaml
         ├── apps/                    # LEGACY: Per-server configurations (backward compat)
         │   ├── remotekit.yaml
@@ -113,8 +113,8 @@ class ConfigManager:
                 try:
                     from navig import console_helper as ch
                     ch.info(f"Using explicit config directory: {self._explicit_config_dir}")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
         else:
             self._app_root = self._find_app_root()
             if self._app_root:
@@ -125,16 +125,16 @@ class ConfigManager:
                         from navig import console_helper as ch
                         ch.success(f"✓ App root: {self._app_root}")
                         ch.info(f"✓ Using app config: {self.app_config_dir}")
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
             else:
                 self.base_dir = self.global_config_dir
                 if self.verbose:
                     try:
                         from navig import console_helper as ch
                         ch.info(f"✓ Using global config: {self.global_config_dir}")
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
 
         self.config_dir = self.base_dir
         self.config_file = self.base_dir / "config.yaml"
@@ -154,8 +154,8 @@ class ConfigManager:
             try:
                 from navig import console_helper as ch
                 ch.info(f"✓ Database: {self.db_file}")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         self._ensure_directories()
         self._paths_resolved = True
@@ -245,7 +245,7 @@ class ConfigManager:
                 list(directory.iterdir())
                 return True
         except (PermissionError, OSError):
-            pass
+            pass  # best-effort cleanup; ignore access/IO errors
         return False
 
     def _get_config_directories(self) -> list[Path]:
@@ -517,8 +517,8 @@ Context provided with each query:
                 # Cache corrupt or unreadable — fall through to slow path
                 try:
                     cache_file.unlink(missing_ok=True)
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         # ── 2. Slow path: full YAML parse ────────────────────────────────────
         slow_result = self._load_global_config(validate=False)
@@ -543,8 +543,8 @@ Context provided with each query:
         cache_file = self.global_config_dir / ".config_cache.pkl"
         try:
             cache_file.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     def _load_global_config(self, validate: bool = True) -> Dict[str, Any]:
         """
@@ -618,8 +618,8 @@ Context provided with each query:
                 try:
                     from navig import console_helper as ch
                     ch.warning(f"YAML error in {global_config_file}: {yaml_err}")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             return {}
         except Exception as e:
             # If config is broken, warn but return empty or minimal dict to assume defaults
@@ -631,8 +631,8 @@ Context provided with each query:
                 try:
                     from navig import console_helper as ch
                     ch.warning(f"Error loading global config: {e}")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             return {}
 
     def _create_default_global_config(self) -> Dict[str, Any]:
@@ -729,8 +729,8 @@ Context provided with each query:
                     execution = local_config.get('execution', {})
                     if 'mode' in execution:
                         return execution['mode']
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Fall back to global config
         execution = self.global_config.get('execution', {})
@@ -773,8 +773,8 @@ Context provided with each query:
                     execution = local_config.get('execution', {})
                     if 'confirmation_level' in execution:
                         return execution['confirmation_level']
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Fall back to global config
         execution = self.global_config.get('execution', {})
@@ -1033,7 +1033,7 @@ Context provided with each query:
                 if host_name and self.host_exists(host_name):
                     return (host_name, 'legacy') if return_source else host_name
             except (PermissionError, OSError):
-                pass
+                pass  # best-effort cleanup; ignore access/IO errors
 
         # Priority 4: Check global cache (set by `navig host use`)
         if self.active_host_file.exists():
@@ -1042,7 +1042,7 @@ Context provided with each query:
                 if host_name and self.host_exists(host_name):
                     return (host_name, 'user') if return_source else host_name
             except (PermissionError, OSError):
-                pass
+                pass  # best-effort cleanup; ignore access/IO errors
 
         # Priority 5: Fall back to default host from global config
         default_host = self.global_config.get('default_host')
@@ -1121,7 +1121,7 @@ Context provided with each query:
                         source = 'user'
                     return (app_name, source) if return_source else app_name
             except (PermissionError, OSError):
-                pass
+                pass  # best-effort cleanup; ignore access/IO errors
 
         # Priority 4: Auto-detect from project's .navig/apps/ (if only one app exists)
         local_navig_dir = Path.cwd() / ".navig"
@@ -1151,7 +1151,7 @@ Context provided with each query:
                 if default_app:
                     return (default_app, 'default') if return_source else default_app
             except FileNotFoundError:
-                pass
+                pass  # file already gone; expected
 
         return (None, 'none') if return_source else None
 

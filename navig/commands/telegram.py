@@ -197,8 +197,8 @@ def prune_sessions(
             last = datetime.fromisoformat(s.last_active)
             if last < cutoff:
                 to_prune.append(s)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     if not to_prune:
         ch.info(f"No sessions inactive for more than {days} days")
@@ -251,8 +251,8 @@ def telegram_status():
         manager = get_session_manager()
         sessions = manager.list_sessions()
         ch.console.print(f"  Sessions: {len(sessions)} active")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     ch.console.print()
     ch.info("Start bot with: navig gateway start")

@@ -125,8 +125,8 @@ class STT:
             key = get_vault_v2().get_secret(vault_label)
             if key:
                 return key
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return os.environ.get(env_var)
 
     async def transcribe(

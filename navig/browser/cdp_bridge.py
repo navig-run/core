@@ -109,8 +109,8 @@ class CDPBridge(BrowserController):
             self._browser = None
             try:
                 await self._playwright.stop()  # closes WS only; does NOT kill remote Chrome
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             self._playwright = None
             logger.info("[CDPBridge] Disconnected (browser still running)")
 

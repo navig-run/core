@@ -73,7 +73,7 @@ def on_unload(ctx: PluginContext) -> None:
             for name in FORMATTERS:
                 handler_registry.deregister_formatter(name)
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
     except Exception as exc:  # noqa: BLE001
         logger.debug("[navig-telegram-handlers] on_unload error (suppressed): %s", exc)
 

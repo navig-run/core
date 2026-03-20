@@ -331,7 +331,7 @@ def load_snapshots(
                     if ts < cutoff:
                         continue
                 except (ValueError, TypeError):
-                    pass
+                    pass  # malformed or missing value; skip
 
             entries.append(entry)
     except Exception as e:
@@ -410,7 +410,7 @@ def prune_snapshots(
                 pruned += 1
                 continue
         except (ValueError, TypeError):
-            pass
+            pass  # malformed or missing value; skip
 
         kept.append(entry.to_line())
 
@@ -471,14 +471,14 @@ def clear_snapshots(
                     if ts < cutoff:
                         remove = True
                 except (ValueError, TypeError):
-                    pass
+                    pass  # malformed or missing value; skip
         elif tool is None and cutoff:
             try:
                 ts = datetime.fromisoformat(entry.timestamp.replace("Z", "+00:00"))
                 if ts < cutoff:
                     remove = True
             except (ValueError, TypeError):
-                pass
+                pass  # malformed or missing value; skip
 
         if remove:
             removed += 1

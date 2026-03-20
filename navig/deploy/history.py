@@ -52,7 +52,7 @@ class DeployHistory:
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
-                continue
+                continue  # malformed JSON; skip line
             if app and entry.get("app") != app:
                 continue
             if host and entry.get("host") != host:

@@ -68,7 +68,7 @@ class PlanExtractor:
                 try:
                     return json.loads(match.group(1))
                 except json.JSONDecodeError:
-                    pass
+                    pass  # malformed JSON; skip line
 
             # Strategy 2: substring from first '{' to last '}'.
             start = raw.find("{")
@@ -77,7 +77,7 @@ class PlanExtractor:
                 try:
                     return json.loads(raw[start : end + 1])
                 except json.JSONDecodeError:
-                    pass
+                    pass  # malformed JSON; skip line
 
             # Strategy 3: json-repair — handles truncated / malformed LLM JSON.
             try:

@@ -27,8 +27,8 @@ def render_keymap_footer(
         try:
             parts = [f"  {k} {v}" for k, v in keymap.items()]
             print("  " + "  ".join(parts), file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_action_approval(

@@ -165,7 +165,7 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
                             info['USER'] = username
                             all_domains[domain] = info
                     except json.JSONDecodeError:
-                        pass
+                        pass  # malformed JSON; skip line
 
             if options.get('json'):
                 ch.raw_print(json.dumps({"domains": all_domains, "count": len(all_domains)}))

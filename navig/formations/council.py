@@ -109,7 +109,7 @@ React to specific points. Challenge weak ideas, support strong ones, propose alt
                 confidence = float(line_clean.split(":", 1)[1].strip())
                 confidence = max(0.0, min(1.0, confidence))
             except (ValueError, IndexError):
-                pass
+                pass  # malformed value; skip
             break
 
     return {

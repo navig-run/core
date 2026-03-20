@@ -22,8 +22,8 @@ def _daemon_status(gw):
             formation = get_registry().get_active()
             if formation:
                 active_formation = formation.name
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # 2. Active Nodes
         nodes = []
@@ -35,10 +35,10 @@ def _daemon_status(gw):
                         "name": p.hostname,
                         "state": "active" if p.health == "online" else "idle"
                     })
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
-        # To ensure we have CORS enabled for Deck / Forge if they hit it directly from browser
+        # To ensure we have CORS enabled for Deck / Bridge if they hit it directly from browser
         resp = json_ok({
             "daemonStatus": "UP",
             "activeFormation": active_formation,

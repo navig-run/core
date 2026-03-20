@@ -68,8 +68,8 @@ def _read_bridge_config():
             bridge = cfg.get("bridge", {})
             url = bridge.get("mcp_url") or ""
             token = token or bridge.get("token", "")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     return url or f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}", token
 
 
@@ -260,8 +260,8 @@ def _register_sessions_subapp():
     try:
         from navig.commands.sessions import sessions_app
         copilot_app.add_typer(sessions_app, name="sessions")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 _register_sessions_subapp()
 
@@ -271,7 +271,7 @@ def copilot_status(
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """
-    Check MCP Forge bridge connectivity and status.
+    Check navig-bridge MCP connectivity and status.
 
     Examples:
         navig copilot status
@@ -279,7 +279,7 @@ def copilot_status(
     """
     import time
 
-    url, token = _read_forge_config()
+    url, token = _read_bridge_config()
 
     async def _check():
         from navig.agent.llm_providers import McpBridgeProvider
@@ -299,17 +299,17 @@ def copilot_status(
         print(json.dumps(info, indent=2))
     else:
         if info["available"]:
-            ch.success("MCP Forge bridge is online")
+            ch.success("navig-bridge MCP is online")
             ch.info(f"  URL:     {info['url']}")
             ch.info(f"  Latency: {info['latency_ms']}ms")
             ch.info(f"  Auth:    {'configured' if info['auth'] else 'NONE'}")
         else:
-            ch.error("MCP Forge bridge is OFFLINE")
+            ch.error("navig-bridge MCP is OFFLINE")
             ch.info(f"  URL:  {info['url']}")
             ch.info(f"  Auth: {'configured' if info['auth'] else 'NONE'}")
             ch.info("")
             ch.info("  Troubleshooting:")
-            ch.info("    1. Is VS Code running with Forge extension?")
+            ch.info("    1. Is VS Code running with navig-bridge extension?")
             ch.info("    2. Is the SSH tunnel active?")
             ch.info("       systemctl status bridge-tunnel")
             ch.info("    3. Check token in ~/.navig/config.yaml → bridge.token")

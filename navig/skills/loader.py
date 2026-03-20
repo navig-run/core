@@ -338,8 +338,8 @@ def get_skill_dirs() -> list[Path]:
                 d = root_fn() / "skills"
                 if d.exists():
                     candidates.append(d)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         for root_fn in (builtin_packages_dir, packages_dir):
             try:
                 root = root_fn()
@@ -348,10 +348,10 @@ def get_skill_dirs() -> list[Path]:
                         s = pkg / "skills"
                         if s.is_dir():
                             candidates.append(s)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
     # Walk up from this file to find workspace root
     here = Path(__file__).resolve()
@@ -371,8 +371,8 @@ def get_skill_dirs() -> list[Path]:
         local_skills = project_root() / ".navig" / "skills"
         if local_skills.exists():
             candidates.append(local_skills)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Deduplicate while preserving order
     seen: set[Path] = set()

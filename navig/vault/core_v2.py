@@ -227,7 +227,7 @@ class VaultV2:
         try:
             salt_path.chmod(0o600)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
         new_master = self._engine.derive_key(new_passphrase)
 
