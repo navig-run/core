@@ -388,3 +388,5 @@ scripts/**
 !scripts/navig-tunnel.sh
 !scripts/bridge-tunnel.service
 !scripts/README.md
+. s e c r e t s . b a s e l i n e  
+ 
