@@ -328,3 +328,9 @@ icons/
 # Private dev-only plugin — never commit
 navig/plugins/llm_bridge/
 navig/plugins/llm-bridge/
+
+# Rust/Cargo build outputs
+host/crates/**/target/
+nohup.out
+*.pdb
+
