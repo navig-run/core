@@ -11,11 +11,11 @@ Common commands:
 
 Examples:
 - `navig host add`
-- `navig host use example-vps`
-- `navig --host example-vps run "uname -a"`
+- `navig host use vps`
+- `navig --host vps run "uname -a"`
 
 Troubleshooting:
 - Validate config: `navig config validate`
-- Test SSH: `navig host test example-vps`
+- Test SSH: `navig host test vps`
 
 

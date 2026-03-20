@@ -185,7 +185,7 @@ class SystemEventQueue:
             try:
                 await self._processor_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         # Save pending events
         self._save_events()

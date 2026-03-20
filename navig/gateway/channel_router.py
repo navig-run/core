@@ -245,8 +245,8 @@ class ChannelRouter:
             try:
                 from navig.agent.ai_client import get_ai_client
                 ai_client = get_ai_client()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             self._conv_agents[session_key] = ConversationalAgent(
                 ai_client=ai_client,
@@ -295,10 +295,10 @@ class ChannelRouter:
                             'session': session_key,
                             'message': message,
                         })
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
     async def _execute_navig_command(

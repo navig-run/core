@@ -32,27 +32,27 @@ def generate_seed() -> str:
     # 1. MAC address (survives OS reinstalls, changes on NIC swap)
     try:
         parts.append(str(uuid.getnode()))
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # 2. Hostname
     try:
         parts.append(platform.node())
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # 3. Username
     try:
         # os.getlogin() can raise in containers/CI — try multiple fallbacks
         parts.append(_get_username())
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # 4. OS platform
     try:
         parts.append(platform.system())
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     if not parts:
         # Absolute last resort: random (entity won't be stable across sessions)
@@ -72,7 +72,7 @@ def _get_username() -> str:
     try:
         return os.getlogin()
     except (OSError, AttributeError):
-        pass
+        pass  # hardware/OS attribute unavailable; skip
     # Environment variables (work in containers / CI)
     for var in ("USERNAME", "USER", "LOGNAME"):
         val = os.environ.get(var)

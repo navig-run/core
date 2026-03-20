@@ -62,7 +62,7 @@ def on_unload(ctx: PluginContext) -> None:
             for name in COMMANDS:
                 CommandRegistry.deregister(name, pack_id=ctx.pack_id)
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
         logger.info("[navig-commands-core] Unloaded %d commands", len(COMMANDS))
     except Exception as exc:  # noqa: BLE001
         logger.warning("[navig-commands-core] on_unload error (suppressed): %s", exc)

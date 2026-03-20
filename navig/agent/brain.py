@@ -231,7 +231,7 @@ Guidelines:
             from navig.ai import get_ai_client
             self._ai_client = get_ai_client()
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
     async def _on_stop(self) -> None:
         """Cleanup brain resources."""
@@ -333,8 +333,8 @@ Guidelines:
             if self._ai_client:
                 try:
                     response = await self._query_ai(prompt, ai_context)
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             if response:
                 # Emit thought event
@@ -450,8 +450,8 @@ Respond with a JSON object containing:
                         # If not JSON, treat as plain steps
                         steps = [line.strip() for line in response.split('\n')
                                 if line.strip() and not line.startswith('#')]
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if not steps:
             steps = [goal]  # Single-step plan
@@ -516,8 +516,8 @@ Respond with JSON:
                             confidence = float(data.get('confidence', confidence))
                     except (json.JSONDecodeError, ValueError):
                         pass
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         decision = Decision(
             question=question,

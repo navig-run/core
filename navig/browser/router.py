@@ -87,8 +87,8 @@ async def get_browser_auto(
         logger.warning("[BrowserRouter] Tier-1 failed (%s), escalating to stealth tier", e)
         try:
             await tier1.stop()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     tier2 = StealthController(stealth_config)
     await tier2.start()

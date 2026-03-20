@@ -80,8 +80,8 @@ def _extract_text(html: str) -> str:
         text = trafilatura.extract(html, include_comments=False, include_tables=True)
         if text:
             return text.strip()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)

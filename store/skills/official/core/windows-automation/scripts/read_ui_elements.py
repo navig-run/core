@@ -61,8 +61,8 @@ def get_ui_elements(window, buttons_only=False, links_only=False):
                         'center_x': (rect.left + rect.right) // 2,
                         'center_y': (rect.top + rect.bottom) // 2
                     }
-                except:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; suppress all errors
                 
                 # Categorize by control type
                 if ctrl_type == 'Button':

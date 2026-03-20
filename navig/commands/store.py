@@ -132,14 +132,14 @@ def store_maintenance(
 
             stores["memory.db"] = lambda: ConversationStore(navig / "memory.db")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
     if (navig / "matrix.db").exists():
         try:
             from navig.comms.matrix_store import MatrixStore
 
             stores["matrix.db"] = lambda: MatrixStore(navig / "matrix.db")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
     for name, factory in stores.items():
         try:
@@ -197,12 +197,12 @@ def store_backup(
     # Managed stores
     try:
         stores_to_backup["audit.db"] = get_audit_store()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     try:
         stores_to_backup["runtime.db"] = get_runtime_store()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Other stores if present
     if (navig / "memory.db").exists():
@@ -210,15 +210,15 @@ def store_backup(
             from navig.memory.conversation import ConversationStore
 
             stores_to_backup["memory.db"] = ConversationStore(navig / "memory.db")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     if (navig / "matrix.db").exists():
         try:
             from navig.comms.matrix_store import MatrixStore
 
             stores_to_backup["matrix.db"] = MatrixStore(navig / "matrix.db")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     for name, store in stores_to_backup.items():
         try:
@@ -327,8 +327,8 @@ def store_migrate(
                         f"  [green]✓[/green] Migrated {count} embeddings to vec0 table"
                     )
             ms.close()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 
 # ── Cleanup ───────────────────────────────────────────────────

@@ -237,7 +237,7 @@ class NavigGateway:
             while self.running:
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
         finally:
             await self.stop()
 
@@ -255,7 +255,7 @@ class NavigGateway:
             try:
                 await self._queue_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         # Stop heartbeat
         if self.heartbeat_runner:
@@ -715,8 +715,8 @@ class NavigGateway:
                 if registry:
                     tg = registry.get_adapter('telegram')
                     telegram_notifier = getattr(tg, '_notifier', None) if tg else None
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             # Optional Matrix bot
             matrix_bot = None
@@ -861,8 +861,8 @@ class NavigGateway:
                 try:
                     context['files'][f'memory/{today}.md'] = memory_log.read_text(encoding='utf-8')
                     break
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         # ── Memory enrichment (best-effort, never blocks the turn) ──────────
         try:
@@ -1048,8 +1048,8 @@ class NavigGateway:
                             if body.get("ok"):
                                 data = {"success": True, **data}
                             return _web.json_response(data, status=resp.status)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
                     return resp
 
                 return handler
@@ -1097,10 +1097,10 @@ class NavigGateway:
             for fn, attr in bindings:
                 try:
                     setattr(self, attr, _flat(fn, self))
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     async def _handle_shutdown(self, request) -> "web.Response":
         """Handle POST /shutdown — custom method that avoids aiohttp-specific r.remote."""

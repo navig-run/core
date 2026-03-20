@@ -428,7 +428,7 @@ class TelegramVoiceBot:
             try:
                 tmp_path.unlink(missing_ok=True)
             except OSError:
-                pass
+                pass  # best-effort cleanup
 
     # ------------------------------------------------------------------ #
     # Text message handler
@@ -499,8 +499,8 @@ class TelegramVoiceBot:
             if info:
                 await query.edit_message_text(info["description"], parse_mode="Markdown")
                 return
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         await query.edit_message_text(f"⚙️ Action: `{data}`", parse_mode="Markdown")
 

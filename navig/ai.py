@@ -60,8 +60,8 @@ class AIAssistant:
 
                 from navig.memory.conversation import ConversationStore
                 AIAssistant._conv_store = ConversationStore(Path.home() / '.navig' / 'memory.db')
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return AIAssistant._conv_store
 
     def _get_fallback_manager(self):

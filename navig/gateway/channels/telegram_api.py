@@ -17,7 +17,7 @@ aiohttp = None
 try:
     import aiohttp
 except ImportError:
-    pass
+    pass  # optional dependency not installed; feature disabled
 
 
 class TelegramApiMixin:

@@ -28,7 +28,7 @@ def _is_ip(value: str) -> bool:
             socket.inet_pton(family, value)
             return True
         except OSError:
-            pass
+            pass  # best-effort cleanup
     return False
 
 

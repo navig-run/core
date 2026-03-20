@@ -67,8 +67,8 @@ class MediaCache:
         if age > self._ttl:
             try:
                 path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             return None
         try:
             return json.loads(path.read_text(encoding="utf-8"))
@@ -87,15 +87,15 @@ class MediaCache:
             logger.debug("MediaCache: write failed for %s: %s", key[:12], exc)
             try:
                 tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     def invalidate(self, key: str) -> None:
         """Remove a cache entry (no-op if not present)."""
         try:
             (self._dir / f"{key}.json").unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     def evict_expired(self) -> int:
         """Remove all expired entries.  Returns count removed."""
@@ -106,6 +106,6 @@ class MediaCache:
                 if (now - p.stat().st_mtime) > self._ttl:
                     p.unlink(missing_ok=True)
                     removed += 1
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return removed

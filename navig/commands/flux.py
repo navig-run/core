@@ -177,7 +177,7 @@ def scan(
     try:
         _post("/mesh/discovery/scan", {})
     except SystemExit:
-        pass
+        pass  # subprocess called sys.exit; suppress
     import time
     time.sleep(wait)
     peers()
@@ -230,8 +230,8 @@ def clear() -> None:
             import urllib.request
             req = urllib.request.Request(f"{_GW}/mesh/target", method="DELETE")
             urllib.request.urlopen(req, timeout=5)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     typer.echo("🔄 Routing target cleared — commands will run locally.")
 
 
@@ -275,7 +275,7 @@ def install(
         cfg = _get("/install/config")
         typer.echo(f"  mesh_token: {cfg.get('mesh_token', '(none)')}\n")
     except SystemExit:
-        pass
+        pass  # subprocess called sys.exit; suppress
 
 
 @flux_app.command("token")
@@ -291,8 +291,8 @@ def token(
         try:
             from navig.config import load_config
             tok = load_config().get("gateway", {}).get("mesh_token", "")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     if not tok:
         typer.echo("⚠  No mesh_token set. Run: navig service start", err=True)

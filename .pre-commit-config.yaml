@@ -29,8 +29,10 @@ repos:
     hooks:
       - id: detect-secrets
         args:
+          - --baseline
+          - .secrets.baseline
           - --exclude-files
-          - '(pnpm-lock\.yaml$|package-lock\.json$)'
+          - '(\.venv|pnpm-lock\.yaml$|package-lock\.json$|\.backups/)'
           - --exclude-lines
           - 'api_key.*example'
           - --exclude-lines

@@ -207,7 +207,8 @@ async def test_on_status_update_syncs_to_executor() -> None:
 async def test_lifecycle_task_start_emitted_by_execute_plan() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")):
+    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
+         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute_plan({
             "understanding": "Do something",
             "plan": [{"action": "wait", "description": "Wait"}],
@@ -225,7 +226,8 @@ async def test_lifecycle_step_start_and_step_done() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("My step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="done")):
+    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="done")), \
+         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     types = [e.type for e in events]
@@ -248,7 +250,7 @@ async def test_lifecycle_step_failed_with_error_metadata() -> None:
     task = _make_task("Failing step")
     with patch.object(
         executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("boom"))
-    ):
+    ), patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     failed = [e for e in events if e.type == "step_failed"]
@@ -261,7 +263,8 @@ async def test_lifecycle_task_done_emitted() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("A step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")):
+    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
+         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     types = [e.type for e in events]
@@ -277,7 +280,7 @@ async def test_lifecycle_step_done_not_emitted_on_failure() -> None:
     task = _make_task("Bad step")
     with patch.object(
         executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("kaboom"))
-    ):
+    ), patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     step_done_events = [e for e in events if e.type == "step_done"]
@@ -289,7 +292,8 @@ async def test_lifecycle_ordering() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("Step one")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")):
+    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
+         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     types = [e.type for e in events]
@@ -459,7 +463,8 @@ async def test_executor_emit_event_callable_class_instance() -> None:
 
     executor = TaskExecutor(on_status_update=SyncCallable(), max_attempts=1)
     task = _make_task("step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")):
+    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
+         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     assert any(e.type == "task_start" for e in received)
@@ -480,7 +485,8 @@ async def test_task_done_emitted_before_current_task_cleared() -> None:
 
     executor._notify_cb = cb
     task = _make_task("step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")):
+    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
+         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     assert len(seen_current_task_at_task_done) == 1
@@ -499,7 +505,7 @@ async def test_step_failed_final_attempt_is_final_true() -> None:
     task = _make_task("fail step")
     with patch.object(
         executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("x"))
-    ):
+    ), patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
         await executor.execute(task)
 
     failed = [e for e in events if e.type == "step_failed"]
@@ -528,7 +534,9 @@ async def test_step_failed_retry_attempt_is_final_false() -> None:
         return "ok"
 
     task = _make_task("flaky")
-    with patch.object(executor, "_execute_step", side_effect=flaky_step):
+    with patch.object(executor, "_execute_step", side_effect=flaky_step), \
+         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))), \
+         patch("asyncio.sleep", new=AsyncMock()):
         await executor.execute(task)
 
     failed = [e for e in events if e.type == "step_failed"]

@@ -151,8 +151,8 @@ def login(
                             vault.update(full)
                             console.print("  [dim]Token saved to vault[/]")
                             break
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     _run_async(_login())
 
@@ -251,7 +251,7 @@ def use_profile(
             console.print("  Available: " + ", ".join(c.profile_id for c in creds))
             raise typer.Exit(1)
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
     try:
         from navig.core.config import set_config_value

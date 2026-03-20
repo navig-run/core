@@ -248,8 +248,8 @@ class ConfigSingleton:
                 cached_host = cache_file.read_text().strip()
                 if cached_host:
                     return (cached_host, 'cache')
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # 4. Default host from global config
         default_host = self.get('default_host', scope='global')
@@ -305,8 +305,8 @@ class ConfigSingleton:
                 cached_app = cache_file.read_text().strip()
                 if cached_app:
                     return (cached_app, 'cache')
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         return (None, 'none')
 

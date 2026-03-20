@@ -51,8 +51,9 @@ rand         = "0.8"
 tempfile   = "3.10"
 
 # ── Tray / UI ─────────────────────────────────────────────────────────────────
-tray-icon  = "0.14"
-muda       = "0.13"
+# CVE glib < 0.20.0: upgraded tray-icon + muda to pull in gtk/glib >= 0.20
+tray-icon  = "0.21"
+muda       = "0.17"
 image      = { version = "0.25", default-features = false, features = ["png"] }
 
 # ── OS utilities ─────────────────────────────────────────────────────────────

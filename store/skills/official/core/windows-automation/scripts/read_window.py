@@ -51,10 +51,10 @@ try:
                 text = ctrl.window_text()
                 if text and text.strip():
                     texts.append(text.strip())
-            except:
-                pass
-    except:
-        pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; suppress all errors
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; suppress all errors
     
     if texts:
         # Remove duplicates while preserving order

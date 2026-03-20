@@ -79,8 +79,8 @@ def extract_webpage_content(window, include_buttons=False, include_links=False, 
                     try:
                         rect = ctrl.rectangle()
                         elem['center'] = ((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
-                    except:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; suppress all errors
                 
                 # Categorize content
                 if ctrl_type in ['Text', 'Static']:
@@ -99,8 +99,8 @@ def extract_webpage_content(window, include_buttons=False, include_links=False, 
                         automation_id = ctrl.element_info.automation_id
                         if automation_id and automation_id.startswith('http'):
                             elem['url'] = automation_id
-                    except:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; suppress all errors
                     content['links'].append(elem)
                     
                 elif ctrl_type in ['Edit', 'ComboBox'] and full:

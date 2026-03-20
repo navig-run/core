@@ -149,7 +149,7 @@ class ElectionManager:
             try:
                 await self._watchdog_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         logger.info("[election] Stopped")
 
@@ -210,7 +210,7 @@ class ElectionManager:
                             self._propose_candidacy(reason="ttl_expiry")
                         )
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
 
     # ─────────────────────────── Election protocol ───────────────────────────
 

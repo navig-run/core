@@ -225,7 +225,7 @@ class CortexOrchestrator:
                 if isinstance(obj, dict):
                     return obj
             except json.JSONDecodeError:
-                pass
+                pass  # malformed JSON; skip line
             return None
 
         # 1. Markdown code blocks

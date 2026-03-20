@@ -218,6 +218,7 @@ class WhatsAppChannel:
             async with session.post(
                 f"{self.config.bridge_url}/api/send",
                 json=payload,
+                timeout=aiohttp.ClientTimeout(total=45),
             ) as response:
                 if response.status == 200:
                     return True
@@ -425,7 +426,7 @@ class WhatsAppChannel:
         session = await self._get_session()
 
         try:
-            async with session.get(f"{self.config.bridge_url}/api/qr") as response:
+            async with session.get(f"{self.config.bridge_url}/api/qr", timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data.get("qr")
@@ -444,7 +445,7 @@ class WhatsAppChannel:
         session = await self._get_session()
 
         try:
-            async with session.get(f"{self.config.bridge_url}/api/status") as response:
+            async with session.get(f"{self.config.bridge_url}/api/status", timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 200:
                     return await response.json()
         except Exception as e:

@@ -260,7 +260,7 @@ class FileWatcher:
             loop = asyncio.get_event_loop()
             handler.set_loop(loop)
         except RuntimeError:
-            pass
+            pass  # no event loop yet; safe to ignore
 
         # Create watchdog handler wrapper
         class WatchdogHandler(watchdog['FileSystemEventHandler']):

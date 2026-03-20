@@ -41,8 +41,8 @@ def render_primary_state(
     except Exception:
         try:
             print(f"{label}: {detail}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_explanation(
@@ -69,8 +69,8 @@ def render_explanation(
         try:
             for c in causes:
                 print(f"  {c.confidence}%  {c.description}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_metrics_panel(
@@ -86,5 +86,5 @@ def render_metrics_panel(
         try:
             for m in metrics:
                 print(f"  {m.label}: {m.value}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

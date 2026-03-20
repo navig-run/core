@@ -522,8 +522,8 @@ def status(method: Optional[str] = None) -> Tuple[bool, str]:
             running_ts, detail_ts = task_scheduler_status()
             if "ERROR" not in detail_ts:
                 lines.append(f"\nTask Scheduler: {'Active' if running_ts else 'Inactive'}")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     else:
         # Linux / macOS — check systemd
         if has_systemd():

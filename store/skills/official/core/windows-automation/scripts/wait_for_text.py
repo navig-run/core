@@ -37,10 +37,10 @@ try:
                             elapsed = time.time() - start_time
                             print(f"Found '{search_text}' after {elapsed:.1f}s")
                             sys.exit(0)
-                    except:
-                        pass
-            except:
-                pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; suppress all errors
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; suppress all errors
         
         time.sleep(0.5)  # Check every 500ms
     

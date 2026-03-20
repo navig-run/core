@@ -178,8 +178,8 @@ class QueryTimer:
                 status="warning",
                 duration_ms=int(elapsed_ms),
             )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     # ── Stats retrieval ───────────────────────────────────────
 

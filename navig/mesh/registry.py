@@ -234,17 +234,17 @@ class NodeRegistry:
             import docker  # noqa: F401
             caps.append("docker")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
         try:
             import paramiko  # noqa: F401
             caps.append("ssh")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
         try:
             import torch  # noqa: F401
             caps.append("gpu")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
         return caps
 
     @staticmethod

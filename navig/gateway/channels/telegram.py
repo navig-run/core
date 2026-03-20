@@ -22,7 +22,7 @@ aiohttp = None
 try:
     import aiohttp
 except ImportError:
-    pass
+    pass  # optional dependency not installed; feature disabled
 
 # Inline keyboard system
 try:
@@ -238,8 +238,8 @@ class TelegramChannel:
                             boot_msg,
                             parse_mode=None,
                         )
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
 
         except Exception as e:
             logger.error(f"Failed to connect to Telegram: {e}")
@@ -279,23 +279,23 @@ class TelegramChannel:
         if self._notifier:
             try:
                 await self._notifier.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Remove webhook if we set one
         if self._use_webhook:
             try:
                 await self._api_call("deleteWebhook")
                 logger.info("Telegram webhook removed")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if self._poll_task:
             self._poll_task.cancel()
             try:
                 await self._poll_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if self._session:
             await self._session.close()
@@ -701,7 +701,7 @@ class TelegramChannel:
                 await self.send_typing(chat_id)
                 await asyncio.sleep(interval)
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
 
     async def _keep_recording(self, chat_id: int, interval: float = 4.0):
         """Re-send 'record_voice' chat action every ``interval`` seconds until cancelled.
@@ -715,7 +715,7 @@ class TelegramChannel:
                 await self._api_call("sendChatAction", {"chat_id": chat_id, "action": "record_voice"})
                 await asyncio.sleep(interval)
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
 
     # ── Cinematic mode dispatcher ───────────────────────────────────────────
 
@@ -769,7 +769,7 @@ class TelegramChannel:
             try:
                 await typing_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if response:
             self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
@@ -803,7 +803,7 @@ class TelegramChannel:
             try:
                 await typing_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if not response:
             return
@@ -824,15 +824,15 @@ class TelegramChannel:
                     user_message=text,
                     message_id=placeholder_id or 0,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if placeholder_id:
             try:
                 await self.edit_message(chat_id, placeholder_id, final_text, keyboard=keyboard)
                 return
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         await self._send_response(chat_id, final_text, text, user_id=user_id, is_group=is_group)
 
     async def _handle_code(
@@ -868,7 +868,7 @@ class TelegramChannel:
             try:
                 await typing_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if not response:
             return
@@ -886,8 +886,8 @@ class TelegramChannel:
             try:
                 await self.edit_message(chat_id, intro_id, final_text)
                 return
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         await self._send_response(chat_id, final_text, text, user_id=user_id, is_group=is_group)
 
     async def _handle_act(
@@ -1011,7 +1011,7 @@ class TelegramChannel:
             try:
                 await typing_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         # ── Step 3: finalize ──
         model_name = self._resolve_model_name(metadata)
@@ -1068,8 +1068,8 @@ class TelegramChannel:
                     text=text,
                     is_group=is_group,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def _transcribe_voice_message(
         self,
@@ -1100,8 +1100,8 @@ class TelegramChannel:
             try:
                 from navig.vault import get_vault_v2 as _gv2
                 dg_key = _gv2().get_secret("deepgram/api-key") or None
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         if dg_key:
             stt_provider = _STTProvider.DEEPGRAM
 
@@ -1110,8 +1110,8 @@ class TelegramChannel:
             try:
                 from navig.vault import get_vault_v2 as _gv2
                 oai_key = _gv2().get_secret("openai/api-key") or None
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         if oai_key:
             if stt_provider is None:
                 stt_provider = _STTProvider.WHISPER_API
@@ -1249,12 +1249,12 @@ class TelegramChannel:
                 try:
                     await _recording_task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # task cancelled; expected during shutdown
             if tmp_path and _os.path.exists(tmp_path):
                 try:
                     _os.remove(tmp_path)
                 except OSError:
-                    pass
+                    pass  # best-effort cleanup
 
     async def _maybe_send_voice(
         self,
@@ -1277,8 +1277,8 @@ class TelegramChannel:
                 session = sm.get_session(chat_id, user_id, is_group=False)
                 if session is not None and not session.voice_enabled:
                     return
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         tts_text = self._prepare_for_tts(text)
         if not tts_text:
@@ -1308,8 +1308,8 @@ class TelegramChannel:
             try:
                 if tts_result and tts_result.audio_path and tts_result.audio_path.exists():
                     tts_result.audio_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     def _prepare_for_tts(self, text: str, max_chars: int = 500) -> str:
         """Strip markdown and code blocks from text before sending to TTS."""
@@ -1412,8 +1412,8 @@ class TelegramChannel:
                 mc = router.modes.get_mode(mode_name)
                 if mc:
                     return f"{mc.provider}:{mc.model}"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return ""
 
@@ -1479,8 +1479,8 @@ class TelegramChannel:
                 for chain_name, models in GitHubModelsProvider.FALLBACK_CHAINS.items():
                     model_list = " → ".join(m.split(":")[-1] for m in models)
                     lines.append(f"  {chain_name.replace('_', ' ')}: {model_list}")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             text = "\n".join(lines)
 
@@ -1517,8 +1517,8 @@ class TelegramChannel:
         try:
             from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT, get_llm_port
             bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         try:
             _s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
             _s.settimeout(1.0)
@@ -1629,8 +1629,8 @@ class TelegramChannel:
                     live = [m["name"] for m in data.get("models", []) if m.get("name")]
                     if live:
                         models = live
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             if not models:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
 
@@ -1650,8 +1650,8 @@ class TelegramChannel:
                     slot = router.cfg.slot_for_tier(tier)
                     if slot.provider == prov_id:
                         current[tier] = f"`{slot.model}`"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         lines = [
             f"{emoji} *{name}* \u2014 assign model to tier",
@@ -1748,8 +1748,8 @@ class TelegramChannel:
             _s.settimeout(0.3)
             _bridge_active = _s.connect_ex(("127.0.0.1", _BRIDGE_PORT)) == 0
             _s.close()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         lines.append("🔌 *Routing*")
         if _bridge_active:
@@ -1793,12 +1793,12 @@ class TelegramChannel:
                 if raw_session is None and sm._get_session_file(sk).exists():
                     try:
                         raw_session = await sm.get_session(sk)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
                 if raw_session is not None:
                     session_messages = list(raw_session.messages or [])
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Memory module fallback
         if not session_messages:
@@ -1809,8 +1809,8 @@ class TelegramChannel:
                     mem.get_recent(user_id=str(user_id), limit=8)
                     if hasattr(mem, "get_recent") else []
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # msg_trace.jsonl last resort
         if not session_messages:
@@ -1824,10 +1824,10 @@ class TelegramChannel:
                                 role = entry.get("role") or entry.get("type", "?")
                                 content = entry.get("content") or entry.get("text") or ""
                                 session_messages.append({"role": role, "content": content})
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                            except Exception:  # noqa: BLE001
+                                pass  # best-effort; failure is non-critical
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         # ── Memory snapshot ────────────────────────────────────────────────────
         lines.append(f"🧠 *Memory* — {len(session_messages)} msgs · {all_sessions_count} session(s)")
@@ -1853,8 +1853,8 @@ class TelegramChannel:
                             ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
                 lines.append(f"  {ts_prefix}{arrow} {actor}: {preview}")
         else:
             lines.append("  _(no recent activity)_")
@@ -1870,8 +1870,8 @@ class TelegramChannel:
             from navig.config import get_config_manager
             _gcfg = get_config_manager().global_config or {}
             active_host = _gcfg.get("active_host") or _gcfg.get("default_host") or "?"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         voice_label = "?"
         if HAS_SESSIONS:
@@ -1881,8 +1881,8 @@ class TelegramChannel:
                 _s = sm.sessions.get(_sk)
                 if _s is not None:
                     voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         lines.append(
             f"⚙️  *Session* — tier: `{tier_label}` · host: `{active_host}` · voice: `{voice_label}`"
@@ -1911,7 +1911,7 @@ class TelegramChannel:
                 ]
                 break
             except OSError:
-                pass
+                pass  # best-effort cleanup
 
         if daemon_issues:
             lines.append("📋 *Daemon Warnings*")
@@ -2224,7 +2224,7 @@ class TelegramChannel:
             try:
                 await typing_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
     async def _handle_briefing(self, chat_id: int, user_id: int, metadata: Dict):
         """Real-data system briefing — no AI, no invented teams/sprints."""
@@ -2268,8 +2268,8 @@ class TelegramChannel:
             try:
                 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT, get_llm_port
                 bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             try:
                 _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
                 _s.settimeout(0.8)
@@ -2285,23 +2285,23 @@ class TelegramChannel:
                 v = get_vault_v2()
                 key_count = len(v.list()) if hasattr(v, "list") else "?"
                 lines.append(f"🔑 *Vault:* {key_count} keys stored")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             # ── Sessions ──
             if HAS_SESSIONS:
                 try:
                     sm = get_session_manager()
                     lines.append(f"💬 *Sessions:* {len(sm.sessions)} active")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             # ── Server uptime ──
             try:
                 up = _sp.run(["uptime", "-p"], capture_output=True, text=True, timeout=2)
                 lines.append(f"⏱ *Server:* {up.stdout.strip()}")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             # ── Disk ──
             try:
@@ -2314,8 +2314,8 @@ class TelegramChannel:
                     parts = dfl[1].split()
                     if len(parts) >= 3:
                         lines.append(f"💾 *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             lines.append("━" * 22)
 
@@ -2332,10 +2332,10 @@ class TelegramChannel:
                                 content = str(e.get("content") or e.get("text") or "")[:60]
                                 if role in ("user", "human") and content.startswith("/"):
                                     recent.append(f"  • `{content}`")
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                            except Exception:  # noqa: BLE001
+                                pass  # best-effort; failure is non-critical
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             if recent:
                 lines.append("*Recent commands:*")
@@ -2349,7 +2349,7 @@ class TelegramChannel:
             try:
                 await typing_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
     async def _handle_deck(self, chat_id: int):
         """Send a WebApp button to open the Deck."""
@@ -2407,8 +2407,8 @@ class TelegramChannel:
                     f"❓ Skill `{skill_id}` not found.\n\nAvailable:\n{available}",
                 )
                 return
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # No command → show skill info via SkillRunTool (info mode)
         tool_args: dict = {"skill_id": skill_id, "command": command, "extra_args": extra_args}

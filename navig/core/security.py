@@ -467,7 +467,7 @@ def check_file_permissions(file_path: Path) -> List[SecurityFinding]:
                     ))
 
     except (PermissionError, OSError):
-        pass
+        pass  # best-effort cleanup; ignore access/IO errors
 
     return findings
 

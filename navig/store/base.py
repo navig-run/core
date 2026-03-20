@@ -175,8 +175,8 @@ class BaseStore:
             except Exception:
                 try:
                     conn.execute("ROLLBACK")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
                 raise
             finally:
                 conn.isolation_level = old_iso
@@ -201,8 +201,8 @@ class BaseStore:
             except Exception:
                 try:
                     conn.execute("ROLLBACK")
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
                 raise
             finally:
                 conn.isolation_level = old_iso

@@ -208,7 +208,7 @@ class DailyLog:
             from navig.core.security import redact_sensitive_text
             content = redact_sensitive_text(content)
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
         # Truncate
         if len(content) > max_length:

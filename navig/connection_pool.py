@@ -95,8 +95,8 @@ class SSHConnection:
         """Close the underlying SSH connection."""
         try:
             self.client.close()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 class SSHConnectionPool:

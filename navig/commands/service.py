@@ -360,7 +360,7 @@ def service_logs(
                     else:
                         time.sleep(0.5)
             except KeyboardInterrupt:
-                pass
+                pass  # user interrupted; clean exit
     else:
         # Read last N lines
         try:

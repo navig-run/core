@@ -29,8 +29,8 @@ def _debug_log(message: str) -> None:
         from navig.debug_logger import DebugLogger
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 
 def _get_memory_dir() -> Path:
@@ -426,8 +426,8 @@ class MemoryManager:
                 mtime_ts = self._mtime_cache.get(fp_str)
                 if mtime_ts is not None:
                     age_days = max(0.0, (now_ts - mtime_ts) / 86400.0)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
             r_copy = copy.copy(r)
             r_copy.combined_score = r.combined_score * math.exp(-lambda_ * age_days)

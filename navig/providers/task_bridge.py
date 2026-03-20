@@ -179,7 +179,7 @@ class CommsProvider(BaseTaskProvider):
             dispatch_message(instruction)
             return ProviderResult(provider=self.name, success=True, output="Message dispatched via gateway")
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
         except Exception as exc:
             return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
 

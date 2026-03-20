@@ -102,8 +102,8 @@ class _LazyConsole:
         if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
             try:
                 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         real = _Console()
         object.__setattr__(self, "_real", real)
         return real

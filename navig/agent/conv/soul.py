@@ -99,7 +99,7 @@ def _scan_soul_files() -> tuple[str, bool]:
                     raw_parts.append(text)
                     sources.append(tag)
         except OSError:
-            pass
+            pass  # best-effort cleanup
     if not raw_parts:
         return "", False
     logger.debug("SOUL sources loaded: %s", sources)

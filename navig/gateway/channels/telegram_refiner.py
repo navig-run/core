@@ -502,8 +502,8 @@ async def handle_rfn_callback(
     if not entry:
         try:
             await channel.answer_callback_query(cb_id, "⚠️ Session expired")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return
 
     try:
@@ -553,8 +553,8 @@ async def handle_rfn_callback(
         refined = session.refined_text or session.original_text
         try:
             await channel.send_message(session.chat_id, f"✅ *Accepted:*\n\n{refined}", parse_mode="Markdown")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         cb_store.remove(session_key)
         cb_store.remove(f"rfn_pending:{session.user_id}:{session.chat_id}")
         await channel.answer_callback_query(cb_id, "✅ Accepted")

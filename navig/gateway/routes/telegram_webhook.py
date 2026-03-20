@@ -19,8 +19,10 @@ if TYPE_CHECKING:
 
 try:
     from aiohttp import web
-except ImportError:
-    pass
+except ImportError as _exc:
+    raise RuntimeError(
+        "aiohttp is required for gateway routes (pip install aiohttp)"
+    ) from _exc
 
 from navig.debug_logger import get_debug_logger
 
@@ -53,8 +55,8 @@ def _webhook_handler(gw: "NavigGateway"):
                 registry = getattr(gw, 'channel_registry', None)
                 if registry:
                     telegram_channel = getattr(registry, 'telegram', None) or registry.get('telegram')
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         if telegram_channel is None:
             return web.json_response(

@@ -337,7 +337,7 @@ class MatrixStore(BaseStore):
                     )
                     count += 1
                 except sqlite3.IntegrityError:
-                    pass
+                    pass  # duplicate row; skip
             conn.commit()
         return count
 

@@ -1,7 +1,7 @@
 """
 NAVIG Unified LLM Router — single canonical routing module.
 
-All entrypoints (Forge Chat, Telegram, CLI, MCP) call through here.
+All entrypoints (Bridge Chat, Telegram, CLI, MCP) call through here.
 Eliminates the split-brain between llm_router.py and model_router.py.
 
 Public API:

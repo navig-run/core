@@ -182,7 +182,7 @@ class AirLLMClient(BaseProviderClient):
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except ImportError:
-                pass
+                pass  # optional dependency not installed; feature disabled
 
         # Build model initialization kwargs
         model_kwargs = {}
@@ -472,7 +472,7 @@ class AirLLMClient(BaseProviderClient):
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except ImportError:
-                pass
+                pass  # optional dependency not installed; feature disabled
 
 
 def create_airllm_client(

@@ -197,8 +197,8 @@ class RoutingConfig:
                     secret = vault.get_secret("github_models", "token", caller="model_router")
                     if secret:
                         gh_token = secret
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
                 # 2. Config
                 if not gh_token:
                     gh_token = global_cfg.get("github_models", {}).get("token", "")
@@ -655,8 +655,8 @@ class HybridRouter:
         for p in self._providers.values():
             try:
                 await p.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         self._providers.clear()
 
     # ── Diagnostics ──

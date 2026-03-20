@@ -274,7 +274,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
         try:
             loop.add_signal_handler(sig, stop_event.set)
         except NotImplementedError:
-            pass
+            pass  # optional feature not implemented by this adapter
 
     # ── MCP reconnect background task ──
     if mcp_cfg.get("auto_connect") and gateway.mcp_client_manager:
@@ -292,7 +292,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
             try:
                 await mcp_reconnect_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         # Tightly coupled shutdown: stop bot → stop matrix → stop deck/HTTP → done
         if channel:
@@ -300,8 +300,8 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
         if matrix_adapter:
             try:
                 await matrix_adapter.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         if enable_gateway:
             await _stop_gateway_http(gateway)
         logger.info("Telegram bot + Deck shutdown complete")

@@ -1110,8 +1110,8 @@ def ahk_dashboard(
                     geom,
                     ",".join(state)
                 )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return Panel(table, title="NAVIG Window Manager", border_style="blue")
 
@@ -1123,7 +1123,7 @@ def ahk_dashboard(
                 live.update(generate_view())
                 time.sleep(refresh)
         except KeyboardInterrupt:
-            pass
+            pass  # user interrupted; clean exit
 
 
 @ahk_app.command("clipboard")

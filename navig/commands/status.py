@@ -24,8 +24,8 @@ def get_gateway_status() -> Dict[str, Any]:
                 "heartbeat": data.get("heartbeat", {}),
                 "cron": data.get("cron", {}),
             }
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     return {"running": False}
 
 

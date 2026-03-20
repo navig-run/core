@@ -165,8 +165,8 @@ class SettingsResolver:
         if file_path.is_file():
             try:
                 existing = json.loads(file_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Support nested keys
         parts = key.split(".")

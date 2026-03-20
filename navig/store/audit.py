@@ -168,8 +168,8 @@ class AuditStore(BaseStore):
                         "duration_ms": duration_ms,
                     },
                 )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return cursor.lastrowid  # type: ignore[return-value]
 

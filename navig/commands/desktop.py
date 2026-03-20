@@ -124,8 +124,8 @@ class _DesktopClient:
             if self._proc.stdin:
                 self._proc.stdin.close()
             self._proc.terminate()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def _get_client() -> _DesktopClient:

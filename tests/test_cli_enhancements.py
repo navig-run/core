@@ -57,13 +57,13 @@ def multi_host_setup(config_manager):
         }
     }
     
-    # Host 2: example-vps with 2 apps
+    # Host 2: vps with 2 apps
     host2_config = {
-        'name': 'example-vps',
-        'host': 'example-vps.com',
+        'name': 'vps',
+        'host': 'vps.example.com',
         'port': 22,
         'user': 'admin',
-        'ssh_key': '~/.ssh/example-vps',
+        'ssh_key': '~/.ssh/vps',
         'default_app': 'portfolio',
         'apps': {
             'portfolio': {
@@ -94,7 +94,7 @@ def multi_host_setup(config_manager):
     }
     
     config_manager.save_host_config('myhost', host1_config)
-    config_manager.save_host_config('example-vps', host2_config)
+    config_manager.save_host_config('vps', host2_config)
     config_manager.save_host_config('local', host3_config)
     
     return config_manager
@@ -130,7 +130,7 @@ class TestListCommandEnhancements:
     def test_list_hosts_returns_all_hosts(self, multi_host_setup):
         """Test that list_hosts returns all configured hosts."""
         hosts = multi_host_setup.list_hosts()
-        assert set(hosts) == {'myhost', 'example-vps', 'local'}
+        assert set(hosts) == {'myhost', 'vps', 'local'}
     
     def test_list_apps_single_host(self, multi_host_setup):
         """Test listing apps on a single host."""
@@ -171,7 +171,7 @@ class TestAppSearch:
             apps = multi_host_setup.list_apps(host)
             all_apps.extend([(host, p) for p in apps if 'port' in p.lower()])
         
-        # Should find 'portfolio' on example-vps
-        assert ('example-vps', 'portfolio') in all_apps
+        # Should find 'portfolio' on vps
+        assert ('vps', 'portfolio') in all_apps
 
 

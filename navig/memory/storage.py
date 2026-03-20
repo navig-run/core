@@ -26,8 +26,8 @@ def _debug_log(message: str) -> None:
         from navig.debug_logger import DebugLogger
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 
 @dataclass
@@ -401,8 +401,8 @@ class MemoryStorage:
             vec = self._get_vec()
             if vec.available:
                 vec.upsert(chunk_id, embedding)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     def delete_chunks_for_file(self, file_path: str) -> int:
         """Delete all chunks for a file."""
@@ -606,8 +606,8 @@ class MemoryStorage:
             vec = self._get_vec()
             if vec.available:
                 vec.upsert_batch(updates)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return len(updates)
 

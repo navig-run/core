@@ -149,7 +149,7 @@ async def _stage_audd(file_bytes: bytes, budget: BudgetGuard) -> Optional[dict]:
             budget.charge("audd")
             return data["result"]
     except BudgetExceeded:
-        pass
+        pass  # budget limit reached; skip provider
     except Exception as exc:
         logger.debug("AudD error: %s", exc)
     return None
@@ -182,7 +182,7 @@ async def _stage_whisper(file_bytes: bytes, budget: BudgetGuard) -> Optional[str
             budget.charge("openai_whisper")
             return data["text"].strip()
     except BudgetExceeded:
-        pass
+        pass  # budget limit reached; skip provider
     except Exception as exc:
         logger.debug("Whisper error: %s", exc)
     return None

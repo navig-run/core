@@ -83,8 +83,8 @@ def _get_skills_dirs() -> List[Path]:
     try:
         from navig.skills.loader import get_skill_dirs
         return get_skill_dirs()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Minimal fallback when loader is not importable
     dirs: list[Path] = []
@@ -195,8 +195,8 @@ def _get_context_skills_mode() -> str:
         ctx = raw.get("context_skills", {})
         if isinstance(ctx, dict):
             return ctx.get("mode", "auto")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     return "auto"
 
 

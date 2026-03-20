@@ -673,7 +673,7 @@ class CallbackHandler:
                 try:
                     await typing_task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # task cancelled; expected during shutdown
             return
 
         # Unknown action
@@ -725,7 +725,7 @@ class CallbackHandler:
                 try:
                     await typing_task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # task cancelled; expected during shutdown
 
     async def _get_ai_response(
         self, prompt: str, user_id: int, entry: CallbackEntry

@@ -184,7 +184,7 @@ def _search_knowledge(query: str, top_k: int) -> List[Dict[str, Any]]:
             logger.debug("RAGPipeline KB search failed: %s", exc)
 
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
     # Fallback: direct KnowledgeBase.search (text-only, no embeddings)
     try:
@@ -403,8 +403,8 @@ def _collect_metadata(project_root: Optional[Path] = None) -> Dict[str, Any]:
                 text = user_md.read_text(encoding="utf-8", errors="replace")
                 meta["user_profile_snippet"] = text[:500]
                 break
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     # Active host / app from ConfigManager
     try:
@@ -412,8 +412,8 @@ def _collect_metadata(project_root: Optional[Path] = None) -> Dict[str, Any]:
         cm = get_config_manager()
         meta["active_host"] = cm.get_active_host() or None
         meta["active_app"] = cm.get_active_app() or None
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     return meta
 

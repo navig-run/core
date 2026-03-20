@@ -125,8 +125,8 @@ def _load_skill_preview(item_id: str) -> str:
             pp = re.search(r"---.*?---\s*(.+?)(\n\n|$)", content, re.DOTALL)
             if pp:
                 return pp.group(1).strip()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     match = next((item for item in MENU_ITEMS if item["id"] == item_id), None)
     return match["desc"] if match else item_id
 
@@ -338,8 +338,8 @@ def _run_tui_menu() -> None:  # noqa: C901
         def on_mount(self) -> None:
             try:
                 self.query_one(ListView).focus()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # ── events ───────────────────────────────────────────────────────
 
@@ -353,8 +353,8 @@ def _run_tui_menu() -> None:  # noqa: C901
                     self.query_one("#preview", Static).update(
                         self._render_preview(match)
                     )
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         def on_input_changed(self, event: Input.Changed) -> None:
             if event.input.id != "search":
@@ -374,22 +374,22 @@ def _run_tui_menu() -> None:  # noqa: C901
             if event.input.id == "search":
                 try:
                     self.query_one(ListView).focus()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         # ── actions ──────────────────────────────────────────────────────
 
         def action_cursor_down(self) -> None:
             try:
                 self.query_one(ListView).action_cursor_down()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         def action_cursor_up(self) -> None:
             try:
                 self.query_one(ListView).action_cursor_up()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         def action_select_item(self) -> None:
             try:
@@ -398,8 +398,8 @@ def _run_tui_menu() -> None:  # noqa: C901
                     return
                 item_id = (lv.highlighted_child.id or "").removeprefix("mi-")
                 self.exit(result=item_id)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         def action_quit_menu(self) -> None:
             self.exit(result="quit")
@@ -409,8 +409,8 @@ def _run_tui_menu() -> None:  # noqa: C901
                 s = self.query_one("#search", Input)
                 s.add_class("active")
                 s.focus()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         def action_clear_search(self) -> None:
             try:
@@ -419,8 +419,8 @@ def _run_tui_menu() -> None:  # noqa: C901
                 s.value = ""
                 self._rebuild_list(MENU_ITEMS)
                 self.query_one(ListView).focus()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # ── helpers ──────────────────────────────────────────────────────
 
@@ -430,8 +430,8 @@ def _run_tui_menu() -> None:  # noqa: C901
                 sc.remove_children()
                 for w in self._build_list(items):
                     sc.mount(w)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     result = NavigMenu().run()
     if result and result not in ("quit", None):

@@ -503,8 +503,8 @@ def _read_from_editor() -> Optional[str]:
         try:
             if 'temp_path' in locals():
                 Path(temp_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def _encode_b64_command(command: str) -> str:

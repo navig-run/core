@@ -11,7 +11,7 @@ Common commands:
 
 Examples:
 - `navig config validate`
-- `navig config validate example-vps`
+- `navig config validate vps`
 - `navig config validate --scope project`
 - `navig config validate --scope both --strict`
 - `navig config validate --json`

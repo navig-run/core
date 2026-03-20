@@ -374,8 +374,8 @@ async def handle_card_callback(
     if not entry:
         try:
             await channel.answer_callback_query(cb_id, "⚠️ Session expired")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return
 
     try:
@@ -401,7 +401,7 @@ async def handle_card_callback(
             await nav.go_to(session, idx)
             cb_store.put(session_key, {"session": session.serialise()}, ttl=7200)
         except ValueError:
-            pass
+            pass  # malformed value; skip
 
     elif action == "copy":
         full_text = "\n\n───\n\n".join(session.cards)
@@ -419,8 +419,8 @@ async def handle_card_callback(
                 parse_mode="Markdown",
                 reply_markup={"inline_keyboard": []},
             )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         cb_store.remove(session_key)
         await channel.answer_callback_query(cb_id, "✅ Accepted")
 

@@ -94,8 +94,8 @@ def _desktop_permission_check(tool_name: str) -> Optional[Dict[str, Any]]:
             step_meta = missions[0].payload.get("step_metadata", {}) if missions[0].payload else {}
             if step_meta.get("desktop_permission") is True:
                 return None  # permission granted
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     return {
         "error": "permission_denied",
         "reason": "active mission step does not have desktop_permission: true",

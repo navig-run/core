@@ -336,8 +336,8 @@ async def exchange_code_for_tokens(
                 decoded = base64.urlsafe_b64decode(payload)
                 claims = json.loads(decoded)
                 account_id = claims.get("sub") or claims.get("account_id")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return OAuthCredentials(
             access=access_token,

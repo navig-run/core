@@ -3,7 +3,7 @@ QUANTUM VELOCITY K5 — Named Pipe / Unix Domain Socket IPC Fast-Path
 ====================================================================
 
 Provides sub-millisecond local inter-process communication between the NAVIG
-CLI, the Daemon, and the Forge VS Code extension — replacing slow JSON-RPC
+CLI, the Daemon, and the navig-bridge VS Code extension — replacing slow JSON-RPC
 HTTP polling for the local-only hot path.
 
 Architecture:
@@ -94,8 +94,8 @@ def _promote_pipe() -> None:
         _PROMOTED_FLAG.touch()
         logger.info("IPC pipe fast-path promoted to primary after %d shadow matches",
                     SHADOW_PROMOTE_AFTER)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 
 def _log_shadow_anomaly(event: str, data: dict) -> None:
@@ -105,8 +105,8 @@ def _log_shadow_anomaly(event: str, data: dict) -> None:
         entry = {"ts": time.time(), "event": event, "data": data}
         with open(_SHADOW_LOG, "a", encoding="utf-8") as _f:
             _f.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -243,8 +243,8 @@ class IPCPipeServer:
                         args=(conn,),
                         daemon=True,
                     ).start()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
     def _handle_windows(self, conn) -> None:
         try:
@@ -263,7 +263,7 @@ class IPCPipeServer:
         try:
             os.unlink(self.address)
         except FileNotFoundError:
-            pass
+            pass  # file already gone; expected
         with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as server:
             server.bind(self.address)
             os.chmod(self.address, 0o600)
@@ -280,8 +280,8 @@ class IPCPipeServer:
                     ).start()
                 except TimeoutError:
                     pass
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
     def _handle_unix(self, conn) -> None:
         try:

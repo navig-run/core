@@ -227,8 +227,8 @@ class TelegramVoiceMixin:
                 if _sess and file_id in getattr(_sess, "processed_voice_ids", set()):
                     logger.debug("Voice file %s already processed — skipping", file_id)
                     return None, ""
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # ── Resolve STT provider ──────────────────────────────────────────────
         stt_provider = None
@@ -387,12 +387,12 @@ class TelegramVoiceMixin:
                 try:
                     await _recording_task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # task cancelled; expected during shutdown
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
-                    pass
+                    pass  # best-effort cleanup
 
     # ── TTS (Text-to-Speech) helpers ─────────────────────────────────────────
 
@@ -499,8 +499,8 @@ class TelegramVoiceMixin:
                 session = sm.get_session(chat_id, user_id, is_group=False)
                 if session is not None and not session.voice_enabled:
                     return False
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         tts_text = self._prepare_for_tts(text)
         if not tts_text:
@@ -533,8 +533,8 @@ class TelegramVoiceMixin:
             try:
                 if tts_result and tts_result.audio_path and tts_result.audio_path.exists():
                     tts_result.audio_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def _send_voice_reply(self, chat_id: int, text: str, session: Any, title: str = "NAVIG Voice") -> bool:
         """Synthesize *text* to audio and send as a Telegram voice message.
@@ -633,7 +633,7 @@ class TelegramVoiceMixin:
                 try:
                     os.unlink(tmp_path)
                 except OSError:
-                    pass
+                    pass  # best-effort cleanup
         except ImportError:
             logger.debug("edge-tts not installed (pip install edge-tts)")
             return False
@@ -662,7 +662,7 @@ class TelegramVoiceMixin:
             try:
                 os.unlink(tmp_path)
             except OSError:
-                pass
+                pass  # best-effort cleanup
 
     async def _handle_audio_file_message(
         self,
@@ -831,7 +831,7 @@ class TelegramVoiceMixin:
             try:
                 os.unlink(tmp_path)
             except OSError:
-                pass
+                pass  # best-effort cleanup
 
     async def _send_voice_file(self, chat_id: int, file_path: str, title: str = "NAVIG", performer: str = "Voice Reply") -> None:
         """Upload a local audio file to Telegram as a voice message.

@@ -27,8 +27,8 @@ def _debug_log(message: str) -> None:
         from navig.debug_logger import DebugLogger
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 
 @dataclass

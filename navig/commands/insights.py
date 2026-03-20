@@ -180,8 +180,8 @@ class InsightsEngine:
                             operations.append(op)
                         except (json.JSONDecodeError, ValueError):
                             continue
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         self._operations = operations
         self._loaded = True

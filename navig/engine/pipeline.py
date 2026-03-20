@@ -258,8 +258,8 @@ class ToolPipeline:
                 if on_step:
                     try:
                         on_step(sr)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
 
                 if step.required:
                     return PipelineResult(

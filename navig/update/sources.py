@@ -73,8 +73,8 @@ class PyPISource(_BaseSource):
                 v = Version(tag)
                 if v.is_prerelease:
                     candidates.append(v)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         if not candidates:
             raise SourceError("No pre-release versions found on PyPI")
         return str(max(candidates))
@@ -185,8 +185,8 @@ class ArtifactURLSource(_BaseSource):
             v = data.get(self._json_key)
             if v:
                 return str(v).lstrip("v")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # Plain text / regex fallback
         match = re.search(r"\d+\.\d+\.\d+", body)

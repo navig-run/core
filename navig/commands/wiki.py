@@ -279,8 +279,8 @@ def list_wiki_pages(wiki_path: Path, folder: Optional[str] = None, recursive: bo
                 if line.startswith('# '):
                     title = line[2:].strip()
                     break
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # Normalize path to forward slashes for cross-platform consistency
         rel_path_str = str(rel_path).replace('\\', '/')

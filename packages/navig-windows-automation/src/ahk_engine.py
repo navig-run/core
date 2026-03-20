@@ -145,8 +145,8 @@ class AHKAdapter:
             )
             if process.returncode == 0:
                 return process.stdout.strip()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return "Unknown"
 
     def get_status(self) -> AHKStatus:
@@ -397,8 +397,8 @@ NAVIG will automatically detect it in standard locations.
             try:
                 w, h = map(int, res.stdout.split("|"))
                 return (w, h)
-            except:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; suppress all errors
         return (1920, 1080) # Default fallback
 
     def read_text(self, selector: str, control_id: str = "") -> str:

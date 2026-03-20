@@ -49,12 +49,12 @@ try:
                         print(f"Clicked '{text}' at ({center_x}, {center_y})")
                         found = True
                         break
-                except:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; suppress all errors
             if found:
                 break
-        except:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; suppress all errors
     
     if not found:
         print(f"Error: Text '{search_text}' not found")

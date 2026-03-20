@@ -23,7 +23,7 @@ def on_load(ctx: dict) -> None:
         CommandRegistry.register("memory_search", cmd_memory_search)
         CommandRegistry.register("memory_clear", cmd_memory_clear)
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
 
 def on_unload(ctx: dict) -> None:
@@ -33,7 +33,7 @@ def on_unload(ctx: dict) -> None:
         for name in ("memory_store", "memory_search", "memory_clear"):
             CommandRegistry.deregister(name)
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
 
 def on_event(event: str, ctx: dict) -> dict | None:
@@ -55,8 +55,8 @@ def _store_path(ctx: Any = None) -> pathlib.Path:
     try:
         if ctx and hasattr(ctx, "store_dir"):
             return pathlib.Path(ctx["store_dir"]) / "memories.json"
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     try:
         from navig.space.paths import get_global_root
         return get_global_root() / "store" / "memory" / "memories.json"

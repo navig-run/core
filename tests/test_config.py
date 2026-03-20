@@ -104,11 +104,11 @@ class TestHostManagement:
     def test_list_hosts_new_format(self, config_manager, sample_host_config):
         """Test list_hosts with new format."""
         config_manager.save_host_config('myhost', sample_host_config)
-        config_manager.save_host_config('example-vps', sample_host_config)
+        config_manager.save_host_config('vps', sample_host_config)
         
         hosts = config_manager.list_hosts()
         assert 'myhost' in hosts
-        assert 'example-vps' in hosts
+        assert 'vps' in hosts
         assert len(hosts) == 2
     
     def test_list_hosts_mixed_formats(self, config_manager, sample_host_config, sample_legacy_config):

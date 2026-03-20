@@ -31,7 +31,7 @@ if sys.platform == 'win32':
             from .ahk_ai import AHKAIGenerator, AHKScriptArchive
             __all__.extend(['AHKAIGenerator', 'AHKScriptArchive'])
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
     except ImportError:
         # AHK dependencies not installed

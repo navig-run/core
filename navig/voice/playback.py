@@ -58,7 +58,7 @@ def _resolve_asset(name: str) -> Optional[Path]:
         if path.exists():
             return path
     except ValueError:
-        pass
+        pass  # malformed value; skip
 
     # Try by enum name (case-insensitive)
     for s in NotificationSound:
@@ -98,8 +98,8 @@ async def _play_windows(path: Path) -> bool:
                 lambda: winsound.PlaySound(str(path), winsound.SND_FILENAME)
             )
             return True
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     # .mp3/.wav fallback → PowerShell MediaPlayer
     try:

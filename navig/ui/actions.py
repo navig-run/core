@@ -45,8 +45,8 @@ def render_actions(
             for item in items:
                 val_str = f"  {item.estimated_value}" if item.estimated_value else ""
                 print(f"  {item.index}.  {item.description}{val_str}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_fallback(
@@ -70,8 +70,8 @@ def render_fallback(
             if alternatives:
                 for alt in alternatives:
                     print(f"  -> {alt}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_action_queue(
@@ -97,5 +97,5 @@ def render_action_queue(
             print(f"\n  {title}", file=sys.stdout)
             for item in items:
                 print(f"  {item.index}.  {item.description}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

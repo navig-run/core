@@ -148,21 +148,21 @@ class Heart(Component):
             try:
                 await self._heartbeat_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if self._health_check_task:
             self._health_check_task.cancel()
             try:
                 await self._health_check_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         if self._goal_processing_task:
             self._goal_processing_task.cancel()
             try:
                 await self._goal_processing_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         # Stop components in reverse order
         stop_order = list(reversed(self.STARTUP_ORDER))
@@ -192,8 +192,8 @@ class Heart(Component):
             if name not in stop_order and component.is_running:
                 try:
                     await component.stop()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         # Emit stopped event
         await self.emit(EventType.AGENT_STOPPED, {})
@@ -368,8 +368,8 @@ class Heart(Component):
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
     async def restart_component(self, name: str, reason: str = "Manual restart") -> bool:
         """

@@ -265,7 +265,7 @@ async def run_process(
         try:
             await proc.stdin.drain()
         except (BrokenPipeError, ConnectionResetError):
-            pass
+            pass  # pipe closed during drain; expected
         proc.stdin.close()
 
     # ── Streaming read with no-output timer ──────────────────────────────────
@@ -314,7 +314,7 @@ async def run_process(
                 try:
                     proc.kill()
                 except ProcessLookupError:
-                    pass
+                    pass  # process already gone; expected
                 return
 
     try:
@@ -330,12 +330,12 @@ async def run_process(
         try:
             proc.kill()
         except ProcessLookupError:
-            pass
+            pass  # process already gone; expected
         # Drain remaining output
         try:
             await asyncio.wait_for(asyncio.shield(communicate_task), timeout=2.0)
         except (asyncio.TimeoutError, asyncio.CancelledError):
-            pass
+            pass  # output drain timed out or cancelled; expected
 
     elapsed_ms = (time.monotonic() - t0) * 1000.0
 

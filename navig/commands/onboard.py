@@ -577,7 +577,7 @@ if _TEXTUAL_AVAILABLE:
                 self.app.push_screen(WelcomeScreen())
 
             except WorkerCancelled:
-                pass
+                pass  # textual worker cancelled; expected during unmount
             except Exception as exc:  # noqa: BLE001
                 self.notify(f"Boot sequence error: {exc}", severity="warning")
                 self.app.push_screen(WelcomeScreen())
@@ -784,13 +784,13 @@ if _TEXTUAL_AVAILABLE:
                             "Ollama: " + ("reachable ✔" if ok else "not reachable"),
                             severity="information" if ok else "warning",
                         )
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
 
                 btn: Button = self.query_one("#btn-continue", Button)
                 btn.disabled = self._critical_failed
             except WorkerCancelled:
-                pass
+                pass  # textual worker cancelled; expected during unmount
             except Exception as exc:  # noqa: BLE001
                 self.notify(f"Check runner error: {exc}", severity="warning")
                 btn = self.query_one("#btn-continue", Button)
@@ -866,7 +866,7 @@ if _TEXTUAL_AVAILABLE:
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
-                pass
+                pass  # widget not present; skip
 
     class Step2ProviderWidget(_WizardStepBase):
         DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
@@ -909,13 +909,13 @@ if _TEXTUAL_AVAILABLE:
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
-                pass
+                pass  # widget not present; skip
 
         def _notify_parent(self) -> None:
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
-                pass
+                pass  # widget not present; skip
 
     class Step3RuntimeWidget(_WizardStepBase):
         DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
@@ -946,7 +946,7 @@ if _TEXTUAL_AVAILABLE:
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
-                pass
+                pass  # widget not present; skip
 
         @on(Input.Changed, "#inp-runtime-host")
         def _host_changed(self, event: Input.Changed) -> None:
@@ -980,7 +980,7 @@ if _TEXTUAL_AVAILABLE:
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
-                pass
+                pass  # widget not present; skip
 
     class Step5ShellWidget(_WizardStepBase):
         DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
@@ -1019,7 +1019,7 @@ if _TEXTUAL_AVAILABLE:
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
-                pass
+                pass  # widget not present; skip
 
     # -----------------------------------------------------------------------
     # WizardScreen (5-step controller)
@@ -1330,7 +1330,7 @@ if _TEXTUAL_AVAILABLE:
                 )
 
             except WorkerCancelled:
-                pass
+                pass  # textual worker cancelled; expected during unmount
             except Exception as exc:  # noqa: BLE001
                 self.notify(f"Registration error: {exc}", severity="error")
                 retry_btn.display = True
@@ -2206,8 +2206,8 @@ def sync_to_env(config: Dict[str, Any], console: ConsoleType = None) -> None:
                     _tok = _cred.get_secret("bot_token")
                     if _tok:
                         updates["TELEGRAM_BOT_TOKEN"] = _tok
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         elif telegram_config.get("bot_token"):  # legacy / manual config
             updates["TELEGRAM_BOT_TOKEN"] = telegram_config["bot_token"]
         if telegram_config.get("allowed_users"):
@@ -2266,9 +2266,9 @@ def _auto_install_textual() -> bool:
                         console.print("[bold green]✓[/bold green] textual installed — launching TUI…\n")
                     return True
                 except ImportError:
-                    pass
+                    pass  # optional dependency not installed; feature disabled
         except (OSError, subprocess.TimeoutExpired):
-            pass
+            pass  # optional tool absent or timed out
 
     # --- fall back to pip ---
     try:

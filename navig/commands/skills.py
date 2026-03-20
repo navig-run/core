@@ -144,8 +144,8 @@ def _collect_skills(skills_dirs: Iterable[Path]) -> List[SkillInfo]:
                 try:
                     sj = json.loads(skill_json.read_text(encoding="utf-8"))
                     entrypoint = sj.get("entrypoint", entrypoint)
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             skills.append(
                 SkillInfo(

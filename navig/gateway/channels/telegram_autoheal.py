@@ -675,8 +675,8 @@ class AutoHealMixin:
                 reachable = await healer._tcp_probe(ctx.host, 22)
                 ssh_status = "✅ reachable" if reachable else "❌ unreachable"
                 lines += ["", f"*SSH port 22 on `{ctx.host}`:* {ssh_status}"]
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         return "\n".join(lines)
 
@@ -932,8 +932,8 @@ class AutoHealMixin:
         try:
             await self._api_call("answerCallbackQuery",
                                   callback_query_id=cb_id, text=text[:200])
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     def _get_session_manager_safe(self) -> Any:
         """Return the SessionManager if available, else None."""
@@ -941,8 +941,8 @@ class AutoHealMixin:
             if hasattr(self, "_has_feature") and self._has_feature("sessions"):
                 from navig.gateway.channels.telegram_features import get_session_manager
                 return get_session_manager()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return None
 
     def _record_heal_event(self, ctx: FailureContext, status: str) -> None:

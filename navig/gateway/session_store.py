@@ -262,8 +262,8 @@ def get_session_store() -> SessionStore:
             )
             if raw_path:
                 persist_path = Path(raw_path).expanduser()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         _store_instance = SessionStore(persist_path=persist_path)
 

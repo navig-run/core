@@ -480,7 +480,7 @@ def agent_logs(
             else:
                 subprocess.run(['tail', '-f', '-n', str(lines), str(log_file)])
         except KeyboardInterrupt:
-            pass
+            pass  # user interrupted; clean exit
     else:
         # Show last N lines
         with open(log_file) as f:
@@ -1186,8 +1186,8 @@ def agent_learn(
                                 error_counts[pattern_name] += 1
                                 if len(error_examples[pattern_name]) < 3:
                                     error_examples[pattern_name].append(line.strip())
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
 
         if not error_counts:
             ch.success("No significant error patterns detected!")

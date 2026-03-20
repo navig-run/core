@@ -80,7 +80,7 @@ def _count_yaml_files(directory: Path) -> Tuple[int, int]:
             except Exception:
                 errors += 1
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
     return total, errors
 
 
@@ -247,8 +247,8 @@ def check_gateway(port: int = 8789) -> List[Tuple[str, bool, str]]:
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
             port = cfg.get("gateway", {}).get("port", port)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     reachable = _gateway_reachable("127.0.0.1", port)
     if reachable:
@@ -274,8 +274,8 @@ def check_env_keys() -> List[Tuple[str, bool, str]]:
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     key_checks = [
         ("OPENROUTER_API_KEY",  "openrouter_api_key",  "ai commands degraded without it"),

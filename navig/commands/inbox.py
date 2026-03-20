@@ -560,8 +560,8 @@ def ui_cmd(
         content = ""
         try:
             content = f.read_text(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         result = classifier.classify(content, filename=f.name)
 
         typer.secho(f"[{i}/{len(files)}] {f.name}", fg=typer.colors.WHITE, bold=True)

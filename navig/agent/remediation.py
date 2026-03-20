@@ -134,7 +134,7 @@ class RemediationEngine:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
         self._save_actions()
         self._log("Remediation engine stopped")
 

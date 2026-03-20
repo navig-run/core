@@ -61,8 +61,7 @@ def read_bridge_grid(*, force: bool = False) -> Optional[dict]:
     return _cached_result
 
 
-# Keep old name as alias for backward compatibility during migration
-read_bridge_grid = read_bridge_grid
+
 
 
 def _read_and_validate() -> Optional[dict]:
@@ -102,8 +101,7 @@ def is_bridge_grid_alive(*, force: bool = False) -> bool:
     return read_bridge_grid(force=force) is not None
 
 
-# Backward-compat alias
-is_bridge_grid_alive = is_bridge_grid_alive
+
 
 
 def get_llm_port(*, force: bool = False) -> Optional[int]:

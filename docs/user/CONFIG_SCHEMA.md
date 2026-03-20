@@ -232,7 +232,7 @@ app_name:
 #### `name` (REQUIRED)
 - **Type**: String
 - **Description**: Unique identifier for the host. Must match the filename (without `.yaml` extension).
-- **Example**: `myhost`, `example-vps`, `local`
+- **Example**: `myhost`, `vps`, `local`
 
 #### `host` (REQUIRED)
 - **Type**: String
@@ -457,7 +457,7 @@ See `docs/MIGRATION_GUIDE.md` for detailed migration instructions.
 See `examples/hosts/` directory for complete example configurations:
 - `local.yaml` - Local development
 - `myhost.yaml` - Production VPS with multiple apps
-- `example-vps.yaml` - Alternative VPS
+- `vps.yaml` - Alternative VPS
 
 ---
 

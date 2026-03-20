@@ -152,8 +152,8 @@ class ContextGenerator:
                         'status': 'running',
                         'uptime': uptime_result.stdout.strip() if uptime_result.returncode == 0 else 'unknown'
                     })
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         return services_status
 
@@ -164,8 +164,8 @@ class ContextGenerator:
             if hasattr(self.assistant, 'auto_detection'):
                 metrics = self.assistant.auto_detection.collect_performance_metrics(remote_ops, server_config)
                 return metrics
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         return {'status': 'unavailable'}
 

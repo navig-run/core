@@ -284,8 +284,8 @@ class MatrixInboxBridge:
                 if meta.get("status") == "read":
                     f.unlink()
                     count += 1
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return count
 
     # ── Internal ──

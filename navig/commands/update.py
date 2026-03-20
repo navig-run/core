@@ -100,8 +100,8 @@ def _step_doctor():
         for r in results:
             if getattr(r, 'level', '') in ('warning', 'error'):
                 warnings.append(getattr(r, 'message', str(r)))
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
     note = f'{len(warnings)} warning(s)' if warnings else 'no issues'
     return _Result('Config doctor', ok=True, note=note, elapsed=time.monotonic()-t0, warnings=warnings)
 
@@ -135,8 +135,8 @@ def _sync_path(src_dir, con):
         if venv_exe.exists() and path_exe and path_exe.exists() and venv_exe != path_exe:
             shutil.copy2(str(venv_exe), str(path_exe))
             _p(con, f'[dim]  + PATH entry synced: {path_exe}[/dim]')
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 def _run_update(check=False, force=False, dry_run=False, channel=None):
     con = _con()
@@ -160,8 +160,8 @@ def _run_update(check=False, force=False, dry_run=False, channel=None):
                     log = subprocess.run(['git', '-C', str(src_dir), 'log', '--oneline', '-1'],
                                          capture_output=True, text=True, timeout=5)
                     grid.add_row('Commit', log.stdout.strip()[:72])
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             con.print(Panel(grid, title='[bold]NAVIG[/bold]', border_style='cyan', padding=(0, 2)))
             con.print('[dim]  Run [bold]navig update[/bold] to apply updates.[/dim]')
         else:
@@ -593,8 +593,8 @@ def update_nodes(
     try:
         for name in (cm.list_hosts() or []):
             nodes.append({"node_id": name, "type": "ssh"})
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     if json_out:
         typer.echo(json.dumps(nodes, indent=2))

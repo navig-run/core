@@ -132,7 +132,7 @@ async def handle_audio_callback(
             try:
                 cfg.speed = float(parts[4])
             except ValueError:
-                pass
+                pass  # malformed value; skip
             save_config(user_id, cfg)
             await _edit(channel, chat_id, message_id,
                         screen_c_text(provider_id, model_id, cfg),

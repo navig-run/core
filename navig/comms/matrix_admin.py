@@ -50,8 +50,8 @@ class MatrixAdminClient:
                 if resp.status_code == 200:
                     self._server_type = "conduit"
                     return "conduit"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         # Try Synapse admin
         try:
@@ -63,8 +63,8 @@ class MatrixAdminClient:
                 if resp.status_code == 200:
                     self._server_type = "synapse"
                     return "synapse"
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         self._server_type = "unknown"
         return "unknown"
@@ -257,8 +257,8 @@ class MatrixAdminClient:
                         if isinstance(data, list):
                             return [{"user_id": u} for u in data]
                         return data.get("users", [])
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         return []
 

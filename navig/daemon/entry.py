@@ -23,8 +23,8 @@ def _load_config() -> dict:
     if DAEMON_CONFIG.exists():
         try:
             return json.loads(DAEMON_CONFIG.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     return {
         "telegram_bot": True,
         # AUDIT self-check: Correct implementation? yes - default matches daemon contract tests.
@@ -64,7 +64,7 @@ def main() -> None:
                 load_dotenv(candidate)
                 break
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
     cfg = _load_config()
 

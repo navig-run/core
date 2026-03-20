@@ -92,7 +92,7 @@ class WorkPatterns:
 class TechnicalContext:
     """Technical environment and stack."""
     stack: List[str] = field(default_factory=list)  # e.g., ["Laravel", "Docker", "PostgreSQL"]
-    managed_hosts: List[str] = field(default_factory=list)  # e.g., ["example-vps", "production"]
+    managed_hosts: List[str] = field(default_factory=list)  # e.g., ["myserver", "production"]
     primary_projects: List[str] = field(default_factory=list)  # e.g., ["my-saas", "api-backend"]
     preferences: List[str] = field(default_factory=list)  # e.g., ["Python", "CLI tools", "Docker"]
 

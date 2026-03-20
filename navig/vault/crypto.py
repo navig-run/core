@@ -153,8 +153,8 @@ class CryptoEngine:
                 )
                 guid, _ = winreg.QueryValueEx(key, "MachineGuid")
                 parts.append(str(guid))
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         return "-".join(p for p in parts if p).encode()
 
     @staticmethod

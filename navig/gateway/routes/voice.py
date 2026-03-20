@@ -13,8 +13,10 @@ from typing import TYPE_CHECKING
 
 try:
     from aiohttp import web
-except ImportError:
-    pass
+except ImportError as _exc:
+    raise RuntimeError(
+        "aiohttp is required for gateway routes (pip install aiohttp)"
+    ) from _exc
 
 if TYPE_CHECKING:
     from aiohttp import web  # noqa: F811
@@ -97,7 +99,7 @@ def _transcribe(gw):
                 try:
                     tmp_path.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    pass  # best-effort cleanup
 
     return h
 
@@ -237,7 +239,7 @@ def _events(gw):
                     await response.write(b": keepalive\n\n")
 
         except asyncio.CancelledError:
-            pass
+            pass  # task cancelled; expected during shutdown
         except Exception as e:
             logger.error('SSE connection error: %s', e)
         finally:

@@ -42,14 +42,14 @@ def detect_linux_distro() -> Optional[str]:
                 if line.startswith('ID='):
                     return line.strip().split('=')[1].strip('"')
     except FileNotFoundError:
-        pass
+        pass  # file already gone; expected
 
     # Try other methods
     try:
         import distro
         return distro.id()
     except ImportError:
-        pass
+        pass  # optional dependency not installed; feature disabled
 
     return None
 

@@ -392,8 +392,8 @@ class UnifiedRouter:
                     secret = vault.get_secret("openrouter", "api_key", caller="unified_router")
                     if secret:
                         api_key = secret.reveal().strip()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             if not api_key:
                 return None
             return OpenRouterProvider(api_key=api_key)
@@ -405,8 +405,8 @@ class UnifiedRouter:
                 try:
                     from navig.agent.llm_providers import GitHubModelsProvider as GMP
                     token = GMP._resolve_token(GMP)
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
             if not token:
                 return None
             return GitHubModelsProvider(api_key=token)
@@ -536,8 +536,8 @@ class UnifiedRouter:
         for provider in self._providers.values():
             try:
                 await provider.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         self._providers.clear()
 
 

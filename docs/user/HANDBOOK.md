@@ -5,7 +5,7 @@ applyTo: '**'
 # NAVIG - AI-Optimized Command Reference Guide
 
 > **Primary Knowledge Base for AI Assistants**
-> Version: 2.4.4 | Last Updated: 2026-02-28
+> Version: 2.4.14 | Last Updated: 2026-03-20
 
 ---
 
@@ -3812,7 +3812,18 @@ navig -c sql "DROP TABLE old_logs"
 
 ## 20. Plugin System
 
-NAVIG supports a modular plugin architecture that allows extending functionality without modifying core code.
+> **⚠️ DEPRECATED** — The Typer-based plugin model (`navig plugin install/list/enable/disable`,
+> `navig.plugins.base.PluginAPI`) has been **retired**.
+>
+> The new decoupled pack model uses `plugin.json` + `handler.py` + plain `handle()` functions
+> and lives in the **[navig-community](https://github.com/navig-run/community)** repository.
+>
+> SDK: `pip install navig-sdk` (Python) or `npm install navig-sdk` (TypeScript).
+> See [navig-community/examples/](https://github.com/navig-run/community/tree/main/examples) for current examples.
+>
+> The content below is preserved for reference only and describes the **retired system**.
+
+NAVIG supported a modular plugin architecture that allowed extending functionality without modifying core code.
 
 ### 19.1 Plugin Management Commands
 
@@ -3904,7 +3915,7 @@ active_app = api.get_active_app()
 
 ### 19.6 Creating Custom Plugins
 
-For full plugin development documentation, see `docs/PLUGIN_DEVELOPMENT.md`.
+For full plugin development documentation (retired system), see `.navig/wiki/dev/PLUGIN_DEVELOPMENT.md`.
 
 **Quick Start:**
 1. Create a directory in `~/.navig/plugins/` with your plugin name
@@ -7916,7 +7927,7 @@ The Inbox Router in navig-bridge handles the `task.completed` event:
 await vscode.commands.executeCommand(
     'navig-bridge.inboxRouterDispatchEvent',
     'task.completed',
-    { taskTitle, taskSlug, summary, phaseName, cwd, source: 'forge' },
+    { taskTitle, taskSlug, summary, phaseName, cwd, source: 'bridge' },
 );
 
 // Slash command in NAVIG chat

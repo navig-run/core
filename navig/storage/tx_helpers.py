@@ -90,5 +90,5 @@ def savepoint(
             conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
             conn.execute(f"RELEASE SAVEPOINT {name}")
         except sqlite3.OperationalError:
-            pass
+            pass  # best-effort rollback; may already be clean
         raise

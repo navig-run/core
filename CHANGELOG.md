@@ -28,7 +28,7 @@
 - fix(agent): auto-resolve GitHub Models token from vault/config + enhance /models command
 - fix(bot): fix SOUL personality + multi-model fallback chain
 - feat(core): GitHub Models routing, vault CLI improvements, personality fix
-- feat(forge): LLM provider chain, GitHub Models, streaming, webhook, copilot CLI, tests
+- feat(bridge): LLM provider chain, GitHub Models, streaming, webhook, copilot CLI, tests
 - perf(cli): optimize startup from 886ms to ~450ms (50% faster)
 - feat(storage): unified SQLite engine with PRAGMA profiles, write batching & query timing
 - feat(store): implement SQLite local-first migration (Phases 1-3)

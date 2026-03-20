@@ -113,8 +113,8 @@ def read_dialog(window):
                 try:
                     rect = ctrl.rectangle()
                     elem['center'] = ((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
-                except:
-                    pass
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; suppress all errors
                 
                 if ctrl_type == 'Button' and name:
                     content['buttons'].append(elem)
@@ -129,8 +129,8 @@ def read_dialog(window):
                 elif ctrl_type == 'CheckBox':
                     try:
                         elem['checked'] = ctrl.get_toggle_state() == 1
-                    except:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; suppress all errors
                     content['checkboxes'].append(elem)
                 elif ctrl_type == 'ListItem' and name:
                     content['list_items'].append(elem)
@@ -205,8 +205,8 @@ def dismiss_dialog(window):
     try:
         window.type_keys('{ESC}')
         return True, "Sent Escape key to dialog"
-    except:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; suppress all errors
     
     return False, "Could not find any dismiss button"
 

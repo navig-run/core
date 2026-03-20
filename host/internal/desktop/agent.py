@@ -117,8 +117,8 @@ def _walk_tree(elem: Any, depth: int) -> Dict[str, Any]:
         try:
             for child in elem.GetChildren():
                 children.append(_walk_tree(child, depth - 1))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         node["children"] = children
     return node
 
@@ -165,13 +165,13 @@ def _method_find_element(params: _Params) -> _Result:
                 match = False
             if match and (name or class_name or control_type_str):
                 results.append(_element_to_dict(elem))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         try:
             for child in elem.GetChildren():
                 _visit(child, current_depth - 1)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     root = auto.GetRootControl()
     _visit(root, depth)
@@ -222,8 +222,8 @@ def _method_set_value(params: _Params) -> _Result:
         if vp is not None:
             vp.SetValue(value)
             return {"method": "ValuePattern"}
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Fall back to SetFocus + SendKeys
     try:
@@ -291,7 +291,7 @@ def _method_ahk_run(params: _Params) -> _Result:
         try:
             os.unlink(tmp_path)
         except OSError:
-            pass
+            pass  # best-effort cleanup
 
 
 # ─────────────────────────── dispatch table ──────────────────────────────────

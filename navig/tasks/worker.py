@@ -157,7 +157,7 @@ class TaskWorker:
             try:
                 await self._worker_task
             except asyncio.CancelledError:
-                pass
+                pass  # task cancelled; expected during shutdown
 
         logger.info("TaskWorker stopped")
 

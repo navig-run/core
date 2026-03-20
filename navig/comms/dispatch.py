@@ -117,7 +117,7 @@ def _resolve_channel(channel: CommsChannel, target: NotificationTarget) -> str:
             from navig.identity.store import get_user_preferred_channel
             return get_user_preferred_channel(target.user_id) or _default_channel
         except ImportError:
-            pass
+            pass  # optional dependency not installed; feature disabled
 
     return _default_channel
 

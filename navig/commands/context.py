@@ -47,8 +47,8 @@ def show_context(opts: Dict[str, Any]) -> None:
     if legacy_file.exists() and legacy_file.is_file():
         try:
             legacy_context = legacy_file.read_text().strip()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     if want_json:
         result = {
@@ -268,8 +268,8 @@ def init_context(opts: Dict[str, Any] = None) -> None:
                 legacy_host = content
             migrate_from_legacy = True
             ch.info(f"Found legacy .navig file: {content}")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     # Check if already initialized
     if navig_dir.exists() and navig_dir.is_dir() and config_file.exists():

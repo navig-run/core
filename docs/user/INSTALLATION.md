@@ -22,7 +22,7 @@ This guide explains how to install NAVIG as a Python package in editable mode, w
 ### 1. Navigate to the App Directory
 
 ```powershell
-cd remote-manager
+cd navig-core
 ```
 
 ### 2. (Optional) Uninstall Existing Installation
@@ -42,7 +42,7 @@ pip install -e .
 ```
 
 **What this does**:
-- Installs all required dependencies from `pyapp.toml`
+- Installs all required dependencies from `pyproject.toml`
 - Creates a `navig` command that's available globally
 - Links the installation to your source code (changes are reflected immediately)
 - Creates/updates the `navig.egg-info` directory with package metadata
@@ -63,11 +63,8 @@ cd ~
 navig --version
 ```
 
-**Expected output**:
-```
-NAVIG v1.0.0
-The Schema's encrypted operations tool
-```
+**Expected output**: NAVIG version string — run `navig --version` to verify
+you see the current version printed (e.g. `NAVIG 2.4.14`).
 
 ### Cross-platform one-shot installers
 
@@ -144,46 +141,30 @@ $env:NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
 
 ---
 
-## What Changed in pyapp.toml
-
-### ✅ Fixed Issues
-
-1. **Added missing `pyperclip` dependency**:
-   - Was in `requirements.txt` but missing from `pyapp.toml`
-   - Now included: `"pyperclip>=1.8.2"`
-
-2. **Removed `questionary` dependency**:
-   - Commented out in `requirements.txt` due to Windows compatibility issues
-   - Removed from `pyapp.toml` to match
-
-3. **Added `navig.modules` to package list**:
-   - Was missing from the packages list
-   - Now includes: `packages = ["navig", "navig.commands", "navig.modules"]`
-
-### 📋 Current Configuration
+## pyproject.toml — Current Configuration
 
 **Entry Point**:
 ```toml
-[app.scripts]
-navig = "navig.cli:app"
+[project.scripts]
+navig = "navig.main:main"
 ```
 
-This creates a `navig` command that calls the Typer `app` object in `navig/cli/__init__.py`.
+The `navig` command runs `main()` in `navig/main.py`.
 
-**Dependencies**:
-- `typer[all]>=0.9.0` - CLI framework
-- `rich>=13.0.0` - Terminal UI and formatting
-- `pyyaml>=6.0` - Configuration file handling
-- `requests>=2.31.0` - HTTP requests (OpenRouter API)
-- `paramiko>=3.0.0` - SSH operations
-- `colorama>=0.4.6` - Cross-platform ANSI colors
-- `psutil>=5.9.0` - Process management
-- `pyperclip>=1.8.2` - Clipboard operations
+**Core Dependencies** (see `pyproject.toml` for the full authoritative list):
+- `typer[all]>=0.9.0` — CLI framework
+- `rich>=13.7.0` — Terminal UI and formatting
+- `pyyaml>=6.0` — Configuration files
+- `requests>=2.31.0` + `httpx>=0.27.0` + `aiohttp>=3.9.0` — HTTP
+- `paramiko>=3.4.0` — SSH operations
+- `loguru>=0.7.0` — Logging
+- `pydantic>=2.0.0` — Data validation
+- `Jinja2>=3.1.0` — Templates
+- `cryptography>=42.0.0` — Vault encryption
+- `platformdirs>=4.0.0` — OS-standard paths
+- `psutil>=5.9.0`, `colorama>=0.4.6`, `pyperclip>=1.8.2` — System utilities
 
-**Packages**:
-- `navig` - Main package
-- `navig.commands` - Command modules
-- `navig.modules` - Utility modules
+**Packages**: auto-discovered from `navig/` via `[tool.setuptools.packages.find]`
 
 ---
 
@@ -199,7 +180,7 @@ This creates a `navig` command that calls the Typer `app` object in `navig/cli/_
 
 If you add a new dependency:
 
-1. Add it to `pyapp.toml` under `[app] dependencies`
+1. Add it to `pyproject.toml` under `[project] dependencies`
 2. Run `pip install -e .` again to install the new dependency
 
 ### Running Tests

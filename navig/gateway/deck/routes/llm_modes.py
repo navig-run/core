@@ -43,8 +43,8 @@ def _get_provider_key_status() -> dict:
                     if c.get("provider") == provider and c.get("enabled", True):
                         has_key = True
                         break
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
         if provider == "ollama":
             has_key = True
         status[provider] = has_key

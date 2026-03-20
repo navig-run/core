@@ -55,8 +55,8 @@ def render_metric_bars(
             for m in metrics:
                 filled, empty = _make_bar(m.bar_fill)
                 print(f"  {m.label}: {filled}{empty} {m.value}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
 
 def render_sparklines(
@@ -80,5 +80,5 @@ def render_sparklines(
             for m in metrics:
                 if m.sparkline:
                     print(f"  {m.label}: {m.sparkline}", file=sys.stdout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical

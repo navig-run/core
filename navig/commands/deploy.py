@@ -223,8 +223,8 @@ def deploy_run(
     try:
         global_raw = cm._load_global_config()
         deploy_cfg.merge_global_defaults(global_raw)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # Set up progress renderer
     renderer = _ProgressRenderer(dry_run=dry_run)
@@ -686,8 +686,8 @@ def _detect_runtime_hints(project_root: Path) -> Dict[str, Any]:
             scripts = pkg.get("scripts", {})
             if "build" in scripts:
                 hints["apply_commands"] = []   # build is local; apply = nothing by default
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     elif (project_root / "requirements.txt").exists() or (project_root / "pyproject.toml").exists():
         hints["adapter"] = "systemd"

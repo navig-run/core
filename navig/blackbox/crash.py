@@ -82,8 +82,8 @@ def record_crash(
     try:
         import psutil  # noqa: PLC0415
         mem_mb = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     # NAVIG version
     try:
@@ -98,8 +98,8 @@ def record_crash(
         from .types import EventType
         events = get_recorder().read_events(limit=10, event_type=EventType.COMMAND)
         recent = [e.payload.get("command", "") for e in events if e.payload.get("command")]
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
     report = CrashReport(
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -148,8 +148,8 @@ def install_crash_handler(blackbox_dir: Optional[Path] = None) -> None:
                 blackbox_dir=blackbox_dir,
             )
         signal.signal(signal.SIGTERM, _sigterm)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
 
 def list_crashes(blackbox_dir: Optional[Path] = None) -> list[CrashReport]:
@@ -167,6 +167,6 @@ def list_crashes(blackbox_dir: Optional[Path] = None) -> list[CrashReport]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             reports.append(CrashReport.from_dict(data))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
     return reports

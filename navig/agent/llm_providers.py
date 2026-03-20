@@ -140,7 +140,8 @@ class OllamaProvider(LLMProvider):
             payload["num_ctx"] = kw["num_ctx"]
 
         t0 = time.monotonic()
-        async with session.post(url, json=payload) as resp:
+        aio = await _get_aiohttp()
+        async with session.post(url, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Ollama error ({resp.status}): {text}")
@@ -203,7 +204,8 @@ class OpenRouterProvider(LLMProvider):
         }
 
         t0 = time.monotonic()
-        async with session.post(url, headers=headers, json=payload) as resp:
+        aio = await _get_aiohttp()
+        async with session.post(url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenRouter error ({resp.status}): {text}")
@@ -259,7 +261,8 @@ class OpenAIProvider(LLMProvider):
         }
 
         t0 = time.monotonic()
-        async with session.post(url, headers=headers, json=payload) as resp:
+        aio = await _get_aiohttp()
+        async with session.post(url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenAI error ({resp.status}): {text}")
@@ -304,7 +307,8 @@ class LlamaCppProvider(LLMProvider):
         }
 
         t0 = time.monotonic()
-        async with session.post(url, json=payload) as resp:
+        aio = await _get_aiohttp()
+        async with session.post(url, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"llama.cpp error ({resp.status}): {text}")
@@ -634,8 +638,8 @@ class GitHubModelsProvider(LLMProvider):
                 val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
                 if val:
                     return val
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         # Config file
         try:
             from navig.config import get_config_manager
@@ -643,8 +647,8 @@ class GitHubModelsProvider(LLMProvider):
             token = cfg.get("github_models", {}).get("token", "")
             if token:
                 return token
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return ""
 
     def _get_fallback_chain(self, model: str) -> List[str]:
@@ -788,8 +792,8 @@ class GitHubModelsProvider(LLMProvider):
                 if token:
                     self.api_key = token
                     return True
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
             return False
         return True
 
@@ -836,7 +840,8 @@ class AnthropicProvider(OpenAIProvider):
             "max_tokens": max_tokens,
         }
         t0 = time.monotonic()
-        async with session.post(url, headers=headers, json=payload) as resp:
+        aio = await _get_aiohttp()
+        async with session.post(url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Anthropic error ({resp.status}): {text}")
@@ -977,8 +982,8 @@ class BlockrunProvider(OpenAIProvider):
             s.close()
             if result:
                 return True
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
         return bool(self.api_key)
 
 
@@ -1080,8 +1085,7 @@ _PROVIDER_MAP = {
     "mcp_bridge": McpBridgeProvider,
 }
 
-# Backward-compat alias
-McpForgeProvider = McpBridgeProvider
+
 
 
 def create_provider(name: str, **kwargs) -> LLMProvider:

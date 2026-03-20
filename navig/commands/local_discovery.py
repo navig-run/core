@@ -614,8 +614,8 @@ def discover_local_host(
                 "host_discovery.json",
                 {"name": name, "discovered": discovered, "config": config},
             )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
     # Show summary
     if progress:
