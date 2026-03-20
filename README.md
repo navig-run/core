@@ -25,7 +25,7 @@
 > NAVIG is under active development and not yet stable.
 > APIs, CLI commands, and config formats may change between releases.
 
-> 🧵 Not vibe-coded. ⚒️ Forge-coded by [@navig-run](https://github.com/navig-run) · solo founder · 
+> 🧵 Not vibe-coded. ⚒️ Built by [@navig-run](https://github.com/navig-run) · solo founder · 
 
 
 

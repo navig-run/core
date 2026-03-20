@@ -157,6 +157,7 @@ nohup.out                   # Background process output
 # Backups and Archives
 # ===============================================
 .backups/                   # Backup directory
+.labs/                      # Experimental lab directory
 .backup/                     # Local backup folder (singular)
 *.backup                    # Backup files
 *.bak                       # Backup files
@@ -334,3 +335,12 @@ host/crates/**/target/
 nohup.out
 *.pdb
 
+
+# Root internal operational files (moved to .navig/)
+BOOTSTRAP_REPORT.md
+NEXT_ACTIONS.md
+GITHUB_MANUAL_OR_CLI_STEPS.md
+BRAND_USAGE.md
+OFFICIAL_BUILDS.md
+audit_log.txt
+nohup.out
