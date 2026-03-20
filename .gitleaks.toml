@@ -1,0 +1,12 @@
+﻿[allowlist]
+description = "Global allowlist for mock test data"
+paths = [
+    '''\.secrets\.baseline''',
+    '''\.backups/.*'''
+]
+regexes = [
+    '''sk-1234567890''',
+    '''sk-abc123xyz''',
+    '''abcdef1234567890abcdef1234567890''',
+    '''eyJhbGciOiJIUzI1NiJ9\.test'''
+]
