@@ -364,3 +364,27 @@ BRAND_USAGE.md
 OFFICIAL_BUILDS.md
 audit_log.txt
 nohup.out
+
+# Effective plain rules for MVP public tree
+.backups/
+.navig/**
+!.navig/
+!.navig/profile.json
+scripts/**
+!scripts/
+!scripts/bootstrap_navig_linux.sh
+!scripts/github-bootstrap.sh
+!scripts/install_navig_factory_server.sh
+!scripts/install_navig_linux.sh
+!scripts/install_navig_linux_enhanced.sh
+!scripts/install_navig_macos.sh
+!scripts/install_navig_windows.ps1
+!scripts/install_navig_windows_enhanced.ps1
+!scripts/install_matrix_synapse_windows.cmd
+!scripts/install_matrix_synapse_windows.ps1
+!scripts/navig_quick_setup.ps1
+!scripts/navig_quick_setup.sh
+!scripts/navig-tunnel.service
+!scripts/navig-tunnel.sh
+!scripts/bridge-tunnel.service
+!scripts/README.md
