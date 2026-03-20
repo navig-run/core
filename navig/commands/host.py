@@ -5,12 +5,13 @@ The Schema tracks all assets. Every host. Every operation.
 """
 
 import os
-import shlex
 import platform
+import shlex
 from pathlib import Path
-from typing import Dict, Any, Optional
-from navig.config import get_config_manager
+from typing import Any, Dict, Optional
+
 from navig import console_helper as ch
+from navig.config import get_config_manager
 
 # Lazy import for ServerDiscovery - only loaded when discovery operations are needed
 _server_discovery = None
@@ -43,7 +44,7 @@ def _is_ppk_format(key_path: str) -> bool:
         expanded_path = Path(key_path).expanduser()
         if not expanded_path.exists():
             return False
-            
+
         with open(expanded_path, 'r', encoding='utf-8', errors='ignore') as f:
             first_line = f.readline().strip()
             return first_line.startswith('PuTTY-User-Key-File')
@@ -64,11 +65,11 @@ def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
         Tuple of (is_valid, error_or_info_message)
     """
     expanded_path = Path(key_path).expanduser()
-    
+
     # Check if file exists
     if not expanded_path.exists():
         return False, f"SSH key file not found: {key_path}"
-    
+
     # Check for PPK format
     if _is_ppk_format(key_path):
         ppk_msg = (
@@ -85,7 +86,7 @@ def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
             f"Then use the converted key path."
         )
         return False, ppk_msg
-    
+
     # Check for OpenSSH format (starts with -----BEGIN)
     try:
         with open(expanded_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -101,7 +102,7 @@ def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
 def list_hosts(options: Dict[str, Any]):
     """List all configured hosts."""
     hosts = config_manager.list_hosts()
-    
+
     if not hosts:
         ch.warning("No hosts configured", "Use 'navig host add <name>' to add one.")
         return
@@ -251,12 +252,12 @@ def use_host(name: str, options: Dict[str, Any]):
     if not config_manager.host_exists(name):
         ch.error(f"Host '{name}' not found", "Use 'navig host list' to see available hosts.")
         return
-    
+
     config_manager.set_active_host(name)
-    
+
     if not options.get('quiet'):
         ch.success(f"Switched to host: {name}")
-        
+
         # Check if there's a local override that would take precedence
         local_navig_dir = Path.cwd() / ".navig"
         if local_navig_dir.exists() and local_navig_dir.is_dir():
@@ -270,15 +271,15 @@ def use_host(name: str, options: Dict[str, Any]):
 def show_current_host(options: Dict[str, Any]):
     """Show currently active host with source information."""
     active, source = config_manager.get_active_host(return_source=True)
-    
+
     if options.get('raw'):
         ch.raw_print(active if active else "")
         return
-    
+
     if not active:
         ch.warning("No active host", "Use 'navig host use <name>' to activate one.")
         return
-    
+
     # Map source to display format
     source_display = {
         'env': '🔧 env (NAVIG_ACTIVE_HOST)',
@@ -288,7 +289,7 @@ def show_current_host(options: Dict[str, Any]):
         'default': '⚙️  default (from config)',
         'none': 'none'
     }
-    
+
     try:
         config = config_manager.load_host_config(active)
         ch.info(f"Source: {source_display.get(source, source)}")
@@ -302,9 +303,9 @@ def set_default_host(name: str, options: Dict[str, Any]):
     if not config_manager.host_exists(name):
         ch.error(f"Host '{name}' not found")
         return
-    
+
     config_manager.update_global_config({'default_host': name})
-    
+
     if not options.get('quiet'):
         ch.success(f"Default host set to: {name}")
 
@@ -314,29 +315,29 @@ def add_host(name: str, options: Dict[str, Any]):
     if config_manager.host_exists(name):
         ch.error(f"Host '{name}' already exists.")
         return
-    
+
     ch.info(f"Adding new host: {name}")
     ch.dim("Press Ctrl+C to cancel at any time.\n")
-    
+
     # Step 1: SSH Authentication
     ch.header("SSH Authentication")
     host = ch.prompt_input("SSH Host")
     port = int(ch.prompt_input("SSH Port", default="22"))
     user = ch.prompt_input("SSH User", default="root")
-    
+
     auth_method = ch.prompt_choice(
         "Authentication method",
         ["key", "password"],
         default="key"
     )
-    
+
     ssh_key = None
     ssh_password = None
-    
+
     if auth_method == "key":
         while True:
             ssh_key = ch.prompt_input("SSH Key Path", default="~/.ssh/id_rsa")
-            
+
             # Validate the SSH key
             is_valid, message = _validate_ssh_key(ssh_key)
             if is_valid:
@@ -352,10 +353,10 @@ def add_host(name: str, options: Dict[str, Any]):
                     return
     else:
         ssh_password = ch.prompt_input("SSH Password", password=True)
-    
+
     # Step 2: Test connection and run auto-discovery
     ch.header("Host Auto-Discovery")
-    
+
     ssh_config = {
         'host': host,
         'port': port,
@@ -560,7 +561,7 @@ def add_host(name: str, options: Dict[str, Any]):
 def remove_host(name: str, options: Dict[str, Any]):
     """Remove host configuration."""
     quiet = options.get('quiet', False)
-    
+
     if not config_manager.host_exists(name):
         if not quiet:
             ch.error(f"Host '{name}' not found.")
@@ -731,8 +732,8 @@ def inspect_host(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def edit_host(options: Dict[str, Any]) -> None:
     """Open host configuration in default editor (YAML file)."""
-    import subprocess
     import os
+    import subprocess
 
     host_name = options.get('host_name')
 
@@ -899,7 +900,8 @@ def test_host(options: Dict[str, Any]) -> None:
     # Build SSH command — resolve full path on Windows to avoid FileNotFoundError
     # Note: 32-bit Python on 64-bit Windows has System32→SysWOW64 redirection,
     # so ssh.exe (64-bit) must be found via SysNative alias.
-    import shutil, pathlib
+    import pathlib
+    import shutil
     ssh_binary = shutil.which('ssh') or shutil.which('ssh.exe')
     if ssh_binary is None:
         _sysroot = os.environ.get('SystemRoot', 'C:/Windows')
@@ -987,12 +989,12 @@ def test_host(options: Dict[str, Any]) -> None:
 
             raise RuntimeError(f"SSH connection failed: {error_msg}")
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as _exc:
         ch.error("Connection timeout", "Host may be unreachable or SSH service not running.")
-        raise RuntimeError("Connection timeout")
-    except FileNotFoundError:
+        raise RuntimeError("Connection timeout") from _exc
+    except FileNotFoundError as _exc:
         ch.error("SSH client not found", "Please install OpenSSH client.")
-        raise RuntimeError("SSH client not found")
+        raise RuntimeError("SSH client not found") from _exc
     except TypeError as e:
         ch.error("Configuration error", f"Invalid SSH configuration: {str(e)}")
         raise
@@ -1001,7 +1003,7 @@ def test_host(options: Dict[str, Any]) -> None:
         raise
     except Exception as e:
         ch.error("Connection test failed", str(e))
-        raise RuntimeError(f"Connection test failed: {str(e)}")
+        raise RuntimeError(f"Connection test failed: {str(e)}") from e
 
 
 def info_host(options: Dict[str, Any]) -> None:
@@ -1131,11 +1133,11 @@ def info_host(options: Dict[str, Any]) -> None:
 
 
 
+from typing import Any, Dict, Optional
+
 import typer
-from navig.cli import show_subcommand_help, deprecation_warning
-from typing import Optional, List, Dict, Any, Tuple
-from pathlib import Path
-from navig import console_helper as ch
+
+from navig.cli import deprecation_warning, show_subcommand_help
 
 # ============================================================================
 # HOST MANAGEMENT COMMANDS
@@ -1181,7 +1183,7 @@ def host_use(
     default: bool = typer.Option(False, "--default", "-d", help="Also set as default host"),
 ):
     """Switch active host context (global)."""
-    from navig.commands.host import use_host, set_default_host
+    from navig.commands.host import set_default_host, use_host
     use_host(name, ctx.obj)
     if default:
         set_default_host(name, ctx.obj)

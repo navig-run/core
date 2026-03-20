@@ -395,7 +395,7 @@ class WakeWordEngine:
             PENDING_WAKES.append(detection)
         except ImportError:
             pass  # API not running
-        
+
         # Keep old HTTP fallback if explicitly configured
         url = self.config.echo_bridge_url
         if not url:

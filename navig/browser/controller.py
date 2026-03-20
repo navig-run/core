@@ -1,9 +1,9 @@
 """Browser automation controller using Playwright."""
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
 
@@ -22,10 +22,10 @@ def _get_playwright():
         try:
             from playwright.async_api import async_playwright
             _playwright = async_playwright
-        except ImportError:
+        except ImportError as _exc:
             raise ImportError(
                 "Playwright not installed. Install with: pip install playwright && playwright install chromium"
-            )
+            ) from _exc
     return _playwright
 
 
@@ -41,17 +41,17 @@ class BrowserConfig:
     screenshot_dir: str = "~/.navig/screenshots"
     proxy: Optional[str] = None
     ignore_https_errors: bool = False
-    
+
     # Security
     allowed_domains: List[str] = field(default_factory=list)  # Empty = allow all
     blocked_domains: List[str] = field(default_factory=list)
-    
+
     @classmethod
     def from_config(cls, config: dict) -> 'BrowserConfig':
         """Load from navig config dict."""
         browser_cfg = config.get('browser', {})
         viewport = browser_cfg.get('viewport', {})
-        
+
         return cls(
             enabled=browser_cfg.get('enabled', True),
             headless=browser_cfg.get('headless', True),
@@ -87,46 +87,46 @@ class BrowserController:
         
         await controller.stop()
     """
-    
+
     def __init__(self, config: Optional[BrowserConfig] = None):
         self.config = config or BrowserConfig()
-        
+
         self._playwright = None
         self._browser = None
         self._context = None
         self._page = None
-        
+
         # Ensure directories exist
         self._screenshot_dir = Path(self.config.screenshot_dir).expanduser()
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
-    
+
     @property
     def is_running(self) -> bool:
         """Check if browser is running."""
         return self._page is not None
-    
+
     async def start(self):
         """Start browser instance."""
         if self._browser:
             logger.warning("Browser already started")
             return
-        
+
         if not self.config.enabled:
             raise RuntimeError("Browser automation is disabled in config")
-        
+
         logger.info("Starting browser...")
-        
+
         async_playwright = _get_playwright()
         self._playwright = await async_playwright().start()
-        
+
         # Launch options
         launch_opts = {
             "headless": self.config.headless,
         }
-        
+
         if self.config.proxy:
             launch_opts["proxy"] = {"server": self.config.proxy}
-        
+
         # Context options
         context_opts = {
             "viewport": {
@@ -135,12 +135,12 @@ class BrowserController:
             },
             "ignore_https_errors": self.config.ignore_https_errors,
         }
-        
+
         # Use persistent context if user_data_dir specified
         if self.config.user_data_dir:
             user_data = Path(self.config.user_data_dir).expanduser()
             user_data.mkdir(parents=True, exist_ok=True)
-            
+
             self._context = await self._playwright.chromium.launch_persistent_context(
                 user_data_path=str(user_data),
                 **{**launch_opts, **context_opts}
@@ -150,11 +150,11 @@ class BrowserController:
             self._browser = await self._playwright.chromium.launch(**launch_opts)
             self._context = await self._browser.new_context(**context_opts)
             self._page = await self._context.new_page()
-        
+
         self._page.set_default_timeout(self.config.timeout_ms)
-        
+
         logger.info("Browser started successfully")
-    
+
     async def stop(self):
         """Stop browser instance."""
         if self._context:
@@ -163,32 +163,32 @@ class BrowserController:
             await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
-        
+
         self._page = None
         self._context = None
         self._browser = None
         self._playwright = None
-        
+
         logger.info("Browser stopped")
-    
+
     async def _ensure_started(self):
         """Ensure browser is started."""
         if not self._page:
             await self.start()
-    
+
     def _check_domain_allowed(self, url: str) -> bool:
         """Check if URL domain is allowed."""
         from urllib.parse import urlparse
-        
+
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
-        
+
         # Check blocked domains
         for blocked in self.config.blocked_domains:
             pattern = blocked.lower().replace('*', '')
             if pattern in domain:
                 return False
-        
+
         # Check allowed domains (if specified)
         if self.config.allowed_domains:
             for allowed in self.config.allowed_domains:
@@ -196,9 +196,9 @@ class BrowserController:
                 if pattern in domain:
                     return True
             return False
-        
+
         return True
-    
+
     async def navigate(
         self,
         url: str,
@@ -215,52 +215,52 @@ class BrowserController:
             Dict with page info (title, url, status)
         """
         await self._ensure_started()
-        
+
         if not self._check_domain_allowed(url):
             raise ValueError(f"Domain not allowed: {url}")
-        
+
         response = await self._page.goto(url, wait_until=wait_until)
-        
+
         return {
             "url": self._page.url,
             "title": await self._page.title(),
             "status": response.status if response else None,
         }
-    
+
     async def fill(self, selector: str, value: str, **kwargs) -> bool:
         """Fill a form field."""
         await self._ensure_started()
         timeout = kwargs.get("timeout", self.config.timeout_ms)
         await self._page.fill(selector, value, timeout=timeout)
         return True
-    
+
     async def click(self, selector: str, **kwargs) -> bool:
         """Click an element."""
         await self._ensure_started()
         timeout = kwargs.get("timeout", self.config.timeout_ms)
         await self._page.click(selector, timeout=timeout)
         return True
-    
+
     async def double_click(self, selector: str, **kwargs) -> bool:
         """Double-click an element."""
         await self._ensure_started()
         timeout = kwargs.get("timeout", self.config.timeout_ms)
         await self._page.dblclick(selector, timeout=timeout)
         return True
-    
+
     async def type_text(self, selector: str, text: str, delay: int = 50) -> bool:
         """Type text into an element with delay between keystrokes."""
         await self._ensure_started()
         await self._page.type(selector, text, delay=delay)
         return True
-    
+
     async def press(self, selector: str, key: str, **kwargs) -> bool:
         """Focus an element and press a key."""
         await self._ensure_started()
         timeout = kwargs.get("timeout", self.config.timeout_ms)
         await self._page.locator(selector).press(key, timeout=timeout)
         return True
-    
+
     async def screenshot(
         self,
         name: Optional[str] = None,
@@ -279,15 +279,15 @@ class BrowserController:
             Path to saved screenshot
         """
         await self._ensure_started()
-        
+
         if not name:
             name = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        
+
         if not name.endswith('.png'):
             name += '.png'
-        
+
         path = self._screenshot_dir / name
-        
+
         if selector:
             element = await self._page.query_selector(selector)
             if element:
@@ -296,10 +296,10 @@ class BrowserController:
                 raise ValueError(f"Element not found: {selector}")
         else:
             await self._page.screenshot(path=str(path), full_page=full_page)
-        
+
         logger.info(f"Screenshot saved: {path}")
         return str(path)
-    
+
     async def screenshot_base64(self, quality: int = 60) -> str:
         """Take screenshot of current page and return as base64 string."""
         import base64
@@ -510,43 +510,43 @@ class BrowserController:
             return {"ok": False, "error": type(exc).__name__,
                     "selector": selector, "detail": err[:200],
                     "suggestion": "Element may be hidden or read-only"}
-    
+
     async def get_content(self) -> str:
         """Get page HTML content."""
         await self._ensure_started()
         return await self._page.content()
-    
+
     async def get_text(self, selector: Optional[str] = None) -> str:
         """Get text content of page or element."""
         await self._ensure_started()
-        
+
         if selector:
             element = await self._page.query_selector(selector)
             if element:
                 return await element.text_content() or ""
             return ""
-        
+
         return await self._page.text_content("body") or ""
-    
+
     async def get_attribute(self, selector: str, attribute: str) -> Optional[str]:
         """Get element attribute value."""
         await self._ensure_started()
-        
+
         element = await self._page.query_selector(selector)
         if element:
             return await element.get_attribute(attribute)
         return None
-    
+
     async def get_value(self, selector: str) -> str:
         """Get input element value."""
         await self._ensure_started()
         return await self._page.input_value(selector)
-    
+
     async def evaluate(self, script: str) -> Any:
         """Execute JavaScript in page context."""
         await self._ensure_started()
         return await self._page.evaluate(script)
-    
+
     async def wait_for_selector(
         self,
         selector: str,
@@ -565,7 +565,7 @@ class BrowserController:
             True if element found, False if timeout
         """
         await self._ensure_started()
-        
+
         try:
             await self._page.wait_for_selector(
                 selector,
@@ -575,97 +575,97 @@ class BrowserController:
             return True
         except Exception:
             return False
-    
+
     async def wait_for_navigation(self, timeout: Optional[int] = None) -> bool:
         """Wait for navigation to complete."""
         await self._ensure_started()
-        
+
         try:
             await self._page.wait_for_load_state("domcontentloaded", timeout=timeout)
             return True
         except Exception:
             return False
-    
+
     async def select_option(self, selector: str, value: str) -> bool:
         """Select option from dropdown."""
         await self._ensure_started()
         await self._page.select_option(selector, value)
         return True
-    
+
     async def check(self, selector: str) -> bool:
         """Check a checkbox."""
         await self._ensure_started()
         await self._page.check(selector)
         return True
-    
+
     async def uncheck(self, selector: str) -> bool:
         """Uncheck a checkbox."""
         await self._ensure_started()
         await self._page.uncheck(selector)
         return True
-    
+
     async def hover(self, selector: str) -> bool:
         """Hover over an element."""
         await self._ensure_started()
         await self._page.hover(selector)
         return True
-    
+
     async def scroll(self, selector: Optional[str] = None, x: int = 0, y: int = 0) -> bool:
         """Scroll page or element."""
         await self._ensure_started()
-        
+
         if selector:
             await self._page.evaluate(
                 f"document.querySelector('{selector}').scrollBy({x}, {y})"
             )
         else:
             await self._page.evaluate(f"window.scrollBy({x}, {y})")
-        
+
         return True
-    
+
     async def get_cookies(self) -> List[Dict[str, Any]]:
         """Get all cookies."""
         await self._ensure_started()
         return await self._context.cookies()
-    
+
     async def set_cookies(self, cookies: List[Dict[str, Any]]):
         """Set cookies."""
         await self._ensure_started()
         await self._context.add_cookies(cookies)
-    
+
     async def clear_cookies(self):
         """Clear all cookies."""
         await self._ensure_started()
         await self._context.clear_cookies()
-    
+
     async def go_back(self) -> bool:
         """Navigate back."""
         await self._ensure_started()
         await self._page.go_back()
         return True
-    
+
     async def go_forward(self) -> bool:
         """Navigate forward."""
         await self._ensure_started()
         await self._page.go_forward()
         return True
-    
+
     async def reload(self) -> bool:
         """Reload page."""
         await self._ensure_started()
         await self._page.reload()
         return True
-    
+
     async def get_url(self) -> str:
         """Get current URL."""
         await self._ensure_started()
         return self._page.url
-    
+
     async def get_title(self) -> str:
         """Get page title."""
         await self._ensure_started()
         return await self._page.title()
-    
+
     async def pdf(self, path: Optional[str] = None) -> str:
         """
         Save page as PDF (only works in headless mode).
@@ -673,16 +673,16 @@ class BrowserController:
         Returns path to saved PDF.
         """
         await self._ensure_started()
-        
+
         if not self.config.headless:
             raise RuntimeError("PDF generation only works in headless mode")
-        
+
         if not path:
             path = str(self._screenshot_dir / f"page_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
-        
+
         await self._page.pdf(path=path)
         return path
-    
+
     async def query_selector_all(self, selector: str) -> List[Dict[str, Any]]:
         """
         Query all matching elements and return their basic info.
@@ -690,10 +690,10 @@ class BrowserController:
         Returns list of dicts with tag, text, and common attributes.
         """
         await self._ensure_started()
-        
+
         elements = await self._page.query_selector_all(selector)
         results = []
-        
+
         for el in elements:
             tag = await el.evaluate("el => el.tagName.toLowerCase()")
             text = (await el.text_content() or "").strip()[:100]
@@ -701,7 +701,7 @@ class BrowserController:
             src = await el.get_attribute("src")
             id_attr = await el.get_attribute("id")
             class_attr = await el.get_attribute("class")
-            
+
             results.append({
                 "tag": tag,
                 "text": text,
@@ -710,5 +710,5 @@ class BrowserController:
                 "id": id_attr,
                 "class": class_attr,
             })
-        
+
         return results

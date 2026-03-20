@@ -1,5 +1,6 @@
 """Cron routes: /cron/jobs CRUD + enable/disable/run."""
 from __future__ import annotations
+
 try:
     from aiohttp import web
 except ImportError:

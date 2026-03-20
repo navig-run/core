@@ -2,8 +2,8 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
 from enum import Enum
+from typing import Any, Dict, List, Optional, Union
 
 
 class MCPMethod(str, Enum):
@@ -28,7 +28,7 @@ class JSONRPCRequest:
     params: Dict[str, Any] = field(default_factory=dict)
     id: Optional[Union[str, int]] = None
     jsonrpc: str = "2.0"
-    
+
     def to_json(self) -> str:
         """Serialize to JSON string."""
         data = {
@@ -40,7 +40,7 @@ class JSONRPCRequest:
         if self.id is not None:
             data["id"] = self.id
         return json.dumps(data)
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         data = {
@@ -61,7 +61,7 @@ class JSONRPCResponse:
     result: Optional[Any] = None
     error: Optional[Dict[str, Any]] = None
     jsonrpc: str = "2.0"
-    
+
     @classmethod
     def from_json(cls, data: str) -> 'JSONRPCResponse':
         """Parse from JSON string."""
@@ -72,7 +72,7 @@ class JSONRPCResponse:
             error=parsed.get("error"),
             jsonrpc=parsed.get("jsonrpc", "2.0"),
         )
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'JSONRPCResponse':
         """Parse from dictionary."""
@@ -82,12 +82,12 @@ class JSONRPCResponse:
             error=data.get("error"),
             jsonrpc=data.get("jsonrpc", "2.0"),
         )
-    
+
     @property
     def is_error(self) -> bool:
         """Check if response is an error."""
         return self.error is not None
-    
+
     def get_error_message(self) -> str:
         """Get error message if present."""
         if self.error:
@@ -102,7 +102,7 @@ class MCPTool:
     description: str
     input_schema: Dict[str, Any]
     server_id: str  # Which server provides this tool
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -111,7 +111,7 @@ class MCPTool:
             "inputSchema": self.input_schema,
             "server_id": self.server_id,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict, server_id: str = "") -> 'MCPTool':
         """Create from dictionary."""
@@ -131,7 +131,7 @@ class MCPResource:
     description: Optional[str] = None
     mime_type: Optional[str] = None
     server_id: str = ""
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -141,7 +141,7 @@ class MCPResource:
             "mimeType": self.mime_type,
             "server_id": self.server_id,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict, server_id: str = "") -> 'MCPResource':
         """Create from dictionary."""
@@ -161,7 +161,7 @@ class MCPPrompt:
     description: Optional[str] = None
     arguments: List[Dict[str, Any]] = field(default_factory=list)
     server_id: str = ""
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -178,7 +178,7 @@ class MCPCapabilities:
     tools: bool = False
     resources: bool = False
     prompts: bool = False
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'MCPCapabilities':
         """Parse capabilities from server response."""

@@ -1,0 +1,24 @@
+{
+  "id": "web",
+  "name": "Web — Fetch & Search",
+  "summary": "Fetch a URL or search the web. Always use command.run with curl or Python — never echo the URL as text.",
+  "commands": [
+    {
+      "name": "fetch_url",
+      "signature": "command.run(cmd=\"curl -Ls '<url>' | head -c 12000\")",
+      "description": "Fetch and read a web page. Use for: 'what is on X', 'latest post on X', 'check X website'. Replace <url> with the actual URL.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"curl -Ls 'https://example.com' | head -c 12000\"}, \"description\": \"Fetch page\"}], \"message\": \"Fetching the page\"}"
+    },
+    {
+      "name": "search",
+      "signature": "command.run(cmd=\"python3 -c \\\"import urllib.parse,urllib.request; q='<query>'; u='https://duckduckgo.com/html/?q='+urllib.parse.quote(q); print(urllib.request.urlopen(u,timeout=20).read(12000).decode('utf-8','ignore'))\\\"\")",
+      "description": "Search the web for a query. Use for: 'search for X', 'find information about X', 'what is X'.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"python3 -c \\\"import urllib.parse,urllib.request; q='latest Python release'; u='https://duckduckgo.com/html/?q='+urllib.parse.quote(q); print(urllib.request.urlopen(u,timeout=20).read(12000).decode('utf-8','ignore'))\\\"\"}, \"description\": \"Web search\"}], \"message\": \"Searching the web\"}"
+    },
+    {
+      "name": "fetch_json",
+      "signature": "command.run(cmd=\"curl -sL '<url>' | python3 -m json.tool | head -c 8000\")",
+      "description": "Fetch and pretty-print a JSON API endpoint."
+    }
+  ]
+}

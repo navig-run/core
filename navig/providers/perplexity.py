@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     import httpx
@@ -34,7 +34,6 @@ from .types import (
     ModelDefinition,
     ProviderConfig,
 )
-
 
 # API Endpoints
 PERPLEXITY_DIRECT_URL = "https://api.perplexity.ai"
@@ -87,7 +86,7 @@ class PerplexityClient(BaseProviderClient):
     - OpenRouter proxy (sk-or-xxx keys)
     - Auto-detection of API type from key prefix
     """
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -108,15 +107,15 @@ class PerplexityClient(BaseProviderClient):
         self.api_key = api_key or self._resolve_api_key()
         self.model = model
         self.timeout = timeout
-        
+
         # Determine base URL from key type
         if base_url:
             self._base_url = base_url
         else:
             self._base_url = self._detect_base_url()
-        
+
         self._client = None
-        
+
         # Create a minimal config for parent class
         self.config = ProviderConfig(
             name="perplexity",
@@ -125,73 +124,73 @@ class PerplexityClient(BaseProviderClient):
             models=PERPLEXITY_MODELS,
             env_key="PERPLEXITY_API_KEY",
         )
-    
+
     def _resolve_api_key(self) -> Optional[str]:
         """Resolve API key from environment."""
         # Try Perplexity key first
         key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
         if key:
             return key
-        
+
         # Fall back to OpenRouter
         key = os.environ.get("OPENROUTER_API_KEY", "").strip()
         if key:
             return key
-        
+
         return None
-    
+
     def _detect_base_url(self) -> str:
         """Detect base URL from API key prefix."""
         if not self.api_key:
             return PERPLEXITY_DIRECT_URL
-        
+
         key_lower = self.api_key.lower()
-        
+
         if key_lower.startswith(PERPLEXITY_KEY_PREFIX):
             return PERPLEXITY_DIRECT_URL
         elif key_lower.startswith(OPENROUTER_KEY_PREFIX):
             return OPENROUTER_URL
-        
+
         # Default to direct API
         return PERPLEXITY_DIRECT_URL
-    
+
     @property
     def is_openrouter(self) -> bool:
         """Check if using OpenRouter proxy."""
         return OPENROUTER_URL in self._base_url
-    
+
     @property
     def base_url(self) -> str:
         return self._base_url
-    
+
     def _build_headers(self) -> Dict[str, str]:
         """Build request headers."""
         headers = {
             "Content-Type": "application/json",
         }
-        
+
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        
+
         # OpenRouter requires additional headers
         if self.is_openrouter:
             headers["HTTP-Referer"] = "https://navig.run"
             headers["X-Title"] = "NAVIG"
-        
+
         return headers
-    
+
     async def _get_client(self):
         """Get or create HTTP client."""
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required for Perplexity client. Install: pip install httpx")
-        
+
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout),
                 headers=self._build_headers(),
             )
         return self._client
-    
+
     async def search(
         self,
         query: str,
@@ -212,59 +211,59 @@ class PerplexityClient(BaseProviderClient):
             PerplexitySearchResult with content and citations
         """
         client = await self._get_client()
-        
+
         model_id = model or self.model
-        
+
         # Adjust model ID for OpenRouter
         if self.is_openrouter and not model_id.startswith("perplexity/"):
             model_id = f"perplexity/{model_id}"
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": query})
-        
+
         body = {
             "model": model_id,
             "messages": messages,
             "max_tokens": max_tokens,
         }
-        
+
         # Perplexity-specific: request citations
         if not self.is_openrouter:
             body["return_citations"] = True
             body["return_related_questions"] = False
-        
+
         try:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=body,
             )
-            
+
             if response.status_code != 200:
                 raise self._parse_error(response.status_code, response.text)
-            
+
             data = response.json()
             choice = data.get("choices", [{}])[0]
             message = choice.get("message", {})
-            
+
             # Extract citations
             citations = data.get("citations", [])
-            
+
             return PerplexitySearchResult(
                 content=message.get("content", ""),
                 citations=citations,
                 model=data.get("model", model_id),
                 usage=data.get("usage"),
             )
-            
+
         except httpx.HTTPError as e:
             raise ProviderError(
                 message=str(e),
                 provider="perplexity",
                 retryable=True,
-            )
-    
+            ) from e
+
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """
         Execute chat completion using Perplexity API.
@@ -273,13 +272,13 @@ class PerplexityClient(BaseProviderClient):
         Use search() for web search queries.
         """
         client = await self._get_client()
-        
+
         model_id = request.model or self.model
-        
+
         # Adjust model ID for OpenRouter
         if self.is_openrouter and not model_id.startswith("perplexity/"):
             model_id = f"perplexity/{model_id}"
-        
+
         body: Dict[str, Any] = {
             "model": model_id,
             "messages": [
@@ -289,23 +288,23 @@ class PerplexityClient(BaseProviderClient):
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
         }
-        
+
         if request.stop:
             body["stop"] = request.stop
-        
+
         try:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=body,
             )
-            
+
             if response.status_code != 200:
                 raise self._parse_error(response.status_code, response.text)
-            
+
             data = response.json()
             choice = data.get("choices", [{}])[0]
             message = choice.get("message", {})
-            
+
             return CompletionResponse(
                 content=message.get("content"),
                 tool_calls=None,  # Perplexity doesn't support tools
@@ -314,14 +313,14 @@ class PerplexityClient(BaseProviderClient):
                 model=data.get("model"),
                 provider="perplexity",
             )
-            
+
         except httpx.HTTPError as e:
             raise ProviderError(
                 message=str(e),
                 provider="perplexity",
                 retryable=True,
-            )
-    
+            ) from e
+
     def _parse_error(self, status_code: int, response_body: str) -> ProviderError:
         """Parse error response into ProviderError."""
         try:
@@ -329,16 +328,16 @@ class PerplexityClient(BaseProviderClient):
             message = data.get("error", {}).get("message", response_body)
         except json.JSONDecodeError:
             message = response_body
-        
+
         error_type = None
         retryable = status_code in (429, 500, 502, 503, 504)
-        
+
         if status_code == 401:
             error_type = "auth"
         elif status_code == 429:
             error_type = "rate_limit"
             retryable = True
-        
+
         return ProviderError(
             message=message,
             status_code=status_code,
@@ -399,7 +398,7 @@ def is_perplexity_available() -> bool:
     key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
     if key:
         return True
-    
+
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     return bool(key)
 

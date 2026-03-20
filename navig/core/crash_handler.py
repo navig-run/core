@@ -8,15 +8,14 @@ Handles uncaught exceptions by:
 
 No telemetry or automatic reporting is performed.
 """
-import sys
-import os
-import traceback
-import platform
 import json
-import logging
+import os
+import platform
+import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Any, Dict
+from typing import Any, Dict, Optional
 
 # Environment variable to force debug mode
 ENV_DEBUG_VAR = "NAVIG_DEBUG"
@@ -51,13 +50,13 @@ class CrashHandler:
             log_dir = Path.home() / ".navig" / "logs"
             if Path(".navig").exists():
                 log_dir = Path(".navig") / "logs"
-        
+
         # Ensure it exists
         try:
             log_dir.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass  # Can't create log dir, maybe permissions?
-            
+
         self._log_dir = log_dir
         return log_dir
 
@@ -95,7 +94,7 @@ class CrashHandler:
                 "cwd": str(Path.cwd()),
                 "env_debug": os.environ.get(ENV_DEBUG_VAR),
             }
-            
+
             # Try to get version
             try:
                 from navig import __version__
@@ -121,7 +120,7 @@ class CrashHandler:
             self._cleanup_old_logs(log_dir)
 
             return log_path
-            
+
         except Exception as e:
             # Use basic stderr if logging fails
             sys.stderr.write(f"Failed to write crash log: {e}\n")
@@ -147,19 +146,19 @@ class CrashHandler:
         try:
             from rich.console import Console
             console = Console(stderr=True)
-            
+
             console.print()
             console.print(f"[bold red]💥 Navig encountered an unexpected error ({err_type})[/bold red]")
             console.print(f"   [red]{msg}[/red]")
             console.print()
-            
+
             if log_path:
                 console.print(f"[dim]Crash details saved to: {log_path}[/dim]")
-            
+
             console.print("[yellow]Tip:[/yellow] Run with [bold]--debug[/bold] for full details.")
             console.print("     Or run [bold]navig crash export[/bold] to Create a report for GitHub.")
             console.print()
-            
+
         except ImportError:
             sys.stderr.write(f"\n💥 Navig encountered an unexpected error ({err_type})\n")
             sys.stderr.write(f"   {msg}\n\n")
@@ -173,14 +172,14 @@ class CrashHandler:
         try:
             log_dir = self._get_log_dir()
             logs = sorted(log_dir.glob("crash-*.json"), key=os.path.getmtime, reverse=True)
-            
+
             if not logs:
                 return None
-                
+
             latest = logs[0]
             with open(latest, "r", encoding="utf-8") as f:
                 return json.load(f)
-                
+
         except Exception:
             return None
 

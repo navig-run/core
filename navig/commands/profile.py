@@ -36,8 +36,9 @@ profile_app = typer.Typer(
 @profile_app.command("list")
 def profile_list():
     """Show all available operating profiles."""
-    from navig.modes import all_modes, get_active_mode_name
     from rich.table import Table
+
+    from navig.modes import all_modes, get_active_mode_name
 
     active = get_active_mode_name()
     modes = all_modes()
@@ -112,7 +113,7 @@ def profile_set(
     force: bool = typer.Option(False, "--force", "-f", help="Skip PIN prompt (use with care)"),
 ):
     """Switch to a different operating profile."""
-    from navig.modes import get_mode, get_active_mode_name, set_active_mode, prompt_pin
+    from navig.modes import get_active_mode_name, get_mode, prompt_pin, set_active_mode
 
     profile = get_mode(name)
     if profile is None:
@@ -147,7 +148,8 @@ def profile_set(
 def profile_pin_set():
     """Set or change the PIN that protects operator/architect profiles."""
     import getpass
-    from navig.modes import set_pin, has_pin
+
+    from navig.modes import has_pin, set_pin
 
     if has_pin():
         ch.info("A PIN is already set. Enter the new PIN to replace it.")
@@ -157,9 +159,9 @@ def profile_pin_set():
     try:
         pin1 = getpass.getpass("   New 4-digit PIN: ")
         pin2 = getpass.getpass("   Confirm PIN:     ")
-    except (KeyboardInterrupt, EOFError):
+    except (KeyboardInterrupt, EOFError) as _exc:
         print("\nCancelled.")
-        raise typer.Exit(0)
+        raise typer.Exit(0) from _exc
 
     if pin1 != pin2:
         ch.error("PINs do not match.")
@@ -170,7 +172,7 @@ def profile_pin_set():
         ch.success("PIN saved. OPERATOR and ARCHITECT profiles are now PIN-protected.")
     except ValueError as e:
         ch.error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +185,7 @@ def profile_pin_clear(
 ):
     """Remove the stored PIN (disables PIN protection for all profiles)."""
     from pathlib import Path
+
     from navig.modes import has_pin, prompt_pin
 
     if not has_pin():

@@ -21,7 +21,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from navig.gateway.channels.telegram import TelegramChannel
@@ -347,7 +347,7 @@ class ResponseKeyboardBuilder:
         """
         # Minimal language detection check based on cyrillic characters
         is_ru = bool(re.search(r'[А-Яа-я]', ai_response))
-        
+
         # Row 1 — contextual actions
         if category == ContentCategory.CODE:
             row1 = [
@@ -1158,17 +1158,22 @@ class CallbackHandler:
 
         if action == "transcribe":
             await self._answer(cb_id, "🎤 Transcribing...")
-            from navig.gateway.channels.task_card import StepState, make_task, send_task_card, update_task_card
+            from navig.gateway.channels.task_card import (
+                StepState,
+                make_task,
+                send_task_card,
+                update_task_card,
+            )
             view = make_task([
                 ("download", "Downloading audio file"),
                 ("stt",      "Running speech-to-text"),
                 ("finalize", "Finalizing transcript"),
             ], title="🎤 Transcribing Audio...")
-            
+
             # Use raw message store if context data not easily available
             if not getattr(self.channel, "task_views", None):
                 self.channel.task_views = {}
-            
+
             await send_task_card(self.channel, chat_id, view)
             self.channel.task_views[view.message_id] = view
 
@@ -1182,7 +1187,7 @@ class CallbackHandler:
                     view.running = False
                     view.recompute_percent()
                     await update_task_card(self.channel, chat_id, view, force=True)
-                    
+
                     await self.channel.send_message(chat_id, f"📝 *Transcript:*\n{transcript}", parse_mode="Markdown")
                 else:
                     view.set_step("finalize", StepState.FAILED, "No speech found")
@@ -1190,7 +1195,7 @@ class CallbackHandler:
                     view.running = False
                     view.recompute_percent()
                     await update_task_card(self.channel, chat_id, view, force=True)
-                    
+
                     await self.channel.send_message(
                         chat_id, "⚠️ Transcription failed — this file may not contain speech."
                     )
@@ -1202,7 +1207,7 @@ class CallbackHandler:
                 view.running = False
                 view.recompute_percent()
                 await update_task_card(self.channel, chat_id, view, force=True)
-                
+
                 await self.channel.send_message(
                     chat_id, "⚠️ Transcription failed — this file may not contain speech."
                 )

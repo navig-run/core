@@ -1,12 +1,14 @@
 """Advanced Database Operation Commands - SECURE VERSION"""
-from navig import console_helper as ch
-from typing import Dict, Any
-import subprocess
 import json
-import re
-import tempfile
 import os
+import re
+import subprocess
+import tempfile
+from typing import Any, Dict
+
 from rich.table import Table
+
+from navig import console_helper as ch
 
 
 def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier") -> bool:
@@ -27,21 +29,21 @@ def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier
     """
     if not identifier:
         raise ValueError(f"{identifier_type} name cannot be empty")
-    
+
     # Only allow alphanumeric and underscores
     if not re.match(r'^[a-zA-Z0-9_]+$', identifier):
         raise ValueError(
             f"Invalid {identifier_type} name: '{identifier}'. "
             f"Only alphanumeric characters and underscores are allowed."
         )
-    
+
     # Prevent SQL injection via common keywords
     dangerous_keywords = [
         'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER',
         'TRUNCATE', 'EXEC', 'EXECUTE', 'UNION', 'WHERE', 'OR', '1=1',
         'INFORMATION_SCHEMA', '--', '/*', '*/', ';'
     ]
-    
+
     upper_identifier = identifier.upper()
     for keyword in dangerous_keywords:
         if keyword in upper_identifier:
@@ -49,11 +51,11 @@ def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier
                 f"Invalid {identifier_type} name: '{identifier}'. "
                 f"Contains disallowed keyword or pattern: {keyword}"
             )
-    
+
     # Additional length check
     if len(identifier) > 64:  # MySQL max identifier length
         raise ValueError(f"{identifier_type} name too long (max 64 characters)")
-    
+
     return True
 
 
@@ -91,11 +93,11 @@ def _create_mysql_config_file(db_user: str, db_password: str) -> str:
     """
     # Create temp file with restrictive permissions
     fd, temp_path = tempfile.mkstemp(prefix='navig_mysql_', suffix='.cnf', text=True)
-    
+
     try:
         # Set file permissions to 0600 (read/write for owner only)
         os.chmod(temp_path, 0o600)
-        
+
         # Write MySQL config format
         config_content = f"""[client]
 user={db_user}
@@ -103,7 +105,7 @@ password={db_password}
 """
         os.write(fd, config_content.encode('utf-8'))
         os.close(fd)
-        
+
         return temp_path
     except Exception as e:
         # Clean up on error
@@ -112,7 +114,7 @@ password={db_password}
             os.unlink(temp_path)
         except OSError:
             pass  # Cleanup - file may not exist
-        raise RuntimeError(f"Failed to create secure MySQL config: {e}")
+        raise RuntimeError(f"Failed to create secure MySQL config: {e}") from e
 
 
 def list_databases_cmd(options: Dict[str, Any]):
@@ -126,24 +128,24 @@ def list_databases_cmd(options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
-    
+
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     # Ensure tunnel
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
     if not tunnel_info:
         ch.warning("Starting tunnel...")
         tunnel_info = tunnel_manager.start_tunnel(server_name)
-    
+
     server_config = config_manager.load_server_config(server_name)
     db = server_config['database']
-    
+
     # Query for database sizes (safe - no user input)
     query = """
     SELECT 
@@ -153,12 +155,12 @@ def list_databases_cmd(options: Dict[str, Any]):
     GROUP BY table_schema
     ORDER BY size_mb DESC;
     """
-    
+
     # Create secure config file for credentials
     config_file = None
     try:
         config_file = _create_mysql_config_file(db['user'], db['password'])
-        
+
         mysql_cmd = [
             'mysql',
             f'--defaults-file={config_file}',  # Secure credential passing
@@ -166,23 +168,23 @@ def list_databases_cmd(options: Dict[str, Any]):
             '-P', str(tunnel_info['local_port']),
             '-e', query
         ]
-        
+
         result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-        
+
         if result.returncode != 0:
             ch.error(f"Query failed: {result.stderr}")
             return
-        
+
         # Parse output
         lines = result.stdout.strip().split('\n')
         if len(lines) < 2:
             ch.warning("No databases found.")
             return
-        
+
         # Skip header
         data_lines = lines[1:]
         databases = []
-        
+
         for line in data_lines:
             parts = line.split('\t')
             if len(parts) >= 2:
@@ -190,7 +192,7 @@ def list_databases_cmd(options: Dict[str, Any]):
                     'name': parts[0],
                     'size_mb': float(parts[1]) if parts[1] != 'NULL' else 0.0
                 })
-        
+
         # Output
         if options.get('json'):
             ch.raw_print(json.dumps({"databases": databases, "count": len(databases)}))
@@ -198,16 +200,16 @@ def list_databases_cmd(options: Dict[str, Any]):
             table = Table(title=f"Databases on {server_name}")
             table.add_column("Database", style="cyan")
             table.add_column("Size (MB)", justify="right", style="green")
-            
+
             for db_info in databases:
                 table.add_row(
                     db_info['name'],
                     f"{db_info['size_mb']:.2f}"
                 )
-            
+
             ch.console.print(table)
             ch.dim(f"\nTotal: {len(databases)} databases")
-    
+
     except FileNotFoundError:
         ch.error("mysql client not found. Please install MySQL client tools.")
     finally:
@@ -233,22 +235,22 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
-    
+
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
-    
+
     # SECURITY: Validate table name
     try:
         _validate_sql_identifier(table, "table")
     except ValueError as e:
         ch.error(str(e))
         return False
-    
+
     # Dry run mode
     if options.get('dry_run'):
         safe_table = _escape_sql_identifier(table)
@@ -258,23 +260,23 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
-    
+
     # Ensure tunnel
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
     if not tunnel_info:
         tunnel_info = tunnel_manager.start_tunnel(server_name)
-    
+
     server_config = config_manager.load_server_config(server_name)
     db = server_config['database']
-    
+
     # SECURITY: Escape table name with backticks
     safe_table = _escape_sql_identifier(table)
     query = f"OPTIMIZE TABLE {safe_table};"
-    
+
     config_file = None
     try:
         config_file = _create_mysql_config_file(db['user'], db['password'])
-        
+
         mysql_cmd = [
             'mysql',
             f'--defaults-file={config_file}',
@@ -283,9 +285,9 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             db['name'],
             '-e', query
         ]
-        
+
         result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             if options.get('json'):
                 ch.raw_print(json.dumps({"success": True, "table": table, "output": result.stdout}))
@@ -299,7 +301,7 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             else:
                 ch.error(f"Optimize failed: {result.stderr}")
             return False
-    
+
     except FileNotFoundError:
         ch.error("mysql client not found.")
         return False
@@ -323,22 +325,22 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
-    
+
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
-    
+
     # SECURITY: Validate table name
     try:
         _validate_sql_identifier(table, "table")
     except ValueError as e:
         ch.error(str(e))
         return False
-    
+
     # Dry run mode
     if options.get('dry_run'):
         safe_table = _escape_sql_identifier(table)
@@ -348,23 +350,23 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
-    
+
     # Ensure tunnel
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
     if not tunnel_info:
         tunnel_info = tunnel_manager.start_tunnel(server_name)
-    
+
     server_config = config_manager.load_server_config(server_name)
     db = server_config['database']
-    
+
     # SECURITY: Escape table name with backticks
     safe_table = _escape_sql_identifier(table)
     query = f"REPAIR TABLE {safe_table};"
-    
+
     config_file = None
     try:
         config_file = _create_mysql_config_file(db['user'], db['password'])
-        
+
         mysql_cmd = [
             'mysql',
             f'--defaults-file={config_file}',
@@ -373,9 +375,9 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             db['name'],
             '-e', query
         ]
-        
+
         result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             if options.get('json'):
                 ch.raw_print(json.dumps({"success": True, "table": table, "output": result.stdout}))
@@ -389,7 +391,7 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             else:
                 ch.error(f"Repair failed: {result.stderr}")
             return False
-    
+
     except FileNotFoundError:
         ch.error("mysql client not found.")
         return False
@@ -410,29 +412,29 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
-    
+
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     # Ensure tunnel
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
     if not tunnel_info:
         tunnel_info = tunnel_manager.start_tunnel(server_name)
-    
+
     server_config = config_manager.load_server_config(server_name)
     db = server_config['database']
-    
+
     query = "SELECT User, Host FROM mysql.user ORDER BY User, Host;"
-    
+
     config_file = None
     try:
         config_file = _create_mysql_config_file(db['user'], db['password'])
-        
+
         mysql_cmd = [
             'mysql',
             f'--defaults-file={config_file}',
@@ -440,23 +442,23 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             '-P', str(tunnel_info['local_port']),
             '-e', query
         ]
-        
+
         result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-        
+
         if result.returncode != 0:
             ch.error(f"Query failed: {result.stderr}")
             return
-        
+
         # Parse output
         lines = result.stdout.strip().split('\n')
         if len(lines) < 2:
             ch.warning("No users found.")
             return
-        
+
         # Skip header
         data_lines = lines[1:]
         users = []
-        
+
         for line in data_lines:
             parts = line.split('\t')
             if len(parts) >= 2:
@@ -464,7 +466,7 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
                     'user': parts[0],
                     'host': parts[1]
                 })
-        
+
         # Output
         if options.get('json'):
             ch.raw_print(json.dumps({"users": users, "count": len(users)}))
@@ -472,16 +474,16 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             table = Table(title=f"Database Users on {server_name}")
             table.add_column("User", style="cyan")
             table.add_column("Host", style="yellow")
-            
+
             for user_info in users:
                 table.add_row(
                     user_info['user'],
                     user_info['host']
                 )
-            
+
             ch.console.print(table)
             ch.dim(f"\nTotal: {len(users)} users")
-    
+
     except FileNotFoundError:
         ch.error("mysql client not found.")
     finally:
@@ -504,33 +506,33 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
-    
+
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
-    
+
     server_name = options.get('app') or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     # SECURITY: Validate database name
     try:
         _validate_sql_identifier(database, "database")
     except ValueError as e:
         ch.error(str(e))
         return
-    
+
     # Ensure tunnel
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
     if not tunnel_info:
         tunnel_info = tunnel_manager.start_tunnel(server_name)
-    
+
     server_config = config_manager.load_server_config(server_name)
     db = server_config['database']
-    
+
     # SECURITY: Use backtick escaping for database name in WHERE clause
     safe_database = _escape_sql_identifier(database)
-    
+
     # Note: We can't use backticks in string comparison, so we validate heavily first
     # Then use single quotes which is safe after validation
     query = f"""
@@ -542,11 +544,11 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
     WHERE table_schema = '{database}'
     ORDER BY size_mb DESC;
     """
-    
+
     config_file = None
     try:
         config_file = _create_mysql_config_file(db['user'], db['password'])
-        
+
         mysql_cmd = [
             'mysql',
             f'--defaults-file={config_file}',
@@ -554,23 +556,23 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             '-P', str(tunnel_info['local_port']),
             '-e', query
         ]
-        
+
         result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-        
+
         if result.returncode != 0:
             ch.error(f"Query failed: {result.stderr}")
             return
-        
+
         # Parse output
         lines = result.stdout.strip().split('\n')
         if len(lines) < 2:
             ch.warning(f"No tables found in database: {database}")
             return
-        
+
         # Skip header
         data_lines = lines[1:]
         tables = []
-        
+
         for line in data_lines:
             parts = line.split('\t')
             if len(parts) >= 3:
@@ -579,7 +581,7 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
                     'size_mb': float(parts[1]) if parts[1] != 'NULL' else 0.0,
                     'rows': int(parts[2]) if parts[2] != 'NULL' else 0
                 })
-        
+
         # Output
         if options.get('json'):
             ch.raw_print(json.dumps({"database": database, "tables": tables, "count": len(tables)}))
@@ -588,17 +590,17 @@ def optimize_table_cmd(table: str, options: Dict[str, Any]):
             table.add_column("Table", style="cyan")
             table.add_column("Size (MB)", justify="right", style="green")
             table.add_column("Rows", justify="right", style="yellow")
-            
+
             for tbl in tables:
                 table.add_row(
                     tbl['name'],
                     f"{tbl['size_mb']:.2f}",
                     f"{tbl['rows']:,}"
                 )
-            
+
             ch.console.print(table)
             ch.dim(f"\nTotal: {len(tables)} tables")
-    
+
     except FileNotFoundError:
         ch.error("mysql client not found.")
     finally:

@@ -4,8 +4,9 @@ Tunnel Management Commands
 Encrypted channels. The Schema's preferred method.
 """
 
+from typing import Any, Dict
+
 from navig import console_helper as ch
-from typing import Dict, Any
 from navig.config import get_config_manager
 from navig.tunnel import TunnelManager
 
@@ -16,24 +17,24 @@ tunnel_manager = TunnelManager(config_manager)
 def start_tunnel(options: Dict[str, Any]):
     """Start SSH tunnel for active server."""
     server_name = options.get('app') or config_manager.get_active_server()
-    
+
     if not server_name:
         ch.error("No active server. Use 'navig server use <name>' first.")
         return
-    
+
     if options.get('verbose'):
         ch.dim(f"Starting tunnel for: {server_name}")
-    
+
     try:
         tunnel_info = tunnel_manager.start_tunnel(server_name)
-        
+
         if not options.get('quiet'):
             ch.success("✓ Encrypted channel established")
             ch.info(f"  Server: {tunnel_info['server']}")
             ch.info(f"  Local Port: 127.0.0.1:{tunnel_info['local_port']}")
             ch.info(f"  PID: {tunnel_info['pid']}")
             ch.dim("The void sees nothing.")
-    
+
     except Exception as e:
         ch.error(f"✗ Tunnel collapsed: {e}")
         ch.info("")
@@ -51,20 +52,20 @@ def start_tunnel(options: Dict[str, Any]):
 def stop_tunnel(options: Dict[str, Any]):
     """Stop SSH tunnel."""
     server_name = options.get('app') or config_manager.get_active_server()
-    
+
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     try:
         success = tunnel_manager.stop_tunnel(server_name)
-        
+
         if success:
             if not options.get('quiet'):
                 ch.success("Connection severed")
         else:
             ch.warning("No tunnel was running")
-    
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -72,19 +73,19 @@ def stop_tunnel(options: Dict[str, Any]):
 def restart_tunnel(options: Dict[str, Any]):
     """Restart tunnel."""
     server_name = options.get('app') or config_manager.get_active_server()
-    
+
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     try:
         ch.info("Restarting tunnel...")
         tunnel_info = tunnel_manager.restart_tunnel(server_name)
-        
+
         if not options.get('quiet'):
             ch.success("Tunnel reestablished")
             ch.info(f"  Local Port: 127.0.0.1:{tunnel_info['local_port']}")
-    
+
     except Exception as e:
         ch.error(f"Error: {e}")
 
@@ -144,14 +145,14 @@ def auto_tunnel(options: Dict[str, Any]):
     For programmatic auto tunnel management, use TunnelManager.auto_tunnel() context manager.
     """
     server_name = options.get('app') or config_manager.get_active_server()
-    
+
     if not server_name:
         ch.error("No active server.")
         return
-    
+
     # Check health
     health = tunnel_manager.check_tunnel_health(server_name)
-    
+
     if health['is_healthy']:
         ch.success("Tunnel is healthy")
         if not options.get('quiet'):
@@ -159,13 +160,13 @@ def auto_tunnel(options: Dict[str, Any]):
             ch.info(f"  Port: 127.0.0.1:{health['tunnel_info']['local_port']}")
             ch.info(f"  PID: {health['tunnel_info']['pid']}")
         return
-    
+
     # Unhealthy - attempt recovery
     ch.warning(f"Tunnel health issues detected: {', '.join(health['issues'])}")
     ch.info("Attempting automatic recovery...")
-    
+
     result = tunnel_manager.recover_tunnel(server_name)
-    
+
     if result['recovered']:
         ch.success("✓ Tunnel recovered successfully")
         if not options.get('quiet'):

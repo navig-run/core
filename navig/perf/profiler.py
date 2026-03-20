@@ -24,11 +24,11 @@ Design contract (Aegis says):
 from __future__ import annotations
 
 import cProfile
+import io
 import json
 import logging
 import os
 import pstats
-import io
 import sys
 import threading
 import time

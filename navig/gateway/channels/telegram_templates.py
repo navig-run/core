@@ -16,7 +16,7 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +261,7 @@ def _smart_split(text: str, target_size: int) -> List[str]:
         if idx == -1:
             # Hard split at target
             idx = target_size
-        
+
         parts.append(remaining[:idx].strip())
         remaining = remaining[idx:].strip()
 

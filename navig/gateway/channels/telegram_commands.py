@@ -31,7 +31,6 @@ import logging
 import os
 import random
 import socket
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -41,15 +40,15 @@ from navig.platform.paths import global_config_path, msg_trace_path
 logger = logging.getLogger(__name__)
 
 from navig.gateway.channels.types import MessageMetadata
-from navig.gateway.channels.utils.decorators import rate_limited, error_handled, typing_context
+from navig.gateway.channels.utils.decorators import error_handled, rate_limited, typing_context
 
 # -- Optional keyboard / session / audio-menu deps ----------------------------
 try:
     from navig.gateway.channels.telegram_keyboards import (
-        build_audio_keyboard,
-        build_settings_hub_keyboard,
         _audio_header_text,
         _settings_hub_text,
+        build_audio_keyboard,
+        build_settings_hub_keyboard,
     )
     _HAS_KEYBOARDS = True
 except ImportError:
@@ -57,9 +56,13 @@ except ImportError:
 
 try:
     from navig.gateway.channels.audio_menu import (
-        screen_a_keyboard as _audio_screen_a_kb,
-        screen_a_text as _audio_screen_a_text,
         load_config as _load_audio_config,
+    )
+    from navig.gateway.channels.audio_menu import (
+        screen_a_keyboard as _audio_screen_a_kb,
+    )
+    from navig.gateway.channels.audio_menu import (
+        screen_a_text as _audio_screen_a_text,
     )
     _HAS_AUDIO_MENU = True
 except ImportError:
@@ -366,8 +369,8 @@ class TelegramCommandsMixin:
                 entry = data.get("bridge_copilot") or {}
                 url = entry.get("url", "")
                 if url:
-                    from urllib.parse import urlparse
                     import asyncio
+                    from urllib.parse import urlparse
                     parsed = urlparse(url)
                     host = parsed.hostname or "127.0.0.1"
                     port = parsed.port or 11435
@@ -637,8 +640,8 @@ class TelegramCommandsMixin:
         except Exception as e:
             lines.append(f"navig: - `{e}`")
         try:
-            from navig.vault import get_vault_v2
             from navig.platform import paths as _paths
+            from navig.vault import get_vault_v2
             v = get_vault_v2()
             count = len(v.list()) if hasattr(v, "list") else "?"
             lines.append(f"vault: - `{count} entries` ({_paths.vault_dir()})")
@@ -680,7 +683,8 @@ class TelegramCommandsMixin:
 
         Covers: LLM bridges - recent messages - session state - daemon warnings - vault.
         """
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
 
         SEP = "-"
         now_utc = _dt.now(_tz.utc).strftime("%H:%M UTC")
@@ -1110,7 +1114,8 @@ class TelegramCommandsMixin:
     @typing_context
     async def _handle_briefing(self, chat_id: int, user_id: int, metadata: MessageMetadata) -> None:
         """Real-data system briefing - no AI, no invented content (/briefing)."""
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
 
         now = _dt.now(_tz.utc)
         lines: list = [

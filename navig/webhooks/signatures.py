@@ -15,7 +15,7 @@ class SignatureConfig:
     header: str  # Header name containing signature
     algorithm: str = "sha256"  # sha256, sha1
     prefix: str = ""  # e.g., "sha256=" for GitHub
-    
+
     @classmethod
     def for_github(cls) -> 'SignatureConfig':
         """GitHub webhook signature config."""
@@ -24,7 +24,7 @@ class SignatureConfig:
             algorithm="sha256",
             prefix="sha256=",
         )
-    
+
     @classmethod
     def for_stripe(cls) -> 'SignatureConfig':
         """Stripe webhook signature config."""
@@ -33,7 +33,7 @@ class SignatureConfig:
             algorithm="sha256",
             prefix="",
         )
-    
+
     @classmethod
     def for_gitlab(cls) -> 'SignatureConfig':
         """GitLab webhook signature config."""
@@ -65,19 +65,19 @@ def verify_signature(
     if not signature:
         logger.warning("No signature provided")
         return False
-    
+
     if not secret:
         logger.warning("No secret configured")
         return False
-    
+
     # Handle plain token comparison (GitLab style)
     if config.algorithm == "plain":
         return hmac.compare_digest(signature, secret)
-    
+
     # Remove prefix if present
     if config.prefix and signature.startswith(config.prefix):
         signature = signature[len(config.prefix):]
-    
+
     # Compute expected signature
     if config.algorithm == "sha256":
         expected = hmac.new(
@@ -94,7 +94,7 @@ def verify_signature(
     else:
         logger.error(f"Unknown signature algorithm: {config.algorithm}")
         return False
-    
+
     # Constant-time comparison
     return hmac.compare_digest(expected.lower(), signature.lower())
 
@@ -117,20 +117,20 @@ def verify_stripe_signature(
     """
     if not signature_header:
         return False
-    
+
     # Parse Stripe signature header
     parts = {}
     for item in signature_header.split(","):
         if "=" in item:
             key, value = item.split("=", 1)
             parts[key] = value
-    
+
     timestamp = parts.get("t")
     signature = parts.get("v1")
-    
+
     if not timestamp or not signature:
         return False
-    
+
     # Verify timestamp is not too old
     import time
     try:
@@ -140,7 +140,7 @@ def verify_stripe_signature(
             return False
     except ValueError:
         return False
-    
+
     # Compute expected signature
     signed_payload = f"{timestamp}.{body.decode()}"
     expected = hmac.new(
@@ -148,7 +148,7 @@ def verify_stripe_signature(
         signed_payload.encode(),
         hashlib.sha256,
     ).hexdigest()
-    
+
     return hmac.compare_digest(expected, signature)
 
 
@@ -165,18 +165,18 @@ def extract_event_type(source: str, headers: dict, payload: dict) -> str:
         Event type string
     """
     source_lower = source.lower()
-    
+
     if source_lower == "github":
         return headers.get("X-GitHub-Event", headers.get("x-github-event", "unknown"))
-    
+
     if source_lower == "gitlab":
         return headers.get("X-Gitlab-Event", headers.get("x-gitlab-event", "unknown"))
-    
+
     if source_lower == "stripe":
         return payload.get("type", "unknown")
-    
+
     if source_lower == "slack":
         return payload.get("event", {}).get("type", payload.get("type", "unknown"))
-    
+
     # Generic extraction
     return payload.get("event_type", payload.get("event", payload.get("type", "unknown")))

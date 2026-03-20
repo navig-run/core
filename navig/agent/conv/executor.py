@@ -189,7 +189,9 @@ class TaskExecutor:
                     '{ "achieved": bool, "confidence": 0-100, '
                     '"gap": "description of what was missed, or empty string" }'
                 )
-                from navig.llm_generate import run_llm  # lazy: heavy module, only used on reflection pass
+                from navig.llm_generate import (
+                    run_llm,  # lazy: heavy module, only used on reflection pass
+                )
                 llm_result = await asyncio.to_thread(
                     run_llm,
                     messages=[{"role": "user", "content": reflection_prompt}],
@@ -320,7 +322,7 @@ class TaskExecutor:
         # through the registered tool packs (web, image, code, system, …).
         # Returns the tool output on success; raises ValueError if the tool
         # is genuinely unknown (preserves existing error contract).
-        from navig.tools.router import get_tool_router, ToolResultStatus
+        from navig.tools.router import ToolResultStatus, get_tool_router
         from navig.tools.schemas import ToolCallAction as _ToolCallAction
         _router = get_tool_router()
         _result = await _router.async_execute(
@@ -346,7 +348,7 @@ class TaskExecutor:
         Each step is dispatched through the ToolRouter.  Failure of any step
         raises RuntimeError immediately, halting the chain.
         """
-        from navig.tools.router import get_tool_router, ToolResultStatus
+        from navig.tools.router import ToolResultStatus, get_tool_router
         _router = get_tool_router()
         outputs: list[str] = []
         for i, step in enumerate(action.steps, 1):

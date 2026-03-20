@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Any, Dict
 
 HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
     # =========================================================================

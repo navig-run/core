@@ -1,11 +1,13 @@
 """
 Cross-platform automation CLI commands
 """
-import typer
 import sys
 from typing import Optional
 
+import typer
+
 from navig.lazy_loader import lazy_import
+
 ch = lazy_import("navig.console_helper")
 
 auto_app = typer.Typer(
@@ -31,14 +33,14 @@ def _get_adapter():
 def auto_status():
     """Check automation system status."""
     adapter = _get_adapter()
-    
+
     if not adapter:
         ch.error(f"No adapter available for {sys.platform}")
         raise typer.Exit(1)
-        
+
     if adapter.is_available():
         ch.success(f"Automation ready on {sys.platform}")
-        
+
         # Platform-specific details
         if sys.platform == 'linux':
             ch.info(f"  xdotool: {'✓' if adapter._has_xdotool else '✗'}")
@@ -49,7 +51,7 @@ def auto_status():
             ch.info(f"  cliclick: {'✓' if adapter._has_cliclick else '✗ (optional)'}")
     else:
         ch.error("Automation not available")
-       
+
         if sys.platform == 'linux':
             ch.info("Install required tools:")
             ch.console.print("  sudo apt install xdotool wmctrl xclip")
@@ -67,7 +69,7 @@ def auto_click(
     if not adapter or not adapter.is_available():
         ch.error("Automation not available")
         raise typer.Exit(1)
-        
+
     result = adapter.click(x, y, button)
     if result.success:
         ch.success(f"Clicked at ({x}, {y})")
@@ -85,7 +87,7 @@ def auto_type(
     if not adapter or not adapter.is_available():
         ch.error("Automation not available")
         raise typer.Exit(1)
-        
+
     result = adapter.type_text(text, delay)
     if result.success:
         ch.success("Text typed")
@@ -102,7 +104,7 @@ def auto_open(
     if not adapter or not adapter.is_available():
         ch.error("Automation not available")
         raise typer.Exit(1)
-        
+
     result = adapter.open_app(target)
     if result.success:
         ch.success(f"Opened: {target}")
@@ -117,9 +119,9 @@ def auto_windows():
     if not adapter or not adapter.is_available():
         ch.error("Automation not available")
         raise typer.Exit(1)
-        
+
     windows = adapter.get_all_windows()
-    
+
     from rich.table import Table
     table = Table(title=f"Windows ({len(windows)})")
     table.add_column("ID", style="dim")
@@ -127,7 +129,7 @@ def auto_windows():
     table.add_column("Process", style="yellow")
     table.add_column("Position", style="green")
     table.add_column("Size", style="blue")
-    
+
     for w in windows:
         table.add_row(
             str(w.id)[:8],
@@ -136,7 +138,7 @@ def auto_windows():
             f"{w.x},{w.y}",
             f"{w.width}x{w.height}"
         )
-        
+
     ch.console.print(table)
 
 @auto_app.command("snap")
@@ -149,7 +151,7 @@ def auto_snap(
     if not adapter or not adapter.is_available():
         ch.error("Automation not available")
         raise typer.Exit(1)
-        
+
     result = adapter.snap_window(selector, position)
     if result.success:
         ch.success(f"Snapped window to {position}")
@@ -166,7 +168,7 @@ def auto_clipboard(
     if not adapter or not adapter.is_available():
         ch.error("Automation not available")
         raise typer.Exit(1)
-    
+
     if text is None:
         content = adapter.get_clipboard()
         print(content)
@@ -185,7 +187,7 @@ def auto_focus():
     if not adapter or not adapter.is_available():
         ch.error("Automation not available")
         raise typer.Exit(1)
-        
+
     window = adapter.get_focused_window()
     if window:
         ch.info("Focused window:")

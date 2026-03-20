@@ -69,8 +69,9 @@ async def push_matrix_stats(
     # Gather stats from local store
     if stats is None:
         try:
-            from navig.comms.matrix_store import MatrixStore
             import os
+
+            from navig.comms.matrix_store import MatrixStore
             db_path = os.path.expanduser("~/.navig/matrix.db")
             if not os.path.exists(db_path):
                 logger.debug("Matrix stats webhook: no store DB, skip")
@@ -122,8 +123,8 @@ async def push_matrix_stats(
 
 def _push_sync(endpoint: str, payload: str, sig: str) -> bool:
     """Sync fallback using urllib."""
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     req = urllib.request.Request(
         endpoint,

@@ -6,10 +6,9 @@ Used for onboarding/wizards and to speed up repeated runs via ~/.navig/cache/ssh
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from navig.cache_store import read_json_cache, write_json_cache
-
 
 _DEFAULT_KEY_NAMES = [
     "id_ed25519",

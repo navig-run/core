@@ -4,41 +4,39 @@ NAVIG Bot Module - Telegram bot utilities and handlers.
 
 from navig.bot.help_system import (
     CATEGORIES,
-    get_all_commands,
-    get_commands_by_category,
-    get_command,
-    search_commands,
-    format_command_help,
-    format_category_help,
-    format_main_help,
     CommandInfo,
+    format_category_help,
+    format_command_help,
+    format_main_help,
+    get_all_commands,
+    get_command,
+    get_commands_by_category,
+    search_commands,
 )
-
-from navig.bot.stats_store import (
-    BotStatsStore,
-    get_bot_store,
-    Reminder,
-    CommandStat,
-)
-
 from navig.bot.start_menu import (
+    ACTION_COMMANDS,
     build_main_menu,
     build_section,
     get_action_info,
-    ACTION_COMMANDS,
+)
+from navig.bot.stats_store import (
+    BotStatsStore,
+    CommandStat,
+    Reminder,
+    get_bot_store,
 )
 
 # NLP Intent Parser - optional, imported on demand
 try:
+    from navig.bot.command_tools import (
+        COMMAND_HANDLER_MAP,
+        COMMAND_TOOLS,
+        get_command_string,
+    )
     from navig.bot.intent_parser import (
+        ConfirmationHandler,
         IntentParser,
         IntentParseResult,
-        ConfirmationHandler,
-    )
-    from navig.bot.command_tools import (
-        COMMAND_TOOLS,
-        COMMAND_HANDLER_MAP,
-        get_command_string,
     )
     NLP_AVAILABLE = True
 except ImportError:

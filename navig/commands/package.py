@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import typer
+
 from navig import console_helper as ch
 from navig.platform.paths import config_dir
 
@@ -140,8 +140,8 @@ def package_list(
             print(pkg_id)
         return
 
-    from rich.table import Table
     from rich.console import Console
+    from rich.table import Table
     _con = Console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("ID", style="cyan", no_wrap=True)
@@ -262,7 +262,7 @@ def package_install(
         manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
     except Exception as e:
         ch.error(f"Invalid navig.package.json: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     pkg_id = manifest.get("id") or src.name
 
@@ -289,7 +289,8 @@ def package_install(
     if isinstance(deps_block, dict):
         pip_deps = deps_block.get("pip", [])
     if pip_deps:
-        import subprocess, sys as _sys
+        import subprocess
+        import sys as _sys
         ch.info(f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…")
         try:
             subprocess.check_call(
@@ -306,7 +307,8 @@ def package_install(
     if post_install:
         hook_path = dest / post_install
         if hook_path.exists():
-            import subprocess, sys as _sys
+            import subprocess
+            import sys as _sys
             ch.info("Running post-install hook…")
             result = subprocess.run([_sys.executable, str(hook_path)])
             if result.returncode != 0:

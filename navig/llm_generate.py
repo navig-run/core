@@ -156,7 +156,7 @@ def run_llm(
         When enable_tools is True and the LLM requests a tool call, the result
         metadata will contain 'tool_results' with execution output.
     """
-    from navig.llm_routing_types import LLMResult, ModelSelection
+    from navig.llm_routing_types import ModelSelection
 
     t0 = time.monotonic()
 
@@ -276,7 +276,6 @@ def _call_with_fallback(
     # Try FallbackManager (providers system)
     try:
         from navig.providers.fallback import complete_with_fallback
-        from navig.providers.clients import Message
 
         result = _safe_run_async(lambda: complete_with_fallback(
             messages=messages,
@@ -340,14 +339,14 @@ def _maybe_execute_tools(result: "LLMResult") -> "LLMResult":
     Returns the (possibly enriched) LLMResult.
     """
     try:
+        from navig.tools.router import get_tool_router
         from navig.tools.schemas import (
-            ToolCallAction,
             MultiStepAction,
             RespondAction,
-            parse_llm_action,
+            ToolCallAction,
             format_tool_result_for_llm,
+            parse_llm_action,
         )
-        from navig.tools.router import get_tool_router
     except ImportError:
         logger.debug("Tool modules not available — skipping tool execution")
         return result
@@ -426,7 +425,7 @@ def _build_pipeline_context(
     or throws, the pipeline continues with an empty context dict.
     """
     try:
-        from navig.memory.context_builder import build_context, EMPTY_CONTEXT
+        from navig.memory.context_builder import build_context
         return build_context(user_input or "", caller_info, session_id)
     except Exception as exc:
         logger.debug("ContextBuilder unavailable or failed: %s", exc)
@@ -554,7 +553,7 @@ def _safe_run_async(func):
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(func())
-    
+
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(lambda: asyncio.run(func())).result()
@@ -591,7 +590,9 @@ def _call_via_providers_system(
 ) -> str:
     """Use the existing navig.providers system for the call."""
     from navig.providers import (
-        Message, CompletionRequest, create_client,
+        CompletionRequest,
+        Message,
+        create_client,
         get_builtin_provider,
     )
     from navig.providers.auth import AuthProfileManager
@@ -600,8 +601,8 @@ def _call_via_providers_system(
     provider_cfg = get_builtin_provider(provider)
     if provider_cfg is None:
         # Build a minimal OpenAI-compatible config
-        from navig.providers.types import ProviderConfig, ModelApi
         from navig.llm_router import PROVIDER_BASE_URLS
+        from navig.providers.types import ModelApi, ProviderConfig
         url = base_url or PROVIDER_BASE_URLS.get(provider, "https://openrouter.ai/api/v1")
         provider_cfg = ProviderConfig(
             name=provider,
@@ -645,6 +646,7 @@ def _call_direct_openai_compat(
 ) -> str:
     """Direct HTTP call for OpenAI-compatible APIs (fallback)."""
     import httpx
+
     from navig.llm_router import PROVIDER_BASE_URLS, _resolve_api_key
 
     url = base_url or PROVIDER_BASE_URLS.get(provider, "https://openrouter.ai/api/v1")

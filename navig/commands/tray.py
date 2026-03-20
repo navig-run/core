@@ -15,6 +15,7 @@ from typing import Optional
 import typer
 
 from navig.lazy_loader import lazy_import
+
 ch = lazy_import("navig.console_helper")
 
 tray_app = typer.Typer(
@@ -82,10 +83,10 @@ def tray_start(
     try:
         import pystray  # noqa: F401
         from PIL import Image  # noqa: F401
-    except ImportError:
+    except ImportError as _exc:
         ch.error("Missing dependencies: pystray, Pillow")
         ch.info("Install with: pip install pystray Pillow")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from _exc
 
     python = sys.executable
 
@@ -147,7 +148,7 @@ def tray_stop():
         ch.success(f"NAVIG Tray stopped (PID {pid})")
     except Exception as e:
         ch.error(f"Failed to stop tray: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @tray_app.command("status")
@@ -209,7 +210,7 @@ def tray_install(
         subprocess.run(args, check=True)
     except subprocess.CalledProcessError as e:
         ch.error(f"Installation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @tray_app.command("uninstall")

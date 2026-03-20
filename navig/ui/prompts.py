@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from typing import Dict, Optional
 
-from navig.ui.theme import STYLE_COMMAND, STYLE_DIM, console
+from navig.ui.theme import console
 
 
 def render_keymap_footer(

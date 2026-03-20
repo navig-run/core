@@ -11,10 +11,10 @@ Use this tier for:
 For simple/internal sites use navig.browser.controller (faster, no overhead).
 """
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
 
@@ -39,11 +39,11 @@ def _get_patchright():
                     "Patchright not installed — falling back to vanilla Playwright. "
                     "Install with: pip install patchright && patchright install chromium"
                 )
-            except ImportError:
+            except ImportError as _exc:
                 raise ImportError(
                     "Neither patchright nor playwright is installed. "
                     "Run: pip install patchright && patchright install chromium"
-                )
+                ) from _exc
     return _patchright
 
 
@@ -352,7 +352,7 @@ class StealthController:
                 [el, text],
             )
             return {"ok": True}
-        except Exception as exc:
+        except Exception:
             try:
                 await self._page.fill(selector, text, timeout=timeout)
                 return {"ok": True}

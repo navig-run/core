@@ -1,0 +1,14 @@
+type: playbook
+name: My Test Runbook
+description: A test runbook
+version: 1.0.0
+author: navig
+requires_navig: '>=2.0.0'
+requires_packs: []
+steps: []
+variables: {}
+workflows: []
+quick_actions: []
+tags: []
+homepage: ''
+license: MIT

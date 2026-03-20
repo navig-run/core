@@ -1,0 +1,9 @@
+﻿{
+  "id": "music",
+  "version": "1.0.0",
+  "description": "Search and link music via public APIs.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

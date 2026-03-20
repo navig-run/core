@@ -31,7 +31,7 @@ class DebugLogger:
     - Structured log format with clear separators
     - Performance-optimized with buffered I/O
     """
-    
+
     # Patterns for sensitive data redaction
     # Extended with patterns from navig.core.security module (Agent-inspired)
     SENSITIVE_PATTERNS = [
@@ -61,9 +61,9 @@ class DebugLogger:
         (re.compile(r'(mysql://[^:]+:)([^@]+)(@)', re.IGNORECASE), r'\1***REDACTED***\3'),
         (re.compile(r'(postgres://[^:]+:)([^@]+)(@)', re.IGNORECASE), r'\1***REDACTED***\3'),
     ]
-    
+
     SEPARATOR = "=" * 80
-    
+
     def __init__(
         self,
         log_path: Optional[Path] = None,
@@ -91,7 +91,7 @@ class DebugLogger:
         self._command_start_time: Optional[datetime] = None
 
         self._setup_logger()
-    
+
     def _setup_logger(self):
         """Configure the rotating file handler and logger."""
         if self.log_path is None:
@@ -99,17 +99,17 @@ class DebugLogger:
             from navig.config import get_config_manager
             config_manager = get_config_manager()
             self.log_path = config_manager.base_dir / "debug.log"
-        
+
         # Ensure parent directory exists
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Create logger with unique name to avoid conflicts
         self.logger = logging.getLogger("navig.debug")
         self.logger.setLevel(logging.DEBUG)
-        
+
         # Remove existing handlers to avoid duplicates
         self.logger.handlers.clear()
-        
+
         # Create rotating file handler
         handler = RotatingFileHandler(
             self.log_path,
@@ -118,11 +118,11 @@ class DebugLogger:
             encoding='utf-8',
         )
         handler.setLevel(logging.DEBUG)
-        
+
         # Simple formatter - we handle formatting in log methods
         formatter = logging.Formatter('%(message)s')
         handler.setFormatter(formatter)
-        
+
         self.logger.addHandler(handler)
         self._handler = handler  # Store reference for cleanup
 
@@ -139,29 +139,29 @@ class DebugLogger:
         """Get current timestamp in ISO 8601 format with milliseconds."""
         now = datetime.now(timezone.utc)
         return now.strftime('%Y-%m-%dT%H:%M:%S.') + f'{now.microsecond // 1000:03d}Z'
-    
+
     def _redact_sensitive_data(self, text: str) -> str:
         """Redact sensitive information from text."""
         if not text:
             return text
-        
+
         result = text
         for pattern, replacement in self.SENSITIVE_PATTERNS:
             result = pattern.sub(replacement, result)
         return result
-    
+
     def _truncate_output(self, output: str) -> str:
         """Truncate output if it exceeds the configured limit."""
         if not output:
             return output
-        
+
         output_bytes = output.encode('utf-8', errors='replace')
         if len(output_bytes) <= self.truncate_output_bytes:
             return output
-        
+
         truncated = output_bytes[:self.truncate_output_bytes].decode('utf-8', errors='replace')
         return f"{truncated}\n... [OUTPUT TRUNCATED - {len(output_bytes)} bytes total]"
-    
+
     def _log(self, message: str):
         """Write message to log file."""
         if self.logger:
@@ -358,21 +358,21 @@ def get_debug_logger() -> logging.Logger:
         pass
 
     global _global_logger
-    
+
     # Create a standard Python logger
     logger = logging.getLogger("navig.gateway")
-    
+
     # Only configure if not already configured
     if not logger.handlers:
         logger.setLevel(logging.DEBUG)
-        
+
         # Try to use the NAVIG debug log path
         try:
             from navig.config import get_config_manager
             config_manager = get_config_manager()
             log_path = config_manager.base_dir / "debug.log"
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Add rotating file handler
             handler = RotatingFileHandler(
                 log_path,
@@ -381,14 +381,14 @@ def get_debug_logger() -> logging.Logger:
                 encoding='utf-8',
             )
             handler.setLevel(logging.DEBUG)
-            
+
             # Format with timestamp
             formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
             )
             handler.setFormatter(formatter)
-            
+
             logger.addHandler(handler)
         except Exception:
             # Fallback to console if file logging fails
@@ -397,9 +397,9 @@ def get_debug_logger() -> logging.Logger:
             formatter = logging.Formatter('%(levelname)s - %(message)s')
             handler.setFormatter(formatter)
             logger.addHandler(handler)
-        
+
         # Prevent propagation to root
         logger.propagate = False
-    
+
     return logger
 

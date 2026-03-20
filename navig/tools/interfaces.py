@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Union
 
-
 # =============================================================================
 # Stream Events
 # =============================================================================
@@ -22,7 +21,7 @@ class StreamStatus:
     step: str
     detail: str = ""
     progress: int = 0
-    
+
     @property
     def phase(self) -> EventPhase:
         return EventPhase.STATUS
@@ -72,7 +71,7 @@ class ExecutionContext:
     cwd: str = ""
     env: Dict[str, str] = field(default_factory=dict)
     owner_only: bool = False
-    
+
 
 @dataclass
 class ExecutionRequest:

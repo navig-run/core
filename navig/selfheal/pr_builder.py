@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from navig.selfheal.git_manager import UPSTREAM_REPO, _github_headers, _github_request, get_github_username
+from navig.selfheal.git_manager import UPSTREAM_REPO, _github_request, get_github_username
 from navig.selfheal.scanner import ScanFinding
 
 # ---------------------------------------------------------------------------

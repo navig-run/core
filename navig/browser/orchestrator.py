@@ -103,7 +103,7 @@ class CortexOrchestrator:
 
         # ── 4. Call LLM ───────────────────────────────────────────────────────
         logger.info("[Cortex] Requesting action for goal: '%s'", self.goal)
-        
+
         # Retry up to 2 times on rate-limit (429) errors
         last_exc = None
         for attempt in range(3):
@@ -125,7 +125,7 @@ class CortexOrchestrator:
                 m = re.search(r"retry in (\d+(?:\.\d+)?)s", err_str)
                 if m:
                     retry_delay = min(int(float(m.group(1))) + 2, 120)  # cap at 2 min
-                
+
                 if "429" in err_str and attempt < 2:
                     logger.warning(
                         "[Cortex] Rate limited (attempt %d/3). Waiting %ds...",
@@ -134,7 +134,7 @@ class CortexOrchestrator:
                     await asyncio.sleep(retry_delay)
                 else:
                     break
-        
+
         if last_exc:
             logger.error("[Cortex] LLM call raised: %s", last_exc)
             return {"action": "error", "error": f"LLM exception: {last_exc}"}

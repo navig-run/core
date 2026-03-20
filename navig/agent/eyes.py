@@ -27,7 +27,7 @@ from navig.agent.nervous_system import EventPriority, EventType, NervousSystem
 @dataclass
 class SystemMetrics:
     """System resource metrics."""
-    
+
     cpu_percent: float = 0.0
     memory_percent: float = 0.0
     memory_used_mb: float = 0.0
@@ -38,7 +38,7 @@ class SystemMetrics:
     network_bytes_recv: int = 0
     process_count: int = 0
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'cpu_percent': self.cpu_percent,
@@ -57,14 +57,14 @@ class SystemMetrics:
 @dataclass
 class Alert:
     """System alert."""
-    
+
     level: str  # info, warning, critical
     category: str  # cpu, memory, disk, service, log
     message: str
     value: Any = None
     threshold: Any = None
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'level': self.level,
@@ -89,7 +89,7 @@ class Eyes(Component):
     When thresholds are exceeded or anomalies detected,
     the Eyes emit alerts through the nervous system.
     """
-    
+
     def __init__(
         self,
         config: EyesConfig,
@@ -97,18 +97,18 @@ class Eyes(Component):
     ):
         super().__init__("eyes", nervous_system)
         self.config = config
-        
+
         # Monitoring tasks
         self._monitoring_task: Optional[asyncio.Task] = None
         self._log_watcher_task: Optional[asyncio.Task] = None
         self._file_watcher_task: Optional[asyncio.Task] = None
-        
+
         # State
         self._last_metrics: Optional[SystemMetrics] = None
         self._alerts: List[Alert] = []
         self._max_alerts = 100
         self._watched_files: Dict[str, float] = {}  # path -> last_mtime
-        
+
         # Try to import psutil
         self._psutil: Optional[Any] = None
         try:
@@ -116,17 +116,17 @@ class Eyes(Component):
             self._psutil = psutil
         except ImportError:
             pass
-    
+
     async def _on_start(self) -> None:
         """Start monitoring tasks."""
         self._monitoring_task = asyncio.create_task(self._monitoring_loop())
-        
+
         if self.config.log_paths:
             self._log_watcher_task = asyncio.create_task(self._log_watcher_loop())
-        
+
         if self.config.watch_paths:
             self._file_watcher_task = asyncio.create_task(self._file_watcher_loop())
-    
+
     async def _on_stop(self) -> None:
         """Stop monitoring tasks."""
         for task in [self._monitoring_task, self._log_watcher_task, self._file_watcher_task]:
@@ -136,7 +136,7 @@ class Eyes(Component):
                     await task
                 except asyncio.CancelledError:
                     pass
-    
+
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for eyes."""
         return {
@@ -146,72 +146,72 @@ class Eyes(Component):
             'watched_files': len(self.config.watch_paths),
             'psutil_available': self._psutil is not None,
         }
-    
+
     async def _monitoring_loop(self) -> None:
         """Main monitoring loop."""
         while True:
             try:
                 await asyncio.sleep(self.config.monitoring_interval)
-                
+
                 # Collect metrics
                 metrics = await self.collect_metrics()
                 self._last_metrics = metrics
-                
+
                 # Emit metrics event
                 await self.emit(
                     EventType.METRIC_COLLECTED,
                     {'metrics': metrics.to_dict()}
                 )
-                
+
                 # Check thresholds and emit alerts
                 await self._check_thresholds(metrics)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception:
                 pass
-    
+
     async def collect_metrics(self) -> SystemMetrics:
         """Collect current system metrics."""
         metrics = SystemMetrics()
-        
+
         if self._psutil:
             try:
                 # CPU
                 metrics.cpu_percent = self._psutil.cpu_percent(interval=0.1)
-                
+
                 # Memory
                 mem = self._psutil.virtual_memory()
                 metrics.memory_percent = mem.percent
                 metrics.memory_used_mb = mem.used / (1024 * 1024)
-                
+
                 # Disk
                 disk = self._psutil.disk_usage('/')
                 metrics.disk_percent = disk.percent
                 metrics.disk_used_gb = disk.used / (1024 ** 3)
-                
+
                 # Load average (Unix only)
                 if hasattr(os, 'getloadavg'):
                     metrics.load_average = os.getloadavg()
-                
+
                 # Network
                 net = self._psutil.net_io_counters()
                 metrics.network_bytes_sent = net.bytes_sent
                 metrics.network_bytes_recv = net.bytes_recv
-                
+
                 # Processes
                 metrics.process_count = len(self._psutil.pids())
-                
+
             except Exception:
                 pass
-        
+
         metrics.timestamp = datetime.now()
         return metrics
-    
+
     async def _check_thresholds(self, metrics: SystemMetrics) -> None:
         """Check metrics against thresholds and emit alerts."""
         alerts = []
-        
+
         # CPU threshold
         if metrics.cpu_percent > self.config.cpu_threshold:
             alerts.append(Alert(
@@ -221,7 +221,7 @@ class Eyes(Component):
                 value=metrics.cpu_percent,
                 threshold=self.config.cpu_threshold,
             ))
-        
+
         # Memory threshold
         if metrics.memory_percent > self.config.memory_threshold:
             alerts.append(Alert(
@@ -231,7 +231,7 @@ class Eyes(Component):
                 value=metrics.memory_percent,
                 threshold=self.config.memory_threshold,
             ))
-        
+
         # Disk threshold
         if metrics.disk_percent > self.config.disk_threshold:
             alerts.append(Alert(
@@ -241,38 +241,38 @@ class Eyes(Component):
                 value=metrics.disk_percent,
                 threshold=self.config.disk_threshold,
             ))
-        
+
         # Emit alerts
         for alert in alerts:
             self._alerts.append(alert)
-            
+
             await self.emit(
                 EventType.ALERT_TRIGGERED,
                 {'alert': alert.to_dict()},
                 priority=EventPriority.HIGH if alert.level == 'critical' else EventPriority.NORMAL
             )
-        
+
         # Trim alerts
         if len(self._alerts) > self._max_alerts:
             self._alerts = self._alerts[-self._max_alerts:]
-    
+
     async def _log_watcher_loop(self) -> None:
         """Watch log files for important entries."""
         # Track file positions
         positions: Dict[str, int] = {}
-        
+
         # Patterns to watch for
         error_patterns = ['error', 'exception', 'failed', 'critical', 'fatal']
-        
+
         while True:
             try:
                 await asyncio.sleep(10)  # Check every 10 seconds
-                
+
                 for log_path in self.config.log_paths:
                     path = Path(log_path).expanduser()
                     if not path.exists():
                         continue
-                    
+
                     try:
                         with open(path, 'r', errors='ignore') as f:
                             # Seek to last known position
@@ -283,7 +283,7 @@ class Eyes(Component):
                                 f.seek(0, 2)
                                 positions[str(path)] = f.tell()
                                 continue
-                            
+
                             # Read new lines
                             for line in f:
                                 line_lower = line.lower()
@@ -298,43 +298,43 @@ class Eyes(Component):
                                             }
                                         )
                                         break
-                            
+
                             positions[str(path)] = f.tell()
                     except Exception:
                         pass
-                
+
             except asyncio.CancelledError:
                 break
             except Exception:
                 pass
-    
+
     async def _file_watcher_loop(self) -> None:
         """Watch for file changes."""
         while True:
             try:
                 await asyncio.sleep(5)  # Check every 5 seconds
-                
+
                 for watch_path in self.config.watch_paths:
                     path = Path(watch_path).expanduser()
-                    
+
                     if path.is_file():
                         await self._check_file_change(path)
                     elif path.is_dir():
                         for file_path in path.rglob('*'):
                             if file_path.is_file():
                                 await self._check_file_change(file_path)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception:
                 pass
-    
+
     async def _check_file_change(self, path: Path) -> None:
         """Check if a file has changed."""
         try:
             mtime = path.stat().st_mtime
             path_str = str(path)
-            
+
             if path_str in self._watched_files:
                 if mtime != self._watched_files[path_str]:
                     await self.emit(
@@ -345,19 +345,19 @@ class Eyes(Component):
                             'new_mtime': mtime,
                         }
                     )
-            
+
             self._watched_files[path_str] = mtime
         except Exception:
             pass
-    
+
     def get_metrics(self) -> Optional[SystemMetrics]:
         """Get latest metrics."""
         return self._last_metrics
-    
+
     def get_alerts(self, limit: int = 10) -> List[Alert]:
         """Get recent alerts."""
         return self._alerts[-limit:]
-    
+
     def get_system_info(self) -> Dict[str, Any]:
         """Get static system information."""
         info = {
@@ -369,7 +369,7 @@ class Eyes(Component):
             'processor': platform.processor(),
             'python_version': platform.python_version(),
         }
-        
+
         if self._psutil:
             try:
                 info['cpu_count'] = self._psutil.cpu_count()
@@ -378,5 +378,5 @@ class Eyes(Component):
                 info['memory_total_gb'] = mem.total / (1024 ** 3)
             except Exception:
                 pass
-        
+
         return info

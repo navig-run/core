@@ -1,0 +1,9 @@
+﻿{
+  "id": "video_download",
+  "version": "1.0.0",
+  "description": "Download a video from a URL using yt-dlp.",
+  "provides": [],
+  "depends": {
+    "pip": ["yt-dlp>=2024.1.0"]
+  }
+}

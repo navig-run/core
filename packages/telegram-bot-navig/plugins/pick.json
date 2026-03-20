@@ -1,0 +1,9 @@
+﻿{
+  "id": "pick",
+  "version": "1.0.0",
+  "description": "Pick a random item from a list.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

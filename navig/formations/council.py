@@ -10,10 +10,10 @@ All AI calls go through the existing navig.ai infrastructure.
 
 from __future__ import annotations
 
-import json
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any, Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
@@ -141,7 +141,7 @@ def run_council(
     """
     timeout = timeout_per_agent or AGENT_TIMEOUT_S
     rounds = max(1, min(rounds, MAX_ROUNDS))
-    
+
     if not formation.loaded_agents:
         return {
             "error": f"Formation '{formation.id}' has no loaded agents. "

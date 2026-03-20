@@ -1,10 +1,13 @@
-import os
-import yaml
-import re
 import glob
+import os
+import re
 from typing import Dict, List, Optional
-from .models import SkillManifest, NavigCommand, NavigPack
+
+import yaml
+
+from .models import NavigCommand, NavigPack, SkillManifest
 from .plugin_manager import PluginManager
+
 
 class NavigKernel:
     def __init__(self, root_path: str):
@@ -28,7 +31,7 @@ class NavigKernel:
             os.path.join(self.root_path, "plugins", "**", "skills", "**", "*.md"),
             os.path.join(self.root_path, ".navig", "skills", "**", "*.md"),
         ]
-        
+
         for pattern in patterns:
             for filepath in glob.glob(pattern, recursive=True):
                 self._parse_skill_file(filepath)
@@ -37,16 +40,16 @@ class NavigKernel:
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             match = re.search(r'^---\n(.*?)\n---', content, re.DOTALL)
             if not match:
                 return
 
             frontmatter = yaml.safe_load(match.group(1))
-            
+
             skill = SkillManifest(**frontmatter)
             self.skills[skill.name] = skill
-            
+
             # Register commands
             for cmd in skill.navig_commands:
                 cmd.source_skill = skill.name
@@ -63,19 +66,19 @@ class NavigKernel:
             os.path.join(self.root_path, "context", "packs", "**", "*.yml"), # Support context packs if any
             os.path.join(self.root_path, ".navig", "packs", "**", "*.yml"),
         ]
-        
+
         for pattern in patterns:
             for filepath in glob.glob(pattern, recursive=True):
                 self._parse_pack_file(filepath)
-                
+
     def _parse_pack_file(self, filepath: str):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = yaml.safe_load(f)
-            
+
             # Helper to map 'steps' properly if they are strings (simple commands) or dicts
             # For robust implementation we need validation. Pydantic handles basic types.
-            
+
             pack = NavigPack(**content)
             self.packs[pack.name] = pack
         except Exception:
@@ -90,54 +93,54 @@ class NavigKernel:
 
         print(f"\n📦 RUNNING PACK: {pack.name}")
         print(f"   {pack.description}")
-        
+
         for i, step in enumerate(pack.steps):
             print(f"\n➡️  Step {i+1}: {step.description or step.name}")
             print(f"   Command: {step.command}")
-            
+
             # Here we resolve the command in the kernel to check for safety!
             # We assume step.command is a full CLI string "navig docker restart ..."
-            
+
             # Simple simulation of execution
             # In reality, we'd parse the command string, resolve intent, check safety, execute.
             parts = step.command.split()
             cmd_name = None
-            
+
             # Try to resolve command from the string
             # This is tricky without a full parser, but let's try strict matching
             # e.g. "navig fs list" -> we look for a command with syntax starting with this
             # For now, just execute blindly (unsafe) or mock it.
-            
+
             print(f"   ✅ (Mock) Executed: {step.command}")
 
-    def resolve_intent(self, query: str) -> Optional[object]: 
+    def resolve_intent(self, query: str) -> Optional[object]:
         # Returns NavigCommand or NavigPack
         query_lower = query.lower()
         query_tokens = set(query_lower.split())
-        
+
         # Check Packs first (as high level intents)
         for name, pack in self.packs.items():
             # Match exact name or name with spaces instead of hyphens
             normalized_name = name.replace("-", " ")
             if name in query_lower or normalized_name in query_lower:
                 return pack
-            
+
         # Check Commands (as before)
         # ... (same logic as before) ...
         best_match = None
         max_score = 0
-        
+
         # print(f"DEBUG: Resolving '{query}'")
 
         for name, cmd in self.commands.items():
             score = 0
-            
+
             # 1. Exact syntax prefix match (High confidence)
             # e.g. "navig docker" in "navig docker ps"
-            cmd_start = cmd.syntax.lower().split()[0:2] 
+            cmd_start = cmd.syntax.lower().split()[0:2]
             if " ".join(cmd_start) in query_lower:
                 score += 20
-                
+
             # 2. Command name/trigger match
             # e.g. "recall" in "navig memory recall"
             # We strip common prefixes like "git-" or "docker-" if present, or just match the name
@@ -158,7 +161,7 @@ class NavigKernel:
                     # If user query is very similar to example
                     if ex.user.lower() in query_lower:
                         score += 30
-                    
+
                     # Token overlap with example
                     ex_tokens = set(ex.user.lower().split())
                     ex_overlap = query_tokens.intersection(ex_tokens)
@@ -169,7 +172,7 @@ class NavigKernel:
             if score > max_score:
                 max_score = score
                 best_match = cmd
-        
+
         if max_score > 5: # Threshold
             return best_match
         return None
@@ -189,7 +192,7 @@ class NavigKernel:
                 return
 
         print(f"✅ Executing {cmd.syntax}...")
-        
+
         parts = cmd.syntax.split()
         if len(parts) >= 3 and parts[0] == "navig" and parts[1] == "memory":
             plugin_name = "navig-memory"
@@ -201,14 +204,14 @@ class NavigKernel:
             plugin_name = "navig-windows-automation"
             # Map command name to plugin method
             # cmd.name is "window-list", plugin method is "window-list"
-            method = cmd.name 
-            
+            method = cmd.name
+
             # Simple arg parsing for prototype
             # args is meant to be a list of strings passed after the command?
             # actually args in execute_command comes from query.split()
             # We need to map positional args to named params if possible, or pass as list
             # The plugin methods expect named args (x, y, etc)
-            
+
             # This is complex without a real parser.
             # providing empty dict for now, or naive mapping
             params = {}
@@ -221,7 +224,7 @@ class NavigKernel:
                  elif method == "click" and len(args) >= 2:
                      params["x"] = args[0]
                      params["y"] = args[1]
-            
+
             self._exec_plugin(plugin_name, method, params)
 
         else:

@@ -25,7 +25,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 try:
-    from argon2.low_level import hash_secret_raw, Type as _A2Type  # type: ignore
+    from argon2.low_level import Type as _A2Type
+    from argon2.low_level import hash_secret_raw  # type: ignore
 
     _HAS_ARGON2 = True
 except ImportError:

@@ -1,7 +1,6 @@
 """Data models for the navig update system."""
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 

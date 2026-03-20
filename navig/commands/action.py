@@ -16,9 +16,10 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict
 
 import typer
+
 from navig import console_helper as ch
 
 action_app = typer.Typer(
@@ -76,7 +77,12 @@ def _load_all_actions() -> list[Dict[str, Any]]:
             _absorb_file(yaml_file)
 
     try:
-        from navig.platform.paths import builtin_store_dir, store_dir, builtin_packages_dir, packages_dir
+        from navig.platform.paths import (
+            builtin_packages_dir,
+            builtin_store_dir,
+            packages_dir,
+            store_dir,
+        )
         _absorb_dir(builtin_store_dir() / "actions")
         _absorb_dir(store_dir() / "actions")
         for root in (builtin_packages_dir(), packages_dir()):
@@ -122,8 +128,8 @@ def action_list(
             print(a.get("name", ""))
         return
 
-    from rich.table import Table
     from rich.console import Console
+    from rich.table import Table
     console = Console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Name", style="cyan", no_wrap=True)
@@ -248,7 +254,7 @@ def action_run(
         ch.info("[dry-run] Command not executed.")
         return
 
-    import subprocess, shlex
+    import subprocess
     try:
         result = subprocess.run(
             command,
@@ -259,4 +265,4 @@ def action_run(
             ch.dim(f"Exit code: {result.returncode}")
     except Exception as e:
         ch.error(f"Failed to run action: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e

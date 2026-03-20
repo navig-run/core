@@ -5,12 +5,12 @@ Manages the workspace directory containing agent context files (bootstrap files)
 Inspired by advanced workspace and agent template systems.
 """
 import json
+import logging
 import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-import logging
+from typing import Any, Dict, List, Optional
 
 from navig.workspace_ownership import (
     USER_NAVIG_DIR,
@@ -36,7 +36,7 @@ class WorkspaceManager:
     personality, capabilities, and user preferences. These are
     injected into the AI context at session start.
     """
-    
+
     # Bootstrap files in priority order
     BOOTSTRAP_FILES = [
         "IDENTITY.md",    # Agent identity (name, emoji, personality)
@@ -47,7 +47,7 @@ class WorkspaceManager:
         "HEARTBEAT.md",   # Background task instructions (optional)
         "BOOTSTRAP.md",   # First-run only (deleted after)
     ]
-    
+
     def __init__(
         self,
         workspace_path: Optional[Path] = None,
@@ -61,10 +61,10 @@ class WorkspaceManager:
             config_path: Custom config file path (default: ~/.navig/navig.json)
         """
         self.config_path = config_path or DEFAULT_CONFIG_FILE
-        
+
         # Load config to get workspace path
         self.config = self._load_config()
-        
+
         # Use provided path, config path, or default
         # AUDIT self-check: Correct implementation? yes - explicit non-project paths are honored, project-local paths are canonicalized.
         # AUDIT self-check: Break callers? no - implicit/default paths still use ownership resolution.
@@ -150,7 +150,7 @@ class WorkspaceManager:
         if self.legacy_workspace_path and self.legacy_workspace_path not in paths:
             paths.append(self.legacy_workspace_path)
         return paths
-    
+
     def _load_config(self) -> Optional[Dict[str, Any]]:
         """Load configuration from JSON file."""
         if self.config_path.exists():
@@ -160,14 +160,14 @@ class WorkspaceManager:
             except Exception as e:
                 logger.warning(f"Failed to load config: {e}")
         return None
-    
+
     def is_initialized(self) -> bool:
         """Check if workspace has been initialized."""
         for ws_path in self._candidate_workspace_paths():
             if ws_path.exists() and any((ws_path / f).exists() for f in self.BOOTSTRAP_FILES):
                 return True
         return False
-    
+
     def get_bootstrap_content(self, include_first_run: bool = True) -> str:
         """
         Get combined content from all bootstrap files.
@@ -179,11 +179,11 @@ class WorkspaceManager:
             Combined markdown content from all bootstrap files
         """
         content_parts = []
-        
+
         for filename in self.BOOTSTRAP_FILES:
             if filename == "BOOTSTRAP.md" and not include_first_run:
                 continue
-                
+
             file_path = self.workspace_path / filename
             if file_path.exists():
                 try:
@@ -193,13 +193,13 @@ class WorkspaceManager:
                         parts = file_content.split("---", 2)
                         if len(parts) >= 3:
                             file_content = parts[2].strip()
-                    
+
                     content_parts.append(f"## {filename}\n\n{file_content}")
                 except Exception as e:
                     logger.warning(f"Failed to read {filename}: {e}")
-        
+
         return "\n\n---\n\n".join(content_parts)
-    
+
     def get_file_content(self, filename: str) -> Optional[str]:
         """Get content of a specific workspace file."""
         for ws_path in self._candidate_workspace_paths():
@@ -210,7 +210,7 @@ class WorkspaceManager:
                 except Exception as e:
                     logger.warning(f"Failed to read {filename}: {e}")
         return None
-    
+
     def update_file(self, filename: str, content: str) -> bool:
         """
         Update a workspace file.
@@ -230,7 +230,7 @@ class WorkspaceManager:
         except Exception as e:
             logger.error(f"Failed to update {filename}: {e}")
             return False
-    
+
     def complete_bootstrap(self) -> bool:
         """
         Complete the first-run bootstrap.
@@ -251,11 +251,11 @@ class WorkspaceManager:
                 except Exception as e:
                     logger.warning(f"Failed to remove BOOTSTRAP.md: {e}")
         return False
-    
+
     def has_bootstrap_pending(self) -> bool:
         """Check if BOOTSTRAP.md exists (first-run not completed)."""
         return any((ws_path / "BOOTSTRAP.md").exists() for ws_path in self._candidate_workspace_paths())
-    
+
     def get_agent_identity(self) -> Dict[str, str]:
         """
         Extract agent identity from IDENTITY.md.
@@ -268,7 +268,7 @@ class WorkspaceManager:
             "emoji": "�",
             "personality": "vigilant, decisive, protective",
         }
-        
+
         content = self.get_file_content("IDENTITY.md")
         if content:
             # Simple parsing for key fields
@@ -278,9 +278,9 @@ class WorkspaceManager:
                     identity["name"] = line.split(":", 1)[1].strip()
                 elif line.startswith("**Emoji**:"):
                     identity["emoji"] = line.split(":", 1)[1].strip()
-        
+
         return identity
-    
+
     def get_user_preferences(self) -> Dict[str, Any]:
         """
         Extract user preferences from USER.md.
@@ -334,11 +334,11 @@ class WorkspaceManager:
             "autonomous_actions": [],
             "requires_confirmation": [],
         }
-        
+
         content = self.get_file_content("USER.md")
         if not content:
             return preferences
-            
+
         # Regex map for flexible field matching
         field_patterns = [
             # Identity
@@ -381,21 +381,21 @@ class WorkspaceManager:
             (r"\*\*Wealth & Work Focus\*\*:", "wealth_focus"),
             (r"\*\*Learning & Skill Targets?\*\*:", "learning_targets"),
         ]
-        
+
         # Parse numbered goals (1. 2. 3.)
         goal_pattern = re.compile(r"^\s*\d+\.\s+(.+)$")
         in_goals_section = False
-        
+
         for line in content.split("\n"):
             original_line = line
             line = line.strip()
-            
+
             # Track goals section
             if "Top 3 Current Goals" in line or "## 5. Life" in line:
                 in_goals_section = True
             elif line.startswith("## ") and in_goals_section:
                 in_goals_section = False
-            
+
             # Parse numbered goals
             if in_goals_section:
                 goal_match = goal_pattern.match(original_line)
@@ -403,26 +403,26 @@ class WorkspaceManager:
                     goal_text = goal_match.group(1).strip()
                     if goal_text and not goal_text.startswith("…"):
                         preferences["goals"].append(goal_text)
-            
+
             # Allow bullet or no bullet
             if line.startswith("- "):
                 line = line[2:]
             elif line.startswith("-"):
                 line = line[1:]
-                
+
             for pattern, key in field_patterns:
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
                     raw_value = line[match.end():].strip()
-                    
+
                     # Handle empty values or placeholders
                     if not raw_value or (raw_value.startswith("(") and raw_value.endswith(")")):
                         continue
-                    
+
                     # Cleanup comments
                     if "(" in raw_value and key in ("do_not_disturb", "work_hours"):
                         raw_value = raw_value.split("(")[0].strip()
-                        
+
                     # Parse types
                     if key == "confirm_destructive":
                         preferences[key] = "yes" in raw_value.lower()
@@ -446,7 +446,7 @@ class WorkspaceManager:
                     else:
                         preferences[key] = raw_value
                     break
-                    
+
         return preferences
 
     def get_user_greeting(self) -> str:
@@ -464,16 +464,16 @@ class WorkspaceManager:
         """
         prefs = self.get_user_preferences()
         dnd = prefs.get("do_not_disturb")
-        
+
         if not dnd:
             return False
-            
+
         try:
             # Normalize separators
             dnd = dnd.replace("\u2013", "-").replace("\u2014", "-").replace(" to ", "-")
-            
+
             start_hour, end_hour = 0, 0
-            
+
             # Match 24h: 23:00-07:00
             m24 = re.search(r"(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})", dnd)
             if m24:
@@ -484,30 +484,30 @@ class WorkspaceManager:
                 match = re.search(r"(\d{1,2})\s*(AM|PM)?\s*-\s*(\d{1,2})\s*(AM|PM)?", dnd, re.IGNORECASE)
                 if not match:
                     return False
-                
+
                 h1 = int(match.group(1))
                 p1 = (match.group(2) or "").upper()
                 h2 = int(match.group(3))
                 p2 = (match.group(4) or "").upper()
-                
+
                 def to_24(h, p):
                     if p == "PM" and h != 12: return h + 12
                     if p == "AM" and h == 12: return 0
                     return h
-                
+
                 start_hour = to_24(h1, p1)
                 end_hour = to_24(h2, p2)
-            
+
             now = datetime.now().hour
-            
+
             if start_hour > end_hour:
                 return now >= start_hour or now < end_hour
             else:
                 return start_hour <= now < end_hour
-                
+
         except Exception:
             return False
-    
+
     def build_system_prompt(self, base_prompt: str = "") -> str:
         """
         Build a complete system prompt with workspace context.
@@ -519,19 +519,19 @@ class WorkspaceManager:
             Complete system prompt with injected workspace context
         """
         parts = []
-        
+
         # Add base prompt if provided
         if base_prompt:
             parts.append(base_prompt)
-        
+
         # Add workspace context
         if self.is_initialized():
             workspace_content = self.get_bootstrap_content()
             if workspace_content:
                 parts.append("\n\n# Agent Context\n\n" + workspace_content)
-        
+
         return "\n".join(parts)
-    
+
     def add_memory(self, key: str, value: str) -> bool:
         """
         Add a memory entry to AGENTS.md.
@@ -546,10 +546,10 @@ class WorkspaceManager:
         agents_path = self.workspace_path / "AGENTS.md"
         if not agents_path.exists():
             return False
-        
+
         try:
             content = agents_path.read_text(encoding="utf-8")
-            
+
             # Find the Memory section and add entry
             if "## Memory" in content:
                 lines = content.split("\n")
@@ -563,13 +563,13 @@ class WorkspaceManager:
                         entry = f"\n- **{key}**: {value}"
                         lines.insert(j, entry)
                         break
-                
+
                 content = "\n".join(lines)
                 agents_path.write_text(content, encoding="utf-8")
                 return True
         except Exception as e:
             logger.error(f"Failed to add memory: {e}")
-        
+
         return False
 
     def sync_to_user_profile(self) -> bool:
@@ -587,14 +587,14 @@ class WorkspaceManager:
         except ImportError:
             logger.warning("UserProfile system not available")
             return False
-        
+
         prefs = self.get_user_preferences()
         if not prefs:
             return False
-        
+
         profile = get_profile()
         updates = {}
-        
+
         # Map USER.md fields to UserProfile structure
         if prefs.get("name"):
             updates["identity.name"] = prefs["name"]
@@ -602,11 +602,11 @@ class WorkspaceManager:
             updates["identity.name"] = prefs["preferred_name"]  # Prefer nickname
         if prefs.get("timezone"):
             updates["identity.timezone"] = prefs["timezone"]
-        
+
         # Work patterns
         if prefs.get("work_hours"):
             updates["work_patterns.active_hours"] = [prefs["work_hours"]]
-        
+
         # Technical context
         if prefs.get("primary_languages"):
             updates["technical_context.stack"] = prefs["primary_languages"]
@@ -619,23 +619,23 @@ class WorkspaceManager:
             for shell in shells:
                 if shell and not shell.startswith("("):
                     updates.setdefault("technical_context.preferences", []).append(shell)
-        
+
         # Preferences
         if prefs.get("communication_style"):
             updates["preferences.communication_style"] = prefs["communication_style"]
         if prefs.get("confirm_destructive"):
             updates["preferences.confirmation_required_for"] = ["delete", "drop", "truncate"]
-        
+
         # Goals
         if prefs.get("goals"):
             updates["goals"] = prefs["goals"]
-        
+
         # Apply updates
         if updates:
             updated = profile.update(updates, auto_save=True)
             logger.info(f"Synced {len(updated)} fields from USER.md to UserProfile")
             return len(updated) > 0
-        
+
         return False
 
 
@@ -648,15 +648,15 @@ def get_workspace_manager() -> WorkspaceManager:
 def workspace_status():
     """Print workspace status."""
     wm = WorkspaceManager()
-    
+
     print(f"Workspace: {wm.workspace_path}")
     print(f"Initialized: {wm.is_initialized()}")
     print(f"Bootstrap pending: {wm.has_bootstrap_pending()}")
-    
+
     if wm.is_initialized():
         identity = wm.get_agent_identity()
         print(f"\nAgent: {identity['emoji']} {identity['name']}")
-        
+
         print("\nBootstrap files:")
         for f in wm.BOOTSTRAP_FILES:
             exists = (wm.workspace_path / f).exists()

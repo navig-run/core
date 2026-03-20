@@ -1,0 +1,25 @@
+{
+  "id": "navig-memory",
+  "name": "NAVIG Memory",
+  "version": "1.0.0",
+  "description": "Persistent memory store for NAVIG agents — store, search, and clear facts.",
+  "author": "NAVIG Team",
+  "license": "MIT",
+  "homepage": "https://github.com/navig-run/core",
+  "type": "commands",
+  "entry": "handler.py",
+  "provides": ["commands"],
+  "hooks": ["startup"],
+  "depends_on": {
+    "packages": {},
+    "skills": [],
+    "pip": []
+  },
+  "config_defaults": {
+    "max_memories": 10000
+  },
+  "install_hooks": {
+    "post_install": "",
+    "post_remove": ""
+  }
+}

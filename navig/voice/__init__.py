@@ -42,45 +42,40 @@ Providers (STT):
 - whisper_local: Local Whisper model, requires openai-whisper package
 """
 
-from navig.voice.tts import (
+from navig.voice.playback import (
     # Classes
-    TTS,
-    TTSConfig,
-    TTSResult,
-    TTSProvider,
-    TTSVoice,
-    
+    NotificationSound,
+    list_sounds,
+    play_notification,
+    play_notification_sync,
     # Functions
-    speak,
-    speak_sync,
-    synthesize,
-    get_tts,
+    play_sound,
+    play_sound_sync,
 )
-
 from navig.voice.stt import (
     # Classes
     STT,
     STTConfig,
-    STTResult,
     STTProvider,
-    
+    STTResult,
+    get_stt,
     # Functions
     transcribe,
     transcribe_full,
     transcribe_sync,
-    get_stt,
 )
-
-from navig.voice.playback import (
+from navig.voice.tts import (
     # Classes
-    NotificationSound,
-    
+    TTS,
+    TTSConfig,
+    TTSProvider,
+    TTSResult,
+    TTSVoice,
+    get_tts,
     # Functions
-    play_sound,
-    play_sound_sync,
-    play_notification,
-    play_notification_sync,
-    list_sounds,
+    speak,
+    speak_sync,
+    synthesize,
 )
 
 __all__ = [
@@ -94,7 +89,7 @@ __all__ = [
     "speak_sync",
     "synthesize",
     "get_tts",
-    
+
     # STT
     "STT",
     "STTConfig",
@@ -104,7 +99,7 @@ __all__ = [
     "transcribe_full",
     "transcribe_sync",
     "get_stt",
-    
+
     # Playback
     "NotificationSound",
     "play_sound",

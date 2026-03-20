@@ -1,0 +1,76 @@
+# Gitea Template Configuration
+# Self-hosted Git service integration with repository paths, backup locations, and API access
+
+name: gitea
+version: 1.0.0
+description: Gitea self-hosted Git service integration with repository paths, backup locations, and API access
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  gitea_root: /var/lib/gitea
+  gitea_custom: /var/lib/gitea/custom
+  gitea_data: /var/lib/gitea/data
+  repositories: /var/lib/gitea/data/gitea-repositories
+  gitea_config: /etc/gitea/app.ini
+  backup_dir: /var/backups/gitea
+  log_dir: /var/lib/gitea/log
+
+services:
+  git_service: gitea
+  gitea_service: gitea.service
+
+commands:
+  - name: start_gitea
+    description: Start Gitea service
+    command: systemctl start gitea
+
+  - name: stop_gitea
+    description: Stop Gitea service
+    command: systemctl stop gitea
+
+  - name: restart_gitea
+    description: Restart Gitea service
+    command: systemctl restart gitea
+
+  - name: status_gitea
+    description: Check Gitea service status
+    command: systemctl status gitea
+
+  - name: gitea_logs
+    description: View Gitea logs
+    command: journalctl -u gitea -f
+
+  - name: backup_gitea
+    description: Create Gitea backup
+    command: cd /var/lib/gitea && sudo -u git gitea dump -c /etc/gitea/app.ini
+
+  - name: list_repos
+    description: List all repositories
+    command: ls -lah /var/lib/gitea/data/gitea-repositories
+
+  - name: check_version
+    description: Check Gitea version
+    command: gitea --version
+
+env_vars:
+  GITEA_WORK_DIR: /var/lib/gitea
+  GITEA_CUSTOM: /var/lib/gitea/custom
+  GITEA_PORT: "3000"
+  GITEA_PROTOCOL: https
+
+api:
+  endpoint: http://localhost:3000/api/v1/
+  auth_method: api_token
+  doc_url: https://docs.gitea.io/en-us/api-usage/
+
+default_port: 3000
+systemd_service: /etc/systemd/system/gitea.service
+
+database:
+  supported:
+    - sqlite3
+    - mysql
+    - postgresql
+  default_db_path: /var/lib/gitea/data/gitea.db

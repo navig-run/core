@@ -8,17 +8,17 @@ AI-powered error analysis and solution suggestions:
 - Learning system based on user feedback
 """
 
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 import json
 import re
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from navig import console_helper as ch
 
 
 class Solution:
     """Represents a solution to an error."""
-    
+
     def __init__(
         self,
         description: str,
@@ -32,7 +32,7 @@ class Solution:
         self.success_rate = success_rate
         self.risk_level = risk_level  # low, medium, high
         self.requires_confirmation = requires_confirmation
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -42,7 +42,7 @@ class Solution:
             'risk_level': self.risk_level,
             'requires_confirmation': self.requires_confirmation
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Solution':
         """Create from dictionary."""
@@ -59,7 +59,7 @@ class ErrorResolution:
     """
     Intelligent error resolution with learning capabilities.
     """
-    
+
     def __init__(self, assistant):
         """
         Initialize error resolution module.
@@ -70,7 +70,7 @@ class ErrorResolution:
         self.assistant = assistant
         self.ai_context_dir = assistant.ai_context_dir
         self.config = assistant.assistant_config
-    
+
     def analyze_error(
         self,
         command: str,
@@ -99,21 +99,21 @@ class ErrorResolution:
 
         # Find matching solutions
         solutions = self._find_solutions(error_message, category)
-        
+
         # If no solutions found, try AI-powered analysis
         if not solutions and self.assistant.is_enabled():
             ai_solutions = self._get_ai_solutions(command, error_message, context)
             solutions.extend(ai_solutions)
-        
+
         # Sort by success rate
         solutions.sort(key=lambda s: s.success_rate, reverse=True)
-        
+
         return solutions[:3]  # Return top 3 solutions
-    
+
     def _categorize_error(self, error_message: str) -> str:
         """Categorize error based on message."""
         error_lower = error_message.lower()
-        
+
         if any(kw in error_lower for kw in ['permission denied', 'access denied']):
             return 'permission'
         elif any(kw in error_lower for kw in ['connection refused', 'timeout', 'network']):
@@ -128,7 +128,7 @@ class ErrorResolution:
             return 'configuration'
         else:
             return 'unknown'
-    
+
     def _log_error(
         self,
         command: str,
@@ -139,7 +139,7 @@ class ErrorResolution:
     ):
         """Log error with enhanced categorization."""
         error_log_file = self.ai_context_dir / 'error_log.json'
-        
+
         try:
             # Load existing log
             if error_log_file.exists():
@@ -147,7 +147,7 @@ class ErrorResolution:
                     error_log = json.load(f)
             else:
                 error_log = []
-            
+
             # Create entry
             entry = {
                 'timestamp': datetime.now().isoformat(),
@@ -160,33 +160,33 @@ class ErrorResolution:
                 'solution_applied': None,
                 'resolution_status': 'pending'
             }
-            
+
             error_log.append(entry)
-            
+
             # Keep last 1000 errors
             if len(error_log) > 1000:
                 error_log = error_log[-1000:]
-            
+
             # Save
             with open(error_log_file, 'w') as f:
                 json.dump(error_log, f, indent=2)
-                
+
         except Exception as e:
             ch.dim(f"Could not log error: {e}")
-    
+
     def _find_solutions(self, error_message: str, category: str) -> List[Solution]:
         """Find solutions from solution database."""
         solutions_file = self.ai_context_dir / 'solutions.json'
-        
+
         try:
             if not solutions_file.exists():
                 return []
-            
+
             with open(solutions_file, 'r') as f:
                 solutions_db = json.load(f)
-            
+
             matched_solutions = []
-            
+
             for entry in solutions_db:
                 # Check if pattern matches
                 pattern = entry.get('pattern', '')
@@ -195,12 +195,12 @@ class ErrorResolution:
                     if entry.get('category') == category or entry.get('category') == 'any':
                         for sol_data in entry.get('solutions', []):
                             matched_solutions.append(Solution.from_dict(sol_data))
-            
+
             return matched_solutions
-            
+
         except Exception:
             return []
-    
+
     def _get_ai_solutions(
         self,
         command: str,

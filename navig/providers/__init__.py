@@ -4,87 +4,81 @@ NAVIG AI Providers Package
 Multi-provider AI system with fallback support.
 """
 
-from .types import (
-    ModelApi,
-    AuthMode,
-    ModelCost,
-    ModelCompatConfig,
-    ModelDefinition,
-    ProviderConfig,
-    ProvidersConfig,
-    ApiKeyCredential,
-    TokenCredential,
-    OAuthCredential,
-    AuthProfileStore,
-    BUILTIN_PROVIDERS,
-    PROVIDER_ENV_VARS,
-    builtin_provider_configs,
+# AirLLM provider (optional - requires airllm package)
+from .airllm import (
+    AirLLMClient,
+    AirLLMConfig,
+    create_airllm_client,
+    get_airllm_vram_recommendations,
+    is_airllm_available,
 )
-
-from .registry import (
-    ProviderManifest,
-    ProviderTier,
-    ALL_PROVIDERS,
-    get_provider,
-    list_enabled_providers,
-    list_all_providers,
-)
-
 from .auth import AuthProfileManager
-
 from .clients import (
-    Message,
-    ToolDefinition,
+    AnthropicClient,
+    BaseProviderClient,
     CompletionRequest,
     CompletionResponse,
-    ToolCall,
-    ProviderError,
-    BaseProviderClient,
+    Message,
     OpenAIClient,
-    AnthropicClient,
+    ProviderError,
+    ToolCall,
+    ToolDefinition,
     create_client,
     get_builtin_provider,
 )
-
 from .fallback import (
     FallbackCandidate,
-    FallbackResult,
     FallbackManager,
-    get_fallback_manager,
+    FallbackResult,
     complete_with_fallback,
+    get_fallback_manager,
 )
-
 from .oauth import (
-    OAuthCredentials,
-    OAuthProviderConfig,
-    OAuthFlowResult,
     OAUTH_PROVIDERS,
+    OAuthCredentials,
+    OAuthFlowResult,
+    OAuthProviderConfig,
+    exchange_code_for_tokens,
     generate_pkce_pair,
     generate_state,
-    run_oauth_flow_interactive,
-    run_oauth_flow_headless,
-    exchange_code_for_tokens,
     refresh_oauth_tokens,
+    run_oauth_flow_headless,
+    run_oauth_flow_interactive,
 )
-
-# AirLLM provider (optional - requires airllm package)
-from .airllm import (
-    AirLLMConfig,
-    AirLLMClient,
-    create_airllm_client,
-    is_airllm_available,
-    get_airllm_vram_recommendations,
+from .registry import (
+    ALL_PROVIDERS,
+    ProviderManifest,
+    ProviderTier,
+    get_provider,
+    list_all_providers,
+    list_enabled_providers,
+)
+from .types import (
+    BUILTIN_PROVIDERS,
+    PROVIDER_ENV_VARS,
+    ApiKeyCredential,
+    AuthMode,
+    AuthProfileStore,
+    ModelApi,
+    ModelCompatConfig,
+    ModelCost,
+    ModelDefinition,
+    OAuthCredential,
+    ProviderConfig,
+    ProvidersConfig,
+    TokenCredential,
+    builtin_provider_configs,
 )
 
 # Perplexity provider (optional - requires httpx)
 try:
     from .perplexity import (
+        PERPLEXITY_PROVIDER,
         PerplexityClient,
         PerplexitySearchResult,
         create_perplexity_client,
-        perplexity_search,
         is_perplexity_available,
-        PERPLEXITY_PROVIDER,
+        perplexity_search,
     )
     _PERPLEXITY_AVAILABLE = True
 except ImportError:

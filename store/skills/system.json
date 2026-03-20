@@ -1,0 +1,41 @@
+{
+  "id": "system",
+  "name": "System — This Server",
+  "summary": "Check disk, RAM, CPU, uptime, and services on the daemon host (navig-ubuntu). Use command.run — no SSH needed.",
+  "commands": [
+    {
+      "name": "disk",
+      "signature": "command.run(cmd=\"df -h\")",
+      "description": "Disk usage on this server. Use for: 'disk space', 'how much space', 'storage'",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"df -h\"}, \"description\": \"Disk usage\"}], \"message\": \"Checking disk space\"}"
+    },
+    {
+      "name": "ram",
+      "signature": "command.run(cmd=\"free -h\")",
+      "description": "RAM usage on this server. Use for: 'memory', 'RAM', 'how much RAM'",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"free -h\"}, \"description\": \"RAM usage\"}], \"message\": \"Checking RAM\"}"
+    },
+    {
+      "name": "cpu",
+      "signature": "command.run(cmd=\"top -bn1 | head -5\")",
+      "description": "CPU load snapshot. Use for: 'CPU usage', 'processor load'",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"top -bn1 | head -5\"}, \"description\": \"CPU load\"}], \"message\": \"Checking CPU\"}"
+    },
+    {
+      "name": "uptime",
+      "signature": "command.run(cmd=\"uptime\")",
+      "description": "Server uptime and load averages."
+    },
+    {
+      "name": "services",
+      "signature": "command.run(cmd=\"systemctl list-units --type=service --state=running --no-pager\")",
+      "description": "List running systemd services.",
+      "example": "{\"plan\": [{\"action\": \"command.run\", \"params\": {\"cmd\": \"systemctl list-units --type=service --state=running --no-pager\"},\"description\": \"Running services\"}], \"message\": \"Listing services\"}"
+    },
+    {
+      "name": "service_status",
+      "signature": "command.run(cmd=\"systemctl status <name> --no-pager -l\")",
+      "description": "Check status of a specific service, e.g. navig-daemon.service."
+    }
+  ]
+}

@@ -6,18 +6,17 @@ Lifecycle per node:
 """
 from __future__ import annotations
 
-import subprocess
 import shutil
+import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from navig.update.models import NodeResult, UpdatePlan, UpdateResult, VersionInfo
-from navig.update.targets import UpdateTarget
 from navig.update.checker import VersionChecker
-from navig.update.sources import _BaseSource
 from navig.update.history import UpdateHistory
+from navig.update.models import NodeResult, UpdatePlan, UpdateResult, VersionInfo
+from navig.update.sources import _BaseSource
+from navig.update.targets import UpdateTarget
 
 # ProgressCallback(node_id, step, status, message)
 ProgressCallback = Callable[[str, str, str, str], None]
@@ -223,6 +222,7 @@ class UpdateEngine:
 
     def _install_local(self, channel: str) -> None:
         from pathlib import Path
+
         from navig.commands.update import _step_git, _step_pypi
 
         src_dir = Path(__file__).resolve().parent.parent.parent
@@ -260,7 +260,8 @@ class UpdateEngine:
         else:
             if self._remote_ops is None:
                 raise RuntimeError("No remote_ops for verify")
-            import json as _json, re as _re
+            import json as _json
+            import re as _re
             r = self._remote_ops.execute_command(
                 "navig version --json 2>/dev/null || navig --version 2>/dev/null",
                 server_config=target.server_config or {},

@@ -9,7 +9,7 @@ import sys
 from typing import List
 
 from navig.ui.models import Metric
-from navig.ui.theme import SAFE_MODE, COLOR_STYLE, console
+from navig.ui.theme import COLOR_STYLE, SAFE_MODE, console
 
 _BAR_WIDTH = 20
 _FILL_RICH = "█"

@@ -6,12 +6,11 @@ Ensures seamless upgrades by transforming old config structures
 into the current schema.
 """
 
-from typing import Dict, Any, List, Callable
 from dataclasses import dataclass
-from packaging import version as pkg_version
+from typing import Any, Callable, Dict, List
 
+from packaging import version as pkg_version
 from rich.console import Console
-from navig import console_helper as ch
 
 # Use stderr for migration logs to avoid polluting stdout (JSON output)
 stderr_console = Console(stderr=True)
@@ -31,11 +30,11 @@ class Migration:
 
 class MigrationManager:
     """Manages and applies configuration migrations."""
-    
+
     def __init__(self):
         self.migrations: List[Migration] = []
         self._register_core_migrations()
-        
+
     def _register_core_migrations(self):
         """Register built-in migrations."""
         self.register(Migration(
@@ -48,7 +47,7 @@ class MigrationManager:
     def register(self, migration: Migration):
         """Register a new migration."""
         self.migrations.append(migration)
-        
+
     def get_pending_migrations(self, current_version: str) -> List[Migration]:
         """
         Get list of migrations that need to be applied.
@@ -56,13 +55,13 @@ class MigrationManager:
         """
         if not current_version:
             current_version = "0.0"
-            
+
         try:
             curr = pkg_version.parse(current_version)
         except Exception:
             # If version is invalid, assume oldest
             curr = pkg_version.parse("0.0")
-            
+
         pending = []
         for m in self.migrations:
             try:
@@ -71,10 +70,10 @@ class MigrationManager:
                     pending.append(m)
             except Exception:
                 continue
-                
+
         # Sort by version
         return sorted(pending, key=lambda x: pkg_version.parse(x.from_version))
-    
+
     def apply_migrations(self, config: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         """
         Apply all pending migrations to the configuration.
@@ -84,27 +83,27 @@ class MigrationManager:
         """
         # Get version from config, default to 0.0 if missing
         config_ver = config.get("version", "0.0")
-        
+
         # If config ver is same as current system version, no need to migrate
         if config_ver == CURRENT_VERSION:
             return config, False
-            
+
         pending = self.get_pending_migrations(config_ver)
-        
+
         if not pending:
             # Just update the version tag if no migrations needed
             if config_ver != CURRENT_VERSION:
                 config["version"] = CURRENT_VERSION
                 return config, True
             return config, False
-            
+
         modified = False
         migrated_config = config.copy()
-        
-        
+
+
         # Log to stderr to allow clean stdout for JSON output
         stderr_console.print(f"[blue]ℹ[/blue] Applying {len(pending)} configuration migrations...")
-        
+
         for migration in pending:
             try:
                 stderr_console.print(f"[dim]  - [{migration.from_version} -> {migration.to_version}] {migration.description}[/dim]")
@@ -115,14 +114,14 @@ class MigrationManager:
                 stderr_console.print(f"[red]✗[/red] Migration failed: {e}")
                 # Stop processing on failure to avoid corruption
                 break
-                
+
         # Ensure final version is set
         migrated_config["version"] = CURRENT_VERSION
-        
+
         return migrated_config, modified
 
     # --- Migration Logic implementations ---
-    
+
     def _migrate_0_9_to_1_0(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Migrate from v0.9 (Legacy) to v1.0.
@@ -133,7 +132,7 @@ class MigrationManager:
         # Ensure 'ai' dict exists
         if "ai" not in config:
             config["ai"] = {}
-            
+
         # Move legacy field if it exists
         if "ai_model_preference" in config:
             # Only migrate if target doesn't already have it
@@ -142,7 +141,7 @@ class MigrationManager:
             else:
                 # If both exist, just remove legacy
                 config.pop("ai_model_preference")
-                
+
         return config
 
 

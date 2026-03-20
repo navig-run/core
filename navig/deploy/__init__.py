@@ -8,8 +8,8 @@ Public API:
   from navig.deploy.models import DeployConfig, DeployResult
 """
 
-from navig.deploy.models import DeployConfig, DeployResult, PhaseResult, DeployPhase
 from navig.deploy.engine import DeployEngine
+from navig.deploy.models import DeployConfig, DeployPhase, DeployResult, PhaseResult
 
 __all__ = [
     "DeployConfig",

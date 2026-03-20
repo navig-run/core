@@ -7,12 +7,12 @@ available providers, active provider, and recent trace summaries.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import web
+
     from navig.gateway.server import NavigGateway
 
 logger = logging.getLogger(__name__)

@@ -5,14 +5,15 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from navig.debug_logger import get_debug_logger
+
 from .policies import ApprovalLevel, ApprovalPolicy, ApprovalStatus
 
 if TYPE_CHECKING:
-    from navig.gateway.server import NavigGateway
     from navig.gateway.audit_log import AuditLog
+    from navig.gateway.server import NavigGateway
 
 logger = get_debug_logger()
 
@@ -30,7 +31,7 @@ class ApprovalRequest:
     created_at: datetime = field(default_factory=datetime.now)
     expires_at: Optional[datetime] = None
     status: ApprovalStatus = ApprovalStatus.PENDING
-    
+
     def to_dict(self) -> dict:
         return {
             'id': self.id,
@@ -53,7 +54,7 @@ class ApprovalManager:
     Integrates with Gateway session context to route approval
     requests to the appropriate channel/user.
     """
-    
+
     def __init__(
         self,
         gateway: Optional['NavigGateway'] = None,
@@ -63,22 +64,22 @@ class ApprovalManager:
         self.gateway = gateway
         self.policy = policy or ApprovalPolicy()
         self._audit_log: Optional['AuditLog'] = audit_log
-        
+
         # Pending approvals by ID
         self._pending: Dict[str, ApprovalRequest] = {}
-        
+
         # Approval futures for async waiting
         self._futures: Dict[str, asyncio.Future] = {}
-        
+
         # Cleanup task
         self._cleanup_task: Optional[asyncio.Task] = None
-        
+
         # Event callbacks
         self._on_request_callbacks: list = []
-        
+
         # Registered handlers by name (e.g., 'gateway', 'telegram')
         self._handlers: Dict[str, Any] = {}
-    
+
     def set_audit_log(self, audit_log: 'AuditLog') -> None:
         """Wire in the audit log (called from gateway after both are initialised)."""
         self._audit_log = audit_log
@@ -127,22 +128,22 @@ class ApprovalManager:
         """
         self._handlers[name] = handler
         logger.debug(f"Registered approval handler: {name}")
-    
+
     def unregister_handler(self, name: str) -> None:
         """Unregister an approval handler."""
         if name in self._handlers:
             del self._handlers[name]
             logger.debug(f"Unregistered approval handler: {name}")
-    
+
     def get_handler(self, name: str) -> Optional[Any]:
         """Get a registered handler by name."""
         return self._handlers.get(name)
-    
+
     async def start(self):
         """Start the approval manager."""
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
         logger.info("ApprovalManager started")
-    
+
     async def stop(self):
         """Stop the approval manager."""
         if self._cleanup_task:
@@ -151,20 +152,20 @@ class ApprovalManager:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
-        
+
         # Cancel all pending futures
         for future in self._futures.values():
             if not future.done():
                 future.cancel()
-        
+
         self._pending.clear()
         self._futures.clear()
         logger.info("ApprovalManager stopped")
-    
+
     def on_request(self, callback: Callable):
         """Register callback for new approval requests."""
         self._on_request_callbacks.append(callback)
-    
+
     async def request_approval(
         self,
         command: str,
@@ -181,7 +182,7 @@ class ApprovalManager:
         """
         if not self.policy.enabled:
             return True
-        
+
         # Check auto-approve users
         if self.policy.is_user_auto_approved(user_id):
             logger.debug(f"Auto-approved (trusted user): {command}")
@@ -203,21 +204,21 @@ class ApprovalManager:
 
         # Classify command
         level = self.policy.classify_command(command)
-        
+
         # Auto-approve safe commands
         if level == ApprovalLevel.SAFE:
             logger.debug(f"Auto-approved (safe): {command}")
             return True
-        
+
         # Auto-deny never commands
         if level == ApprovalLevel.NEVER:
             logger.warning(f"Auto-denied (never): {command}")
             return False
-        
+
         # Create approval request
         request_id = str(uuid.uuid4())[:8]
         expires_at = datetime.now() + timedelta(seconds=self.policy.timeout_seconds)
-        
+
         request = ApprovalRequest(
             id=request_id,
             command=command,
@@ -228,14 +229,14 @@ class ApprovalManager:
             user_id=user_id,
             expires_at=expires_at,
         )
-        
+
         self._pending[request_id] = request
-        
+
         # Create future for async waiting
         loop = asyncio.get_event_loop()
         future = loop.create_future()
         self._futures[request_id] = future
-        
+
         # Notify callbacks
         for callback in self._on_request_callbacks:
             try:
@@ -245,7 +246,7 @@ class ApprovalManager:
                     callback(request)
             except Exception as e:
                 logger.error(f"Approval callback error: {e}")
-        
+
         try:
             # Wait for response or timeout
             result = await asyncio.wait_for(
@@ -253,28 +254,28 @@ class ApprovalManager:
                 timeout=self.policy.timeout_seconds
             )
             return result
-            
+
         except asyncio.TimeoutError:
             # Timeout - apply default action
             request.status = ApprovalStatus.EXPIRED
             default_approve = self.policy.default_action == "approve"
-            
+
             if level == ApprovalLevel.DANGEROUS:
                 # Dangerous commands default to deny on timeout
                 default_approve = False
-            
+
             logger.info(f"Approval timeout for {request_id}: {'approved' if default_approve else 'denied'}")
             return default_approve
-            
+
         except asyncio.CancelledError:
             request.status = ApprovalStatus.DENIED
             return False
-            
+
         finally:
             # Cleanup
             self._pending.pop(request_id, None)
             self._futures.pop(request_id, None)
-    
+
     async def respond(self, request_id: str, approved: bool) -> bool:
         """
         Respond to an approval request.
@@ -285,38 +286,38 @@ class ApprovalManager:
         if not request:
             logger.warning(f"Approval request not found: {request_id}")
             return False
-        
+
         request.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.DENIED
-        
+
         # Resolve the waiting future
         future = self._futures.get(request_id)
         if future and not future.done():
             future.set_result(approved)
-        
+
         logger.info(f"Approval {request_id}: {'approved' if approved else 'denied'}")
         return True
-    
+
     def get_pending(self, channel: Optional[str] = None, user_id: Optional[str] = None) -> list:
         """Get pending approval requests, optionally filtered."""
         requests = list(self._pending.values())
-        
+
         if channel:
             requests = [r for r in requests if r.channel == channel]
-        
+
         if user_id:
             requests = [r for r in requests if r.user_id == user_id]
-        
+
         return [r.to_dict() for r in requests]
-    
+
     def list_pending(self) -> list:
         """List pending approval requests. Alias for testing compatibility."""
         return list(self._pending.values())
-    
+
     def get_request(self, request_id: str) -> Optional[dict]:
         """Get a specific request by ID."""
         request = self._pending.get(request_id)
         return request.to_dict() if request else None
-    
+
     def format_approval_message(self, request: ApprovalRequest) -> str:
         """Format approval request as user-friendly message."""
         level_emoji = {
@@ -324,13 +325,13 @@ class ApprovalManager:
             ApprovalLevel.DANGEROUS: "🚨",
         }
         emoji = level_emoji.get(request.level, "❓")
-        
+
         time_remaining = ""
         if request.expires_at:
             remaining = (request.expires_at - datetime.now()).total_seconds()
             if remaining > 0:
                 time_remaining = f" (expires in {int(remaining)}s)"
-        
+
         return (
             f"{emoji} **Approval Required**{time_remaining}\n\n"
             f"**Command:** `{request.command}`\n"
@@ -338,31 +339,31 @@ class ApprovalManager:
             f"**ID:** `{request.id}`\n\n"
             f"Reply with `/approve {request.id}` or `/deny {request.id}`"
         )
-    
+
     async def _cleanup_loop(self):
         """Periodically clean up expired requests."""
         while True:
             try:
                 await asyncio.sleep(30)
                 now = datetime.now()
-                
+
                 expired_ids = [
                     req_id for req_id, req in self._pending.items()
                     if req.expires_at and req.expires_at < now
                 ]
-                
+
                 for req_id in expired_ids:
                     request = self._pending.pop(req_id, None)
                     if request:
                         request.status = ApprovalStatus.EXPIRED
-                    
+
                     future = self._futures.pop(req_id, None)
                     if future and not future.done():
                         future.set_result(False)  # Deny on expiry
-                
+
                 if expired_ids:
                     logger.debug(f"Cleaned up {len(expired_ids)} expired approval requests")
-                        
+
             except asyncio.CancelledError:
                 break
             except Exception as e:

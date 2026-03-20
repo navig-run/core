@@ -13,11 +13,11 @@ operator health monitoring, adapted for NAVIG's persistent daemon model.
 
 import json
 import time
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from enum import Enum
 
 from navig.debug_logger import get_debug_logger
 
@@ -100,25 +100,25 @@ class UserStateTracker:
     The EngagementCoordinator reads this state to decide what proactive
     actions to take.
     """
-    
+
     def __init__(self, state_dir: Optional[Path] = None):
         self.state_dir = state_dir or Path.home() / ".navig" / "engagement"
         self.state_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # In-memory state
         self._interactions: List[InteractionRecord] = []
         self._max_interactions = 500
         self.stats = UsageStats()
         self.preferences = UserPreferences()
-        
+
         # Active hours configuration (24h format)
         self.active_hours_start = 8   # 8 AM
         self.active_hours_end = 23    # 11 PM
         self.timezone_offset = 0      # Hours from UTC
-        
+
         # Load persisted state
         self._load_state()
-    
+
     def record_interaction(
         self,
         message_type: str = "chat",
@@ -128,7 +128,7 @@ class UserStateTracker:
     ):
         """Record a user interaction event."""
         now = time.time()
-        
+
         record = InteractionRecord(
             timestamp=now,
             message_type=message_type,
@@ -137,25 +137,25 @@ class UserStateTracker:
             sentiment=sentiment,
         )
         self._interactions.append(record)
-        
+
         # Trim old interactions
         if len(self._interactions) > self._max_interactions:
             self._interactions = self._interactions[-self._max_interactions:]
-        
+
         # Update stats
         self.stats.total_messages += 1
         if not self.stats.first_seen:
             self.stats.first_seen = now
         self.stats.last_seen = now
-        
+
         if message_type == "command" and command:
             self.stats.total_commands += 1
             self.stats.command_counts[command] = self.stats.command_counts.get(command, 0) + 1
-            
+
             # Track feature usage (group by command category)
             feature = command.split()[0] if command else "unknown"
             self.stats.features_used[feature] = self.stats.features_used.get(feature, 0) + 1
-        
+
         # Track peak hours
         hour = datetime.fromtimestamp(now).hour
         if hour not in self.stats.peak_hours:
@@ -167,11 +167,11 @@ class UserStateTracker:
             self.stats.peak_hours = sorted(
                 hour_counts.keys(), key=lambda h: hour_counts[h], reverse=True
             )[:5]
-        
+
         # Auto-save periodically (every 50 interactions)
         if self.stats.total_messages % 50 == 0:
             self._save_state()
-    
+
     def record_proactive_event(self, event_type: str):
         """Record when a proactive event was sent (to prevent spamming)."""
         now = time.time()
@@ -184,7 +184,7 @@ class UserStateTracker:
         elif event_type == "feedback_ask":
             self.stats.last_feedback_ask = now
         self._save_state()
-    
+
     def record_feedback(self, feedback: str, rating: Optional[int] = None):
         """Record user feedback from self-improvement dialogue."""
         self.stats.feedback_responses.append({
@@ -196,26 +196,26 @@ class UserStateTracker:
         if len(self.stats.feedback_responses) > 20:
             self.stats.feedback_responses = self.stats.feedback_responses[-20:]
         self._save_state()
-    
+
     def get_operator_state(self) -> OperatorState:
         """Infer current operator state from interaction patterns."""
         now = time.time()
-        
+
         if not self.stats.last_seen:
             return OperatorState.UNKNOWN
-        
+
         gap_seconds = now - self.stats.last_seen
         gap_minutes = gap_seconds / 60
         gap_hours = gap_seconds / 3600
-        
+
         # Just arrived: first message after 2+ hour gap
         if gap_hours >= 2:
             return OperatorState.JUST_ARRIVED
-        
+
         # Away: no activity for 1-2 hours
         if gap_hours >= 1:
             return OperatorState.AWAY
-        
+
         # Check for deep work pattern: long session, few messages
         recent = [r for r in self._interactions if now - r.timestamp < 3600]
         if len(recent) >= 3:
@@ -223,19 +223,19 @@ class UserStateTracker:
             time_span = now - recent[0].timestamp
             if time_span > 3600 and len(recent) < 10:
                 return OperatorState.DEEP_WORK
-        
+
         # Winding down: late hours + decreasing activity
         hour = datetime.fromtimestamp(now).hour
         if hour >= 21 or hour < 5:
             if gap_minutes > 15:
                 return OperatorState.WINDING_DOWN
-        
+
         # Idle: no activity for 15+ minutes
         if gap_minutes >= 15:
             return OperatorState.IDLE
-        
+
         return OperatorState.ACTIVE
-    
+
     def get_time_of_day(self) -> TimeOfDay:
         """Get current time-of-day classification."""
         hour = datetime.now().hour
@@ -251,12 +251,12 @@ class UserStateTracker:
             return TimeOfDay.NIGHT
         else:
             return TimeOfDay.LATE_NIGHT
-    
+
     def is_within_active_hours(self) -> bool:
         """Check if current time is within configured active hours."""
         hour = datetime.now().hour
         return self.active_hours_start <= hour < self.active_hours_end
-    
+
     def hours_since(self, event_type: str) -> Optional[float]:
         """Get hours since a specific proactive event type."""
         now = time.time()
@@ -271,24 +271,24 @@ class UserStateTracker:
             ts = self.stats.last_feedback_ask
         elif event_type == "last_interaction":
             ts = self.stats.last_seen
-        
+
         if ts is None:
             return None
         return (now - ts) / 3600
-    
+
     def get_underused_features(self, known_features: List[str]) -> List[str]:
         """Identify features the user hasn't tried or rarely uses."""
         used = set(self.stats.features_used.keys())
         never_used = [f for f in known_features if f not in used]
-        
+
         # Also find features used < 3 times
         rarely_used = [
             f for f, count in self.stats.features_used.items()
             if count < 3 and f in known_features
         ]
-        
+
         return never_used + rarely_used
-    
+
     def get_frequent_commands(self, top_n: int = 5) -> List[tuple]:
         """Get most frequently used commands."""
         sorted_cmds = sorted(
@@ -299,7 +299,7 @@ class UserStateTracker:
         return sorted_cmds[:top_n]
 
     # ── Preference management ──────────────────────────────────
-    
+
     def set_preference(self, key: str, value: Any) -> bool:
         """Set a user preference. Returns True if value was valid and set."""
         if key == "chat_mode":
@@ -364,7 +364,7 @@ class UserStateTracker:
         if self.is_quiet_hours() and priority <= 2:
             return True
         return False
-    
+
     def _load_state(self):
         """Load persisted state from disk."""
         state_file = self.state_dir / "user_state.json"
@@ -392,7 +392,7 @@ class UserStateTracker:
                 config = data.get("config", {})
                 self.active_hours_start = config.get("active_hours_start", 8)
                 self.active_hours_end = config.get("active_hours_end", 23)
-                
+
                 # Load preferences
                 prefs = data.get("preferences", {})
                 if prefs:
@@ -407,7 +407,7 @@ class UserStateTracker:
                     )
             except Exception as e:
                 logger.warning(f"Failed to load user state: {e}")
-    
+
     def _save_state(self):
         """Persist state to disk."""
         state_file = self.state_dir / "user_state.json"

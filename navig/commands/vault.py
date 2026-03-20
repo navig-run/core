@@ -7,7 +7,6 @@ Supports adding, listing, editing, deleting, testing, and cloning credentials.
 
 import json
 import sys
-from datetime import datetime
 from typing import Optional
 
 import typer
@@ -102,7 +101,7 @@ def list_credentials(
     for c in creds:
         status = "✅" if c.enabled else "❌"
         last_used = c.last_used_at.strftime("%Y-%m-%d %H:%M") if c.last_used_at else "-"
-        
+
         table.add_row(
             c.id,
             status,
@@ -115,7 +114,7 @@ def list_credentials(
 
     con = _console()
     con.print(table)
-    
+
     active_profile = vault.get_active_profile()
     con.print(f"[dim]Active Profile: [bold]{active_profile}[/bold][/dim]")
 
@@ -181,7 +180,7 @@ def add_credential(
 
     # Determine data payload based on type
     data = {}
-    
+
     if interactive and not from_stdin and not (api_key or token or password):
         # Prompt for secret if not provided — hidden input, no shell history
         if credential_type == "api_key":
@@ -192,14 +191,14 @@ def add_credential(
             if not email:
                 email = typer.prompt("Email Address")
             password = typer.prompt("Enter App Password", hide_input=True)
-    
+
     if api_key:
         data["api_key"] = api_key
     if token:
         data["token"] = token
     if password:
         data["password"] = password
-        
+
     if not data:
         _ch.error("No secret data provided. Use --key, --token, --password, --stdin, or interactive mode.")
         raise typer.Exit(1)
@@ -219,14 +218,14 @@ def add_credential(
             metadata=metadata
         )
         _ch.success(f"Credential added successfully! ID: {cred_id}")
-        
+
         # Ask to test immediately (skip in non-interactive / stdin mode)
         if interactive and not from_stdin and _ch.confirm_action("Test this credential now?"):
             test_credential(cred_id)
-            
+
     except Exception as e:
         _ch.error(f"Failed to add credential: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @cred_app.command("show")
@@ -237,11 +236,11 @@ def show_credential(
     """Show details of a credential."""
     vault = _vault_mod.get_vault()
     cred = vault.get_by_id(credential_id)
-    
+
     if not cred:
         _ch.error(f"Credential {credential_id} not found")
         raise typer.Exit(1)
-    
+
     con = _console()
     con.print(f"[bold cyan]Credential Details: {cred.id}[/bold cyan]")
     con.print(f"Provider: [green]{cred.provider}[/green]")
@@ -252,10 +251,10 @@ def show_credential(
     con.print(f"Created:  {cred.created_at}")
     con.print(f"Updated:  {cred.updated_at}")
     con.print(f"Used:     {cred.last_used_at or 'Never'}")
-    
+
     con.print("\n[bold]Metadata:[/bold]")
     _rprint(cred.metadata)
-    
+
     con.print("\n[bold]Data:[/bold]")
     if reveal:
         _ch.warning("Revealing secrets!")
@@ -277,7 +276,7 @@ def edit_credential(
 ):
     """Edit an existing credential."""
     vault = _vault_mod.get_vault()
-    
+
     data = {}
     if api_key:
         data["api_key"] = api_key
@@ -285,7 +284,7 @@ def edit_credential(
         data["token"] = token
     if password:
         data["password"] = password
-        
+
     if not (label or data):
         _ch.warning("Nothing to update.")
         return
@@ -305,15 +304,15 @@ def delete_credential(
     """Delete a credential permanently."""
     vault = _vault_mod.get_vault()
     cred = vault.get_by_id(credential_id)
-    
+
     if not cred:
         _ch.error(f"Credential {credential_id} not found")
         raise typer.Exit(1)
-        
+
     if not force:
         if not _ch.confirm_action(f"Delete credential {cred.label} ({cred.id})?"):
             raise typer.Abort()
-            
+
     if vault.delete(credential_id):
         _ch.success(f"Credential {credential_id} deleted.")
     else:
@@ -327,18 +326,18 @@ def test_credential(
 ):
     """Test a credential against the provider API."""
     vault = _vault_mod.get_vault()
-    
+
     # Check if target looks like a UUID (8 chars)
-    is_id = len(target) == 8 
-    
+    is_id = len(target) == 8
+
     con = _console()
     con.print(f"Running validation for [cyan]{target}[/cyan]...")
-    
+
     if is_id:
         result = vault.test(target)
     else:
         result = vault.test_provider(target, profile_id=profile)
-        
+
     if result.success:
         _ch.success("Validation successful!")
         con.print(f"[green]{result.message}[/green]")
@@ -381,7 +380,7 @@ def clone_credential(
     """Clone a credential to a different profile."""
     vault = _vault_mod.get_vault()
     new_id = vault.clone(credential_id, profile, label)
-    
+
     if new_id:
         _ch.success(f"Credential cloned to profile '{profile}'. New ID: {new_id}")
     else:
@@ -406,25 +405,25 @@ def show_audit_log(
     """Show audit log for credentials."""
     vault = _vault_mod.get_vault()
     logs = vault.get_audit_log(credential_id, limit)
-    
+
     table = _Table(title="Credential Audit Log")
     table.add_column("Time", style="dim")
     table.add_column("Credential", style="cyan")
     table.add_column("Action", style="bold")
     table.add_column("Accessed By")
-    
+
     for log in logs:
         action_style = "green" if log["action"] in ("created", "enabled") else \
                        "red" if log["action"] in ("deleted", "disabled") else \
                        "yellow" if log["action"] == "updated" else "white"
-                       
+
         table.add_row(
             log["timestamp"],
             log["credential_id"],
             f"[{action_style}]{log['action']}[/{action_style}]",
             log["accessed_by"]
         )
-        
+
     _console().print(table)
 
 
@@ -438,7 +437,7 @@ def list_profiles():
     vault = _vault_mod.get_vault()
     profiles = vault.list_profiles()
     active = vault.get_active_profile()
-    
+
     con = _console()
     con.print("Available Profiles:")
     for p in profiles:

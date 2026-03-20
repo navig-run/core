@@ -9,10 +9,8 @@ to improve CLI startup time (~120 ms saved).
 """
 
 import sys
-
-from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
-
+from typing import Any, Dict, List, Optional, Union
 
 # ---------------------------------------------------------------------------
 # Lazy Rich class accessors  (loaded on first use, then cached)
@@ -38,15 +36,23 @@ def _ensure_rich():
         return
     from rich.console import Console as _C
     from rich.panel import Panel as _P
-    from rich.table import Table as _T
-    from rich.tree import Tree as _Tr
+    from rich.progress import (
+        BarColumn as _BC,
+    )
     from rich.progress import (
         Progress as _Pr,
+    )
+    from rich.progress import (
         SpinnerColumn as _SC,
-        TextColumn as _TC,
-        BarColumn as _BC,
+    )
+    from rich.progress import (
         TaskProgressColumn as _TPC,
     )
+    from rich.progress import (
+        TextColumn as _TC,
+    )
+    from rich.table import Table as _T
+    from rich.tree import Tree as _Tr
     _Console = _C
     _Panel = _P
     _Table = _T
@@ -328,7 +334,7 @@ def create_table(
         show_lines=show_lines,
         header_style="bold cyan"
     )
-    
+
     if columns:
         for col in columns:
             table.add_column(
@@ -336,7 +342,7 @@ def create_table(
                 style=col.get('style', 'white'),
                 justify=col.get('justify', 'left')
             )
-    
+
     return table
 
 
@@ -359,20 +365,20 @@ def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
     """
     if not stdout or not stdout.strip():
         return
-    
+
     lines = stdout.strip().split('\n')
     if not lines:
         return
-    
+
     # Parse header and rows
     header = lines[0].split('\t')
     rows = [line.split('\t') for line in lines[1:] if line.strip()]
-    
+
     if not rows:
         # Just header, no data
         raw_print(stdout)
         return
-    
+
     # Detect query type from headers if not provided
     if not query_type:
         header_lower = [h.lower() for h in header]
@@ -380,7 +386,7 @@ def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
             query_type = 'describe'
         else:
             query_type = 'select'
-    
+
     # Create minimal table - no box, no colors on columns
     _ensure_rich()
     table = _Table(
@@ -390,35 +396,35 @@ def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
         box=None,
         padding=(0, 1),
     )
-    
+
     # Add columns - no styling (saves tokens)
     for col_name in header:
         table.add_column(col_name)
-    
+
     # Add rows - only highlight critical info
     for row in rows:
         formatted_row = []
         for i, val in enumerate(row):
             if i >= len(header):
                 continue
-                
+
             col_lower = header[i].lower() if i < len(header) else ''
-            
+
             # Only color truly critical things (saves tokens)
             if query_type == 'describe':
                 if col_lower == 'key' and val == 'PRI':
                     val = "[bold]PRI[/]"  # Primary keys are important
                 elif col_lower == 'extra' and 'auto_increment' in val.lower():
                     val = "[dim]AI[/]"  # Shorten to save tokens
-            
+
             formatted_row.append(val)
-        
+
         # Ensure row has same number of columns as header
         while len(formatted_row) < len(header):
             formatted_row.append('')
-        
+
         table.add_row(*formatted_row[:len(header)])
-    
+
     console.print(table)
 
 
@@ -461,16 +467,16 @@ def create_spinner(message: str = "Working...") -> "SpinnerContext":
 
 class SpinnerContext:
     """Context manager for showing a spinner with a message."""
-    
+
     def __init__(self, message: str):
         self.message = message
         self.status = None
-    
+
     def __enter__(self):
         self.status = console.status(f"[{Colors.INFO}]{self.message}[/{Colors.INFO}]", spinner="dots")
         self.status.__enter__()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.status:
             self.status.__exit__(exc_type, exc_val, exc_tb)
@@ -575,22 +581,22 @@ def print_server_info(name: str, config: Dict[str, Any]):
             {"name": "Value", "style": "green"}
         ]
     )
-    
+
     table.add_row("Host", config.get('host', 'N/A'))
     table.add_row("User", config.get('user', 'N/A'))
     table.add_row("Port", str(config.get('port', 22)))
-    
+
     if 'database' in config:
         db = config['database']
         table.add_row("Database", f"{db.get('type', 'N/A')} ({db.get('name', 'N/A')})")
-    
+
     if 'metadata' in config:
         meta = config['metadata']
         if meta.get('os'):
             table.add_row("OS", meta['os'])
         if meta.get('php_version'):
             table.add_row("PHP", meta['php_version'])
-    
+
     print_table(table)
 
 
@@ -603,12 +609,12 @@ def print_tunnel_status(tunnel_info: Dict[str, Any], server_name: str):
             {"name": "Value", "style": "green"}
         ]
     )
-    
+
     table.add_row("Status", status_text("RUNNING", True))
     table.add_row("Local Endpoint", f"127.0.0.1:{tunnel_info['local_port']}")
     table.add_row("Process ID", str(tunnel_info['pid']))
     table.add_row("Started At", tunnel_info.get('started_at', 'Unknown'))
-    
+
     print_table(table)
 
 
@@ -657,15 +663,15 @@ def requires_confirmation(
     # --yes flag bypasses all confirmation
     if auto_confirm:
         return False
-    
+
     # Auto mode bypasses confirmation
     if execution_mode == 'auto':
         return False
-    
+
     # Check if operation level meets the confirmation threshold
     op_level = OPERATION_LEVELS.get(operation_type, 2)  # Default to standard
     threshold = CONFIRMATION_THRESHOLDS.get(confirmation_level, 2)  # Default to standard
-    
+
     return op_level <= threshold
 
 
@@ -702,23 +708,23 @@ def confirm_operation(
         - 'verbose': All operations including read-only (SELECT, downloads)
     """
     from navig.config import get_config_manager
-    
+
     config_manager = get_config_manager()
     execution_mode = config_manager.get_execution_mode()
     confirmation_level = config_manager.get_confirmation_level()
-    
+
     # --confirm flag forces interactive mode for this command
     if force_confirm:
         execution_mode = 'interactive'
         auto_confirm = False
-    
+
     # Check if confirmation is needed
     if not requires_confirmation(operation_type, confirmation_level, execution_mode, auto_confirm):
         return True
-    
+
     # Build confirmation message
     console.print()
-    
+
     # Choose icon and color based on operation type
     if operation_type == 'critical':
         icon = "⚠️"
@@ -732,22 +738,22 @@ def confirm_operation(
         icon = "ℹ️"
         title_color = Colors.INFO
         title_text = "Confirm action"
-    
+
     console.print(f"[{title_color}]{icon} {title_text}:[/{title_color}]")
     console.print(f"  [bold]{operation_name}[/bold]")
-    
+
     if host:
         console.print(f"  [{Colors.DIM}]Host:[/{Colors.DIM}] [{Colors.SERVER}]{host}[/{Colors.SERVER}]")
     if app:
         console.print(f"  [{Colors.DIM}]App:[/{Colors.DIM}] [{Colors.ACCENT}]{app}[/{Colors.ACCENT}]")
     if details:
         console.print(f"  [{Colors.DIM}]{details}[/{Colors.DIM}]")
-    
+
     console.print()
-    
+
     # Default to Yes, except for critical operations (keep No for destructive ops)
     default = False if operation_type == 'critical' else True
-    
+
     return confirm_action("Are you sure you want to proceed?", default=default)
 
 
@@ -762,7 +768,7 @@ def classify_command(command: str) -> str:
         'critical', 'standard', or 'verbose'
     """
     command_lower = command.lower().strip()
-    
+
     # Critical patterns (destructive operations)
     critical_patterns = [
         'rm ', 'rm\t', 'rmdir', 'rm -rf', 'rm -r',
@@ -775,11 +781,11 @@ def classify_command(command: str) -> str:
         'userdel', 'groupdel',
         ':(){:|:&};:',  # Fork bomb
     ]
-    
+
     for pattern in critical_patterns:
         if pattern in command_lower:
             return 'critical'
-    
+
     # Standard patterns (state-changing operations)
     standard_patterns = [
         'create database', 'create table', 'alter table',
@@ -796,11 +802,11 @@ def classify_command(command: str) -> str:
         'certbot', 'ufw ', 'iptables',
         'crontab', 'at ',
     ]
-    
+
     for pattern in standard_patterns:
         if pattern in command_lower:
             return 'standard'
-    
+
     # Default to verbose (read-only or unknown)
     return 'verbose'
 
@@ -816,15 +822,15 @@ def classify_sql(query: str) -> str:
         'critical', 'standard', or 'verbose'
     """
     query_upper = query.upper().strip()
-    
+
     # Critical SQL operations
     if any(kw in query_upper for kw in ['DROP', 'TRUNCATE', 'DELETE']):
         return 'critical'
-    
+
     # Standard SQL operations
     if any(kw in query_upper for kw in ['CREATE', 'ALTER', 'INSERT', 'UPDATE', 'REPLACE', 'GRANT', 'REVOKE']):
         return 'standard'
-    
+
     # Verbose (read-only)
     return 'verbose'
 

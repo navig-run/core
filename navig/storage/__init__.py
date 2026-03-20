@@ -11,10 +11,10 @@ Provides:
 """
 
 from navig.storage.engine import Engine, get_engine
-from navig.storage.pragma_profiles import PragmaProfile, FAST, BALANCED, DURABLE
-from navig.storage.write_batcher import WriteBatcher
+from navig.storage.pragma_profiles import BALANCED, DURABLE, FAST, PragmaProfile
 from navig.storage.query_timer import QueryTimer
 from navig.storage.tx_helpers import begin_immediate, savepoint
+from navig.storage.write_batcher import WriteBatcher
 
 __all__ = [
     "Engine",

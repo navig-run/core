@@ -1,0 +1,10 @@
+{
+  "id": "lifeos",
+  "name": "Life OS",
+  "version": "1.0.0",
+  "description": "Personal life operating system — daily workflows, routines, and productivity sequences.",
+  "author": "navig",
+  "license": "MIT",
+  "provides": ["workflows"],
+  "depends_on": {}
+}

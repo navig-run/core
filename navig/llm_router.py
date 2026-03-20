@@ -41,11 +41,12 @@ DO NOT merge these two modules.
 
 from __future__ import annotations
 
-import os
-import threading
-import re
 import logging
+import os
+import re
+import threading
 from typing import Any, Dict, List, Optional, Set
+
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 try:
@@ -178,7 +179,7 @@ PROVIDER_BASE_URLS: Dict[str, str] = {
     "together":      "https://api.together.xyz/v1",
     "github_models": "https://models.inference.ai.azure.com",
     "ollama":        "http://127.0.0.1:11434/v1",
-    "mcp_bridge":     "ws://127.0.0.1:42070",
+    "mcp_bridge":     f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}",
 }
 
 SUPPORTED_PROVIDERS = set(PROVIDER_BASE_URLS.keys())

@@ -37,6 +37,7 @@ def mode_show(
     """Display all LLM modes with their configuration."""
     if json_output:
         import json as _json
+
         from navig.llm_router import get_llm_router
         router = get_llm_router()
         typer.echo(_json.dumps(router.get_all_modes(), indent=2))
@@ -49,7 +50,7 @@ def _show_modes():
     from rich.console import Console
     from rich.table import Table
 
-    from navig.llm_router import get_llm_router, CANONICAL_MODES, _has_api_key
+    from navig.llm_router import CANONICAL_MODES, _has_api_key, get_llm_router
 
     console = Console()
     router = get_llm_router()
@@ -120,6 +121,7 @@ def mode_set(
 ):
     """Update a mode's provider, model, or parameters."""
     from rich.console import Console
+
     from navig.llm_router import get_llm_router
 
     console = Console()
@@ -179,6 +181,7 @@ def mode_list(
     """List available models per provider, with uncensored status."""
     from rich.console import Console
     from rich.table import Table
+
     from navig.llm_router import get_llm_router
 
     console = Console()
@@ -238,6 +241,7 @@ def mode_detect(
 ):
     """Test mode detection on a piece of text."""
     from rich.console import Console
+
     from navig.llm_router import get_llm_router
 
     console = Console()

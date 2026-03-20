@@ -1,9 +1,10 @@
-import subprocess
 import json
-import threading
 import logging
 import os
-from typing import Dict, Any, Optional
+import subprocess
+import threading
+from typing import Any, Dict, Optional
+
 
 class PluginInstance:
     def __init__(self, name: str, entrypoint: str, cwd: str):
@@ -61,9 +62,9 @@ class PluginInstance:
             pass
 
     def send_request(self, method: str, params: Dict[str, Any] = None) -> Any:
-        import uuid
         import concurrent.futures
-        
+        import uuid
+
         req_id = str(uuid.uuid4())
         payload = {
             "jsonrpc": "2.0",
@@ -71,7 +72,7 @@ class PluginInstance:
             "params": params or {},
             "id": req_id
         }
-        
+
         future = concurrent.futures.Future()
         with self.lock:
             self.requests[req_id] = future
@@ -80,7 +81,7 @@ class PluginInstance:
                 self.process.stdin.flush()
             else:
                 raise RuntimeError("Plugin process not running")
-        
+
         return future.result(timeout=10) # 10s timeout
 
     def stop(self):
@@ -99,7 +100,7 @@ class PluginManager:
     def discover_and_load(self):
         if not os.path.exists(self.plugin_dir):
             return
-            
+
         for d in os.listdir(self.plugin_dir):
             plugin_path = os.path.join(self.plugin_dir, d)
             manifest_path = os.path.join(plugin_path, "navig.plugin.json")
@@ -110,15 +111,15 @@ class PluginManager:
         try:
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
-            
+
             name = manifest['name']
             entrypoint = manifest['entrypoint']
-            
+
             instance = PluginInstance(name, entrypoint, path)
             instance.start()
             self.plugins[name] = instance
             print(f"🔌 Plugin loaded: {name}")
-            
+
         except Exception as e:
             print(f"❌ Failed to load plugin at {path}: {e}")
 

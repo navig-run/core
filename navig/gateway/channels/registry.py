@@ -94,22 +94,22 @@ class ChannelMeta:
     description: str
     docs_url: Optional[str] = None
     icon: str = "💬"
-    
+
     # Capabilities
     capabilities: List[ChannelCapability] = field(default_factory=list)
-    
+
     # Status
     status: ChannelStatus = ChannelStatus.UNAVAILABLE
     status_message: Optional[str] = None
-    
+
     # Config requirements
     required_config: List[str] = field(default_factory=list)
     optional_config: List[str] = field(default_factory=list)
-    
+
     # Module info
     module_path: Optional[str] = None
     adapter_class: Optional[str] = None
-    
+
     def is_available(self) -> bool:
         """Check if channel is available for use."""
         return self.status in (
@@ -117,11 +117,11 @@ class ChannelMeta:
             ChannelStatus.CONFIGURED,
             ChannelStatus.CONNECTED,
         )
-    
+
     def has_capability(self, cap: ChannelCapability) -> bool:
         """Check if channel has a specific capability."""
         return cap in self.capabilities
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -353,26 +353,26 @@ class ChannelRegistry:
     
     Manages channel discovery, metadata, and adapter loading.
     """
-    
+
     def __init__(self):
         self._channels: Dict[ChannelId, ChannelMeta] = {}
         self._adapters: Dict[ChannelId, Any] = {}
         self._initialized = False
-    
+
     def initialize(self) -> None:
         """Initialize registry with default channels."""
         if self._initialized:
             return
-        
+
         # Load default channel metadata
         for channel_id, meta in DEFAULT_CHANNEL_META.items():
             self._channels[channel_id] = meta
-        
+
         # Check availability of each channel
         self._check_channel_availability()
-        
+
         self._initialized = True
-    
+
     def _check_channel_availability(self) -> None:
         """Check which channels are available based on dependencies."""
         for channel_id, meta in self._channels.items():
@@ -386,7 +386,7 @@ class ChannelRegistry:
                 except ImportError as e:
                     meta.status = ChannelStatus.UNAVAILABLE
                     meta.status_message = f"Module not available: {e}"
-    
+
     def get_channel(self, channel_id: Union[str, ChannelId]) -> Optional[ChannelMeta]:
         """
         Get channel metadata by ID or alias.
@@ -399,15 +399,15 @@ class ChannelRegistry:
         """
         if not self._initialized:
             self.initialize()
-        
+
         # Normalize to ChannelId
         if isinstance(channel_id, str):
             channel_id = self.normalize_channel_id(channel_id)
             if channel_id is None:
                 return None
-        
+
         return self._channels.get(channel_id)
-    
+
     def normalize_channel_id(self, raw: str) -> Optional[ChannelId]:
         """
         Normalize a channel name/alias to ChannelId.
@@ -419,19 +419,19 @@ class ChannelRegistry:
             Normalized ChannelId or None if invalid
         """
         key = raw.strip().lower()
-        
+
         # Check aliases first
         if key in CHANNEL_ALIASES:
             return CHANNEL_ALIASES[key]
-        
+
         # Try direct match
         try:
             return ChannelId(key)
         except ValueError:
             pass
-        
+
         return None
-    
+
     def list_channels(self, available_only: bool = False) -> List[ChannelMeta]:
         """
         List all registered channels.
@@ -444,20 +444,20 @@ class ChannelRegistry:
         """
         if not self._initialized:
             self.initialize()
-        
+
         channels = []
         for channel_id in CHANNEL_ORDER:
             if channel_id in self._channels:
                 meta = self._channels[channel_id]
                 if not available_only or meta.is_available():
                     channels.append(meta)
-        
+
         return channels
-    
+
     def list_available_channels(self) -> List[ChannelMeta]:
         """List only available channels."""
         return self.list_channels(available_only=True)
-    
+
     def get_adapter(self, channel_id: Union[str, ChannelId]) -> Optional[Any]:
         """
         Get or load channel adapter.
@@ -472,16 +472,16 @@ class ChannelRegistry:
             channel_id = self.normalize_channel_id(channel_id)
             if channel_id is None:
                 return None
-        
+
         # Check cache
         if channel_id in self._adapters:
             return self._adapters[channel_id]
-        
+
         # Load adapter
         meta = self.get_channel(channel_id)
         if not meta or not meta.module_path or not meta.adapter_class:
             return None
-        
+
         try:
             import importlib
             module = importlib.import_module(meta.module_path)
@@ -493,7 +493,7 @@ class ChannelRegistry:
             meta.status = ChannelStatus.ERROR
             meta.status_message = str(e)
             return None
-    
+
     def register_channel(
         self,
         meta: ChannelMeta,
@@ -509,12 +509,12 @@ class ChannelRegistry:
         self._channels[meta.id] = meta
         if adapter:
             self._adapters[meta.id] = adapter
-    
+
     def get_status_summary(self) -> Dict[str, Any]:
         """Get summary of all channel statuses."""
         if not self._initialized:
             self.initialize()
-        
+
         summary = {
             'total': len(self._channels),
             'available': 0,
@@ -522,18 +522,18 @@ class ChannelRegistry:
             'connected': 0,
             'channels': [],
         }
-        
+
         for channel in self.list_channels():
             info = channel.to_dict()
             summary['channels'].append(info)
-            
+
             if channel.status == ChannelStatus.AVAILABLE:
                 summary['available'] += 1
             elif channel.status == ChannelStatus.CONFIGURED:
                 summary['configured'] += 1
             elif channel.status == ChannelStatus.CONNECTED:
                 summary['connected'] += 1
-        
+
         return summary
 
 

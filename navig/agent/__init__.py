@@ -33,17 +33,17 @@ Usage:
     navig agent stop
 """
 
-from navig.agent.config import AgentConfig, PersonalityConfig
+from navig.agent.brain import Brain, Decision, Plan, Thought
 from navig.agent.component import Component, ComponentState, HealthStatus
-from navig.agent.nervous_system import NervousSystem, Event, EventType, EventPriority
-from navig.agent.goals import GoalPlanner, Goal, GoalState, Subtask, SubtaskState
-from navig.agent.heart import Heart
-from navig.agent.eyes import Eyes, SystemMetrics, Alert
+from navig.agent.config import AgentConfig, PersonalityConfig
 from navig.agent.ears import Ears, InputMessage
-from navig.agent.hands import Hands, CommandResult, CommandStatus
-from navig.agent.brain import Brain, Thought, Plan, Decision
-from navig.agent.soul import Soul, PersonalityProfile, Mood
+from navig.agent.eyes import Alert, Eyes, SystemMetrics
+from navig.agent.goals import Goal, GoalPlanner, GoalState, Subtask, SubtaskState
+from navig.agent.hands import CommandResult, CommandStatus, Hands
+from navig.agent.heart import Heart
+from navig.agent.nervous_system import Event, EventPriority, EventType, NervousSystem
 from navig.agent.runner import Agent, run_agent
+from navig.agent.soul import Mood, PersonalityProfile, Soul
 
 __all__ = [
     # Main Entry

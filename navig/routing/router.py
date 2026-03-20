@@ -18,7 +18,6 @@ Provider priority:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import time
@@ -364,8 +363,10 @@ class UnifiedRouter:
     def _create_provider(self, name: str):
         """Create a provider from config."""
         from navig.agent.llm_providers import (
-            McpBridgeProvider, OpenRouterProvider,
-            GitHubModelsProvider, OllamaProvider,
+            GitHubModelsProvider,
+            McpBridgeProvider,
+            OllamaProvider,
+            OpenRouterProvider,
         )
 
         bridge_cfg = self._config.get("bridge", {})
@@ -379,7 +380,10 @@ class UnifiedRouter:
 
         elif name == "openrouter":
             import os
-            api_key = self._config.get("openrouter_api_key", "") or os.getenv("OPENROUTER_API_KEY", "")
+            api_key = (
+                self._config.get("openrouter_api_key", "")
+                or os.getenv("OPENROUTER_API_KEY", "")
+            )
             if not api_key:
                 # Try vault
                 try:
@@ -422,9 +426,7 @@ class UnifiedRouter:
 
         # VS Code providers: pass purpose, let VS Code pick model
         if provider_name == "mcp_bridge":
-            kwargs: Dict[str, Any] = {}
-            if provider_name == "mcp_bridge":
-                kwargs["purpose"] = decision.purpose
+            kwargs: Dict[str, Any] = {"purpose": decision.purpose}
             resp = await provider.chat(
                 model=decision.model or "",
                 messages=request.messages,
@@ -448,9 +450,8 @@ class UnifiedRouter:
 
         # Guard: log a warning if Opus is about to be used — it must never auto-route.
         if "claude-opus" in model.lower():
-            from loguru import logger  # noqa: PLC0415
             logger.warning(
-                "[routing] Opus model selected: provider={} mode={} model={} — "
+                "[routing] Opus model selected: provider=%s mode=%s model=%s — "
                 "verify this is an explicit user request (allow_premium=True)",
                 provider_name, decision.mode, model,
             )
@@ -563,8 +564,12 @@ def reset_router() -> None:
     """Reset the singleton (for testing or config reload)."""
     global _router
     if _router:
-        # Don't await close in sync context
-        pass
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            loop.create_task(_router.close())
+        except RuntimeError:
+            asyncio.run(_router.close())
     _router = None
 
 

@@ -1,0 +1,73 @@
+# Matomo Addon Template for NAVIG
+# Open-source web analytics platform
+
+name: matomo
+version: "1.0.0"
+description: "Privacy-focused web analytics platform, Google Analytics alternative"
+author: navig-run
+enabled: false
+dependencies:
+  - nginx
+  - postgresql
+
+paths:
+  install_dir: /var/www/matomo
+  config_dir: /var/www/matomo/config
+  config_file: /var/www/matomo/config/config.ini.php
+  plugins_dir: /var/www/matomo/plugins
+  tmp_dir: /var/www/matomo/tmp
+  log_file: /var/log/matomo/matomo.log
+  nginx_config: /etc/nginx/sites-available/matomo
+
+services:
+  php_fpm: php8.2-fpm
+  web_server: nginx
+  archive_cron: matomo-archive.timer
+
+commands:
+  - name: archive
+    description: "Process archived reports"
+    command: "php /var/www/matomo/console core:archive"
+  - name: clear_cache
+    description: "Clear Matomo cache"
+    command: "php /var/www/matomo/console cache:clear"
+  - name: update
+    description: "Update Matomo core"
+    command: "php /var/www/matomo/console core:update"
+  - name: create_user
+    description: "Create a new user"
+    command: "php /var/www/matomo/console user:create"
+  - name: list_sites
+    description: "List all tracked sites"
+    command: "php /var/www/matomo/console site:list"
+  - name: add_site
+    description: "Add a new site to track"
+    command: "php /var/www/matomo/console site:add"
+  - name: plugin_list
+    description: "List all plugins"
+    command: "php /var/www/matomo/console plugin:list"
+  - name: diagnostics
+    description: "Run system diagnostics"
+    command: "php /var/www/matomo/console diagnostics:run"
+
+env_vars:
+  MATOMO_DATABASE_HOST: localhost
+  MATOMO_DATABASE_USERNAME: matomo
+  MATOMO_DATABASE_PASSWORD: ""
+  MATOMO_DATABASE_DBNAME: matomo
+  MATOMO_DATABASE_TABLES_PREFIX: matomo_
+
+api:
+  endpoint: "http://localhost/index.php"
+  auth_method: token_auth
+  doc_url: "https://developer.matomo.org/api-reference/reporting-api"
+
+default_port: 80
+webserver_config: nginx
+
+database:
+  supported:
+    - mysql
+    - mariadb
+  default_type: mysql
+  default_name: matomo

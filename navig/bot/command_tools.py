@@ -10,8 +10,7 @@ Each command is defined with:
 - parameters: JSON schema for command arguments
 """
 
-from typing import Dict, List, Any, Callable, Optional, Union
-
+from typing import Any, Callable, Dict, List, Optional, Union
 
 # ============================================================================
 # COMMAND FUNCTION SCHEMAS
@@ -85,7 +84,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
-    
+
     # -------------- Host Management --------------
     {
         "type": "function",
@@ -112,7 +111,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- System Monitoring --------------
     {
         "type": "function",
@@ -227,7 +226,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Docker --------------
     {
         "type": "function",
@@ -275,7 +274,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Database --------------
     {
         "type": "function",
@@ -302,7 +301,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Tools --------------
     {
         "type": "function",
@@ -387,7 +386,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Utilities --------------
     {
         "type": "function",
@@ -542,7 +541,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Crypto & Finance --------------
     {
         "type": "function",
@@ -594,7 +593,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Weather --------------
     {
         "type": "function",
@@ -613,7 +612,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Developer Tools --------------
     {
         "type": "function",
@@ -722,7 +721,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Social & Fun --------------
     {
         "type": "function",
@@ -782,7 +781,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- Media --------------
     {
         "type": "function",
@@ -835,7 +834,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             }
         }
     },
-    
+
     # -------------- AI Commands --------------
     {
         "type": "function",
@@ -901,11 +900,11 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
     "stats": "/stats",
     "reset": "/reset",
     "about": "/about",
-    
+
     # Host Management
     "hosts": "/hosts",
     "use_host": lambda args: f"/use {args.get('host_name', '')}",
-    
+
     # System Monitoring
     "disk": "/disk",
     "memory": "/memory",
@@ -920,22 +919,22 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
     "services": "/services",
     "cron": "/cron",
     "ssl": lambda args: f"/ssl {args.get('domain', '')}",
-    
+
     # Docker
     "docker_ps": "/docker",
     "docker_logs": lambda args: f"/logs {args.get('container', '')} {args.get('lines', '')}".strip(),
     "docker_restart": lambda args: f"/restart {args.get('container', '')}",
-    
+
     # Database
     "db_list": "/db",
     "db_tables": lambda args: f"/tables {args.get('database', '')}",
-    
+
     # Tools
     "tunnel": lambda args: _build_tunnel_cmd(args),
     "backup": lambda args: _build_backup_cmd(args),
     "hestia": lambda args: _build_hestia_cmd(args),
     "run_command": lambda args: f"/run {args.get('command', '')}",
-    
+
     # Utilities
     "whois": lambda args: f"/whois {args.get('domain', '')}",
     "time": lambda args: f"/time {args.get('timezone', '')}".strip(),
@@ -947,15 +946,15 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
     "remind": lambda args: _build_remind_cmd(args),
     "reminders": "/reminders",
     "cancelreminder": lambda args: f"/cancelreminder {args.get('reminder_id', '')}",
-    
+
     # Crypto & Finance
     "crypto": lambda args: f"/crypto {args.get('symbol', '')}".strip(),
     "crypto_list": "/crypto_list",
     "convert": lambda args: f"/convert {args.get('amount', '')} {args.get('from_currency', '')} {args.get('to_currency', '')}",
-    
+
     # Weather
     "weather": lambda args: f"/weather {args.get('location', '')}".strip(),
-    
+
     # Developer Tools
     "calc": lambda args: f"/calc {args.get('expression', '')}",
     "hash": lambda args: f"/hash {args.get('algorithm', 'sha256')} {args.get('text', '')}",
@@ -963,19 +962,19 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
     "encode": lambda args: f"/encode {args.get('text', '')}",
     "decode": lambda args: f"/decode {args.get('text', '')}",
     "curl": lambda args: f"/curl {args.get('url', '')}",
-    
+
     # Social & Fun
     "profile": lambda args: f"/profile {args.get('user', '')}".strip(),
     "quote": "/quote",
     "joke": "/joke",
     "uid": "/uid",
     "respect": lambda args: f"/respect {args.get('target', '')}".strip(),
-    
+
     # Media
     "music": lambda args: f"/music {args.get('url', '')}",
     "video": lambda args: f"/video {args.get('url', '')}",
     "imagegen": lambda args: f"/imagegen {args.get('prompt', '')}",
-    
+
     # AI Commands
     "explain": lambda args: f"/explain {args.get('question', '')}",
     "ai_persona": lambda args: f"/ai_persona {args.get('persona', '')}".strip(),
@@ -1015,11 +1014,11 @@ def _build_remind_cmd(args: Dict[str, Any]) -> str:
     message = args.get('message', '')
     duration = args.get('duration', 30)
     unit = args.get('unit', 'minutes')
-    
+
     # Convert unit to short form
     unit_map = {'minutes': 'm', 'hours': 'h', 'days': 'd', 'weeks': 'w'}
     short_unit = unit_map.get(unit, 'm')
-    
+
     return f"/remind {duration}{short_unit} {message}"
 
 
@@ -1037,7 +1036,7 @@ def get_command_string(function_name: str, args: Dict[str, Any]) -> Optional[str
     handler = COMMAND_HANDLER_MAP.get(function_name)
     if handler is None:
         return None
-    
+
     if callable(handler):
         return handler(args)
     return handler
@@ -1067,26 +1066,26 @@ INTENT_KEYWORDS: Dict[str, List[str]] = {
     "memory": ["memory", "ram", "mem", "free memory", "available memory"],
     "cpu": ["cpu", "processor", "load", "load average"],
     "uptime": ["uptime", "running", "since", "last boot", "reboot"],
-    
+
     # Docker
     "docker_ps": ["docker", "containers", "running containers", "docker ps", "container list"],
     "docker_logs": ["logs", "container logs", "docker logs"],
     "docker_restart": ["restart container", "restart docker", "reboot container"],
-    
+
     # Host
     "hosts": ["hosts", "servers", "machines", "list servers", "show servers"],
     "use_host": ["switch", "use", "connect to", "change server", "select server"],
-    
+
     # Database
     "db_list": ["databases", "list databases", "show databases", "dbs"],
     "db_tables": ["tables", "database tables", "show tables"],
-    
+
     # Utilities
     "weather": ["weather", "temperature", "forecast", "climate"],
     "crypto": ["bitcoin", "btc", "eth", "ethereum", "crypto", "cryptocurrency", "price of"],
     "convert": ["convert", "exchange", "currency", "usd", "eur", "gbp"],
     "time": ["time", "timezone", "current time", "what time"],
-    
+
     # Fun
     "flip": ["flip", "coin", "heads", "tails"],
     "roll": ["roll", "dice", "d6", "d20"],

@@ -8,9 +8,9 @@ queue     — Lane-based async command queue with cancellation and timeout.
 pipeline  — Composable tool chain that pipes ToolResult.output between steps.
 """
 
-from .hooks import ExecutionHooks, ExecutionEvent, HookPhase
+from .hooks import ExecutionEvent, ExecutionHooks, HookPhase
+from .pipeline import PipelineResult, PipelineStep, ToolPipeline
 from .queue import CommandQueue, LaneClearedError, TaskHandle
-from .pipeline import ToolPipeline, PipelineStep, PipelineResult
 
 __all__ = [
     # Hooks

@@ -9,9 +9,8 @@ from typing import Optional
 
 import typer
 
-from navig.deprecation import deprecation_warning
-from navig.lazy_loader import lazy_import
 from navig.cli._callbacks import show_subcommand_help
+from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
 
@@ -270,8 +269,6 @@ def register_local_web_commands(app: typer.Typer) -> None:
         """List HestiaCP resources (users, domains)."""
         ctx.obj['plain'] = plain
         if users:
-            from navig.commands.config_backup import inspect_export
-            from navig.commands.config_backup import list_exportsmains_cmd
             list_domains_cmd(user_filter, ctx.obj)
         else:
             from navig.commands.hestia import list_users_cmd

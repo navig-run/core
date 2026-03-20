@@ -29,7 +29,7 @@ import os
 import time
 from typing import Any, Optional
 
-from navig.gateway.channels.media_engine.budget import BudgetGuard, BudgetExceeded
+from navig.gateway.channels.media_engine.budget import BudgetExceeded, BudgetGuard
 from navig.gateway.channels.media_engine.media_cache import MediaCache
 
 try:
@@ -195,7 +195,6 @@ async def _stage_spotify(artist: str, title: str, budget: BudgetGuard) -> Option
     if not (client_id and client_secret):
         return None
     try:
-        import httpx
         # Obtain bearer token
         auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
         token_data = await _fetch_json(

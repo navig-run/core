@@ -7,14 +7,14 @@ Provides web content fetching and search capabilities:
 Modeled after advanced web tools implementation.
 """
 
-import re
-import html
 import hashlib
-from typing import Dict, Any, Optional, Tuple, List
+import html
+import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
+from typing import Any, Dict, List, Optional, Tuple
 
 # HTTP library (requests for sync, aiohttp for async)
 try:
@@ -57,7 +57,7 @@ class CacheEntry:
     """Cache entry with expiration."""
     data: Any
     expires_at: datetime
-    
+
     def is_expired(self) -> bool:
         return datetime.now() > self.expires_at
 
@@ -130,15 +130,15 @@ def html_to_markdown(html_content: str) -> Dict[str, Optional[str]]:
     # Extract title
     title_match = re.search(r'<title[^>]*>([\s\S]*?)</title>', html_content, re.IGNORECASE)
     title = _normalize_whitespace(_strip_tags(title_match.group(1))) if title_match else None
-    
+
     text = html_content
-    
+
     # Remove scripts, styles, noscript
     text = re.sub(r'<script[\s\S]*?</script>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<style[\s\S]*?</style>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<noscript[\s\S]*?</noscript>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<!--[\s\S]*?-->', '', text)
-    
+
     # Convert links
     def convert_link(match):
         href = match.group(1)
@@ -146,9 +146,9 @@ def html_to_markdown(html_content: str) -> Dict[str, Optional[str]]:
         if not body:
             return href
         return f'[{body}]({href})'
-    text = re.sub(r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', 
+    text = re.sub(r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>',
                   convert_link, text, flags=re.IGNORECASE)
-    
+
     # Convert headings
     def convert_heading(match):
         level = int(match.group(1))
@@ -156,26 +156,26 @@ def html_to_markdown(html_content: str) -> Dict[str, Optional[str]]:
         prefix = '#' * min(6, max(1, level))
         return f'\n{prefix} {body}\n'
     text = re.sub(r'<h([1-6])[^>]*>([\s\S]*?)</h\1>', convert_heading, text, flags=re.IGNORECASE)
-    
+
     # Convert list items
     def convert_li(match):
         body = _normalize_whitespace(_strip_tags(match.group(1)))
         return f'\n- {body}' if body else ''
     text = re.sub(r'<li[^>]*>([\s\S]*?)</li>', convert_li, text, flags=re.IGNORECASE)
-    
+
     # Convert code blocks
     text = re.sub(r'<pre[^>]*>([\s\S]*?)</pre>', r'\n```\n\1\n```\n', text, flags=re.IGNORECASE)
     text = re.sub(r'<code[^>]*>([\s\S]*?)</code>', r'`\1`', text, flags=re.IGNORECASE)
-    
+
     # Convert line breaks and block elements
     text = re.sub(r'<(br|hr)\s*/?>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'</(p|div|section|article|header|footer|table|tr|ul|ol)>', '\n', 
+    text = re.sub(r'</(p|div|section|article|header|footer|table|tr|ul|ol)>', '\n',
                   text, flags=re.IGNORECASE)
-    
+
     # Strip remaining tags
     text = _strip_tags(text)
     text = _normalize_whitespace(text)
-    
+
     return {'text': text, 'title': title}
 
 
@@ -247,14 +247,14 @@ def web_fetch(
             success=False,
             error="requests library not available. Install with: pip install requests"
         )
-    
+
     # Validate URL
     if not url.startswith(('http://', 'https://')):
         return WebFetchResult(
             success=False,
             error="Invalid URL: must start with http:// or https://"
         )
-    
+
     # Check cache
     cache_key = _cache_key(url, mode=extract_mode, max_chars=max_chars)
     if use_cache:
@@ -263,7 +263,7 @@ def web_fetch(
             result = WebFetchResult(**cached)
             result.cached = True
             return result
-    
+
     try:
         # Make request
         headers = {
@@ -272,7 +272,7 @@ def web_fetch(
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate',
         }
-        
+
         response = requests.get(
             url,
             headers=headers,
@@ -280,10 +280,10 @@ def web_fetch(
             allow_redirects=True,
             verify=True
         )
-        
+
         final_url = response.url
         status_code = response.status_code
-        
+
         if status_code >= 400:
             return WebFetchResult(
                 success=False,
@@ -291,9 +291,9 @@ def web_fetch(
                 final_url=final_url,
                 error=f"HTTP error {status_code}: {response.reason}"
             )
-        
+
         content = response.text
-        
+
         # Extract readable content
         if TRAFILATURA_AVAILABLE:
             # Use trafilatura for better extraction
@@ -322,10 +322,10 @@ def web_fetch(
             else:
                 text = markdown_to_text(result['text'])
             title = result['title']
-        
+
         # Truncate if needed
         text, truncated = truncate_text(text, max_chars)
-        
+
         result = WebFetchResult(
             success=True,
             text=text,
@@ -334,7 +334,7 @@ def web_fetch(
             status_code=status_code,
             truncated=truncated
         )
-        
+
         # Cache the result
         if use_cache:
             _set_cached(_fetch_cache, cache_key, {
@@ -345,9 +345,9 @@ def web_fetch(
                 'status_code': status_code,
                 'truncated': truncated
             }, cache_ttl_minutes)
-        
+
         return result
-        
+
     except requests.Timeout:
         return WebFetchResult(
             success=False,
@@ -405,14 +405,14 @@ def _search_brave(
             'q': query,
             'count': min(count, 20),
         }
-        
+
         response = requests.get(
             BRAVE_SEARCH_ENDPOINT,
             headers=headers,
             params=params,
             timeout=timeout_seconds
         )
-        
+
         if response.status_code != 200:
             return WebSearchResult(
                 success=False,
@@ -420,10 +420,10 @@ def _search_brave(
                 provider='brave',
                 error=f"Brave API error {response.status_code}: {response.text[:500]}"
             )
-        
+
         data = response.json()
         results = []
-        
+
         web_results = data.get('web', {}).get('results', [])
         for item in web_results[:count]:
             results.append(SearchResult(
@@ -432,14 +432,14 @@ def _search_brave(
                 snippet=item.get('description', ''),
                 age=item.get('age')
             ))
-        
+
         return WebSearchResult(
             success=True,
             results=results,
             query=query,
             provider='brave'
         )
-        
+
     except Exception as e:
         return WebSearchResult(
             success=False,
@@ -462,14 +462,14 @@ def _search_duckduckgo(
             'no_redirect': '1',
             'no_html': '1',
         }
-        
+
         response = requests.get(
             DUCKDUCKGO_ENDPOINT,
             params=params,
             timeout=timeout_seconds,
             headers={'User-Agent': DEFAULT_USER_AGENT}
         )
-        
+
         if response.status_code != 200:
             return WebSearchResult(
                 success=False,
@@ -477,13 +477,13 @@ def _search_duckduckgo(
                 provider='duckduckgo',
                 error=f"DuckDuckGo API error {response.status_code}"
             )
-        
+
         data = response.json()
         results = []
-        
+
         # DuckDuckGo Instant Answer API returns different formats
         # We'll try to extract useful results
-        
+
         # Abstract (main result)
         if data.get('Abstract'):
             results.append(SearchResult(
@@ -491,7 +491,7 @@ def _search_duckduckgo(
                 url=data.get('AbstractURL', ''),
                 snippet=data.get('Abstract', '')
             ))
-        
+
         # Related topics
         for topic in data.get('RelatedTopics', [])[:count-len(results)]:
             if isinstance(topic, dict) and topic.get('FirstURL'):
@@ -500,7 +500,7 @@ def _search_duckduckgo(
                     url=topic.get('FirstURL', ''),
                     snippet=topic.get('Text', '')
                 ))
-        
+
         # Results
         for item in data.get('Results', [])[:count-len(results)]:
             results.append(SearchResult(
@@ -508,7 +508,7 @@ def _search_duckduckgo(
                 url=item.get('FirstURL', ''),
                 snippet=item.get('Text', '')
             ))
-        
+
         if not results:
             return WebSearchResult(
                 success=False,
@@ -516,14 +516,14 @@ def _search_duckduckgo(
                 provider='duckduckgo',
                 error="No results found. DuckDuckGo Instant Answer API is limited. Try Brave Search for better results."
             )
-        
+
         return WebSearchResult(
             success=True,
             results=results,
             query=query,
             provider='duckduckgo'
         )
-        
+
     except Exception as e:
         return WebSearchResult(
             success=False,
@@ -562,7 +562,7 @@ def web_search(
             query=query,
             error="requests library not available. Install with: pip install requests"
         )
-    
+
     # Check cache
     cache_key = _cache_key(query, count=count, provider=provider)
     if use_cache:
@@ -571,15 +571,15 @@ def web_search(
             result = WebSearchResult(**cached)
             result.cached = True
             return result
-    
+
     # Get API key from environment if not provided
     import os
     brave_key = api_key or os.environ.get('BRAVE_API_KEY', '')
-    
+
     # Auto-select provider
     if provider == "auto":
         provider = "brave" if brave_key else "duckduckgo"
-    
+
     # Perform search
     if provider == "brave":
         if not brave_key:
@@ -597,17 +597,17 @@ def web_search(
         result = _search_brave(query, brave_key, count, timeout_seconds)
     else:
         result = _search_duckduckgo(query, count, timeout_seconds)
-    
+
     # Cache successful results
     if use_cache and result.success:
         _set_cached(_search_cache, cache_key, {
             'success': True,
-            'results': [{'title': r.title, 'url': r.url, 'snippet': r.snippet, 'age': r.age} 
+            'results': [{'title': r.title, 'url': r.url, 'snippet': r.snippet, 'age': r.age}
                        for r in result.results],
             'query': result.query,
             'provider': result.provider
         }, cache_ttl_minutes)
-    
+
     return result
 
 
@@ -636,46 +636,46 @@ def search_docs(
         docs_path = navig_root / 'docs'
         if not docs_path.exists():
             docs_path = navig_root.parent / 'docs'
-    
+
     if not docs_path.exists():
         return []
-    
+
     results = []
     query_lower = query.lower()
     query_words = set(query_lower.split())
-    
+
     # Search through markdown files
     for md_file in docs_path.rglob('*.md'):
         try:
             content = md_file.read_text(encoding='utf-8', errors='ignore')
             content_lower = content.lower()
-            
+
             # Calculate relevance score
             score = 0
-            
+
             # Check for query matches
             if query_lower in content_lower:
                 score += 10
-            
+
             # Check for word matches
             for word in query_words:
                 if word in content_lower:
                     score += 1
-            
+
             if score == 0:
                 continue
-            
+
             # Extract title (first # heading)
             title_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
             title = title_match.group(1) if title_match else md_file.stem
-            
+
             # Find relevant excerpt
             excerpt = ""
             for line in content.split('\n'):
                 if query_lower in line.lower():
                     excerpt = line.strip()[:200]
                     break
-            
+
             if not excerpt:
                 # Use first paragraph
                 paragraphs = re.split(r'\n\n+', content)
@@ -683,17 +683,17 @@ def search_docs(
                     if not p.startswith('#') and len(p.strip()) > 50:
                         excerpt = p.strip()[:200]
                         break
-            
+
             results.append({
                 'file': str(md_file.relative_to(docs_path)),
                 'title': title,
                 'excerpt': excerpt,
                 'score': score
             })
-            
+
         except Exception:
             continue
-    
+
     # Sort by score and limit
     results.sort(key=lambda x: x['score'], reverse=True)
     return results[:max_results]
@@ -723,7 +723,7 @@ def is_url_investigation_request(message: str) -> Tuple[bool, Optional[str]]:
         (is_url_request, url_if_found)
     """
     message_lower = message.lower()
-    
+
     # Keywords that suggest URL investigation
     url_triggers = [
         'investigate', 'check this', 'look at', 'read this', 'fetch',
@@ -732,23 +732,23 @@ def is_url_investigation_request(message: str) -> Tuple[bool, Optional[str]]:
         'open this', 'visit', 'go to', 'navigate to',
         'what\'s on', 'what\'s at', 'content of', 'contents of'
     ]
-    
+
     has_trigger = any(trigger in message_lower for trigger in url_triggers)
-    
+
     # Extract URLs
     urls = extract_urls(message)
-    
+
     if urls:
         # If there's a URL and a trigger, definitely a URL request
         if has_trigger:
             return True, urls[0]
-        
+
         # If the message is mostly just a URL, treat as URL request
         url_len = len(urls[0])
         other_text = message.replace(urls[0], '').strip()
         if len(other_text) < 20:  # Very little other text
             return True, urls[0]
-    
+
     return False, None
 
 
@@ -770,7 +770,7 @@ def get_web_config(config_manager=None) -> Dict[str, Any]:
             api_key: str (from config or env)
     """
     import os
-    
+
     default_config = {
         'fetch': {
             'enabled': True,
@@ -783,27 +783,27 @@ def get_web_config(config_manager=None) -> Dict[str, Any]:
             'api_key': os.environ.get('BRAVE_API_KEY', ''),
         }
     }
-    
+
     if config_manager is None:
         try:
             from navig.config import ConfigManager
             config_manager = ConfigManager()
         except Exception:
             return default_config
-    
+
     try:
         web_config = config_manager.get_global_config_value('web') or {}
-        
+
         # Merge with defaults
         for key in default_config:
             if key in web_config:
                 default_config[key].update(web_config[key])
-        
+
         # Get API key from env if not in config
         if not default_config['search']['api_key']:
             default_config['search']['api_key'] = os.environ.get('BRAVE_API_KEY', '')
-        
+
         return default_config
-        
+
     except Exception:
         return default_config

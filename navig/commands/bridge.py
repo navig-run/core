@@ -6,8 +6,8 @@ Generates auth token, configures gateway, and outputs connection details.
 """
 
 import secrets
+
 import typer
-from typing import Optional
 
 from navig.lazy_loader import lazy_import
 
@@ -41,18 +41,19 @@ def bridge_connect(
         navig bridge connect --port 8789
         navig bridge connect --json
     """
-    import yaml
     from pathlib import Path
-    
+
+    import yaml
+
     config_path = Path.home() / '.navig' / 'config.yaml'
-    
+
     # Load or create config
     if config_path.exists():
         cfg = yaml.safe_load(config_path.read_text()) or {}
     else:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         cfg = {}
-    
+
     # Generate token
     token = ""
     if generate_token:
@@ -60,17 +61,17 @@ def bridge_connect(
     else:
         # Read existing token
         token = cfg.get('gateway', {}).get('auth', {}).get('token', '')
-    
+
     # Update config
     gw = cfg.setdefault('gateway', {})
     gw['enabled'] = True
     gw['port'] = port
     gw['host'] = bind
     gw.setdefault('auth', {})['token'] = token
-    
+
     # Write config
     config_path.write_text(yaml.dump(cfg, default_flow_style=False))
-    
+
     if json_output:
         import json
         print(json.dumps({
@@ -91,17 +92,17 @@ def bridge_connect(
         ch.info(f"  Token:   {token[:8]}...{token[-4:]}")
         ch.info("")
         ch.info("Next steps:")
-        ch.info(f"  1. Restart the daemon to pick up the new token")
-        ch.info(f"  2. On your Windows machine, start an SSH tunnel:")
+        ch.info("  1. Restart the daemon to pick up the new token")
+        ch.info("  2. On your Windows machine, start an SSH tunnel:")
         ch.info(f"     ssh -L {port}:127.0.0.1:{port} <user>@<host>")
-        ch.info(f"  3. In VS Code, run: NAVIG Bridge: Connect to Daemon")
-        ch.info(f"     Or manually set these VS Code settings:")
+        ch.info("  3. In VS Code, run: NAVIG Bridge: Connect to Daemon")
+        ch.info("     Or manually set these VS Code settings:")
         ch.info(f"       navig-bridge.chat.remoteDaemonUrl = http://127.0.0.1:{port}")
-        ch.info(f"       navig-bridge.chat.defaultBackend  = ubuntu-navig")
-        ch.info(f"  4. Store the token securely in VS Code SecretStorage")
-        ch.info(f"     (the Connect to Daemon command does this automatically)")
+        ch.info("       navig-bridge.chat.defaultBackend  = ubuntu-navig")
+        ch.info("  4. Store the token securely in VS Code SecretStorage")
+        ch.info("     (the Connect to Daemon command does this automatically)")
         ch.info("")
-        ch.info(f"  Full token (copy for manual setup):")
+        ch.info("  Full token (copy for manual setup):")
         ch.info(f"    {token}")
 
 
@@ -116,23 +117,24 @@ def bridge_status(
         navig bridge status
         navig bridge status --json
     """
-    import yaml
     from pathlib import Path
-    
+
+    import yaml
+
     config_path = Path.home() / '.navig' / 'config.yaml'
-    
+
     if not config_path.exists():
-        ch.warning("No NAVIG config found. Run 'navig bridge connect' first."))
+        ch.warning("No NAVIG config found. Run 'navig bridge connect' first.")
         return
-    
+
     cfg = yaml.safe_load(config_path.read_text()) or {}
     gw = cfg.get('gateway', {})
-    
+
     enabled = gw.get('enabled', False)
     port = gw.get('port', 8789)
     host = gw.get('host', '127.0.0.1')
     token = gw.get('auth', {}).get('token', '')
-    
+
     if json_output:
         import json
         print(json.dumps({
@@ -146,11 +148,11 @@ def bridge_status(
         status_icon = "🟢" if enabled else "🔴"
         secure_icon = "🔒" if host == '127.0.0.1' else "⚠️"
         auth_icon = "🔑" if token else "🔓"
-        
+
         ch.info(f"  {status_icon} Gateway: {'enabled' if enabled else 'disabled'}")
         ch.info(f"  {secure_icon} Bind:    {host}:{port}")
         ch.info(f"  {auth_icon} Auth:    {'configured' if token else 'NONE (open access!)'}")
-        
+
         if host != '127.0.0.1':
             ch.warning("  Gateway is bound to a non-localhost address!")
             ch.warning("  Run 'navig bridge connect' to fix this (binds to 127.0.0.1).")
@@ -170,22 +172,23 @@ def bridge_rotate_token(
         navig bridge rotate-token
         navig bridge rotate-token --json
     """
-    import yaml
     from pathlib import Path
-    
+
+    import yaml
+
     config_path = Path.home() / '.navig' / 'config.yaml'
-    
+
     if not config_path.exists():
-        ch.error("No NAVIG config found. Run 'navig bridge connect' first."))
+        ch.error("No NAVIG config found. Run 'navig bridge connect' first.")
         raise typer.Exit(1)
-    
+
     cfg = yaml.safe_load(config_path.read_text()) or {}
-    
+
     new_token = secrets.token_urlsafe(32)
     cfg.setdefault('gateway', {}).setdefault('auth', {})['token'] = new_token
-    
+
     config_path.write_text(yaml.dump(cfg, default_flow_style=False))
-    
+
     if json_output:
         import json
         print(json.dumps({"token": new_token}))

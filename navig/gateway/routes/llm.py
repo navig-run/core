@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import web
+
     from navig.gateway.server import NavigGateway  # noqa: F401
 
 try:

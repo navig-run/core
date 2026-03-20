@@ -38,7 +38,6 @@ import json
 import os
 from typing import Optional
 
-
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _ENV_KEY = "NAVIG_MESH_SECRET"

@@ -7,9 +7,10 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import typer
+
 from navig import console_helper as ch
 
 
@@ -28,16 +29,16 @@ def _check_powershell_quoting_issues(
     # Skip if already using a safe input method
     if stdin or file or interactive or command is None:
         return
-    
+
     # Skip if command is too simple to have issues
     if len(command) < 20:
         return
-    
+
     # Detect if we're running in PowerShell
     is_powershell = False
     parent_process = os.environ.get('TERM_PROGRAM', '').lower()
     shell_name = os.environ.get('SHELL', '').lower()
-    
+
     if sys.platform == 'win32':
         # On Windows, PowerShell is the default
         is_powershell = True
@@ -46,10 +47,10 @@ def _check_powershell_quoting_issues(
             is_powershell = False
     elif 'powershell' in parent_process or 'pwsh' in shell_name:
         is_powershell = True
-    
+
     if not is_powershell:
         return
-    
+
     # Check for PowerShell-problematic patterns
     powershell_problems = [
         ('(', 'parentheses - PowerShell treats them as syntax'),
@@ -58,12 +59,12 @@ def _check_powershell_quoting_issues(
         ('$', 'dollar signs - PowerShell treats them as variables'),
         ('`', 'backticks - PowerShell treats them as escape characters'),
     ]
-    
+
     found_issues = []
     for pattern, reason in powershell_problems:
         if pattern in command:
             found_issues.append(reason)
-    
+
     # Only warn if multiple problematic patterns found (avoid false positives)
     if len(found_issues) >= 2 and not options.get('b64'):
         ch.warning(
@@ -127,7 +128,7 @@ def run_remote_command(
 
     # Store original command for display purposes before base64 encoding
     display_command = final_command
-    
+
     # Apply Base64 encoding if requested
     use_b64 = options.get('b64', False)
     if use_b64:
@@ -140,7 +141,7 @@ def run_remote_command(
         else:
             # Not base64 - encode it now
             final_command = _encode_b64_command(final_command)
-        
+
         if final_command is None:
             return  # Error already printed
 
@@ -155,7 +156,7 @@ def run_remote_command(
     # Check if command requires confirmation based on configured level
     command_type = ch.classify_command(display_command)
     preview = display_command if len(display_command) < 80 else display_command[:80] + "..."
-    
+
     if not ch.confirm_operation(
         operation_name=f"Run: {preview}",
         operation_type=command_type,
@@ -203,7 +204,7 @@ def run_remote_command(
         except RuntimeError as e:
             import json as _json
             ch.raw_print(_json.dumps({"error": str(e), "success": False}, indent=2))
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         import json as _json
 
         ch.raw_print(
@@ -239,7 +240,7 @@ def run_remote_command(
             result = remote_ops.execute_command(final_command, host_config, capture_output=False)
     except RuntimeError as e:
         ch.error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Print newline after command output for clean separation
     ch.console.print()
@@ -254,7 +255,9 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
     Shows elapsed time after 3 seconds of waiting. The indicator updates
     in the terminal line above the command output area.
     """
-    import subprocess, shutil, pathlib as _pl
+    import pathlib as _pl
+    import shutil
+    import subprocess
 
     # Resolve ssh binary — 32-bit Python on 64-bit Windows cannot find System32\OpenSSH via PATH
     def _find_ssh():
@@ -318,12 +321,12 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
         _timeout = int(os.environ.get("NAVIG_SSH_TIMEOUT", "30"))
         try:
             result = subprocess.run(ssh_args, timeout=_timeout)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as _exc:
             _host = host_config.get("host", "?")
             raise RuntimeError(
                 f"SSH connection timed out after {_timeout}s — "
                 f"'{_host}' is unreachable or not responding."
-            )
+            ) from _exc
         return result
     finally:
         # Signal progress thread to stop
@@ -535,16 +538,16 @@ def _try_decode_b64(text: str) -> Optional[str]:
     Used to detect if user already passed base64-encoded command.
     """
     text = text.strip()
-    
+
     # Quick check: base64 strings are alphanumeric + /+= only
     if not all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r' for c in text):
         return None
-    
+
     # Try to decode
     try:
         decoded_bytes = base64.b64decode(text, validate=True)
         decoded = decoded_bytes.decode('utf-8')
-        
+
         # Sanity check: decoded text should look like a shell command
         # (contains common shell characters, not just random bytes)
         if len(decoded) > 0 and any(c in decoded for c in ' /.-;|&'):
@@ -558,22 +561,22 @@ def install_remote_package(package: str, options: Dict[str, Any]):
     """Auto-detect package manager and install."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
-    
+
     config_manager = get_config_manager()
     host_name = options.get('host') or options.get('app') or config_manager.get_active_host()
-    
+
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
-    
+
     host_config = config_manager.load_host_config(host_name)
     remote_ops = RemoteOperations(host_config)
-    
+
     ch.info(f"📦 Installing package: {package}")
-    
+
     # Detect package manager based on OS metadata or by checking commands
     os_type = server_config.get('metadata', {}).get('os', '').lower()
-    
+
     # Try to detect package manager
     package_managers = [
         {'cmd': 'apt-get', 'install': f'apt-get install -y {package}', 'systems': ['ubuntu', 'debian']},
@@ -583,14 +586,14 @@ def install_remote_package(package: str, options: Dict[str, Any]):
         {'cmd': 'zypper', 'install': f'zypper install -y {package}', 'systems': ['opensuse', 'suse']},
         {'cmd': 'apk', 'install': f'apk add {package}', 'systems': ['alpine']},
     ]
-    
+
     # First try OS-based detection
     detected_pm = None
     for pm in package_managers:
         if any(sys in os_type for sys in pm['systems']):
             detected_pm = pm
             break
-    
+
     # If no OS match, check which package manager exists
     if not detected_pm:
         ch.info("   Auto-detecting package manager...")
@@ -600,22 +603,22 @@ def install_remote_package(package: str, options: Dict[str, Any]):
                 detected_pm = pm
                 ch.success(f"   ✓ Detected: {pm['cmd']}")
                 break
-    
+
     if not detected_pm:
         ch.error("Could not detect package manager.")
         ch.info("Supported: apt-get, yum, dnf, pacman, zypper, apk")
         ch.info(f"Try manually: navig run \"<package-manager> install {package}\"")
         return
-    
+
     # Dry-run check
     if options.get('dry_run'):
         ch.info(f"[DRY RUN] Would execute: {detected_pm['install']}")
         return
-    
+
     # Execute installation
     ch.info(f"   Using: {detected_pm['cmd']}")
     result = remote_ops.execute_command(detected_pm['install'])
-    
+
     if result['success'] and result['exit_code'] == 0:
         ch.success(f"✅ Package installed: {package}")
         if result['output']:

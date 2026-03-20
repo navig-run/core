@@ -1,19 +1,17 @@
 """Configuration management commands for NAVIG."""
 
 import json
-import typer
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import typer
+from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
-from rich import print as rprint
 
-from navig.migration import (
-    migrate_all_configs
-)
-from navig.config import get_config_manager
 from navig import console_helper as ch
+from navig.config import get_config_manager
+from navig.migration import migrate_all_configs
 from navig.yaml_utils import load_yaml_with_lines
 
 
@@ -208,22 +206,22 @@ def migrate(
         navig config migrate --no-backup
     """
     console = Console()
-    
+
     # Get configuration directories
     config_manager = get_config_manager()
     old_dir = Path.home() / '.navig' / 'apps'
     new_dir = Path.home() / '.navig' / 'hosts'
-    
+
     if not old_dir.exists():
         ch.error(f"Old configuration directory not found: {old_dir}")
         ch.info("No legacy configurations to migrate.")
         raise typer.Exit(0)
-    
+
     # Perform migration
     ch.info(f"{'[DRY RUN] ' if dry_run else ''}Migrating configurations...")
     ch.info(f"  Old directory: {old_dir}")
     ch.info(f"  New directory: {new_dir}")
-    
+
     try:
         results = migrate_all_configs(
             old_dir=old_dir,
@@ -233,17 +231,17 @@ def migrate(
         )
     except Exception as e:
         ch.error(f"Migration failed: {str(e)}")
-        raise typer.Exit(1)
-    
+        raise typer.Exit(1) from e
+
     # Display results
     console.print()
-    
+
     if results['migrated']:
         table = Table(title="✅ Migrated Configurations", show_header=True)
         table.add_column("Old File", style="cyan")
         table.add_column("New File", style="green")
         table.add_column("Status", style="yellow")
-        
+
         for item in results['migrated']:
             status = "DRY RUN" if item.get('dry_run') else "MIGRATED"
             table.add_row(
@@ -251,44 +249,44 @@ def migrate(
                 Path(item['new_file']).name,
                 status
             )
-        
+
         console.print(table)
         console.print()
-    
+
     if results['skipped']:
         table = Table(title="⏭️  Skipped Configurations", show_header=True)
         table.add_column("File", style="yellow")
         table.add_column("Reason", style="dim")
-        
+
         for item in results['skipped']:
             table.add_row(
                 Path(item['file']).name,
                 item['reason']
             )
-        
+
         console.print(table)
         console.print()
-    
+
     if results['failed']:
         table = Table(title="❌ Failed Migrations", show_header=True)
         table.add_column("File", style="red")
         table.add_column("Error", style="dim")
-        
+
         for item in results['failed']:
             table.add_row(
                 Path(item['file']).name,
                 item['error']
             )
-        
+
         console.print(table)
         console.print()
-    
+
     if results['backups'] and not dry_run:
         ch.success(f"Created {len(results['backups'])} backup(s)")
         for backup in results['backups']:
             ch.info(f"  Backup: {backup}")
         console.print()
-    
+
     # Summary
     if dry_run:
         ch.warning("DRY RUN - No changes were made")
@@ -300,7 +298,7 @@ def migrate(
             ch.info("Backups created with .backup.<timestamp>.yaml extension")
         else:
             ch.info("No configurations were migrated")
-    
+
     if results['failed']:
         ch.error(f"Failed to migrate {len(results['failed'])} configuration(s)")
         raise typer.Exit(1)
@@ -611,7 +609,7 @@ def show(
             rprint(app_config)
         except Exception as e:
             ch.error(f"Failed to load app configuration: {str(e)}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
     else:
         # Show host configuration
         host_name = target
@@ -623,7 +621,7 @@ def show(
             rprint(host_config)
         except Exception as e:
             ch.error(f"Failed to load host configuration: {str(e)}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
 
 def set_mode(mode: str):
@@ -639,17 +637,17 @@ def set_mode(mode: str):
         navig config set-mode auto
     """
     config_manager = get_config_manager()
-    
+
     try:
         config_manager.set_execution_mode(mode)
         ch.success(f"Execution mode set to: {mode}")
-        
+
         if mode == 'auto':
             ch.warning("⚠️  Auto mode bypasses all confirmation prompts")
             ch.info("Use --confirm flag to force prompts for specific commands")
     except ValueError as e:
         ch.error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def set_confirmation_level(level: str):
@@ -667,11 +665,11 @@ def set_confirmation_level(level: str):
         navig config set-confirmation-level verbose
     """
     config_manager = get_config_manager()
-    
+
     try:
         config_manager.set_confirmation_level(level)
         ch.success(f"Confirmation level set to: {level}")
-        
+
         level_descriptions = {
             'critical': 'Only destructive operations will require confirmation',
             'standard': 'State-changing operations will require confirmation',
@@ -680,7 +678,7 @@ def set_confirmation_level(level: str):
         ch.info(level_descriptions.get(level, ''))
     except ValueError as e:
         ch.error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def show_settings():
@@ -692,20 +690,20 @@ def show_settings():
     """
     config_manager = get_config_manager()
     console = Console()
-    
+
     # Get all settings
     global_config = config_manager.get_global_config()
     execution_settings = config_manager.get_execution_settings()
     active_host = config_manager.get_active_host()
     active_app = config_manager.get_active_app()
     default_host = global_config.get('default_host')
-    
+
     # Create table
     table = Table(title="NAVIG Settings", show_header=True)
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
     table.add_column("Description", style="dim")
-    
+
     # Execution settings
     table.add_row(
         "Execution Mode",
@@ -717,7 +715,7 @@ def show_settings():
         execution_settings['confirmation_level'],
         "critical | standard | verbose"
     )
-    
+
     # Active context
     table.add_row(
         "Active Host",
@@ -734,7 +732,7 @@ def show_settings():
         default_host or "(none)",
         "Fallback when no active host"
     )
-    
+
     # Other settings
     table.add_row(
         "Log Level",
@@ -751,11 +749,11 @@ def show_settings():
         str(config_manager.base_dir),
         "Configuration storage path"
     )
-    
+
     console.print()
     console.print(table)
     console.print()
-    
+
     # Show API key status (not the key itself)
     api_key = global_config.get('openrouter_api_key', '')
     if api_key:
@@ -780,24 +778,24 @@ def set_config(key: str, value: str):
         navig config set default_host production
     """
     config_manager = get_config_manager()
-    
+
     # Handle nested keys (e.g., execution.mode)
     if '.' in key:
         parts = key.split('.')
         config = config_manager.global_config
-        
+
         # Navigate to parent
         for part in parts[:-1]:
             if part not in config:
                 config[part] = {}
             config = config[part]
-        
+
         # Set value
         config[parts[-1]] = value
         config_manager._save_global_config(config_manager.global_config)
     else:
         config_manager.update_global_config({key: value})
-    
+
     ch.success(f"Set {key} = {value}")
 
 
@@ -810,19 +808,19 @@ def get_config(key: str):
         navig config get execution.mode
     """
     config_manager = get_config_manager()
-    
+
     # Handle nested keys
     if '.' in key:
         parts = key.split('.')
         config = config_manager.global_config
-        
+
         for part in parts:
             if isinstance(config, dict) and part in config:
                 config = config[part]
             else:
                 ch.error(f"Key not found: {key}")
                 raise typer.Exit(1)
-        
+
         ch.info(f"{key} = {config}")
     else:
         value = config_manager.global_config.get(key)
@@ -839,19 +837,19 @@ def edit_config(options: dict = None):
     
     Opens the ~/.navig/config.yaml file in the system's default editor.
     """
-    import subprocess
     import os
     import platform
-    
+    import subprocess
+
     config_manager = get_config_manager()
     config_path = config_manager.global_config_dir / "config.yaml"
-    
+
     if not config_path.exists():
         # Create default config if it doesn't exist
         config_manager.ensure_global_config()
-    
+
     ch.info(f"Opening config file: {config_path}")
-    
+
     try:
         if platform.system() == 'Windows':
             os.startfile(str(config_path))
@@ -861,10 +859,10 @@ def edit_config(options: dict = None):
             # Try common editors
             editor = os.environ.get('EDITOR', 'nano')
             subprocess.run([editor, str(config_path)])
-        
+
         ch.success("Configuration file opened in editor.")
     except Exception as e:
         ch.error(f"Failed to open editor: {e}")
         ch.info(f"You can manually edit: {config_path}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 

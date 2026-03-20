@@ -5,12 +5,12 @@ Polymorphic execution layer that abstracts the difference between
 SSH (remote) and subprocess (local) command execution.
 """
 
-import subprocess
 import shutil
+import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     pass
@@ -23,12 +23,12 @@ class CommandResult:
     stderr: str
     exit_code: int
     duration: float = 0.0  # Execution duration in seconds
-    
+
     @property
     def success(self) -> bool:
         """Return True if command executed successfully (exit code 0)."""
         return self.exit_code == 0
-    
+
     @property
     def output(self) -> str:
         """Return combined stdout and stderr for convenience."""
@@ -38,7 +38,7 @@ class CommandResult:
         if self.stderr:
             parts.append(self.stderr)
         return '\n'.join(parts)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -57,7 +57,7 @@ class ConnectionAdapter(ABC):
     Provides unified interface for executing commands on both
     local and remote systems.
     """
-    
+
     @abstractmethod
     def run(self, command: str, capture_output: bool = True, timeout: Optional[float] = None) -> CommandResult:
         """
@@ -72,7 +72,7 @@ class ConnectionAdapter(ABC):
             CommandResult with stdout, stderr, exit_code, and duration
         """
         pass
-    
+
     @abstractmethod
     def upload(self, local_path: Path, remote_path: Path) -> bool:
         """
@@ -86,7 +86,7 @@ class ConnectionAdapter(ABC):
             True if transfer succeeded
         """
         pass
-    
+
     @abstractmethod
     def download(self, remote_path: Path, local_path: Path) -> bool:
         """
@@ -100,7 +100,7 @@ class ConnectionAdapter(ABC):
             True if transfer succeeded
         """
         pass
-    
+
     @abstractmethod
     def detect_os(self) -> str:
         """
@@ -110,7 +110,7 @@ class ConnectionAdapter(ABC):
             OS type: 'windows', 'linux', or 'darwin'
         """
         pass
-    
+
     @abstractmethod
     def close(self) -> None:
         """
@@ -120,11 +120,11 @@ class ConnectionAdapter(ABC):
         For local: cleanup any subprocess handles
         """
         pass
-    
+
     def __enter__(self):
         """Context manager entry."""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - ensure cleanup."""
         self.close()
@@ -138,7 +138,7 @@ class LocalConnection(ConnectionAdapter):
     Executes commands on the local machine using subprocess,
     providing the same interface as SSH connections for remote hosts.
     """
-    
+
     def __init__(self, os_type: Optional[str] = None):
         """
         Initialize local connection.
@@ -148,7 +148,7 @@ class LocalConnection(ConnectionAdapter):
                      If None, auto-detect using platform.system()
         """
         import platform
-        
+
         if os_type:
             self._os_type = os_type.lower()
         else:
@@ -159,7 +159,7 @@ class LocalConnection(ConnectionAdapter):
                 self._os_type = 'windows'
             else:
                 self._os_type = 'linux'
-    
+
     def run(self, command: str, capture_output: bool = True, timeout: Optional[float] = None) -> CommandResult:
         """
         Execute command locally via subprocess.
@@ -175,7 +175,7 @@ class LocalConnection(ConnectionAdapter):
         import time
         start_time = time.time()
         cmd_timeout = timeout if timeout is not None else 300
-        
+
         try:
             if self._os_type == 'windows':
                 # On Windows, use PowerShell for better compatibility
@@ -193,7 +193,7 @@ class LocalConnection(ConnectionAdapter):
                     text=True,
                     timeout=cmd_timeout,
                 )
-            
+
             return CommandResult(
                 stdout=result.stdout or '',
                 stderr=result.stderr or '',
@@ -214,7 +214,7 @@ class LocalConnection(ConnectionAdapter):
                 exit_code=1,
                 duration=time.time() - start_time
             )
-    
+
     def upload(self, local_path: Path, remote_path: Path) -> bool:
         """
         Copy file locally (for local "host", upload is just a copy).
@@ -233,7 +233,7 @@ class LocalConnection(ConnectionAdapter):
             return True
         except (OSError, IOError, PermissionError):
             return False
-    
+
     def download(self, remote_path: Path, local_path: Path) -> bool:
         """
         Copy file locally (for local "host", download is just a copy).
@@ -251,11 +251,11 @@ class LocalConnection(ConnectionAdapter):
             return True
         except (OSError, IOError, PermissionError):
             return False
-    
+
     def detect_os(self) -> str:
         """Return detected OS type."""
         return self._os_type
-    
+
     def close(self) -> None:
         """No cleanup needed for local connection."""
         pass
@@ -268,7 +268,7 @@ class SSHConnection(ConnectionAdapter):
     Uses subprocess to call ssh/scp commands for remote execution.
     This preserves existing behavior while providing unified interface.
     """
-    
+
     def __init__(self, host_config: Dict[str, Any]):
         """
         Initialize SSH connection.
@@ -282,22 +282,22 @@ class SSHConnection(ConnectionAdapter):
         """
         self.host_config = host_config
         self._cached_os: Optional[str] = None
-    
+
     def _build_ssh_args(self) -> list:
         """Build base SSH command arguments."""
         ssh_args = ['ssh']
         ssh_args.extend(['-o', 'StrictHostKeyChecking=yes'])
         ssh_args.extend(['-o', 'ConnectTimeout=10'])
-        
+
         if self.host_config.get('port', 22) != 22:
             ssh_args.extend(['-p', str(self.host_config['port'])])
-        
+
         if self.host_config.get('ssh_key'):
             ssh_args.extend(['-i', self.host_config['ssh_key']])
-        
+
         ssh_args.append(f"{self.host_config['user']}@{self.host_config['host']}")
         return ssh_args
-    
+
     def run(self, command: str, capture_output: bool = True, timeout: Optional[float] = None) -> CommandResult:
         """
         Execute command on remote host via SSH.
@@ -313,10 +313,10 @@ class SSHConnection(ConnectionAdapter):
         import time
         start_time = time.time()
         cmd_timeout = timeout if timeout is not None else 300
-        
+
         ssh_args = self._build_ssh_args()
         ssh_args.append(command)
-        
+
         try:
             result = subprocess.run(
                 ssh_args,
@@ -324,7 +324,7 @@ class SSHConnection(ConnectionAdapter):
                 text=True,
                 timeout=cmd_timeout,
             )
-            
+
             return CommandResult(
                 stdout=result.stdout or '',
                 stderr=result.stderr or '',
@@ -345,7 +345,7 @@ class SSHConnection(ConnectionAdapter):
                 exit_code=1,
                 duration=time.time() - start_time
             )
-    
+
     def upload(self, local_path: Path, remote_path: Path) -> bool:
         """
         Upload file to remote host via SCP.
@@ -358,21 +358,21 @@ class SSHConnection(ConnectionAdapter):
             True if transfer succeeded
         """
         scp_args = ['scp']
-        
+
         if self.host_config.get('port', 22) != 22:
             scp_args.extend(['-P', str(self.host_config['port'])])
-        
+
         if self.host_config.get('ssh_key'):
             scp_args.extend(['-i', self.host_config['ssh_key']])
-        
+
         scp_args.append(str(local_path))
         scp_args.append(
             f"{self.host_config['user']}@{self.host_config['host']}:{remote_path}"
         )
-        
+
         result = subprocess.run(scp_args, capture_output=True)
         return result.returncode == 0
-    
+
     def download(self, remote_path: Path, local_path: Path) -> bool:
         """
         Download file from remote host via SCP.
@@ -385,21 +385,21 @@ class SSHConnection(ConnectionAdapter):
             True if transfer succeeded
         """
         scp_args = ['scp']
-        
+
         if self.host_config.get('port', 22) != 22:
             scp_args.extend(['-P', str(self.host_config['port'])])
-        
+
         if self.host_config.get('ssh_key'):
             scp_args.extend(['-i', self.host_config['ssh_key']])
-        
+
         scp_args.append(
             f"{self.host_config['user']}@{self.host_config['host']}:{remote_path}"
         )
         scp_args.append(str(local_path))
-        
+
         result = subprocess.run(scp_args, capture_output=True)
         return result.returncode == 0
-    
+
     def detect_os(self) -> str:
         """
         Detect remote OS by running uname command.
@@ -409,7 +409,7 @@ class SSHConnection(ConnectionAdapter):
         """
         if self._cached_os:
             return self._cached_os
-        
+
         # Try uname first (works on Linux/macOS)
         result = self.run('uname -s', capture_output=True)
         if result.success:
@@ -421,17 +421,17 @@ class SSHConnection(ConnectionAdapter):
             else:
                 self._cached_os = 'linux'  # Default to Linux for unknown Unix
             return self._cached_os
-        
+
         # If uname fails, might be Windows
         result = self.run('ver', capture_output=True)
         if result.success and 'windows' in result.stdout.lower():
             self._cached_os = 'windows'
             return self._cached_os
-        
+
         # Default to Linux
         self._cached_os = 'linux'
         return self._cached_os
-    
+
     def close(self) -> None:
         """
         Cleanup SSH connection.
@@ -460,7 +460,7 @@ def get_connection(host_config: Dict[str, Any]) -> ConnectionAdapter:
         ValueError: If host configuration is invalid
     """
     host_type = host_config.get('type', 'ssh')
-    
+
     if host_type == 'local':
         os_type = host_config.get('os')
         return LocalConnection(os_type=os_type)

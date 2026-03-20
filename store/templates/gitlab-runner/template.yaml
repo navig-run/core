@@ -1,0 +1,74 @@
+# GitLab Runner Addon Template for NAVIG
+# CI/CD runner for GitLab
+
+name: gitlab-runner
+version: "1.0.0"
+description: "CI/CD runner for executing GitLab CI/CD jobs"
+author: navig-run
+enabled: false
+dependencies: []
+
+paths:
+  install_dir: /usr/bin
+  config_dir: /etc/gitlab-runner
+  config_file: /etc/gitlab-runner/config.toml
+  home_dir: /home/gitlab-runner
+  builds_dir: /home/gitlab-runner/builds
+  cache_dir: /home/gitlab-runner/cache
+
+services:
+  main: gitlab-runner.service
+
+commands:
+  - name: start
+    description: "Start GitLab Runner service"
+    command: "systemctl start gitlab-runner"
+  - name: stop
+    description: "Stop GitLab Runner service"
+    command: "systemctl stop gitlab-runner"
+  - name: restart
+    description: "Restart GitLab Runner service"
+    command: "systemctl restart gitlab-runner"
+  - name: status
+    description: "Check GitLab Runner status"
+    command: "gitlab-runner status"
+  - name: register
+    description: "Register a new runner"
+    command: "gitlab-runner register"
+  - name: unregister
+    description: "Unregister a runner"
+    command: "gitlab-runner unregister"
+  - name: list
+    description: "List registered runners"
+    command: "gitlab-runner list"
+  - name: verify
+    description: "Verify registered runners"
+    command: "gitlab-runner verify"
+  - name: run_single
+    description: "Run single build"
+    command: "gitlab-runner run-single"
+
+env_vars:
+  CI_SERVER_URL: "https://gitlab.com/"
+  REGISTRATION_TOKEN: ""
+  RUNNER_EXECUTOR: docker
+  DOCKER_IMAGE: alpine:latest
+  RUNNER_TAG_LIST: ""
+
+api:
+  endpoint: ""
+  auth_method: registration_token
+  doc_url: "https://docs.gitlab.com/runner/"
+
+default_port: null
+systemd_service: /etc/systemd/system/gitlab-runner.service
+
+executors:
+  - shell
+  - docker
+  - docker-ssh
+  - ssh
+  - parallels
+  - virtualbox
+  - docker+machine
+  - kubernetes

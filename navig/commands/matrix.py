@@ -13,9 +13,8 @@ Provides the ``navig matrix`` command group for Matrix messaging operations:
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 import logging
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Optional
@@ -27,7 +26,6 @@ from rich.table import Table
 from navig.comms.matrix_features import (
     FEATURE_DESCRIPTIONS,
     get_all_features,
-    is_matrix_enabled,
     require_feature,
     require_matrix,
 )
@@ -261,7 +259,7 @@ def use_profile(
         console.print(f"[green]✓[/] Active Matrix profile → [bold]{profile}[/]")
     except Exception as e:
         console.print(f"[red]✗[/] Failed to set profile: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -496,7 +494,7 @@ def room_join(
             console.print(f"[green]✓[/] Joined {room_id}")
         except Exception as e:
             console.print(f"[red]✗[/] Failed to join: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     _run_async(_join())
 
@@ -518,7 +516,7 @@ def room_leave(
             console.print(f"[green]✓[/] Left {room_id}")
         except Exception as e:
             console.print(f"[red]✗[/] Failed to leave: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     _run_async(_leave())
 
@@ -597,7 +595,7 @@ def room_topic(
             console.print(f"[green]✓[/] Topic set for {room_id}")
         except Exception as e:
             console.print(f"[red]✗[/] Failed: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     _run_async(_topic())
 
@@ -979,9 +977,9 @@ def inbox_process(
 
     try:
         from navig.agents.inbox_router import InboxRouterAgent, execute_plan
-    except ImportError:
+    except ImportError as _exc:
         console.print("[red]✗[/] InboxRouterAgent not available")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from _exc
 
     agent = InboxRouterAgent(bridge.project_root, use_llm=not no_llm)
     console.print(f"Processing {len(msgs)} unread message(s)...\n")
@@ -997,7 +995,7 @@ def inbox_process(
         if not dry_run and not plan.get("error"):
             execute_plan(bridge.project_root, plan, dry_run=False, move_source=True)
 
-    console.print(f"\n[green]✓[/] Done")
+    console.print("\n[green]✓[/] Done")
 
 
 # ============================================================================
@@ -1190,7 +1188,7 @@ def e2ee_trust(
         if ok:
             console.print(f"[green]✓[/] Trusted {device_id} ({user_id})")
         else:
-            console.print(f"[red]✗[/] Failed to trust device")
+            console.print("[red]✗[/] Failed to trust device")
             raise typer.Exit(1)
 
     _run_async(_trust())
@@ -1213,7 +1211,7 @@ def e2ee_blacklist(
         if ok:
             console.print(f"[green]✓[/] Blacklisted {device_id} ({user_id})")
         else:
-            console.print(f"[red]✗[/] Failed to blacklist device")
+            console.print("[red]✗[/] Failed to blacklist device")
             raise typer.Exit(1)
 
     _run_async(_blacklist())
@@ -1236,7 +1234,7 @@ def e2ee_unverify(
         if ok:
             console.print(f"[green]✓[/] Unverified {device_id} ({user_id})")
         else:
-            console.print(f"[red]✗[/] Failed to unverify device")
+            console.print("[red]✗[/] Failed to unverify device")
             raise typer.Exit(1)
 
     _run_async(_unverify())
@@ -1286,7 +1284,6 @@ def e2ee_verify(
 
             # Poll for emoji (simplified — in a real interactive flow
             # the to-device callback would deliver them)
-            import time
             for _ in range(30):  # 30s timeout
                 emoji = await mgr.get_emoji(session.transaction_id)
                 if emoji:
@@ -1334,7 +1331,7 @@ def e2ee_keys():
         console.print(f"  User:       {info.get('user_id', '?')}")
         console.print(f"  Ed25519:    [green]{info.get('ed25519', 'N/A')}[/]")
         console.print(f"  Curve25519: [green]{info.get('curve25519', 'N/A')}[/]")
-        console.print(f"\n  Share these keys with other users for manual verification.")
+        console.print("\n  Share these keys with other users for manual verification.")
 
     _run_async(_keys())
 
@@ -1408,8 +1405,9 @@ matrix_app.add_typer(store_app, name="store")
 @store_app.command("stats")
 def store_stats():
     """Show persistent store statistics."""
-    from navig.comms.matrix_store import MatrixStore
     import os
+
+    from navig.comms.matrix_store import MatrixStore
 
     db_path = os.path.expanduser("~/.navig/matrix.db")
     if not os.path.exists(db_path):
@@ -1435,8 +1433,9 @@ def store_rooms(
     purpose: Annotated[Optional[str], typer.Option("--purpose", "-p", help="Filter by purpose")] = None,
 ):
     """List rooms in the persistent store."""
-    from navig.comms.matrix_store import MatrixStore
     import os
+
+    from navig.comms.matrix_store import MatrixStore
 
     db_path = os.path.expanduser("~/.navig/matrix.db")
     if not os.path.exists(db_path):
@@ -1476,8 +1475,9 @@ def store_events(
     limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
 ):
     """Show recent events for a room from the persistent store."""
-    from navig.comms.matrix_store import MatrixStore
     import os
+
+    from navig.comms.matrix_store import MatrixStore
 
     db_path = os.path.expanduser("~/.navig/matrix.db")
     if not os.path.exists(db_path):
@@ -1510,8 +1510,9 @@ def store_prune(
     max_rows: Annotated[int, typer.Option("--max", "-m", help="Max events to keep")] = 10000,
 ):
     """Prune old events from the store."""
-    from navig.comms.matrix_store import MatrixStore
     import os
+
+    from navig.comms.matrix_store import MatrixStore
 
     db_path = os.path.expanduser("~/.navig/matrix.db")
     if not os.path.exists(db_path):
@@ -1538,8 +1539,9 @@ def store_bridges(
     room_id: Annotated[Optional[str], typer.Argument(help="Room ID (optional)")] = None,
 ):
     """List bridge configurations in the store."""
-    from navig.comms.matrix_store import MatrixStore
     import os
+
+    from navig.comms.matrix_store import MatrixStore
 
     db_path = os.path.expanduser("~/.navig/matrix.db")
     if not os.path.exists(db_path):

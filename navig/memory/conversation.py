@@ -12,8 +12,7 @@ import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Optional, Iterator
+from typing import Iterator, Optional
 
 from navig.store.base import BaseStore
 
@@ -31,7 +30,7 @@ def _debug_log(message: str) -> None:
 @dataclass
 class Message:
     """A single conversation message."""
-    
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     session_key: str = ""
     role: str = "user"  # user, assistant, system, tool
@@ -39,7 +38,7 @@ class Message:
     timestamp: datetime = field(default_factory=datetime.utcnow)
     metadata: dict = field(default_factory=dict)
     token_count: int = 0
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""
         return {
@@ -51,7 +50,7 @@ class Message:
             'metadata': json.dumps(self.metadata),
             'token_count': self.token_count,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'Message':
         """Create from dictionary."""
@@ -69,7 +68,7 @@ class Message:
 @dataclass
 class SessionInfo:
     """Metadata about a conversation session."""
-    
+
     session_key: str
     created_at: datetime
     updated_at: datetime
@@ -95,7 +94,7 @@ class ConversationStore(BaseStore):
         # Get history
         history = store.get_history('task-123', limit=50)
     """
-    
+
     SCHEMA_VERSION = 1
 
     def _create_schema(self, conn: sqlite3.Connection) -> None:
@@ -130,7 +129,7 @@ class ConversationStore(BaseStore):
                 ON sessions(updated_at DESC);
         ''')
         _debug_log(f"ConversationStore initialized at {self.db_path}")
-    
+
     def add_message(self, message: Message) -> Message:
         """
         Add a message to the store.
@@ -143,7 +142,7 @@ class ConversationStore(BaseStore):
         """
         conn = self._get_conn()
         now = datetime.utcnow().isoformat()
-        
+
         with self._lock:
             old_iso = conn.isolation_level
             try:
@@ -156,14 +155,14 @@ class ConversationStore(BaseStore):
                     VALUES (?, ?, ?, '{}')
                     ON CONFLICT(session_key) DO UPDATE SET updated_at = excluded.updated_at
                 ''', (message.session_key, now, now))
-                
+
                 # Insert message
                 data = message.to_dict()
                 conn.execute('''
                     INSERT INTO messages (id, session_key, role, content, timestamp, metadata, token_count)
                     VALUES (:id, :session_key, :role, :content, :timestamp, :metadata, :token_count)
                 ''', data)
-                
+
                 # Update session token count
                 conn.execute('''
                     UPDATE sessions 
@@ -171,7 +170,7 @@ class ConversationStore(BaseStore):
                         updated_at = ?
                     WHERE session_key = ?
                 ''', (message.token_count, now, message.session_key))
-                
+
                 conn.execute("COMMIT")
             except Exception:
                 try:
@@ -181,10 +180,10 @@ class ConversationStore(BaseStore):
                 raise
             finally:
                 conn.isolation_level = old_iso
-        
+
         _debug_log(f"Added message {message.id} to session {message.session_key}")
         return message
-    
+
     def get_history(
         self,
         session_key: str,
@@ -205,51 +204,51 @@ class ConversationStore(BaseStore):
             List of messages in chronological order
         """
         conn = self._get_conn()
-        
+
         query = 'SELECT * FROM messages WHERE session_key = ?'
         params: list = [session_key]
-        
+
         if before:
             query += ' AND timestamp < ?'
             params.append(before.isoformat())
-        
+
         if roles:
             placeholders = ','.join('?' * len(roles))
             query += f' AND role IN ({placeholders})'
             params.extend(roles)
-        
+
         query += ' ORDER BY timestamp DESC LIMIT ?'
         params.append(limit)
-        
+
         cursor = conn.execute(query, params)
         rows = cursor.fetchall()
-        
+
         # Convert to messages and reverse for chronological order
         messages = [Message.from_dict(dict(row)) for row in rows]
         messages.reverse()
-        
+
         return messages
-    
+
     def get_session(self, session_key: str) -> Optional[SessionInfo]:
         """Get session info."""
         conn = self._get_conn()
-        
+
         cursor = conn.execute(
             'SELECT * FROM sessions WHERE session_key = ?',
             (session_key,)
         )
         row = cursor.fetchone()
-        
+
         if not row:
             return None
-        
+
         # Count messages
         count_cursor = conn.execute(
             'SELECT COUNT(*) FROM messages WHERE session_key = ?',
             (session_key,)
         )
         message_count = count_cursor.fetchone()[0]
-        
+
         return SessionInfo(
             session_key=row['session_key'],
             created_at=datetime.fromisoformat(row['created_at']),
@@ -258,7 +257,7 @@ class ConversationStore(BaseStore):
             total_tokens=row['total_tokens'],
             metadata=json.loads(row['metadata']),
         )
-    
+
     def list_sessions(
         self,
         limit: int = 50,
@@ -266,20 +265,20 @@ class ConversationStore(BaseStore):
     ) -> list[SessionInfo]:
         """List all sessions."""
         conn = self._get_conn()
-        
+
         query = 'SELECT * FROM sessions'
         params: list = []
-        
+
         if active_after:
             query += ' WHERE updated_at > ?'
             params.append(active_after.isoformat())
-        
+
         query += ' ORDER BY updated_at DESC LIMIT ?'
         params.append(limit)
-        
+
         cursor = conn.execute(query, params)
         rows = cursor.fetchall()
-        
+
         sessions = []
         for row in rows:
             # Get message count for each session
@@ -288,7 +287,7 @@ class ConversationStore(BaseStore):
                 (row['session_key'],)
             )
             message_count = count_cursor.fetchone()[0]
-            
+
             sessions.append(SessionInfo(
                 session_key=row['session_key'],
                 created_at=datetime.fromisoformat(row['created_at']),
@@ -297,13 +296,13 @@ class ConversationStore(BaseStore):
                 total_tokens=row['total_tokens'],
                 metadata=json.loads(row['metadata']),
             ))
-        
+
         return sessions
-    
+
     def delete_session(self, session_key: str) -> bool:
         """Delete a session and all its messages."""
         conn = self._get_conn()
-        
+
         with self._lock:
             conn.execute(
                 'DELETE FROM messages WHERE session_key = ?',
@@ -314,12 +313,12 @@ class ConversationStore(BaseStore):
                 (session_key,)
             )
             conn.commit()
-        
+
         deleted = cursor.rowcount > 0
         if deleted:
             _debug_log(f"Deleted session {session_key}")
         return deleted
-    
+
     def clear_old_messages(
         self,
         session_key: str,
@@ -336,7 +335,7 @@ class ConversationStore(BaseStore):
             Number of messages deleted
         """
         conn = self._get_conn()
-        
+
         with self._lock:
             # Find cutoff point
             cursor = conn.execute('''
@@ -345,11 +344,11 @@ class ConversationStore(BaseStore):
                 ORDER BY timestamp DESC
                 LIMIT 1 OFFSET ?
             ''', (session_key, keep_last))
-            
+
             row = cursor.fetchone()
             if not row:
                 return 0
-            
+
             # Delete older messages
             delete_cursor = conn.execute('''
                 DELETE FROM messages 
@@ -358,27 +357,27 @@ class ConversationStore(BaseStore):
                     SELECT timestamp FROM messages WHERE id = ?
                 )
             ''', (session_key, row['id']))
-            
+
             deleted = delete_cursor.rowcount
-            
+
             # Recalculate token count
             token_cursor = conn.execute('''
                 SELECT COALESCE(SUM(token_count), 0) 
                 FROM messages WHERE session_key = ?
             ''', (session_key,))
             new_total = token_cursor.fetchone()[0]
-            
+
             conn.execute('''
                 UPDATE sessions SET total_tokens = ? WHERE session_key = ?
             ''', (new_total, session_key))
-            
+
             conn.commit()
-        
+
         if deleted > 0:
             _debug_log(f"Compacted session {session_key}, deleted {deleted} messages")
-        
+
         return deleted
-    
+
     def search_content(
         self,
         query: str,
@@ -397,10 +396,10 @@ class ConversationStore(BaseStore):
             Matching messages
         """
         conn = self._get_conn()
-        
+
         # Simple LIKE search (FTS can be added later)
         search_pattern = f'%{query}%'
-        
+
         if session_key:
             cursor = conn.execute('''
                 SELECT * FROM messages 
@@ -413,9 +412,9 @@ class ConversationStore(BaseStore):
                 WHERE content LIKE ?
                 ORDER BY timestamp DESC LIMIT ?
             ''', (search_pattern, limit))
-        
+
         return [Message.from_dict(dict(row)) for row in cursor.fetchall()]
-    
+
     def get_token_count(self, session_key: str) -> int:
         """Get total token count for a session."""
         conn = self._get_conn()
@@ -425,7 +424,7 @@ class ConversationStore(BaseStore):
         )
         row = cursor.fetchone()
         return row['total_tokens'] if row else 0
-    
+
     def iter_messages(
         self,
         session_key: str,
@@ -438,7 +437,7 @@ class ConversationStore(BaseStore):
         """
         conn = self._get_conn()
         offset = 0
-        
+
         while True:
             cursor = conn.execute('''
                 SELECT * FROM messages 
@@ -446,14 +445,14 @@ class ConversationStore(BaseStore):
                 ORDER BY timestamp ASC
                 LIMIT ? OFFSET ?
             ''', (session_key, batch_size, offset))
-            
+
             rows = cursor.fetchall()
             if not rows:
                 break
-            
+
             for row in rows:
                 yield Message.from_dict(dict(row))
-            
+
             offset += batch_size
-    
+
     # close() inherited from BaseStore

@@ -9,9 +9,8 @@ a Node's ExecutionReceipt history.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
-
 
 # ── Capability ────────────────────────────────────────────────────────────────
 
@@ -108,6 +107,7 @@ class TrustScore:
         (converges to 1 for nodes with 20+ missions, starts at 0.5 for new nodes).
         """
         from datetime import datetime, timezone
+
         from navig.contracts.execution_receipt import ReceiptOutcome
 
         total    = len(receipts)

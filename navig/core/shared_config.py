@@ -13,11 +13,12 @@ Usage:
     config.save()
 """
 
-import threading
-import yaml
-from pathlib import Path
-from typing import Any, Optional, Dict, Tuple
 import os
+import threading
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
+import yaml
 
 
 class ConfigSingleton:
@@ -30,10 +31,10 @@ class ConfigSingleton:
     - Dot-notation key access: config.get('plugins.brain.db_path')
     - Thread-safe read/write operations
     """
-    
+
     _instance: Optional['ConfigSingleton'] = None
     _lock = threading.Lock()
-    
+
     def __new__(cls) -> 'ConfigSingleton':
         if cls._instance is None:
             with cls._lock:
@@ -42,34 +43,34 @@ class ConfigSingleton:
                     instance._initialized = False
                     cls._instance = instance
         return cls._instance
-    
+
     def __init__(self):
         if getattr(self, '_initialized', False):
             return
-        
+
         with self._lock:
             if not getattr(self, '_initialized', False):
                 # Global config path
                 self.global_config_dir = Path.home() / ".navig"
                 self.global_config_path = self.global_config_dir / "config.yaml"
-                
+
                 # Project-local config path
                 self.project_config_path = Path.cwd() / ".navig" / "config.yaml"
-                
+
                 # Cache directory
                 self.cache_dir = self.global_config_dir / "cache"
-                
+
                 # Plugin directory
                 self.plugins_dir = self.global_config_dir / "plugins"
-                
+
                 # Data storage
                 self._global_data: Dict[str, Any] = {}
                 self._project_data: Dict[str, Any] = {}
-                
+
                 # Load configuration
                 self._load()
                 self._initialized = True
-    
+
     def _load(self) -> None:
         """Load configuration from disk (global + project-local)."""
         # Load global config
@@ -84,7 +85,7 @@ class ConfigSingleton:
             self._global_data = self._get_default_config()
             self._ensure_dirs()
             self._save_global()
-        
+
         # Load project-local config
         if self.project_config_path.exists():
             try:
@@ -92,7 +93,7 @@ class ConfigSingleton:
                     self._project_data = yaml.safe_load(f) or {}
             except Exception:
                 self._project_data = {}
-    
+
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration values."""
         return {
@@ -113,25 +114,25 @@ class ConfigSingleton:
             "debug_log_max_size_mb": 10,
             "debug_log_max_files": 5,
         }
-    
+
     def _ensure_dirs(self) -> None:
         """Ensure required directories exist."""
         self.global_config_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def _save_global(self) -> None:
         """Save global configuration to disk."""
         self._ensure_dirs()
         with open(self.global_config_path, 'w', encoding='utf-8') as f:
             yaml.dump(self._global_data, f, default_flow_style=False, allow_unicode=True)
-    
+
     def _save_project(self) -> None:
         """Save project-local configuration to disk."""
         self.project_config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.project_config_path, 'w', encoding='utf-8') as f:
             yaml.dump(self._project_data, f, default_flow_style=False, allow_unicode=True)
-    
+
     def _get_nested(self, data: Dict[str, Any], key: str, default: Any = None) -> Any:
         """Get value using dot notation (e.g., 'plugins.brain.db_path')."""
         keys = key.split('.')
@@ -144,7 +145,7 @@ class ConfigSingleton:
             else:
                 return default
         return value if value is not None else default
-    
+
     def _set_nested(self, data: Dict[str, Any], key: str, value: Any) -> None:
         """Set value using dot notation."""
         keys = key.split('.')
@@ -154,7 +155,7 @@ class ConfigSingleton:
                 current[k] = {}
             current = current[k]
         current[keys[-1]] = value
-    
+
     def get(self, key: str, default: Any = None, scope: str = 'merged') -> Any:
         """
         Get config value using dot notation.
@@ -178,7 +179,7 @@ class ConfigSingleton:
                 if project_value is not None:
                     return project_value
                 return self._get_nested(self._global_data, key, default)
-    
+
     def set(self, key: str, value: Any, scope: str = 'global') -> None:
         """
         Set config value using dot notation.
@@ -193,7 +194,7 @@ class ConfigSingleton:
                 self._set_nested(self._project_data, key, value)
             else:
                 self._set_nested(self._global_data, key, value)
-    
+
     def save(self, scope: str = 'global') -> None:
         """
         Persist configuration to disk.
@@ -206,16 +207,16 @@ class ConfigSingleton:
                 self._save_global()
             if scope in ('project', 'both'):
                 self._save_project()
-    
+
     def reload(self) -> None:
         """Reload configuration from disk (discard in-memory changes)."""
         with self._lock:
             self._load()
-    
+
     # =========================================================================
     # Convenience Methods
     # =========================================================================
-    
+
     def get_active_host(self) -> Tuple[Optional[str], str]:
         """
         Get active host with source indicator.
@@ -234,12 +235,12 @@ class ConfigSingleton:
         env_host = os.environ.get('NAVIG_ACTIVE_HOST')
         if env_host:
             return (env_host, 'env')
-        
+
         # 2. Project-local config
         project_host = self.get('active_host', scope='project')
         if project_host:
             return (project_host, 'project')
-        
+
         # 3. Global cache
         cache_file = self.cache_dir / "active_host.txt"
         if cache_file.exists():
@@ -249,14 +250,14 @@ class ConfigSingleton:
                     return (cached_host, 'cache')
             except Exception:
                 pass
-        
+
         # 4. Default host from global config
         default_host = self.get('default_host', scope='global')
         if default_host:
             return (default_host, 'default')
-        
+
         return (None, 'none')
-    
+
     def set_active_host(self, host: str, scope: str = 'cache') -> None:
         """
         Set active host.
@@ -274,7 +275,7 @@ class ConfigSingleton:
                 self._ensure_dirs()
                 cache_file = self.cache_dir / "active_host.txt"
                 cache_file.write_text(host)
-    
+
     def get_active_app(self) -> Tuple[Optional[str], str]:
         """
         Get active app with source indicator.
@@ -291,12 +292,12 @@ class ConfigSingleton:
         env_app = os.environ.get('NAVIG_ACTIVE_APP')
         if env_app:
             return (env_app, 'env')
-        
+
         # 2. Project-local config
         project_app = self.get('app.name', scope='project')
         if project_app:
             return (project_app, 'project')
-        
+
         # 3. Global cache
         cache_file = self.cache_dir / "active_app.txt"
         if cache_file.exists():
@@ -306,9 +307,9 @@ class ConfigSingleton:
                     return (cached_app, 'cache')
             except Exception:
                 pass
-        
+
         return (None, 'none')
-    
+
     def set_active_app(self, app_name: str, scope: str = 'cache') -> None:
         """
         Set active app.
@@ -325,11 +326,11 @@ class ConfigSingleton:
                 self._ensure_dirs()
                 cache_file = self.cache_dir / "active_app.txt"
                 cache_file.write_text(app_name)
-    
+
     # =========================================================================
     # Plugin Configuration
     # =========================================================================
-    
+
     def get_plugin_config(self, plugin_name: str, key: str = None, default: Any = None) -> Any:
         """
         Get plugin-specific configuration.
@@ -345,7 +346,7 @@ class ConfigSingleton:
         if key:
             return self.get(f'plugins.{plugin_name}.{key}', default)
         return self.get(f'plugins.{plugin_name}', default or {})
-    
+
     def set_plugin_config(self, plugin_name: str, key: str, value: Any) -> None:
         """
         Set plugin-specific configuration.
@@ -356,12 +357,12 @@ class ConfigSingleton:
             value: Value to set
         """
         self.set(f'plugins.{plugin_name}.{key}', value)
-    
+
     def is_plugin_disabled(self, plugin_name: str) -> bool:
         """Check if a plugin is explicitly disabled."""
         disabled = self.get('plugins.disabled_plugins', [])
         return plugin_name in disabled
-    
+
     def disable_plugin(self, plugin_name: str) -> None:
         """Disable a plugin."""
         with self._lock:
@@ -370,7 +371,7 @@ class ConfigSingleton:
                 disabled.append(plugin_name)
                 self._set_nested(self._global_data, 'plugins.disabled_plugins', disabled)
                 self._save_global()
-    
+
     def enable_plugin(self, plugin_name: str) -> None:
         """Enable a previously disabled plugin."""
         with self._lock:
@@ -379,21 +380,21 @@ class ConfigSingleton:
                 disabled.remove(plugin_name)
                 self._set_nested(self._global_data, 'plugins.disabled_plugins', disabled)
                 self._save_global()
-    
+
     # =========================================================================
     # Path Helpers
     # =========================================================================
-    
+
     @property
     def hosts_dir(self) -> Path:
         """Get hosts configuration directory."""
         return self.global_config_dir / "hosts"
-    
+
     @property
     def apps_dir(self) -> Path:
         """Get apps configuration directory."""
         return self.global_config_dir / "apps"
-    
+
     @property
     def templates_dir(self) -> Path:
         """Get templates directory."""

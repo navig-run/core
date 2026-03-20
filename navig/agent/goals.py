@@ -19,7 +19,7 @@ from navig.debug_logger import DebugLogger
 
 class GoalState(Enum):
     """State of a goal."""
-    
+
     PENDING = "pending"
     DECOMPOSING = "decomposing"
     IN_PROGRESS = "in_progress"
@@ -31,7 +31,7 @@ class GoalState(Enum):
 
 class SubtaskState(Enum):
     """State of a subtask."""
-    
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -42,7 +42,7 @@ class SubtaskState(Enum):
 @dataclass
 class Subtask:
     """A single subtask of a goal."""
-    
+
     id: str
     description: str
     command: Optional[str] = None
@@ -53,7 +53,7 @@ class Subtask:
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     result: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
@@ -67,7 +67,7 @@ class Subtask:
             'error': self.error,
             'result': self.result,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Subtask:
         return cls(
@@ -87,7 +87,7 @@ class Subtask:
 @dataclass
 class Goal:
     """A high-level goal to be achieved."""
-    
+
     id: str
     description: str
     state: GoalState = GoalState.PENDING
@@ -97,7 +97,7 @@ class Goal:
     completed_at: Optional[datetime] = None
     progress: float = 0.0  # 0.0 to 1.0
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
@@ -110,7 +110,7 @@ class Goal:
             'progress': self.progress,
             'metadata': self.metadata,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Goal:
         return cls(
@@ -124,13 +124,13 @@ class Goal:
             progress=data.get('progress', 0.0),
             metadata=data.get('metadata', {}),
         )
-    
+
     def update_progress(self) -> float:
         """Update and return progress (0.0 to 1.0)."""
         if not self.subtasks:
             self.progress = 0.0
             return self.progress
-        
+
         completed = sum(1 for st in self.subtasks if st.state == SubtaskState.COMPLETED)
         self.progress = completed / len(self.subtasks)
         return self.progress
@@ -142,34 +142,34 @@ class GoalPlanner:
     
     Manages goal decomposition, dependency tracking, and execution.
     """
-    
+
     def __init__(self, storage_dir: Optional[Path] = None):
         self.storage_dir = storage_dir or Path.home() / '.navig' / 'workspace'
         self.goals_file = self.storage_dir / 'goals.json'
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.logger = DebugLogger()
         self._goals: Dict[str, Goal] = {}
         self._load_goals()
-    
+
     def _load_goals(self) -> None:
         """Load goals from storage."""
         if not self.goals_file.exists():
             return
-        
+
         try:
             with open(self.goals_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             for goal_data in data.get('goals', []):
                 goal = Goal.from_dict(goal_data)
                 self._goals[goal.id] = goal
-                
+
             self.logger.log_operation("goals", {"action": "load", "count": len(self._goals)})
-            
+
         except Exception as e:
             self.logger.log_operation("goals", {"action": "load", "error": str(e)})
-    
+
     def _save_goals(self) -> None:
         """Save goals to storage."""
         try:
@@ -177,15 +177,15 @@ class GoalPlanner:
                 'goals': [goal.to_dict() for goal in self._goals.values()],
                 'updated_at': datetime.now().isoformat(),
             }
-            
+
             with open(self.goals_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-                
+
             self.logger.log_operation("goals", {"action": "save", "count": len(self._goals)})
-            
+
         except Exception as e:
             self.logger.log_operation("goals", {"action": "save", "error": str(e)})
-    
+
     def add_goal(self, description: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Add a new goal.
@@ -203,17 +203,17 @@ class GoalPlanner:
             description=description,
             metadata=metadata or {}
         )
-        
+
         self._goals[goal_id] = goal
         self._save_goals()
-        
+
         self.logger.log_operation("goals", {"action": "add", "id": goal_id, "description": description})
         return goal_id
-    
+
     def get_goal(self, goal_id: str) -> Optional[Goal]:
         """Get a goal by ID."""
         return self._goals.get(goal_id)
-    
+
     def list_goals(self, state: Optional[GoalState] = None) -> List[Goal]:
         """
         List goals, optionally filtered by state.
@@ -225,14 +225,14 @@ class GoalPlanner:
             List of goals
         """
         goals = list(self._goals.values())
-        
+
         if state:
             goals = [g for g in goals if g.state == state]
-        
+
         # Sort by created_at descending
         goals.sort(key=lambda g: g.created_at, reverse=True)
         return goals
-    
+
     def decompose_goal(self, goal_id: str, subtasks: List[Dict[str, Any]]) -> bool:
         """
         Decompose a goal into subtasks.
@@ -250,10 +250,10 @@ class GoalPlanner:
         goal = self.get_goal(goal_id)
         if not goal:
             return False
-        
+
         goal.state = GoalState.DECOMPOSING
         goal.subtasks = []
-        
+
         for i, st_def in enumerate(subtasks):
             subtask_id = f"{goal_id}-{i+1}"
             subtask = Subtask(
@@ -263,17 +263,17 @@ class GoalPlanner:
                 dependencies=st_def.get('dependencies', [])
             )
             goal.subtasks.append(subtask)
-        
+
         goal.state = GoalState.PENDING
         self._save_goals()
-        
+
         self.logger.log_operation("goals", {
             "action": "decompose",
             "id": goal_id,
             "subtask_count": len(goal.subtasks)
         })
         return True
-    
+
     def start_goal(self, goal_id: str) -> bool:
         """
         Start executing a goal.
@@ -287,14 +287,14 @@ class GoalPlanner:
         goal = self.get_goal(goal_id)
         if not goal or goal.state not in (GoalState.PENDING, GoalState.BLOCKED):
             return False
-        
+
         goal.state = GoalState.IN_PROGRESS
         goal.started_at = datetime.now()
         self._save_goals()
-        
+
         self.logger.log_operation("goals", {"action": "start", "id": goal_id})
         return True
-    
+
     def complete_subtask(self, goal_id: str, subtask_id: str, result: Optional[str] = None) -> bool:
         """
         Mark a subtask as completed.
@@ -310,25 +310,25 @@ class GoalPlanner:
         goal = self.get_goal(goal_id)
         if not goal:
             return False
-        
+
         subtask = next((st for st in goal.subtasks if st.id == subtask_id), None)
         if not subtask:
             return False
-        
+
         subtask.state = SubtaskState.COMPLETED
         subtask.completed_at = datetime.now()
         subtask.result = result
-        
+
         # Update goal progress
         goal.update_progress()
-        
+
         # Check if goal is complete
         if all(st.state == SubtaskState.COMPLETED for st in goal.subtasks):
             goal.state = GoalState.COMPLETED
             goal.completed_at = datetime.now()
-        
+
         self._save_goals()
-        
+
         self.logger.log_operation("goals", {
             "action": "complete_subtask",
             "goal_id": goal_id,
@@ -336,7 +336,7 @@ class GoalPlanner:
             "progress": goal.progress
         })
         return True
-    
+
     def fail_subtask(self, goal_id: str, subtask_id: str, error: str) -> bool:
         """
         Mark a subtask as failed.
@@ -352,19 +352,19 @@ class GoalPlanner:
         goal = self.get_goal(goal_id)
         if not goal:
             return False
-        
+
         subtask = next((st for st in goal.subtasks if st.id == subtask_id), None)
         if not subtask:
             return False
-        
+
         subtask.state = SubtaskState.FAILED
         subtask.error = error
-        
+
         # Mark goal as blocked
         goal.state = GoalState.BLOCKED
-        
+
         self._save_goals()
-        
+
         self.logger.log_operation("goals", {
             "action": "fail_subtask",
             "goal_id": goal_id,
@@ -372,7 +372,7 @@ class GoalPlanner:
             "error": error
         })
         return True
-    
+
     def cancel_goal(self, goal_id: str) -> bool:
         """
         Cancel a goal.
@@ -386,14 +386,14 @@ class GoalPlanner:
         goal = self.get_goal(goal_id)
         if not goal:
             return False
-        
+
         goal.state = GoalState.CANCELLED
         goal.completed_at = datetime.now()
         self._save_goals()
-        
+
         self.logger.log_operation("goals", {"action": "cancel", "id": goal_id})
         return True
-    
+
     def get_next_subtask(self, goal_id: str) -> Optional[Subtask]:
         """
         Get the next executable subtask for a goal.
@@ -411,19 +411,19 @@ class GoalPlanner:
         goal = self.get_goal(goal_id)
         if not goal or goal.state != GoalState.IN_PROGRESS:
             return None
-        
+
         for subtask in goal.subtasks:
             if subtask.state != SubtaskState.PENDING:
                 continue
-            
+
             # Check dependencies
             dependencies_met = all(
                 any(st.id == dep_id and st.state == SubtaskState.COMPLETED
                     for st in goal.subtasks)
                 for dep_id in subtask.dependencies
             )
-            
+
             if dependencies_met:
                 return subtask
-        
+
         return None

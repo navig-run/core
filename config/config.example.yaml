@@ -1,0 +1,102 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NAVIG User Configuration
+#
+# HOW TO USE
+# ──────────────────────────────────────────────────────────────────────────
+# 1. Recommended: run `navig init` — it writes this file for you interactively.
+# 2. Manual:      copy this file to ~/.navig/config.yaml and edit the values
+#                 you want to change.  Anything not set here falls back to the
+#                 factory defaults in config/defaults.yaml.
+#
+# You only need to include the keys you want to change.
+# Secrets (API keys, tokens) belong in the vault, not here:
+#   navig vault set openai_api_key sk-...
+#
+# Apply changes instantly — no restart required.
+# View current live config: navig config show
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── Gateway ───────────────────────────────────────────────────────────────────
+# The local server that powers navig cron, navig status, navig flux, etc.
+# Only change the port if 8789 conflicts with another service on your machine.
+#
+# gateway:
+#   port: 8789
+
+
+# ── Telegram Bot ──────────────────────────────────────────────────────────────
+# Configure via `navig init` (recommended) — the token is stored in the vault.
+# You can safely customise these non-secret settings here:
+#
+# telegram:
+#   # Telegram user IDs allowed to send commands (get your ID from @userinfobot).
+#   # Leave empty to allow anyone — not recommended for public bots.
+#   allowed_users:
+#     - 123456789
+#
+#   # Typing indicator style while NAVIG is processing:
+#   #   instant  — show as soon as the message arrives (default)
+#   #   message  — show only while the AI is writing
+#   #   never    — disable typing indicators
+#   typing_mode: instant
+
+
+# ── AI / LLM ─────────────────────────────────────────────────────────────────
+# Provider API keys are stored in the vault (navig vault set openai_api_key ...).
+# These settings control model selection, not credentials.
+#
+# llm:
+#   fallback_model: gpt-4o-mini
+
+
+# ── Voice Replies (TTS) ───────────────────────────────────────────────────────
+# When your Telegram bot sends voice messages via OpenAI TTS.
+# Available voices: alloy, echo, fable, onyx, nova, shimmer
+# Available models: tts-1 (fast), tts-1-hd (higher quality)
+# Set via environment variable: NAVIG_TTS_MODEL, NAVIG_TTS_VOICE
+# (no yaml key — use the env vars above or accept the defaults: tts-1 / nova)
+
+
+# ── Mini Agent ────────────────────────────────────────────────────────────────
+# Your personal NAVIG Mini device (NAS, Raspberry Pi, home server).
+# The shared secret belongs in the vault: navig vault set mini.secret <value>
+#
+# mini:
+#   url: "http://your-nas-hostname:9191"
+#   ssh_host: "your-nas-hostname"
+
+
+# ── Mesh ──────────────────────────────────────────────────────────────────────
+# Multi-node NAVIG coordination.  Disabled by default — enable only when you
+# have a second NAVIG node running.
+#
+# mesh:
+#   enabled: false
+
+
+# ── Identity / Status Display ─────────────────────────────────────────────────
+# The host NAVIG pings to measure your network latency in `navig status`.
+# Change to an intranet address if you are in an air-gapped network.
+# Set via environment variable: NAVIG_LATENCY_PROBE_HOST
+# (no yaml key — use the env var above or accept the default: 8.8.8.8)
+
+
+# ── Browser Daemon ────────────────────────────────────────────────────────────
+# Port for the Go browser automation daemon (navig webhook, browser tasks).
+# Only change if 7421 conflicts with another service.
+#
+# daemon:
+#   browser_port: 7421
+
+
+# ── Deploy ────────────────────────────────────────────────────────────────────
+# deploy:
+#   default_backup: true          # snapshot before every push
+#   default_health_retries: 5
+#   snapshot_keep_last: 5
+
+
+# ── Update channel ───────────────────────────────────────────────────────────
+# update:
+#   channel: stable               # stable | beta | nightly
