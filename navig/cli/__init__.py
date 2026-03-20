@@ -7513,12 +7513,12 @@ def gateway_session(
 app.add_typer(gateway_app, name="gateway")
 
 # ============================================================================
-# FORGE / FARMORE / COPILOT — deferred to _register_external_commands
+# BRIDGE / FARMORE / COPILOT — deferred to _register_external_commands
 # ============================================================================
 # QUANTUM VELOCITY K4: These were imported eagerly at module level, paying the
 # full import cost (~30-60ms) even for unrelated commands like `navig host list`.
 # They are now registered lazily via _EXTERNAL_CMD_MAP in _register_external_commands
-# and only imported when the user actually invokes `navig forge|farmore|copilot`.
+# and only imported when the user actually invokes `navig bridge|farmore|copilot`.
 # (entries added to _EXTERNAL_CMD_MAP below)
 
 
@@ -10181,8 +10181,8 @@ def proactive_test():
 # Commands whose sub-app needs an external module import.
 _EXTERNAL_CMD_MAP = {
     # name          →  (module_path,               attr_name)
-    # ── QUANTUM VELOCITY K4: forge/farmore/copilot moved here from module-level ──
-    "forge":        ("navig.commands.forge",        "forge_app"),
+    # ── QUANTUM VELOCITY K4: bridge/farmore/copilot moved here from module-level ──
+    "bridge":        ("navig.commands.bridge",        "bridge_app"),
     "farmore":      ("navig.commands.farmore",      "farmore_app"),
     "copilot":      ("navig.commands.copilot",      "copilot_app"),
     "inbox":        ("navig.commands.inbox",        "inbox_app"),
@@ -10299,6 +10299,8 @@ _EXTERNAL_CMD_MAP = {
     "portable":   ("navig.commands.portable",    "portable_app"),
     "migrate":    ("navig.commands.migrate",     "migrate_app"),
     "system":     ("navig.commands.system_cmd",  "system_app"),
+    # ── Mount: NTFS junction registry + PowerShell helper generation ──────────
+    "mount":      ("navig.commands.mount",       "mount_app"),
 }
 
 
@@ -10334,10 +10336,10 @@ def _register_external_commands(*, register_all: bool = False):
             mod = importlib.import_module(mod_path)
             app.add_typer(getattr(mod, attr), name=target,
                           hidden=(target in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")))
-        except ImportError as _ie:
+        except Exception as _ie:
             import sys as _sys
             _sys.stderr.write(
-                f"[navig] \u26a0 command '{target}' unavailable (import failed: {_ie})\n"
+                f"[navig] \u26a0 command '{target}' unavailable (registration failed: {_ie})\n"
             )
         return
 
@@ -10366,10 +10368,10 @@ def _register_external_commands(*, register_all: bool = False):
             mod = importlib.import_module(mod_path)
             app.add_typer(getattr(mod, attr), name=cmd_name,
                           hidden=(cmd_name in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")))
-        except ImportError as _ie:
+        except Exception as _ie:
             import sys as _sys
             _sys.stderr.write(
-                f"[navig] \u26a0 command '{cmd_name}' unavailable (import failed: {_ie})\n"
+                f"[navig] \u26a0 command '{cmd_name}' unavailable (registration failed: {_ie})\n"
             )
 
     if sys.platform == "win32":

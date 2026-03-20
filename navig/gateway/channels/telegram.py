@@ -808,12 +808,24 @@ class TelegramChannel:
         model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
         footer = f"\n\n`· {model_name}`" if model_name else ""
         final_text = f"{response}{footer}"
+        final_text = self._strip_internal_tags(final_text)
 
         self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
 
+        keyboard = None
+        if self._kb_builder:
+            try:
+                keyboard = self._kb_builder.build(
+                    ai_response=final_text,
+                    user_message=text,
+                    message_id=placeholder_id or 0,
+                )
+            except Exception:
+                pass
+
         if placeholder_id:
             try:
-                await self.edit_message(chat_id, placeholder_id, final_text)
+                await self.edit_message(chat_id, placeholder_id, final_text, keyboard=keyboard)
                 return
             except Exception:
                 pass
@@ -1325,6 +1337,8 @@ class TelegramChannel:
         extra_krow: Optional[list] = None,
     ) -> None:
         """Send a response with template limits, optional keyboard, and voice reply."""
+        # Strip internal LLM reasoning tags before any further processing
+        response = self._strip_internal_tags(response)
         parts = None
         if HAS_TEMPLATES:
             try:
@@ -1491,24 +1505,24 @@ class TelegramChannel:
             await self.send_message(chat_id, text)
 
     async def _handle_providers(self, chat_id: int) -> None:
-        """AI Provider Hub — live registry status, Forge Bridge probe, interactive keyboard."""
+        """AI Provider Hub — live registry status, Bridge probe, interactive keyboard."""
         import os
         import socket as _socket
 
-        # ── Forge Bridge probe ──
-        forge_port = 42070
+        # ── Bridge probe ──
+        bridge_port = 42070
         try:
             from navig.providers.bridge_grid_reader import get_llm_port
-            forge_port = get_llm_port() or 42070
+            bridge_port = get_llm_port() or 42070
         except Exception:
             pass
         try:
             _s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
             _s.settimeout(1.0)
-            forge_online = _s.connect_ex(("127.0.0.1", forge_port)) == 0
+            bridge_online = _s.connect_ex(("127.0.0.1", bridge_port)) == 0
             _s.close()
         except Exception:
-            forge_online = False
+            bridge_online = False
 
         # ── Load live provider list from registry ──
         try:
@@ -1520,23 +1534,23 @@ class TelegramChannel:
 
         # ── Build status lines ──
         lines = ["🤖 *AI Provider Hub*\n"]
-        if forge_online:
-            lines.append("⚡ *Forge Bridge* — online (`forge_copilot`)")
-            lines.append("_Non-Forge providers are fallback only while bridge is connected._")
+        if bridge_online:
+            lines.append("⚡ *Bridge* — online (`bridge_copilot`)")
+            lines.append("_Non-Bridge providers are fallback only while bridge is connected._")
         else:
-            lines.append("⚡ *Forge Bridge* — offline")
+            lines.append("⚡ *Bridge* — offline")
             lines.append("_Connect VS Code + navig-bridge to activate bridge._")
         lines.append("")
 
         keyboard_rows: list = [
-            [{"text": f"⚡ Forge Bridge — {'online ✓' if forge_online else 'offline'}",
-              "callback_data": "prov_forge"}],
+            [{"text": f"⚡ Bridge — {'online ✓' if bridge_online else 'offline'}",
+              "callback_data": "prov_bridge"}],
         ]
         button_row: list = []
 
         for manifest in providers:
-            if manifest.id == "mcp_forge":
-                # Already rendered as the forge bridge row above
+            if manifest.id == "mcp_bridge":
+                # Already rendered as the bridge row above
                 continue
             try:
                 result = verify_provider(manifest)
@@ -1720,22 +1734,22 @@ class TelegramChannel:
         lines: list = [f"🔍 *Recent Trace* — {now_utc}", SEP]
 
         # ── Active Backend ─────────────────────────────────────────────────────
-        # Check Forge Bridge (VS Code MCP on :42070) first
-        _forge_active = False
+        # Check Bridge (VS Code MCP on :42070) first
+        _bridge_active = False
         try:
             import socket as _sock
             _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
             _s.settimeout(0.3)
-            _forge_active = _s.connect_ex(("127.0.0.1", 42070)) == 0
+            _bridge_active = _s.connect_ex(("127.0.0.1", 42070)) == 0
             _s.close()
         except Exception:
             pass
 
         lines.append("🔌 *Routing*")
-        if _forge_active:
-            lines.append("  🟢 Forge Bridge (VS Code) — *connected*")
+        if _bridge_active:
+            lines.append("  🟢 Bridge (VS Code) — *connected*")
         else:
-            lines.append("  ⚫ Forge Bridge — offline (using model router)")
+            lines.append("  ⚫ Bridge — offline (using model router)")
 
         # Model router slot assignments
         try:
@@ -2242,21 +2256,21 @@ class TelegramChannel:
             except Exception:
                 lines.append("⚡ *Daemon:* status unavailable")
 
-            # ── Forge Bridge ──
-            forge_port = 42070
+            # ── Bridge ──
+            bridge_port = 42070
             try:
                 from navig.providers.bridge_grid_reader import get_llm_port
-                forge_port = get_llm_port() or 42070
+                bridge_port = get_llm_port() or 42070
             except Exception:
                 pass
             try:
                 _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
                 _s.settimeout(0.8)
-                forge_ok = _s.connect_ex(("127.0.0.1", forge_port)) == 0
+                bridge_ok = _s.connect_ex(("127.0.0.1", bridge_port)) == 0
                 _s.close()
             except Exception:
-                forge_ok = False
-            lines.append(f"\u26a1 *Forge Bridge:* {'online (forge_copilot)' if forge_ok else 'offline'}")
+                bridge_ok = False
+            lines.append(f"\u26a1 *Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}")
 
             # ── Vault ──
             try:
@@ -2594,14 +2608,39 @@ class TelegramChannel:
         message_id: int,
         text: str,
         parse_mode: str = "Markdown",
+        keyboard: Optional[list] = None,
     ) -> Optional[Dict]:
         """Edit an existing message."""
-        return await self._api_call("editMessageText", {
+        payload: Dict = {
             "chat_id": chat_id,
             "message_id": message_id,
             "text": text,
             "parse_mode": parse_mode,
-        })
+        }
+        if keyboard is not None:
+            payload["reply_markup"] = {"inline_keyboard": keyboard}
+        return await self._api_call("editMessageText", payload)
+
+    @staticmethod
+    def _strip_internal_tags(text: str) -> str:
+        """Remove LLM internal reasoning tags from response text."""
+        import re as _re
+        # Strip search-quality reflection/score and raw search tags
+        text = _re.sub(
+            r'<searchquality(?:reflection|score)[^>]*>.*?</searchquality(?:reflection|score)[^>]*>',
+            '',
+            text,
+            flags=_re.DOTALL | _re.IGNORECASE,
+        )
+        text = _re.sub(
+            r'<search>.*?</search>',
+            '',
+            text,
+            flags=_re.DOTALL | _re.IGNORECASE,
+        )
+        # Collapse multiple blank lines introduced by removal
+        text = _re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
         
     async def delete_message(self, chat_id: int, message_id: int) -> bool:
         """Delete a message."""

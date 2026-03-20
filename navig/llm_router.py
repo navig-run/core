@@ -46,6 +46,7 @@ import threading
 import re
 import logging
 from typing import Any, Dict, List, Optional, Set
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 try:
     from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -99,6 +100,49 @@ MODE_ALIASES: Dict[str, str] = {
 # Providers that enforce content filtering (censored)
 CENSORED_PROVIDERS: Set[str] = {"openai", "anthropic", "deepseek", "google"}
 
+# ---------------------------------------------------------------------------
+# Provider Resource URLs — canonical source of truth for all external endpoints
+# ---------------------------------------------------------------------------
+# Each provider maps to a dict of named resource URLs.  Consumer modules
+# import this constant rather than building URLs ad-hoc.
+#   from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL
+
+PROVIDER_RESOURCE_URLS: Dict[str, Dict[str, str]] = {
+    "openai": {
+        "chat":           "https://api.openai.com/v1/chat/completions",
+        "transcriptions": "https://api.openai.com/v1/audio/transcriptions",
+        "speech":         "https://api.openai.com/v1/audio/speech",
+        "embeddings":     "https://api.openai.com/v1/embeddings",
+    },
+    "deepgram": {
+        "listen":  "https://api.deepgram.com/v1/listen",
+        "speak":   "https://api.deepgram.com/v1/speak",
+        "analyze": "https://api.deepgram.com/v1/read",
+    },
+    "elevenlabs": {
+        "tts_base":       "https://api.elevenlabs.io/v1/text-to-speech",
+        "voices":         "https://api.elevenlabs.io/v1/voices",
+        "tts_stream":     "https://api.elevenlabs.io/v1/text-to-speech/stream",
+    },
+    "google_tts": {
+        "synthesize": "https://texttospeech.googleapis.com/v1/text:synthesize",
+    },
+    "spotify": {
+        "token":         "https://accounts.spotify.com/api/token",
+        "search":        "https://api.spotify.com/v1/search",
+        "recommendations": "https://api.spotify.com/v1/recommendations",
+    },
+    "lastfm": {
+        "base": "https://ws.audioscrobbler.com/2.0/",
+    },
+    "audd": {
+        "base": "https://api.audd.io/",
+    },
+    "serpapi": {
+        "search": "https://serpapi.com/search",
+    },
+}
+
 # Provider → env var(s) for API key resolution
 PROVIDER_ENV_KEYS: Dict[str, List[str]] = {
     "openai":        ["OPENAI_API_KEY"],
@@ -115,7 +159,7 @@ PROVIDER_ENV_KEYS: Dict[str, List[str]] = {
     "together":      ["TOGETHER_API_KEY"],
     "github_models": ["GITHUB_TOKEN"],  # free via GitHub PAT
     "ollama":        [],  # local, no key needed
-    "mcp_forge":     [],  # VS Code Copilot via MCP WebSocket (no key, uses tunnel)
+    "mcp_bridge":     [],  # VS Code Copilot via MCP WebSocket (no key, uses tunnel)
 }
 
 # Provider → base URL
@@ -134,7 +178,7 @@ PROVIDER_BASE_URLS: Dict[str, str] = {
     "together":      "https://api.together.xyz/v1",
     "github_models": "https://models.inference.ai.azure.com",
     "ollama":        "http://127.0.0.1:11434/v1",
-    "mcp_forge":     "ws://127.0.0.1:42070",
+    "mcp_bridge":     "ws://127.0.0.1:42070",
 }
 
 SUPPORTED_PROVIDERS = set(PROVIDER_BASE_URLS.keys())

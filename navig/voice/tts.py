@@ -39,6 +39,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL  # noqa: F401
+
 # =============================================================================
 # Types
 # =============================================================================

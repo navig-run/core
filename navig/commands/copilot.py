@@ -1,8 +1,8 @@
 """
 NAVIG Copilot CLI Commands
 
-Direct access to VS Code Copilot via the MCP Forge bridge from the command line.
-Works over the SSH tunnel — requires an active Forge connection.
+Direct access to VS Code Copilot via the MCP Bridge from the command line.
+Works over the SSH tunnel — requires an active Bridge connection.
 
 Usage:
     navig copilot ask "How do I configure nginx rate limiting?"
@@ -17,12 +17,13 @@ import typer
 from typing import Optional
 
 from navig.lazy_loader import lazy_import
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 ch = lazy_import("navig.console_helper")
 
 copilot_app = typer.Typer(
     name="copilot",
-    help="Chat with VS Code Copilot via the MCP Forge bridge",
+    help="Chat with VS Code Copilot via the MCP Bridge",
     no_args_is_help=True,
 )
 
@@ -42,12 +43,12 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-async def _get_forge_provider():
-    """Build a McpForgeProvider from config."""
-    from navig.agent.llm_providers import McpForgeProvider
+async def _get_bridge_provider():
+    """Build a McpBridgeProvider from config."""
+    from navig.agent.llm_providers import McpBridgeProvider
 
-    url, token = _read_forge_config()
-    provider = McpForgeProvider(base_url=url, api_key=token)
+    url, token = _read_bridge_config()
+    provider = McpBridgeProvider(base_url=url, api_key=token)
 
     if not await provider.is_available():
         await provider.close()
@@ -55,32 +56,32 @@ async def _get_forge_provider():
     return provider
 
 
-def _read_forge_config():
-    """Read MCP Forge URL and token from config / env."""
+def _read_bridge_config():
+    """Read MCP Bridge URL and token from config / env."""
     import os
-    url = os.getenv("NAVIG_FORGE_MCP_URL", "")
-    token = os.getenv("NAVIG_FORGE_LLM_TOKEN", "")
+    url = os.getenv("NAVIG_BRIDGE_MCP_URL", "")
+    token = os.getenv("NAVIG_BRIDGE_LLM_TOKEN", "")
     if not url:
         try:
             from navig.config import get_config_manager
             cfg = get_config_manager().global_config or {}
-            forge = cfg.get("forge", {})
-            url = forge.get("mcp_url") or ""
-            token = token or forge.get("token", "")
+            bridge = cfg.get("bridge", {})
+            url = bridge.get("mcp_url") or ""
+            token = token or bridge.get("token", "")
         except Exception:
             pass
     return url or "ws://127.0.0.1:42070", token
 
 
 async def _chat(messages: list, model: str = "") -> str:
-    """Send messages through the Forge bridge and return the response."""
-    provider = await _get_forge_provider()
+    """Send messages through the Bridge and return the response."""
+    provider = await _get_bridge_provider()
     if provider is None:
-        ch.error("MCP Forge bridge is not reachable.")
+        ch.error("MCP Bridge is not reachable.")
         ch.info("  Check that:")
-        ch.info("    1. VS Code is running with the Forge extension active")
-        ch.info("    2. The SSH tunnel is up (systemctl status forge-tunnel)")
-        ch.info("    3. forge.mcp_url / forge.token in ~/.navig/config.yaml are correct")
+        ch.info("    1. VS Code is running with the Bridge extension active")
+        ch.info("    2. The SSH tunnel is up (systemctl status bridge-tunnel)")
+        ch.info("    3. bridge.mcp_url / bridge.token in ~/.navig/config.yaml are correct")
         raise typer.Exit(1)
     try:
         resp = await provider.chat(model=model, messages=messages, max_tokens=4096)
@@ -281,8 +282,8 @@ def copilot_status(
     url, token = _read_forge_config()
 
     async def _check():
-        from navig.agent.llm_providers import McpForgeProvider
-        provider = McpForgeProvider(base_url=url, api_key=token)
+        from navig.agent.llm_providers import McpBridgeProvider
+        provider = McpBridgeProvider(base_url=url, api_key=token)
         t0 = time.monotonic()
         available = await provider.is_available()
         latency = int((time.monotonic() - t0) * 1000)
@@ -310,5 +311,5 @@ def copilot_status(
             ch.info("  Troubleshooting:")
             ch.info("    1. Is VS Code running with Forge extension?")
             ch.info("    2. Is the SSH tunnel active?")
-            ch.info("       systemctl status forge-tunnel")
-            ch.info("    3. Check token in ~/.navig/config.yaml → forge.token")
+            ch.info("       systemctl status bridge-tunnel")
+            ch.info("    3. Check token in ~/.navig/config.yaml → bridge.token")

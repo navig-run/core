@@ -50,6 +50,7 @@ def isolated_project(tmp_path: Path, monkeypatch):
 
     cli._config_manager = None
     cli._NO_CACHE = False
+    cli._register_external_commands(register_all=True)
 
     return tmp_path
 

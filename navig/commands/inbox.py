@@ -348,3 +348,274 @@ def watch_cmd(
         engine.start_watch(interval_secs=interval, dry_run=dry_run)
     except KeyboardInterrupt:
         typer.echo("\nWatch stopped.")
+
+
+@inbox_app.command("stats")
+def stats_cmd(
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Show routing summary statistics from the inbox SQLite store."""
+    from navig.inbox.store import InboxStore
+
+    store = InboxStore()
+    data = store.stats()
+
+    if json_output:
+        typer.echo(json.dumps(data, indent=2))
+        return
+
+    total = data.get("total_events", 0)
+    by_status = data.get("by_status", {})
+    by_category = data.get("by_category", {})
+
+    typer.secho("Inbox Statistics", fg=typer.colors.CYAN, bold=True)
+    typer.echo(f"  Total events  : {total}")
+    typer.echo("")
+    typer.secho("  By status:", fg=typer.colors.WHITE)
+    for status, count in sorted(by_status.items()):
+        color = typer.colors.GREEN if status == "routed" else typer.colors.YELLOW
+        typer.secho(f"    {status:<12} {count}", fg=color)
+    typer.echo("")
+    typer.secho("  By category:", fg=typer.colors.WHITE)
+    for category, count in sorted(by_category.items(), key=lambda x: -x[1]):
+        typer.echo(f"    {category:<26} {count}")
+
+
+@inbox_app.command("add")
+def add_url_cmd(
+    url: str = typer.Argument(..., help="URL to fetch, classify, and route"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Use BM25 classifier only"),
+    mode: str = typer.Option("copy", "--mode", "-m", help="Route mode: copy | move | link"),
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
+) -> None:
+    """Fetch a URL, classify it, and route it into the wiki inbox.
+
+    \b
+    Examples:
+      navig inbox add https://example.com/article
+      navig inbox add https://arxiv.org/abs/2401.00001 --mode move
+    """
+    import hashlib
+    import re
+    import urllib.request
+    import urllib.error
+    import time
+
+    from navig.inbox.classifier import Classifier
+    from navig.inbox.router import InboxRouter, RouteMode
+    from navig.inbox.store import InboxStore, InboxEvent, RoutingDecision
+
+    typer.echo(f"Fetching: {url}")
+
+    # Fetch content
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "NAVIG/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read(204800)  # cap at 200 KB
+            content_type = resp.headers.get("content-type", "")
+            content = raw.decode("utf-8", errors="replace")
+    except Exception as exc:
+        typer.secho(f"Fetch failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    # Derive a filename from URL
+    path_part = url.rstrip("/").split("/")[-1] or "index"
+    path_part = re.sub(r"[^a-zA-Z0-9_-]", "_", path_part)
+    filename = f"{path_part}.md"
+
+    # Strip HTML tags for classification
+    text = re.sub(r"<[^>]+>", " ", content)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # Classify
+    classifier = Classifier(use_llm=not no_llm)
+    result = classifier.classify(text, filename=filename, extra_context=url)
+
+    if json_output:
+        import dataclasses
+        typer.echo(json.dumps({
+            "url": url,
+            "filename": filename,
+            "category": result.category,
+            "confidence": result.confidence,
+            "method": result.method,
+        }, indent=2))
+        if dry_run:
+            return
+
+    typer.echo(f"  Category  : {result.category}")
+    typer.echo(f"  Confidence: {result.confidence:.2%}  ({result.method})")
+
+    # Build markdown content
+    md = (
+        f"---\n"
+        f"source: {url}\n"
+        f"fetched_at: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+        f"category: {result.category}\n"
+        f"confidence: {result.confidence}\n"
+        f"---\n\n"
+        f"# {path_part}\n\n"
+        f"Source: {url}\n\n"
+        f"{text[:8000]}\n"
+    )
+
+    # Route
+    project_root = _find_project_root()
+    router_mode = RouteMode(mode) if mode in ("copy", "move", "link") else RouteMode.COPY
+    router = InboxRouter(project_root=project_root, mode=router_mode)
+    route_result = router.route_url(url, md, filename, result, dry_run=dry_run)
+
+    if json_output:
+        typer.echo(json.dumps({
+            "route_status": route_result.status,
+            "destination": route_result.destination,
+            "result_path": route_result.result_path,
+        }, indent=2))
+        return
+
+    if route_result.status == "routed":
+        dest = route_result.result_path or route_result.destination
+        if dry_run:
+            typer.secho(f"  [dry-run] Would write → {dest}", fg=typer.colors.YELLOW)
+        else:
+            typer.secho(f"  ✓ Routed  → {dest}", fg=typer.colors.GREEN)
+            # Persist to store
+            store = InboxStore()
+            event = InboxEvent(
+                source_path=url,
+                source_type="url",
+                filename=filename,
+                size_bytes=len(md.encode()),
+                content_hash=hashlib.sha256(md.encode()).hexdigest()[:16],
+                status="routed",
+            )
+            event_id = store.insert_event(event)
+            decision = RoutingDecision(
+                event_id=event_id,
+                category=result.category,
+                confidence=result.confidence,
+                mode=mode,
+                destination=route_result.destination or "",
+                result_path=route_result.result_path,
+                executed=True,
+                classifier=result.method,
+            )
+            store.insert_decision(decision)
+    else:
+        typer.secho(
+            f"  {route_result.status}: {route_result.error or 'no destination'}",
+            fg=typer.colors.YELLOW,
+        )
+
+
+@inbox_app.command("ui")
+def ui_cmd(
+    path: Optional[str] = typer.Option(
+        None, "--path", "-p", help="Project root (default: auto-detected)"
+    ),
+    no_llm: bool = typer.Option(False, "--no-llm", help="BM25 only, no LLM"),
+    mode: str = typer.Option("copy", "--mode", "-m", help="Route mode: copy | move | link"),
+) -> None:
+    """Interactive TUI review panel — inspect inbox files and approve routing.
+
+    Shows each pending file with its classification result. Press:
+      [y] Route now   [n] Keep in inbox   [q] Quit   [?] Details
+    """
+    from navig.inbox.classifier import Classifier
+    from navig.inbox.router import InboxRouter, RouteMode, ConflictStrategy
+    from navig.inbox.store import InboxStore, InboxEvent, RoutingDecision
+
+    project_root = Path(path).resolve() if path else _find_project_root()
+    inbox_dir = project_root / ".navig" / "wiki" / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+
+    files = [f for f in inbox_dir.iterdir() if f.is_file() and not f.name.startswith(".")]
+    if not files:
+        # Also check global inbox
+        try:
+            from navig.platform.paths import navig_data_dir
+            global_inbox = navig_data_dir() / "inbox"
+        except Exception:
+            global_inbox = Path.home() / ".navig" / "inbox"
+        if global_inbox.is_dir():
+            files += [f for f in global_inbox.iterdir() if f.is_file() and not f.name.startswith(".")]
+
+    if not files:
+        typer.secho("No inbox files found.", fg=typer.colors.YELLOW)
+        return
+
+    classifier = Classifier(use_llm=not no_llm)
+    router_mode = RouteMode(mode) if mode in ("copy", "move", "link") else RouteMode.COPY
+    router = InboxRouter(project_root=project_root, mode=router_mode)
+    store = InboxStore()
+
+    typer.secho(
+        f"NAVIG Inbox Review  ({len(files)} file(s))  [y=route  n=skip  q=quit  ?=details]",
+        fg=typer.colors.CYAN,
+        bold=True,
+    )
+    typer.echo("")
+
+    routed = skipped = 0
+    for i, f in enumerate(files, 1):
+        content = ""
+        try:
+            content = f.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+        result = classifier.classify(content, filename=f.name)
+
+        typer.secho(f"[{i}/{len(files)}] {f.name}", fg=typer.colors.WHITE, bold=True)
+        typer.echo(f"  Category  : {result.category}")
+        typer.echo(f"  Confidence: {result.confidence:.2%}  ({result.method})")
+
+        while True:
+            choice = typer.prompt("  → route? [y/n/q/?]", default="y").strip().lower()
+            if choice == "?":
+                typer.echo(f"  Explanation: {result.explanation}")
+                if result.alternatives:
+                    typer.echo("  Alternatives:")
+                    for alt_cat, alt_score in result.alternatives:
+                        typer.echo(f"    {alt_cat}: {alt_score:.4f}")
+                continue
+            break
+
+        if choice == "q":
+            typer.echo("Quit.")
+            break
+        elif choice == "y":
+            route_result = router.route(f, result, dry_run=False)
+            if route_result.status == "routed":
+                typer.secho(f"  ✓ → {route_result.result_path}", fg=typer.colors.GREEN)
+                routed += 1
+                # Persist
+                import hashlib
+                event = InboxEvent(
+                    source_path=str(f),
+                    source_type="file",
+                    filename=f.name,
+                    size_bytes=f.stat().st_size,
+                    content_hash=hashlib.sha256(content.encode()).hexdigest()[:16],
+                    status="routed",
+                )
+                event_id = store.insert_event(event)
+                decision = RoutingDecision(
+                    event_id=event_id,
+                    category=result.category,
+                    confidence=result.confidence,
+                    mode=router_mode.value,
+                    destination=route_result.destination or "",
+                    result_path=route_result.result_path,
+                    executed=True,
+                    classifier=result.method,
+                )
+                store.insert_decision(decision)
+            else:
+                typer.secho(f"  ✗ {route_result.status}: {route_result.error}", fg=typer.colors.RED)
+        else:
+            typer.secho("  Kept in inbox.", fg=typer.colors.YELLOW)
+            skipped += 1
+        typer.echo("")
+
+    typer.secho(f"Done. {routed} routed, {skipped} kept.", fg=typer.colors.CYAN)

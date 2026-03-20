@@ -151,7 +151,7 @@ def _chat(gw: "NavigGateway"):
         try:
             response_text = await gw.router.route_message(
                 channel="http",
-                user_id="forge",
+                user_id="bridge",
                 message=text,
                 metadata=metadata,
             )
@@ -239,15 +239,15 @@ def _register_provider():
     """POST /llm/providers/register — register a dynamic LLM provider."""
     async def handler(request: "web.Request") -> "web.Response":
         try:
-            from navig.providers.forge_bridge import get_forge_bridge_registry
+            from navig.providers.bridge_registry import get_bridge_registry
             body = await request.json()
             name     = body.get("name", "")
             url      = body.get("url", "")
             priority = int(body.get("priority", 0))
             if not name or not url:
                 return json_error_response("name and url are required", status=400, code="invalid_request")
-            provider = get_forge_bridge_registry().register(name, url, priority)
-            logger.info("[ForgeBridge] Registered provider '%s' at %s (priority %d)", name, url, priority)
+            provider = get_bridge_registry().register(name, url, priority)
+            logger.info("[Bridge] Registered provider '%s' at %s (priority %d)", name, url, priority)
             return json_ok({"name": provider.name, "url": provider.url, "priority": provider.priority})
         except Exception as exc:
             logger.exception("Provider register error")
@@ -259,13 +259,13 @@ def _unregister_provider():
     """POST /llm/providers/unregister — unregister a dynamic LLM provider."""
     async def handler(request: "web.Request") -> "web.Response":
         try:
-            from navig.providers.forge_bridge import get_forge_bridge_registry
+            from navig.providers.bridge_registry import get_bridge_registry
             body = await request.json()
             name = body.get("name", "")
             if not name:
                 return json_error_response("name is required", status=400, code="invalid_request")
-            removed = get_forge_bridge_registry().unregister(name)
-            logger.info("[ForgeBridge] Unregistered provider '%s' (found=%s)", name, removed)
+            removed = get_bridge_registry().unregister(name)
+            logger.info("[Bridge] Unregistered provider '%s' (found=%s)", name, removed)
             return json_ok({"removed": removed})
         except Exception as exc:
             logger.exception("Provider unregister error")
@@ -276,8 +276,8 @@ def _unregister_provider():
 def _list_providers():
     """GET /llm/providers — list all dynamically registered providers."""
     async def handler(request: "web.Request") -> "web.Response":
-        from navig.providers.forge_bridge import get_forge_bridge_registry
-        providers = get_forge_bridge_registry().all()
+        from navig.providers.bridge_registry import get_bridge_registry
+        providers = get_bridge_registry().all()
         return json_ok({
             "providers": [{"name": p.name, "url": p.url, "priority": p.priority} for p in providers]
         })
@@ -289,7 +289,7 @@ def _sync():
     GET /sync?after=<uuid>
 
     Synapse: return all messages logged after the given UUID so that a
-    reconnecting Forge client can recover any messages it missed while
+    reconnecting Bridge client can recover any messages it missed while
     the connection was down.
 
     Query param:

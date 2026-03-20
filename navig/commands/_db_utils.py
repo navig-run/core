@@ -1,0 +1,48 @@
+"""
+Shared database utility helpers for NAVIG command modules.
+
+Keep this module import-light — it is imported from database.py,
+database_advanced.py, and backup.py at command-dispatch time.
+"""
+import os
+import tempfile
+
+
+def create_mysql_config_file(user: str, password: str) -> str:
+    """
+    Create a temporary MySQL option file containing credentials.
+
+    Writing credentials to a ``[client]`` config file (rather than passing
+    them as CLI arguments) prevents plaintext passwords from appearing in
+    process listings (``ps aux``, ``/proc/<pid>/cmdline``).
+
+    The file is created with ``0o600`` permissions (owner read/write only).
+    The **caller is responsible for deleting the file** after the subprocess
+    completes, regardless of success or failure (use a ``try/finally`` block).
+
+    Returns:
+        Absolute path to the temporary ``.cnf`` file.
+
+    Raises:
+        RuntimeError: If the file cannot be created or permissions cannot be set.
+    """
+    fd, config_path = tempfile.mkstemp(prefix="navig_mysql_", suffix=".cnf", text=True)
+    try:
+        # Set restrictive permissions before writing secrets
+        os.chmod(config_path, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write("[client]\n")
+            f.write(f"user={user}\n")
+            f.write(f"password={password}\n")
+        return config_path
+    except Exception as exc:
+        # Best-effort cleanup on failure
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(config_path)
+        except OSError:
+            pass
+        raise RuntimeError(f"Failed to create secure MySQL config file: {exc}") from exc

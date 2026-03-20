@@ -229,7 +229,7 @@ class TestA11yRefParsing:
 # SECTION 5 — TemplateRunner (no browser, no Playwright)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-example-app_YAML = Path(__file__).parent.parent / "navig" / "browser" / "templates" / "example-app.yaml"
+EXAMPLE_APP_YAML = Path(__file__).parent.parent / "navig" / "browser" / "templates" / "example-app.yaml"
 GENERIC_YAML = Path(__file__).parent.parent / "navig" / "browser" / "templates" / "generic.yaml"
 
 
@@ -246,9 +246,9 @@ class TestTemplateRunner:
         mock_driver.press = AsyncMock(return_value=True)
         return TemplateRunner(mock_driver)
 
-    def test_example-app_yaml_is_valid(self):
-        assert example-app_YAML.exists(), "example-app.yaml must exist"
-        data = yaml.safe_load(example-app_YAML.read_text())
+    def test_example_app_yaml_is_valid(self):
+        assert EXAMPLE_APP_YAML.exists(), "example-app.yaml must exist"
+        data = yaml.safe_load(EXAMPLE_APP_YAML.read_text())
         assert data["site"] == "example.org"
         assert "login" in data["flows"]
         assert "post" in data["flows"]
@@ -259,22 +259,22 @@ class TestTemplateRunner:
         assert "login" in data["flows"]
         assert "post" in data["flows"]
 
-    def test_example-app_login_flow_has_4_steps(self):
-        data = yaml.safe_load(example-app_YAML.read_text())
+    def test_example_app_login_flow_has_4_steps(self):
+        data = yaml.safe_load(EXAMPLE_APP_YAML.read_text())
         steps = data["flows"]["login"]["steps"]
         assert len(steps) == 4, f"Expected 4 login steps, got {len(steps)}"
 
-    def test_example-app_login_uses_navigate_first(self):
-        data = yaml.safe_load(example-app_YAML.read_text())
+    def test_example_app_login_uses_navigate_first(self):
+        data = yaml.safe_load(EXAMPLE_APP_YAML.read_text())
         first_step = data["flows"]["login"]["steps"][0]
         assert first_step["action"] == "navigate"
 
-    def test_example-app_post_flow_has_2_steps(self):
-        data = yaml.safe_load(example-app_YAML.read_text())
+    def test_example_app_post_flow_has_2_steps(self):
+        data = yaml.safe_load(EXAMPLE_APP_YAML.read_text())
         steps = data["flows"]["post"]["steps"]
         assert len(steps) == 2
 
-    def test_find_template_for_example-app(self):
+    def test_find_template_for_example_app(self):
         runner = self._make_runner()
         runner.load_all()
         tmpl = runner.find_template("https://example.org/account/login")
@@ -408,7 +408,7 @@ class TestLiveBrowser:
     """
 
     @pytest.mark.asyncio
-    async def test_a11y_snapshot_example-app(self):
+    async def test_a11y_snapshot_example_app(self):
         from navig.browser.controller import BrowserController, BrowserConfig
         driver = BrowserController(BrowserConfig(headless=True))
         await driver.start()
@@ -422,7 +422,7 @@ class TestLiveBrowser:
             await driver.stop()
 
     @pytest.mark.asyncio
-    async def test_interactive_elements_fast_example-app(self):
+    async def test_interactive_elements_fast_example_app(self):
         from navig.browser.controller import BrowserController, BrowserConfig
         driver = BrowserController(BrowserConfig(headless=True))
         await driver.start()

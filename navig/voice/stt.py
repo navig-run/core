@@ -24,6 +24,7 @@ Providers:
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL  # noqa: F401
 
 # =============================================================================
 # Types
@@ -407,6 +409,25 @@ class STT:
 # =============================================================================
 
 _default_stt: Optional[STT] = None
+
+
+def _resolve_audio_file_params(filename: str, *, is_voice: bool = False) -> tuple[str, str]:
+    """Return a normalized upload filename and MIME type for an audio file.
+
+    Voice messages are normalized to Telegram's preferred ``.oga`` filename
+    while preserving the Ogg MIME type.
+    """
+    path = Path(filename)
+
+    if is_voice:
+        return "voice.oga", "audio/ogg"
+
+    mime, _ = mimetypes.guess_type(str(path))
+    if mime:
+        return path.name, mime
+
+    mime = STT._get_content_type(path)
+    return path.name, mime
 
 
 def get_stt() -> STT:

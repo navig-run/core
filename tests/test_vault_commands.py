@@ -52,7 +52,7 @@ def test_vault_cli_add_delete(vault):
     assert not any(c.id == cred.id for c in creds)
 
 def test_vault_cli_profile_list():
-    result = runner.invoke(app, ["profile", "list"])
+    result = runner.invoke(app, ["cred-profile", "list"])
     assert result.exit_code == 0
     assert "Available Profiles" in result.stdout
     assert "default" in result.stdout

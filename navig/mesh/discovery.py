@@ -44,6 +44,12 @@ PROBE_INTERVAL = 20          # seconds between active HTTP /health pings per pee
 PROBE_TIMEOUT_S = 3.0        # seconds before a probe is counted as failed
 MAX_PACKET_SIZE = 512        # bytes — single datagram fits all fields
 
+# Election message type constants — imported by navig.mesh.election
+ELECT_PROPOSE = "elect_propose"  # candidate announces itself
+ELECT_PROMOTE = "elect_promote"  # winner claims the leader role
+ELECT_YIELD   = "elect_yield"    # current leader gracefully steps down
+ELECT_ACK     = "elect_ack"      # peer acknowledges yield / takeover offer
+
 
 def _build_packet(
     registry: NodeRegistry,

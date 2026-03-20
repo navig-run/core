@@ -191,3 +191,41 @@ PROVIDER_PRESETS: Dict[str, Dict[str, Any]] = {
         },
     },
 }
+
+# ---------------------------------------------------------------------------
+# VaultItemKind / VaultItem — used by VaultStore (per-item DEK schema)
+# ---------------------------------------------------------------------------
+
+class VaultItemKind(str, Enum):
+    """Kind discriminator for vault items stored in the new DEK schema."""
+
+    SECRET   = "secret"   # Generic secret / API key
+    JSON     = "json"     # Structured JSON blob (e.g. service-account.json)
+    CERT     = "cert"     # TLS / SSH certificate or key
+    TOKEN    = "token"    # OAuth / bearer token
+    PASSWORD = "password" # Password
+    GENERIC  = "generic"  # Catch-all
+
+
+@dataclass
+class VaultItem:
+    """
+    Single item stored in the vault with its own DEK (Data Encryption Key).
+
+    The payload is stored encrypted; this dataclass represents the decrypted
+    view returned to callers after unlocking.
+    """
+
+    id:             str
+    kind:           VaultItemKind
+    label:          str
+    provider:       Optional[str]
+    payload:        bytes                    # Decrypted payload
+    metadata:       Dict[str, Any] = field(default_factory=dict)
+    created_at:     datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at:     datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @staticmethod
+    def new_id() -> str:
+        """Generate a short random ID."""
+        return str(uuid.uuid4())[:8]

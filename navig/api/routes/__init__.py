@@ -1,0 +1,1 @@
+"""navig API route modules."""

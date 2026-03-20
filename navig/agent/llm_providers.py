@@ -23,6 +23,7 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -331,9 +332,9 @@ class LlamaCppProvider(LLMProvider):
             return False
 
 
-# ── MCP Forge (VS Code Copilot via MCP WebSocket) ──────────────────
+# ── MCP Bridge (VS Code Copilot via MCP WebSocket) ──────────────────
 
-class McpForgeProvider(LLMProvider):
+class McpBridgeProvider(LLMProvider):
     """
     LLM provider that calls VS Code Copilot via MCP protocol (WebSocket).
 
@@ -343,12 +344,12 @@ class McpForgeProvider(LLMProvider):
 
     Config in ~/.navig/config.yaml::
 
-        forge:
+        bridge:
           mcp_url: ws://127.0.0.1:42070
           token: <shared-secret>
     """
 
-    name = "mcp_forge"
+    name = "mcp_bridge"
     DEFAULT_URL = "ws://127.0.0.1:42070"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
@@ -371,22 +372,22 @@ class McpForgeProvider(LLMProvider):
         if self._ws is not None and not self._ws.closed:
             return
 
-        # Fast pre-check: if the forge daemon port is not reachable, fail
+        # Fast pre-check: if the bridge daemon port is not reachable, fail
         # immediately instead of waiting for TCP/WebSocket timeout (~10 s).
         import socket as _socket
         from urllib.parse import urlparse as _urlparse
         _parsed = _urlparse(
             self.base_url.replace("ws://", "http://").replace("wss://", "https://")
         )
-        _forge_host = _parsed.hostname or "127.0.0.1"
-        _forge_port = _parsed.port or 42070
+        _bridge_host = _parsed.hostname or "127.0.0.1"
+        _bridge_port = _parsed.port or 42070
         try:
-            _sock = _socket.create_connection((_forge_host, _forge_port), timeout=0.5)
+            _sock = _socket.create_connection((_bridge_host, _bridge_port), timeout=0.5)
             _sock.close()
         except OSError:
             raise ConnectionError(
-                f"Forge daemon not reachable at {_forge_host}:{_forge_port} "
-                "(start the NAVIG Forge extension in VS Code)"
+                f"Bridge daemon not reachable at {_bridge_host}:{_bridge_port} "
+                "(start the NAVIG Bridge extension in VS Code)"
             ) from None
 
         session = await self._get_session()
@@ -1075,8 +1076,11 @@ _PROVIDER_MAP = {
     "llama_cpp": LlamaCppProvider,
     "airllm": AirLLMProvider,
     # Bridge
-    "mcp_forge": McpForgeProvider,
+    "mcp_bridge": McpBridgeProvider,
 }
+
+# Backward-compat alias
+McpForgeProvider = McpBridgeProvider
 
 
 def create_provider(name: str, **kwargs) -> LLMProvider:

@@ -1,4 +1,4 @@
-# NAVIG Ultra Context Engine — Design Spec
+﻿# NAVIG Ultra Context Engine — Design Spec
 
 > Version 1.0 · February 2026
 

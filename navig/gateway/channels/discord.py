@@ -285,7 +285,7 @@ class DiscordChannel:
 • "Price of bitcoin"
 • "Search the web for Python tutorials"
 
-**More info:** https://github.com/your-org/navig
+**More info:** https://github.com/navig-run/core
             """
             await interaction.response.send_message(help_text.strip(), ephemeral=True)
     

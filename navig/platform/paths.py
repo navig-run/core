@@ -195,8 +195,78 @@ def debug_log_path() -> Path:
 
 
 def global_config_path() -> Path:
-    """Path to the main global config file (config.yaml)."""
-    return config_dir() / "config.yaml"
+    """Path to the main global config file (config.yaml).
+
+    New layout: config/config.yaml
+    Legacy fallback: config.yaml at the root of the NAVIG directory.
+    """
+    new_path = config_dir() / "config" / "config.yaml"
+    legacy = config_dir() / "config.yaml"
+    if not new_path.exists() and legacy.exists():
+        return legacy
+    return new_path
+
+
+def genesis_json_path() -> Path:
+    """Path to genesis.json with legacy fallback."""
+    new_path = config_dir() / "state" / "genesis.json"
+    legacy = config_dir() / "genesis.json"
+    if not new_path.exists() and legacy.exists():
+        return legacy
+    return new_path
+
+
+def entity_json_path() -> Path:
+    """Path to entity.json with legacy fallback."""
+    new_path = config_dir() / "state" / "entity.json"
+    legacy = config_dir() / "entity.json"
+    if not new_path.exists() and legacy.exists():
+        return legacy
+    return new_path
+
+
+def onboarding_json_path() -> Path:
+    """Path to onboarding.json with legacy fallback."""
+    new_path = config_dir() / "state" / "onboarding.json"
+    legacy = config_dir() / "onboarding.json"
+    if not new_path.exists() and legacy.exists():
+        return legacy
+    return new_path
+
+
+def store_dir() -> Path:
+    """User content store location, with env override and legacy fallback."""
+    env = os.environ.get("NAVIG_STORE_DIR")
+    if env:
+        return Path(env)
+
+    new_path = config_dir() / "data" / "store"
+    legacy = config_dir() / "store"
+    if not new_path.exists() and legacy.exists():
+        return legacy
+    return new_path
+
+
+def packages_dir() -> Path:
+    """Installed pack directory, with env override and legacy fallback."""
+    env = os.environ.get("NAVIG_PACKAGES_DIR")
+    if env:
+        return Path(env)
+
+    new_path = config_dir() / "packs"
+    legacy = config_dir() / "packages"
+    if not new_path.exists() and legacy.exists():
+        return legacy
+    return new_path
+
+
+def audio_configs_dir() -> Path:
+    """Audio provider configs directory with legacy fallback."""
+    new_path = config_dir() / "config" / "audio"
+    legacy = config_dir() / "audio_configs"
+    if not new_path.exists() and legacy.exists():
+        return legacy
+    return new_path
 
 
 def ssh_key_dir() -> Path:

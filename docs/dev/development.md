@@ -14,8 +14,8 @@ This guide covers setting up your development environment, running tests, and co
 
 ### Traditional (pip)
 ```bash
-git clone https://github.com/navig-run/remote-manager.git
-cd remote-manager
+git clone https://github.com/navig-run/core.git
+cd core
 python -m venv venv
 venv\Scripts\activate  # Windows
 # source venv/bin/activate  # Linux/macOS

@@ -48,6 +48,9 @@ class TelegramSession:
     messages: List[SessionMessage] = field(default_factory=list)
     context_summary: str = ""
     reply_chain: List[int] = field(default_factory=list)
+    autoheal_enabled: bool = False
+    autoheal_hive_enabled: bool = False
+    heal_history: List[dict] = field(default_factory=list)
     
     def add_message(
         self, 
@@ -96,6 +99,9 @@ class TelegramSession:
             "messages": [asdict(m) for m in self.messages],
             "context_summary": self.context_summary,
             "reply_chain": self.reply_chain,
+            "autoheal_enabled": self.autoheal_enabled,
+            "autoheal_hive_enabled": self.autoheal_hive_enabled,
+            "heal_history": self.heal_history,
         }
     
     @classmethod
@@ -116,6 +122,9 @@ class TelegramSession:
             messages=messages,
             context_summary=data.get("context_summary", ""),
             reply_chain=data.get("reply_chain", []),
+            autoheal_enabled=data.get("autoheal_enabled", False),
+            autoheal_hive_enabled=data.get("autoheal_hive_enabled", False),
+            heal_history=data.get("heal_history", []),
         )
 
 

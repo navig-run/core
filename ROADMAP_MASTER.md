@@ -1,4 +1,4 @@
-# NAVIG Ecosphere — Master Execution Plan 2026–2027+
+﻿# NAVIG Ecosphere — Master Execution Plan 2026–2027+
 
 > **Strategic source of truth** for the entire ecosphere.
 > Wired to `ROADMAP.md` as the canonical strategy document.

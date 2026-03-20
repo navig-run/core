@@ -346,6 +346,9 @@ class BrowserController:
         for line in raw.splitlines():
             stripped = line.lstrip()
             # ARIA snapshot lines look like: "- button \"Log in\""
+            if stripped.startswith("- /"):
+                annotated_lines.append(line)
+                continue
             if stripped.startswith("- "):
                 # Parse role and name
                 rest = stripped[2:]

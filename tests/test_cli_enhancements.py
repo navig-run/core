@@ -120,7 +120,7 @@ class TestAppAutoDetection:
     
     def test_find_hosts_with_app_case_sensitive(self, multi_host_setup):
         """Test that app search is case-sensitive."""
-        hosts = multi_host_setup.find_hosts_with_app('myapp')
+        hosts = multi_host_setup.find_hosts_with_app('MyApp')
         assert hosts == []  # Should not match 'myapp'
 
 
