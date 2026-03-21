@@ -1,0 +1,24 @@
+# Format: <type>(<scope>): <subject>
+#
+# type  : feat | fix | docs | style | refactor | perf | test | chore | release
+# scope : optional, e.g. auth | api | cli | agent | gateway | mesh | storage
+# subject: imperative, lowercase, no period at end
+#
+# Examples:
+#   feat(cli): add OAuth2 token refresh command
+#   fix(agent): handle empty vault response gracefully
+#   chore: bump version to 2.5.0
+#   release: v2.5.0
+#
+# Body (optional — blank line after subject):
+#   Explain *what* and *why*, not *how*. Wrap at 72 chars.
+#
+# Footer (optional):
+#   Breaking change: BREAKING CHANGE: <description>
+#   Closes issue:    Closes #123
+#
+# Branch-to-merge target reminder:
+#   feature/*  →  develop   (PR + squash merge)
+#   hotfix/*   →  main + develop (PR + merge commit)
+#   release/*  →  main + develop (PR + merge commit, then tag)
+#

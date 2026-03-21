@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+All notable changes to this project are documented here.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+<!-- Add entries here until the next release, then move them under a new version heading. -->
+<!-- Run: git log v2.4.14..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+---
 
 ## [2.4.14] - 2026-03-13
 
