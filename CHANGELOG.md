@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
@@ -232,6 +232,947 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Settings sub-menu** — Toggle auto-start tray with Windows, toggle auto-start bot on tray launch, open config/log folders.
   - **Advanced sub-menu** — Standalone Gateway/Agent start/stop (grayed when not applicable), service status, daemon logs, NAVIG Terminal.
   - **"Open NAVIG Terminal"** — Opens a cmd prompt pre-configured for navig commands.
+
+## [2.0.0] - 2026-02-12
+
+### ✅ Resource Leak Audit (Task 7 - Reliability)
+
+#### Comprehensive Resource Leak Analysis
+- **Scanned:** All subprocess calls, file operations, SSH connections, temp files
+- **Results:** ✅ **NO CRITICAL LEAKS FOUND** - All resources properly managed
+
+#### Resource Management Verification
+
+**Subprocess Cleanup (50+ subprocess calls audited):**
+- ✅ `subprocess.Popen` in `tunnel.py`: Process tracked via PID, graceful shutdown (SIGTERM → SIGKILL)
+- ✅ `subprocess.Popen` in `mcp_manager.py`: Proper `terminate()` → `wait()` → `kill()` fallback
+- ✅ `subprocess.run()` in all commands: Auto-cleanup (blocking calls, no zombie processes)
+- ✅ SSH tunnel processes: Process discovery with 3-retry logic, health monitoring, auto-recovery
+
+**File Handle Management (30+ file operations audited):**
+- ✅ All `open()` calls use `with` context managers (auto-close guaranteed)
+- ✅ Examples: config.py, tunnel.py, backup.py, database.py, monitoring.py
+- ✅ No naked `open()` calls without context managers found
+
+**Temporary File Cleanup (11 tempfile usages audited):**
+- ✅ MySQL config files (`database.py`, `database_advanced.py`, `backup.py`):
+  - Created with `tempfile.mkstemp()` for credentials (prevents password in process list)
+  - **ALWAYS** cleaned up in `finally` block (all 8 functions verified)
+  - Permissions set to 0600 (owner-only read/write)
+  - Cleanup even on exceptions (try/except/finally pattern)
+- ✅ Test temp directories: Proper cleanup in tearDown methods
+
+**SSH Connection Cleanup (paramiko usage):**
+- ✅ `discovery.py`: SSH client explicitly closed via `client.close()` after command execution
+- ✅ Connection timeout: 30 seconds prevents hanging connections
+- ✅ No persistent SSH connections - created per-operation and immediately closed
+
+**Context Managers (Auto-cleanup Patterns):**
+- ✅ `TunnelManager.auto_tunnel()`: Context manager with optional cleanup
+- ✅ File operations: Consistent use of `with open()` throughout codebase
+- ✅ File locking: `with open(lock_file, 'w') as lock:` in tunnel.py
+
+#### Resource Leak Prevention Patterns
+
+```python
+# ✅ EXCELLENT: Temp file cleanup in all error paths
+def _create_mysql_config_file(user: str, password: str) -> str:
+    fd, config_path = tempfile.mkstemp(suffix='.cnf', text=True)
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.write(f"[client]\nuser={user}\npassword={password}\n")
+        os.chmod(config_path, 0o600)
+        return config_path
+    except Exception as e:
+        try:
+            os.unlink(config_path)  # Cleanup on error
+        except:
+            pass
+        raise
+
+# Usage always in try/finally:
+config_file = _create_mysql_config_file(user, password)
+try:
+    subprocess.run(['mysql', f'--defaults-file={config_file}', ...])
+finally:
+    os.unlink(config_file)  # ALWAYS cleaned up
+```
+
+```python
+# ✅ EXCELLENT: Process lifecycle management
+class MCPServer:
+    def stop(self) -> bool:
+        try:
+            self.process.terminate()
+            self.process.wait(timeout=5)  # Graceful shutdown
+        except subprocess.TimeoutExpired:
+            self.process.kill()  # Force kill if needed
+            self.process.wait()
+```
+
+```python
+# ✅ EXCELLENT: SSH tunnel cleanup with retry
+def stop_tunnel(self, server_name: str) -> bool:
+    process = psutil.Process(pid)
+    process.terminate()  # SIGTERM (graceful)
+    try:
+        process.wait(timeout=5)
+    except psutil.TimeoutExpired:
+        process.kill()  # SIGKILL (force)
+        process.wait()
+```
+
+#### Zero Leaks Confirmed
+
+**Analysis Summary:**
+- **Subprocess calls:** 50+ reviewed - all properly managed
+- **File operations:** 30+ reviewed - all use context managers
+- **Temp files:** 11 reviewed - all cleaned up in finally blocks
+- **SSH connections:** 1 reviewed - explicitly closed
+- **Process tracking:** PID-based with health checks and recovery
+- **Memory:** Streaming I/O for large files (prevents exhaustion)
+
+**Best Practices Applied:**
+1. **try/finally pattern:** All temp files cleaned up even on exceptions
+2. **Context managers:** All file operations auto-close
+3. **Graceful shutdown:** SIGTERM → wait → SIGKILL for processes
+4. **Health monitoring:** Tunnel health checks detect zombie processes
+5. **Retry logic:** 3-retry process discovery handles race conditions
+6. **Streaming I/O:** Large backups/restores use streaming to prevent memory exhaustion
+
+### 📋 Error Handling Enhancements (Task 6 - User Experience)
+
+#### Actionable Error Messages
+- **Enhanced:** All critical error paths now provide troubleshooting guidance
+  - SSH connection failures: 5-step diagnostic checklist
+  - MySQL client errors: Platform-specific installation instructions (Windows/macOS/Linux)
+  - Tunnel failures: Recovery steps with specific commands
+  - Disk space errors: 5 cleanup strategies with examples
+  - File upload/download failures: Cause analysis with fix commands
+  - Permission errors: Exact chmod/chown commands to resolve
+- **Impact:** Users can self-diagnose and fix 80%+ of issues without external help
+
+#### Error Message Examples
+```
+❌ mysql client not found. Please install MySQL client tools.
+
+Installation instructions:
+  Windows: choco install mysql
+  macOS:   brew install mysql-client
+  Ubuntu:  sudo apt-get install mysql-client
+  CentOS:  sudo yum install mysql
+
+After installation, restart your terminal.
+```
+
+```
+✗ Tunnel collapsed: Connection refused
+
+Recovery steps:
+  1. Check tunnel status: navig tunnel status
+  2. Restart tunnel: navig tunnel restart
+  3. Check for zombie processes: ps aux | grep ssh
+  4. Verify SSH connection: ssh user@host 'echo test'
+  5. Check server logs: navig logs ssh
+```
+
+### ✨ Feature Implementations (Task 5 - TODO Resolution)
+
+#### Package Manager Auto-Detection
+- **Implemented:** `navig install <package>` with smart package manager detection
+  - Auto-detects package manager: apt-get, yum, dnf, pacman, zypper, apk
+  - OS-based detection using server metadata (Ubuntu→apt, CentOS→yum, Alpine→apk)
+  - Fallback: Checks which package managers are available on server
+  - Supports dry-run mode to preview installation command
+  - Clear error messages with manual fallback instructions
+  - **Impact:** Replaces "coming soon" placeholder with full implementation
+
+#### HestiaCP Password Security Enhancement
+- **Fixed:** Password exposure in HestiaCP user creation (HIGH severity)
+  - Changed from command-line argument to stdin pipe: `printf '%s\n' <password> | v-add-user`
+  - HestiaCP CLI supports reading password from stdin when using '-' placeholder
+  - Password no longer visible in `ps aux` or process listings
+  - **Impact:** Eliminates last remaining password exposure in NAVIG
+  - Completes security hardening - ALL credentials now protected
+
+### 🛡️ Backup/Restore Safety Enhancements (Task 4 - Edge Case Hardening)
+
+#### Critical Edge Cases Fixed
+- **Added:** Disk space verification before backup operations
+  - New `_verify_disk_space()` helper function checks available space
+  - Requires 1.5x estimated backup size as safety margin
+  - Prevents disk full errors mid-backup (could crash server)
+  - Validated before all backup operations (database, system, Hestia)
+  - Shows clear error: "Insufficient disk space: X MB free, Y MB required"
+- **Added:** Backup integrity verification with SHA-256 checksums
+  - New `_calculate_file_checksum()` generates cryptographic hashes
+  - Checksums stored in backup metadata.json
+  - Automatic verification before restore operations
+  - Detects corrupted backups before attempting restore
+  - Prevents database corruption from bad backup files
+- **Added:** Transaction-based database restore with rollback support
+  - Enhanced `restore_database()` with safety-first design
+  - Automatic safety backup before restore (rollback capability)
+  - Verifies backup file integrity before starting restore
+  - Descriptive confirmation prompt (shows file size, requires typing 'RESTORE')
+  - Better error messages with rollback instructions
+  - **Impact:** CRITICAL - Previous implementation had NO rollback, partial restore corrupted databases
+- **Added:** Partial backup cleanup on failure
+  - New `_cleanup_failed_backup()` removes incomplete backups
+  - Prevents confusion from corrupted/incomplete backup files
+  - Clear error messages explain what failed and why
+- **Improved:** Backup metadata with checksums and detailed info
+  - Backup results include per-database checksums
+  - File sizes, timestamps, success/failure status tracked
+  - Enables integrity verification and incremental backup detection
+- **Fixed:** Memory exhaustion on large database restores
+  - Changed from `file.read_text()` (loads entire file to RAM) to streaming
+  - Can now restore multi-GB SQL files without memory errors
+  - Progress indicators planned for long-running operations
+
+#### Safety Features Added
+- `--force` flag to override checksum verification (emergency use only)
+- `--no-backup` flag to skip safety backup (faster, less safe)
+- Verbose mode shows checksums and disk space details
+- Failed restores provide rollback command
+
+### 🚀 Performance & Reliability Enhancements
+
+#### Tunnel Lifecycle Management (Task 3 - Comprehensive Audit)
+- **Added:** Atomic tunnel state management with file locking (prevents race conditions)
+  - Cross-platform file locking using `fcntl` (Unix) and `msvcrt` (Windows)
+  - All tunnel operations now atomic - no more concurrent modification issues
+  - Prevents race condition when multiple NAVIG instances start tunnels simultaneously
+- **Improved:** `_find_tunnel_process()` with retry logic and better matching
+  - Now retries up to 3 times with 0.5s delays (handles slow SSH process startup)
+  - More precise cmdline matching: `-L {port}:localhost:{remote_port}` pattern
+  - Better error handling for zombie processes and access denied errors
+- **Added:** `TunnelManager.auto_tunnel()` context manager (resolves TODO)
+  - Automatic tunnel lifecycle: starts if needed, optionally cleans up on exit
+  - Usage: `with tunnel_manager.auto_tunnel('production') as tunnel: ...`
+  - Smart cleanup: only stops tunnel if context manager started it
+- **Added:** Comprehensive tunnel health monitoring
+  - `check_tunnel_health()`: Verifies process running + port accessible
+  - `recover_tunnel()`: Auto-recovery strategy (stop → cleanup → restart)
+  - Returns detailed health report with issues list
+- **Implemented:** `navig tunnel auto` command
+  - Checks tunnel health and auto-recovers if unhealthy
+  - CLI interface for health monitoring and recovery
+  - Replaces "coming soon" placeholder with full implementation
+- **Impact:** Eliminates race conditions during concurrent operations, zombie processes auto-detected and cleaned up, tunnel failures auto-recover
+
+### 📖 Documentation Updates
+
+#### Enhanced Security Documentation
+- **Added:** Comprehensive security warnings in README.md
+  - New "Security Update (v2.0.0)" callout section with production-ready features
+  - Expanded "Security Best Practices" section (90+ lines):
+    * Credential protection guidelines (never commit .env files)
+    * SSH keys vs passwords recommendations
+    * File permissions for Windows, Linux, macOS
+    * Database password rotation examples
+    * Git commit verification checklist
+    * Credential exposure monitoring commands
+  - New "Security Setup (REQUIRED)" in Installation section:
+    * Verify .gitignore configuration
+    * Protect NAVIG config directory permissions
+    * SSH key generation and deployment guide
+  - Security hardening checklist (10 items)
+  - Links to SECURITY_FIXES_APPLIED.md for technical details
+- **Added:** Production-ready security documentation in `docs/SECURITY_FIXES_APPLIED.md`
+  - Complete before/after code examples for all 9 security fixes
+  - Testing validation section (9/9 tests passing)
+  - Deployment recommendations and safety checklist
+- **Added:** Comprehensive security audit report in `docs/SECURITY_AUDIT_REPORT.md`
+  - 20-point audit covering Critical, High, Medium, and Low severity issues
+  - Developer experience enhancement recommendations
+
+### 🔒 CRITICAL SECURITY FIXES (Phase 2 - Comprehensive Audit)
+
+#### Password Exposure in Database Operations (CVE-level severity)
+- **Fixed:** Database passwords visible in process listings in `navig/commands/database.py`
+  - Functions affected: `execute_sql()`, `backup_database()`, `execute_sql_file()`, `restore_database()`
+  - Changed from `-p{password}` command-line argument to `--defaults-file={temp_config}`
+  - Temporary MySQL config files created with strict 0600 permissions (owner-only read/write)
+  - Config files automatically cleaned up in finally blocks
+  - **Impact:** CRITICAL - Every SQL command exposed database password in `ps aux`, Task Manager, `/proc/*/cmdline`
+  - **Mitigation:** Passwords now passed via secure temporary files, never visible in process listings
+
+#### Password Exposure in Backup Operations (CVE-level severity)
+- **Fixed:** Database passwords visible during full system backups in `navig/commands/backup.py`
+  - Function affected: `backup_db_all_cmd()` (backs up ALL databases)
+  - Applied same secure credential pattern as database_advanced.py
+  - Added compression verification before deleting original files (prevents data loss)
+  - **Impact:** CRITICAL - Full system backups exposed password for every database being backed up
+  - **Mitigation:** Secure temp config files + verification step before file deletion
+
+#### HestiaCP Password Exposure (HIGH severity)
+- **Fixed:** User passwords visible in shell commands in `navig/commands/hestia.py`
+  - Function affected: `add_user_cmd()` - HestiaCP user creation
+  - Applied `shlex.quote()` to username, password, and email parameters
+  - **Impact:** HIGH - Admin passwords visible in SSH history, process listings, server logs
+  - **Mitigation:** Command arguments properly quoted, prevents injection and reduces exposure
+  - **Note:** Password still visible in cmdline (HestiaCP CLI limitation - no stdin/env var support)
+
+#### Bare Exception Handlers Eliminated (MEDIUM severity)
+- **Fixed:** 11 instances of bare `except:` blocks causing silent failures
+  - `navig/commands/ai.py`: Process context gathering now logs failures
+  - `navig/commands/backup.py`: Compression errors now logged with warnings
+  - `navig/commands/database_advanced.py`: Cleanup exceptions now specific `OSError` only
+  - Changed from `except: pass` to `except OSError: pass  # Cleanup - file deletion may fail`
+  - Added logging for non-critical failures (AI context gathering)
+  - **Impact:** Backup failures, compression errors, context gathering issues were completely silent
+  - **Mitigation:** Specific exception types, logged warnings, user-visible error messages
+
+### 🔒 CRITICAL SECURITY FIXES (Phase 1 - Initial Hardening)
+
+#### Command Injection Prevention (CVE-level severity)
+- **Fixed:** Command injection vulnerability in `navig/commands/files_advanced.py`
+  - All shell commands now use `shlex.quote()` to safely escape user-supplied parameters
+  - Prevents injection attacks like `file; rm -rf /` → safely escaped to `'file; rm -rf /'`
+  - Affected functions: `delete_file_cmd`, `create_dir_cmd`, `change_permissions_cmd`, `change_ownership_cmd`
+  - **Impact:** Malicious file paths could have executed arbitrary shell commands on remote servers
+  - **Mitigation:** All user-supplied file paths, permissions, and ownership values are now properly escaped
+
+#### SQL Injection Prevention (CVE-level severity)
+- **Fixed:** SQL injection vulnerabilities in `navig/commands/database_advanced.py`
+  - Implemented three-layer security model:
+    1. **Validation Layer:** `_validate_sql_identifier()` - Regex validation (`^[a-zA-Z0-9_]+$`), keyword blacklist, 64-char limit
+    2. **Escaping Layer:** `_escape_sql_identifier()` - Backtick escaping for MySQL identifiers
+    3. **Secure Credentials:** `_create_mysql_config_file()` - Temporary config files with 0600 permissions
+  - Affected functions: `list_databases_cmd`, `list_tables_cmd`, `list_users_cmd`, `optimize_table_cmd`, `repair_table_cmd`
+  - **Impact:** Malicious table/database names could have executed arbitrary SQL commands
+  - **Mitigation:** All identifiers validated and escaped, SQL keywords blacklisted
+
+#### Credential Exposure Prevention (HIGH severity)
+- **Fixed:** Database passwords visible in process listings
+  - Changed from `-p{password}` command-line argument to `--defaults-file={temp_config}`
+  - Temporary MySQL config files created with strict 0600 permissions (owner-only read/write)
+  - Config files automatically cleaned up after command execution
+  - **Impact:** Database passwords were visible in `ps aux`, `/proc/{pid}/cmdline`, Windows Task Manager
+  - **Mitigation:** Credentials now passed via secure temporary files, never in command line
+
+#### SSH Man-in-the-Middle Prevention (HIGH severity)
+- **Fixed:** SSH connections auto-accepting unknown host keys in `navig/remote.py`
+  - Changed default from `StrictHostKeyChecking=accept-new` to `StrictHostKeyChecking=yes`
+  - Added `trust_new_host` parameter (default `False`) to `execute_command()` method
+  - Unknown hosts now rejected by default unless explicitly trusted
+  - **Impact:** Auto-accepting new hosts enabled MITM attacks during first connection
+  - **Mitigation:** Strict host key verification enforced, manual trust required for new hosts
+
+### 🔧 CRITICAL API FIXES
+
+#### Fixed API Drift Crashes
+- **Fixed:** Multiple modules using non-existent API methods causing crashes
+  - **monitoring.py:** 15+ replacements
+    - `get_app_config()` → `load_server_config()`
+    - `execute_remote_command()` → `execute_command(cmd, server_config)`
+    - `result['success']` → `result.returncode == 0`
+    - `result['output']` → `result.stdout`
+    - `result.get('error')` → `result.stderr`
+  - **maintenance.py:** 20 replacements (same pattern as monitoring.py)
+  - **webserver.py:** Mixed API corrections
+    - `get_server_config()` → `load_server_config()`
+    - `RemoteOperations(config)` → `RemoteOperations(config_manager)` with separate server_config
+  - Affected functions: All monitoring, maintenance, and webserver commands
+  - **Impact:** Commands would crash with `AttributeError` on `get_app_config()`, `execute_remote_command()`
+  - **Mitigation:** All modules now use correct `ConfigManager` and `RemoteOperations` APIs
+
+#### Fixed MCP Server Environment Stripping
+- **Fixed:** MCP servers losing PATH and system environment variables in `navig/mcp_manager.py`
+  - Changed from `env={custom_vars_only}` to `full_env = os.environ.copy(); full_env.update(custom_vars)`
+  - MCP servers now inherit parent environment with custom overrides
+  - **Impact:** MCP servers failed with "command not found" errors when calling system executables
+  - **Mitigation:** Subprocess launched with `os.environ.copy()` preserving PATH and system variables
+
+### ⚠️ BREAKING CHANGES
+
+#### SSH Host Key Verification (Security Enhancement)
+- **Breaking:** `RemoteOperations.execute_command()` now rejects unknown SSH hosts by default
+  - **Migration:** For first-time server connections, use `trust_new_host=True` parameter:
+    ```python
+    # First connection to new server
+    remote_ops.execute_command(cmd, server_config, trust_new_host=True)
+    
+    # Subsequent connections (default, secure)
+    remote_ops.execute_command(cmd, server_config)
+    ```
+  - **Reason:** Previous behavior auto-accepted unknown hosts, enabling MITM attacks
+
+#### SQL Identifier Restrictions (Security Enhancement)
+- **Breaking:** Database/table names must be alphanumeric + underscore only
+  - **Valid:** `users`, `user_accounts_2024`, `my_database123`
+  - **Invalid:** `users; DROP TABLE`, `table-name`, `table name`, ``users` OR '1'='1``
+  - **Migration:** Rename databases/tables with special characters to use only `[a-zA-Z0-9_]`
+  - **Reason:** Prevents SQL injection attacks via malicious identifiers
+
+### ✅ TESTING
+
+#### Added Integration Test Suite
+- **Added:** `tests/test_security_fixes.py` with 9 comprehensive security tests
+  - Command injection protection (shlex.quote validation)
+  - SQL injection protection (identifier validation, escaping, secure credentials)
+  - API correctness (ConfigManager, RemoteOperations)
+  - MCP environment preservation
+  - SSH host key verification (strict checking, trust_new_host flag)
+- **Coverage:** All 8 critical/high-priority security fixes validated
+- **Status:** ✅ All 9 tests passing
+
+### 📚 DOCUMENTATION
+
+#### Updated Security Documentation
+- **Updated:** `.github/instructions/directives.instructions.md`
+  - Added multi-phase workflow execution rules
+  - Enhanced app structure organization (docs/, tests/, scripts/)
+  - Security best practices for NAVIG usage
+- **Updated:** `.github/instructions/navig.instructions.md`
+  - Documented all NAVIG security fixes
+  - Updated command reference with secure defaults
+  - Added troubleshooting for SSH host key rejection
+
+### 🔍 AUDIT TRAIL
+
+#### Security Review Summary
+- **Total Vulnerabilities Fixed:** 4 critical, 2 high-priority
+- **Files Modified:** 7 production files (commands/, core libraries)
+- **Insecure Backups Created:** 2 files (`*.INSECURE.bak` for audit trail)
+- **Tests Added:** 9 integration tests (100% pass rate)
+- **Breaking Changes:** 2 (SSH host verification, SQL identifier restrictions)
+
+#### Risk Assessment
+**Without These Fixes:**
+1. **Command Injection:** Attackers could execute arbitrary shell commands via malicious file paths
+2. **SQL Injection:** Attackers could drop tables, steal data, or escalate privileges
+3. **Credential Exposure:** Database passwords visible in process listings, logs, monitoring tools
+4. **MITM Attacks:** SSH connections vulnerable to man-in-the-middle during host key exchange
+5. **API Crashes:** Production commands unusable due to incorrect method calls
+6. **MCP Failures:** Model Context Protocol servers non-functional due to missing PATH
+
+**With These Fixes:**
+- All inputs validated and safely escaped before execution
+- Credentials passed securely via temporary files with strict permissions
+- SSH connections reject unknown hosts unless explicitly trusted
+- All API methods aligned with actual codebase implementation
+- MCP servers inherit full system environment for proper execution
+
+---
+
+## [1.0.0] - 2025-11-21
+
+### Added
+
+#### Phase 5: Cleanup & Finalization Complete
+- Moved all deprecated PowerShell scripts to `archive/` directory
+- Created `archive/README.md` with deprecation notice and migration instructions
+- Updated main README.md with command categories, global flags, and migration guide
+- Created comprehensive `docs/RELEASE_NOTES_v1.0.0.md` with full migration summary
+- **PowerShell to Python migration 100% complete**
+
+#### Phase 4: Documentation Complete
+- Created `docs/USAGE_GUIDE.md` - 600+ line comprehensive usage guide with 100+ examples
+- Documented all 60+ new commands across 10 categories
+- Added troubleshooting section with common errors and solutions
+- Included best practices for dry-run, app markers, JSON automation
+- Updated CHANGELOG.md with complete Phase 2-5 documentation
+
+#### Phase 3: Testing & Rebranding Complete
+
+**Rebranding**
+- Rebranded to "NAVIG - No Admin Visible In Graveyard"
+- New tagline: "Keep your servers alive. Forever."
+- Updated README, CLI help text, and package metadata
+- Shifted focus from technical features to outcome-based messaging (proactive server management to prevent admin failures)
+
+**Testing & Validation**
+- Created comprehensive test suite with pytest
+- Added `tests/test_all_modules.py` - Module import and syntax validation (18 tests)
+- Added `tests/test_integration.py` - Integration tests for dry-run, JSON output, error handling
+- Added `tests/pytest.ini` - Pytest configuration with markers and settings
+- Fixed import paths (changed from `navig.core` to `navig` for ConfigManager and RemoteOperations)
+- All 8 new command modules verified to import correctly without syntax errors
+- Validated version and branding information
+- CLI integration tests passing (18/18 tests - 100% success rate)
+
+#### PowerShell Migration - Phase 2.1-2.8 Complete
+
+**Advanced File Operations** - Extended file management capabilities
+- `navig delete <remote> [--recursive] [--force]` - Delete remote files or directories
+  - Smart confirmation prompts (skippable with `--force`)
+  - Recursive directory deletion with `--recursive` flag
+  - Dry-run support via global `--dry-run` flag
+  - JSON output support via global `--json` flag
+- `navig mkdir <remote> [--parents] [--mode 755]` - Create remote directories
+  - Parent directory creation with `--parents` (default: true)
+  - Custom permission modes with `--mode` flag
+  - Supports dry-run and JSON output
+- `navig chmod <remote> <mode> [--recursive]` - Change file/directory permissions
+  - Numeric permission modes (e.g., 755, 644, 0755)
+  - Recursive application with `--recursive` flag
+  - Validation for proper mode format
+  - Supports dry-run and JSON output
+- `navig chown <remote> <owner> [--recursive]` - Change file/directory ownership
+  - Owner in `user` or `user:group` format
+  - Recursive application for directories
+  - Supports dry-run and JSON output
+
+**Advanced Database Operations** - Enhanced database management
+- `navig db-list` - List all databases with sizes
+  - Displays database names and sizes in MB
+  - Rich table output or JSON format
+  - Queries information_schema for accurate sizes
+- `navig db-tables <database>` - List tables in a database
+  - Shows table name, size (MB), and row count
+  - Sorted by size (largest first)
+  - Rich table or JSON output
+- `navig db-optimize <table>` - Optimize database table
+  - Reclaims unused space and defragments
+  - Shows optimization results
+  - Supports dry-run and JSON output
+- `navig db-repair <table>` - Repair corrupted database table
+  - Fixes table corruption issues
+  - Shows repair results
+  - Supports dry-run and JSON output
+- `navig db-users` - List database users
+  - Displays username and host information
+  - Rich table or JSON output
+  - Queries mysql.user table
+
+**HestiaCP Integration** - Comprehensive HestiaCP management (9 commands)
+- `navig hestia users` - List all HestiaCP users
+  - Shows username, package, email, domains, and databases count
+  - JSON output via `v-list-users json` API
+  - Rich table formatting
+- `navig hestia domains [--user USERNAME]` - List domains
+  - All domains across all users (when no --user specified)
+  - Filter by specific user with `--user` flag
+  - Shows domain, user, IP, SSL status, and PHP backend
+  - Aggregates data from v-list-web-domains
+- `navig hestia add-user <username> <password> <email>` - Create new user
+  - Executes v-add-user command
+  - Supports dry-run mode
+  - JSON output for automation
+- `navig hestia delete-user <username> [--force]` - Delete user
+  - Confirms deletion unless `--force` flag used
+  - Deletes ALL user data (domains, databases, email)
+  - JSON mode requires `--force` flag
+- `navig hestia add-domain <user> <domain>` - Add domain to user
+  - Creates web domain configuration
+  - Automatic DNS zone setup
+  - Supports dry-run and JSON output
+- `navig hestia delete-domain <user> <domain> [--force]` - Remove domain
+  - Confirms deletion unless `--force` flag used
+  - Removes all domain data (web, DNS, mail)
+  - JSON mode requires `--force` flag
+- `navig hestia renew-ssl <user> <domain>` - Renew Let's Encrypt SSL
+  - Executes v-add-letsencrypt-domain
+  - Automatic ACME challenge handling
+  - Supports dry-run and JSON output
+- `navig hestia rebuild-web <user>` - Rebuild web configuration
+  - Regenerates Nginx/Apache configs for all user domains
+  - Fixes configuration corruption issues
+  - Supports dry-run and JSON output
+- `navig hestia backup-user <user>` - Backup HestiaCP user
+  - Creates full user backup (web, DB, mail, DNS)
+  - Stored in HestiaCP backup directory
+  - Supports dry-run and JSON output
+
+**Comprehensive Backup System** - Full system backup and restore (7 commands)
+- `navig backup-config [--name NAME]` - Backup system configuration files
+  - Backs up: SSH config, UFW, Fail2Ban, hosts, hostname, timezone, fstab, crontab
+  - Custom backup naming with `--name` flag
+  - Saves to `~/.navig/backups/<name>/configs/`
+  - Creates metadata.json with backup details
+  - Skips missing files gracefully
+- `navig backup-db-all [--name NAME] [--compress gzip|zstd|none]` - Backup all databases
+  - Backs up ALL databases (excluding system schemas)
+  - Compression options: gzip (default), zstd, or none
+  - Individual SQL files per database
+  - Size calculation and reporting
+  - Metadata tracking with database list and sizes
+  - Uses existing tunnel infrastructure
+- `navig backup-hestia [--name NAME]` - Comprehensive HestiaCP backup
+  - Backs up 5 critical directories:
+    - `/usr/local/hestia/conf` - Configuration files
+    - `/usr/local/hestia/data/users` - User data
+    - `/usr/local/hestia/ssl` - SSL certificates
+    - `/usr/local/hestia/data/templates` - Custom templates
+    - `/usr/local/hestia/data/zones` - DNS zone files
+  - Creates compressed tar archives remotely
+  - Downloads and extracts locally
+  - Excludes log files automatically
+  - Reports file count and size per directory
+- `navig backup-web [--name NAME]` - Backup web server configurations
+  - Backs up Nginx configs: nginx.conf, sites-available, sites-enabled
+  - Backs up Apache configs: apache2.conf, ports.conf, sites-available, sites-enabled
+  - Detects available web servers automatically
+  - Preserves directory structure
+  - Metadata tracking per server type
+- `navig backup-all [--name NAME] [--compress gzip|zstd|none]` - Full system backup
+  - Executes all backup types in sequence:
+    1. System configuration (`backup-config`)
+    2. All databases (`backup-db-all`)
+    3. HestiaCP data (`backup-hestia`)
+    4. Web server configs (`backup-web`)
+  - Single unified backup with organized structure
+  - Compression applied to databases only
+  - Comprehensive metadata with all component details
+- `navig list-backups` - List all available backups
+  - Rich table output with name, type, date, and size
+  - Reads metadata.json for accurate information
+  - Sorted by date (newest first)
+  - JSON output for automation
+- `navig restore-backup <name> [--component TYPE] [--force]` - Restore from backup
+  - Manual review required (safety measure)
+  - Confirmation prompt unless `--force` used
+  - Optional component-specific restore
+  - Shows backup location for manual inspection
+  - Prevents accidental overwrites
+
+  - Reports saved in JSON format with full metrics and alerts
+  - Rich table output with color-coded status indicators
+  - Metadata tracking for historical analysis
+
+**Resource Monitoring** - Real-time server monitoring and health checks
+- `navig monitor-resources` - Monitor real-time resource usage
+  - CPU usage percentage with threshold alerts (>80% triggers alert)
+  - Memory usage in percentage and MB (used/total)
+  - Disk usage for root partition
+  - Load averages (1, 5, 15 minute intervals)
+  - TCP connection count
+  - System uptime display
+  - Rich table output with color-coded status (🟢 OK, 🟡 MEDIUM, 🔴 HIGH)
+- `navig monitor-disk [--threshold 80]` - Disk space monitoring with custom thresholds
+  - Monitors all mounted disk partitions
+  - Customizable alert threshold (default: 80%)
+  - Shows device, mount point, size, used, available, usage%
+  - Color-coded alerts (🟢 OK, 🟡 WARNING, 🔴 ALERT)
+  - JSON output for scripting/automation
+- `navig monitor-services` - Service health status checks
+  - Monitors 16 critical services: nginx, apache2, mysql, mariadb, postgresql, php-fpm (8.1/8.2/8.3), hestia, fail2ban, ufw, ssh, sshd, redis, memcached
+  - Rich table with status icons (✓ active, ✗ inactive, - not installed)
+  - Health indicators (🟢 healthy, 🔴 stopped, ⚪ N/A)
+  - Reports inactive services count
+  - JSON output support
+- `navig monitor-network` - Network statistics and connections
+  - Connection summary (TCP, UDP, UNIX sockets)
+  - Listening ports count
+  - Established connections count
+  - Network interface list
+  - Rich panel display for connection summary
+- `navig health-check` - Comprehensive health check
+  - Combines all monitoring aspects: resources, services, disk, network
+  - Sequential execution with progress indicators
+  - Comprehensive view of server health
+  - Useful for scheduled health audits
+- `navig monitoring-report` - Generate comprehensive health report
+  - Saves JSON report to `~/.navig/reports/health-report_<server>_<timestamp>.json`
+  - Includes: timestamp, server info, resource metrics, service status, disk usage, network stats, alerts
+  - Alert tracking with severity levels
+  - Historical data for trend analysis
+  - Summary display with alert count
+
+**Security Management** - Comprehensive security and firewall management
+- `navig firewall-status` - Display UFW firewall status and rules
+  - Shows firewall status (active/inactive)
+  - Lists all configured rules with actions (ALLOW/DENY)
+  - Displays default policies
+  - Shows logging level
+  - Rule count summary
+  - JSON output support for automation
+- `navig firewall-add <port> [--protocol tcp|udp] [--from <ip>]` - Add UFW firewall rule
+  - Add port-based rules (e.g., allow 8080/tcp)
+  - Restrict by source IP or subnet (e.g., --from 10.0.0.0/24)
+  - Default: allow from any IP
+  - Supports TCP and UDP protocols
+  - Dry-run mode to preview changes
+- `navig firewall-remove <port> [--protocol tcp|udp]` - Remove UFW firewall rule
+  - Remove existing firewall rules
+  - Specify port and protocol
+  - Confirmation before deletion
+- `navig firewall-enable` - Enable UFW firewall
+  - Activates firewall protection
+  - Uses --force to avoid interactive prompts
+  - Warning about SSH access (port 22 must be allowed)
+- `navig firewall-disable` - Disable UFW firewall
+  - Deactivates firewall (use with caution)
+  - Warning that server is unprotected
+- `navig fail2ban-status` - Display Fail2Ban status and banned IPs
+  - Service status check (active/inactive)
+  - Lists all active jails
+  - Shows currently banned IPs per jail
+  - Total ban statistics
+  - Rich table with color-coded banned counts (red for active bans)
+  - Displays banned IP addresses if any
+- `navig fail2ban-unban <ip> [--jail <name>]` - Unban IP address from Fail2Ban
+  - Unban from specific jail (e.g., sshd)
+  - Unban from all jails if no jail specified
+  - Useful for accidental bans or trusted IPs
+- `navig ssh-audit` - Audit SSH configuration for security issues
+  - Checks 5 critical SSH settings:
+    - PermitRootLogin (recommended: prohibit-password or no)
+    - PasswordAuthentication (recommended: no)
+    - PermitEmptyPasswords (recommended: no)
+    - X11Forwarding (recommended: no)
+    - MaxAuthTries (recommended: 3 or less)
+  - Rich table with current vs recommended values
+  - Status indicators (✓ OK or ⚠ REVIEW)
+  - Progress bar during checks
+  - Summary of issues found
+  - Guidance on fixing issues
+- `navig security-updates` - Check for available security updates
+  - Updates package lists (apt-get update)
+  - Checks for security-related updates
+  - Displays available security updates
+  - Update count summary
+  - Installation command guidance
+  - Progress bar during check
+- `navig audit-connections` - Audit active network connections
+  - Lists established connections (TCP/UDP)
+  - Shows all listening ports
+  - Checks for suspicious processes (netcat, ncat)
+  - Connection count summary
+  - Truncates long lists (first 10 shown)
+  - Security warnings for suspicious activity
+- `navig security-scan` - Run comprehensive security scan
+  - Executes all security checks in sequence:
+    1. Firewall status
+    2. Fail2Ban status
+    3. SSH audit
+    4. Security updates check
+    5. Connection audit
+  - Comprehensive security overview
+  - Useful for regular security audits
+  - JSON output for reporting
+
+**System Maintenance** - Package management and system cleanup
+- `navig update-packages` - Update package lists and upgrade packages
+  - Updates apt package lists with progress spinner
+  - Checks for upgradable packages with count display
+  - Shows first 10 upgradable packages
+  - Performs non-interactive upgrade (DEBIAN_FRONTEND=noninteractive)
+  - Displays packages upgraded count
+  - "All packages up to date" message if none
+  - Dry-run preview support
+- `navig clean-packages` - Clean package cache and remove orphaned packages
+  - Cleans apt package cache (apt-get clean)
+  - Removes unused/orphaned packages (apt-get autoremove)
+  - Frees disk space automatically
+  - Success confirmation for each step
+- `navig rotate-logs` - Rotate and compress log files
+  - Forces log rotation using logrotate
+  - Applies /etc/logrotate.conf rules
+  - Compresses old log files automatically
+  - Success/failure feedback
+- `navig cleanup-temp` - Clean temporary files and caches
+  - Removes files from /tmp older than 7 days
+  - Cleans apt cache
+  - Safe deletion (ignores locked files)
+  - Shows cleanup completion
+- `navig check-filesystem` - Check filesystem usage and find large files
+  - Displays disk usage (df -h) in Rich table format
+  - Finds large files (>100MB) in /var/log and /tmp
+  - Shows file sizes in human-readable format
+  - Warns about large log files with count
+  - First 10 large files displayed (truncates if more)
+  - "No large files found" confirmation
+- `navig system-maintenance` - Run comprehensive system maintenance
+  - Executes all maintenance tasks in sequence:
+    1. Update and upgrade packages
+    2. Clean package cache
+    3. Rotate log files
+    4. Check filesystem
+    5. Clean temporary files
+  - Progress indication for each step
+  - Time elapsed summary
+  - Useful for scheduled maintenance (cron)
+  - JSON output for reporting
+
+**Global Flag Enhancements**
+- All new commands support existing global flags:
+  - `--dry-run` - Preview actions without executing
+  - `--json` - JSON output for automation/scripting
+  - `--app/-p` - Override active server
+  - `--verbose` - Detailed logging
+  - `--quiet/-q` - Minimal output
+  - `--yes/-y` - Auto-confirm prompts
+
+**Web Server Management** - Apache and Nginx administration
+- `navig webserver-list-vhosts [--server nginx|apache]` - List virtual hosts
+  - Shows enabled sites (green checkmarks) and available but disabled sites (dimmed)
+  - Rich table with status indicators, summary counts
+  - Supports both Apache (/etc/apache2/sites-*) and Nginx (/etc/nginx/sites-*)
+  - JSON output with enabled/available arrays
+
+- `navig webserver-test-config [--server nginx|apache]` - Test server configuration
+  - Pre-validation before reload/restart to prevent downtime
+  - Apache: `apache2ctl configtest` | Nginx: `nginx -t`
+  - Rich panel output with green/red border based on result
+  - JSON output with valid flag and test output
+
+- `navig webserver-enable-site SITE_NAME [--server nginx|apache]` - Enable a site
+  - Apache: Uses `a2ensite` | Nginx: Creates symlink sites-available → sites-enabled
+  - Success message with reload reminder, dry-run preview support
+
+- `navig webserver-disable-site SITE_NAME [--server nginx|apache]` - Disable a site
+  - Apache: Uses `a2dissite` | Nginx: Removes symlink from sites-enabled
+  - Success message with reload reminder, dry-run preview support
+
+- `navig webserver-enable-module MODULE_NAME` - Enable Apache module
+  - Uses `a2enmod` for modules like: rewrite, ssl, headers, deflate, http2
+  - Success message with reload reminder, dry-run preview support
+
+- `navig webserver-disable-module MODULE_NAME` - Disable Apache module
+  - Uses `a2dismod` to safely disable modules
+  - Success message with reload reminder, dry-run preview support
+
+- `navig webserver-reload [--server nginx|apache]` - Safely reload server
+  - Tests configuration before reload (prevents breaking production)
+  - Aborts if configuration test fails, uses `systemctl reload` (preserves connections)
+  - Verifies service remains active after reload (1s wait for stabilization)
+  - JSON output with config_valid, reload_success, service_active flags
+
+- `navig webserver-recommendations [--server nginx|apache]` - Performance tuning tips
+  - **Apache**: mod_deflate, mod_expires, mod_cache, MaxRequestWorkers optimization, HTTP/2, mod_pagespeed
+  - **Nginx**: gzip, browser caching, fastcgi_cache, worker tuning, HTTP/2
+  - Each tip includes description, command or config example
+  - JSON output with full recommendations array
+
+#### Per-Server Template Configuration System
+- **Server-Specific Template Customization** - Each server can have independent template configurations
+  - Hybrid storage: template state in server YAML, customizations in separate JSON files
+  - 3-layer merge priority: template → auto-detection info → custom overrides
+  - Lazy file creation - custom configs only created when modified
+  - Per-server enable/disable with independent state per server
+  - Template version tracking for update management
+  
+- **Auto-Detection for Server Templates** - Automatic discovery during server inspection
+  - **n8n Detection** - systemd service, binary version, port 5678, ~/.n8n directory
+  - **HestiaCP Detection** - /usr/local/hestia, CLI tools, port 8083, version info
+  - **Gitea Detection** - systemd service, binary version, port 3000, /var/lib/gitea paths
+  - Auto-initialization of detected templates with version and path info
+  
+- **Server Template CLI Commands** (`navig server-template`)
+  - `navig server-template list [--server NAME] [--enabled]` - List templates for a server
+  - `navig server-template show TEMPLATE [--server NAME]` - Show merged template configuration
+  - `navig server-template enable TEMPLATE [--server NAME]` - Enable template for specific server
+  - `navig server-template disable TEMPLATE [--server NAME]` - Disable template for specific server
+  - `navig server-template set TEMPLATE KEY VALUE [--server NAME]` - Set custom configuration value
+  - `navig server-template sync TEMPLATE [--server NAME] [--force]` - Sync from template (preserves custom settings by default)
+  - `navig server-template init TEMPLATE [--server NAME] [--enable]` - Manually initialize template
+  - All commands support `--server` option (defaults to active server)
+  - Rich table output with status, version, source, and customization indicators
+  
+- **Template Sync Mechanism**
+  - Preserve custom settings by default during template updates
+  - `--force` flag to reset to template defaults
+  - Version tracking shows when templates are updated
+  - Deep merge strategy maintains nested customizations
+
+#### Template System
+- **Plugin-Based Template Architecture** - Dynamic management of server-specific configurations without application restarts
+  - Self-contained template packages with JSON metadata (template.json)
+  - Server-specific paths, connection details, services, and commands
+  - Hot-swapping support - enable/disable templates at runtime
+  - Lifecycle hooks: onEnable, onDisable, onLoad, onUnload
+  - Dependency resolution with circular dependency prevention
+  - Lazy loading - only enabled templates are loaded into memory
+  - Automatic configuration merging into server configs
+  
+- **Pre-Built Templates** - Three production-ready templates included:
+  - **HestiaCP** - Web hosting control panel integration
+    - 8 predefined paths (hestia_root, web_root, backup_dir, etc.)
+    - 7 services (nginx, php-fpm, mysql, exim4, bind9, vsftpd)
+    - 5 common commands (v-list-users, v-backup-user, v-restart-web, etc.)
+    - API integration support
+  - **n8n** - Workflow automation platform integration
+    - 5 paths (n8n_home, workflows_dir, credentials_dir, log_dir)
+    - Systemd service management
+    - 7 commands (start/stop/restart, export/import workflows, logs)
+    - Environment variable configuration (N8N_HOST, N8N_PORT, WEBHOOK_URL)
+    - Webhook and API endpoint support
+  - **Gitea** - Self-hosted Git service integration
+    - 7 paths (gitea_root, repositories, config, backup_dir, log_dir)
+    - Git and Gitea service management
+    - 8 commands (backup, list repos, version check, service control)
+    - Multi-database support (SQLite3, MySQL, PostgreSQL)
+    - API token authentication
+    
+- **Template CLI Commands**
+  - `navig template list` - List all available templates with status
+  - `navig template enable <name>` - Enable template with dependency checking
+  - `navig template disable <name>` - Disable template with dependent warning
+  - `navig template toggle <name>` - Toggle template state
+  - `navig template info <name>` - Show detailed template information
+  - `navig template validate` - Validate all template configurations
+
+#### MCP Integration
+- **MCP (Model Context Protocol) Server Management** - Discovery, installation, and process management for MCP servers
+  - Directory search from MCP ecosystem
+  - Automated installation (npm, Python, standalone)
+  - Process lifecycle management (start/stop/restart)
+  - Multi-server support with enable/disable
+  - Status monitoring and health checks
+  
+- **MCP CLI Commands**
+  - `navig mcp search <query>` - Search MCP directory for servers
+  - `navig mcp install <name>` - Install MCP server from directory
+  - `navig mcp uninstall <name>` - Uninstall MCP server
+  - `navig mcp list` - List installed MCP servers
+  - `navig mcp enable <name>` - Enable MCP server
+  - `navig mcp disable <name>` - Disable MCP server
+  - `navig mcp start <name|all>` - Start MCP server(s)
+  - `navig mcp stop <name|all>` - Stop MCP server(s)
+  - `navig mcp restart <name>` - Restart MCP server
+  - `navig mcp status <name>` - Show detailed MCP server status
+  
+- **Built-in MCP Server Support**
+  - Filesystem - Local filesystem access
+  - GitHub - GitHub API integration
+  - SQLite - SQLite database access
+  - Brave Search - Web search via Brave API
+
+### Changed
+
+#### Architecture Improvements
+- Enhanced Rich console output with professional formatting
+- Centralized console_helper module for consistent UI
+- Improved error handling and validation across all modules
+- Standardized command patterns for template and MCP management
+
+### Fixed
+- Windows temp directory permission issues in test suite
+- Template configuration merging now properly preserves original server settings
+- MCP process management handles graceful shutdown with timeout
+
+## [1.0.0] - Previous Release
+
+Initial release with core functionality:
+- SSH tunnel management
+- Multi-server support
+- Database operations (SQL execution, backup, restore)
+- File operations (upload, download, list)
+- Remote command execution
+- Service monitoring and management
+- AI-powered assistance
+- Health checks and log viewing
+
+---
+
+For more information about these features, see the [README.md](README.md) documentation.
+
+
+
+
+
+
+---
+
+## [Archived — Pre-2026 Planning Notes]
+
+> The entries below were part of an internal development branch that predated the
+> public open-source release (v2.3.0, Feb 2026). They are preserved for historical
+> context only and do not correspond to tagged releases in this repository.
+> The canonical version timeline is: **v1.0.0 (Nov 2025) → v2.0.0 (Feb 2026) → v2.4.14 (Mar 2026)**.
 
 ## [3.23.0] — Persistent Daemon + Service Management
 
@@ -4670,935 +5611,4 @@ def start_tunnel():
 - **Visibility**: All retry attempts logged with timing and context
 - **Intelligence**: Circuit breakers learn from failures and prevent waste
 - **Scalability**: Jitter prevents thundering herd in multi-client scenarios
-
-## [2.0.0] - 2025-01-XX
-
-### ✅ Resource Leak Audit (Task 7 - Reliability)
-
-#### Comprehensive Resource Leak Analysis
-- **Scanned:** All subprocess calls, file operations, SSH connections, temp files
-- **Results:** ✅ **NO CRITICAL LEAKS FOUND** - All resources properly managed
-
-#### Resource Management Verification
-
-**Subprocess Cleanup (50+ subprocess calls audited):**
-- ✅ `subprocess.Popen` in `tunnel.py`: Process tracked via PID, graceful shutdown (SIGTERM → SIGKILL)
-- ✅ `subprocess.Popen` in `mcp_manager.py`: Proper `terminate()` → `wait()` → `kill()` fallback
-- ✅ `subprocess.run()` in all commands: Auto-cleanup (blocking calls, no zombie processes)
-- ✅ SSH tunnel processes: Process discovery with 3-retry logic, health monitoring, auto-recovery
-
-**File Handle Management (30+ file operations audited):**
-- ✅ All `open()` calls use `with` context managers (auto-close guaranteed)
-- ✅ Examples: config.py, tunnel.py, backup.py, database.py, monitoring.py
-- ✅ No naked `open()` calls without context managers found
-
-**Temporary File Cleanup (11 tempfile usages audited):**
-- ✅ MySQL config files (`database.py`, `database_advanced.py`, `backup.py`):
-  - Created with `tempfile.mkstemp()` for credentials (prevents password in process list)
-  - **ALWAYS** cleaned up in `finally` block (all 8 functions verified)
-  - Permissions set to 0600 (owner-only read/write)
-  - Cleanup even on exceptions (try/except/finally pattern)
-- ✅ Test temp directories: Proper cleanup in tearDown methods
-
-**SSH Connection Cleanup (paramiko usage):**
-- ✅ `discovery.py`: SSH client explicitly closed via `client.close()` after command execution
-- ✅ Connection timeout: 30 seconds prevents hanging connections
-- ✅ No persistent SSH connections - created per-operation and immediately closed
-
-**Context Managers (Auto-cleanup Patterns):**
-- ✅ `TunnelManager.auto_tunnel()`: Context manager with optional cleanup
-- ✅ File operations: Consistent use of `with open()` throughout codebase
-- ✅ File locking: `with open(lock_file, 'w') as lock:` in tunnel.py
-
-#### Resource Leak Prevention Patterns
-
-```python
-# ✅ EXCELLENT: Temp file cleanup in all error paths
-def _create_mysql_config_file(user: str, password: str) -> str:
-    fd, config_path = tempfile.mkstemp(suffix='.cnf', text=True)
-    try:
-        with os.fdopen(fd, 'w') as f:
-            f.write(f"[client]\nuser={user}\npassword={password}\n")
-        os.chmod(config_path, 0o600)
-        return config_path
-    except Exception as e:
-        try:
-            os.unlink(config_path)  # Cleanup on error
-        except:
-            pass
-        raise
-
-# Usage always in try/finally:
-config_file = _create_mysql_config_file(user, password)
-try:
-    subprocess.run(['mysql', f'--defaults-file={config_file}', ...])
-finally:
-    os.unlink(config_file)  # ALWAYS cleaned up
-```
-
-```python
-# ✅ EXCELLENT: Process lifecycle management
-class MCPServer:
-    def stop(self) -> bool:
-        try:
-            self.process.terminate()
-            self.process.wait(timeout=5)  # Graceful shutdown
-        except subprocess.TimeoutExpired:
-            self.process.kill()  # Force kill if needed
-            self.process.wait()
-```
-
-```python
-# ✅ EXCELLENT: SSH tunnel cleanup with retry
-def stop_tunnel(self, server_name: str) -> bool:
-    process = psutil.Process(pid)
-    process.terminate()  # SIGTERM (graceful)
-    try:
-        process.wait(timeout=5)
-    except psutil.TimeoutExpired:
-        process.kill()  # SIGKILL (force)
-        process.wait()
-```
-
-#### Zero Leaks Confirmed
-
-**Analysis Summary:**
-- **Subprocess calls:** 50+ reviewed - all properly managed
-- **File operations:** 30+ reviewed - all use context managers
-- **Temp files:** 11 reviewed - all cleaned up in finally blocks
-- **SSH connections:** 1 reviewed - explicitly closed
-- **Process tracking:** PID-based with health checks and recovery
-- **Memory:** Streaming I/O for large files (prevents exhaustion)
-
-**Best Practices Applied:**
-1. **try/finally pattern:** All temp files cleaned up even on exceptions
-2. **Context managers:** All file operations auto-close
-3. **Graceful shutdown:** SIGTERM → wait → SIGKILL for processes
-4. **Health monitoring:** Tunnel health checks detect zombie processes
-5. **Retry logic:** 3-retry process discovery handles race conditions
-6. **Streaming I/O:** Large backups/restores use streaming to prevent memory exhaustion
-
-### 📋 Error Handling Enhancements (Task 6 - User Experience)
-
-#### Actionable Error Messages
-- **Enhanced:** All critical error paths now provide troubleshooting guidance
-  - SSH connection failures: 5-step diagnostic checklist
-  - MySQL client errors: Platform-specific installation instructions (Windows/macOS/Linux)
-  - Tunnel failures: Recovery steps with specific commands
-  - Disk space errors: 5 cleanup strategies with examples
-  - File upload/download failures: Cause analysis with fix commands
-  - Permission errors: Exact chmod/chown commands to resolve
-- **Impact:** Users can self-diagnose and fix 80%+ of issues without external help
-
-#### Error Message Examples
-```
-❌ mysql client not found. Please install MySQL client tools.
-
-Installation instructions:
-  Windows: choco install mysql
-  macOS:   brew install mysql-client
-  Ubuntu:  sudo apt-get install mysql-client
-  CentOS:  sudo yum install mysql
-
-After installation, restart your terminal.
-```
-
-```
-✗ Tunnel collapsed: Connection refused
-
-Recovery steps:
-  1. Check tunnel status: navig tunnel status
-  2. Restart tunnel: navig tunnel restart
-  3. Check for zombie processes: ps aux | grep ssh
-  4. Verify SSH connection: ssh user@host 'echo test'
-  5. Check server logs: navig logs ssh
-```
-
-### ✨ Feature Implementations (Task 5 - TODO Resolution)
-
-#### Package Manager Auto-Detection
-- **Implemented:** `navig install <package>` with smart package manager detection
-  - Auto-detects package manager: apt-get, yum, dnf, pacman, zypper, apk
-  - OS-based detection using server metadata (Ubuntu→apt, CentOS→yum, Alpine→apk)
-  - Fallback: Checks which package managers are available on server
-  - Supports dry-run mode to preview installation command
-  - Clear error messages with manual fallback instructions
-  - **Impact:** Replaces "coming soon" placeholder with full implementation
-
-#### HestiaCP Password Security Enhancement
-- **Fixed:** Password exposure in HestiaCP user creation (HIGH severity)
-  - Changed from command-line argument to stdin pipe: `printf '%s\n' <password> | v-add-user`
-  - HestiaCP CLI supports reading password from stdin when using '-' placeholder
-  - Password no longer visible in `ps aux` or process listings
-  - **Impact:** Eliminates last remaining password exposure in NAVIG
-  - Completes security hardening - ALL credentials now protected
-
-### 🛡️ Backup/Restore Safety Enhancements (Task 4 - Edge Case Hardening)
-
-#### Critical Edge Cases Fixed
-- **Added:** Disk space verification before backup operations
-  - New `_verify_disk_space()` helper function checks available space
-  - Requires 1.5x estimated backup size as safety margin
-  - Prevents disk full errors mid-backup (could crash server)
-  - Validated before all backup operations (database, system, Hestia)
-  - Shows clear error: "Insufficient disk space: X MB free, Y MB required"
-- **Added:** Backup integrity verification with SHA-256 checksums
-  - New `_calculate_file_checksum()` generates cryptographic hashes
-  - Checksums stored in backup metadata.json
-  - Automatic verification before restore operations
-  - Detects corrupted backups before attempting restore
-  - Prevents database corruption from bad backup files
-- **Added:** Transaction-based database restore with rollback support
-  - Enhanced `restore_database()` with safety-first design
-  - Automatic safety backup before restore (rollback capability)
-  - Verifies backup file integrity before starting restore
-  - Descriptive confirmation prompt (shows file size, requires typing 'RESTORE')
-  - Better error messages with rollback instructions
-  - **Impact:** CRITICAL - Previous implementation had NO rollback, partial restore corrupted databases
-- **Added:** Partial backup cleanup on failure
-  - New `_cleanup_failed_backup()` removes incomplete backups
-  - Prevents confusion from corrupted/incomplete backup files
-  - Clear error messages explain what failed and why
-- **Improved:** Backup metadata with checksums and detailed info
-  - Backup results include per-database checksums
-  - File sizes, timestamps, success/failure status tracked
-  - Enables integrity verification and incremental backup detection
-- **Fixed:** Memory exhaustion on large database restores
-  - Changed from `file.read_text()` (loads entire file to RAM) to streaming
-  - Can now restore multi-GB SQL files without memory errors
-  - Progress indicators planned for long-running operations
-
-#### Safety Features Added
-- `--force` flag to override checksum verification (emergency use only)
-- `--no-backup` flag to skip safety backup (faster, less safe)
-- Verbose mode shows checksums and disk space details
-- Failed restores provide rollback command
-
-### 🚀 Performance & Reliability Enhancements
-
-#### Tunnel Lifecycle Management (Task 3 - Comprehensive Audit)
-- **Added:** Atomic tunnel state management with file locking (prevents race conditions)
-  - Cross-platform file locking using `fcntl` (Unix) and `msvcrt` (Windows)
-  - All tunnel operations now atomic - no more concurrent modification issues
-  - Prevents race condition when multiple NAVIG instances start tunnels simultaneously
-- **Improved:** `_find_tunnel_process()` with retry logic and better matching
-  - Now retries up to 3 times with 0.5s delays (handles slow SSH process startup)
-  - More precise cmdline matching: `-L {port}:localhost:{remote_port}` pattern
-  - Better error handling for zombie processes and access denied errors
-- **Added:** `TunnelManager.auto_tunnel()` context manager (resolves TODO)
-  - Automatic tunnel lifecycle: starts if needed, optionally cleans up on exit
-  - Usage: `with tunnel_manager.auto_tunnel('production') as tunnel: ...`
-  - Smart cleanup: only stops tunnel if context manager started it
-- **Added:** Comprehensive tunnel health monitoring
-  - `check_tunnel_health()`: Verifies process running + port accessible
-  - `recover_tunnel()`: Auto-recovery strategy (stop → cleanup → restart)
-  - Returns detailed health report with issues list
-- **Implemented:** `navig tunnel auto` command
-  - Checks tunnel health and auto-recovers if unhealthy
-  - CLI interface for health monitoring and recovery
-  - Replaces "coming soon" placeholder with full implementation
-- **Impact:** Eliminates race conditions during concurrent operations, zombie processes auto-detected and cleaned up, tunnel failures auto-recover
-
-### 📖 Documentation Updates
-
-#### Enhanced Security Documentation
-- **Added:** Comprehensive security warnings in README.md
-  - New "Security Update (v2.0.0)" callout section with production-ready features
-  - Expanded "Security Best Practices" section (90+ lines):
-    * Credential protection guidelines (never commit .env files)
-    * SSH keys vs passwords recommendations
-    * File permissions for Windows, Linux, macOS
-    * Database password rotation examples
-    * Git commit verification checklist
-    * Credential exposure monitoring commands
-  - New "Security Setup (REQUIRED)" in Installation section:
-    * Verify .gitignore configuration
-    * Protect NAVIG config directory permissions
-    * SSH key generation and deployment guide
-  - Security hardening checklist (10 items)
-  - Links to SECURITY_FIXES_APPLIED.md for technical details
-- **Added:** Production-ready security documentation in `docs/SECURITY_FIXES_APPLIED.md`
-  - Complete before/after code examples for all 9 security fixes
-  - Testing validation section (9/9 tests passing)
-  - Deployment recommendations and safety checklist
-- **Added:** Comprehensive security audit report in `docs/SECURITY_AUDIT_REPORT.md`
-  - 20-point audit covering Critical, High, Medium, and Low severity issues
-  - Developer experience enhancement recommendations
-
-### 🔒 CRITICAL SECURITY FIXES (Phase 2 - Comprehensive Audit)
-
-#### Password Exposure in Database Operations (CVE-level severity)
-- **Fixed:** Database passwords visible in process listings in `navig/commands/database.py`
-  - Functions affected: `execute_sql()`, `backup_database()`, `execute_sql_file()`, `restore_database()`
-  - Changed from `-p{password}` command-line argument to `--defaults-file={temp_config}`
-  - Temporary MySQL config files created with strict 0600 permissions (owner-only read/write)
-  - Config files automatically cleaned up in finally blocks
-  - **Impact:** CRITICAL - Every SQL command exposed database password in `ps aux`, Task Manager, `/proc/*/cmdline`
-  - **Mitigation:** Passwords now passed via secure temporary files, never visible in process listings
-
-#### Password Exposure in Backup Operations (CVE-level severity)
-- **Fixed:** Database passwords visible during full system backups in `navig/commands/backup.py`
-  - Function affected: `backup_db_all_cmd()` (backs up ALL databases)
-  - Applied same secure credential pattern as database_advanced.py
-  - Added compression verification before deleting original files (prevents data loss)
-  - **Impact:** CRITICAL - Full system backups exposed password for every database being backed up
-  - **Mitigation:** Secure temp config files + verification step before file deletion
-
-#### HestiaCP Password Exposure (HIGH severity)
-- **Fixed:** User passwords visible in shell commands in `navig/commands/hestia.py`
-  - Function affected: `add_user_cmd()` - HestiaCP user creation
-  - Applied `shlex.quote()` to username, password, and email parameters
-  - **Impact:** HIGH - Admin passwords visible in SSH history, process listings, server logs
-  - **Mitigation:** Command arguments properly quoted, prevents injection and reduces exposure
-  - **Note:** Password still visible in cmdline (HestiaCP CLI limitation - no stdin/env var support)
-
-#### Bare Exception Handlers Eliminated (MEDIUM severity)
-- **Fixed:** 11 instances of bare `except:` blocks causing silent failures
-  - `navig/commands/ai.py`: Process context gathering now logs failures
-  - `navig/commands/backup.py`: Compression errors now logged with warnings
-  - `navig/commands/database_advanced.py`: Cleanup exceptions now specific `OSError` only
-  - Changed from `except: pass` to `except OSError: pass  # Cleanup - file deletion may fail`
-  - Added logging for non-critical failures (AI context gathering)
-  - **Impact:** Backup failures, compression errors, context gathering issues were completely silent
-  - **Mitigation:** Specific exception types, logged warnings, user-visible error messages
-
-### 🔒 CRITICAL SECURITY FIXES (Phase 1 - Initial Hardening)
-
-#### Command Injection Prevention (CVE-level severity)
-- **Fixed:** Command injection vulnerability in `navig/commands/files_advanced.py`
-  - All shell commands now use `shlex.quote()` to safely escape user-supplied parameters
-  - Prevents injection attacks like `file; rm -rf /` → safely escaped to `'file; rm -rf /'`
-  - Affected functions: `delete_file_cmd`, `create_dir_cmd`, `change_permissions_cmd`, `change_ownership_cmd`
-  - **Impact:** Malicious file paths could have executed arbitrary shell commands on remote servers
-  - **Mitigation:** All user-supplied file paths, permissions, and ownership values are now properly escaped
-
-#### SQL Injection Prevention (CVE-level severity)
-- **Fixed:** SQL injection vulnerabilities in `navig/commands/database_advanced.py`
-  - Implemented three-layer security model:
-    1. **Validation Layer:** `_validate_sql_identifier()` - Regex validation (`^[a-zA-Z0-9_]+$`), keyword blacklist, 64-char limit
-    2. **Escaping Layer:** `_escape_sql_identifier()` - Backtick escaping for MySQL identifiers
-    3. **Secure Credentials:** `_create_mysql_config_file()` - Temporary config files with 0600 permissions
-  - Affected functions: `list_databases_cmd`, `list_tables_cmd`, `list_users_cmd`, `optimize_table_cmd`, `repair_table_cmd`
-  - **Impact:** Malicious table/database names could have executed arbitrary SQL commands
-  - **Mitigation:** All identifiers validated and escaped, SQL keywords blacklisted
-
-#### Credential Exposure Prevention (HIGH severity)
-- **Fixed:** Database passwords visible in process listings
-  - Changed from `-p{password}` command-line argument to `--defaults-file={temp_config}`
-  - Temporary MySQL config files created with strict 0600 permissions (owner-only read/write)
-  - Config files automatically cleaned up after command execution
-  - **Impact:** Database passwords were visible in `ps aux`, `/proc/{pid}/cmdline`, Windows Task Manager
-  - **Mitigation:** Credentials now passed via secure temporary files, never in command line
-
-#### SSH Man-in-the-Middle Prevention (HIGH severity)
-- **Fixed:** SSH connections auto-accepting unknown host keys in `navig/remote.py`
-  - Changed default from `StrictHostKeyChecking=accept-new` to `StrictHostKeyChecking=yes`
-  - Added `trust_new_host` parameter (default `False`) to `execute_command()` method
-  - Unknown hosts now rejected by default unless explicitly trusted
-  - **Impact:** Auto-accepting new hosts enabled MITM attacks during first connection
-  - **Mitigation:** Strict host key verification enforced, manual trust required for new hosts
-
-### 🔧 CRITICAL API FIXES
-
-#### Fixed API Drift Crashes
-- **Fixed:** Multiple modules using non-existent API methods causing crashes
-  - **monitoring.py:** 15+ replacements
-    - `get_app_config()` → `load_server_config()`
-    - `execute_remote_command()` → `execute_command(cmd, server_config)`
-    - `result['success']` → `result.returncode == 0`
-    - `result['output']` → `result.stdout`
-    - `result.get('error')` → `result.stderr`
-  - **maintenance.py:** 20 replacements (same pattern as monitoring.py)
-  - **webserver.py:** Mixed API corrections
-    - `get_server_config()` → `load_server_config()`
-    - `RemoteOperations(config)` → `RemoteOperations(config_manager)` with separate server_config
-  - Affected functions: All monitoring, maintenance, and webserver commands
-  - **Impact:** Commands would crash with `AttributeError` on `get_app_config()`, `execute_remote_command()`
-  - **Mitigation:** All modules now use correct `ConfigManager` and `RemoteOperations` APIs
-
-#### Fixed MCP Server Environment Stripping
-- **Fixed:** MCP servers losing PATH and system environment variables in `navig/mcp_manager.py`
-  - Changed from `env={custom_vars_only}` to `full_env = os.environ.copy(); full_env.update(custom_vars)`
-  - MCP servers now inherit parent environment with custom overrides
-  - **Impact:** MCP servers failed with "command not found" errors when calling system executables
-  - **Mitigation:** Subprocess launched with `os.environ.copy()` preserving PATH and system variables
-
-### ⚠️ BREAKING CHANGES
-
-#### SSH Host Key Verification (Security Enhancement)
-- **Breaking:** `RemoteOperations.execute_command()` now rejects unknown SSH hosts by default
-  - **Migration:** For first-time server connections, use `trust_new_host=True` parameter:
-    ```python
-    # First connection to new server
-    remote_ops.execute_command(cmd, server_config, trust_new_host=True)
-    
-    # Subsequent connections (default, secure)
-    remote_ops.execute_command(cmd, server_config)
-    ```
-  - **Reason:** Previous behavior auto-accepted unknown hosts, enabling MITM attacks
-
-#### SQL Identifier Restrictions (Security Enhancement)
-- **Breaking:** Database/table names must be alphanumeric + underscore only
-  - **Valid:** `users`, `user_accounts_2024`, `my_database123`
-  - **Invalid:** `users; DROP TABLE`, `table-name`, `table name`, ``users` OR '1'='1``
-  - **Migration:** Rename databases/tables with special characters to use only `[a-zA-Z0-9_]`
-  - **Reason:** Prevents SQL injection attacks via malicious identifiers
-
-### ✅ TESTING
-
-#### Added Integration Test Suite
-- **Added:** `tests/test_security_fixes.py` with 9 comprehensive security tests
-  - Command injection protection (shlex.quote validation)
-  - SQL injection protection (identifier validation, escaping, secure credentials)
-  - API correctness (ConfigManager, RemoteOperations)
-  - MCP environment preservation
-  - SSH host key verification (strict checking, trust_new_host flag)
-- **Coverage:** All 8 critical/high-priority security fixes validated
-- **Status:** ✅ All 9 tests passing
-
-### 📚 DOCUMENTATION
-
-#### Updated Security Documentation
-- **Updated:** `.github/instructions/directives.instructions.md`
-  - Added multi-phase workflow execution rules
-  - Enhanced app structure organization (docs/, tests/, scripts/)
-  - Security best practices for NAVIG usage
-- **Updated:** `.github/instructions/navig.instructions.md`
-  - Documented all NAVIG security fixes
-  - Updated command reference with secure defaults
-  - Added troubleshooting for SSH host key rejection
-
-### 🔍 AUDIT TRAIL
-
-#### Security Review Summary
-- **Total Vulnerabilities Fixed:** 4 critical, 2 high-priority
-- **Files Modified:** 7 production files (commands/, core libraries)
-- **Insecure Backups Created:** 2 files (`*.INSECURE.bak` for audit trail)
-- **Tests Added:** 9 integration tests (100% pass rate)
-- **Breaking Changes:** 2 (SSH host verification, SQL identifier restrictions)
-
-#### Risk Assessment
-**Without These Fixes:**
-1. **Command Injection:** Attackers could execute arbitrary shell commands via malicious file paths
-2. **SQL Injection:** Attackers could drop tables, steal data, or escalate privileges
-3. **Credential Exposure:** Database passwords visible in process listings, logs, monitoring tools
-4. **MITM Attacks:** SSH connections vulnerable to man-in-the-middle during host key exchange
-5. **API Crashes:** Production commands unusable due to incorrect method calls
-6. **MCP Failures:** Model Context Protocol servers non-functional due to missing PATH
-
-**With These Fixes:**
-- All inputs validated and safely escaped before execution
-- Credentials passed securely via temporary files with strict permissions
-- SSH connections reject unknown hosts unless explicitly trusted
-- All API methods aligned with actual codebase implementation
-- MCP servers inherit full system environment for proper execution
-
----
-
-## [1.0.0] - 2025-11-21
-
-### Added
-
-#### Phase 5: Cleanup & Finalization Complete
-- Moved all deprecated PowerShell scripts to `archive/` directory
-- Created `archive/README.md` with deprecation notice and migration instructions
-- Updated main README.md with command categories, global flags, and migration guide
-- Created comprehensive `docs/RELEASE_NOTES_v1.0.0.md` with full migration summary
-- **PowerShell to Python migration 100% complete**
-
-#### Phase 4: Documentation Complete
-- Created `docs/USAGE_GUIDE.md` - 600+ line comprehensive usage guide with 100+ examples
-- Documented all 60+ new commands across 10 categories
-- Added troubleshooting section with common errors and solutions
-- Included best practices for dry-run, app markers, JSON automation
-- Updated CHANGELOG.md with complete Phase 2-5 documentation
-
-#### Phase 3: Testing & Rebranding Complete
-
-**Rebranding**
-- Rebranded to "NAVIG - No Admin Visible In Graveyard"
-- New tagline: "Keep your servers alive. Forever."
-- Updated README, CLI help text, and package metadata
-- Shifted focus from technical features to outcome-based messaging (proactive server management to prevent admin failures)
-
-**Testing & Validation**
-- Created comprehensive test suite with pytest
-- Added `tests/test_all_modules.py` - Module import and syntax validation (18 tests)
-- Added `tests/test_integration.py` - Integration tests for dry-run, JSON output, error handling
-- Added `tests/pytest.ini` - Pytest configuration with markers and settings
-- Fixed import paths (changed from `navig.core` to `navig` for ConfigManager and RemoteOperations)
-- All 8 new command modules verified to import correctly without syntax errors
-- Validated version and branding information
-- CLI integration tests passing (18/18 tests - 100% success rate)
-
-#### PowerShell Migration - Phase 2.1-2.8 Complete
-
-**Advanced File Operations** - Extended file management capabilities
-- `navig delete <remote> [--recursive] [--force]` - Delete remote files or directories
-  - Smart confirmation prompts (skippable with `--force`)
-  - Recursive directory deletion with `--recursive` flag
-  - Dry-run support via global `--dry-run` flag
-  - JSON output support via global `--json` flag
-- `navig mkdir <remote> [--parents] [--mode 755]` - Create remote directories
-  - Parent directory creation with `--parents` (default: true)
-  - Custom permission modes with `--mode` flag
-  - Supports dry-run and JSON output
-- `navig chmod <remote> <mode> [--recursive]` - Change file/directory permissions
-  - Numeric permission modes (e.g., 755, 644, 0755)
-  - Recursive application with `--recursive` flag
-  - Validation for proper mode format
-  - Supports dry-run and JSON output
-- `navig chown <remote> <owner> [--recursive]` - Change file/directory ownership
-  - Owner in `user` or `user:group` format
-  - Recursive application for directories
-  - Supports dry-run and JSON output
-
-**Advanced Database Operations** - Enhanced database management
-- `navig db-list` - List all databases with sizes
-  - Displays database names and sizes in MB
-  - Rich table output or JSON format
-  - Queries information_schema for accurate sizes
-- `navig db-tables <database>` - List tables in a database
-  - Shows table name, size (MB), and row count
-  - Sorted by size (largest first)
-  - Rich table or JSON output
-- `navig db-optimize <table>` - Optimize database table
-  - Reclaims unused space and defragments
-  - Shows optimization results
-  - Supports dry-run and JSON output
-- `navig db-repair <table>` - Repair corrupted database table
-  - Fixes table corruption issues
-  - Shows repair results
-  - Supports dry-run and JSON output
-- `navig db-users` - List database users
-  - Displays username and host information
-  - Rich table or JSON output
-  - Queries mysql.user table
-
-**HestiaCP Integration** - Comprehensive HestiaCP management (9 commands)
-- `navig hestia users` - List all HestiaCP users
-  - Shows username, package, email, domains, and databases count
-  - JSON output via `v-list-users json` API
-  - Rich table formatting
-- `navig hestia domains [--user USERNAME]` - List domains
-  - All domains across all users (when no --user specified)
-  - Filter by specific user with `--user` flag
-  - Shows domain, user, IP, SSL status, and PHP backend
-  - Aggregates data from v-list-web-domains
-- `navig hestia add-user <username> <password> <email>` - Create new user
-  - Executes v-add-user command
-  - Supports dry-run mode
-  - JSON output for automation
-- `navig hestia delete-user <username> [--force]` - Delete user
-  - Confirms deletion unless `--force` flag used
-  - Deletes ALL user data (domains, databases, email)
-  - JSON mode requires `--force` flag
-- `navig hestia add-domain <user> <domain>` - Add domain to user
-  - Creates web domain configuration
-  - Automatic DNS zone setup
-  - Supports dry-run and JSON output
-- `navig hestia delete-domain <user> <domain> [--force]` - Remove domain
-  - Confirms deletion unless `--force` flag used
-  - Removes all domain data (web, DNS, mail)
-  - JSON mode requires `--force` flag
-- `navig hestia renew-ssl <user> <domain>` - Renew Let's Encrypt SSL
-  - Executes v-add-letsencrypt-domain
-  - Automatic ACME challenge handling
-  - Supports dry-run and JSON output
-- `navig hestia rebuild-web <user>` - Rebuild web configuration
-  - Regenerates Nginx/Apache configs for all user domains
-  - Fixes configuration corruption issues
-  - Supports dry-run and JSON output
-- `navig hestia backup-user <user>` - Backup HestiaCP user
-  - Creates full user backup (web, DB, mail, DNS)
-  - Stored in HestiaCP backup directory
-  - Supports dry-run and JSON output
-
-**Comprehensive Backup System** - Full system backup and restore (7 commands)
-- `navig backup-config [--name NAME]` - Backup system configuration files
-  - Backs up: SSH config, UFW, Fail2Ban, hosts, hostname, timezone, fstab, crontab
-  - Custom backup naming with `--name` flag
-  - Saves to `~/.navig/backups/<name>/configs/`
-  - Creates metadata.json with backup details
-  - Skips missing files gracefully
-- `navig backup-db-all [--name NAME] [--compress gzip|zstd|none]` - Backup all databases
-  - Backs up ALL databases (excluding system schemas)
-  - Compression options: gzip (default), zstd, or none
-  - Individual SQL files per database
-  - Size calculation and reporting
-  - Metadata tracking with database list and sizes
-  - Uses existing tunnel infrastructure
-- `navig backup-hestia [--name NAME]` - Comprehensive HestiaCP backup
-  - Backs up 5 critical directories:
-    - `/usr/local/hestia/conf` - Configuration files
-    - `/usr/local/hestia/data/users` - User data
-    - `/usr/local/hestia/ssl` - SSL certificates
-    - `/usr/local/hestia/data/templates` - Custom templates
-    - `/usr/local/hestia/data/zones` - DNS zone files
-  - Creates compressed tar archives remotely
-  - Downloads and extracts locally
-  - Excludes log files automatically
-  - Reports file count and size per directory
-- `navig backup-web [--name NAME]` - Backup web server configurations
-  - Backs up Nginx configs: nginx.conf, sites-available, sites-enabled
-  - Backs up Apache configs: apache2.conf, ports.conf, sites-available, sites-enabled
-  - Detects available web servers automatically
-  - Preserves directory structure
-  - Metadata tracking per server type
-- `navig backup-all [--name NAME] [--compress gzip|zstd|none]` - Full system backup
-  - Executes all backup types in sequence:
-    1. System configuration (`backup-config`)
-    2. All databases (`backup-db-all`)
-    3. HestiaCP data (`backup-hestia`)
-    4. Web server configs (`backup-web`)
-  - Single unified backup with organized structure
-  - Compression applied to databases only
-  - Comprehensive metadata with all component details
-- `navig list-backups` - List all available backups
-  - Rich table output with name, type, date, and size
-  - Reads metadata.json for accurate information
-  - Sorted by date (newest first)
-  - JSON output for automation
-- `navig restore-backup <name> [--component TYPE] [--force]` - Restore from backup
-  - Manual review required (safety measure)
-  - Confirmation prompt unless `--force` used
-  - Optional component-specific restore
-  - Shows backup location for manual inspection
-  - Prevents accidental overwrites
-
-  - Reports saved in JSON format with full metrics and alerts
-  - Rich table output with color-coded status indicators
-  - Metadata tracking for historical analysis
-
-**Resource Monitoring** - Real-time server monitoring and health checks
-- `navig monitor-resources` - Monitor real-time resource usage
-  - CPU usage percentage with threshold alerts (>80% triggers alert)
-  - Memory usage in percentage and MB (used/total)
-  - Disk usage for root partition
-  - Load averages (1, 5, 15 minute intervals)
-  - TCP connection count
-  - System uptime display
-  - Rich table output with color-coded status (🟢 OK, 🟡 MEDIUM, 🔴 HIGH)
-- `navig monitor-disk [--threshold 80]` - Disk space monitoring with custom thresholds
-  - Monitors all mounted disk partitions
-  - Customizable alert threshold (default: 80%)
-  - Shows device, mount point, size, used, available, usage%
-  - Color-coded alerts (🟢 OK, 🟡 WARNING, 🔴 ALERT)
-  - JSON output for scripting/automation
-- `navig monitor-services` - Service health status checks
-  - Monitors 16 critical services: nginx, apache2, mysql, mariadb, postgresql, php-fpm (8.1/8.2/8.3), hestia, fail2ban, ufw, ssh, sshd, redis, memcached
-  - Rich table with status icons (✓ active, ✗ inactive, - not installed)
-  - Health indicators (🟢 healthy, 🔴 stopped, ⚪ N/A)
-  - Reports inactive services count
-  - JSON output support
-- `navig monitor-network` - Network statistics and connections
-  - Connection summary (TCP, UDP, UNIX sockets)
-  - Listening ports count
-  - Established connections count
-  - Network interface list
-  - Rich panel display for connection summary
-- `navig health-check` - Comprehensive health check
-  - Combines all monitoring aspects: resources, services, disk, network
-  - Sequential execution with progress indicators
-  - Comprehensive view of server health
-  - Useful for scheduled health audits
-- `navig monitoring-report` - Generate comprehensive health report
-  - Saves JSON report to `~/.navig/reports/health-report_<server>_<timestamp>.json`
-  - Includes: timestamp, server info, resource metrics, service status, disk usage, network stats, alerts
-  - Alert tracking with severity levels
-  - Historical data for trend analysis
-  - Summary display with alert count
-
-**Security Management** - Comprehensive security and firewall management
-- `navig firewall-status` - Display UFW firewall status and rules
-  - Shows firewall status (active/inactive)
-  - Lists all configured rules with actions (ALLOW/DENY)
-  - Displays default policies
-  - Shows logging level
-  - Rule count summary
-  - JSON output support for automation
-- `navig firewall-add <port> [--protocol tcp|udp] [--from <ip>]` - Add UFW firewall rule
-  - Add port-based rules (e.g., allow 8080/tcp)
-  - Restrict by source IP or subnet (e.g., --from 10.0.0.0/24)
-  - Default: allow from any IP
-  - Supports TCP and UDP protocols
-  - Dry-run mode to preview changes
-- `navig firewall-remove <port> [--protocol tcp|udp]` - Remove UFW firewall rule
-  - Remove existing firewall rules
-  - Specify port and protocol
-  - Confirmation before deletion
-- `navig firewall-enable` - Enable UFW firewall
-  - Activates firewall protection
-  - Uses --force to avoid interactive prompts
-  - Warning about SSH access (port 22 must be allowed)
-- `navig firewall-disable` - Disable UFW firewall
-  - Deactivates firewall (use with caution)
-  - Warning that server is unprotected
-- `navig fail2ban-status` - Display Fail2Ban status and banned IPs
-  - Service status check (active/inactive)
-  - Lists all active jails
-  - Shows currently banned IPs per jail
-  - Total ban statistics
-  - Rich table with color-coded banned counts (red for active bans)
-  - Displays banned IP addresses if any
-- `navig fail2ban-unban <ip> [--jail <name>]` - Unban IP address from Fail2Ban
-  - Unban from specific jail (e.g., sshd)
-  - Unban from all jails if no jail specified
-  - Useful for accidental bans or trusted IPs
-- `navig ssh-audit` - Audit SSH configuration for security issues
-  - Checks 5 critical SSH settings:
-    - PermitRootLogin (recommended: prohibit-password or no)
-    - PasswordAuthentication (recommended: no)
-    - PermitEmptyPasswords (recommended: no)
-    - X11Forwarding (recommended: no)
-    - MaxAuthTries (recommended: 3 or less)
-  - Rich table with current vs recommended values
-  - Status indicators (✓ OK or ⚠ REVIEW)
-  - Progress bar during checks
-  - Summary of issues found
-  - Guidance on fixing issues
-- `navig security-updates` - Check for available security updates
-  - Updates package lists (apt-get update)
-  - Checks for security-related updates
-  - Displays available security updates
-  - Update count summary
-  - Installation command guidance
-  - Progress bar during check
-- `navig audit-connections` - Audit active network connections
-  - Lists established connections (TCP/UDP)
-  - Shows all listening ports
-  - Checks for suspicious processes (netcat, ncat)
-  - Connection count summary
-  - Truncates long lists (first 10 shown)
-  - Security warnings for suspicious activity
-- `navig security-scan` - Run comprehensive security scan
-  - Executes all security checks in sequence:
-    1. Firewall status
-    2. Fail2Ban status
-    3. SSH audit
-    4. Security updates check
-    5. Connection audit
-  - Comprehensive security overview
-  - Useful for regular security audits
-  - JSON output for reporting
-
-**System Maintenance** - Package management and system cleanup
-- `navig update-packages` - Update package lists and upgrade packages
-  - Updates apt package lists with progress spinner
-  - Checks for upgradable packages with count display
-  - Shows first 10 upgradable packages
-  - Performs non-interactive upgrade (DEBIAN_FRONTEND=noninteractive)
-  - Displays packages upgraded count
-  - "All packages up to date" message if none
-  - Dry-run preview support
-- `navig clean-packages` - Clean package cache and remove orphaned packages
-  - Cleans apt package cache (apt-get clean)
-  - Removes unused/orphaned packages (apt-get autoremove)
-  - Frees disk space automatically
-  - Success confirmation for each step
-- `navig rotate-logs` - Rotate and compress log files
-  - Forces log rotation using logrotate
-  - Applies /etc/logrotate.conf rules
-  - Compresses old log files automatically
-  - Success/failure feedback
-- `navig cleanup-temp` - Clean temporary files and caches
-  - Removes files from /tmp older than 7 days
-  - Cleans apt cache
-  - Safe deletion (ignores locked files)
-  - Shows cleanup completion
-- `navig check-filesystem` - Check filesystem usage and find large files
-  - Displays disk usage (df -h) in Rich table format
-  - Finds large files (>100MB) in /var/log and /tmp
-  - Shows file sizes in human-readable format
-  - Warns about large log files with count
-  - First 10 large files displayed (truncates if more)
-  - "No large files found" confirmation
-- `navig system-maintenance` - Run comprehensive system maintenance
-  - Executes all maintenance tasks in sequence:
-    1. Update and upgrade packages
-    2. Clean package cache
-    3. Rotate log files
-    4. Check filesystem
-    5. Clean temporary files
-  - Progress indication for each step
-  - Time elapsed summary
-  - Useful for scheduled maintenance (cron)
-  - JSON output for reporting
-
-**Global Flag Enhancements**
-- All new commands support existing global flags:
-  - `--dry-run` - Preview actions without executing
-  - `--json` - JSON output for automation/scripting
-  - `--app/-p` - Override active server
-  - `--verbose` - Detailed logging
-  - `--quiet/-q` - Minimal output
-  - `--yes/-y` - Auto-confirm prompts
-
-**Web Server Management** - Apache and Nginx administration
-- `navig webserver-list-vhosts [--server nginx|apache]` - List virtual hosts
-  - Shows enabled sites (green checkmarks) and available but disabled sites (dimmed)
-  - Rich table with status indicators, summary counts
-  - Supports both Apache (/etc/apache2/sites-*) and Nginx (/etc/nginx/sites-*)
-  - JSON output with enabled/available arrays
-
-- `navig webserver-test-config [--server nginx|apache]` - Test server configuration
-  - Pre-validation before reload/restart to prevent downtime
-  - Apache: `apache2ctl configtest` | Nginx: `nginx -t`
-  - Rich panel output with green/red border based on result
-  - JSON output with valid flag and test output
-
-- `navig webserver-enable-site SITE_NAME [--server nginx|apache]` - Enable a site
-  - Apache: Uses `a2ensite` | Nginx: Creates symlink sites-available → sites-enabled
-  - Success message with reload reminder, dry-run preview support
-
-- `navig webserver-disable-site SITE_NAME [--server nginx|apache]` - Disable a site
-  - Apache: Uses `a2dissite` | Nginx: Removes symlink from sites-enabled
-  - Success message with reload reminder, dry-run preview support
-
-- `navig webserver-enable-module MODULE_NAME` - Enable Apache module
-  - Uses `a2enmod` for modules like: rewrite, ssl, headers, deflate, http2
-  - Success message with reload reminder, dry-run preview support
-
-- `navig webserver-disable-module MODULE_NAME` - Disable Apache module
-  - Uses `a2dismod` to safely disable modules
-  - Success message with reload reminder, dry-run preview support
-
-- `navig webserver-reload [--server nginx|apache]` - Safely reload server
-  - Tests configuration before reload (prevents breaking production)
-  - Aborts if configuration test fails, uses `systemctl reload` (preserves connections)
-  - Verifies service remains active after reload (1s wait for stabilization)
-  - JSON output with config_valid, reload_success, service_active flags
-
-- `navig webserver-recommendations [--server nginx|apache]` - Performance tuning tips
-  - **Apache**: mod_deflate, mod_expires, mod_cache, MaxRequestWorkers optimization, HTTP/2, mod_pagespeed
-  - **Nginx**: gzip, browser caching, fastcgi_cache, worker tuning, HTTP/2
-  - Each tip includes description, command or config example
-  - JSON output with full recommendations array
-
-#### Per-Server Template Configuration System
-- **Server-Specific Template Customization** - Each server can have independent template configurations
-  - Hybrid storage: template state in server YAML, customizations in separate JSON files
-  - 3-layer merge priority: template → auto-detection info → custom overrides
-  - Lazy file creation - custom configs only created when modified
-  - Per-server enable/disable with independent state per server
-  - Template version tracking for update management
-  
-- **Auto-Detection for Server Templates** - Automatic discovery during server inspection
-  - **n8n Detection** - systemd service, binary version, port 5678, ~/.n8n directory
-  - **HestiaCP Detection** - /usr/local/hestia, CLI tools, port 8083, version info
-  - **Gitea Detection** - systemd service, binary version, port 3000, /var/lib/gitea paths
-  - Auto-initialization of detected templates with version and path info
-  
-- **Server Template CLI Commands** (`navig server-template`)
-  - `navig server-template list [--server NAME] [--enabled]` - List templates for a server
-  - `navig server-template show TEMPLATE [--server NAME]` - Show merged template configuration
-  - `navig server-template enable TEMPLATE [--server NAME]` - Enable template for specific server
-  - `navig server-template disable TEMPLATE [--server NAME]` - Disable template for specific server
-  - `navig server-template set TEMPLATE KEY VALUE [--server NAME]` - Set custom configuration value
-  - `navig server-template sync TEMPLATE [--server NAME] [--force]` - Sync from template (preserves custom settings by default)
-  - `navig server-template init TEMPLATE [--server NAME] [--enable]` - Manually initialize template
-  - All commands support `--server` option (defaults to active server)
-  - Rich table output with status, version, source, and customization indicators
-  
-- **Template Sync Mechanism**
-  - Preserve custom settings by default during template updates
-  - `--force` flag to reset to template defaults
-  - Version tracking shows when templates are updated
-  - Deep merge strategy maintains nested customizations
-
-#### Template System
-- **Plugin-Based Template Architecture** - Dynamic management of server-specific configurations without application restarts
-  - Self-contained template packages with JSON metadata (template.json)
-  - Server-specific paths, connection details, services, and commands
-  - Hot-swapping support - enable/disable templates at runtime
-  - Lifecycle hooks: onEnable, onDisable, onLoad, onUnload
-  - Dependency resolution with circular dependency prevention
-  - Lazy loading - only enabled templates are loaded into memory
-  - Automatic configuration merging into server configs
-  
-- **Pre-Built Templates** - Three production-ready templates included:
-  - **HestiaCP** - Web hosting control panel integration
-    - 8 predefined paths (hestia_root, web_root, backup_dir, etc.)
-    - 7 services (nginx, php-fpm, mysql, exim4, bind9, vsftpd)
-    - 5 common commands (v-list-users, v-backup-user, v-restart-web, etc.)
-    - API integration support
-  - **n8n** - Workflow automation platform integration
-    - 5 paths (n8n_home, workflows_dir, credentials_dir, log_dir)
-    - Systemd service management
-    - 7 commands (start/stop/restart, export/import workflows, logs)
-    - Environment variable configuration (N8N_HOST, N8N_PORT, WEBHOOK_URL)
-    - Webhook and API endpoint support
-  - **Gitea** - Self-hosted Git service integration
-    - 7 paths (gitea_root, repositories, config, backup_dir, log_dir)
-    - Git and Gitea service management
-    - 8 commands (backup, list repos, version check, service control)
-    - Multi-database support (SQLite3, MySQL, PostgreSQL)
-    - API token authentication
-    
-- **Template CLI Commands**
-  - `navig template list` - List all available templates with status
-  - `navig template enable <name>` - Enable template with dependency checking
-  - `navig template disable <name>` - Disable template with dependent warning
-  - `navig template toggle <name>` - Toggle template state
-  - `navig template info <name>` - Show detailed template information
-  - `navig template validate` - Validate all template configurations
-
-#### MCP Integration
-- **MCP (Model Context Protocol) Server Management** - Discovery, installation, and process management for MCP servers
-  - Directory search from MCP ecosystem
-  - Automated installation (npm, Python, standalone)
-  - Process lifecycle management (start/stop/restart)
-  - Multi-server support with enable/disable
-  - Status monitoring and health checks
-  
-- **MCP CLI Commands**
-  - `navig mcp search <query>` - Search MCP directory for servers
-  - `navig mcp install <name>` - Install MCP server from directory
-  - `navig mcp uninstall <name>` - Uninstall MCP server
-  - `navig mcp list` - List installed MCP servers
-  - `navig mcp enable <name>` - Enable MCP server
-  - `navig mcp disable <name>` - Disable MCP server
-  - `navig mcp start <name|all>` - Start MCP server(s)
-  - `navig mcp stop <name|all>` - Stop MCP server(s)
-  - `navig mcp restart <name>` - Restart MCP server
-  - `navig mcp status <name>` - Show detailed MCP server status
-  
-- **Built-in MCP Server Support**
-  - Filesystem - Local filesystem access
-  - GitHub - GitHub API integration
-  - SQLite - SQLite database access
-  - Brave Search - Web search via Brave API
-
-### Changed
-
-#### Architecture Improvements
-- Enhanced Rich console output with professional formatting
-- Centralized console_helper module for consistent UI
-- Improved error handling and validation across all modules
-- Standardized command patterns for template and MCP management
-
-### Fixed
-- Windows temp directory permission issues in test suite
-- Template configuration merging now properly preserves original server settings
-- MCP process management handles graceful shutdown with timeout
-
-## [1.0.0] - Previous Release
-
-Initial release with core functionality:
-- SSH tunnel management
-- Multi-server support
-- Database operations (SQL execution, backup, restore)
-- File operations (upload, download, list)
-- Remote command execution
-- Service monitoring and management
-- AI-powered assistance
-- Health checks and log viewing
-
----
-
-For more information about these features, see the [README.md](README.md) documentation.
-
-
-
-
 
