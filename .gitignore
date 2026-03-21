@@ -1,5 +1,5 @@
-# ===============================================
-# NAVIG CLI — Git Ignore Configuration
+﻿# ===============================================
+# NAVIG CLI вЂ” Git Ignore Configuration
 # ===============================================
 # This file specifies intentionally untracked files that Git should ignore.
 # See: https://git-scm.com/docs/gitignore
@@ -143,14 +143,14 @@ discord-*.json              # Discord config with secrets
 vault.salt                  # Vault salt file
 
 # Cython compiled binaries (generated at build time, not committed)
-*.pyd                       # Cython/C extension — Windows
+*.pyd                       # Cython/C extension вЂ” Windows
 # *.so compiled by Cython are already covered by *.so above
 
 # NAVIG Configuration
-# .navig/ is project-local runtime state (plans, wiki, apps, logs) — user-specific, NOT for VCS
-# ~/.navig/ is the global user store — absolute path, not relevant as a gitignore rule
-.navig/*                    # Project-local NAVIG state — keep only profile.json
-!.navig/profile.json        # MVP allowlist — keep profile only
+# .navig/ is project-local runtime state (plans, wiki, apps, logs) вЂ” user-specific, NOT for VCS
+# ~/.navig/ is the global user store вЂ” absolute path, not relevant as a gitignore rule
+.navig/*                    # Project-local NAVIG state вЂ” keep only profile.json
+!.navig/profile.json        # MVP allowlist вЂ” keep profile only
 .archive/                   # Local archive / cleanup staging
 nohup.out                   # Background process output
 
@@ -173,7 +173,7 @@ nohup.out                   # Background process output
 # Testing and Coverage
 # ===============================================
 .pytest_cache/              # Pytest cache
-.benchmarks/                # Benchmark results — local only, not for VCS
+.benchmarks/                # Benchmark results вЂ” local only, not for VCS
 .coverage                   # Coverage data
 htmlcov/                    # HTML coverage reports
 .tox/                       # Tox testing
@@ -192,11 +192,11 @@ site/                       # MkDocs build directory
 # App-Specific
 # ===============================================
 
-# Documentation and Tests (tracked — essential to the project)
+# Documentation and Tests (tracked вЂ” essential to the project)
 # docs/
 # tests/
 
-# Scripts — keep only public install/bootstrap entrypoints tracked
+# Scripts вЂ” keep only public install/bootstrap entrypoints tracked
 scripts/*
 !scripts/bootstrap_navig_linux.sh
 !scripts/github-bootstrap.sh
@@ -214,6 +214,7 @@ scripts/*
 !scripts/navig-tunnel.sh
 !scripts/bridge-tunnel.service
 !scripts/README.md
+!scripts/release.sh
 
 # ===============================================
 # OS-Specific
@@ -251,7 +252,7 @@ cython_debug/               # Cython debug symbols
 node_modules/
 
 # AI IDE Configuration
-# .agents/ .claude/ .codex/ .gemini/ are TRACKED — auto-synced from
+# .agents/ .claude/ .codex/ .gemini/ are TRACKED вЂ” auto-synced from
 # .github/copilot-instructions.md via scripts/sync-instructions.ps1
 # Per-developer overrides only:
 .augment
@@ -312,7 +313,7 @@ audit_slugs.py
 validate_prompts.py
 
 # Root output / tracking files
-audit_log.txt               # Agent session audit log — user-specific
+audit_log.txt               # Agent session audit log вЂ” user-specific
 ft4.txt                     # Dev scratch output
 latest.json                 # Stale release metadata artifact
 pytest_fail.txt
@@ -329,7 +330,7 @@ temp_restore/
 # Runtime local data (user-specific, not for VCS)
 userdata/
 
-# host/ — compiled binaries and runtime logs
+# host/ вЂ” compiled binaries and runtime logs
 host/out.log
 host/build_errors.txt
 host/*.exe
@@ -337,7 +338,7 @@ host/*.exe
 # Community stub folder (separate repo at navig-community/)
 navig-community/
 
-# store/ at repo root is the built-in content package store — it IS tracked.
+# store/ at repo root is the built-in content package store вЂ” it IS tracked.
 # Only exclude generated/runtime artifacts within it if they appear:
 store/cache/
 store/tmp/
@@ -346,7 +347,7 @@ store/*.log
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
 
-# Private dev-only plugin — never commit
+# Private dev-only plugin вЂ” never commit
 navig/plugins/llm_bridge/
 navig/plugins/llm-bridge/
 
@@ -388,5 +389,6 @@ scripts/**
 !scripts/navig-tunnel.sh
 !scripts/bridge-tunnel.service
 !scripts/README.md
+!scripts/release.sh
 . s e c r e t s . b a s e l i n e  
  
