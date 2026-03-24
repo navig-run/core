@@ -63,6 +63,38 @@ echo "✅ Tag $TAG created locally"
 git push origin "$TAG"
 echo "✅ Tag $TAG pushed to origin"
 echo ""
+echo "──────────────────────────────────────────"
+echo "  Building and publishing to PyPI"
+echo "──────────────────────────────────────────"
+
+# Ensure build and twine are available
+if ! python -m build --version &>/dev/null; then
+  echo "Installing build..."
+  pip install --quiet build twine
+fi
+
+# Clean previous dist artifacts, build fresh
+rm -rf dist/
+python -m build
+
+# Validate the distributions before uploading
+python -m twine check dist/*
+
+echo ""
+echo "Ready to upload to PyPI."
+echo "Ensure TWINE_USERNAME=__token__ and TWINE_PASSWORD=<your-api-token> are set,"
+echo "or that ~/.pypirc is configured."
+echo ""
+read -r -p "Upload to PyPI now? [y/N] " PYPI_REPLY
+if [[ "$PYPI_REPLY" =~ ^[Yy]$ ]]; then
+  python -m twine upload dist/*
+  echo "✅ Published navig==$VERSION to PyPI"
+  echo "   https://pypi.org/project/navig/$VERSION/"
+else
+  echo "⚠️  PyPI upload skipped. Run manually: python -m twine upload dist/*"
+fi
+
+echo ""
 echo "Next steps:"
 echo "  1. Create GitHub Release from $TAG in the repository UI"
 echo "  2. Update CHANGELOG.md — move [Unreleased] entries under [$VERSION]"

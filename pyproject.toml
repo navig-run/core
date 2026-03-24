@@ -107,65 +107,8 @@ navig = ["*.txt", "*.md", "help/*.md", "schemas/*.json"]
 "navig.resources" = ["workflows/*.yaml", "*.md"]
 "navig.agent.context" = ["*.md"]
 "navig_sdk" = ["*.md"]
-# Root content trees included in wheel/sdist
-"" = [
-    "store/skills/**/*.md",
-    "store/skills/**/*.json",
-    "store/skills/**/*.txt",
-    "store/skills/**/*.yaml",
-    "store/skills/**/*.py",
-    "store/templates/**/*.yaml",
-    "store/templates/**/*.yml",
-    "store/templates/**/*.txt",
-    "store/formations/**/*.json",
-    "store/formations/**/*.md",
-    "store/actions/**/*.yaml",
-    "store/actions/**/*.json",
-    "store/agents/**/*.json",
-    "store/agents/**/*.md",
-    "store/prompts/**/*.md",
-    "store/prompts/**/*.txt",
-    "store/stacks/**/*.yaml",
-    "store/stacks/**/*.yml",
-    "store/workflows/**/*.yaml",
-    "store/workflows/**/*.json",
-    "packages/**/*.json",
-    "packages/**/*.yaml",
-    "packages/**/*.yml",
-    "packages/**/*.md",
-    "packages/**/*.py",
-]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-minversion = "3.10"
-addopts = [
-  "-v",
-  "--tb=short",
-  "--strict-markers",
-  "--disable-warnings",
-  "--import-mode=importlib",
-  "--cov=navig.gateway.server",
-  "--cov=navig.daemon.telegram_worker",
-  "--cov=navig.daemon.service_manager",
-  "--cov=navig.contracts",
-  "--cov=navig.remote",
-  "--cov=navig.tunnel",
-  "--cov=navig.core.security",
-  "--cov=navig.routing.router",
-  "--cov-report=term-missing",
-  "--cov-fail-under=75",
-]
-asyncio_mode = "auto"
-markers = [
-  "unit: Unit tests for individual functions",
-  "integration: Integration tests requiring mocked dependencies",
-  "slow: Tests that take longer to run",
-  "requires_server: Tests that require actual server connection",
-]
+# Root content trees (store/, packages/) are included in sdist via MANIFEST.in.
+# They are not Python packages so cannot be listed as package-data keys.
 
 [tool.ruff]
 line-length = 100
