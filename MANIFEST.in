@@ -1,0 +1,38 @@
+# MANIFEST.in — controls files included in the sdist (source distribution).
+# Python wheels include only what is declared in [tool.setuptools.package-data].
+# Root-level content trees (not Python packages) are included here so that
+# developers installing from source (pip install -e .) get the full asset set.
+
+# Core documentation
+include README.md LICENSE NOTICE CHANGELOG.md ROADMAP.md
+include CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md
+
+# Default configuration templates
+recursive-include config *.yaml *.yml *.txt *.json
+
+# Runtime asset stores (skills, templates, formations, etc.)
+recursive-include store *.md *.json *.txt *.yaml *.yml *.py
+
+# Package manifests / pre-bundled packs
+recursive-include packages *.json *.yaml *.yml *.md *.py
+
+# Skills
+recursive-include skills *.md *.yaml *.yml *.json *.txt *.py
+
+# Workflow definitions
+recursive-include workflows *.yaml *.yml *.json
+
+# Plugin system
+recursive-include plugins *.py *.yaml *.json *.md
+
+# Deployment reference configs (not installed, but useful in source dist)
+recursive-include deploy *.yaml *.yml *.sh *.service *.conf *.sql
+
+# Exclude build artefacts and local-only paths
+prune build
+prune dist
+prune *.egg-info
+prune .local
+prune .navig
+prune __pycache__
+global-exclude *.pyc *.pyo *.pyd .DS_Store
