@@ -16,7 +16,8 @@
 Thumbs.db                   # Windows thumbnail cache
 desktop.ini                 # Windows folder settings
 nul                         # Windows NUL device artifact
-
+.archive/              # Local archive — not for VCS
+.agents/               # Local AI agent configs — not for public repo
 # ===============================================
 # Dev scripts generated during agent sessions
 # ===============================================
