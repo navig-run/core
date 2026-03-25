@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:curl",
+  "version": "1.0.0",
+  "name": "Curl",
+  "description": "Auto-generated scaffold for tool:curl",
+  "runtime": "python",
+  "entrypoint": "tools/curl.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

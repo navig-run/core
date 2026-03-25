@@ -1,0 +1,18 @@
+{
+  "name": "vivetool-feature-flags",
+  "description": "Enable, disable, or query Windows 11 feature experiments using ViVeTool",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig sys vivetool enable --ids {id1,id2}",
+    "navig sys vivetool disable --ids {id1,id2}",
+    "navig sys vivetool query --id {id}"
+  ],
+  "requires": [
+    "ViVeTool.exe (from C:\\USB\\system\\vivetool\\ViVeTool.exe)",
+    "Admin rights"
+  ],
+  "id": "skill:vivetool-feature-flags",
+  "tools": [
+    "tool:sys"
+  ]
+}

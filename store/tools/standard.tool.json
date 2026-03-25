@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:standard",
+  "version": "1.0.0",
+  "name": "Standard",
+  "description": "Auto-generated scaffold for tool:standard",
+  "runtime": "python",
+  "entrypoint": "tools/standard.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

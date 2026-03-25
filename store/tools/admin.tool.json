@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:admin",
+  "version": "1.0.0",
+  "name": "Admin",
+  "description": "Auto-generated scaffold for tool:admin",
+  "runtime": "python",
+  "entrypoint": "tools/admin.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

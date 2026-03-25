@@ -1,0 +1,14 @@
+{
+  "name": "check-disk-space",
+  "description": "Check disk space on remote servers via NAVIG",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig host use {host}",
+    "navig run \"df -h\""
+  ],
+  "id": "skill:disk-space",
+  "tools": [
+    "tool:host",
+    "tool:run"
+  ]
+}

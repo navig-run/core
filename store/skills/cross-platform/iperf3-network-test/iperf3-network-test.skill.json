@@ -1,0 +1,17 @@
+{
+  "name": "iperf3-network-test",
+  "description": "Run iperf3 network speed tests \u2014 client or server mode",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig net iperf3 client --host {host} --duration {seconds}",
+    "navig net iperf3 server",
+    "navig net iperf3 client --host {host} --udp --duration 10"
+  ],
+  "requires": [
+    "iperf3 (from C:\\USB\\network\\iperf3\\ on Windows; system iperf3 on Linux/Mac)"
+  ],
+  "id": "skill:iperf3-network-test",
+  "tools": [
+    "tool:net"
+  ]
+}

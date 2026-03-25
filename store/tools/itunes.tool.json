@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:itunes",
+  "version": "1.0.0",
+  "name": "Itunes",
+  "description": "Auto-generated scaffold for tool:itunes",
+  "runtime": "python",
+  "entrypoint": "tools/itunes.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

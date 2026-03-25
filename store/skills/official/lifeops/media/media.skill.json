@@ -1,0 +1,5 @@
+{
+  "name": "media-factory",
+  "description": "Media processing and playback automation using FFmpeg, MPV, and AutoHotkey.",
+  "id": "skill:media"
+}

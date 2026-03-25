@@ -1,0 +1,16 @@
+{
+  "name": "tmux-sessions",
+  "description": "Manage tmux sessions on remote Linux servers for persistent terminal sessions",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig run \"tmux list-sessions\"",
+    "navig run \"tmux new -d -s {name}\"",
+    "navig run \"tmux send-keys -t {session} '{command}' Enter\"",
+    "navig run \"tmux capture-pane -p -t {session}\"",
+    "navig run \"tmux kill-session -t {session}\""
+  ],
+  "id": "skill:tmux-sessions",
+  "tools": [
+    "tool:run"
+  ]
+}

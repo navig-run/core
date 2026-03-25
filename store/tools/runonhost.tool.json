@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:runonhost",
+  "version": "1.0.0",
+  "name": "Runonhost",
+  "description": "Auto-generated scaffold for tool:runonhost",
+  "runtime": "python",
+  "entrypoint": "tools/runonhost.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

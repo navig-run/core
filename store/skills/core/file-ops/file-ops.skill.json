@@ -1,0 +1,30 @@
+{
+  "name": "file-operations",
+  "version": "1.0.0",
+  "category": "system",
+  "safety": "moderate",
+  "description": "Essential file system operations.",
+  "user_invocable": true,
+  "navig-commands": [
+    {
+      "name": "list-files",
+      "syntax": "navig fs list <path>",
+      "description": "List files in a directory.",
+      "risk": "safe"
+    },
+    {
+      "name": "read-file",
+      "syntax": "navig fs read <path>",
+      "description": "Read file contents.",
+      "risk": "safe"
+    },
+    {
+      "name": "write-file",
+      "syntax": "navig fs write <path> <content>",
+      "description": "Write content to a file.",
+      "risk": "destructive",
+      "confirmation_msg": "Overwrite file at {path}?"
+    }
+  ],
+  "id": "skill:file-ops"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "screenshot-capture",
+  "description": "Capture screenshots of the full screen, a specific monitor, or a region",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig sys screenshot take",
+    "navig sys screenshot take --output {path.png}",
+    "navig sys screenshot take --monitor {index}",
+    "navig sys screenshot take --region {x,y,w,h}",
+    "navig sys screenshot monitors"
+  ],
+  "requires": [
+    {
+      "Windows": "Pillow or mss (pip install mss pillow)"
+    },
+    {
+      "macOS": "built-in screencapture"
+    },
+    {
+      "Linux": "scrot, gnome-screenshot, or imagemagick import"
+    }
+  ],
+  "id": "skill:screenshot-capture",
+  "tools": [
+    "tool:sys"
+  ]
+}

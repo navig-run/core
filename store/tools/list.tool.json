@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:list",
+  "version": "1.0.0",
+  "name": "List",
+  "description": "Auto-generated scaffold for tool:list",
+  "runtime": "python",
+  "entrypoint": "tools/list.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

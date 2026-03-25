@@ -1,0 +1,16 @@
+{
+  "name": "summarize-url",
+  "description": "Summarize web pages, articles, YouTube videos, and documents using AI",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig ai ask \"summarize {url}\""
+  ],
+  "requires": [
+    "curl (for fetching web content)",
+    "navig ai (for AI-powered summarization)"
+  ],
+  "id": "skill:summarize-url",
+  "tools": [
+    "tool:ai"
+  ]
+}

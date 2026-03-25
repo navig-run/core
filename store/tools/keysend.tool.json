@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:keysend",
+  "version": "1.0.0",
+  "name": "Keysend",
+  "description": "Auto-generated scaffold for tool:keysend",
+  "runtime": "python",
+  "entrypoint": "tools/keysend.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

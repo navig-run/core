@@ -1,0 +1,66 @@
+{
+  "tool_id": "win_perf_tuner",
+  "version": "1.0.0",
+  "description": "Windows system performance tuner — power plan, NTFS metadata cache, kernel paging, GPU HAGS, visual effects. Targets: all | power | kernel | gpu | fx. All changes are reversible.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  true,
+    "writes_files": false,
+    "network":      false
+  },
+  "timeouts": { "default_sec": 30 },
+  "commands": [
+    {
+      "id":      "scan",
+      "cli":     ["sys", "perf", "scan"],
+      "summary": "Audit current state of all performance settings — shows what is optimal, suboptimal, or missing",
+      "args": {
+        "flags": [
+          { "name": "--save", "type": "string", "default": null, "description": "Save JSON report to file" }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id":      "apply",
+      "cli":     ["sys", "perf", "apply"],
+      "summary": "Apply one or all performance tweaks. Targets: all | power | kernel | gpu | fx",
+      "args": {
+        "flags": [
+          { "name": "--target",  "type": "string", "default": "all",  "description": "Which tweak: all | power | kernel | gpu | fx" },
+          { "name": "--dry-run", "type": "bool",   "default": false },
+          { "name": "--yes",     "type": "bool",   "default": false,  "description": "Skip confirmation for destructive targets" }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id":      "revert",
+      "cli":     ["sys", "perf", "revert"],
+      "summary": "Revert one or all performance tweaks back to Windows defaults",
+      "args": {
+        "flags": [
+          { "name": "--target",  "type": "string", "default": "all" },
+          { "name": "--dry-run", "type": "bool",   "default": false },
+          { "name": "--yes",     "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id":      "status",
+      "cli":     ["sys", "perf", "status"],
+      "summary": "Quick one-line summary of active performance tweaks",
+      "args": { "flags": [], "positionals": [] },
+      "backend_preference": "worker"
+    }
+  ]
+}

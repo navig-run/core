@@ -337,11 +337,11 @@ sudo -u "$NAVIG_USER" tee "$NAVIG_HOME/.env" > /dev/null <<'ENVEOF'
 
 # Postgres
 POSTGRES_USER=navig
-POSTGRES_PASSWORD=navig_db_4k3n!s3cur3
+POSTGRES_PASSWORD=CHANGE_ME
 POSTGRES_DB=navig
 
 # Redis
-REDIS_PASSWORD=navig_redis_s3cr3t
+REDIS_PASSWORD=CHANGE_ME
 
 # Ollama
 OLLAMA_HOST=0.0.0.0
@@ -349,7 +349,7 @@ OLLAMA_MODELS=/root/.ollama/models
 
 # Gateway
 GATEWAY_PORT=8789
-GATEWAY_SECRET=navig_gw_t0k3n
+GATEWAY_SECRET=CHANGE_ME
 
 # Ports (all bind 127.0.0.1 only)
 DASHBOARD_PORT=3000
@@ -595,6 +595,12 @@ sudo -u "$NAVIG_USER" tee "$NAVIG_HOME/navig_healthcheck.sh" > /dev/null <<'HCEO
 # NAVIG Stack Healthcheck
 set -euo pipefail
 
+# Load credentials from stack .env
+ENVFILE="$(dirname "$0")/.env"
+if [ -f "$ENVFILE" ]; then
+  set -a; . "$ENVFILE"; set +a
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 PASS=0; FAIL=0
 
@@ -612,7 +618,7 @@ check() {
 echo "═══ NAVIG Healthcheck $(date) ═══"
 check "Docker running"       "systemctl is-active docker"
 check "Postgres healthy"     "docker exec navig-postgres pg_isready -U navig"
-check "Redis responds"       "docker exec navig-redis redis-cli -a navig_redis_s3cr3t ping | grep -q PONG"
+check "Redis responds"       "docker exec navig-redis redis-cli -a \"${REDIS_PASSWORD:-CHANGE_ME}\" ping | grep -q PONG"
 check "Ollama reachable"     "curl -sf http://127.0.0.1:11434/api/tags"
 check "Postgres port 5432"   "ss -tlnp | grep -q ':5432'"
 check "Redis port 6379"      "ss -tlnp | grep -q ':6379'"

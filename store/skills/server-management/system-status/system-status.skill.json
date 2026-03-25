@@ -1,0 +1,17 @@
+{
+  "name": "system-status",
+  "description": "Check server health - uptime, memory, CPU load, running processes, and general system info",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig host use {host}",
+    "navig run \"uptime\"",
+    "navig run \"free -h\"",
+    "navig run \"top -bn1 | head -20\"",
+    "navig run \"uname -a\""
+  ],
+  "id": "skill:system-status",
+  "tools": [
+    "tool:host",
+    "tool:run"
+  ]
+}

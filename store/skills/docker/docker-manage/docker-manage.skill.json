@@ -1,0 +1,15 @@
+{
+  "name": "docker-manage",
+  "description": "Manage Docker containers on remote servers via NAVIG",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig docker ps",
+    "navig docker logs {container}",
+    "navig docker restart {container}",
+    "navig docker stats"
+  ],
+  "id": "skill:docker-manage",
+  "tools": [
+    "tool:docker"
+  ]
+}

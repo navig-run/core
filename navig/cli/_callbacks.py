@@ -54,15 +54,23 @@ def make_subcommand_callback(name: str):
 
 
 def show_compact_help():
-    """Display domain-grouped help using the registry renderer."""
-    try:
-        from navig.cli.help import render_root_help
-        render_root_help()
-    except Exception:
-        from navig import __version__ as _version
-        typer.echo(f"NAVIG v{_version}")
-        typer.echo("  navig <command> [options]")
-        typer.echo("  navig help <cmd>  for details")
+    """Render navig/help/index.md with Rich Markdown, or fall back to bare text."""
+    from pathlib import Path as _Path
+    _help_index = _Path(__file__).resolve().parent.parent / "help" / "index.md"
+    if _help_index.exists():
+        try:
+            from rich.console import Console as _Console
+            from rich.markdown import Markdown as _MD
+            _Console(legacy_windows=True).print(_MD(_help_index.read_text(encoding="utf-8")))
+            raise typer.Exit()
+        except typer.Exit:
+            raise
+        except Exception:
+            pass
+    from navig import __version__ as _version
+    typer.echo(f"NAVIG v{_version}")
+    typer.echo("  navig <command> [options]")
+    typer.echo("  navig help <cmd>  for details")
     raise typer.Exit()
 
 

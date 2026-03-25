@@ -73,38 +73,38 @@ Unified database management for MySQL/MariaDB/PostgreSQL.
 
 ---
 
-## Server Monitoring (`navig monitor`)
+## Server Monitoring (`navig host monitor`)
 
-Real-time server monitoring and health checks.
+Real-time server monitoring and health checks, nested under `navig host`.
 
 | Command | Description |
 |---------|-------------|
-| `monitor resources` | CPU, RAM, disk, network usage |
-| `monitor disk [--threshold N]` | Disk space with alerts |
-| `monitor services` | Check critical service status |
-| `monitor network` | Network statistics |
-| `monitor health` | Comprehensive health check |
-| `monitor report` | Generate monitoring report |
+| `host monitor show` | Comprehensive health overview |
+| `host monitor show --resources` | CPU, RAM, disk, network usage |
+| `host monitor show --disk [--threshold N]` | Disk space with alerts |
+| `host monitor show --services` | Check critical service status |
+| `host monitor show --network` | Network statistics |
+| `host monitor show --process` | Top processes by CPU/memory |
+
+> **Note:** The deprecated `navig monitor` alias still works but will be removed in v3.0.
+> Use `navig host monitor show` going forward.
 
 ---
 
-## Security Management (`navig security`)
+## Security Management (`navig host security`)
 
-Firewall, intrusion detection, and security auditing.
+Firewall, intrusion detection, and security auditing, nested under `navig host`.
 
 | Command | Description |
 |---------|-------------|
-| `security firewall` | Show UFW firewall status |
-| `security firewall-add <port>` | Add firewall rule |
-| `security firewall-remove <port>` | Remove firewall rule |
-| `security firewall-enable` | Enable UFW firewall |
-| `security firewall-disable` | Disable UFW firewall |
-| `security fail2ban` | Show Fail2Ban status |
-| `security unban <ip>` | Unban IP from Fail2Ban |
-| `security ssh` | Audit SSH configuration |
-| `security updates` | Check security updates |
-| `security connections` | Audit network connections |
-| `security scan` | Run security scan |
+| `host security show` | Security overview |
+| `host security show --firewall` | Show UFW firewall rules |
+| `host security show --ssh` | Audit SSH configuration |
+| `host security show --fail2ban` | Show Fail2Ban status |
+| `host security show --updates` | Check security updates |
+
+> **Note:** The deprecated `navig security` alias still works but will be removed in v3.0.
+> Use `navig host security show` going forward.
 
 ---
 
@@ -131,29 +131,40 @@ Secure tunnel management for database access.
 
 | Command | Description |
 |---------|-------------|
-| `tunnel start` | Start SSH tunnel |
-| `tunnel stop` | Stop SSH tunnel |
-| `tunnel status [--plain]` | Show tunnel status |
-| `tunnel restart` | Restart tunnel |
+| `tunnel run` | Start SSH tunnel for active host |
+| `tunnel remove` | Stop and tear down tunnel |
+| `tunnel show [--plain]` | Show tunnel status |
+| `tunnel update` | Restart (stop + start) tunnel |
+| `tunnel auto` | Auto-detect and create tunnel |
+
+> **Note:** The old `tunnel start / stop / status / restart` aliases are deprecated.
+> Use `run / remove / show / update` instead.
 
 ---
 
-## File Operations
+## File Operations (`navig file`)
 
-Direct file management on remote servers.
+Direct file management on remote servers. All operations are under `navig file`.
 
 | Command | Description |
 |---------|-------------|
-| `upload <local> [remote]` | Upload file/directory |
-| `download <remote> [local]` | Download file/directory |
-| `cat <file>` | Display file contents |
-| `ls [path]` | List directory |
-| `tree [path]` | Show directory tree |
-| `mkdir <path>` | Create directory |
-| `delete <path>` | Delete file/directory |
-| `chmod <mode> <path>` | Change permissions |
-| `chown <owner> <path>` | Change ownership |
-| `write-file <path> <content>` | Write content to file |
+| `file add <local> [remote]` | Upload file or directory |
+| `file get <remote> [local]` | Download file |
+| `file show <remote>` | View file contents |
+| `file show <remote> --tail --lines 50` | View last 50 lines |
+| `file show <remote> --lines 100-200` | View line range |
+| `file list <dir>` | List directory |
+| `file list <dir> --tree --depth 3` | Tree view |
+| `file list <dir> --all` | Include hidden files |
+| `file edit <remote> --content "..."` | Write content to file |
+| `file edit <remote> --mode 755` | Change permissions |
+| `file edit <remote> --owner user:group` | Change ownership |
+| `file remove <remote>` | Delete file/directory |
+| `file remove <remote> --recursive` | Recursive delete |
+
+> **Note:** The legacy flat commands `navig upload`, `navig download`, `navig ls`,
+> `navig cat` still work for backward compatibility but are deprecated.
+> Use `navig file add / get / show / list` instead.
 
 ---
 
@@ -229,16 +240,16 @@ Container management.
 
 ---
 
-## HestiaCP (`navig hestia`)
+## HestiaCP (`navig web hestia`)
 
-HestiaCP control panel integration.
+HestiaCP control panel integration, nested under `navig web`.
 
 | Command | Description |
 |---------|-------------|
-| `hestia users [--plain]` | List HestiaCP users |
-| `hestia domains [--plain]` | List domains |
-| `hestia user-info <user>` | User details |
-| `hestia domain-info <domain>` | Domain details |
+| `web hestia list` | List HestiaCP virtual hosts |
+| `web hestia add <domain>` | Add domain to HestiaCP |
+| `web hestia remove <domain>` | Remove domain from HestiaCP |
 
-
+> **Note:** The deprecated `navig hestia` top-level alias still works but will be removed in v3.0.
+> Use `navig web hestia` going forward.
 

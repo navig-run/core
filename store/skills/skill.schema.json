@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://navig.ai/schemas/skill.schema.json",
+  "title": "NAVIG Skill Manifest",
+  "description": "Definition of a NAVIG Skill.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^skill:[a-zA-Z0-9_-]+$",
+      "description": "Unique identifier for the skill, prefixed with 'skill:'"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human readable name of the skill"
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of the skill's capabilities"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of the skill"
+    },
+    "user_invocable": {
+      "type": "boolean",
+      "description": "Whether the user can directly invoke this skill from the CLI or UI"
+    },
+    "triggers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Keywords or intent patterns that trigger this skill"
+    },
+    "navig-commands": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "NAVIG CLI commands this skill executes or demonstrates"
+    },
+    "tools": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^tool:[a-zA-Z0-9_-]+$" },
+      "description": "Reference to required tool schemas (prefixed with 'tool:')"
+    },
+    "requires": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Prerequisites or environment dependencies"
+    },
+    "author": {
+      "type": "string",
+      "description": "Author or maintainer of the skill"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Categorization tags"
+    }
+  },
+  "required": ["id", "name", "description"]
+}

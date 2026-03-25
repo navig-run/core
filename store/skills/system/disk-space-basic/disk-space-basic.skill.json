@@ -1,0 +1,35 @@
+{
+  "name": "disk-space-basic",
+  "version": "1.0.0",
+  "category": "system",
+  "tags": [
+    "storage",
+    "disk",
+    "monitoring",
+    "system"
+  ],
+  "safety": "safe",
+  "description": "Monitor system disk space and storage usage safely.",
+  "user_invocable": true,
+  "navig-commands": [
+    {
+      "name": "check-disk",
+      "syntax": "navig system disk",
+      "description": "Show disk usage for all mounted filesystems.",
+      "output-format": "table"
+    },
+    {
+      "name": "check-directory",
+      "syntax": "navig system storage --path <path>",
+      "description": "Analyze storage usage for a specific directory.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "The absolute path to analyze",
+          "required": true
+        }
+      }
+    }
+  ],
+  "id": "skill:disk-space-basic"
+}

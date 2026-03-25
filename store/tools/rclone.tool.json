@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:rclone",
+  "version": "1.0.0",
+  "name": "Rclone",
+  "description": "Auto-generated scaffold for tool:rclone",
+  "runtime": "python",
+  "entrypoint": "tools/rclone.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

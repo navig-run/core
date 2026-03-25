@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:outbound",
+  "version": "1.0.0",
+  "name": "Outbound",
+  "description": "Auto-generated scaffold for tool:outbound",
+  "runtime": "python",
+  "entrypoint": "tools/outbound.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

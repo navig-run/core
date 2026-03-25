@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:packdocker-health",
+  "version": "1.0.0",
+  "name": "Packdocker Health",
+  "description": "Auto-generated scaffold for tool:packdocker-health",
+  "runtime": "python",
+  "entrypoint": "tools/packdocker-health.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

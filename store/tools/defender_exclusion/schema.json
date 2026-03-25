@@ -1,0 +1,72 @@
+{
+  "tool_id": "defender_exclusion",
+  "version": "1.0.0",
+  "upstream_version": "built-in",
+  "upstream_note": "Uses Windows Defender PowerShell cmdlets (Add/Remove/Get-MpPreference) — no external binary required",
+  "description": "Manage Windows Defender (Antimalware) scan exclusions — add, remove, or list excluded paths, processes and extensions. Requires admin. Uses PowerShell MpPreference cmdlets.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  true,
+    "writes_files": false,
+    "network":      false
+  },
+  "timeouts": { "default_sec": 20 },
+  "commands": [
+    {
+      "id": "add-path",
+      "cli": ["sys", "defender", "exclude", "path"],
+      "summary": "Add a folder or file path to Defender exclusions",
+      "args": {
+        "flags": [
+          { "name": "--path",    "type": "string", "required": true, "description": "Full path to exclude from real-time scanning" },
+          { "name": "--dry-run", "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "remove-path",
+      "cli": ["sys", "defender", "exclude", "remove"],
+      "summary": "Remove a path from Defender exclusions",
+      "args": {
+        "flags": [
+          { "name": "--path",    "type": "string", "required": true },
+          { "name": "--dry-run", "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "list",
+      "cli": ["sys", "defender", "exclude", "list"],
+      "summary": "List all current Defender exclusions (paths, processes, extensions)",
+      "args": {
+        "flags": [
+          { "name": "--save", "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "add-process",
+      "cli": ["sys", "defender", "exclude", "process"],
+      "summary": "Exclude a process name from Defender scanning",
+      "args": {
+        "flags": [
+          { "name": "--process", "type": "string", "required": true, "description": "Process name (e.g. python.exe)" },
+          { "name": "--dry-run", "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

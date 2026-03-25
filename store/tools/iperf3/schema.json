@@ -1,0 +1,56 @@
+{
+  "tool_id": "iperf3",
+  "version": "1.0.0",
+  "upstream_version": "3.20",
+  "upstream_updated": "2025-11-14",
+  "download": {
+    \"windows\": \"https://github.com/ar51an/iperf3-win-builds/releases/download/3.20/iperf-3.20-win64.zip\",
+    "linux":   "apt install iperf3",
+    "mac":     "brew install iperf3"
+  },
+  "description": "Network bandwidth testing — run as client against a remote server, or start a local server. Uses the iperf3 binary from C:/USB/network/iperf3/ on Windows; system iperf3 on Linux/Mac.",
+  "os": ["windows", "linux", "mac"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  false,
+    "writes_files": false,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 60 },
+  "commands": [
+    {
+      "id": "client",
+      "cli": ["net", "iperf3", "client"],
+      "summary": "Run a bandwidth test to a remote iperf3 server",
+      "args": {
+        "flags": [
+          { "name": "--host",     "type": "string", "required": true,  "description": "Server hostname or IP" },
+          { "name": "--port",     "type": "int",    "default": 5201 },
+          { "name": "--duration", "type": "int",    "default": 10,    "description": "Test duration in seconds" },
+          { "name": "--json",     "type": "bool",   "default": false, "description": "Request JSON output from iperf3" },
+          { "name": "--dry-run",  "type": "bool",   "default": false },
+          { "name": "--save",     "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "server",
+      "cli": ["net", "iperf3", "server"],
+      "summary": "Start a local iperf3 server",
+      "args": {
+        "flags": [
+          { "name": "--port",    "type": "int",  "default": 5201 },
+          { "name": "--dry-run", "type": "bool", "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

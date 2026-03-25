@@ -22,10 +22,9 @@ Use `navig <cmd> --help` for full CLI help, or `navig help <topic>` for a short,
 - `backup` — backup and restore
 
 **Automation:**
-- `flow` — workflows
+- `flow` — workflows (canonical; `task` is an alias)
 - `cron` — job scheduling
 - `trigger` — event-driven automation
-- `task` — task queue
 - `scaffold` — project templates
 - `skills` — AI skill definitions
 

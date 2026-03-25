@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:gh",
+  "version": "1.0.0",
+  "name": "Gh",
+  "description": "Auto-generated scaffold for tool:gh",
+  "runtime": "python",
+  "entrypoint": "tools/gh.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

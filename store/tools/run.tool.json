@@ -1,0 +1,26 @@
+{
+  "id": "tool:run",
+  "name": "navig_run",
+  "description": "Execute NAVIG run operations.",
+  "version": "1.0",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "args": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Arguments for the command"
+      }
+    },
+    "required": [
+      "args"
+    ]
+  },
+  "execution": {
+    "type": "cli",
+    "target": "navig run"
+  },
+  "requires_approval": true
+}

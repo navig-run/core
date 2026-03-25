@@ -349,4 +349,50 @@ Debug logs are saved to `~/.navig/debug.log`
 3. **Report issues:**
    Include debug log output when reporting issues.
 
+---
+
+## Recently Fixed Issues (v2.4.15+)
+
+These bugs were caught from crash reports and are fixed in current builds.
+
+### Telegram bot restarts infinitely (exit code 1)
+
+**Symptom:** `daemon.log` shows thousands of restart cycles (`exit_code=1`, backoff
+2→4→8→16→32→64→120→2...).  Running a second Telegram polling session on the same
+token causes `ERROR: Conflict: terminated by other getUpdates request`.
+
+**Fix:** The daemon supervisor now stops retrying after 15 consecutive quick exits (<30 s).
+**Resolution:** Kill the conflicting bot process and run `navig bot status` to confirm only
+one instance is running.
+
+### `navig formation show --json` crashes on Windows (`OSError: Invalid argument`)
+
+**Symptom:** Running `navig formation show <name> --json` in VS Code's integrated terminal
+crashes with `OSError: [Errno 22] Invalid argument`.
+
+**Fix:** `formation.py` now uses `click.echo()` instead of `print()`, which handles Windows
+stdout encoding correctly.
+
+### MCP Forge not available on startup
+
+**Symptom:** `daemon.log` shows `MCP Forge not yet available: MCPClientManager.add_client()
+got an unexpected keyword argument 'name'`.
+
+**Fix:** The `MCPClientManager.add_client()` call now passes an `MCPClientConfig` object
+instead of keyword arguments.
+
+### Voice setup instructions fail (`~/.navig/.env not found`)
+
+**Symptom:** STT warning tells you to configure `DEEPGRAM_KEY` in `~/.navig/.env`, but that
+file no longer exists.
+
+**Fix:** The warning now says `run 'navig init' to configure DEEPGRAM_KEY or OPENAI_API_KEY`.
+
+### GROK/XAI API key not detected from vault
+
+**Symptom:** Voice features degrade even when `GROK_KEY` or `XAI_API_KEY` is stored in the
+vault.
+
+**Fix:** The key is now resolved via the vault resolver before falling back to environment
+variables.
 

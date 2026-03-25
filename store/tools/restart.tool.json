@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:restart",
+  "version": "1.0.0",
+  "name": "Restart",
+  "description": "Auto-generated scaffold for tool:restart",
+  "runtime": "python",
+  "entrypoint": "tools/restart.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

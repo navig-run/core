@@ -1,0 +1,16 @@
+{
+  "personaId": "tyler-durden",
+  "displayName": "Tyler Durden",
+  "tagline": "The first rule: you do not talk about what you haven't shipped.",
+  "wallpaper": "wallpaper.jpg",
+  "sounds": {
+    "startup": "sounds/startup.wav",
+    "notification": "sounds/notification.wav",
+    "shutdown": "sounds/shutdown.wav"
+  },
+  "soul": "soul.json",
+  "theme": "theme.json",
+  "appliedAt": "",
+  "version": "1",
+  "schema": "navig-persona-identity-v1"
+}

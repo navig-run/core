@@ -1,0 +1,41 @@
+{
+  "tool_id": "futurerestore",
+  "version": "1.0.0",
+  "upstream_version": "v2.0.0-Build_321",
+  "upstream_updated": "2024-01-01",
+  "upstream_note": "Use nightly builds from cdn.cryptiiiic.com or nightly.link — v194 is deprecated",
+  "download": {
+    "windows": "https://cdn.cryptiiiic.com/bin/Windows/x86_64/futurerestore/futurerestore-Windows-x86_64-v2.0.0-Build_321-RELEASE.exe",
+    "linux":   "https://nightly.link/futurerestore/futurerestore/workflows/ci/main",
+    "mac":     "https://nightly.link/futurerestore/futurerestore/workflows/ci/main"
+  },
+  "description": "Restore iOS devices to unsigned firmware using saved SHSH2 blobs. Uses bundled futurerestore.exe from C:/USB/ios/futurerestore/. Requires device in pwned DFU mode.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  true,
+    "writes_files": false,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 600 },
+  "commands": [
+    {
+      "id": "restore",
+      "cli": ["ios", "futurerestore", "restore"],
+      "summary": "Restore iOS device to IPSW using a .shsh2 blob (pwned DFU required)",
+      "args": {
+        "flags": [
+          { "name": "--blob",    "type": "string", "required": true, "description": "Path to .shsh2 blob file" },
+          { "name": "--ipsw",    "type": "string", "required": true, "description": "Path to .ipsw firmware file" },
+          { "name": "--dry-run", "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:windowmove",
+  "version": "1.0.0",
+  "name": "Windowmove",
+  "description": "Auto-generated scaffold for tool:windowmove",
+  "runtime": "python",
+  "entrypoint": "tools/windowmove.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

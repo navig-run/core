@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible defect in NAVIG Core
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps and command output
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: NAVIG version
+      placeholder: "e.g. 2.1.0"
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, shell, relevant config context

@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:uptime",
+  "version": "1.0.0",
+  "name": "Uptime",
+  "description": "Auto-generated scaffold for tool:uptime",
+  "runtime": "python",
+  "entrypoint": "tools/uptime.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

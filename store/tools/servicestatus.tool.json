@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:servicestatus",
+  "version": "1.0.0",
+  "name": "Servicestatus",
+  "description": "Auto-generated scaffold for tool:servicestatus",
+  "runtime": "python",
+  "entrypoint": "tools/servicestatus.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

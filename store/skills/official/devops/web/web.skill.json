@@ -1,0 +1,5 @@
+{
+  "name": "nginx-web",
+  "description": "Web server and reverse proxy management.",
+  "id": "skill:web"
+}

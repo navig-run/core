@@ -1,0 +1,85 @@
+{
+  "tool_id": "telemetry_auditor",
+  "version": "1.0.0",
+  "description": "Privacy audit: captures all outbound/inbound network connections from VS Code and Windows telemetry services, traces each endpoint to its owner (WHOIS/ASN/PTR/GeoIP), maps data categories, locates local staging files, and generates a classified risk report. Read-only — makes no network changes.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  true,
+    "writes_files": false,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 60 },
+  "commands": [
+    {
+      "id":      "scan",
+      "cli":     ["telemetry", "audit", "scan"],
+      "summary": "Step 1+2 — Capture active TCP connections, resolve PIDs to process names, match against known telemetry FQDNs. Read-only.",
+      "args": {
+        "flags": [
+          { "name": "--filter",  "type": "string", "default": "all",  "description": "Filter scope: 'vscode' | 'windows' | 'all'" },
+          { "name": "--resolve", "type": "bool",   "default": true,   "description": "Resolve remote IPs to hostnames via PTR lookup" },
+          { "name": "--timeout", "type": "int",    "default": 60 },
+          { "name": "--save",    "type": "string", "default": null,   "description": "Save JSON output to this file path" }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id":      "whois",
+      "cli":     ["telemetry", "audit", "whois"],
+      "summary": "Step 3 — Trace ownership of a remote IP: WHOIS via RDAP, ASN via BGPView, PTR reverse-DNS, GeoIP via ipinfo.io. Passive lookups only.",
+      "args": {
+        "flags": [
+          { "name": "--ip",      "type": "string", "required": true,  "description": "Remote IP address to look up" },
+          { "name": "--timeout", "type": "int",    "default": 15 },
+          { "name": "--save",    "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id":      "sources",
+      "cli":     ["telemetry", "audit", "sources"],
+      "summary": "Step 5 — Enumerate local telemetry staging files, ETL logs, Watson crash queues, DiagTrack registry keys. Read-only.",
+      "args": {
+        "flags": [
+          { "name": "--save",    "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id":      "report",
+      "cli":     ["telemetry", "audit", "report"],
+      "summary": "Step 6 — Full audit: run scan + sources, then generate the classified risk table (Process / Remote Host / Owner / Country / Data Category / Risk Level / Status).",
+      "args": {
+        "flags": [
+          { "name": "--filter",  "type": "string", "default": "all" },
+          { "name": "--resolve", "type": "bool",   "default": true },
+          { "name": "--timeout", "type": "int",    "default": 90 },
+          { "name": "--save",    "type": "string", "default": null,   "description": "Save report to file (JSON + Markdown)" }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id":      "cmdref",
+      "cli":     ["telemetry", "audit", "cmdref"],
+      "summary": "Print the complete copy-pasteable command reference for Steps 1–5 (PowerShell, netstat, Wireshark, ETW, WMI).",
+      "args": {
+        "flags": [],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

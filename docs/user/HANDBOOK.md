@@ -393,6 +393,70 @@ navig local         # Local operations menu
 
 ---
 
+## 1.7 In-App Help System
+
+NAVIG ships a built-in help system for quick offline reference without
+leaving the terminal.
+
+### List All Topics
+
+```bash
+navig help
+```
+
+Prints a table of every available help topic and a one-line description.
+Use this to discover topics you can dive into.
+
+### View a Topic
+
+```bash
+navig help <topic>
+```
+
+Renders the full Markdown topic file for that resource group.
+
+**Examples:**
+
+```bash
+navig help db          # Database operations
+navig help host        # Host management
+navig help run         # Remote command execution
+navig help file        # File operations
+navig help backup      # Backup and restore
+navig help docker      # Container management
+navig help tunnel      # SSH tunnels
+navig help web         # Web server management
+navig help config      # Configuration management
+navig help flow        # Workflows and automation
+navig help wiki        # Wiki and knowledge base
+navig help ai          # AI assistant
+```
+
+### Machine-Readable Schema
+
+Output the full command schema as JSON (for shell completion or AI tooling):
+
+```bash
+navig --schema
+# or
+navig help --schema
+```
+
+This emits a JSON document listing every command group, its description,
+and all subcommands. Pipe it to `jq` or use it in automation scripts.
+
+### Per-Command Help
+
+Every command and subcommand also exposes `--help` via Typer:
+
+```bash
+navig db --help
+navig db list --help
+navig host monitor show --help
+```
+
+---
+
 ## 2. Host Management
 
 Manage remote server configurations.

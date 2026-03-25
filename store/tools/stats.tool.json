@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:stats",
+  "version": "1.0.0",
+  "name": "Stats",
+  "description": "Auto-generated scaffold for tool:stats",
+  "runtime": "python",
+  "entrypoint": "tools/stats.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

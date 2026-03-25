@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:nssm",
+  "version": "1.0.0",
+  "name": "Nssm",
+  "description": "Auto-generated scaffold for tool:nssm",
+  "runtime": "python",
+  "entrypoint": "tools/nssm.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

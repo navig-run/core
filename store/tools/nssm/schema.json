@@ -1,0 +1,90 @@
+{
+  "tool_id": "nssm",
+  "version": "1.0.0",
+  "upstream_version": "2.24-101-g897c7ad",
+  "upstream_updated": "2017-04-26",
+  "download": {
+    "windows": "https://nssm.cc/release/nssm-2.24.zip"
+  },
+  "description": "Non-Sucking Service Manager — install any Windows executable as a persistent service. Uses bundled nssm.exe from C:/USB/system/nssm/win64/.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  true,
+    "writes_files": false,
+    "network":      false
+  },
+  "timeouts": { "default_sec": 30 },
+  "commands": [
+    {
+      "id": "install",
+      "cli": ["sys", "nssm", "install"],
+      "summary": "Install a program as a Windows service",
+      "args": {
+        "flags": [
+          { "name": "--service-name", "type": "string", "required": true },
+          { "name": "--program",      "type": "string", "required": true, "description": "Full path to executable" },
+          { "name": "--dry-run",      "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "start",
+      "cli": ["sys", "nssm", "start"],
+      "summary": "Start an NSSM-managed Windows service",
+      "args": {
+        "flags": [
+          { "name": "--service-name", "type": "string", "required": true },
+          { "name": "--dry-run",      "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "stop",
+      "cli": ["sys", "nssm", "stop"],
+      "summary": "Stop an NSSM-managed Windows service",
+      "args": {
+        "flags": [
+          { "name": "--service-name", "type": "string", "required": true },
+          { "name": "--dry-run",      "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "remove",
+      "cli": ["sys", "nssm", "remove"],
+      "summary": "Remove an NSSM-managed service (requires --yes)",
+      "args": {
+        "flags": [
+          { "name": "--service-name", "type": "string", "required": true },
+          { "name": "--yes",          "type": "bool",   "default": false },
+          { "name": "--dry-run",      "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "status",
+      "cli": ["sys", "nssm", "status"],
+      "summary": "Show the status of an NSSM-managed service",
+      "args": {
+        "flags": [
+          { "name": "--service-name", "type": "string", "required": true }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

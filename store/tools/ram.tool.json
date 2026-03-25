@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:ram",
+  "version": "1.0.0",
+  "name": "Ram",
+  "description": "Auto-generated scaffold for tool:ram",
+  "runtime": "python",
+  "entrypoint": "tools/ram.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

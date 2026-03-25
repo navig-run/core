@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:search",
+  "version": "1.0.0",
+  "name": "Search",
+  "description": "Auto-generated scaffold for tool:search",
+  "runtime": "python",
+  "entrypoint": "tools/search.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}
