@@ -168,7 +168,7 @@ nohup.out                   # Background process output
 *.tgz                       # Compressed archives
 *.rar                       # Archives
 *-upload.tgz                # Upload artifacts
-
+audit_log.txt
 # ===============================================
 # Testing and Coverage
 # ===============================================
@@ -252,8 +252,8 @@ cython_debug/               # Cython debug symbols
 node_modules/
 
 # AI IDE Configuration
-# .agents/ .claude/ .codex/ .gemini/ are TRACKED вЂ” auto-synced from
-# .github/copilot-instructions.md via scripts/sync-instructions.ps1
+.agents/                    # AI agent rules/skills — local only, not public
+.github/                    # GitHub config — local only, not public
 # Per-developer overrides only:
 .augment
 .clinerules
@@ -290,6 +290,7 @@ test_run.log
 test_vault.log
 failed_test*.txt
 raw_out.txt
+audit_log.txt
 cli_analysis.txt
 
 # Root-level dev scratch scripts (one-off, not part of package)
@@ -390,5 +391,35 @@ scripts/**
 !scripts/bridge-tunnel.service
 !scripts/README.md
 !scripts/release.sh
-. s e c r e t s . b a s e l i n e  
- 
+# ================================================
+# Agent-session temporary scripts and output dumps
+# ================================================
+# Fix/inspect one-off scripts (keep in .local/ if needed)
+/fix_*.py
+/inspect_*.py
+/replace_*.py
+/undo_fix.py
+# Lint output dumps
+/ruff_out*.txt
+# Test output dumps
+/pytest_out*.txt
+/pytest_final*.txt
+/pytest_sec*.txt
+/pytest_temp*.txt
+/tests_res.txt
+# Coverage output dumps
+/cov_*.txt
+/coverage_report.txt
+/full_cov.txt
+/session_cov.txt
+# General output dumps
+/err.txt
+/output.txt
+# Ruff F821 investigation artifacts
+/f821*.txt
+/f821*.json
+/new_f821.txt
+# Root-level HTML artifacts
+/*.html
+# Stale release metadata
+/latest.json
