@@ -1,0 +1,18 @@
+# Normalize all text files to LF on commit and checkout
+* text=auto eol=lf
+
+# Explicitly binary — never touch line endings
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.whl binary
+*.pyc binary
+*.pyd binary
+*.so binary
+*.dll binary
+*.exe binary
+
+# SVG is text, keep LF
+*.svg text eol=lf
