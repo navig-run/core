@@ -20,8 +20,6 @@ repos:
       - id: check-merge-conflict
       - id: check-case-conflict
       - id: detect-private-key
-      - id: mixed-line-ending
-        args: [--fix=lf]
 
   # Secret detection
   - repo: https://github.com/Yelp/detect-secrets
@@ -123,7 +121,7 @@ repos:
 
 # CI configuration
 ci:
-  autofix_prs: true
+  autofix_prs: false
   autofix_commit_msg: '[pre-commit.ci] Auto-fix'
   autoupdate_commit_msg: '[pre-commit.ci] Auto-update pre-commit hooks'
   autoupdate_schedule: weekly
