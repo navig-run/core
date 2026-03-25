@@ -1,4 +1,5 @@
 """navig.tui.widgets.brand_hero — Animated NAVIG logo widget."""
+
 from __future__ import annotations
 
 from typing import Any

@@ -25,11 +25,11 @@ navig run "df -h"
 
 **Weirdness:**
 
-- 
+-
 
 ---
 
-Tested by:  
-Date:  
-Host OS:  
-NAVIG version (`navig --version`):  
+Tested by:
+Date:
+Host OS:
+NAVIG version (`navig --version`):

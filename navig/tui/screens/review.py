@@ -1,6 +1,7 @@
 """
 navig.tui.screens.review — ReviewScreen, ConfirmModal, FinalScreen.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,7 +20,6 @@ from navig.tui.config_model import (
     detect_environment,
 )
 from navig.tui.widgets.summary_panel import SummaryPanel
-
 
 # ---------------------------------------------------------------------------
 # ConfirmModal
@@ -108,7 +108,9 @@ class ReviewScreen(Screen):  # type: ignore[type-arg]
             yield SummaryPanel(self._cfg, id="review-summary")
             yield Label("")
             with Horizontal(id="review-btns"):
-                yield Button("Confirm & Install  ✔", variant="primary", id="btn-confirm")
+                yield Button(
+                    "Confirm & Install  ✔", variant="primary", id="btn-confirm"
+                )
                 yield Button("← Edit", variant="default", id="btn-back")
 
     def on_mount(self) -> None:
@@ -176,9 +178,9 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
 
     def compose(self):  # type: ignore[override]
         env = detect_environment()
-        packs_str = "  ".join(
-            f"{p.capitalize()} ✔" for p in self._cfg.capability_packs
-        ) or "—"
+        packs_str = (
+            "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs) or "—"
+        )
         summary_text = (
             f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
             f"\n"
@@ -194,8 +196,12 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
                 yield Static(summary_text, id="final-summary", markup=True)
                 yield RichLog(id="final-log", markup=True, highlight=False, wrap=False)
                 with Horizontal(id="final-footer"):
-                    yield Button("Press Enter to launch  →", variant="primary", id="btn-exit")
-                    yield Button("Retry write", variant="warning", id="btn-retry", display=False)
+                    yield Button(
+                        "Press Enter to launch  →", variant="primary", id="btn-exit"
+                    )
+                    yield Button(
+                        "Retry write", variant="warning", id="btn-retry", display=False
+                    )
             yield Label(
                 "  [dim]Try:[/dim]  [bold #22d3ee]navig ask 'hello'[/bold #22d3ee]",
                 id="final-hint",
@@ -208,11 +214,12 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
     @work(exclusive=True)
     async def _run_registration(self) -> None:
         from navig.commands.onboard import (
-            save_config,
-            create_workspace_templates,
-            sync_to_env,
             _store_in_vault,
+            create_workspace_templates,
+            save_config,
+            sync_to_env,
         )
+
         log: RichLog = self.query_one("#final-log", RichLog)
         retry_btn: Button = self.query_one("#btn-retry", Button)
         try:
@@ -221,7 +228,10 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             # Vault-store API key if provided
             if self._cfg.api_key:
                 vault_id = _store_in_vault(
-                    self._cfg.ai_provider, "api_key", self._cfg.api_key, "api_key",
+                    self._cfg.ai_provider,
+                    "api_key",
+                    self._cfg.api_key,
+                    "api_key",
                 )
                 if vault_id:
                     cfg_dict["auth"]["profiles"][self._cfg.ai_provider] = {
@@ -243,6 +253,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
 
             try:
                 from pathlib import Path
+
                 create_workspace_templates(Path(self._cfg.workspace_root))
             except Exception:  # noqa: BLE001
                 pass
@@ -259,9 +270,10 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             await asyncio.sleep(0.5)
             summary_widget: Static = self.query_one("#final-summary", Static)
             env = detect_environment()
-            packs_str = "  ".join(
-                f"{p.capitalize()} ✔" for p in self._cfg.capability_packs
-            ) or "—"
+            packs_str = (
+                "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs)
+                or "—"
+            )
             summary_widget.update(
                 f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
                 f"\n"

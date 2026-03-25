@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for defender_exclusion (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -8,13 +9,15 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
 from common import err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
-from worker import cmd_path, cmd_remove, cmd_list, cmd_process  # noqa: E402
+from worker import cmd_list, cmd_path, cmd_process, cmd_remove  # noqa: E402
 
 TOOL = "defender_exclusion"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig sys defender", description="Windows Defender exclusion manager")
+    parser = argparse.ArgumentParser(
+        prog="navig sys defender", description="Windows Defender exclusion manager"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_path = sub.add_parser("exclude", help="Add path/process exclusion")

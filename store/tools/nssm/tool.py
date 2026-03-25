@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for nssm (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -8,13 +9,21 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
 from common import err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
-from worker import cmd_install, cmd_start, cmd_stop, cmd_remove, cmd_status  # noqa: E402
+from worker import (  # noqa: E402
+    cmd_install,
+    cmd_remove,
+    cmd_start,
+    cmd_status,
+    cmd_stop,
+)
 
 TOOL = "nssm"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig sys nssm", description="NSSM Windows service manager")
+    parser = argparse.ArgumentParser(
+        prog="navig sys nssm", description="NSSM Windows service manager"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_install = sub.add_parser("install", help="Install a service")

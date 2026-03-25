@@ -6,6 +6,7 @@ webhook secret, and enabled flag.
 Bindings: ctrl+s=save, escape=cancel.
 On save: posts SettingsSaved("Gateway").
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -24,8 +25,8 @@ class GatewaySettingsScreen(Screen):  # type: ignore[type-arg]
     """Gateway / Telegram channel settings."""
 
     BINDINGS = [
-        Binding("ctrl+s",  "save",   "Save",   show=True),
-        Binding("escape",  "cancel", "Cancel", show=True),
+        Binding("ctrl+s", "save", "Save", show=True),
+        Binding("escape", "cancel", "Cancel", show=True),
     ]
 
     DEFAULT_CSS = """
@@ -65,16 +66,22 @@ class GatewaySettingsScreen(Screen):  # type: ignore[type-arg]
     def _load() -> dict:
         try:
             from navig.tui.config_model import load_navig_json
+
             raw = load_navig_json() or {}
             gw = raw.get("gateway", {})
             return {
-                "webhook_url":    gw.get("webhook_url", ""),
-                "bot_token":      gw.get("telegram", {}).get("bot_token", ""),
+                "webhook_url": gw.get("webhook_url", ""),
+                "bot_token": gw.get("telegram", {}).get("bot_token", ""),
                 "webhook_secret": gw.get("webhook_secret", ""),
-                "enabled":        bool(gw.get("enabled", False)),
+                "enabled": bool(gw.get("enabled", False)),
             }
         except Exception:  # noqa: BLE001
-            return {"webhook_url": "", "bot_token": "", "webhook_secret": "", "enabled": False}
+            return {
+                "webhook_url": "",
+                "bot_token": "",
+                "webhook_secret": "",
+                "enabled": False,
+            }
 
     def compose(self) -> ComposeResult:
         d = self._initial
@@ -85,13 +92,21 @@ class GatewaySettingsScreen(Screen):  # type: ignore[type-arg]
             yield Switch(value=d["enabled"], id="gw-enabled")
 
             yield Label("Webhook URL", classes="field-label", markup=False)
-            yield Input(value=d["webhook_url"], placeholder="https://…", id="gw-webhook-url")
+            yield Input(
+                value=d["webhook_url"], placeholder="https://…", id="gw-webhook-url"
+            )
 
             yield Label("Telegram Bot Token", classes="field-label", markup=False)
-            yield Input(value=d["bot_token"], placeholder="123456:ABC-…", id="gw-bot-token")
+            yield Input(
+                value=d["bot_token"], placeholder="123456:ABC-…", id="gw-bot-token"
+            )
 
             yield Label("Webhook Secret", classes="field-label", markup=False)
-            yield Input(value=d["webhook_secret"], placeholder="optional shared secret", id="gw-webhook-secret")
+            yield Input(
+                value=d["webhook_secret"],
+                placeholder="optional shared secret",
+                id="gw-webhook-secret",
+            )
 
             with Horizontal(id="gw-btns"):
                 yield Button("Save  [ctrl+s]", variant="primary", id="btn-save")
@@ -113,16 +128,22 @@ class GatewaySettingsScreen(Screen):  # type: ignore[type-arg]
 
     def _do_save(self) -> None:
         try:
-            from navig.tui.config_model import DEFAULT_CONFIG_FILE, load_navig_json
             from navig.commands.onboard import save_config
+            from navig.tui.config_model import DEFAULT_CONFIG_FILE, load_navig_json
 
             raw = load_navig_json() or {}
             raw.setdefault("gateway", {})
-            raw["gateway"]["webhook_url"]    = self.query_one("#gw-webhook-url", Input).value.strip()
-            raw["gateway"]["webhook_secret"] = self.query_one("#gw-webhook-secret", Input).value.strip()
-            raw["gateway"]["enabled"]        = self.query_one("#gw-enabled", Switch).value
+            raw["gateway"]["webhook_url"] = self.query_one(
+                "#gw-webhook-url", Input
+            ).value.strip()
+            raw["gateway"]["webhook_secret"] = self.query_one(
+                "#gw-webhook-secret", Input
+            ).value.strip()
+            raw["gateway"]["enabled"] = self.query_one("#gw-enabled", Switch).value
             raw["gateway"].setdefault("telegram", {})
-            raw["gateway"]["telegram"]["bot_token"] = self.query_one("#gw-bot-token", Input).value.strip()
+            raw["gateway"]["telegram"]["bot_token"] = self.query_one(
+                "#gw-bot-token", Input
+            ).value.strip()
 
             save_config(raw, DEFAULT_CONFIG_FILE)
             self.post_message(SettingsSaved("Gateway"))

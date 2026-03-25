@@ -1,6 +1,7 @@
 """
 navig.tui.messages — Textual message classes for inter-screen communication.
 """
+
 from __future__ import annotations
 
 try:

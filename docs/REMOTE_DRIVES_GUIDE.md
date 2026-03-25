@@ -167,11 +167,11 @@ net use Z: "\\sshfs\$($host_info.username)@$($host_info.hostname)/home/$($host_i
 **For your use case:**
 
 1. **Local WiFi sharing (laptop ↔ PC):** ✅ Already working!
-   
+
 2. **NAVIG Ubuntu remote server:**
    - **Option A:** SSHFS-Win (native file access, slower)
    - **Option B:** rclone SFTP (faster, cached)
-   
+
 3. **Cloud drives:**
    - Use `rclone` for all cloud providers
    - Mount as Windows drive letters

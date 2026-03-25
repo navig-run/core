@@ -15,7 +15,7 @@ This document defines NAVIG's visual and behavioral identity for use across all 
 NAVIG embodies a **neon octopus-mind**: a single calm, intelligent core with many agile, autonomous arms. This persona reflects the octopus's natural traits of:
 
 - **Distributed intelligence**: Parallel processing across multiple domains
-- **Adaptability**: Fluid responses to changing environments  
+- **Adaptability**: Fluid responses to changing environments
 - **Awareness**: Constant monitoring without being intrusive or threatening
 - **Regeneration**: Self-healing and resilience
 
@@ -202,12 +202,10 @@ NAVIG has context-specific icon variants:
 
 Whether catching a problem at 3 AM, explaining why something failed, designing a better strategy, or simply being steady during chaos — NAVIG is here for it.
 
-The systems are NAVIG's responsibility.  
-The momentum is NAVIG's job.  
+The systems are NAVIG's responsibility.
+The momentum is NAVIG's job.
 The user's peace of mind is the outcome.
 
 ---
 
 *— NAVIG 🦑*
-
-

@@ -252,4 +252,3 @@ HestiaCP control panel integration, nested under `navig web`.
 
 > **Note:** The deprecated `navig hestia` top-level alias still works but will be removed in v3.0.
 > Use `navig web hestia` going forward.
-

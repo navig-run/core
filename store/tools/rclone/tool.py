@@ -1,20 +1,23 @@
 """tool.py — CLI fallback for rclone (spawn-per-call)."""
+
 import argparse
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
-from common import err, emit  # noqa: E402
+from common import emit, err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
-from worker import cmd_ls, cmd_sync, cmd_copy, cmd_remotes  # noqa: E402
+from worker import cmd_copy, cmd_ls, cmd_remotes, cmd_sync  # noqa: E402
 
 TOOL = "rclone"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig cloud rclone", description="rclone cloud sync")
+    parser = argparse.ArgumentParser(
+        prog="navig cloud rclone", description="rclone cloud sync"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ls = sub.add_parser("ls", help="List remote path")

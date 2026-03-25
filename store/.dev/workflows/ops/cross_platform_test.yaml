@@ -8,26 +8,26 @@ steps:
     args:
       command: "echo Platform test running"
     capture: platform_check
-  
+
   # Test 2: Wait (universal)
   - action: wait
     args:
       seconds: 0.5
-  
+
   # Test 3: Clipboard (cross-platform)
   - action: set_clipboard
     args:
       text: "{{test_text}}"
     capture: clipboard_result
-  
+
   # Test 4: Get clipboard back
   - action: get_clipboard
     capture: clipboard_content
-  
+
   # Test 5: Get focused window
   - action: get_focused_window
     capture: current_window
-  
+
   # Test 6: Conditional based on window
   - action: run_command
     args:

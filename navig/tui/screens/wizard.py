@@ -4,6 +4,7 @@ navig.tui.screens.wizard — WizardScreen: 5-step configuration wizard.
 Includes _WizardStepBase and all 5 step widgets (Step1–Step5).
 Esc at any step saves partial progress and opens the dashboard.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,7 +39,6 @@ from navig.tui.config_model import (
 from navig.tui.widgets.step_indicator import StepIndicator
 from navig.tui.widgets.summary_panel import SummaryPanel
 
-
 # ---------------------------------------------------------------------------
 # Wizard step base
 # ---------------------------------------------------------------------------
@@ -66,11 +66,14 @@ class _WizardStepBase(Vertical):
 
 
 class Step1IdentityWidget(_WizardStepBase):
-    DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+    DEFAULT_CSS = (
+        _WizardStepBase.DEFAULT_CSS
+        + """
     Step1IdentityWidget { height: auto; padding: 1 2; }
     Step1IdentityWidget Label { color: #94a3b8; margin-bottom: 0; }
     Step1IdentityWidget Input { margin-bottom: 1; }
     """
+    )
 
     def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -78,9 +81,15 @@ class Step1IdentityWidget(_WizardStepBase):
 
     def compose(self):  # type: ignore[override]
         yield Label("Operator name (display)")
-        yield Input(value=self._cfg.profile_name, id="inp-profile-name", placeholder="operator")
+        yield Input(
+            value=self._cfg.profile_name, id="inp-profile-name", placeholder="operator"
+        )
         yield Label("Workspace root")
-        yield Input(value=self._cfg.workspace_root, id="inp-workspace", placeholder=str(DEFAULT_WORKSPACE_DIR))
+        yield Input(
+            value=self._cfg.workspace_root,
+            id="inp-workspace",
+            placeholder=str(DEFAULT_WORKSPACE_DIR),
+        )
         yield Label("Theme")
         yield Select(
             [("Dark", "dark"), ("Light", "light"), ("System", "system")],
@@ -117,12 +126,15 @@ class Step1IdentityWidget(_WizardStepBase):
 
 
 class Step2ProviderWidget(_WizardStepBase):
-    DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+    DEFAULT_CSS = (
+        _WizardStepBase.DEFAULT_CSS
+        + """
     Step2ProviderWidget { height: auto; padding: 1 2; }
     Step2ProviderWidget Label { color: #94a3b8; margin-bottom: 0; }
     Step2ProviderWidget RadioSet { margin-bottom: 1; }
     Step2ProviderWidget Input { margin-bottom: 1; }
     """
+    )
 
     _PROVIDERS = ["openrouter", "openai", "anthropic", "groq", "ollama", "none"]
 
@@ -172,11 +184,14 @@ class Step2ProviderWidget(_WizardStepBase):
 
 
 class Step3RuntimeWidget(_WizardStepBase):
-    DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+    DEFAULT_CSS = (
+        _WizardStepBase.DEFAULT_CSS
+        + """
     Step3RuntimeWidget { height: auto; padding: 1 2; }
     Step3RuntimeWidget Label { color: #94a3b8; }
     Step3RuntimeWidget Input { margin-top: 1; }
     """
+    )
 
     def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -213,10 +228,13 @@ class Step3RuntimeWidget(_WizardStepBase):
 
 
 class Step4PacksWidget(_WizardStepBase):
-    DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+    DEFAULT_CSS = (
+        _WizardStepBase.DEFAULT_CSS
+        + """
     Step4PacksWidget { height: auto; padding: 1 2; }
     Step4PacksWidget Label { color: #94a3b8; margin-bottom: 1; }
     """
+    )
 
     _PACKS = [("DevOps", "devops"), ("SysOps", "sysops"), ("LifeOps", "lifeops")]
 
@@ -227,7 +245,9 @@ class Step4PacksWidget(_WizardStepBase):
     def compose(self):  # type: ignore[override]
         yield Label("Capability packs to activate")
         for display, key in self._PACKS:
-            yield Checkbox(display, value=(key in self._cfg.capability_packs), id=f"cb-{key}")
+            yield Checkbox(
+                display, value=(key in self._cfg.capability_packs), id=f"cb-{key}"
+            )
 
     @on(Checkbox.Changed)
     def _pack_toggled(self, event: Checkbox.Changed) -> None:
@@ -236,7 +256,9 @@ class Step4PacksWidget(_WizardStepBase):
             if key not in self._cfg.capability_packs:
                 self._cfg.capability_packs.append(key)
         else:
-            self._cfg.capability_packs = [p for p in self._cfg.capability_packs if p != key]
+            self._cfg.capability_packs = [
+                p for p in self._cfg.capability_packs if p != key
+            ]
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
@@ -249,11 +271,14 @@ class Step4PacksWidget(_WizardStepBase):
 
 
 class Step5ShellWidget(_WizardStepBase):
-    DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+    DEFAULT_CSS = (
+        _WizardStepBase.DEFAULT_CSS
+        + """
     Step5ShellWidget { height: auto; padding: 1 2; }
     Step5ShellWidget .sw-label { color: #94a3b8; }
     Step5ShellWidget .sw-desc  { color: #334155; margin-bottom: 1; }
     """
+    )
 
     def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -261,10 +286,30 @@ class Step5ShellWidget(_WizardStepBase):
 
     def compose(self):  # type: ignore[override]
         items = [
-            ("sw-shell",     "Shell integration", "Adds `navig` to $PATH and sets up completions", "shell_integration"),
-            ("sw-update",    "Auto-update",        "Automatically install patch updates",           "auto_update"),
-            ("sw-git",       "Git hooks",          "Run pre-commit safety checks via navig",        "git_hooks"),
-            ("sw-telemetry", "Telemetry",          "Send anonymous usage stats to improve NAVIG",   "telemetry"),
+            (
+                "sw-shell",
+                "Shell integration",
+                "Adds `navig` to $PATH and sets up completions",
+                "shell_integration",
+            ),
+            (
+                "sw-update",
+                "Auto-update",
+                "Automatically install patch updates",
+                "auto_update",
+            ),
+            (
+                "sw-git",
+                "Git hooks",
+                "Run pre-commit safety checks via navig",
+                "git_hooks",
+            ),
+            (
+                "sw-telemetry",
+                "Telemetry",
+                "Send anonymous usage stats to improve NAVIG",
+                "telemetry",
+            ),
         ]
         for sw_id, title, desc, attr in items:
             yield Label(title, classes="sw-label")
@@ -274,9 +319,9 @@ class Step5ShellWidget(_WizardStepBase):
     @on(Switch.Changed)
     def _sw_changed(self, event: Switch.Changed) -> None:
         mapping = {
-            "sw-shell":     "shell_integration",
-            "sw-update":    "auto_update",
-            "sw-git":       "git_hooks",
+            "sw-shell": "shell_integration",
+            "sw-update": "auto_update",
+            "sw-git": "git_hooks",
             "sw-telemetry": "telemetry",
         }
         attr = mapping.get(event.switch.id or "")
@@ -382,6 +427,7 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
             self._sync_nav_buttons()
         else:
             from navig.tui.screens.review import ReviewScreen
+
             self.app.push_screen(ReviewScreen(self._cfg))
 
     @on(Button.Pressed, "#btn-back")
@@ -400,7 +446,10 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
                 self.notify("Operator name cannot be empty.", severity="warning")
                 return False
         if self._step == 1:
-            if self._cfg.ai_provider not in ("ollama", "none") and not self._cfg.api_key:
+            if (
+                self._cfg.ai_provider not in ("ollama", "none")
+                and not self._cfg.api_key
+            ):
                 self.notify(
                     "No API key entered. You can add one later via `navig ai providers`.",
                     severity="warning",
@@ -412,12 +461,14 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
         """Esc: save partial progress and open the dashboard."""
         self._partial_save()
         from navig.tui.screens.dashboard import DashboardScreen
+
         self.app.switch_screen(DashboardScreen())
 
     def _partial_save(self) -> None:
         """Write current NavigConfig state to navig.json (even if incomplete)."""
         try:
             from navig.commands.onboard import save_config
+
             cfg_dict = build_config_dict(self._cfg)
             save_config(cfg_dict, DEFAULT_CONFIG_FILE)
         except Exception:  # noqa: BLE001

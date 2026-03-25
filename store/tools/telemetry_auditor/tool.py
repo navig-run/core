@@ -1,5 +1,7 @@
 """tool.py — CLI fallback for telemetry_auditor (spawn-per-call)."""
+
 from __future__ import annotations
+
 import argparse
 import json
 import sys
@@ -9,7 +11,13 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
 from common import err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
-from worker import cmd_scan, cmd_whois, cmd_sources, cmd_report, cmd_cmdref  # noqa: E402
+from worker import (  # noqa: E402
+    cmd_cmdref,
+    cmd_report,
+    cmd_scan,
+    cmd_sources,
+    cmd_whois,
+)
 
 TOOL = "telemetry_auditor"
 
@@ -37,34 +45,70 @@ Examples:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # ── scan ──────────────────────────────────────────────────────────────────
-    p_scan = sub.add_parser("scan", help="Step 1+2: capture all TCP connections, identify telemetry endpoints")
-    p_scan.add_argument("--filter",    choices=["all", "vscode", "windows"], default="all",
-                        help="Scope: 'vscode' for VS Code only, 'windows' for system telemetry, 'all' for everything")
-    p_scan.add_argument("--resolve",   action="store_true",  default=True,  help="Resolve remote IPs to hostnames (default: on)")
-    p_scan.add_argument("--no-resolve",action="store_true",  default=False, help="Skip PTR resolution (faster but no hostname matching)")
-    p_scan.add_argument("--timeout",   type=int, default=60, metavar="SEC")
-    p_scan.add_argument("--save",      metavar="FILE",       default=None,  help="Write JSON output to this file")
+    p_scan = sub.add_parser(
+        "scan",
+        help="Step 1+2: capture all TCP connections, identify telemetry endpoints",
+    )
+    p_scan.add_argument(
+        "--filter",
+        choices=["all", "vscode", "windows"],
+        default="all",
+        help="Scope: 'vscode' for VS Code only, 'windows' for system telemetry, 'all' for everything",
+    )
+    p_scan.add_argument(
+        "--resolve",
+        action="store_true",
+        default=True,
+        help="Resolve remote IPs to hostnames (default: on)",
+    )
+    p_scan.add_argument(
+        "--no-resolve",
+        action="store_true",
+        default=False,
+        help="Skip PTR resolution (faster but no hostname matching)",
+    )
+    p_scan.add_argument("--timeout", type=int, default=60, metavar="SEC")
+    p_scan.add_argument(
+        "--save", metavar="FILE", default=None, help="Write JSON output to this file"
+    )
 
     # ── whois ─────────────────────────────────────────────────────────────────
-    p_whois = sub.add_parser("whois", help="Step 3: trace ownership of a remote IP (RDAP, ASN, PTR, GeoIP)")
-    p_whois.add_argument("--ip",      required=True, metavar="IP",  help="Remote IP address to investigate")
+    p_whois = sub.add_parser(
+        "whois", help="Step 3: trace ownership of a remote IP (RDAP, ASN, PTR, GeoIP)"
+    )
+    p_whois.add_argument(
+        "--ip", required=True, metavar="IP", help="Remote IP address to investigate"
+    )
     p_whois.add_argument("--timeout", type=int, default=15, metavar="SEC")
-    p_whois.add_argument("--save",    metavar="FILE", default=None)
+    p_whois.add_argument("--save", metavar="FILE", default=None)
 
     # ── sources ───────────────────────────────────────────────────────────────
-    p_src = sub.add_parser("sources", help="Step 5: enumerate local telemetry staging files, ETL logs, registry keys")
+    p_src = sub.add_parser(
+        "sources",
+        help="Step 5: enumerate local telemetry staging files, ETL logs, registry keys",
+    )
     p_src.add_argument("--save", metavar="FILE", default=None)
 
     # ── report ────────────────────────────────────────────────────────────────
-    p_rep = sub.add_parser("report", help="Step 6: full audit report with classified risk table (runs scan + sources)")
-    p_rep.add_argument("--filter",    choices=["all", "vscode", "windows"], default="all")
-    p_rep.add_argument("--no-resolve",action="store_true", default=False)
-    p_rep.add_argument("--timeout",   type=int, default=90, metavar="SEC")
-    p_rep.add_argument("--save",      metavar="FILE", default=None,
-                        help="Write both JSON (.json) and Markdown (.md) report to this base path")
+    p_rep = sub.add_parser(
+        "report",
+        help="Step 6: full audit report with classified risk table (runs scan + sources)",
+    )
+    p_rep.add_argument("--filter", choices=["all", "vscode", "windows"], default="all")
+    p_rep.add_argument("--no-resolve", action="store_true", default=False)
+    p_rep.add_argument("--timeout", type=int, default=90, metavar="SEC")
+    p_rep.add_argument(
+        "--save",
+        metavar="FILE",
+        default=None,
+        help="Write both JSON (.json) and Markdown (.md) report to this base path",
+    )
 
     # ── cmdref ────────────────────────────────────────────────────────────────
-    sub.add_parser("cmdref", help="Print copy-pasteable command reference for manual audit steps 1–5")
+    sub.add_parser(
+        "cmdref",
+        help="Print copy-pasteable command reference for manual audit steps 1–5",
+    )
 
     args = parser.parse_args()
     params = vars(args)

@@ -1,11 +1,12 @@
 """tool.py — CLI fallback for iperf3 (spawn-per-call)."""
+
 import argparse
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
-from common import err, emit  # noqa: E402
+from common import emit, err  # noqa: E402
 
 # Import handlers from worker
 sys.path.insert(0, str(Path(__file__).parent))
@@ -15,7 +16,9 @@ TOOL = "iperf3"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig net iperf3", description="iperf3 network speed test")
+    parser = argparse.ArgumentParser(
+        prog="navig net iperf3", description="iperf3 network speed test"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_client = sub.add_parser("client", help="Run iperf3 client test")

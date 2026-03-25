@@ -62,4 +62,3 @@ Examples:
 - `navig help db`
 - `navig help file`
 - `navig db --help`
-

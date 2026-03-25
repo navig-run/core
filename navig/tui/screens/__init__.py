@@ -1,4 +1,5 @@
 """navig.tui.screens — Re-exports all TUI screen classes."""
+
 from __future__ import annotations
 
 from navig.tui.screens.boot import BootScreen

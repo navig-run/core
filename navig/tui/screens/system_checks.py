@@ -1,4 +1,5 @@
 """navig.tui.screens.system_checks — SystemChecksScreen: environment probes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,19 +7,19 @@ from typing import Any, List, Optional
 
 from textual import on, work
 from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Label
-from textual.containers import Horizontal, Vertical
 from textual.worker import WorkerCancelled
 
 from navig.tui.config_model import (
     NavigConfig,
-    check_python_version,
+    check_config_dir_writable,
+    check_disk_space,
     check_git_installed,
     check_network,
-    check_disk_space,
-    check_config_dir_writable,
     check_ollama_reachable,
+    check_python_version,
 )
 from navig.tui.widgets.check_row import CheckRow
 
@@ -94,12 +95,15 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
             yield Label("System Checks", id="checks-title")
             for label, *_ in self._CHECK_DEFS:
                 import re as _re
+
                 _safe_id = _re.sub(r"[^a-zA-Z0-9_-]", "", label[:24].replace(" ", "_"))
                 row = CheckRow(label, id=f"check-{_safe_id or str(id(label))}")
                 yield row
             yield Label("")
             with Horizontal(id="checks-footer"):
-                yield Button("Continue  →", variant="primary", id="btn-continue", disabled=True)
+                yield Button(
+                    "Continue  →", variant="primary", id="btn-continue", disabled=True
+                )
                 yield Button("← Back", variant="default", id="btn-back")
 
     def on_mount(self) -> None:
@@ -146,6 +150,7 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
     @on(Button.Pressed, "#btn-continue")
     def _continue(self) -> None:
         from navig.tui.screens.wizard import WizardScreen
+
         self.app.push_screen(WizardScreen(self._cfg))
 
     @on(Button.Pressed, "#btn-back")

@@ -124,5 +124,3 @@ If a command fails:
 - Audit trail for all destructive actions
 
 You are capable and trusted. Act accordingly.
-
-

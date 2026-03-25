@@ -16,7 +16,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "monitor": "monitoring subcommands",
             "security": "security subcommands",
             "maintenance": "maintenance subcommands",
-        }
+        },
     },
     "context": {
         "desc": "Manage host/app context for current project",
@@ -25,7 +25,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "set": "set project-local context",
             "clear": "clear project-local context",
             "init": "initialize .navig directory",
-        }
+        },
     },
     "history": {
         "desc": "Command history, replay, and audit trail",
@@ -37,7 +37,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "export": "export history to file (json/csv)",
             "clear": "clear all history",
             "stats": "show history statistics",
-        }
+        },
     },
     "dashboard": {
         "desc": "Real-time TUI for infrastructure monitoring",
@@ -45,7 +45,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "(default)": "launch live dashboard with auto-refresh",
             "--no-live": "single snapshot mode",
             "--refresh": "set refresh interval (seconds)",
-        }
+        },
     },
     "suggest": {
         "desc": "Intelligent command suggestions based on history",
@@ -54,7 +54,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "--context": "filter by context (docker, database, etc.)",
             "--run <n>": "run suggestion by number",
             "--dry-run": "preview without executing",
-        }
+        },
     },
     "quick": {
         "desc": "Quick action shortcuts for frequent operations",
@@ -64,7 +64,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "add": "add a new quick action",
             "remove": "remove a quick action",
             "<name>": "run a quick action by name",
-        }
+        },
     },
     "tunnel": {
         "desc": "Manage SSH tunnels for secure connections",
@@ -74,7 +74,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "remove": "stop and remove tunnel",
             "update": "restart tunnel",
             "auto": "auto-detect and create tunnel",
-        }
+        },
     },
     "local": {
         "desc": "Local machine operations and diagnostics",
@@ -86,7 +86,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "ping": "ping remote host",
             "dns": "DNS lookup",
             "interfaces": "show network interfaces",
-        }
+        },
     },
     "hosts": {
         "desc": "Manage /etc/hosts file entries",
@@ -94,9 +94,8 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "view": "view hosts file",
             "edit": "edit hosts file",
             "add": "add hosts entry",
-        }
+        },
     },
-
     # =========================================================================
     # SERVICES
     # =========================================================================
@@ -111,7 +110,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "remove": "remove app configuration",
             "search": "search apps by name/domain",
             "migrate": "migrate app to another host",
-        }
+        },
     },
     "docker": {
         "desc": "Manage Docker containers on remote hosts",
@@ -125,7 +124,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "start": "start container",
             "stats": "show resource usage",
             "inspect": "inspect container details",
-        }
+        },
     },
     "web": {
         "desc": "Manage web servers (Nginx/Apache)",
@@ -139,9 +138,8 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "module-disable": "disable web server module",
             "recommend": "get optimization recommendations",
             "hestia": "HestiaCP subcommands",
-        }
+        },
     },
-
     # =========================================================================
     # DATA
     # =========================================================================
@@ -158,7 +156,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "restore": "restore database from backup",
             "optimize": "optimize database tables",
             "repair": "repair database tables",
-        }
+        },
     },
     "file": {
         "desc": "File operations (upload, download, edit)",
@@ -169,14 +167,14 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "edit": "edit remote file",
             "get": "download file",
             "remove": "delete remote file",
-        }
+        },
     },
     "log": {
         "desc": "View and manage remote log files",
         "commands": {
             "show": "view log file contents",
             "run": "tail log in real-time",
-        }
+        },
     },
     "backup": {
         "desc": "Backup and restore NAVIG configuration",
@@ -185,9 +183,8 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "import": "import config from backup",
             "show": "show backup details",
             "remove": "delete backup file",
-        }
+        },
     },
-
     # =========================================================================
     # AUTOMATION
     # =========================================================================
@@ -201,7 +198,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "add": "create new flow",
             "remove": "delete a flow",
             "edit": "edit flow definition",
-        }
+        },
     },
     "skills": {
         "desc": "Manage AI skill definitions",
@@ -210,7 +207,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "tree": "show skills by category",
             "show": "show skill details, commands, and examples",
             "run": "run a skill command (skill:command [args])",
-        }
+        },
     },
     "scaffold": {
         "desc": "Generate project structures from templates",
@@ -218,7 +215,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "apply": "generate files from template",
             "validate": "check template syntax",
             "list": "list available templates",
-        }
+        },
     },
     "ai": {
         "desc": "AI assistant for server management",
@@ -233,7 +230,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "providers": "manage AI providers and API keys",
             "login": "OAuth login (e.g., OpenAI Codex)",
             "logout": "remove OAuth credentials",
-        }
+        },
     },
     "config": {
         "desc": "Manage NAVIG settings and configuration",
@@ -247,7 +244,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "set": "set configuration value",
             "get": "get configuration value",
             "migrate": "migrate legacy config",
-        }
+        },
     },
     "wiki": {
         "desc": "Wiki & knowledge base management",
@@ -264,7 +261,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "inbox": "inbox processing commands",
             "links": "wiki link management",
             "rag": "RAG knowledge base for AI",
-        }
+        },
     },
     "mcp": {
         "desc": "MCP server management for AI assistants",
@@ -281,7 +278,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "status": "show server status",
             "serve": "start NAVIG as MCP server",
             "config": "generate MCP config for AI tools",
-        }
+        },
     },
     # =========================================================================
     # AUTONOMOUS AGENT
@@ -300,7 +297,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "remediation": "view and manage auto-remediation actions",
             "learn": "analyze logs and learn from error patterns",
             "goal": "autonomous goal planning and execution tracking",
-        }
+        },
     },
     "tray": {
         "desc": "Windows system tray launcher for NAVIG services",
@@ -308,7 +305,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "start": "launch the tray app (system tray icon with service controls)",
             "install": "install tray app (desktop shortcut + optional auto-start)",
             "status": "check if tray app is running",
-        }
+        },
     },
     "gateway": {
         "desc": "Autonomous agent gateway server (24/7 control plane)",
@@ -317,7 +314,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "stop": "stop the gateway server",
             "status": "show gateway status",
             "session": "manage sessions",
-        }
+        },
     },
     "heartbeat": {
         "desc": "Periodic health check system",
@@ -326,7 +323,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "trigger": "trigger immediate heartbeat",
             "history": "show heartbeat history",
             "configure": "configure heartbeat settings",
-        }
+        },
     },
     "cron": {
         "desc": "Persistent job scheduling",
@@ -338,7 +335,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "enable": "enable a job",
             "disable": "disable a job",
             "status": "show cron service status",
-        }
+        },
     },
     "trigger": {
         "desc": "Event-driven automation triggers",
@@ -353,7 +350,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "fire": "manually fire a trigger",
             "history": "show trigger execution history",
             "stats": "show trigger statistics",
-        }
+        },
     },
     "insights": {
         "desc": "Operations analytics and insights",
@@ -365,7 +362,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "anomalies": "detect unusual patterns",
             "recommend": "personalized recommendations",
             "report": "generate full analytics report",
-        }
+        },
     },
     "pack": {
         "desc": "Shareable operations bundles (runbooks, checklists, workflows)",
@@ -378,7 +375,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "run": "execute a pack",
             "create": "create a new pack",
             "search": "search for packs",
-        }
+        },
     },
     "approve": {
         "desc": "Human approval system for agent actions",
@@ -387,7 +384,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "yes": "approve a pending request",
             "no": "deny a pending request",
             "policy": "show/edit approval policy",
-        }
+        },
     },
     "browser": {
         "desc": "Browser automation for web tasks",
@@ -398,7 +395,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "screenshot": "capture page screenshot",
             "stop": "stop browser",
             "status": "show browser status",
-        }
+        },
     },
     "ahk": {
         "desc": "AutoHotkey v2 automation (Windows)",
@@ -417,7 +414,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "windows": "list all visible windows",
             "clipboard": "get/set clipboard content",
             "automate": "AI-powered automation",
-        }
+        },
     },
     "task": {
         "desc": "Alias for 'flow' — run 'navig flow' for the canonical workflow command",
@@ -427,7 +424,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "show": "show flow definition (same as: navig flow show <name>)",
             "add": "create new flow (same as: navig flow add)",
             "test": "validate flow syntax (same as: navig flow test <name>)",
-        }
+        },
     },
     "memory": {
         "desc": "Conversation memory and knowledge base",
@@ -437,7 +434,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "clear": "clear session or all memory",
             "knowledge": "manage knowledge entries",
             "stats": "show memory statistics",
-        }
+        },
     },
     "calendar": {
         "desc": "Calendar operations and event management",
@@ -446,7 +443,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "auth": "authenticate with calendar provider",
             "add": "add new calendar event",
             "sync": "sync calendar data from remote",
-        }
+        },
     },
     "email": {
         "desc": "Email operations and inbox management",
@@ -456,7 +453,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "search": "search emails by query",
             "send": "send an email",
             "sync": "sync email data from remote",
-        }
+        },
     },
     # =========================================================================
     # DOCUMENTATION & HELP
@@ -466,7 +463,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
         "commands": {
             "(no args)": "list all documentation topics",
             "<query>": "search docs for relevant content",
-        }
+        },
     },
     "fetch": {
         "desc": "Fetch and extract content from URLs",
@@ -474,7 +471,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "<url>": "fetch content from URL",
             "--mode": "extraction mode: markdown, text, raw",
             "--json": "output in JSON format",
-        }
+        },
     },
     "search": {
         "desc": "Search the web for information",
@@ -482,7 +479,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "<query>": "search the web",
             "--limit": "max number of results",
             "--provider": "brave or duckduckgo",
-        }
+        },
     },
     "formation": {
         "desc": "Manage profile-based agent formations",
@@ -491,20 +488,20 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "show": "show formation details",
             "init": "initialize profile for workspace",
             "agents": "list agents in active formation",
-        }
+        },
     },
     "council": {
         "desc": "Multi-agent council deliberation",
         "commands": {
             "run": "run deliberation across all agents",
-        }
+        },
     },
     "version": {
         "desc": "Show NAVIG version and system info",
         "commands": {
             "(no args)": "show version with random quote",
             "--json": "output version in JSON format",
-        }
+        },
     },
     "start": {
         "desc": "Quick launcher for gateway + Telegram bot",
@@ -513,7 +510,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "--foreground": "start with visible logs",
             "--no-bot": "start gateway only",
             "--no-gateway": "start bot only (standalone)",
-        }
+        },
     },
     "init": {
         "desc": "Interactive setup wizard for new installations",
@@ -521,7 +518,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "(no args)": "run setup wizard",
             "--reconfigure": "re-run setup for existing installation",
             "--install-daemon": "install NAVIG as system service",
-        }
+        },
     },
     "telegram": {
         "desc": "Telegram bot management",
@@ -532,13 +529,13 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "sessions clear": "clear session history",
             "sessions delete": "delete session",
             "sessions prune": "remove inactive sessions",
-        }
+        },
     },
     "crash": {
         "desc": "Manage crash reports and logs",
         "commands": {
             "export": "export latest crash report for GitHub",
-        }
+        },
     },
     # ── Phase 2: Links ──────────────────────────────────────────────────────
     "links": {
@@ -553,7 +550,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "tag": "add a tag to a bookmark",
             "delete": "delete a bookmark",
             "import": "bulk import from JSON file",
-        }
+        },
     },
     # ── Phase 3: Knowledge Graph ────────────────────────────────────────────
     "kg": {
@@ -565,7 +562,7 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "forget": "delete a fact by ID",
             "routines": "list all registered routines",
             "status": "show knowledge graph statistics",
-        }
+        },
     },
     # ── Phase 4: Webhooks ───────────────────────────────────────────────────
     "webhook": {
@@ -577,6 +574,6 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
             "disable": "disable a webhook",
             "delete": "permanently delete a webhook",
             "test": "send test event to an outbound webhook",
-        }
+        },
     },
 }

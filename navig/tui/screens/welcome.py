@@ -1,13 +1,14 @@
 """navig.tui.screens.welcome — WelcomeScreen: mode selection."""
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
 from textual import on
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Label
-from textual.containers import Horizontal, Vertical
 
 
 class WelcomeScreen(Screen):  # type: ignore[type-arg]
@@ -73,6 +74,7 @@ class WelcomeScreen(Screen):  # type: ignore[type-arg]
     @on(Button.Pressed, "#btn-advanced")
     def _go_advanced(self) -> None:
         from navig.tui.screens.system_checks import SystemChecksScreen
+
         self.app.push_screen(SystemChecksScreen())
 
     @on(Button.Pressed, "#btn-quickstart")
@@ -81,14 +83,16 @@ class WelcomeScreen(Screen):  # type: ignore[type-arg]
 
     async def _do_quickstart(self) -> None:
         import functools
+
         from navig.commands.onboard import (
+            create_workspace_templates,
             get_console,
             run_quickstart,
             save_config,
-            create_workspace_templates,
             sync_to_env,
         )
         from navig.tui.config_model import DEFAULT_CONFIG_FILE, DEFAULT_WORKSPACE_DIR
+
         console = get_console()
         cfg_dict = await asyncio.get_event_loop().run_in_executor(
             None, functools.partial(run_quickstart, console)

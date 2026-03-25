@@ -155,5 +155,3 @@ navig db list --help
 - Read the [Commands Reference](commands.md) for detailed command documentation
 - Check [Full Handbook](HANDBOOK.md) for comprehensive documentation
 - See [Troubleshooting](troubleshooting.md) for common issues
-
-

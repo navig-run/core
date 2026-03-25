@@ -8,6 +8,7 @@ Upgraded implementation:
 - Subscribes to SettingsSaved → re-resolves changed section
 - BINDINGS: i=wizard, s=settings, r=refresh, q=quit
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
@@ -25,9 +26,9 @@ from navig.tui.widgets.status_row import StatusRow
 
 # Deep-link key → import path for settings screens
 _DEEPLINK_SCREENS: Dict[str, str] = {
-    "/settings/gateway":   "navig.tui.screens.settings.gateway.GatewaySettingsScreen",
-    "/settings/agents":    "navig.tui.screens.settings.agents.AgentSettingsScreen",
-    "/settings/vault":     "navig.tui.screens.settings.vault.VaultSettingsScreen",
+    "/settings/gateway": "navig.tui.screens.settings.gateway.GatewaySettingsScreen",
+    "/settings/agents": "navig.tui.screens.settings.agents.AgentSettingsScreen",
+    "/settings/vault": "navig.tui.screens.settings.vault.VaultSettingsScreen",
     "/settings/scheduler": "navig.tui.screens.settings.scheduler.SchedulerSettingsScreen",
 }
 
@@ -36,6 +37,7 @@ def _import_screen_class(dotted: str):  # type: ignore[return]
     """Lazily import and return a Screen class from a dotted path string."""
     module_path, _, cls_name = dotted.rpartition(".")
     import importlib
+
     module = importlib.import_module(module_path)
     return getattr(module, cls_name)
 
@@ -43,7 +45,7 @@ def _import_screen_class(dotted: str):  # type: ignore[return]
 def _build_sorted_badges(badges: Sequence[StatusBadge]) -> List[StatusBadge]:
     """Return badges with error rows first, then warn, then ok/missing."""
     errors = [b for b in badges if b.status == "error"]
-    warns  = [b for b in badges if b.status == "warn"]
+    warns = [b for b in badges if b.status == "warn"]
     others = [b for b in badges if b.status not in ("error", "warn")]
     return errors + warns + others
 
@@ -56,10 +58,10 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
     """
 
     BINDINGS = [
-        Binding("i", "start_wizard",   "Wizard",   show=True),
-        Binding("s", "open_settings",  "Settings", show=True),
-        Binding("r", "refresh_status", "Refresh",  show=True),
-        Binding("q", "quit",           "Quit",     show=False),
+        Binding("i", "start_wizard", "Wizard", show=True),
+        Binding("s", "open_settings", "Settings", show=True),
+        Binding("r", "refresh_status", "Refresh", show=True),
+        Binding("q", "quit", "Quit", show=False),
         Binding("question_mark", "show_help", "Help", show=False),
     ]
 
@@ -144,17 +146,19 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
             with ScrollableContainer(id="status-scroll"):
                 yield Label("System Status", id="dash-section-title", markup=False)
                 # Placeholder rows; real badges resolved on_mount via worker
-                for (section_key, _resolver) in SECTIONS:
+                for section_key, _resolver in SECTIONS:
                     row_id = f"row-{section_key.lower().replace(' ', '-')}"
                     self._row_ids[section_key] = row_id
-                    badge = StatusBadge(label=section_key, status="missing", detail="Loading…")
+                    badge = StatusBadge(
+                        label=section_key, status="missing", detail="Loading…"
+                    )
                     yield StatusRow(badge, id=row_id, key=section_key)
 
             with Horizontal(id="dash-actions"):
-                yield Button("Wizard [i]",    variant="primary",   id="btn-wizard")
-                yield Button("Settings [s]",  variant="default",   id="btn-settings")
-                yield Button("Refresh [r]",   variant="default",   id="btn-refresh")
-                yield Button("Quit [q]",      variant="default",   id="btn-quit")
+                yield Button("Wizard [i]", variant="primary", id="btn-wizard")
+                yield Button("Settings [s]", variant="default", id="btn-settings")
+                yield Button("Refresh [r]", variant="default", id="btn-refresh")
+                yield Button("Quit [q]", variant="default", id="btn-quit")
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -168,6 +172,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
 
     def _open_wizard_provider_step(self) -> None:
         from navig.tui.screens.wizard import WizardScreen
+
         cfg = getattr(self.app, "config", None)
         if cfg is not None:
             self.app.push_screen(WizardScreen(cfg, start_step=1))
@@ -180,7 +185,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
     def _resolve_all(self) -> None:
         """Resolve each section badge in a background thread."""
         badges: list[tuple[str, StatusBadge]] = []
-        for (section_key, resolver) in SECTIONS:
+        for section_key, resolver in SECTIONS:
             try:
                 badge = resolver(self._get_config())
             except Exception as exc:  # noqa: BLE001
@@ -197,10 +202,14 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
         # Re-sort: errors first, then warn, then ok/missing
         section_map: Dict[str, StatusBadge] = dict(badges)
         all_keys_ordered = [k for k, _ in SECTIONS]
-        sorted_badges = _build_sorted_badges([section_map[k] for k in all_keys_ordered if k in section_map])
+        sorted_badges = _build_sorted_badges(
+            [section_map[k] for k in all_keys_ordered if k in section_map]
+        )
 
         # Re-order DOM rows
-        container: ScrollableContainer = self.query_one("#status-scroll", ScrollableContainer)
+        container: ScrollableContainer = self.query_one(
+            "#status-scroll", ScrollableContainer
+        )
         # Update each row in sorted order by moving DOM nodes
         for badge in sorted_badges:
             row_id = self._row_ids.get(badge.label)
@@ -208,12 +217,18 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
                 try:
                     row_widget: StatusRow = self.query_one(f"#{row_id}", StatusRow)
                     row_widget.update_badge(badge)
-                    container.move_child(row_widget, after=-1)  # move to end (sorted pass)
+                    container.move_child(
+                        row_widget, after=-1
+                    )  # move to end (sorted pass)
                 except Exception:  # noqa: BLE001
                     pass
 
         # Final pass: put errors truly first
-        sorted_order = [self._row_ids.get(b.label) for b in sorted_badges if self._row_ids.get(b.label)]
+        sorted_order = [
+            self._row_ids.get(b.label)
+            for b in sorted_badges
+            if self._row_ids.get(b.label)
+        ]
         for idx, row_id in enumerate(sorted_order):
             try:
                 row_widget: StatusRow = self.query_one(f"#{row_id}", StatusRow)
@@ -254,12 +269,14 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
 
     def action_start_wizard(self) -> None:
         from navig.tui.screens.wizard import WizardScreen
+
         cfg = getattr(self.app, "config", None)
         if cfg is not None:
             self.app.push_screen(WizardScreen(cfg))
 
     def action_open_settings(self) -> None:
         from navig.tui.screens.settings.root import SettingsRootScreen
+
         self.app.push_screen(SettingsRootScreen())
 
     def action_refresh_status(self) -> None:
@@ -296,6 +313,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
                 self.notify(f"Cannot open settings: {exc}", severity="error")
         elif deep_link == "/wizard/provider":
             from navig.tui.screens.wizard import WizardScreen
+
             cfg = getattr(self.app, "config", None)
             if cfg is not None:
                 self.app.push_screen(WizardScreen(cfg, start_step=1))
@@ -328,6 +346,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
         """Return the loaded navig.json dict (may be None)."""
         try:
             from navig.tui.config_model import load_navig_json
+
             return load_navig_json()
         except Exception:  # noqa: BLE001
             return None
@@ -336,6 +355,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
     def _read_operator_name() -> str:
         try:
             from navig.tui.config_model import load_navig_json
+
             cfg_dict = load_navig_json()
             if cfg_dict:
                 return (

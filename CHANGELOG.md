@@ -975,7 +975,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `navig context clear` — remove project-local context
   - `navig context init` — initialize .navig directory in project
   - Short alias: `navig ctx`
-  
+
 - **NEW**: JSON and plain output modes for scripting
   - `navig context show --json` — full context as JSON
   - `navig context show --plain` — one-line format for shell scripts
@@ -992,8 +992,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FIXED**: Comprehensive encoding fixes across the codebase
   - Removed raw Unicode emoji from all output-facing Python code
   - All console output now uses ASCII-safe symbols via console_helper
-  - Files fixed: proactive_display.py, template_manager.py, server_template_manager.py, 
-    retry.py, mcp_manager.py, workflow.py, hello plugin, error_resolution.py, 
+  - Files fixed: proactive_display.py, template_manager.py, server_template_manager.py,
+    retry.py, mcp_manager.py, workflow.py, hello plugin, error_resolution.py,
     migrate_addons_to_templates.py, user_profile.py, main.py, heartbeat/runner.py
   - Output works correctly on all Windows terminals (cmd, PowerShell, legacy encodings)
 
@@ -1063,7 +1063,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (2026-02-08) - Code Quality
 
-- **FIXED**: Type annotation issues in `onboard.py` 
+- **FIXED**: Type annotation issues in `onboard.py`
   - Resolved "Variable not allowed in type expression" Pylance errors
   - Added proper `ConsoleType` alias for conditional imports
 
@@ -1425,16 +1425,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Compact status dashboard showing Host, App, and Last Command status
   - Quick Help menu (`?`) with keyboard shortcuts
   - Command History menu (`H`) for reviewing recent operations
-  
+
 - **NEW**: Additional Interactive Submenus
   - Flow Automation menu (`F`) - workflows, templates, validation
   - Local Operations menu (`L`) - system info, ports, network
   - Agent & Gateway menu (`G`) - autonomous mode, sessions, cron
   - Monitoring & Security combined menu (`7`) - resources, firewall, audit
-  
+
 - **NEW**: Standalone Menu Launchers
   - `navig flow` - Flow automation menu
-  - `navig local` - Local operations menu  
+  - `navig local` - Local operations menu
   - `navig cron` - Cron job management
   - `navig agent` - Agent/Gateway management
 
@@ -1818,7 +1818,7 @@ No migration required. New features are opt-in via CLI commands.
   - Task queue now validates commands and restricts to `navig` commands only
   - Changed from `shell=True` to `shlex.split()` with `shell=False`
   - Added explicit allowlist for command prefixes (`navig`, `python -m navig`)
-  
+
 - **CRITICAL FIX**: Shell injection vulnerability in cron scheduler
   - Cron job commands now use `shlex.split()` instead of passing to shell
   - Only NAVIG commands executed via cron are affected (AI prompts unchanged)
@@ -1826,7 +1826,7 @@ No migration required. New features are opt-in via CLI commands.
 - **CRITICAL FIX**: Shell injection vulnerability in channel router (gateway/channel_router.py)
   - Telegram/MCP messages routed to gateway now use `shlex.split()` with `shell=False`
   - Prevents arbitrary command injection from external message sources
-  
+
 - **IMPROVED**: Webhook listener now binds to `127.0.0.1` by default (was `0.0.0.0`)
   - Prevents external network access to agent webhook endpoint
   - Can be overridden in config to `0.0.0.0` if needed
@@ -1842,24 +1842,24 @@ No migration required. New features are opt-in via CLI commands.
 - **Fixed**: Missing numpy dependency causing ImportError
   - Made numpy import lazy/conditional with proper error message
   - Added HAS_NUMPY flag to check availability before use
-  
+
 - **Fixed**: pyproject.toml missing 15+ subpackages
   - Changed to `find:` package discovery to include all navig.* packages
   - Ensures `pip install .` includes agent, gateway, scheduler, mcp, memory, etc.
-  
+
 - **Fixed**: Bare `except:` clauses swallowing KeyboardInterrupt
   - Changed to `except Exception:` in navig_ai.py and cli.py
   - Allows Ctrl+C to properly terminate the program
-  
+
 - **Fixed**: Scaffold date variable using literal "today" instead of actual date
   - Now uses `datetime.now().strftime('%Y-%m-%d')`
-  
+
 - **Fixed**: Silent error swallowing in nervous_system.py event dispatch
   - Added proper logging with traceback for handler errors
-  
+
 - **Fixed**: README references to nonexistent SECURITY_FIXES_APPLIED.md
   - Updated to point to Troubleshooting Guide instead
-  
+
 - **Fixed**: Old repository name "remote-manager" in README and pyproject.toml
   - Updated all URLs to current "navig" repository name
 
@@ -1867,10 +1867,10 @@ No migration required. New features are opt-in via CLI commands.
 
 - **Improved**: Scaffold dry-run now shows preview of files to be created
   - Lists all files and directories from template before generation
-  
+
 - **Improved**: Better error message for external source files in templates
   - Now explicitly states feature is not implemented instead of silent pass
-  
+
 - **Added**: Shared test fixtures in tests/conftest.py
   - Mock configs, SSH clients, subprocess calls, temp directories
   - Sample data factories for hosts, apps, templates
@@ -1883,7 +1883,7 @@ No migration required. New features are opt-in via CLI commands.
   - Deleted pre-implementation architecture docs
   - Deleted completed roadmaps and gap analyses
   - Removed redundant implementation completion files
-  
+
 - **Updated**: HANDBOOK.md version to 2.1.0 (was incorrectly 2.3.0)
 - **Updated**: HANDBOOK.md date to 2026-02-06 (was 2025-01-06)
 
@@ -1893,7 +1893,7 @@ No migration required. New features are opt-in via CLI commands.
   - Deleted `docs/TELEGRAM_BOT.md` (1,332 words) - merged into TELEGRAM.md
   - Deleted `docs/TELEGRAM_BOT_SETUP.md` (1,447 words) - merged into TELEGRAM.md
   - Deleted `docs/TELEGRAM_AI_ASSISTANT.md` (5,290 words) - architecture proposals, essentials merged
-  
+
 - **Removed**: 2 additional stale planning documents
   - Deleted `docs/IMPLEMENTATION_ROADMAP.md` (4,460 words) - planning artifact
   - Deleted `docs/TELEGRAM_IMPLEMENTATION_COMPLETE.md` (1,162 words) - completion announcement
@@ -2589,7 +2589,7 @@ NAVIG now follows the `navig <resource> <action>` pattern organized into 7 pilla
 
 **New canonical commands:**
 - `navig file add/get/list/show/edit/remove` - File operations
-- `navig db list/tables/run/dump/restore` - Database operations  
+- `navig db list/tables/run/dump/restore` - Database operations
 - `navig backup list/run/restore` - Backup management
 - `navig ai ask/analyze/context/status/config/reset` - Unified AI assistant
 - `navig system show/update/clean/run/reboot` - System maintenance
@@ -2669,7 +2669,7 @@ navig wiki publish --preview           # Preview what would be published
 ├── inbox/           # Drop files here for AI processing
 ├── .meta/           # Configuration & indexes
 ├── knowledge/       # Encyclopedia (configurable public/private)
-├── technical/       # Technical documentation  
+├── technical/       # Technical documentation
 ├── hub/             # Project command center (roadmap, tasks, planning)
 ├── external/        # Business & marketing materials
 └── archive/         # Archived content
@@ -2693,7 +2693,7 @@ All legacy commands continue to work but show deprecation warnings pointing to t
 
 Every resource now supports these standard actions (where applicable):
 - `add` - Create new resource
-- `list` - List resources  
+- `list` - List resources
 - `show` - Show detailed information
 - `edit` - Modify existing resource
 - `update` - Update/sync resource
@@ -3983,19 +3983,19 @@ Check `is_file()` before `read_text()` to distinguish between:
   - Automatic app root detection via upward directory search from current working directory
   - App-specific configs take precedence over global `~/.navig/` configs
   - Three-tier configuration priority: **App > Global > Defaults**
-  
+
 - ✅ **New `navig init` command**:
   - Initializes `.navig/` directory in current directory
   - Creates complete directory structure:
     - `hosts/` - App-specific host configurations
-    - `apps/` - App-specific app configurations  
+    - `apps/` - App-specific app configurations
     - `cache/` - Runtime state (tunnel PIDs, etc.)
     - `backups/` - Database backups
     - `config.yaml` - App metadata (name, version, timestamp)
   - Available in both CLI and interactive menu
   - Optional `--copy-global` flag to copy global configs to app
   - Automatic error handling if `.navig/` already exists
-  
+
 - ✅ **Enhanced ConfigManager with hierarchical support**:
   - `_find_app_root()` - Searches upward from cwd for `.navig/` directory
   - `_get_config_directories()` - Returns priority-ordered list of config locations
@@ -4004,13 +4004,13 @@ Check `is_file()` before `read_text()` to distinguish between:
   - Updated `list_hosts()` - Merges hosts from all config directories (deduplicated)
   - Updated `host_exists()` - Checks all config directories
   - Updated `delete_host_config()` - Deletes from first location found
-  
+
 - ✅ **Database path separation**:
   - App context uses `<app>/.navig/navig.db`
   - Non-app context uses `~/.navig/navig.db`
   - Automatic separation based on app root detection
   - Command history and cache are app-specific when in app directory
-  
+
 - ✅ **Verbose mode for diagnostics**:
   - New `verbose` parameter in `ConfigManager.__init__()`
   - Diagnostic output shows:
@@ -4019,7 +4019,7 @@ Check `is_file()` before `read_text()` to distinguish between:
     - Database file path being used
     - Config file loading locations
   - Helpful for troubleshooting configuration issues
-  
+
 - ✅ **Backward compatibility maintained**:
   - Existing `~/.navig/` global configs continue to work
   - Commands run outside apps use global config as before
@@ -4559,7 +4559,7 @@ navig config show myhost:myapp
   - JSON mode includes `cancelled:true` when user aborts restore
   - Safety backup tracking in JSON output (automatic rollback file)
 
-#### **File Commands - Added JSON Support**  
+#### **File Commands - Added JSON Support**
 - ✅ `navig upload <local> [remote]` - JSON with local/remote/size_bytes/success
 
 #### **Coverage Improvements**
@@ -4582,7 +4582,7 @@ navig config show myhost:myapp
   - Automatic error categorization (tunnel, database, file, network, config)
   - Persistent storage in `~/.navig/error_log.json`
   - Time-based filtering (last 24h, 7d, 30d)
-  
+
 #### **Command Suggestion Engine**
 - ✅ **Smart Suggestions**: AI analyzes failed commands and suggests fixes
   - Tunnel failures → Check SSH, firewall, port conflicts, restart with auto-increment
@@ -4591,22 +4591,22 @@ navig config show myhost:myapp
   - Config errors → List servers, validate setup, inspect configuration
   - Returns top 5 actionable suggestions based on error patterns
 
-#### **Error Analysis Commands**  
+#### **Error Analysis Commands**
 - ✅ `navig ai errors [--hours 24] [--category <cat>] [--json]` - View error summary
   - Total error count and category breakdown
   - Most common error patterns with occurrence counts
   - Recent errors with timestamps and context
   - JSON export for automation/monitoring
-  
+
 - ✅ `navig ai suggest <command> "<error>"` - Get troubleshooting suggestions
   - Analyzes failed command and error message
   - Returns actionable steps to diagnose and fix
   - Supports JSON output for scripting
-  
+
 - ✅ `navig ai clear [--days 30]` - Clear old error logs
   - Remove errors older than specified days
   - Confirmation prompt (bypassed with --yes)
-  
+
 - ✅ `navig ai export <file> [--hours 168]` - Export errors to JSON
   - Export last N hours of errors for external analysis
   - Includes timestamps, categories, commands, context
@@ -4617,7 +4617,7 @@ navig config show myhost:myapp
   - Last 24h error count and categories automatically added to context
   - Top 3 most common errors included in AI prompts
   - Helps AI provide more accurate troubleshooting advice
-  
+
 #### **Integrated Error Logging**
 - ✅ **Command Integration**: Error logging added to critical commands
   - Database commands: Log SQL failures, connection issues, credential errors
@@ -4655,7 +4655,7 @@ navig config show myhost:myapp
   - Jitter (random 0-25% variation) prevents thundering herd problem
   - Overall timeout support (prevents infinite retries)
   - Automatic error logging for failed operations
-  
+
 #### **Retry Configurations** (Preset for Common Operations)
 - ✅ **Tunnel Operations**: 5 retries, 1s → 2s → 4s → 8s → 16s, 60s timeout
 - ✅ **Database Operations**: 3 retries, 2s → 4s → 8s, 30s timeout
@@ -4674,13 +4674,13 @@ delay += random(0, delay * 0.25)       # Add jitter
   - **CLOSED** (normal): Operations execute normally, failures tracked
   - **OPEN** (failing): Operations blocked, prevents cascade failures
   - **HALF_OPEN** (testing): Limited attempts to test service recovery
-  
+
 - ✅ **Automatic State Transitions**:
   - CLOSED → OPEN: After 3-5 consecutive failures (configurable)
   - OPEN → HALF_OPEN: After 30-60s recovery timeout (configurable)
   - HALF_OPEN → CLOSED: After 2 successful operations
   - HALF_OPEN → OPEN: If recovery test fails
-  
+
 - ✅ **Global Circuit Breakers**: Separate instances for tunnel, database, SSH
   - Tunnel breaker: 3 failures → 30s timeout
   - Database breaker: 5 failures → 60s timeout
@@ -4709,7 +4709,7 @@ def start_tunnel():
   - SSH connections: 10s default (ConnectTimeout=10)
   - Port tests: 2-3s connection timeout
   - Database queries: 30s default, configurable per command
-  
+
 - ✅ **Failure Isolation**: Circuit breakers prevent cascade failures
   - Tunnel failure doesn't block database cache operations
   - Database failure doesn't affect file operations
@@ -5101,7 +5101,7 @@ Recovery steps:
     ```python
     # First connection to new server
     remote_ops.execute_command(cmd, server_config, trust_new_host=True)
-    
+
     # Subsequent connections (default, secure)
     remote_ops.execute_command(cmd, server_config)
     ```
@@ -5552,13 +5552,13 @@ Recovery steps:
   - Lazy file creation - custom configs only created when modified
   - Per-server enable/disable with independent state per server
   - Template version tracking for update management
-  
+
 - **Auto-Detection for Server Templates** - Automatic discovery during server inspection
   - **n8n Detection** - systemd service, binary version, port 5678, ~/.n8n directory
   - **HestiaCP Detection** - /usr/local/hestia, CLI tools, port 8083, version info
   - **Gitea Detection** - systemd service, binary version, port 3000, /var/lib/gitea paths
   - Auto-initialization of detected templates with version and path info
-  
+
 - **Server Template CLI Commands** (`navig server-template`)
   - `navig server-template list [--server NAME] [--enabled]` - List templates for a server
   - `navig server-template show TEMPLATE [--server NAME]` - Show merged template configuration
@@ -5569,7 +5569,7 @@ Recovery steps:
   - `navig server-template init TEMPLATE [--server NAME] [--enable]` - Manually initialize template
   - All commands support `--server` option (defaults to active server)
   - Rich table output with status, version, source, and customization indicators
-  
+
 - **Template Sync Mechanism**
   - Preserve custom settings by default during template updates
   - `--force` flag to reset to template defaults
@@ -5585,7 +5585,7 @@ Recovery steps:
   - Dependency resolution with circular dependency prevention
   - Lazy loading - only enabled templates are loaded into memory
   - Automatic configuration merging into server configs
-  
+
 - **Pre-Built Templates** - Three production-ready templates included:
   - **HestiaCP** - Web hosting control panel integration
     - 8 predefined paths (hestia_root, web_root, backup_dir, etc.)
@@ -5604,7 +5604,7 @@ Recovery steps:
     - 8 commands (backup, list repos, version check, service control)
     - Multi-database support (SQLite3, MySQL, PostgreSQL)
     - API token authentication
-    
+
 - **Template CLI Commands**
   - `navig template list` - List all available templates with status
   - `navig template enable <name>` - Enable template with dependency checking
@@ -5620,7 +5620,7 @@ Recovery steps:
   - Process lifecycle management (start/stop/restart)
   - Multi-server support with enable/disable
   - Status monitoring and health checks
-  
+
 - **MCP CLI Commands**
   - `navig mcp search <query>` - Search MCP directory for servers
   - `navig mcp install <name>` - Install MCP server from directory
@@ -5632,7 +5632,7 @@ Recovery steps:
   - `navig mcp stop <name|all>` - Stop MCP server(s)
   - `navig mcp restart <name>` - Restart MCP server
   - `navig mcp status <name>` - Show detailed MCP server status
-  
+
 - **Built-in MCP Server Support**
   - Filesystem - Local filesystem access
   - GitHub - GitHub API integration
@@ -5667,8 +5667,3 @@ Initial release with core functionality:
 ---
 
 For more information about these features, see the [README.md](README.md) documentation.
-
-
-
-
-

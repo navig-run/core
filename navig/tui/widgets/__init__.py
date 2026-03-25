@@ -1,4 +1,5 @@
 """navig.tui.widgets — Re-exports all shared TUI widget classes."""
+
 from __future__ import annotations
 
 from navig.tui.widgets.brand_hero import BrandHero

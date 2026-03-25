@@ -83,6 +83,7 @@ class Status(Enum):
 @dataclass
 class TraySettings:
     """Persistent tray app settings."""
+
     auto_start: bool = False
     start_daemon_on_launch: bool = True
     start_gateway_on_launch: bool = False
@@ -99,7 +100,9 @@ class TraySettings:
         if SETTINGS_FILE.exists():
             try:
                 data = json.loads(SETTINGS_FILE.read_text())
-                return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+                return cls(
+                    **{k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+                )
             except Exception:  # noqa: BLE001
                 pass  # Intentionally ignored  # best-effort; failure is non-critical
         return cls()
@@ -108,6 +111,7 @@ class TraySettings:
 @dataclass
 class ProcessState:
     """Track a managed subprocess."""
+
     name: str
     process: Optional[subprocess.Popen] = None
     status: Status = Status.STOPPED
@@ -146,7 +150,9 @@ class NavigTray:
         self.settings = TraySettings.load()
         self.gateway = ProcessState(name="Gateway")
         self.agent = ProcessState(name="Agent")
-        self.daemon = ProcessState(name="Daemon")  # New: supervised daemon (bot+gateway+scheduler)
+        self.daemon = ProcessState(
+            name="Daemon"
+        )  # New: supervised daemon (bot+gateway+scheduler)
         self._icon = None
         self._health_thread: Optional[threading.Thread] = None
         self._running = False
@@ -225,7 +231,9 @@ class NavigTray:
                 stdout=fh,
                 stderr=subprocess.STDOUT,
                 cwd=str(Path.home()),
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                creationflags=(
+                    subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                ),
             )
             state.status = Status.RUNNING
             state.started_at = datetime.now()
@@ -260,16 +268,29 @@ class NavigTray:
         """Find and kill any orphan navig_bot.py processes."""
         try:
             result = subprocess.run(
-                ["powershell", "-Command",
-                 "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*navig_bot.py*' } | Select-Object ProcessId | ForEach-Object { $_.ProcessId }"],
-                capture_output=True, text=True, timeout=10,
+                [
+                    "powershell",
+                    "-Command",
+                    "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*navig_bot.py*' } | Select-Object ProcessId | ForEach-Object { $_.ProcessId }",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            pids = [int(p.strip()) for p in result.stdout.strip().split('\n') if p.strip().isdigit()]
+            pids = [
+                int(p.strip())
+                for p in result.stdout.strip().split("\n")
+                if p.strip().isdigit()
+            ]
             for pid in pids:
                 try:
-                    subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, timeout=5,
-                                   creationflags=subprocess.CREATE_NO_WINDOW)
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        capture_output=True,
+                        timeout=5,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
                     log.info(f"Killed orphan bot process PID {pid}")
                 except Exception:  # noqa: BLE001
                     pass  # Intentionally ignored  # best-effort; failure is non-critical
@@ -302,7 +323,11 @@ class NavigTray:
                 stdout=fh,
                 stderr=subprocess.STDOUT,
                 cwd=str(Path.home()),
-                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+                creationflags=(
+                    subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+                    if sys.platform == "win32"
+                    else 0
+                ),
             )
             self.daemon.status = Status.RUNNING
             self.daemon.started_at = datetime.now()
@@ -337,7 +362,10 @@ class NavigTray:
                 # This triggers graceful _shutdown() which kills children properly
                 if sys.platform == "win32":
                     import ctypes
-                    ctypes.windll.kernel32.GenerateConsoleCtrlEvent(1, daemon_pid)  # CTRL_BREAK = 1
+
+                    ctypes.windll.kernel32.GenerateConsoleCtrlEvent(
+                        1, daemon_pid
+                    )  # CTRL_BREAK = 1
                 else:
                     os.kill(daemon_pid, signal.SIGTERM)
             except Exception as e:
@@ -359,7 +387,8 @@ class NavigTray:
                 try:
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(daemon_pid), "/T"],
-                        capture_output=True, timeout=5,
+                        capture_output=True,
+                        timeout=5,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
                 except Exception:  # noqa: BLE001
@@ -397,6 +426,7 @@ class NavigTray:
                 pid = int(daemon_pid_file.read_text().strip())
                 if sys.platform == "win32":
                     import ctypes
+
                     kernel32 = ctypes.windll.kernel32
                     handle = kernel32.OpenProcess(0x100000, False, pid)
                     if handle:
@@ -414,7 +444,10 @@ class NavigTray:
             return False
         try:
             import winreg
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_KEY, 0, winreg.KEY_READ)
+
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, REGISTRY_KEY, 0, winreg.KEY_READ
+            )
             try:
                 winreg.QueryValueEx(key, REGISTRY_VALUE)
                 return True
@@ -431,6 +464,7 @@ class NavigTray:
             return
         try:
             import winreg
+
             # Use CreateKeyEx to ensure the key exists and we have write access
             key = winreg.CreateKeyEx(
                 winreg.HKEY_CURRENT_USER, REGISTRY_KEY, 0, winreg.KEY_SET_VALUE
@@ -529,8 +563,10 @@ class NavigTray:
         # --- helpers ---
         def _bg(fn):
             """Wrap action to run in a background thread."""
+
             def wrapper(icon, item):
                 threading.Thread(target=fn, daemon=True).start()
+
             return wrapper
 
         def _toggle_autostart(icon, item):
@@ -543,7 +579,9 @@ class NavigTray:
         # --- status label ---
         parts = []
         if dm_running:
-            pid_str = f" (PID {self.daemon.process.pid})" if self.daemon.is_alive else ""
+            pid_str = (
+                f" (PID {self.daemon.process.pid})" if self.daemon.is_alive else ""
+            )
             parts.append(f"Bot: ON{pid_str}")
         if gw_running:
             parts.append("GW: ON")
@@ -555,7 +593,6 @@ class NavigTray:
             # ── Header ──
             pystray.MenuItem(f"NAVIG  —  {status_text}", None, enabled=False),
             pystray.Menu.SEPARATOR,
-
             # ── Telegram Bot (daemon) ──
             pystray.MenuItem(
                 "Start Telegram Bot" if not dm_running else "Restart Telegram Bot",
@@ -567,88 +604,159 @@ class NavigTray:
                 enabled=dm_running,
             ),
             pystray.Menu.SEPARATOR,
-
             # ── Hosts & Remote ──
-            pystray.MenuItem("Hosts", pystray.Menu(
-                pystray.MenuItem("Host Status",        _bg(lambda: self._run_navig_interactive(["host", "status"]))),
-                pystray.MenuItem("List Hosts",         _bg(lambda: self._run_navig_interactive(["host", "list"]))),
-                pystray.MenuItem("Test Connection",    _bg(lambda: self._run_navig_interactive(["host", "test"]))),
-            )),
-
+            pystray.MenuItem(
+                "Hosts",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "Host Status",
+                        _bg(lambda: self._run_navig_interactive(["host", "status"])),
+                    ),
+                    pystray.MenuItem(
+                        "List Hosts",
+                        _bg(lambda: self._run_navig_interactive(["host", "list"])),
+                    ),
+                    pystray.MenuItem(
+                        "Test Connection",
+                        _bg(lambda: self._run_navig_interactive(["host", "test"])),
+                    ),
+                ),
+            ),
             # ── Database ──
-            pystray.MenuItem("Database", pystray.Menu(
-                pystray.MenuItem("List Databases",     _bg(lambda: self._run_navig_interactive(["db", "list"]))),
-                pystray.MenuItem("Show Tables",        _bg(lambda: self._run_navig_interactive(["db", "tables"]))),
-                pystray.MenuItem("DB Status",          _bg(lambda: self._run_navig_interactive(["db", "status"]))),
-            )),
-
+            pystray.MenuItem(
+                "Database",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "List Databases",
+                        _bg(lambda: self._run_navig_interactive(["db", "list"])),
+                    ),
+                    pystray.MenuItem(
+                        "Show Tables",
+                        _bg(lambda: self._run_navig_interactive(["db", "tables"])),
+                    ),
+                    pystray.MenuItem(
+                        "DB Status",
+                        _bg(lambda: self._run_navig_interactive(["db", "status"])),
+                    ),
+                ),
+            ),
             # ── Vault / Credentials ──
-            pystray.MenuItem("Vault", pystray.Menu(
-                pystray.MenuItem("List Credentials",   _bg(lambda: self._run_navig_interactive(["cred", "list"]))),
-                pystray.MenuItem("Show Vault Info",    _bg(lambda: self._run_navig_interactive(["cred", "show"]))),
-            )),
-
+            pystray.MenuItem(
+                "Vault",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "List Credentials",
+                        _bg(lambda: self._run_navig_interactive(["cred", "list"])),
+                    ),
+                    pystray.MenuItem(
+                        "Show Vault Info",
+                        _bg(lambda: self._run_navig_interactive(["cred", "show"])),
+                    ),
+                ),
+            ),
             # ── Skills ──
-            pystray.MenuItem("Skills", pystray.Menu(
-                pystray.MenuItem("List Skills",        _bg(lambda: self._run_navig_interactive(["skills", "list"]))),
-                pystray.MenuItem("Installed Skills",   _bg(lambda: self._run_navig_interactive(["skills", "installed"]))),
-            )),
-
+            pystray.MenuItem(
+                "Skills",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "List Skills",
+                        _bg(lambda: self._run_navig_interactive(["skills", "list"])),
+                    ),
+                    pystray.MenuItem(
+                        "Installed Skills",
+                        _bg(
+                            lambda: self._run_navig_interactive(["skills", "installed"])
+                        ),
+                    ),
+                ),
+            ),
             # ── Backups ──
-            pystray.MenuItem("Backups", pystray.Menu(
-                pystray.MenuItem("Backup Status",      _bg(lambda: self._run_navig_interactive(["backup", "status"]))),
-                pystray.MenuItem("List Backups",       _bg(lambda: self._run_navig_interactive(["backup", "list"]))),
-                pystray.MenuItem("Run Backup Now",     _bg(lambda: self._run_navig_interactive(["backup", "run"]))),
-            )),
-
+            pystray.MenuItem(
+                "Backups",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "Backup Status",
+                        _bg(lambda: self._run_navig_interactive(["backup", "status"])),
+                    ),
+                    pystray.MenuItem(
+                        "List Backups",
+                        _bg(lambda: self._run_navig_interactive(["backup", "list"])),
+                    ),
+                    pystray.MenuItem(
+                        "Run Backup Now",
+                        _bg(lambda: self._run_navig_interactive(["backup", "run"])),
+                    ),
+                ),
+            ),
             pystray.Menu.SEPARATOR,
-
             # ── Advanced Services ──
-            pystray.MenuItem("Advanced", pystray.Menu(
-                pystray.MenuItem(
-                    "Start Gateway (standalone)",
-                    _bg(self.start_gateway),
-                    enabled=not gw_running,
+            pystray.MenuItem(
+                "Advanced",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "Start Gateway (standalone)",
+                        _bg(self.start_gateway),
+                        enabled=not gw_running,
+                    ),
+                    pystray.MenuItem(
+                        "Stop Gateway",
+                        _bg(self.stop_gateway),
+                        enabled=gw_running,
+                    ),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        "Start Agent (standalone)",
+                        _bg(self.start_agent),
+                        enabled=not ag_running,
+                    ),
+                    pystray.MenuItem(
+                        "Stop Agent",
+                        _bg(self.stop_agent),
+                        enabled=ag_running,
+                    ),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        "Service Status",
+                        _bg(lambda: self._run_navig_interactive(["service", "status"])),
+                    ),
+                    pystray.MenuItem(
+                        "View Daemon Logs",
+                        _bg(
+                            lambda: self._run_navig_interactive(
+                                ["service", "logs", "--lines", "50"]
+                            )
+                        ),
+                    ),
+                    pystray.MenuItem(
+                        "Open NAVIG Terminal", _bg(lambda: self._open_navig_shell())
+                    ),
                 ),
-                pystray.MenuItem(
-                    "Stop Gateway",
-                    _bg(self.stop_gateway),
-                    enabled=gw_running,
-                ),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem(
-                    "Start Agent (standalone)",
-                    _bg(self.start_agent),
-                    enabled=not ag_running,
-                ),
-                pystray.MenuItem(
-                    "Stop Agent",
-                    _bg(self.stop_agent),
-                    enabled=ag_running,
-                ),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Service Status",     _bg(lambda: self._run_navig_interactive(["service", "status"]))),
-                pystray.MenuItem("View Daemon Logs",   _bg(lambda: self._run_navig_interactive(["service", "logs", "--lines", "50"]))),
-                pystray.MenuItem("Open NAVIG Terminal", _bg(lambda: self._open_navig_shell())),
-            )),
-
+            ),
             # ── Settings ──
-            pystray.MenuItem("Settings", pystray.Menu(
-                pystray.MenuItem(
-                    "Auto-start tray with Windows",
-                    _toggle_autostart,
-                    checked=lambda item: self._get_autostart_enabled(),
+            pystray.MenuItem(
+                "Settings",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "Auto-start tray with Windows",
+                        _toggle_autostart,
+                        checked=lambda item: self._get_autostart_enabled(),
+                    ),
+                    pystray.MenuItem(
+                        "Start bot when tray opens",
+                        lambda icon, item: self._toggle_setting(
+                            "start_daemon_on_launch"
+                        ),
+                        checked=lambda item: self.settings.start_daemon_on_launch,
+                    ),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        "Open Config Folder", _bg(lambda: os.startfile(str(NAVIG_DIR)))
+                    ),
+                    pystray.MenuItem(
+                        "Open Log Folder", _bg(lambda: os.startfile(str(LOG_DIR)))
+                    ),
                 ),
-                pystray.MenuItem(
-                    "Start bot when tray opens",
-                    lambda icon, item: self._toggle_setting("start_daemon_on_launch"),
-                    checked=lambda item: self.settings.start_daemon_on_launch,
-                ),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Open Config Folder", _bg(lambda: os.startfile(str(NAVIG_DIR)))),
-                pystray.MenuItem("Open Log Folder",    _bg(lambda: os.startfile(str(LOG_DIR)))),
-            )),
-
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 "Stop All & Exit",
@@ -664,7 +772,9 @@ class NavigTray:
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                creationflags=(
+                    subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                ),
             )
         except Exception as e:
             log.error(f"Failed to run navig command: {e}")
@@ -698,7 +808,9 @@ class NavigTray:
             # Set title, show version, then drop to prompt
             init = f'title {title} && "{self._python}" -m navig --version && echo. && echo Type "navig --help" for commands && echo.'
             try:
-                subprocess.Popen(f'cmd /k "{init}"', creationflags=subprocess.CREATE_NEW_CONSOLE)
+                subprocess.Popen(
+                    f'cmd /k "{init}"', creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
             except Exception as e:
                 log.error(f"Failed to open NAVIG shell: {e}")
 
@@ -767,8 +879,11 @@ def main():
             # Check if PID is still alive
             if sys.platform == "win32":
                 import ctypes
+
                 kernel32 = ctypes.windll.kernel32
-                handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                handle = kernel32.OpenProcess(
+                    0x1000, False, pid
+                )  # PROCESS_QUERY_LIMITED_INFORMATION
                 if handle:
                     kernel32.CloseHandle(handle)
                     print(f"NAVIG Tray is already running (PID {pid})")

@@ -1,4 +1,5 @@
 """navig.tui.widgets.step_indicator — Dot-based wizard step progress widget."""
+
 from __future__ import annotations
 
 from typing import List

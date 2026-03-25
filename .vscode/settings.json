@@ -1,0 +1,8 @@
+{
+    "navig-bridge.projectManager.planningFolder": "k:\\_PROJECTS_SMALL\\navig\\.navig\\plans",
+    "copilot-auto-continue.projectManager.planningFolder": ".navig/plans",
+    "navig-bridge.projectManager.enabled": true,
+    "git.ignoreLimitWarning": true,
+    "workbench.colorTheme": "Monokai Pro (Filter Machine)",
+    "workbench.iconTheme": "material-icon-theme",
+}

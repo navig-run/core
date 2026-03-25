@@ -1,0 +1,22 @@
+# Gemini Assistant Instructions
+
+You are acting as an expert AI programming assistant (managed by Gemini) for the NAVIG project.
+Please respect the following strict repository directives in all your automated actions and suggestions:
+
+## 1. Directory Contract & Repo Cleanliness
+- **NEVER** write test logs, audit logs, scratchpad scripts, JSON dumps, WIP markdown, or random txt files to the repository root.
+- All temporary artifacts, draft scripts, execution logs (e.g. `audit_log.txt`, `failed_tests.txt`, `pytest_collect.txt`, `ruff_bugs.txt`), and non-production outputs MUST be placed in `.local/`.
+- The repository root must remain pristine.
+
+## 2. General Code Directives
+- Follow the overarching guidelines found in `.github/instructions/contributor.instructions.md` and `.github/instructions/owner.instructions.md`.
+- Keep changes concise and avoid duplicating code.
+- Prefer `loguru` for all application logging in Python, never `print()`.
+
+## 3. Workflow & Executions
+- When running tests or linters, if output needs to be saved to a file, pipe it securely to `.local/` (e.g., `py -m pytest > .local/test_output.txt`).
+- Always clean up your own temporary files when a task is completed, ensuring no clutter is left behind.
+
+## 4. Skills & Assets
+- Always respect the dual-format (JSON + SKILL.md) bridges when modifying skills under `store/skills`.
+- Follow strict naming conventions and do not scatter ad-hoc assets without explicit architectural approval.
