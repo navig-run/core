@@ -8,6 +8,7 @@ State-aware Textual Application:
 deep_link is forwarded to DashboardScreen for startup routing
 (e.g. deep_link="provider" → wizard steps open on AI Provider step).
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -132,7 +133,9 @@ class NavigOnboardingApp(App):  # type: ignore[type-arg]
     def on_mount(self) -> None:
         if self._mode == "dashboard":
             from navig.tui.screens.dashboard import DashboardScreen
+
             self.push_screen(DashboardScreen(deep_link=self._deep_link))
         else:
             from navig.tui.screens.boot import BootScreen
+
             self.push_screen(BootScreen())

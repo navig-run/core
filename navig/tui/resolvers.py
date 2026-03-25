@@ -7,13 +7,13 @@ calls, no subprocess.  All must complete in <100 ms on a cold local disk.
 StatusBadge.deep_link is the /settings/* route that repairs this section.
 An empty string means no settings panel is available (read-only info).
 """
+
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
-
 
 # ---------------------------------------------------------------------------
 # StatusBadge
@@ -25,7 +25,7 @@ class StatusBadge:
     """Lightweight health record for one NAVIG sub-system."""
 
     label: str
-    status: str        # "ok" | "warn" | "error" | "missing"
+    status: str  # "ok" | "warn" | "error" | "missing"
     detail: str = ""
     icon: str = ""
     deep_link: str = ""  # /settings/<section> — empty = no settings panel
@@ -33,18 +33,18 @@ class StatusBadge:
     @property
     def color(self) -> str:
         return {
-            "ok":      "#10b981",
-            "warn":    "#f59e0b",
-            "error":   "#ef4444",
+            "ok": "#10b981",
+            "warn": "#f59e0b",
+            "error": "#ef4444",
             "missing": "#64748b",
         }.get(self.status, "#64748b")
 
     @property
     def symbol(self) -> str:
         return self.icon or {
-            "ok":      "●",
-            "warn":    "◑",
-            "error":   "✖",
+            "ok": "●",
+            "warn": "◑",
+            "error": "✖",
             "missing": "○",
         }.get(self.status, "?")
 
@@ -56,9 +56,11 @@ class StatusBadge:
 
 def _load_navig_json() -> Optional[Dict[str, Any]]:
     from navig.tui.config_model import DEFAULT_CONFIG_FILE
+
     try:
         if DEFAULT_CONFIG_FILE.is_file():
             import json
+
             return json.loads(DEFAULT_CONFIG_FILE.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         pass
@@ -81,16 +83,21 @@ def resolve_provider() -> StatusBadge:
             pass
     try:
         from navig.settings.resolver import get as _sget
+
         resolved = _sget("navig.ai.provider", "")
     except Exception:  # noqa: BLE001
         resolved = ""
     if resolved or (nj and provider_hint != "—"):
         return StatusBadge(
-            "AI Provider", "ok", resolved or provider_hint,
+            "AI Provider",
+            "ok",
+            resolved or provider_hint,
             deep_link="/settings/vault",
         )
     return StatusBadge(
-        "AI Provider", "missing", "navig init --provider",
+        "AI Provider",
+        "missing",
+        "navig init --provider",
         deep_link="/settings/vault",
     )
 
@@ -99,16 +106,21 @@ def resolve_telegram() -> StatusBadge:
     """Check Telegram bot configuration."""
     try:
         from navig.config import get as _cfg
+
         token = _cfg("TELEGRAM_BOT_TOKEN", "") or _cfg("telegram_bot_token", "")
         if token:
             return StatusBadge(
-                "Telegram", "ok", "configured",
+                "Telegram",
+                "ok",
+                "configured",
                 deep_link="/settings/gateway",
             )
     except Exception:  # noqa: BLE001
         pass
     return StatusBadge(
-        "Telegram", "missing", "Optional • navig bot setup",
+        "Telegram",
+        "missing",
+        "Optional • navig bot setup",
         deep_link="/settings/gateway",
     )
 
@@ -119,12 +131,14 @@ def resolve_ssh() -> StatusBadge:
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.is_file():
             import yaml  # type: ignore[import]
+
             data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
             hosts = data.get("hosts", {})
             if hosts:
                 count = len(hosts)
                 return StatusBadge(
-                    "SSH Keys", "ok",
+                    "SSH Keys",
+                    "ok",
                     f"{count} host{'s' if count != 1 else ''} active",
                 )
     except Exception:  # noqa: BLE001
@@ -143,7 +157,9 @@ def resolve_daemon() -> StatusBadge:
     except (ValueError, OSError, ProcessLookupError, PermissionError):
         pass
     return StatusBadge(
-        "Daemon", "missing", "not installed → navig daemon start",
+        "Daemon",
+        "missing",
+        "not installed → navig daemon start",
         deep_link="",
     )
 
@@ -152,13 +168,16 @@ def resolve_vault() -> StatusBadge:
     """Check vault initialisation state."""
     try:
         from navig.vault.manager import VaultManager  # type: ignore[import]
+
         vm = VaultManager()
         vm.list()
         return StatusBadge("Vault", "ok", "encrypted ✓", deep_link="/settings/vault")
     except Exception as exc:  # noqa: BLE001
         detail = str(exc)[:50] if str(exc) else "locked or missing"
         return StatusBadge(
-            "Vault", "warn", detail,
+            "Vault",
+            "warn",
+            detail,
             deep_link="/settings/vault",
         )
 
@@ -172,6 +191,7 @@ def resolve_agent() -> StatusBadge:
     """Check active agent config (soul.json / agent.json)."""
     try:
         from navig.agent_config_loader import load_agent_json
+
         cfg = load_agent_json("navig")
         if cfg:
             mode = cfg.llm_mode or "auto"
@@ -179,19 +199,28 @@ def resolve_agent() -> StatusBadge:
             detail = f"{name} / {mode}"
             # Check soul.json as secondary signal
             soul_path = Path("store/agents/navig/soul.json")
-            soul_ok = soul_path.is_file() or (Path.home() / ".navig/agents/navig/soul.json").is_file()
+            soul_ok = (
+                soul_path.is_file()
+                or (Path.home() / ".navig/agents/navig/soul.json").is_file()
+            )
             soul_indicator = " soul.json ✓" if soul_ok else ""
             return StatusBadge(
-                "Agent", "ok", detail + soul_indicator,
+                "Agent",
+                "ok",
+                detail + soul_indicator,
                 deep_link="/settings/agents",
             )
         return StatusBadge(
-            "Agent", "missing", "navig init",
+            "Agent",
+            "missing",
+            "navig init",
             deep_link="/settings/agents",
         )
     except Exception:  # noqa: BLE001
         return StatusBadge(
-            "Agent", "warn", "config unavailable",
+            "Agent",
+            "warn",
+            "config unavailable",
             deep_link="/settings/agents",
         )
 
@@ -211,7 +240,9 @@ def resolve_gateway() -> StatusBadge:
 
         if not active:
             return StatusBadge(
-                "Gateway", "missing", "no channels configured",
+                "Gateway",
+                "missing",
+                "no channels configured",
                 deep_link="/settings/gateway",
             )
 
@@ -221,17 +252,22 @@ def resolve_gateway() -> StatusBadge:
         channel_str = ", ".join(active[:2]) + ("…" if len(active) > 2 else "")
         if error_count > 0:
             return StatusBadge(
-                "Gateway", "warn",
+                "Gateway",
+                "warn",
                 f"{channel_str} — {error_count} error{'s' if error_count != 1 else ''} in last hour",
                 deep_link="/settings/gateway",
             )
         return StatusBadge(
-            "Gateway", "ok", channel_str,
+            "Gateway",
+            "ok",
+            channel_str,
             deep_link="/settings/gateway",
         )
     except Exception:  # noqa: BLE001
         return StatusBadge(
-            "Gateway", "missing", "navig bot setup",
+            "Gateway",
+            "missing",
+            "navig bot setup",
             deep_link="/settings/gateway",
         )
 
@@ -240,6 +276,7 @@ def resolve_mesh() -> StatusBadge:
     """Check mesh node topology (read-only, no settings panel)."""
     try:
         from navig.mesh.registry import NodeRegistry  # type: ignore[import]
+
         registry = NodeRegistry()
         nodes = registry.list_nodes() if hasattr(registry, "list_nodes") else []
         node_count = len(nodes) if nodes else 0
@@ -251,13 +288,15 @@ def resolve_mesh() -> StatusBadge:
         leader_name = "—"
         try:
             from navig.mesh.election import get_current_leader  # type: ignore[import]
+
             leader = get_current_leader()
             leader_name = str(leader) if leader else "—"
         except Exception:  # noqa: BLE001
             pass
 
         return StatusBadge(
-            "Mesh", "ok",
+            "Mesh",
+            "ok",
             f"{node_count} node{'s' if node_count != 1 else ''} — leader: {leader_name}",
         )
     except Exception:  # noqa: BLE001
@@ -268,13 +307,16 @@ def resolve_scheduler() -> StatusBadge:
     """Check cron scheduler state."""
     try:
         from navig.scheduler.cron_service import CronService  # type: ignore[import]
+
         svc = CronService()
         jobs = svc.list_jobs() if hasattr(svc, "list_jobs") else []
         count = len(jobs) if jobs else 0
 
         if count == 0:
             return StatusBadge(
-                "Scheduler", "missing", "no jobs configured",
+                "Scheduler",
+                "missing",
+                "no jobs configured",
                 deep_link="/settings/scheduler",
             )
 
@@ -289,6 +331,7 @@ def resolve_scheduler() -> StatusBadge:
                 job = upcoming[0]
                 name = getattr(job, "name", "job")
                 import time
+
                 delta = int(job.next_fire - time.time())
                 if delta < 60:
                     next_label = f" — next: {name} in {delta}s"
@@ -300,13 +343,16 @@ def resolve_scheduler() -> StatusBadge:
             pass
 
         return StatusBadge(
-            "Scheduler", "ok",
+            "Scheduler",
+            "ok",
             f"{count} job{'s' if count != 1 else ''}{next_label}",
             deep_link="/settings/scheduler",
         )
     except Exception:  # noqa: BLE001
         return StatusBadge(
-            "Scheduler", "missing", "navig cron list",
+            "Scheduler",
+            "missing",
+            "navig cron list",
             deep_link="/settings/scheduler",
         )
 
@@ -315,6 +361,7 @@ def resolve_task_queue() -> StatusBadge:
     """Check task queue depth and last completion."""
     try:
         from navig.tasks.queue import TaskQueue  # type: ignore[import]
+
         q = TaskQueue()
         pending = q.pending_count() if hasattr(q, "pending_count") else 0
         last_age = None
@@ -338,6 +385,7 @@ def resolve_blackbox() -> StatusBadge:
     """Check recent blackbox operation timeline."""
     try:
         from navig.blackbox.timeline import BlackboxTimeline  # type: ignore[import]
+
         tl = BlackboxTimeline()
         ops = tl.recent(n=3) if hasattr(tl, "recent") else []
 
@@ -349,6 +397,7 @@ def resolve_blackbox() -> StatusBadge:
         last_label = ""
         if last_op:
             import time
+
             name = getattr(last_op, "name", getattr(last_op, "action", "op"))
             ts = getattr(last_op, "timestamp", None)
             if ts:
@@ -371,12 +420,15 @@ def _count_recent_errors(category: str, window_seconds: int = 3600) -> int:
     """Count recent error entries from blackbox that match a category."""
     try:
         import time
+
         from navig.blackbox.timeline import BlackboxTimeline  # type: ignore[import]
+
         tl = BlackboxTimeline()
         cutoff = time.time() - window_seconds
         recent = tl.recent(n=100) if hasattr(tl, "recent") else []
         return sum(
-            1 for op in recent
+            1
+            for op in recent
             if getattr(op, "status", "") in ("error", "failed")
             and getattr(op, "category", "") == category
             and getattr(op, "timestamp", 0) >= cutoff
@@ -390,15 +442,15 @@ def _count_recent_errors(category: str, window_seconds: int = 3600) -> int:
 # ---------------------------------------------------------------------------
 
 SECTIONS = [
-    ("Agent",       resolve_agent),
+    ("Agent", resolve_agent),
     ("AI Provider", resolve_provider),
-    ("Gateway",     resolve_gateway),
-    ("Mesh",        resolve_mesh),
-    ("Scheduler",   resolve_scheduler),
-    ("Task Queue",  resolve_task_queue),
-    ("Blackbox",    resolve_blackbox),
-    ("SSH Keys",    resolve_ssh),
-    ("Daemon",      resolve_daemon),
-    ("Vault",       resolve_vault),
-    ("Telegram",    resolve_telegram),
+    ("Gateway", resolve_gateway),
+    ("Mesh", resolve_mesh),
+    ("Scheduler", resolve_scheduler),
+    ("Task Queue", resolve_task_queue),
+    ("Blackbox", resolve_blackbox),
+    ("SSH Keys", resolve_ssh),
+    ("Daemon", resolve_daemon),
+    ("Vault", resolve_vault),
+    ("Telegram", resolve_telegram),
 ]

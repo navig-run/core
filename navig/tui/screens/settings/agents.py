@@ -6,6 +6,7 @@ and execution mode toggle.
 Bindings: ctrl+s=save, escape=cancel.
 On save: posts SettingsSaved("Agent").
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -20,15 +21,15 @@ from textual.widgets import Button, Input, Label, Select
 from navig.tui.messages import SettingsSaved
 
 _PROVIDERS = ["openai", "anthropic", "ollama", "groq", "mistral", "gemini", "custom"]
-_MODES     = ["standard", "plan-and-execute", "react", "simple"]
+_MODES = ["standard", "plan-and-execute", "react", "simple"]
 
 
 class AgentSettingsScreen(Screen):  # type: ignore[type-arg]
     """Agent / LLM runtime settings."""
 
     BINDINGS = [
-        Binding("ctrl+s",  "save",   "Save",   show=True),
-        Binding("escape",  "cancel", "Cancel", show=True),
+        Binding("ctrl+s", "save", "Save", show=True),
+        Binding("escape", "cancel", "Cancel", show=True),
     ]
 
     DEFAULT_CSS = """
@@ -68,21 +69,27 @@ class AgentSettingsScreen(Screen):  # type: ignore[type-arg]
     def _load() -> dict:
         try:
             from navig.tui.config_model import load_navig_json
+
             raw = load_navig_json() or {}
             ag = raw.get("agent", {})
             return {
-                "provider":   ag.get("provider", "openai"),
-                "model":      ag.get("model", ""),
+                "provider": ag.get("provider", "openai"),
+                "model": ag.get("model", ""),
                 "agent_json": ag.get("agent_json_path", ""),
-                "mode":       ag.get("execution_mode", "standard"),
+                "mode": ag.get("execution_mode", "standard"),
             }
         except Exception:  # noqa: BLE001
-            return {"provider": "openai", "model": "", "agent_json": "", "mode": "standard"}
+            return {
+                "provider": "openai",
+                "model": "",
+                "agent_json": "",
+                "mode": "standard",
+            }
 
     def compose(self) -> ComposeResult:
         d = self._initial
         provider_opts = [(p, p) for p in _PROVIDERS]
-        mode_opts     = [(m, m) for m in _MODES]
+        mode_opts = [(m, m) for m in _MODES]
 
         with Vertical(id="agent-panel"):
             yield Label("Agent Settings", id="agent-title", markup=False)
@@ -94,11 +101,25 @@ class AgentSettingsScreen(Screen):  # type: ignore[type-arg]
                 id="agent-provider",
             )
 
-            yield Label("Model (leave blank for default)", classes="field-label", markup=False)
-            yield Input(value=d["model"], placeholder="e.g. gpt-4o, claude-3-5-sonnet", id="agent-model")
+            yield Label(
+                "Model (leave blank for default)", classes="field-label", markup=False
+            )
+            yield Input(
+                value=d["model"],
+                placeholder="e.g. gpt-4o, claude-3-5-sonnet",
+                id="agent-model",
+            )
 
-            yield Label("Agent JSON path (optional override)", classes="field-label", markup=False)
-            yield Input(value=d["agent_json"], placeholder="~/.navig/agents/custom.json", id="agent-json-path")
+            yield Label(
+                "Agent JSON path (optional override)",
+                classes="field-label",
+                markup=False,
+            )
+            yield Input(
+                value=d["agent_json"],
+                placeholder="~/.navig/agents/custom.json",
+                id="agent-json-path",
+            )
 
             yield Label("Execution Mode", classes="field-label", markup=False)
             yield Select(
@@ -127,19 +148,29 @@ class AgentSettingsScreen(Screen):  # type: ignore[type-arg]
 
     def _do_save(self) -> None:
         try:
-            from navig.tui.config_model import DEFAULT_CONFIG_FILE, load_navig_json
             from navig.commands.onboard import save_config
+            from navig.tui.config_model import DEFAULT_CONFIG_FILE, load_navig_json
 
             raw = load_navig_json() or {}
             raw.setdefault("agent", {})
 
             provider_sel = self.query_one("#agent-provider", Select)
-            mode_sel     = self.query_one("#agent-mode", Select)
+            mode_sel = self.query_one("#agent-mode", Select)
 
-            raw["agent"]["provider"]         = str(provider_sel.value) if provider_sel.value is not Select.BLANK else "openai"
-            raw["agent"]["model"]            = self.query_one("#agent-model", Input).value.strip()
-            raw["agent"]["agent_json_path"]  = self.query_one("#agent-json-path", Input).value.strip()
-            raw["agent"]["execution_mode"]   = str(mode_sel.value) if mode_sel.value is not Select.BLANK else "standard"
+            raw["agent"]["provider"] = (
+                str(provider_sel.value)
+                if provider_sel.value is not Select.BLANK
+                else "openai"
+            )
+            raw["agent"]["model"] = self.query_one("#agent-model", Input).value.strip()
+            raw["agent"]["agent_json_path"] = self.query_one(
+                "#agent-json-path", Input
+            ).value.strip()
+            raw["agent"]["execution_mode"] = (
+                str(mode_sel.value)
+                if mode_sel.value is not Select.BLANK
+                else "standard"
+            )
 
             save_config(raw, DEFAULT_CONFIG_FILE)
             self.post_message(SettingsSaved("Agent"))

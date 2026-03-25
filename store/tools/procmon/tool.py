@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for procmon (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -14,12 +15,16 @@ TOOL = "procmon"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig sys procmon", description="Sysinternals Process Monitor capture")
+    parser = argparse.ArgumentParser(
+        prog="navig sys procmon", description="Sysinternals Process Monitor capture"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_cap = sub.add_parser("capture", help="Capture events to a PML file")
     p_cap.add_argument("--output", default=None, help="Output .pml path")
-    p_cap.add_argument("--duration", type=int, default=15, help="Capture duration in seconds")
+    p_cap.add_argument(
+        "--duration", type=int, default=15, help="Capture duration in seconds"
+    )
     p_cap.add_argument("--filter", default=None, help="PMC filter config path")
     p_cap.add_argument("--dry-run", action="store_true", default=False)
 

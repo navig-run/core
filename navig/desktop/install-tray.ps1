@@ -46,7 +46,7 @@ if (-not $Python) {
         (Get-Command python -ErrorAction SilentlyContinue).Source,
         (Get-Command python3 -ErrorAction SilentlyContinue).Source
     ) | Where-Object { $_ -and (Test-Path $_) }
-    
+
     if ($candidates.Count -gt 0) {
         $Python = $candidates[0]
     } else {

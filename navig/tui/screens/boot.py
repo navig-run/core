@@ -1,4 +1,5 @@
 """navig.tui.screens.boot — BootScreen: animated startup sequence."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,9 +7,9 @@ from typing import Any
 
 from textual import work
 from textual.binding import Binding
+from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Label, RichLog
-from textual.containers import Vertical
 from textual.worker import WorkerCancelled
 
 from navig.tui.config_model import detect_environment
@@ -48,6 +49,7 @@ class BootScreen(Screen):  # type: ignore[type-arg]
     @work(exclusive=True)
     async def _run_boot_sequence(self) -> None:
         from navig.tui.screens.welcome import WelcomeScreen
+
         log: RichLog = self.query_one("#boot-log", RichLog)
         try:
             # Phase 1: character-by-character logo
@@ -78,8 +80,12 @@ class BootScreen(Screen):  # type: ignore[type-arg]
 
             # Phase 3: identity block
             env = detect_environment()
-            log.write("[dim #64748b]NAVIG mesh detected:[/dim #64748b]  [#22d3ee]0 nodes[/#22d3ee]")
-            log.write("[dim #64748b]Operator identity:[/dim #64748b]   [yellow]not registered[/yellow]")
+            log.write(
+                "[dim #64748b]NAVIG mesh detected:[/dim #64748b]  [#22d3ee]0 nodes[/#22d3ee]"
+            )
+            log.write(
+                "[dim #64748b]Operator identity:[/dim #64748b]   [yellow]not registered[/yellow]"
+            )
             log.write("")
             log.write(f"[dim]Machine :[/dim]  [#22d3ee]{env['hostname']}[/#22d3ee]")
             log.write(f"[dim]Shell   :[/dim]  {env['shell']}")
@@ -95,8 +101,10 @@ class BootScreen(Screen):  # type: ignore[type-arg]
         except Exception as exc:  # noqa: BLE001
             self.notify(f"Boot sequence error: {exc}", severity="warning")
             from navig.tui.screens.welcome import WelcomeScreen
+
             self.app.push_screen(WelcomeScreen())
 
     def action_skip(self) -> None:
         from navig.tui.screens.welcome import WelcomeScreen
+
         self.app.push_screen(WelcomeScreen())

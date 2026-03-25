@@ -256,5 +256,5 @@ After installation:
 
 ---
 
-**Bookmark this card!** 🤖  
+**Bookmark this card!** 🤖
 Print or save for quick reference.

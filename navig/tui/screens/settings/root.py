@@ -3,6 +3,7 @@ navig.tui.screens.settings.root — SettingsRootScreen.
 
 Navigation hub linking to all scoped settings panels.
 """
+
 from __future__ import annotations
 
 from textual import on
@@ -18,7 +19,7 @@ class SettingsRootScreen(Screen):  # type: ignore[type-arg]
 
     BINDINGS = [
         Binding("escape", "dismiss", "Back", show=True),
-        Binding("q",      "dismiss", "Back", show=False),
+        Binding("q", "dismiss", "Back", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -46,30 +47,34 @@ class SettingsRootScreen(Screen):  # type: ignore[type-arg]
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-panel"):
             yield Label("Settings", id="settings-title", markup=False)
-            yield Button("Gateway",  variant="default", id="btn-gateway")
-            yield Button("Agents",   variant="default", id="btn-agents")
-            yield Button("Vault",    variant="default", id="btn-vault")
-            yield Button("Scheduler",variant="default", id="btn-scheduler")
-            yield Button("← Back",   variant="default", id="btn-back")
+            yield Button("Gateway", variant="default", id="btn-gateway")
+            yield Button("Agents", variant="default", id="btn-agents")
+            yield Button("Vault", variant="default", id="btn-vault")
+            yield Button("Scheduler", variant="default", id="btn-scheduler")
+            yield Button("← Back", variant="default", id="btn-back")
 
     @on(Button.Pressed, "#btn-gateway")
     def _gateway(self) -> None:
         from navig.tui.screens.settings.gateway import GatewaySettingsScreen
+
         self.app.push_screen(GatewaySettingsScreen())
 
     @on(Button.Pressed, "#btn-agents")
     def _agents(self) -> None:
         from navig.tui.screens.settings.agents import AgentSettingsScreen
+
         self.app.push_screen(AgentSettingsScreen())
 
     @on(Button.Pressed, "#btn-vault")
     def _vault(self) -> None:
         from navig.tui.screens.settings.vault import VaultSettingsScreen
+
         self.app.push_screen(VaultSettingsScreen())
 
     @on(Button.Pressed, "#btn-scheduler")
     def _scheduler(self) -> None:
         from navig.tui.screens.settings.scheduler import SchedulerSettingsScreen
+
         self.app.push_screen(SchedulerSettingsScreen())
 
     @on(Button.Pressed, "#btn-back")

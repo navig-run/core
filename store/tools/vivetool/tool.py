@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for vivetool (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -8,13 +9,15 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
 from common import err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
-from worker import cmd_enable, cmd_disable, cmd_query  # noqa: E402
+from worker import cmd_disable, cmd_enable, cmd_query  # noqa: E402
 
 TOOL = "vivetool"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig sys vivetool", description="ViVeTool Windows feature flags")
+    parser = argparse.ArgumentParser(
+        prog="navig sys vivetool", description="ViVeTool Windows feature flags"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_enable = sub.add_parser("enable", help="Enable feature IDs")

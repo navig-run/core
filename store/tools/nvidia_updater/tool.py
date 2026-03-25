@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for nvidia_updater (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -14,7 +15,9 @@ TOOL = "nvidia_updater"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig sys nvidia", description="NVIDIA driver update checker")
+    parser = argparse.ArgumentParser(
+        prog="navig sys nvidia", description="NVIDIA driver update checker"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("check", help="Check for NVIDIA driver updates")

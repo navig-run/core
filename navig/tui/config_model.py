@@ -3,6 +3,7 @@ navig.tui.config_model — Shared NavigConfig dataclass and related helpers.
 
 No Textual dependency.  Safe to import anywhere.
 """
+
 from __future__ import annotations
 
 import json
@@ -107,11 +108,7 @@ def load_navig_json() -> Optional[Dict[str, Any]]:
 
 def detect_environment() -> Dict[str, str]:
     """Return a snapshot of the local operator environment."""
-    shell = (
-        os.environ.get("SHELL")
-        or os.environ.get("COMSPEC")
-        or "unknown"
-    )
+    shell = os.environ.get("SHELL") or os.environ.get("COMSPEC") or "unknown"
     return {
         "hostname": socket.gethostname(),
         "shell": shell,
@@ -167,6 +164,7 @@ def check_ollama_reachable(host: str = "http://localhost:11434") -> bool:
     """True if Ollama HTTP endpoint responds within 2 s."""
     try:
         import httpx  # already a core dep
+
         resp = httpx.get(host, timeout=2.0)
         return resp.status_code < 500
     except Exception:  # noqa: BLE001
@@ -185,6 +183,7 @@ def check_api_key_in_env(provider: str) -> bool:
         return False
     try:
         from navig.config import get as _cfg_get  # lazy
+
         return bool(_cfg_get(env_var, ""))
     except Exception:  # noqa: BLE001
         return bool(os.environ.get(env_var))

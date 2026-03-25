@@ -19,10 +19,10 @@ import importlib
 import sys
 from typing import Any, Dict, List, Optional
 
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def get_schema() -> Dict[str, Any]:
     """Return a stable JSON-serialisable schema of all registered CLI commands.
@@ -65,11 +65,13 @@ def get_schema() -> Dict[str, Any]:
                 {"name": cmd_name, "description": cmd_desc}
                 for cmd_name, cmd_desc in commands_dict.items()
             ]
-            groups.append({
-                "name": topic,
-                "description": desc,
-                "commands": commands,
-            })
+            groups.append(
+                {
+                    "name": topic,
+                    "description": desc,
+                    "commands": commands,
+                }
+            )
     except Exception:
         # Fall back to an empty-but-valid structure if help_dictionaries
         # is unavailable (e.g., during testing with a stripped install).
@@ -77,13 +79,13 @@ def get_schema() -> Dict[str, Any]:
 
     # Augment with any additional flat commands not covered by HELP_REGISTRY.
     _FLAT_COMMANDS = [
-        {"name": "run",      "description": "Execute command on remote host"},
-        {"name": "status",   "description": "Show active host/app/tunnel status"},
-        {"name": "init",     "description": "Interactive setup wizard"},
-        {"name": "help",     "description": "Show help for a topic"},
-        {"name": "upgrade",  "description": "Upgrade NAVIG to the latest version"},
-        {"name": "version",  "description": "Show version information"},
-        {"name": "menu",     "description": "Launch interactive menu"},
+        {"name": "run", "description": "Execute command on remote host"},
+        {"name": "status", "description": "Show active host/app/tunnel status"},
+        {"name": "init", "description": "Interactive setup wizard"},
+        {"name": "help", "description": "Show help for a topic"},
+        {"name": "upgrade", "description": "Upgrade NAVIG to the latest version"},
+        {"name": "version", "description": "Show version information"},
+        {"name": "menu", "description": "Launch interactive menu"},
     ]
     flat_commands.extend(_FLAT_COMMANDS)
 
@@ -100,4 +102,5 @@ def get_schema() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import json
+
     print(json.dumps(get_schema(), indent=2))

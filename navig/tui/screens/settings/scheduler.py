@@ -6,6 +6,7 @@ max concurrent tasks, and retry policy.
 Bindings: ctrl+s=save, escape=cancel.
 On save: posts SettingsSaved("Scheduler").
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -24,8 +25,8 @@ class SchedulerSettingsScreen(Screen):  # type: ignore[type-arg]
     """Scheduler / task runner settings."""
 
     BINDINGS = [
-        Binding("ctrl+s",  "save",   "Save",   show=True),
-        Binding("escape",  "cancel", "Cancel", show=True),
+        Binding("ctrl+s", "save", "Save", show=True),
+        Binding("escape", "cancel", "Cancel", show=True),
     ]
 
     DEFAULT_CSS = """
@@ -65,11 +66,12 @@ class SchedulerSettingsScreen(Screen):  # type: ignore[type-arg]
     def _load() -> dict:
         try:
             from navig.tui.config_model import load_navig_json
+
             raw = load_navig_json() or {}
             sc = raw.get("scheduler", {})
             return {
-                "enabled":     bool(sc.get("enabled", False)),
-                "cron":        sc.get("cron", "*/5 * * * *"),
+                "enabled": bool(sc.get("enabled", False)),
+                "cron": sc.get("cron", "*/5 * * * *"),
                 "max_concurrent": str(sc.get("max_concurrent", "4")),
                 "retry_limit": str(sc.get("retry_limit", "3")),
                 "retry_delay": str(sc.get("retry_delay_seconds", "60")),
@@ -101,7 +103,9 @@ class SchedulerSettingsScreen(Screen):  # type: ignore[type-arg]
             yield Input(value=d["retry_limit"], placeholder="3", id="sched-retry-limit")
 
             yield Label("Retry Delay (seconds)", classes="field-label", markup=False)
-            yield Input(value=d["retry_delay"], placeholder="60", id="sched-retry-delay")
+            yield Input(
+                value=d["retry_delay"], placeholder="60", id="sched-retry-delay"
+            )
 
             with Horizontal(id="sched-btns"):
                 yield Button("Save  [ctrl+s]", variant="primary", id="btn-save")
@@ -123,8 +127,8 @@ class SchedulerSettingsScreen(Screen):  # type: ignore[type-arg]
 
     def _do_save(self) -> None:
         try:
-            from navig.tui.config_model import DEFAULT_CONFIG_FILE, load_navig_json
             from navig.commands.onboard import save_config
+            from navig.tui.config_model import DEFAULT_CONFIG_FILE, load_navig_json
 
             raw = load_navig_json() or {}
             raw.setdefault("scheduler", {})
@@ -135,7 +139,7 @@ class SchedulerSettingsScreen(Screen):  # type: ignore[type-arg]
             if cron:
                 raw["scheduler"]["cron"] = cron
 
-            max_str  = self.query_one("#sched-max", Input).value.strip()
+            max_str = self.query_one("#sched-max", Input).value.strip()
             rlim_str = self.query_one("#sched-retry-limit", Input).value.strip()
             rdel_str = self.query_one("#sched-retry-delay", Input).value.strip()
 

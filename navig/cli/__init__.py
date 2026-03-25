@@ -65,8 +65,10 @@ def _get_config_manager():
         with _config_manager_lock:
             if _config_manager is None:  # double-checked locking
                 from navig.config import get_config_manager
+
                 _config_manager = get_config_manager(force_new=_NO_CACHE)
     return _config_manager
+
 
 # Heavy dependencies - loaded lazily on first use
 # This reduces startup time by ~200ms for commands that don't need them
@@ -84,6 +86,7 @@ def _get_tunnel_manager():
         with _lazy_lock:
             if _TunnelManager is None:
                 from navig.tunnel import TunnelManager
+
                 _TunnelManager = TunnelManager
     return _TunnelManager
 
@@ -95,6 +98,7 @@ def _get_remote_operations():
         with _lazy_lock:
             if _RemoteOperations is None:
                 from navig.remote import RemoteOperations
+
                 _RemoteOperations = RemoteOperations
     return _RemoteOperations
 
@@ -106,6 +110,7 @@ def _get_ai_assistant():
         with _lazy_lock:
             if _AIAssistant is None:
                 from navig.ai import AIAssistant
+
                 _AIAssistant = AIAssistant
     return _AIAssistant
 
@@ -139,11 +144,15 @@ def show_subcommand_help(name: str, ctx: typer.Context = None):
     info = HELP_REGISTRY[name]
 
     console.print()
-    console.print(f"[bold cyan]navig {name}[/bold cyan] [dim]-[/dim] [white]{info['desc']}[/white]")
+    console.print(
+        f"[bold cyan]navig {name}[/bold cyan] [dim]-[/dim] [white]{info['desc']}[/white]"
+    )
     console.print("[dim]" + "=" * 75 + "[/dim]")
 
     # Commands table
-    cmd_table = Table(box=None, show_header=False, padding=(0, 2), collapse_padding=True)
+    cmd_table = Table(
+        box=None, show_header=False, padding=(0, 2), collapse_padding=True
+    )
     cmd_table.add_column("Command", style="cyan", min_width=12)
     cmd_table.add_column("Description", style="dim")
 
@@ -153,7 +162,9 @@ def show_subcommand_help(name: str, ctx: typer.Context = None):
     console.print(cmd_table)
 
     console.print("[dim]" + "=" * 75 + "[/dim]")
-    console.print(f"[yellow]navig {name} <cmd> --help[/yellow] [dim]for command details[/dim]")
+    console.print(
+        f"[yellow]navig {name} <cmd> --help[/yellow] [dim]for command details[/dim]"
+    )
     console.print()
 
     return True
@@ -161,22 +172,28 @@ def show_subcommand_help(name: str, ctx: typer.Context = None):
 
 def make_subcommand_callback(name: str):
     """Create a callback function for a subcommand that shows custom help."""
+
     def callback(ctx: typer.Context):
         if ctx.invoked_subcommand is None:
             if show_subcommand_help(name, ctx):
                 raise typer.Exit()
+
     return callback
 
 
 def show_compact_help():
     """Render navig/help/index.md with Rich Markdown, or fall back to bare text."""
     from pathlib import Path as _Path
+
     _help_index = _Path(__file__).resolve().parent.parent / "help" / "index.md"
     if _help_index.exists():
         try:
             from rich.console import Console as _Console
             from rich.markdown import Markdown as _MD
-            _Console(legacy_windows=True).print(_MD(_help_index.read_text(encoding="utf-8")))
+
+            _Console(legacy_windows=True).print(
+                _MD(_help_index.read_text(encoding="utf-8"))
+            )
             raise typer.Exit()
         except typer.Exit:
             raise
@@ -184,6 +201,7 @@ def show_compact_help():
             pass
     # Fallback: minimal text so --help never crashes
     from navig import __version__ as _v  # noqa: PLC0415
+
     typer.echo(f"NAVIG v{_v}")
     typer.echo("  navig <command> [options]")
     typer.echo("  navig help <cmd>  for details")
@@ -223,14 +241,15 @@ def _get_hacker_quotes() -> list:
     global _HACKER_QUOTES
     if _HACKER_QUOTES is None:
         from navig.cli._quotes import HACKER_QUOTES as _q
+
         _HACKER_QUOTES = _q
     return _HACKER_QUOTES
-
 
 
 # ============================================================================
 # GLOBAL FLAGS (applied via context)
 # ============================================================================
+
 
 def _schema_callback(value: bool):
     """Output machine-readable command schema as JSON and exit."""
@@ -238,6 +257,7 @@ def _schema_callback(value: bool):
         import json as _json
 
         from navig.cli.registry import get_schema
+
         _schema = get_schema()
         typer.echo(_json.dumps(_schema, indent=2))
         raise typer.Exit()
@@ -249,8 +269,9 @@ def version_callback(value: bool):
         ch.info(f"NAVIG v{__version__}")
         # Select and display a random quote
         import random
+
         quote, author = random.choice(_get_hacker_quotes())
-        ch.dim(f'💬 {quote} - {author}')
+        ch.dim(f"💬 {quote} - {author}")
         raise typer.Exit()
 
 
@@ -363,7 +384,7 @@ def main(
         if not hosts_with_app:
             ch.error(
                 f"App '{app}' not found on any host",
-                "Use 'navig app list --all' to see all available apps."
+                "Use 'navig app list --all' to see all available apps.",
             )
             raise typer.Exit(1)
         elif len(hosts_with_app) == 1:
@@ -374,36 +395,40 @@ def main(
         else:
             # Multiple hosts have this app
             active_host = _get_config_manager().get_active_host()
-            default_host = _get_config_manager().global_config.get('default_host')
+            default_host = _get_config_manager().global_config.get("default_host")
 
             # Try to use active host first, then default host
             if active_host in hosts_with_app:
                 host = active_host
                 if not quiet:
-                    ch.dim(f"→ Using active host: {host} (app '{app}' found on {len(hosts_with_app)} hosts)")
+                    ch.dim(
+                        f"→ Using active host: {host} (app '{app}' found on {len(hosts_with_app)} hosts)"
+                    )
             elif default_host in hosts_with_app:
                 host = default_host
                 if not quiet:
-                    ch.dim(f"→ Using default host: {host} (app '{app}' found on {len(hosts_with_app)} hosts)")
+                    ch.dim(
+                        f"→ Using default host: {host} (app '{app}' found on {len(hosts_with_app)} hosts)"
+                    )
             else:
                 # Prompt user to choose
                 ch.warning(
                     f"App '{app}' found on multiple hosts: {', '.join(hosts_with_app)}",
-                    "Please specify which host to use with --host flag."
+                    "Please specify which host to use with --host flag.",
                 )
                 raise typer.Exit(1)
 
-    ctx.obj['host'] = host
-    ctx.obj['app'] = app
-    ctx.obj['verbose'] = verbose
-    ctx.obj['quiet'] = quiet
-    ctx.obj['dry_run'] = dry_run
-    ctx.obj['yes'] = yes
-    ctx.obj['confirm'] = confirm
-    ctx.obj['raw'] = raw
-    ctx.obj['json'] = json
-    ctx.obj['debug_log'] = debug_log
-    ctx.obj['debug_logger'] = None
+    ctx.obj["host"] = host
+    ctx.obj["app"] = app
+    ctx.obj["verbose"] = verbose
+    ctx.obj["quiet"] = quiet
+    ctx.obj["dry_run"] = dry_run
+    ctx.obj["yes"] = yes
+    ctx.obj["confirm"] = confirm
+    ctx.obj["raw"] = raw
+    ctx.obj["json"] = json
+    ctx.obj["debug_log"] = debug_log
+    ctx.obj["debug_logger"] = None
 
     # Initialize operation recorder for history tracking
     # void: every command becomes a memory. every memory becomes a lesson.
@@ -414,30 +439,46 @@ def main(
         from navig.operation_recorder import OperationType, get_operation_recorder
 
         recorder = get_operation_recorder()
-        command_str = ' '.join(sys.argv[1:])  # Exclude 'python -m navig'
+        command_str = " ".join(sys.argv[1:])  # Exclude 'python -m navig'
 
         # Determine operation type from command
         op_type = OperationType.LOCAL_COMMAND
-        if any(kw in command_str for kw in ['exec ', 'ssh ', 'tunnel ']):
+        if any(kw in command_str for kw in ["exec ", "ssh ", "tunnel "]):
             op_type = OperationType.REMOTE_COMMAND
-        elif any(kw in command_str for kw in ['db ', 'database ']):
+        elif any(kw in command_str for kw in ["db ", "database "]):
             op_type = OperationType.DATABASE_QUERY
-        elif any(kw in command_str for kw in ['upload ', 'download ', 'get ', 'put ']):
-            op_type = OperationType.FILE_UPLOAD if 'upload' in command_str or 'put' in command_str else OperationType.FILE_DOWNLOAD
-        elif any(kw in command_str for kw in ['docker ', 'container ']):
+        elif any(kw in command_str for kw in ["upload ", "download ", "get ", "put "]):
+            op_type = (
+                OperationType.FILE_UPLOAD
+                if "upload" in command_str or "put" in command_str
+                else OperationType.FILE_DOWNLOAD
+            )
+        elif any(kw in command_str for kw in ["docker ", "container "]):
             op_type = OperationType.DOCKER_COMMAND
-        elif any(kw in command_str for kw in ['workflow run']):
+        elif any(kw in command_str for kw in ["workflow run"]):
             op_type = OperationType.WORKFLOW_RUN
-        elif 'host use' in command_str or 'host switch' in command_str:
+        elif "host use" in command_str or "host switch" in command_str:
             op_type = OperationType.HOST_SWITCH
-        elif 'service' in command_str:
+        elif "service" in command_str:
             op_type = OperationType.SERVICE_RESTART
 
         # Skip recording for certain meta commands
-        skip_record = any(kw in command_str for kw in [
-            'history ', 'help', '--help', '-h', '--version', '-v',
-            'insights ', 'dashboard', 'suggest', 'trigger test', 'trigger history',
-        ])
+        skip_record = any(
+            kw in command_str
+            for kw in [
+                "history ",
+                "help",
+                "--help",
+                "-h",
+                "--version",
+                "-v",
+                "insights ",
+                "dashboard",
+                "suggest",
+                "trigger test",
+                "trigger history",
+            ]
+        )
 
         if not skip_record and command_str.strip():
             record = recorder.start_operation(
@@ -446,9 +487,9 @@ def main(
                 host=host,
                 app=app,
             )
-            ctx.obj['_operation_record'] = record
-            ctx.obj['_operation_start'] = time.time()
-            ctx.obj['_operation_recorder'] = recorder
+            ctx.obj["_operation_record"] = record
+            ctx.obj["_operation_start"] = time.time()
+            ctx.obj["_operation_recorder"] = recorder
     except Exception as e:
         # Silently skip recording on failure
         if verbose:
@@ -464,16 +505,17 @@ def main(
             _cm = _get_config_manager()
             # Only load config for this check if it's already loaded (cheap)
             if _cm._global_config_loaded:
-                debug_log_enabled = _cm.global_config.get('debug_log', False)
+                debug_log_enabled = _cm.global_config.get("debug_log", False)
             else:
                 # Fast-path: read just the debug_log key from the YAML file
                 # without triggering full config load + migrations + validation
                 import yaml
+
                 _gc_file = _cm.global_config_dir / "config.yaml"
                 if _gc_file.exists():
-                    with open(_gc_file, 'r', encoding='utf-8') as _f:
+                    with open(_gc_file, "r", encoding="utf-8") as _f:
                         _debug_raw_cfg = yaml.safe_load(_f) or {}
-                    debug_log_enabled = _debug_raw_cfg.get('debug_log', False)
+                    debug_log_enabled = _debug_raw_cfg.get("debug_log", False)
         except Exception:
             debug_log_enabled = False
 
@@ -487,10 +529,10 @@ def main(
                 if _get_config_manager()._global_config_loaded
                 else {}
             )
-            log_path = _dgc.get('debug_log_path')
-            max_size_mb = _dgc.get('debug_log_max_size_mb', 10)
-            max_files = _dgc.get('debug_log_max_files', 5)
-            truncate_kb = _dgc.get('debug_log_truncate_output_kb', 10)
+            log_path = _dgc.get("debug_log_path")
+            max_size_mb = _dgc.get("debug_log_max_size_mb", 10)
+            max_files = _dgc.get("debug_log_max_files", 5)
+            truncate_kb = _dgc.get("debug_log_truncate_output_kb", 10)
 
             debug_logger = DebugLogger(
                 log_path=Path(log_path) if log_path else None,
@@ -498,23 +540,28 @@ def main(
                 max_files=max_files,
                 truncate_output_kb=truncate_kb,
             )
-            ctx.obj['debug_logger'] = debug_logger
+            ctx.obj["debug_logger"] = debug_logger
 
             # Log command start
             import atexit
             import sys
-            command_str = ' '.join(sys.argv)
-            debug_logger.log_command_start(command_str, {
-                'host': host,
-                'app': app,
-                'verbose': verbose,
-                'quiet': quiet,
-                'dry_run': dry_run,
-            })
+
+            command_str = " ".join(sys.argv)
+            debug_logger.log_command_start(
+                command_str,
+                {
+                    "host": host,
+                    "app": app,
+                    "verbose": verbose,
+                    "quiet": quiet,
+                    "dry_run": dry_run,
+                },
+            )
 
             # Register atexit handler to log command end
             def log_command_end_on_exit():
                 debug_logger.log_command_end(True)
+
             atexit.register(log_command_end_on_exit)
 
             if verbose:
@@ -525,16 +572,16 @@ def main(
 
     # Register operation recording completion handler
     # void: the loop closes. the record endures.
-    if '_operation_record' in ctx.obj:
+    if "_operation_record" in ctx.obj:
         import atexit
         import time
 
         def record_operation_on_exit():
             def _do_record():
                 try:
-                    record = ctx.obj.get('_operation_record')
-                    recorder = ctx.obj.get('_operation_recorder')
-                    start_time = ctx.obj.get('_operation_start', time.time())
+                    record = ctx.obj.get("_operation_record")
+                    recorder = ctx.obj.get("_operation_recorder")
+                    start_time = ctx.obj.get("_operation_start", time.time())
 
                     if record and recorder:
                         duration_ms = (time.time() - start_time) * 1000
@@ -548,45 +595,54 @@ def main(
                         )
                 except Exception:
                     pass  # Silent fail for recording
-            import threading
-            threading.Thread(target=_do_record, daemon=True).start()
 
+            import threading
+
+            threading.Thread(target=_do_record, daemon=True).start()
 
         atexit.register(record_operation_on_exit)
 
     # Register fact extraction handler — runs silently after every CLI invocation.
     # void: every command is a signal. we harvest meaning from routine.
-    _SKIP_FACT_CMDS = frozenset(['memory', 'kg', 'index', 'history', 'version', 'help'])
-    _invoked_cmd = sys.argv[1] if len(sys.argv) > 1 else ''
-    if _invoked_cmd not in _SKIP_FACT_CMDS and _invoked_cmd not in ('', '--help', '--version'):
+    _SKIP_FACT_CMDS = frozenset(["memory", "kg", "index", "history", "version", "help"])
+    _invoked_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if _invoked_cmd not in _SKIP_FACT_CMDS and _invoked_cmd not in (
+        "",
+        "--help",
+        "--version",
+    ):
+
         def _extract_facts_on_exit():
             def _do_extract():
                 try:
-                    command_str = ' '.join(sys.argv[1:])
+                    command_str = " ".join(sys.argv[1:])
                     if not command_str.strip():
                         return
                     # Skip meta commands
-                    _skip_prefixes = ('--help', '--version', 'memory ', 'kg ', 'index ')
+                    _skip_prefixes = ("--help", "--version", "memory ", "kg ", "index ")
                     if any(command_str.startswith(p) for p in _skip_prefixes):
                         return
                     from navig.memory.manager import get_memory_manager
+
                     _mgr = get_memory_manager()
-                    if hasattr(_mgr, 'record_command'):
+                    if hasattr(_mgr, "record_command"):
                         _mgr.record_command(command_str)
-                    elif hasattr(_mgr, 'fact_extractor') and _mgr.fact_extractor:
+                    elif hasattr(_mgr, "fact_extractor") and _mgr.fact_extractor:
                         _result = _mgr.fact_extractor.extract_from_text(
                             f"User ran: {command_str}",
                             source="cli",
                         )
-                        if _result and hasattr(_mgr, 'store_facts'):
+                        if _result and hasattr(_mgr, "store_facts"):
                             _mgr.store_facts(_result)
                 except Exception:
                     pass  # Never surface memory errors to the user
 
             import threading
+
             threading.Thread(target=_do_extract, daemon=True).start()
 
         import atexit as _atexit2
+
         _atexit2.register(_extract_facts_on_exit)
 
     # Initialize proactive assistant if enabled
@@ -598,7 +654,9 @@ def main(
     # blocks the critical CLI path (saves ~181ms on every invocation).
     # Commands that need the assistant call ctx.obj['get_assistant']() which
     # returns the instance (waiting up to 500ms if still loading).
-    _skip_assistant = quiet or any(a in sys.argv for a in ('--plain', '--raw', '--json'))
+    _skip_assistant = quiet or any(
+        a in sys.argv for a in ("--plain", "--raw", "--json")
+    )
     if not _skip_assistant:
         import threading as _threading
 
@@ -609,6 +667,7 @@ def main(
             try:
                 from navig.config import get_config_manager as _gcm
                 from navig.proactive_assistant import ProactiveAssistant as _PA
+
                 _cfg = _gcm()
                 _inst = _PA(_cfg)
                 _assistant_holder["instance"] = _inst
@@ -624,30 +683,52 @@ def main(
             _assistant_ready.wait(timeout=timeout)
             return _assistant_holder.get("instance")
 
-        ctx.obj['get_assistant'] = _get_assistant
-        ctx.obj['assistant_enabled'] = True  # optimistic — set False if disabled
+        ctx.obj["get_assistant"] = _get_assistant
+        ctx.obj["assistant_enabled"] = True  # optimistic — set False if disabled
     else:
-        ctx.obj['get_assistant'] = lambda timeout=0.5: None
-        ctx.obj['assistant_enabled'] = False
+        ctx.obj["get_assistant"] = lambda timeout=0.5: None
+        ctx.obj["assistant_enabled"] = False
 
     # Show compact help if no subcommand is invoked
     if ctx.invoked_subcommand is None:
         # Check if user passed a natural language query as argument
         # (navig "check disk space" should work like AI chat)
         import sys
+
         remaining_args = sys.argv[1:]
 
         # Filter out global flags
-        global_flags = {'--host', '-h', '--app', '-p', '--verbose', '--quiet', '-q',
-                       '--dry-run', '--yes', '-y', '--confirm', '-c', '--raw',
-                       '--json', '--debug-log', '--no-cache', '--version', '-v', '--help'}
-        non_flag_args = [arg for arg in remaining_args
-                        if arg not in global_flags and not arg.startswith('--')]
+        global_flags = {
+            "--host",
+            "-h",
+            "--app",
+            "-p",
+            "--verbose",
+            "--quiet",
+            "-q",
+            "--dry-run",
+            "--yes",
+            "-y",
+            "--confirm",
+            "-c",
+            "--raw",
+            "--json",
+            "--debug-log",
+            "--no-cache",
+            "--version",
+            "-v",
+            "--help",
+        }
+        non_flag_args = [
+            arg
+            for arg in remaining_args
+            if arg not in global_flags and not arg.startswith("--")
+        ]
 
-        if non_flag_args and not non_flag_args[0].startswith('-'):
+        if non_flag_args and not non_flag_args[0].startswith("-"):
             # User passed something like: navig "check disk space"
             # Treat as natural language query → start AI chat
-            query = ' '.join(non_flag_args)
+            query = " ".join(non_flag_args)
             _run_ai_chat(query, single_query=True)
         else:
             # No args - show help
@@ -659,6 +740,7 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
     import sys
 
     from rich.console import Console
+
     console = Console()
 
     try:
@@ -676,7 +758,9 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
 
         # Interactive mode
         console.print("\n🤖 [bold cyan]NAVIG AI Chat[/bold cyan]")
-        console.print("   Type your question or command. Type 'exit' or 'quit' to leave.\n")
+        console.print(
+            "   Type your question or command. Type 'exit' or 'quit' to leave.\n"
+        )
 
         conversation = []
 
@@ -696,7 +780,7 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
                 if not user_input:
                     continue
 
-                if user_input.lower() in ('exit', 'quit', 'q', 'bye'):
+                if user_input.lower() in ("exit", "quit", "q", "bye"):
                     console.print("\n👋 Goodbye!")
                     break
 
@@ -743,6 +827,7 @@ def version_command(
 
     if json_output:
         import json
+
         info = {
             "navig_version": __version__,
             "python_version": sys.version.split()[0],
@@ -753,18 +838,25 @@ def version_command(
         print(json.dumps(info, indent=2))
     else:
         ch.info(f"NAVIG v{__version__}")
-        ch.dim(f"Python {sys.version.split()[0]} on {platform.system()} {platform.release()}")
+        ch.dim(
+            f"Python {sys.version.split()[0]} on {platform.system()} {platform.release()}"
+        )
         # Show a random quote
         import random
+
         quote, author = random.choice(_get_hacker_quotes())
-        ch.dim(f'💬 {quote} - {author}')
+        ch.dim(f"💬 {quote} - {author}")
 
 
 @app.command("upgrade")
 def upgrade_command(
     ctx: typer.Context,
-    check: bool = typer.Option(False, "--check", "-c", help="Only check, don't install"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force reinstall even if already up-to-date"),
+    check: bool = typer.Option(
+        False, "--check", "-c", help="Only check, don't install"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force reinstall even if already up-to-date"
+    ),
 ):
     """
     Upgrade NAVIG to the latest version.
@@ -784,7 +876,9 @@ def upgrade_command(
     from rich.console import Console as _RC
 
     _con = _RC()
-    src_dir = Path(__file__).resolve().parent.parent.parent  # navig/cli/__init__.py → navig-core/
+    src_dir = (
+        Path(__file__).resolve().parent.parent.parent
+    )  # navig/cli/__init__.py → navig-core/
     is_git = (src_dir / ".git").exists()
 
     # ------------------------------------------------------------------ check
@@ -794,16 +888,24 @@ def upgrade_command(
                 # Show current commit without any network call
                 log = subprocess.run(
                     ["git", "-C", str(src_dir), "log", "--oneline", "-1"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 commit = log.stdout.strip()
-                _con.print(f"[green]✓[/green] NAVIG v{__version__}  [dim]{commit}[/dim]")
-                _con.print("[dim]Run [bold]navig upgrade[/bold] to pull latest commits.[/dim]")
+                _con.print(
+                    f"[green]✓[/green] NAVIG v{__version__}  [dim]{commit}[/dim]"
+                )
+                _con.print(
+                    "[dim]Run [bold]navig upgrade[/bold] to pull latest commits.[/dim]"
+                )
             except Exception as exc:
                 _con.print(f"[dim]Could not read git info: {exc}[/dim]")
         else:
             _con.print(f"[green]✓[/green] NAVIG v{__version__}")
-            _con.print("[dim]Run [bold]navig upgrade[/bold] to upgrade to the latest release.[/dim]")
+            _con.print(
+                "[dim]Run [bold]navig upgrade[/bold] to upgrade to the latest release.[/dim]"
+            )
         return
 
     # ---------------------------------------------------------------- upgrade
@@ -812,18 +914,26 @@ def upgrade_command(
 
     if is_git:
         _con.print(f"[cyan]▶[/cyan] Pulling latest from git… [dim]({src_dir})[/dim]")
-        _git_env = {**__import__('os').environ, "GIT_TERMINAL_PROMPT": "0"}
+        _git_env = {**__import__("os").environ, "GIT_TERMINAL_PROMPT": "0"}
         try:
             pull = subprocess.run(
                 [
                     "git",
-                    "-C", str(src_dir),
-                    "-c", "http.connectTimeout=10",
-                    "-c", "http.lowSpeedLimit=0",
-                    "-c", "http.lowSpeedTime=20",
-                    "pull", "--ff-only",
+                    "-C",
+                    str(src_dir),
+                    "-c",
+                    "http.connectTimeout=10",
+                    "-c",
+                    "http.lowSpeedLimit=0",
+                    "-c",
+                    "http.lowSpeedTime=20",
+                    "pull",
+                    "--ff-only",
                 ],
-                capture_output=True, text=True, timeout=30, env=_git_env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=_git_env,
             )
             if pull.returncode != 0:
                 err = pull.stderr.strip()
@@ -837,18 +947,31 @@ def upgrade_command(
             _con.print("[red]✗[/red] git not found — install git and retry")
             raise SystemExit(1) from _exc
         except subprocess.TimeoutExpired:
-            _con.print("[yellow]⚠[/yellow] git pull timed out (slow network) — reinstalling from local source")
+            _con.print(
+                "[yellow]⚠[/yellow] git pull timed out (slow network) — reinstalling from local source"
+            )
 
         # Re-install editable so any new entry points or deps are picked up
         _con.print("[cyan]▶[/cyan] Reinstalling package…")
         uv = shutil.which("uv")
         if uv:
-            cmd = [uv, "pip", "install", "--python", sys.executable, "-e", str(src_dir), "-q"]
+            cmd = [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                sys.executable,
+                "-e",
+                str(src_dir),
+                "-q",
+            ]
         else:
             cmd = [sys.executable, "-m", "pip", "install", "-e", str(src_dir), "-q"]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if r.returncode != 0:
-            _con.print(f"[yellow]⚠[/yellow] Reinstall warning:\n[dim]{r.stderr.strip()[:300]}[/dim]")
+            _con.print(
+                f"[yellow]⚠[/yellow] Reinstall warning:\n[dim]{r.stderr.strip()[:300]}[/dim]"
+            )
         success = True
 
     else:
@@ -856,20 +979,38 @@ def upgrade_command(
         uv = shutil.which("uv")
         if uv:
             _con.print("[cyan]▶[/cyan] Upgrading via [bold]uv[/bold]…")
-            cmd = [uv, "pip", "install", "--python", sys.executable, "--upgrade", "navig"]
+            cmd = [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                sys.executable,
+                "--upgrade",
+                "navig",
+            ]
             if force:
                 cmd.append("--reinstall")
         else:
             _con.print("[cyan]▶[/cyan] Upgrading via [bold]pip[/bold]…")
-            cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "navig",
-                   "--disable-pip-version-check", "-q"]
+            cmd = [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "navig",
+                "--disable-pip-version-check",
+                "-q",
+            ]
             if force:
                 cmd.append("--force-reinstall")
 
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             if r.returncode != 0:
-                _con.print(f"[red]✗[/red] Upgrade failed:\n[dim]{r.stderr.strip()[:400]}[/dim]")
+                _con.print(
+                    f"[red]✗[/red] Upgrade failed:\n[dim]{r.stderr.strip()[:400]}[/dim]"
+                )
                 raise SystemExit(1)
             success = True
         except subprocess.TimeoutExpired as _exc:
@@ -882,22 +1023,35 @@ def upgrade_command(
             import importlib
 
             import navig as _nav
+
             importlib.reload(_nav)
             new_version = _nav.__version__
         except Exception:
             new_version = "?"
         if new_version != old_version:
-            _con.print(f"[bold green]✓[/bold green] Upgraded [cyan]v{old_version}[/cyan] → [bold cyan]v{new_version}[/bold cyan]")
+            _con.print(
+                f"[bold green]✓[/bold green] Upgraded [cyan]v{old_version}[/cyan] → [bold cyan]v{new_version}[/bold cyan]"
+            )
         else:
             _con.print(f"[bold green]✓[/bold green] NAVIG v{new_version} is ready")
 
         # Sync the PATH entry point if it differs from the venv script
         # (handles cases where an old navig.exe lives in ~/.local/bin)
         try:
-            _venv_exe = Path(__file__).resolve().parent.parent.parent / ".venv" / "Scripts" / "navig.exe"
+            _venv_exe = (
+                Path(__file__).resolve().parent.parent.parent
+                / ".venv"
+                / "Scripts"
+                / "navig.exe"
+            )
             _path_navig = shutil.which("navig")
             _path_exe = Path(_path_navig) if _path_navig else None
-            if _venv_exe.exists() and _path_exe and _path_exe.exists() and _venv_exe != _path_exe:
+            if (
+                _venv_exe.exists()
+                and _path_exe
+                and _path_exe.exists()
+                and _venv_exe != _path_exe
+            ):
                 shutil.copy2(str(_venv_exe), str(_path_exe))
                 _con.print(f"[dim]↳ PATH entry point updated: {_path_exe}[/dim]")
         except Exception:
@@ -955,6 +1109,7 @@ def help_command(
     # --schema: emit the canonical command registry and exit
     if schema_out:
         from navig.cli.registry import get_schema as _get_schema
+
         typer.echo(jsonlib.dumps(_get_schema(), indent=2))
         raise typer.Exit()
 
@@ -965,7 +1120,11 @@ def help_command(
     md_topics = []
     if help_dir.exists():
         md_topics = sorted(
-            {p.stem for p in help_dir.glob("*.md") if p.is_file() and p.stem.lower() not in {"readme"}}
+            {
+                p.stem
+                for p in help_dir.glob("*.md")
+                if p.is_file() and p.stem.lower() not in {"readme"}
+            }
         )
 
     registry_topics = sorted(HELP_REGISTRY.keys())
@@ -1004,7 +1163,9 @@ def help_command(
                 console.print(Markdown(content))
         else:
             console.print("[bold cyan]NAVIG Help[/bold cyan]")
-            console.print("Use [yellow]navig help <topic>[/yellow] or [yellow]navig <cmd> --help[/yellow].")
+            console.print(
+                "Use [yellow]navig help <topic>[/yellow] or [yellow]navig <cmd> --help[/yellow]."
+            )
 
         if all_topics:
             console.print("\n[bold white]Topics[/bold white]")
@@ -1117,7 +1278,7 @@ def docs_command(
     else:
         ch.error(
             "Documentation directory not found.",
-            "Make sure NAVIG is installed correctly with docs/ available."
+            "Make sure NAVIG is installed correctly with docs/ available.",
         )
         raise typer.Exit(1)
 
@@ -1133,16 +1294,18 @@ def docs_command(
             # Get first heading as title
             try:
                 content = f.read_text(encoding="utf-8")
-                lines = content.split('\n')
+                lines = content.split("\n")
                 title = None
                 for line in lines:
-                    if line.startswith('# '):
+                    if line.startswith("# "):
                         title = line[2:].strip()
                         break
-                topics.append({
-                    "file": str(rel_path),
-                    "title": title or f.stem,
-                })
+                topics.append(
+                    {
+                        "file": str(rel_path),
+                        "title": title or f.stem,
+                    }
+                )
             except Exception:
                 topics.append({"file": str(rel_path), "title": f.stem})
 
@@ -1153,15 +1316,19 @@ def docs_command(
             console.print(f"Found {len(topics)} documentation files.\n")
             for item in topics:
                 # Use safe ASCII output - strip emoji that can't be encoded
-                title = item['title']
+                title = item["title"]
                 try:
                     # Test if title can be encoded in console encoding
-                    title.encode(console.encoding or 'utf-8')
+                    title.encode(console.encoding or "utf-8")
                 except (UnicodeEncodeError, LookupError):
                     # Strip non-ASCII characters
-                    title = ''.join(c for c in title if ord(c) < 128)
-                console.print(f"  [cyan]*[/cyan] [yellow]{item['file']}[/yellow]: {title.strip()}")
-            console.print("\n[dim]Use 'navig docs <query>' to search documentation.[/dim]")
+                    title = "".join(c for c in title if ord(c) < 128)
+                console.print(
+                    f"  [cyan]*[/cyan] [yellow]{item['file']}[/yellow]: {title.strip()}"
+                )
+            console.print(
+                "\n[dim]Use 'navig docs <query>' to search documentation.[/dim]"
+            )
         raise typer.Exit()
 
     # Search docs
@@ -1171,29 +1338,42 @@ def docs_command(
         results = search_docs(query=query, docs_path=docs_dir, max_results=limit)
 
         if want_json:
-            console.print(jsonlib.dumps({
-                "query": query,
-                "results": [
+            console.print(
+                jsonlib.dumps(
                     {
-                        "file": r.get("file"),
-                        "title": r.get("title"),
-                        "excerpt": r.get("excerpt"),
-                        "score": r.get("score"),
-                    }
-                    for r in results
-                ]
-            }, indent=2))
+                        "query": query,
+                        "results": [
+                            {
+                                "file": r.get("file"),
+                                "title": r.get("title"),
+                                "excerpt": r.get("excerpt"),
+                                "score": r.get("score"),
+                            }
+                            for r in results
+                        ],
+                    },
+                    indent=2,
+                )
+            )
         else:
             if not results:
                 console.print(f"[yellow]No results found for '{query}'.[/yellow]")
-                console.print("[dim]Try different keywords or check 'navig docs' for all topics.[/dim]")
+                console.print(
+                    "[dim]Try different keywords or check 'navig docs' for all topics.[/dim]"
+                )
             else:
                 console.print(f"[bold cyan]Search Results for '{query}'[/bold cyan]\n")
                 for i, r in enumerate(results, 1):
-                    console.print(f"[bold white]{i}. {r.get('title', 'Untitled')}[/bold white]")
+                    console.print(
+                        f"[bold white]{i}. {r.get('title', 'Untitled')}[/bold white]"
+                    )
                     console.print(f"   [dim]{r.get('file')}[/dim]")
-                    if r.get('excerpt'):
-                        excerpt = r['excerpt'][:300] + "..." if len(r.get('excerpt', '')) > 300 else r.get('excerpt', '')
+                    if r.get("excerpt"):
+                        excerpt = (
+                            r["excerpt"][:300] + "..."
+                            if len(r.get("excerpt", "")) > 300
+                            else r.get("excerpt", "")
+                        )
                         console.print(f"   {excerpt}")
                     console.print()
 
@@ -1211,17 +1391,20 @@ def fetch_command(
     url: str = typer.Argument(..., help="URL to fetch content from"),
     mode: str = typer.Option(
         "markdown",
-        "--mode", "-m",
+        "--mode",
+        "-m",
         help="Extraction mode: markdown (default), text, or raw",
     ),
     max_chars: int = typer.Option(
         50000,
-        "--max-chars", "-c",
+        "--max-chars",
+        "-c",
         help="Maximum characters to extract",
     ),
     timeout: int = typer.Option(
         30,
-        "--timeout", "-t",
+        "--timeout",
+        "-t",
         help="Request timeout in seconds",
     ),
     plain: bool = typer.Option(
@@ -1269,15 +1452,20 @@ def fetch_command(
         )
 
         if want_json:
-            console.print(jsonlib.dumps({
-                "success": result.success,
-                "url": url,
-                "final_url": result.final_url,
-                "title": result.title,
-                "content": result.text[:max_chars] if result.text else None,
-                "truncated": result.truncated,
-                "error": result.error if not result.success else None,
-            }, indent=2))
+            console.print(
+                jsonlib.dumps(
+                    {
+                        "success": result.success,
+                        "url": url,
+                        "final_url": result.final_url,
+                        "title": result.title,
+                        "content": result.text[:max_chars] if result.text else None,
+                        "truncated": result.truncated,
+                        "error": result.error if not result.success else None,
+                    },
+                    indent=2,
+                )
+            )
         elif result.success:
             if want_plain:
                 if result.title:
@@ -1289,7 +1477,9 @@ def fetch_command(
                 console.print(f"[dim]{result.final_url or url}[/dim]\n")
                 console.print(Markdown(result.text[:20000]))
                 if result.truncated:
-                    console.print("\n[yellow]Content truncated. Use --max-chars to increase limit.[/yellow]")
+                    console.print(
+                        "\n[yellow]Content truncated. Use --max-chars to increase limit.[/yellow]"
+                    )
         else:
             ch.error(f"Failed to fetch URL: {result.error}")
             raise typer.Exit(1)
@@ -1308,12 +1498,14 @@ def search_command(
     query: str = typer.Argument(..., help="Search query"),
     limit: int = typer.Option(
         10,
-        "--limit", "-l",
+        "--limit",
+        "-l",
         help="Maximum number of results",
     ),
     provider: str = typer.Option(
         "auto",
-        "--provider", "-p",
+        "--provider",
+        "-p",
         help="Search provider: auto, brave, duckduckgo",
     ),
     plain: bool = typer.Option(
@@ -1353,7 +1545,11 @@ def search_command(
     try:
         from navig.tools.web import web_search
 
-        console.print(f"[dim]Searching for '{query}'...[/dim]") if not want_json else None
+        (
+            console.print(f"[dim]Searching for '{query}'...[/dim]")
+            if not want_json
+            else None
+        )
 
         result = web_search(
             query=query,
@@ -1361,19 +1557,28 @@ def search_command(
         )
 
         if want_json:
-            console.print(jsonlib.dumps({
-                "success": result.success,
-                "query": query,
-                "results": [
+            console.print(
+                jsonlib.dumps(
                     {
-                        "title": r.title,
-                        "url": r.url,
-                        "snippet": r.snippet,
-                    }
-                    for r in result.results
-                ] if result.results else [],
-                "error": result.error if not result.success else None,
-            }, indent=2))
+                        "success": result.success,
+                        "query": query,
+                        "results": (
+                            [
+                                {
+                                    "title": r.title,
+                                    "url": r.url,
+                                    "snippet": r.snippet,
+                                }
+                                for r in result.results
+                            ]
+                            if result.results
+                            else []
+                        ),
+                        "error": result.error if not result.success else None,
+                    },
+                    indent=2,
+                )
+            )
         elif result.success and result.results:
             if want_plain:
                 for i, r in enumerate(result.results, 1):
@@ -1394,9 +1599,13 @@ def search_command(
             console.print("[yellow]No results found.[/yellow]")
         else:
             ch.error(f"Search failed: {result.error}")
-            console.print("\n[dim]Tip: Set up Brave Search API for better results:[/dim]")
+            console.print(
+                "\n[dim]Tip: Set up Brave Search API for better results:[/dim]"
+            )
             console.print("[dim]  1. Get key from https://brave.com/search/api/[/dim]")
-            console.print("[dim]  2. navig config set web.search.api_key=YOUR_KEY[/dim]")
+            console.print(
+                "[dim]  2. navig config set web.search.api_key=YOUR_KEY[/dim]"
+            )
             raise typer.Exit(1)
 
     except ImportError as e:
@@ -1410,6 +1619,7 @@ def search_command(
 # ============================================================================
 # ONBOARDING & WORKSPACE (Agent-style setup)
 # ============================================================================
+
 
 @app.command("onboard", hidden=True)
 def onboard_command(
@@ -1450,6 +1660,7 @@ def onboard_command(
         navig onboard -n                 # Non-interactive with defaults
     """
     from navig.commands.onboard import run_onboard
+
     run_onboard(flow=flow, non_interactive=non_interactive, skip=skip)
 
 
@@ -1462,8 +1673,12 @@ def onboarding_alias(
     """Alias for 'navig onboard' — use that instead."""
     ctx.obj = getattr(ctx, "obj", None)
     from rich.console import Console as _C
-    _C().print("[yellow]Tip:[/yellow] use [bold]navig onboard[/bold] (this alias works too)")
+
+    _C().print(
+        "[yellow]Tip:[/yellow] use [bold]navig onboard[/bold] (this alias works too)"
+    )
     from navig.commands.onboard import run_onboard
+
     run_onboard(flow=flow, non_interactive=non_interactive)
 
 
@@ -1503,8 +1718,8 @@ def init_command(
         navig init --reconfigure # always run wizard
         navig init --provider    # configure AI provider
     """
-    from navig.commands.onboard import run_init_wizard
     from navig.commands.init import _maybe_send_first_run_ping
+    from navig.commands.onboard import run_init_wizard
 
     if reconfigure:
         run_init_wizard(mode="wizard", deep_link=provider or None)
@@ -1535,11 +1750,13 @@ def whoami_command(
     if debug:
         try:
             from navig.platform.paths import navig_config_dir
+
             state_file = navig_config_dir() / "state" / "entity.json"
             ch.dim(f"  entity path: {state_file}")
         except Exception:  # noqa: BLE001
             pass
     from navig.commands.whoami import run_whoami
+
     run_whoami(debug=debug)
 
 
@@ -1579,6 +1796,7 @@ def settings_command(
         navig settings --layer project --show-sources
     """
     from navig.commands.settings_cmd import run_settings
+
     run_settings(
         key=key,
         value=value,
@@ -1609,6 +1827,7 @@ def task_callback(ctx: typer.Context):
     """Task management - run without subcommand to list tasks."""
     if ctx.invoked_subcommand is None:
         from navig.commands.workflow import list_workflows
+
         list_workflows()
 
 
@@ -1616,6 +1835,7 @@ def task_callback(ctx: typer.Context):
 def task_list():
     """List all available tasks/workflows."""
     from navig.commands.workflow import list_workflows
+
     list_workflows()
 
 
@@ -1623,19 +1843,25 @@ def task_list():
 def task_show(name: str = typer.Argument(..., help="Task name")):
     """Display task definition and steps."""
     from navig.commands.workflow import show_workflow
+
     show_workflow(name)
 
 
 @task_app.command("run")
 def task_run(
     name: str = typer.Argument(..., help="Task name"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without executing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without executing"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmations"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Detailed output"),
-    var: Optional[List[str]] = typer.Option(None, "--var", "-V", help="Variable (name=value)"),
+    var: Optional[List[str]] = typer.Option(
+        None, "--var", "-V", help="Variable (name=value)"
+    ),
 ):
     """Execute a task/workflow."""
     from navig.commands.workflow import run_workflow
+
     run_workflow(name, dry_run=dry_run, yes=yes, verbose=verbose, var=var or [])
 
 
@@ -1643,6 +1869,7 @@ def task_run(
 def task_test(name: str = typer.Argument(..., help="Task name")):
     """Validate task syntax and structure."""
     from navig.commands.workflow import validate_workflow
+
     validate_workflow(name)
 
 
@@ -1653,6 +1880,7 @@ def task_add(
 ):
     """Create a new task from template."""
     from navig.commands.workflow import create_workflow
+
     create_workflow(name, global_scope=global_scope)
 
 
@@ -1663,6 +1891,7 @@ def task_remove(
 ):
     """Delete a task."""
     from navig.commands.workflow import delete_workflow
+
     delete_workflow(name, force=force)
 
 
@@ -1670,17 +1899,22 @@ def task_remove(
 def task_edit(name: str = typer.Argument(..., help="Task name")):
     """Open task in default editor."""
     from navig.commands.workflow import edit_workflow
+
     edit_workflow(name)
 
 
 @task_app.command("complete")
 def task_complete(
-    task_title:  str = typer.Argument(..., help="Human-readable task title"),
-    task_slug:   str = typer.Argument(..., help="kebab-case unique slug"),
-    summary:     str = typer.Argument(..., help="One-sentence completion summary"),
-    phase_name:  str = typer.Argument(..., help="Phase name (e.g. phase-1)"),
-    dry_run:     bool = typer.Option(False, "--dry-run", "-n", help="Validate; skip all writes"),
-    now_date:    Optional[str] = typer.Option(None, "--date", "-d", help="Override date YYYY-MM-DD"),
+    task_title: str = typer.Argument(..., help="Human-readable task title"),
+    task_slug: str = typer.Argument(..., help="kebab-case unique slug"),
+    summary: str = typer.Argument(..., help="One-sentence completion summary"),
+    phase_name: str = typer.Argument(..., help="Phase name (e.g. phase-1)"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Validate; skip all writes"
+    ),
+    now_date: Optional[str] = typer.Option(
+        None, "--date", "-d", help="Override date YYYY-MM-DD"
+    ),
 ) -> None:
     """Record a completed task — runs complete-task.sh (Unix) or complete-task.ps1 (Windows)."""
     import os
@@ -1697,7 +1931,10 @@ def task_complete(
             break
 
     if project_root is None:
-        typer.secho("ERROR: could not find .navig/ directory within cwd ancestry", fg=typer.colors.RED)
+        typer.secho(
+            "ERROR: could not find .navig/ directory within cwd ancestry",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(1)
 
     scripts_dir = project_root / ".navig" / "scripts"
@@ -1715,15 +1952,22 @@ def task_complete(
         env["NAVIG_NOW"] = now_date
 
     if is_windows:
-        cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script),
-               task_title, task_slug, summary, phase_name]
+        cmd = [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            task_title,
+            task_slug,
+            summary,
+            phase_name,
+        ]
     else:
         cmd = ["bash", str(script), task_title, task_slug, summary, phase_name]
 
     result = subprocess.run(cmd, env=env, cwd=str(cwd))
     raise typer.Exit(result.returncode)
-
-
 
 
 context_app = typer.Typer(
@@ -1740,6 +1984,7 @@ def context_callback(ctx: typer.Context):
     """Context management - shows current context if no subcommand."""
     if ctx.invoked_subcommand is None:
         from navig.commands.context import show_context
+
         show_context(ctx.obj)
         raise typer.Exit()
 
@@ -1762,17 +2007,22 @@ def context_show(
         navig context --plain
     """
     from navig.commands.context import show_context
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     if json_out:
-        ctx.obj['json'] = True
+        ctx.obj["json"] = True
     show_context(ctx.obj)
 
 
 @context_app.command("set")
 def context_set(
     ctx: typer.Context,
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to set as project default"),
-    app_name: Optional[str] = typer.Option(None, "--app", "-a", help="App to set as project default"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host to set as project default"
+    ),
+    app_name: Optional[str] = typer.Option(
+        None, "--app", "-a", help="App to set as project default"
+    ),
 ):
     """
     Set project-local context in .navig/config.yaml.
@@ -1786,6 +2036,7 @@ def context_set(
         navig context set --app backend
     """
     from navig.commands.context import set_context
+
     set_context(host=host, app=app_name, opts=ctx.obj)
 
 
@@ -1801,6 +2052,7 @@ def context_clear(ctx: typer.Context):
         navig context clear
     """
     from navig.commands.context import clear_context
+
     clear_context(ctx.obj)
 
 
@@ -1817,6 +2069,7 @@ def context_init(ctx: typer.Context):
         navig context init
     """
     from navig.commands.context import init_context
+
     init_context(ctx.obj)
 
 
@@ -1835,8 +2088,14 @@ app.add_typer(index_app, name="index")
 @index_app.command("scan")
 def index_scan(
     ctx: typer.Context,
-    root: Optional[str] = typer.Argument(None, help="Project root directory (default: current directory)"),
-    incremental: bool = typer.Option(True, "--incremental/--full", help="Incremental scan (only changed files) or full rescan"),
+    root: Optional[str] = typer.Argument(
+        None, help="Project root directory (default: current directory)"
+    ),
+    incremental: bool = typer.Option(
+        True,
+        "--incremental/--full",
+        help="Incremental scan (only changed files) or full rescan",
+    ),
 ):
     """
     Scan and index project source code for BM25 search.
@@ -1850,8 +2109,12 @@ def index_scan(
     """
     import time as _time
     from pathlib import Path
+
+    from rich.console import Console as _Con
+
     from navig.memory.project_indexer import ProjectIndexer
-    from rich.console import Console as _Con; console = _Con()
+
+    console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
     if not project_root.is_dir():
@@ -1872,7 +2135,9 @@ def index_scan(
 def index_search(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="Search query"),
-    root: Optional[str] = typer.Option(None, "--root", "-r", help="Project root directory"),
+    root: Optional[str] = typer.Option(
+        None, "--root", "-r", help="Project root directory"
+    ),
     top_k: int = typer.Option(10, "--top", "-k", help="Max results to return"),
 ):
     """
@@ -1885,8 +2150,12 @@ def index_search(
         navig index search "database connection" --top 5
     """
     from pathlib import Path
+
+    from rich.console import Console as _Con
+
     from navig.memory.project_indexer import ProjectIndexer
-    from rich.console import Console as _Con; console = _Con()
+
+    console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
     with ProjectIndexer(project_root) as indexer:
@@ -1901,19 +2170,25 @@ def index_search(
 
         for r in results:
             score_str = f"[dim]({r.score:.2f})[/]"
-            console.print(f"\n{score_str} [bold]{r.file_path}[/] L{r.start_line}-{r.end_line} [dim]({r.content_type})[/]")
+            console.print(
+                f"\n{score_str} [bold]{r.file_path}[/] L{r.start_line}-{r.end_line} [dim]({r.content_type})[/]"
+            )
             # Show first 5 lines of each result
-            lines = r.content.split('\n')[:5]
+            lines = r.content.split("\n")[:5]
             for line in lines:
                 console.print(f"  [dim]{line}[/]")
-            if len(r.content.split('\n')) > 5:
-                console.print(f"  [dim]... ({len(r.content.split(chr(10)))} lines total)[/]")
+            if len(r.content.split("\n")) > 5:
+                console.print(
+                    f"  [dim]... ({len(r.content.split(chr(10)))} lines total)[/]"
+                )
 
 
 @index_app.command("stats")
 def index_stats(
     ctx: typer.Context,
-    root: Optional[str] = typer.Option(None, "--root", "-r", help="Project root directory"),
+    root: Optional[str] = typer.Option(
+        None, "--root", "-r", help="Project root directory"
+    ),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """
@@ -1925,8 +2200,12 @@ def index_stats(
     """
     import json
     from pathlib import Path
+
+    from rich.console import Console as _Con
+
     from navig.memory.project_indexer import ProjectIndexer
-    from rich.console import Console as _Con; console = _Con()
+
+    console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
     with ProjectIndexer(project_root) as indexer:
@@ -1942,7 +2221,9 @@ def index_stats(
 @index_app.command("drop")
 def index_drop(
     ctx: typer.Context,
-    root: Optional[str] = typer.Option(None, "--root", "-r", help="Project root directory"),
+    root: Optional[str] = typer.Option(
+        None, "--root", "-r", help="Project root directory"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """
@@ -1953,13 +2234,18 @@ def index_drop(
         navig index drop --yes
     """
     from pathlib import Path
+
+    from rich.console import Console as _Con
+
     from navig.memory.project_indexer import ProjectIndexer
-    from rich.console import Console as _Con; console = _Con()
+
+    console = _Con()
 
     project_root = Path(root) if root else Path.cwd()
 
     if not yes:
         import typer as _typer
+
         confirmed = _typer.confirm(f"Drop index for {project_root}?")
         if not confirmed:
             raise typer.Exit(0)
@@ -1987,6 +2273,7 @@ def history_callback(ctx: typer.Context):
     """History management - shows recent history if no subcommand."""
     if ctx.invoked_subcommand is None:
         from navig.commands.history import show_history
+
         show_history(limit=20, opts=ctx.obj)
         raise typer.Exit()
 
@@ -1996,10 +2283,18 @@ def history_list(
     ctx: typer.Context,
     limit: int = typer.Option(20, "--limit", "-l", help="Number of entries to show"),
     host: Optional[str] = typer.Option(None, "--host", "-h", help="Filter by host"),
-    type_filter: Optional[str] = typer.Option(None, "--type", "-t", help="Filter by operation type"),
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status (success/failed)"),
-    search: Optional[str] = typer.Option(None, "--search", "-q", help="Search in command text"),
-    since: Optional[str] = typer.Option(None, "--since", help="Time filter (e.g., 1h, 24h, 7d)"),
+    type_filter: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Filter by operation type"
+    ),
+    status: Optional[str] = typer.Option(
+        None, "--status", "-s", help="Filter by status (success/failed)"
+    ),
+    search: Optional[str] = typer.Option(
+        None, "--search", "-q", help="Search in command text"
+    ),
+    since: Optional[str] = typer.Option(
+        None, "--since", help="Time filter (e.g., 1h, 24h, 7d)"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -2014,9 +2309,10 @@ def history_list(
         navig history list --search "docker" --json
     """
     from navig.commands.history import show_history
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     if json_out:
-        ctx.obj['json'] = True
+        ctx.obj["json"] = True
     show_history(
         limit=limit,
         host=host,
@@ -2031,7 +2327,9 @@ def history_list(
 @history_app.command("show")
 def history_show(
     ctx: typer.Context,
-    op_id: str = typer.Argument(..., help="Operation ID or index (1=last, 2=second-last)"),
+    op_id: str = typer.Argument(
+        ..., help="Operation ID or index (1=last, 2=second-last)"
+    ),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """
@@ -2043,8 +2341,9 @@ def history_show(
         navig history show 1 --json       # JSON output
     """
     from navig.commands.history import show_operation_details
+
     if json_out:
-        ctx.obj['json'] = True
+        ctx.obj["json"] = True
     show_operation_details(op_id, opts=ctx.obj)
 
 
@@ -2052,8 +2351,12 @@ def history_show(
 def history_replay(
     ctx: typer.Context,
     op_id: str = typer.Argument(..., help="Operation ID or index to replay"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be done"),
-    modify: Optional[str] = typer.Option(None, "--modify", "-m", help="Modify command before replay"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Show what would be done"
+    ),
+    modify: Optional[str] = typer.Option(
+        None, "--modify", "-m", help="Modify command before replay"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """
@@ -2065,7 +2368,8 @@ def history_replay(
         navig history replay 1 --modify "--host staging"
     """
     from navig.commands.history import replay_operation
-    ctx.obj['yes'] = yes
+
+    ctx.obj["yes"] = yes
     replay_operation(op_id, dry_run=dry_run, modify=modify, opts=ctx.obj)
 
 
@@ -2084,6 +2388,7 @@ def history_undo(
         navig history undo 1
     """
     from navig.commands.history import undo_operation
+
     undo_operation(op_id, opts=ctx.obj)
 
 
@@ -2091,7 +2396,9 @@ def history_undo(
 def history_export(
     ctx: typer.Context,
     output: str = typer.Argument(..., help="Output file path"),
-    format: str = typer.Option("json", "--format", "-f", help="Export format (json, csv)"),
+    format: str = typer.Option(
+        "json", "--format", "-f", help="Export format (json, csv)"
+    ),
     limit: int = typer.Option(1000, "--limit", "-l", help="Max entries to export"),
 ):
     """
@@ -2103,6 +2410,7 @@ def history_export(
         navig history export all.json --limit 10000
     """
     from navig.commands.history import export_history
+
     export_history(output, format=format, limit=limit, opts=ctx.obj)
 
 
@@ -2119,7 +2427,8 @@ def history_clear(
         navig history clear --yes
     """
     from navig.commands.history import clear_history
-    ctx.obj['yes'] = yes
+
+    ctx.obj["yes"] = yes
     clear_history(opts=ctx.obj)
 
 
@@ -2136,8 +2445,9 @@ def history_stats_cmd(
         navig history stats --json
     """
     from navig.commands.history import history_stats
+
     if json_out:
-        ctx.obj['json'] = True
+        ctx.obj["json"] = True
     history_stats(opts=ctx.obj)
 
 
@@ -2166,6 +2476,7 @@ def tunnel_callback(ctx: typer.Context):
 def tunnel_run(ctx: typer.Context):
     """Start SSH tunnel for active server (canonical command)."""
     from navig.commands.tunnel import start_tunnel
+
     start_tunnel(ctx.obj)
 
 
@@ -2174,6 +2485,7 @@ def tunnel_start(ctx: typer.Context):
     """[DEPRECATED: Use 'navig tunnel run'] Start SSH tunnel."""
     deprecation_warning("navig tunnel start", "navig tunnel run")
     from navig.commands.tunnel import start_tunnel
+
     start_tunnel(ctx.obj)
 
 
@@ -2181,6 +2493,7 @@ def tunnel_start(ctx: typer.Context):
 def tunnel_remove(ctx: typer.Context):
     """Stop and remove SSH tunnel (canonical command)."""
     from navig.commands.tunnel import stop_tunnel
+
     stop_tunnel(ctx.obj)
 
 
@@ -2189,6 +2502,7 @@ def tunnel_stop(ctx: typer.Context):
     """[DEPRECATED: Use 'navig tunnel remove'] Stop SSH tunnel."""
     deprecation_warning("navig tunnel stop", "navig tunnel remove")
     from navig.commands.tunnel import stop_tunnel
+
     stop_tunnel(ctx.obj)
 
 
@@ -2196,6 +2510,7 @@ def tunnel_stop(ctx: typer.Context):
 def tunnel_update(ctx: typer.Context):
     """Restart tunnel (canonical command)."""
     from navig.commands.tunnel import restart_tunnel
+
     restart_tunnel(ctx.obj)
 
 
@@ -2204,18 +2519,22 @@ def tunnel_restart(ctx: typer.Context):
     """[DEPRECATED: Use 'navig tunnel update'] Restart tunnel."""
     deprecation_warning("navig tunnel restart", "navig tunnel update")
     from navig.commands.tunnel import restart_tunnel
+
     restart_tunnel(ctx.obj)
 
 
 @tunnel_app.command("show")
 def tunnel_show(
     ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="Output plain text for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text for scripting"
+    ),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """Show tunnel status (canonical command)."""
     from navig.commands.tunnel import show_tunnel_status
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     if json:
         ctx.obj["json"] = True
     show_tunnel_status(ctx.obj)
@@ -2224,12 +2543,15 @@ def tunnel_show(
 @tunnel_app.command("status", hidden=True)
 def tunnel_status(
     ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (running/stopped) for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (running/stopped) for scripting"
+    ),
 ):
     """[DEPRECATED: Use 'navig tunnel show'] Show tunnel status."""
     deprecation_warning("navig tunnel status", "navig tunnel show")
     from navig.commands.tunnel import show_tunnel_status
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     show_tunnel_status(ctx.obj)
 
 
@@ -2237,6 +2559,7 @@ def tunnel_status(
 def tunnel_auto(ctx: typer.Context):
     """Auto-start tunnel if needed, auto-stop when done."""
     from navig.commands.tunnel import auto_tunnel
+
     auto_tunnel(ctx.obj)
 
 
@@ -2259,6 +2582,7 @@ def monitor_callback(ctx: typer.Context):
     deprecation_warning("navig monitor", "navig host monitor")
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_monitoring_menu
+
         launch_monitoring_menu()
         raise typer.Exit()
 
@@ -2266,28 +2590,39 @@ def monitor_callback(ctx: typer.Context):
 @monitor_app.command("show")
 def monitor_show(
     ctx: typer.Context,
-    resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
+    resources: bool = typer.Option(
+        False, "--resources", "-r", help="Show resource usage"
+    ),
     disk: bool = typer.Option(False, "--disk", "-d", help="Show disk space"),
-    services: bool = typer.Option(False, "--services", "-s", help="Show service status"),
+    services: bool = typer.Option(
+        False, "--services", "-s", help="Show service status"
+    ),
     network: bool = typer.Option(False, "--network", "-n", help="Show network stats"),
-    threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
+    threshold: int = typer.Option(
+        80, "--threshold", "-t", help="Alert threshold percentage"
+    ),
 ):
     """Show monitoring information (canonical command)."""
     if resources:
         from navig.commands.monitoring import monitor_resources
+
         monitor_resources(ctx.obj)
     elif disk:
         from navig.commands.monitoring import monitor_disk
+
         monitor_disk(threshold, ctx.obj)
     elif services:
         from navig.commands.monitoring import monitor_services
+
         monitor_services(ctx.obj)
     elif network:
         from navig.commands.monitoring import monitor_network
+
         monitor_network(ctx.obj)
     else:
         # Default to health overview
         from navig.commands.monitoring import health_check
+
         health_check(ctx.obj)
 
 
@@ -2299,9 +2634,11 @@ def monitor_run(
     """Run monitoring checks (canonical command)."""
     if report:
         from navig.commands.monitoring import generate_report
+
         generate_report(ctx.obj)
     else:
         from navig.commands.monitoring import health_check
+
         health_check(ctx.obj)
 
 
@@ -2310,17 +2647,21 @@ def monitor_resources_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor show --resources'] Monitor resources."""
     deprecation_warning("navig monitor resources", "navig monitor show --resources")
     from navig.commands.monitoring import monitor_resources
+
     monitor_resources(ctx.obj)
 
 
 @monitor_app.command("disk", hidden=True)
 def monitor_disk_new(
     ctx: typer.Context,
-    threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
+    threshold: int = typer.Option(
+        80, "--threshold", "-t", help="Alert threshold percentage"
+    ),
 ):
     """[DEPRECATED: Use 'navig monitor show --disk'] Monitor disk space."""
     deprecation_warning("navig monitor disk", "navig monitor show --disk")
     from navig.commands.monitoring import monitor_disk
+
     monitor_disk(threshold, ctx.obj)
 
 
@@ -2329,6 +2670,7 @@ def monitor_services_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor show --services'] Check service status."""
     deprecation_warning("navig monitor services", "navig monitor show --services")
     from navig.commands.monitoring import monitor_services
+
     monitor_services(ctx.obj)
 
 
@@ -2337,6 +2679,7 @@ def monitor_network_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor show --network'] Monitor network."""
     deprecation_warning("navig monitor network", "navig monitor show --network")
     from navig.commands.monitoring import monitor_network
+
     monitor_network(ctx.obj)
 
 
@@ -2345,6 +2688,7 @@ def monitor_health_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor show'] Health check."""
     deprecation_warning("navig monitor health", "navig monitor show")
     from navig.commands.monitoring import health_check
+
     health_check(ctx.obj)
 
 
@@ -2352,6 +2696,7 @@ def monitor_health_new(ctx: typer.Context):
 def monitor_report_new(ctx: typer.Context):
     """Generate comprehensive monitoring report and save to file."""
     from navig.commands.monitoring import generate_report
+
     generate_report(ctx.obj)
 
 
@@ -2359,51 +2704,69 @@ def monitor_report_new(ctx: typer.Context):
 @app.command("monitor-resources", hidden=True)
 def monitor_resources_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor resources']"""
-    ch.warning("'navig monitor-resources' is deprecated. Use 'navig monitor resources' instead.")
+    ch.warning(
+        "'navig monitor-resources' is deprecated. Use 'navig monitor resources' instead."
+    )
     from navig.commands.monitoring import monitor_resources
+
     monitor_resources(ctx.obj)
 
 
 @app.command("monitor-disk", hidden=True)
 def monitor_disk_cmd(
     ctx: typer.Context,
-    threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
+    threshold: int = typer.Option(
+        80, "--threshold", "-t", help="Alert threshold percentage"
+    ),
 ):
     """[DEPRECATED: Use 'navig monitor disk']"""
     ch.warning("'navig monitor-disk' is deprecated. Use 'navig monitor disk' instead.")
     from navig.commands.monitoring import monitor_disk
+
     monitor_disk(threshold, ctx.obj)
 
 
 @app.command("monitor-services", hidden=True)
 def monitor_services_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor services']"""
-    ch.warning("'navig monitor-services' is deprecated. Use 'navig monitor services' instead.")
+    ch.warning(
+        "'navig monitor-services' is deprecated. Use 'navig monitor services' instead."
+    )
     from navig.commands.monitoring import monitor_services
+
     monitor_services(ctx.obj)
 
 
 @app.command("monitor-network", hidden=True)
 def monitor_network_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor network']"""
-    ch.warning("'navig monitor-network' is deprecated. Use 'navig monitor network' instead.")
+    ch.warning(
+        "'navig monitor-network' is deprecated. Use 'navig monitor network' instead."
+    )
     from navig.commands.monitoring import monitor_network
+
     monitor_network(ctx.obj)
 
 
 @app.command("health-check", hidden=True)
 def health_check_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor health']"""
-    ch.warning("'navig health-check' is deprecated. Use 'navig monitor health' instead.")
+    ch.warning(
+        "'navig health-check' is deprecated. Use 'navig monitor health' instead."
+    )
     from navig.commands.monitoring import health_check
+
     health_check(ctx.obj)
 
 
 @app.command("monitoring-report", hidden=True)
 def monitoring_report_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig monitor report']"""
-    ch.warning("'navig monitoring-report' is deprecated. Use 'navig monitor report' instead.")
+    ch.warning(
+        "'navig monitoring-report' is deprecated. Use 'navig monitor report' instead."
+    )
     from navig.commands.monitoring import generate_report
+
     generate_report(ctx.obj)
 
 
@@ -2425,6 +2788,7 @@ def security_callback(ctx: typer.Context):
     deprecation_warning("navig security", "navig host security")
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_security_menu
+
         launch_security_menu()
         raise typer.Exit()
 
@@ -2432,31 +2796,45 @@ def security_callback(ctx: typer.Context):
 @security_app.command("show")
 def security_show(
     ctx: typer.Context,
-    firewall: bool = typer.Option(False, "--firewall", "-f", help="Show firewall status"),
-    fail2ban: bool = typer.Option(False, "--fail2ban", "-b", help="Show fail2ban status"),
+    firewall: bool = typer.Option(
+        False, "--firewall", "-f", help="Show firewall status"
+    ),
+    fail2ban: bool = typer.Option(
+        False, "--fail2ban", "-b", help="Show fail2ban status"
+    ),
     ssh: bool = typer.Option(False, "--ssh", "-s", help="Show SSH audit"),
-    updates: bool = typer.Option(False, "--updates", "-u", help="Show security updates"),
-    connections: bool = typer.Option(False, "--connections", "-c", help="Show network connections"),
+    updates: bool = typer.Option(
+        False, "--updates", "-u", help="Show security updates"
+    ),
+    connections: bool = typer.Option(
+        False, "--connections", "-c", help="Show network connections"
+    ),
 ):
     """Show security information (canonical command)."""
     if firewall:
         from navig.commands.security import firewall_status
+
         firewall_status(ctx.obj)
     elif fail2ban:
         from navig.commands.security import fail2ban_status
+
         fail2ban_status(ctx.obj)
     elif ssh:
         from navig.commands.security import ssh_audit
+
         ssh_audit(ctx.obj)
     elif updates:
         from navig.commands.security import check_security_updates
+
         check_security_updates(ctx.obj)
     elif connections:
         from navig.commands.security import audit_connections
+
         audit_connections(ctx.obj)
     else:
         # Default to security scan overview
         from navig.commands.security import security_scan
+
         security_scan(ctx.obj)
 
 
@@ -2464,6 +2842,7 @@ def security_show(
 def security_run(ctx: typer.Context):
     """Run comprehensive security scan (canonical command)."""
     from navig.commands.security import security_scan
+
     security_scan(ctx.obj)
 
 
@@ -2471,6 +2850,7 @@ def security_run(ctx: typer.Context):
 def security_firewall_new(ctx: typer.Context):
     """Display UFW firewall status and rules."""
     from navig.commands.security import firewall_status
+
     firewall_status(ctx.obj)
 
 
@@ -2479,17 +2859,22 @@ def security_firewall_add_new(
     ctx: typer.Context,
     port: int = typer.Argument(..., help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", "-p", help="Protocol (tcp/udp)"),
-    allow_from: str = typer.Option("any", "--from", help="IP address or subnet (default: any)"),
+    allow_from: str = typer.Option(
+        "any", "--from", help="IP address or subnet (default: any)"
+    ),
 ):
     """Add UFW firewall rule."""
     from navig.commands.security import firewall_add_rule
+
     firewall_add_rule(port, protocol, allow_from, ctx.obj)
 
 
 @security_app.command("edit")
 def security_edit(
     ctx: typer.Context,
-    firewall: bool = typer.Option(False, "--firewall", "-f", help="Edit firewall rules"),
+    firewall: bool = typer.Option(
+        False, "--firewall", "-f", help="Edit firewall rules"
+    ),
     port: Optional[int] = typer.Option(None, "--port", "-p", help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", help="Protocol (tcp/udp)"),
     allow_from: str = typer.Option("any", "--from", help="IP address or subnet"),
@@ -2497,28 +2882,38 @@ def security_edit(
     remove: bool = typer.Option(False, "--remove", "-r", help="Remove a rule"),
     enable: bool = typer.Option(False, "--enable", help="Enable firewall"),
     disable: bool = typer.Option(False, "--disable", help="Disable firewall"),
-    unban: Optional[str] = typer.Option(None, "--unban", help="Unban IP address from fail2ban"),
-    jail: Optional[str] = typer.Option(None, "--jail", "-j", help="Jail name for fail2ban"),
+    unban: Optional[str] = typer.Option(
+        None, "--unban", help="Unban IP address from fail2ban"
+    ),
+    jail: Optional[str] = typer.Option(
+        None, "--jail", "-j", help="Jail name for fail2ban"
+    ),
 ):
     """Edit security settings (canonical command)."""
     if firewall:
         if enable:
             from navig.commands.security import firewall_enable
+
             firewall_enable(ctx.obj)
         elif disable:
             from navig.commands.security import firewall_disable
+
             firewall_disable(ctx.obj)
         elif add and port:
             from navig.commands.security import firewall_add_rule
+
             firewall_add_rule(port, protocol, allow_from, ctx.obj)
         elif remove and port:
             from navig.commands.security import firewall_remove_rule
+
             firewall_remove_rule(port, protocol, ctx.obj)
     elif unban:
         from navig.commands.security import fail2ban_unban
+
         fail2ban_unban(unban, jail, ctx.obj)
     else:
         from navig.console_helper import ch
+
         ch.error("Specify what to edit: --firewall or --unban")
 
 
@@ -2530,6 +2925,7 @@ def security_firewall_remove_new(
 ):
     """Remove UFW firewall rule."""
     from navig.commands.security import firewall_remove_rule
+
     firewall_remove_rule(port, protocol, ctx.obj)
 
 
@@ -2537,6 +2933,7 @@ def security_firewall_remove_new(
 def security_firewall_enable_new(ctx: typer.Context):
     """Enable UFW firewall."""
     from navig.commands.security import firewall_enable
+
     firewall_enable(ctx.obj)
 
 
@@ -2544,6 +2941,7 @@ def security_firewall_enable_new(ctx: typer.Context):
 def security_firewall_disable_new(ctx: typer.Context):
     """Disable UFW firewall."""
     from navig.commands.security import firewall_disable
+
     firewall_disable(ctx.obj)
 
 
@@ -2552,6 +2950,7 @@ def security_fail2ban_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig security show --fail2ban'] Show Fail2Ban status."""
     deprecation_warning("navig security fail2ban", "navig security show --fail2ban")
     from navig.commands.security import fail2ban_status
+
     fail2ban_status(ctx.obj)
 
 
@@ -2559,11 +2958,14 @@ def security_fail2ban_new(ctx: typer.Context):
 def security_unban_new(
     ctx: typer.Context,
     ip_address: str = typer.Argument(..., help="IP address to unban"),
-    jail: str = typer.Option(None, "--jail", "-j", help="Jail name (default: all jails)"),
+    jail: str = typer.Option(
+        None, "--jail", "-j", help="Jail name (default: all jails)"
+    ),
 ):
     """[DEPRECATED: Use 'navig security edit --unban <ip>'] Unban IP."""
     deprecation_warning("navig security unban", "navig security edit --unban <ip>")
     from navig.commands.security import fail2ban_unban
+
     fail2ban_unban(ip_address, jail, ctx.obj)
 
 
@@ -2572,6 +2974,7 @@ def security_ssh_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig security show --ssh'] SSH audit."""
     deprecation_warning("navig security ssh", "navig security show --ssh")
     from navig.commands.security import ssh_audit
+
     ssh_audit(ctx.obj)
 
 
@@ -2579,6 +2982,7 @@ def security_ssh_new(ctx: typer.Context):
 def security_updates_new(ctx: typer.Context):
     """Check for available security updates."""
     from navig.commands.security import check_security_updates
+
     check_security_updates(ctx.obj)
 
 
@@ -2586,6 +2990,7 @@ def security_updates_new(ctx: typer.Context):
 def security_connections_new(ctx: typer.Context):
     """Audit active network connections."""
     from navig.commands.security import audit_connections
+
     audit_connections(ctx.obj)
 
 
@@ -2593,56 +2998,74 @@ def security_connections_new(ctx: typer.Context):
 def security_scan_new(ctx: typer.Context):
     """Run comprehensive security scan."""
     from navig.commands.security import security_scan
+
     security_scan(ctx.obj)
 
 
 # Legacy aliases for backward compatibility (hidden)
-@app.command('firewall-status', hidden=True)
+@app.command("firewall-status", hidden=True)
 def firewall_status_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig security firewall']"""
-    ch.warning("'navig firewall-status' is deprecated. Use 'navig security firewall' instead.")
+    ch.warning(
+        "'navig firewall-status' is deprecated. Use 'navig security firewall' instead."
+    )
     from navig.commands.security import firewall_status
+
     firewall_status(ctx.obj)
 
 
-@app.command('firewall-add', hidden=True)
+@app.command("firewall-add", hidden=True)
 def firewall_add_cmd(
     port: int = typer.Argument(..., help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", "-p", help="Protocol (tcp/udp)"),
-    allow_from: str = typer.Option("any", "--from", help="IP address or subnet (default: any)"),
-    ctx: typer.Context = typer.Context
+    allow_from: str = typer.Option(
+        "any", "--from", help="IP address or subnet (default: any)"
+    ),
+    ctx: typer.Context = typer.Context,
 ):
     """[DEPRECATED: Use 'navig security firewall-add']"""
-    ch.warning("'navig firewall-add' is deprecated. Use 'navig security firewall-add' instead.")
+    ch.warning(
+        "'navig firewall-add' is deprecated. Use 'navig security firewall-add' instead."
+    )
     from navig.commands.security import firewall_add_rule
+
     firewall_add_rule(port, protocol, allow_from, ctx.obj)
 
 
-@app.command('firewall-remove', hidden=True)
+@app.command("firewall-remove", hidden=True)
 def firewall_remove_cmd(
     port: int = typer.Argument(..., help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", "-p", help="Protocol (tcp/udp)"),
-    ctx: typer.Context = typer.Context
+    ctx: typer.Context = typer.Context,
 ):
     """[DEPRECATED: Use 'navig security firewall-remove']"""
-    ch.warning("'navig firewall-remove' is deprecated. Use 'navig security firewall-remove' instead.")
+    ch.warning(
+        "'navig firewall-remove' is deprecated. Use 'navig security firewall-remove' instead."
+    )
     from navig.commands.security import firewall_remove_rule
+
     firewall_remove_rule(port, protocol, ctx.obj)
 
 
-@app.command('fail2ban-status', hidden=True)
+@app.command("fail2ban-status", hidden=True)
 def fail2ban_status_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig security fail2ban']"""
-    ch.warning("'navig fail2ban-status' is deprecated. Use 'navig security fail2ban' instead.")
+    ch.warning(
+        "'navig fail2ban-status' is deprecated. Use 'navig security fail2ban' instead."
+    )
     from navig.commands.security import fail2ban_status
+
     fail2ban_status(ctx.obj)
 
 
-@app.command('security-scan', hidden=True)
+@app.command("security-scan", hidden=True)
 def security_scan_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig security scan']"""
-    ch.warning("'navig security-scan' is deprecated. Use 'navig security scan' instead.")
+    ch.warning(
+        "'navig security-scan' is deprecated. Use 'navig security scan' instead."
+    )
     from navig.commands.security import security_scan
+
     security_scan(ctx.obj)
 
 
@@ -2665,6 +3088,7 @@ def system_callback(ctx: typer.Context):
     deprecation_warning("navig system", "navig host maintenance")
     if ctx.invoked_subcommand is None:
         from navig.commands.maintenance import system_info
+
         system_info(ctx.obj)
 
 
@@ -2674,20 +3098,26 @@ def system_show(
     info: bool = typer.Option(False, "--info", "-i", help="Show system information"),
     disk: bool = typer.Option(False, "--disk", "-d", help="Show disk usage"),
     memory: bool = typer.Option(False, "--memory", "-m", help="Show memory usage"),
-    processes: bool = typer.Option(False, "--processes", "-p", help="Show running processes"),
+    processes: bool = typer.Option(
+        False, "--processes", "-p", help="Show running processes"
+    ),
 ):
     """Show system information (canonical command)."""
     if disk:
         from navig.commands.monitoring import monitor_disk
+
         monitor_disk(80, ctx.obj)
     elif memory:
         from navig.commands.monitoring import monitor_resources
+
         monitor_resources(ctx.obj)
     elif processes:
         from navig.commands.remote import run_remote_command
+
         run_remote_command("ps aux --sort=-%mem | head -20", ctx.obj)
     else:
         from navig.commands.maintenance import system_info
+
         system_info(ctx.obj)
 
 
@@ -2696,39 +3126,56 @@ def system_run(
     ctx: typer.Context,
     update: bool = typer.Option(False, "--update", "-u", help="Update system packages"),
     clean: bool = typer.Option(False, "--clean", "-c", help="Clean package cache"),
-    rotate_logs: bool = typer.Option(False, "--rotate-logs", "-r", help="Rotate log files"),
-    cleanup_temp: bool = typer.Option(False, "--cleanup-temp", "-t", help="Clean temp files"),
-    maintenance: bool = typer.Option(False, "--maintenance", "-m", help="Full maintenance"),
+    rotate_logs: bool = typer.Option(
+        False, "--rotate-logs", "-r", help="Rotate log files"
+    ),
+    cleanup_temp: bool = typer.Option(
+        False, "--cleanup-temp", "-t", help="Clean temp files"
+    ),
+    maintenance: bool = typer.Option(
+        False, "--maintenance", "-m", help="Full maintenance"
+    ),
     reboot: bool = typer.Option(False, "--reboot", help="Reboot server"),
 ):
     """Run system maintenance operations (canonical command)."""
     if update:
         from navig.commands.maintenance import update_packages
+
         update_packages(ctx.obj)
     elif clean:
         from navig.commands.maintenance import clean_packages
+
         clean_packages(ctx.obj)
     elif rotate_logs:
         from navig.commands.maintenance import rotate_logs as rotate_logs_func
+
         rotate_logs_func(ctx.obj)
     elif cleanup_temp:
         from navig.commands.maintenance import cleanup_temp as cleanup_temp_func
+
         cleanup_temp_func(ctx.obj)
     elif maintenance:
         from navig.commands.maintenance import system_maintenance
+
         system_maintenance(ctx.obj)
     elif reboot:
         from navig.commands.remote import run_remote_command
-        if ctx.obj.get('yes') or typer.confirm("Are you sure you want to reboot the server?"):
+
+        if ctx.obj.get("yes") or typer.confirm(
+            "Are you sure you want to reboot the server?"
+        ):
             run_remote_command("sudo reboot", ctx.obj)
     else:
-        ch.error("Specify an action: --update, --clean, --rotate-logs, --cleanup-temp, --maintenance, --reboot")
+        ch.error(
+            "Specify an action: --update, --clean, --rotate-logs, --cleanup-temp, --maintenance, --reboot"
+        )
 
 
 @system_app.command("update")
 def system_update(ctx: typer.Context):
     """Update system packages (alias for 'navig system run --update')."""
     from navig.commands.maintenance import update_packages
+
     update_packages(ctx.obj)
 
 
@@ -2736,6 +3183,7 @@ def system_update(ctx: typer.Context):
 def system_clean(ctx: typer.Context):
     """Clean package cache and orphans (alias for 'navig system run --clean')."""
     from navig.commands.maintenance import clean_packages
+
     clean_packages(ctx.obj)
 
 
@@ -2743,6 +3191,7 @@ def system_clean(ctx: typer.Context):
 def system_info_cmd(ctx: typer.Context):
     """Display comprehensive system information."""
     from navig.commands.maintenance import system_info
+
     system_info(ctx.obj)
 
 
@@ -2750,7 +3199,10 @@ def system_info_cmd(ctx: typer.Context):
 def system_reboot(ctx: typer.Context):
     """Reboot the server (requires confirmation)."""
     from navig.commands.remote import run_remote_command
-    if ctx.obj.get('yes') or typer.confirm("Are you sure you want to reboot the server?"):
+
+    if ctx.obj.get("yes") or typer.confirm(
+        "Are you sure you want to reboot the server?"
+    ):
         run_remote_command("sudo reboot", ctx.obj)
 
 
@@ -2760,6 +3212,7 @@ def update_packages_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig system update'] Update packages."""
     deprecation_warning("navig update-packages", "navig system update")
     from navig.commands.maintenance import update_packages
+
     update_packages(ctx.obj)
 
 
@@ -2768,6 +3221,7 @@ def clean_packages_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig system clean'] Clean packages."""
     deprecation_warning("navig clean-packages", "navig system clean")
     from navig.commands.maintenance import clean_packages
+
     clean_packages(ctx.obj)
 
 
@@ -2776,6 +3230,7 @@ def rotate_logs_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig system run --rotate-logs'] Rotate logs."""
     deprecation_warning("navig rotate-logs", "navig system run --rotate-logs")
     from navig.commands.maintenance import rotate_logs
+
     rotate_logs(ctx.obj)
 
 
@@ -2784,6 +3239,7 @@ def cleanup_temp_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig system run --cleanup-temp'] Cleanup temp."""
     deprecation_warning("navig cleanup-temp", "navig system run --cleanup-temp")
     from navig.commands.maintenance import cleanup_temp
+
     cleanup_temp(ctx.obj)
 
 
@@ -2792,6 +3248,7 @@ def check_filesystem_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig system show --disk'] Check filesystem."""
     deprecation_warning("navig check-filesystem", "navig system show --disk")
     from navig.commands.maintenance import check_filesystem
+
     check_filesystem(ctx.obj)
 
 
@@ -2800,6 +3257,7 @@ def system_maintenance_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig system run --maintenance'] Run maintenance."""
     deprecation_warning("navig system-maintenance", "navig system run --maintenance")
     from navig.commands.maintenance import system_maintenance
+
     system_maintenance(ctx.obj)
 
 
@@ -2807,17 +3265,37 @@ def system_maintenance_cmd(ctx: typer.Context):
 # REMOTE COMMAND EXECUTION
 # ============================================================================
 
+
 @app.command("run")
 def run_command(
     ctx: typer.Context,
-    command: Optional[str] = typer.Argument(None, help="Command to execute, @- for stdin, @file for file"),
-    stdin: bool = typer.Option(False, "--stdin", "-s", help="Read command from stdin (bypasses escaping)"),
-    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Read command from file"),
-    b64: bool = typer.Option(False, "--b64", "-b", help="Encode command as Base64 (escape-proof for JSON/special chars)"),
-    interactive: bool = typer.Option(False, "--interactive", "-i", help="Open editor for multi-line input"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-confirm prompts (same as global --yes)"),
-    confirm: bool = typer.Option(False, "--confirm", "-c", help="Force confirmation prompt"),
-    json: bool = typer.Option(False, "--json", help="Output JSON (captures stdout/stderr)"),
+    command: Optional[str] = typer.Argument(
+        None, help="Command to execute, @- for stdin, @file for file"
+    ),
+    stdin: bool = typer.Option(
+        False, "--stdin", "-s", help="Read command from stdin (bypasses escaping)"
+    ),
+    file: Optional[Path] = typer.Option(
+        None, "--file", "-f", help="Read command from file"
+    ),
+    b64: bool = typer.Option(
+        False,
+        "--b64",
+        "-b",
+        help="Encode command as Base64 (escape-proof for JSON/special chars)",
+    ),
+    interactive: bool = typer.Option(
+        False, "--interactive", "-i", help="Open editor for multi-line input"
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Auto-confirm prompts (same as global --yes)"
+    ),
+    confirm: bool = typer.Option(
+        False, "--confirm", "-c", help="Force confirmation prompt"
+    ),
+    json: bool = typer.Option(
+        False, "--json", help="Output JSON (captures stdout/stderr)"
+    ),
 ):
     """Execute arbitrary shell command on remote server.
 
@@ -2844,6 +3322,7 @@ def run_command(
       • Nested quotes: "outer 'inner' text"
     """
     from navig.commands.remote import run_remote_command
+
     # Suggest using --b64 for risky/complex shell strings.
     if command and not b64 and not stdin and not file and not interactive:
         # Only warn about ACTUAL quoting/escaping problems
@@ -2851,30 +3330,32 @@ def run_command(
         # Risky: nested quotes, JSON braces, dollar signs (variable expansion), backticks
         risky_markers = [
             '"\'"',  # nested quotes: "...'..."
-            '\'"',   # nested quotes: '..."...'
-            '{"',    # JSON object start
-            '"}',    # JSON object end
-            '["',    # JSON array with string
-            '"]',    # JSON array with string
-            '$(',    # command substitution
-            '`',     # backticks (command substitution)
-            '\\n',   # literal newlines in command string
-            '\\t',   # literal tabs
+            "'\"",  # nested quotes: '..."...'
+            '{"',  # JSON object start
+            '"}',  # JSON object end
+            '["',  # JSON array with string
+            '"]',  # JSON array with string
+            "$(",  # command substitution
+            "`",  # backticks (command substitution)
+            "\\n",  # literal newlines in command string
+            "\\t",  # literal tabs
         ]
         if any(m in command for m in risky_markers):
             ch.warning("This command looks complex; consider --b64 for safer quoting.")
-            ch.dim("Example: navig run --b64 \"curl -d '{\\\"k\\\":\\\"v\\\"}' ...\"")
+            ch.dim('Example: navig run --b64 "curl -d \'{\\"k\\":\\"v\\"}\' ..."')
     # Merge command-level options with global options
     options = ctx.obj.copy()
     if yes:
-        options['yes'] = True
+        options["yes"] = True
     if confirm:
-        options['confirm'] = True
+        options["confirm"] = True
     if b64:
-        options['b64'] = True
+        options["b64"] = True
     if json:
-        options['json'] = True
-    run_remote_command(command, options, stdin=stdin, file=file, interactive=interactive)
+        options["json"] = True
+    run_remote_command(
+        command, options, stdin=stdin, file=file, interactive=interactive
+    )
 
 
 @app.command("r", hidden=True)
@@ -2882,11 +3363,17 @@ def run_command_alias(
     ctx: typer.Context,
     command: Optional[str] = typer.Argument(None, help="Alias for: navig run"),
     stdin: bool = typer.Option(False, "--stdin", "-s", help="Read command from stdin"),
-    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Read command from file"),
+    file: Optional[Path] = typer.Option(
+        None, "--file", "-f", help="Read command from file"
+    ),
     b64: bool = typer.Option(False, "--b64", "-b", help="Base64 encode the command"),
-    interactive: bool = typer.Option(False, "--interactive", "-i", help="Open editor for multi-line input"),
+    interactive: bool = typer.Option(
+        False, "--interactive", "-i", help="Open editor for multi-line input"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-confirm prompts"),
-    confirm: bool = typer.Option(False, "--confirm", "-c", help="Force confirmation prompt"),
+    confirm: bool = typer.Option(
+        False, "--confirm", "-c", help="Force confirmation prompt"
+    ),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """Alias for: navig run."""
@@ -2924,7 +3411,9 @@ def status_command(
 def dashboard_command(
     ctx: typer.Context,
     live: bool = typer.Option(True, "--live/--no-live", help="Live auto-refresh mode"),
-    refresh: int = typer.Option(5, "--refresh", "-r", help="Refresh interval in seconds"),
+    refresh: int = typer.Option(
+        5, "--refresh", "-r", help="Refresh interval in seconds"
+    ),
 ):
     """
     Real-time operations dashboard with host status, Docker, and history.
@@ -2953,12 +3442,21 @@ def dashboard_command(
 @app.command("suggest")
 def suggest_command(
     ctx: typer.Context,
-    context: Optional[str] = typer.Option(None, "--context", "-c", help="Filter by context (docker, database, deployment, monitoring)"),
-    run_idx: Optional[int] = typer.Option(None, "--run", "-r", help="Run suggestion by number"),
+    context: Optional[str] = typer.Option(
+        None,
+        "--context",
+        "-c",
+        help="Filter by context (docker, database, deployment, monitoring)",
+    ),
+    run_idx: Optional[int] = typer.Option(
+        None, "--run", "-r", help="Run suggestion by number"
+    ),
     limit: int = typer.Option(8, "--limit", "-l", help="Number of suggestions"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show command without executing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show command without executing"
+    ),
 ):
     """
     Intelligent command suggestions based on history and context.
@@ -3009,6 +3507,7 @@ def trigger_callback(ctx: typer.Context):
     """Event-driven automation triggers - run without subcommand for list."""
     if ctx.invoked_subcommand is None:
         from navig.commands.triggers import list_triggers
+
         list_triggers()
         raise typer.Exit()
 
@@ -3016,14 +3515,19 @@ def trigger_callback(ctx: typer.Context):
 @trigger_app.command("list")
 def trigger_list(
     ctx: typer.Context,
-    type_filter: Optional[str] = typer.Option(None, "--type", "-t", help="Filter by trigger type"),
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status (enabled/disabled)"),
+    type_filter: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Filter by trigger type"
+    ),
+    status: Optional[str] = typer.Option(
+        None, "--status", "-s", help="Filter by status (enabled/disabled)"
+    ),
     tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """List all configured triggers."""
     from navig.commands.triggers import list_triggers
+
     list_triggers(
         type_filter=type_filter,
         status_filter=status,
@@ -3042,6 +3546,7 @@ def trigger_show(
 ):
     """Show detailed trigger information."""
     from navig.commands.triggers import show_trigger
+
     show_trigger(trigger_id, plain=plain, json_out=json_out)
 
 
@@ -3049,12 +3554,23 @@ def trigger_show(
 def trigger_add(
     ctx: typer.Context,
     name: Optional[str] = typer.Argument(None, help="Trigger name"),
-    action: Optional[str] = typer.Option(None, "--action", "-a", help="Action to execute"),
-    trigger_type: str = typer.Option("manual", "--type", "-t", help="Trigger type (health, schedule, threshold, manual)"),
+    action: Optional[str] = typer.Option(
+        None, "--action", "-a", help="Action to execute"
+    ),
+    trigger_type: str = typer.Option(
+        "manual",
+        "--type",
+        "-t",
+        help="Trigger type (health, schedule, threshold, manual)",
+    ),
     description: str = typer.Option("", "--desc", "-d", help="Description"),
-    schedule: str = typer.Option("", "--schedule", help="Schedule expression (for schedule triggers)"),
+    schedule: str = typer.Option(
+        "", "--schedule", help="Schedule expression (for schedule triggers)"
+    ),
     host: str = typer.Option("", "--host", help="Target host (for threshold triggers)"),
-    condition: str = typer.Option("", "--condition", "-c", help="Condition (format: 'target op value')"),
+    condition: str = typer.Option(
+        "", "--condition", "-c", help="Condition (format: 'target op value')"
+    ),
 ):
     """
     Create a new trigger.
@@ -3080,7 +3596,9 @@ def trigger_add(
         add_trigger_interactive()
     else:
         if not action:
-            ch.error("Action is required for quick mode. Use --action or run without args for interactive mode.")
+            ch.error(
+                "Action is required for quick mode. Use --action or run without args for interactive mode."
+            )
             return
         add_trigger_quick(
             name=name,
@@ -3101,6 +3619,7 @@ def trigger_remove(
 ):
     """Remove a trigger."""
     from navig.commands.triggers import remove_trigger
+
     remove_trigger(trigger_id, force=force)
 
 
@@ -3111,6 +3630,7 @@ def trigger_enable(
 ):
     """Enable a disabled trigger."""
     from navig.commands.triggers import enable_trigger
+
     enable_trigger(trigger_id)
 
 
@@ -3121,6 +3641,7 @@ def trigger_disable(
 ):
     """Disable a trigger (stops it from firing)."""
     from navig.commands.triggers import disable_trigger
+
     disable_trigger(trigger_id)
 
 
@@ -3135,6 +3656,7 @@ def trigger_test(
     Shows what actions would be executed without actually running them.
     """
     from navig.commands.triggers import test_trigger
+
     test_trigger(trigger_id)
 
 
@@ -3150,6 +3672,7 @@ def trigger_fire(
     regardless of conditions or cooldown.
     """
     from navig.commands.triggers import fire_trigger
+
     fire_trigger(trigger_id)
 
 
@@ -3163,6 +3686,7 @@ def trigger_history(
 ):
     """Show trigger execution history."""
     from navig.commands.triggers import show_trigger_history
+
     show_trigger_history(
         trigger_id=trigger_id,
         limit=limit,
@@ -3174,11 +3698,14 @@ def trigger_history(
 @trigger_app.command("clear-history")
 def trigger_clear_history(
     ctx: typer.Context,
-    trigger_id: Optional[str] = typer.Argument(None, help="Clear history for specific trigger only"),
+    trigger_id: Optional[str] = typer.Argument(
+        None, help="Clear history for specific trigger only"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Clear trigger execution history."""
     from navig.commands.triggers import clear_trigger_history
+
     clear_trigger_history(trigger_id=trigger_id, force=force)
 
 
@@ -3186,6 +3713,7 @@ def trigger_clear_history(
 def trigger_stats(ctx: typer.Context):
     """Show trigger statistics."""
     from navig.commands.triggers import show_trigger_stats
+
     show_trigger_stats()
 
 
@@ -3206,6 +3734,7 @@ def insights_callback(ctx: typer.Context):
     """Operations insights - analytics on your command patterns."""
     if ctx.invoked_subcommand is None:
         from navig.commands.insights import show_insights_summary
+
         show_insights_summary()
         raise typer.Exit()
 
@@ -3213,19 +3742,24 @@ def insights_callback(ctx: typer.Context):
 @insights_app.command("show")
 def insights_show(
     ctx: typer.Context,
-    time_range: str = typer.Option("week", "--range", "-r", help="Time range: today, week, month, all"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Show insights summary with key metrics."""
     from navig.commands.insights import show_insights_summary
+
     show_insights_summary(time_range=time_range, plain=plain, json_out=json_out)
 
 
 @insights_app.command("hosts")
 def insights_hosts(
     ctx: typer.Context,
-    time_range: str = typer.Option("week", "--range", "-r", help="Time range: today, week, month, all"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -3239,6 +3773,7 @@ def insights_hosts(
     Also shows if host performance is improving, stable, or declining.
     """
     from navig.commands.insights import show_host_health
+
     show_host_health(time_range=time_range, plain=plain, json_out=json_out)
 
 
@@ -3246,19 +3781,26 @@ def insights_hosts(
 def insights_commands(
     ctx: typer.Context,
     limit: int = typer.Option(10, "--limit", "-n", help="Number of commands to show"),
-    time_range: str = typer.Option("week", "--range", "-r", help="Time range: today, week, month, all"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Show most frequently used commands with success rates."""
     from navig.commands.insights import show_top_commands
-    show_top_commands(limit=limit, time_range=time_range, plain=plain, json_out=json_out)
+
+    show_top_commands(
+        limit=limit, time_range=time_range, plain=plain, json_out=json_out
+    )
 
 
 @insights_app.command("time")
 def insights_time(
     ctx: typer.Context,
-    time_range: str = typer.Option("week", "--range", "-r", help="Time range: today, week, month, all"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -3271,13 +3813,16 @@ def insights_time(
     - Most common commands at each hour
     """
     from navig.commands.insights import show_time_patterns
+
     show_time_patterns(time_range=time_range, plain=plain, json_out=json_out)
 
 
 @insights_app.command("anomalies")
 def insights_anomalies(
     ctx: typer.Context,
-    time_range: str = typer.Option("week", "--range", "-r", help="Time range: today, week, month, all"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -3291,26 +3836,34 @@ def insights_anomalies(
     - Performance degradation
     """
     from navig.commands.insights import show_anomalies
+
     show_anomalies(time_range=time_range, plain=plain, json_out=json_out)
 
 
 @insights_app.command("recommend")
 def insights_recommend(
     ctx: typer.Context,
-    time_range: str = typer.Option("week", "--range", "-r", help="Time range: today, week, month, all"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Get personalized recommendations based on your usage."""
     from navig.commands.insights import show_recommendations
+
     show_recommendations(time_range=time_range, plain=plain, json_out=json_out)
 
 
 @insights_app.command("report")
 def insights_report(
     ctx: typer.Context,
-    time_range: str = typer.Option("week", "--range", "-r", help="Time range: today, week, month, all"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Save report to file"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Save report to file"
+    ),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """
@@ -3326,6 +3879,7 @@ def insights_report(
     Can be exported to JSON for further analysis.
     """
     from navig.commands.insights import generate_report
+
     generate_report(time_range=time_range, output_file=output, json_out=json_out)
 
 
@@ -3347,6 +3901,7 @@ def pack_callback(ctx: typer.Context):
     """Packs - shareable operations bundles."""
     if ctx.invoked_subcommand is None:
         from navig.commands.packs import list_packs
+
         list_packs()
         raise typer.Exit()
 
@@ -3354,15 +3909,29 @@ def pack_callback(ctx: typer.Context):
 @pack_app.command("list")
 def pack_list(
     ctx: typer.Context,
-    pack_type: Optional[str] = typer.Option(None, "--type", "-t", help="Filter by type: workflow, runbook, checklist, template"),
+    pack_type: Optional[str] = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Filter by type: workflow, runbook, checklist, template",
+    ),
     tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
-    installed: bool = typer.Option(False, "--installed", "-i", help="Show only installed packs"),
+    installed: bool = typer.Option(
+        False, "--installed", "-i", help="Show only installed packs"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """List available packs."""
     from navig.commands.packs import list_packs
-    list_packs(pack_type=pack_type, tag=tag, installed_only=installed, plain=plain, json_out=json_out)
+
+    list_packs(
+        pack_type=pack_type,
+        tag=tag,
+        installed_only=installed,
+        plain=plain,
+        json_out=json_out,
+    )
 
 
 @pack_app.command("show")
@@ -3374,6 +3943,7 @@ def pack_show(
 ):
     """Show pack details."""
     from navig.commands.packs import show_pack
+
     show_pack(name, plain=plain, json_out=json_out)
 
 
@@ -3391,6 +3961,7 @@ def pack_install(
     - Local file path (e.g., "./my-pack.yaml")
     """
     from navig.commands.packs import install_pack
+
     install_pack(source, force=force)
 
 
@@ -3402,6 +3973,7 @@ def pack_uninstall(
 ):
     """Uninstall a pack."""
     from navig.commands.packs import uninstall_pack
+
     uninstall_pack(name, force=force)
 
 
@@ -3409,7 +3981,9 @@ def pack_uninstall(
 def pack_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Pack name to run"),
-    var: Optional[List[str]] = typer.Option(None, "--var", "-v", help="Variables (key=value)"),
+    var: Optional[List[str]] = typer.Option(
+        None, "--var", "-v", help="Variables (key=value)"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without executing"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmations"),
 ):
@@ -3427,8 +4001,8 @@ def pack_run(
     variables = {}
     if var:
         for v in var:
-            if '=' in v:
-                key, value = v.split('=', 1)
+            if "=" in v:
+                key, value = v.split("=", 1)
                 variables[key] = value
 
     run_pack(name, variables=variables, dry_run=dry_run, yes=yes)
@@ -3438,11 +4012,14 @@ def pack_run(
 def pack_create(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Pack name"),
-    pack_type: str = typer.Option("runbook", "--type", "-t", help="Pack type: workflow, runbook, checklist"),
+    pack_type: str = typer.Option(
+        "runbook", "--type", "-t", help="Pack type: workflow, runbook, checklist"
+    ),
     description: str = typer.Option("", "--description", "-d", help="Pack description"),
 ):
     """Create a new pack in local packs directory."""
     from navig.commands.packs import create_pack
+
     create_pack(name, pack_type=pack_type, description=description)
 
 
@@ -3455,6 +4032,7 @@ def pack_search(
 ):
     """Search for packs by name, description, or tags."""
     from navig.commands.packs import search_packs
+
     search_packs(query, plain=plain, json_out=json_out)
 
 
@@ -3475,6 +4053,7 @@ def install_callback(ctx: typer.Context):
     """Install community assets from GitHub into store/."""
     if ctx.invoked_subcommand is None:
         from navig.commands.install import list_assets
+
         list_assets()
         raise typer.Exit()
 
@@ -3487,9 +4066,15 @@ def install_callback(ctx: typer.Context):
 @install_app.command("add")
 def install_add(
     ctx: typer.Context,
-    spec: str = typer.Argument(..., help="type:owner/repo[@ref]  e.g. skill:myuser/my-skill"),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite if already installed."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    spec: str = typer.Argument(
+        ..., help="type:owner/repo[@ref]  e.g. skill:myuser/my-skill"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite if already installed."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview without writing files."
+    ),
 ):
     """Install an asset from GitHub.
 
@@ -3505,6 +4090,7 @@ def install_add(
       navig install add playbook:myorg/ops-pack@v1.2.0 --force
     """
     from navig.commands.install import install_asset
+
     try:
         install_asset(spec, force=force, dry_run=dry_run)
     except (ValueError, SystemExit) as exc:
@@ -3518,6 +4104,7 @@ def install_list(
 ):
     """List installed community assets."""
     from navig.commands.install import list_assets
+
     list_assets(plain=plain)
 
 
@@ -3529,6 +4116,7 @@ def install_remove(
 ):
     """Remove an installed community asset."""
     from navig.commands.install import remove_asset
+
     try:
         remove_asset(spec, force=force)
     except (ValueError, SystemExit) as exc:
@@ -3538,11 +4126,14 @@ def install_remove(
 @install_app.command("update")
 def install_update(
     ctx: typer.Context,
-    spec: str = typer.Argument(None, help="Specific asset to update (omit to update all)."),
+    spec: str = typer.Argument(
+        None, help="Specific asset to update (omit to update all)."
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without changes."),
 ):
     """Update one or all installed assets to latest."""
     from navig.commands.install import update_assets
+
     try:
         update_assets(spec, dry_run=dry_run)
     except (ValueError, SystemExit) as exc:
@@ -3557,6 +4148,7 @@ def install_upgrade(
 ):
     """Upgrade all installed assets (alias for update)."""
     from navig.commands.install import update_assets
+
     try:
         update_assets(spec, dry_run=dry_run)
     except (ValueError, SystemExit) as exc:
@@ -3570,6 +4162,7 @@ def install_show(
 ):
     """Show details of an installed asset."""
     from navig.commands.install import show_asset
+
     try:
         show_asset(spec)
     except (ValueError, SystemExit) as exc:
@@ -3583,6 +4176,7 @@ def install_freeze(
 ):
     """Print installed assets as type/name==version specs."""
     from navig.commands.install import freeze_assets
+
     freeze_assets(plain=plain)
 
 
@@ -3590,6 +4184,7 @@ def install_freeze(
 def install_status(ctx: typer.Context):
     """Show health of all installed assets."""
     from navig.commands.install import status_assets
+
     status_assets()
 
 
@@ -3598,7 +4193,9 @@ def install_search(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="Search query (name, description, tags)"),
     type_filter: Optional[str] = typer.Option(
-        None, "--type", "-t",
+        None,
+        "--type",
+        "-t",
         help="Filter by asset type: skill, playbook, workflow, plugin, …",
     ),
     refresh: bool = typer.Option(False, "--refresh", help="Force registry re-fetch."),
@@ -3619,6 +4216,7 @@ def install_search(
 
     if json_out:
         import json as _json
+
         ch.print(_json.dumps(results, indent=2, ensure_ascii=False))
         return
 
@@ -3636,6 +4234,7 @@ def install_search(
         return
 
     from rich.table import Table
+
     table = Table(title=f"Registry search: {query!r}", show_lines=False)
     table.add_column("Type", style="dim", width=10)
     table.add_column("Name", style="cyan")
@@ -3643,7 +4242,9 @@ def install_search(
     table.add_column("Install", style="green")
 
     for asset in results:
-        install_spec = f"{asset.get('type','?')}:{asset.get('repo', asset.get('name',''))}"
+        install_spec = (
+            f"{asset.get('type','?')}:{asset.get('repo', asset.get('name',''))}"
+        )
         table.add_row(
             asset.get("type", "?"),
             asset.get("name", "?"),
@@ -3659,7 +4260,9 @@ def install_search(
 def install_browse(
     ctx: typer.Context,
     type_filter: Optional[str] = typer.Option(
-        None, "--type", "-t",
+        None,
+        "--type",
+        "-t",
         help="Filter by asset type: skill, playbook, workflow, plugin, …",
     ),
     refresh: bool = typer.Option(False, "--refresh", help="Force registry re-fetch."),
@@ -3680,6 +4283,7 @@ def install_browse(
 
     if json_out:
         import json as _json
+
         ch.print(_json.dumps(assets, indent=2, ensure_ascii=False))
         return
 
@@ -3698,6 +4302,7 @@ def install_browse(
         return
 
     from rich.table import Table
+
     title = "Community Registry" + (f" — {type_filter}" if type_filter else "")
     table = Table(title=title, show_lines=False)
     table.add_column("Type", style="dim", width=10)
@@ -3735,6 +4340,7 @@ def quick_callback(ctx: typer.Context):
     """Quick actions - shortcuts for frequent operations."""
     if ctx.invoked_subcommand is None:
         from navig.commands.suggest import show_quick_actions
+
         show_quick_actions()
         raise typer.Exit()
 
@@ -3747,6 +4353,7 @@ def quick_list(
 ):
     """List all quick actions."""
     from navig.commands.suggest import show_quick_actions
+
     show_quick_actions(plain=plain, json_out=json_out)
 
 
@@ -3754,7 +4361,9 @@ def quick_list(
 def quick_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Quick action name to run"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show command without executing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show command without executing"
+    ),
 ):
     """
     Run a quick action by name.
@@ -3765,6 +4374,7 @@ def quick_run(
         navig q run status
     """
     from navig.commands.suggest import run_quick_action
+
     run_quick_action(name, dry_run=dry_run)
 
 
@@ -3813,7 +4423,7 @@ def quick_remove(
         ch.error(f"Quick action '{name}' not found.")
         return
 
-    with open(quick_file, 'r', encoding='utf-8') as f:
+    with open(quick_file, "r", encoding="utf-8") as f:
         actions = yaml.safe_load(f) or {}
 
     if name not in actions:
@@ -3822,7 +4432,7 @@ def quick_remove(
 
     del actions[name]
 
-    with open(quick_file, 'w', encoding='utf-8') as f:
+    with open(quick_file, "w", encoding="utf-8") as f:
         yaml.safe_dump(actions, f, default_flow_style=False)
 
     ch.success(f"Removed quick action: {name}")
@@ -3843,6 +4453,7 @@ def install_package(
 ):
     """Auto-detect package manager and install."""
     from navig.commands.remote import install_remote_package
+
     install_remote_package(package, ctx.obj)
 
 
@@ -3871,6 +4482,7 @@ def hosts_callback(ctx: typer.Context):
 def hosts_view_cmd(ctx: typer.Context):
     """View the system hosts file with syntax highlighting."""
     from navig.commands.local import hosts_view
+
     hosts_view(ctx.obj)
 
 
@@ -3878,6 +4490,7 @@ def hosts_view_cmd(ctx: typer.Context):
 def hosts_edit_cmd(ctx: typer.Context):
     """Open hosts file in editor (requires admin)."""
     from navig.commands.local import hosts_edit
+
     hosts_edit(ctx.obj)
 
 
@@ -3889,6 +4502,7 @@ def hosts_add_cmd(
 ):
     """Add an entry to the hosts file (requires admin)."""
     from navig.commands.local import hosts_add
+
     hosts_add(ip, hostname, ctx.obj)
 
 
@@ -3906,6 +4520,7 @@ def software_callback(ctx: typer.Context):
     """Software management - run without subcommand to list packages."""
     if ctx.invoked_subcommand is None:
         from navig.commands.local import software_list
+
         software_list(ctx.obj)
         raise typer.Exit()
 
@@ -3913,11 +4528,14 @@ def software_callback(ctx: typer.Context):
 @software_app.command("list")
 def software_list_cmd(
     ctx: typer.Context,
-    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit number of results"),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", "-l", help="Limit number of results"
+    ),
 ):
     """List installed software packages."""
     from navig.commands.local import software_list
-    ctx.obj['limit'] = limit
+
+    ctx.obj["limit"] = limit
     software_list(ctx.obj)
 
 
@@ -3928,6 +4546,7 @@ def software_search_cmd(
 ):
     """Search installed packages by name."""
     from navig.commands.local import software_search
+
     software_search(query, ctx.obj)
 
 
@@ -3952,14 +4571,18 @@ def local_callback(ctx: typer.Context):
 def local_show_cmd(
     ctx: typer.Context,
     info: bool = typer.Option(True, "--info", "-i", help="Show system information"),
-    resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
+    resources: bool = typer.Option(
+        False, "--resources", "-r", help="Show resource usage"
+    ),
 ):
     """Show local system information."""
     if resources:
         from navig.commands.local import resource_usage
+
         resource_usage(ctx.obj)
     else:
         from navig.commands.local import system_info
+
         system_info(ctx.obj)
 
 
@@ -3967,12 +4590,15 @@ def local_show_cmd(
 def local_audit_cmd(
     ctx: typer.Context,
     ai: bool = typer.Option(False, "--ai", "-a", help="Include AI analysis"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed information"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show detailed information"
+    ),
 ):
     """Run local security audit."""
     from navig.commands.local import security_audit
-    ctx.obj['ai'] = ai
-    ctx.obj['verbose'] = verbose
+
+    ctx.obj["ai"] = ai
+    ctx.obj["verbose"] = verbose
     security_audit(ctx.obj)
 
 
@@ -3980,6 +4606,7 @@ def local_audit_cmd(
 def local_ports_cmd(ctx: typer.Context):
     """Show open/listening ports on local machine."""
     from navig.commands.local import security_ports
+
     security_ports(ctx.obj)
 
 
@@ -3987,6 +4614,7 @@ def local_ports_cmd(ctx: typer.Context):
 def local_firewall_cmd(ctx: typer.Context):
     """Show local firewall status."""
     from navig.commands.local import security_firewall
+
     security_firewall(ctx.obj)
 
 
@@ -3998,6 +4626,7 @@ def local_ping_cmd(
 ):
     """Ping a host from local machine."""
     from navig.commands.local import network_ping
+
     network_ping(host, count, ctx.obj)
 
 
@@ -4008,6 +4637,7 @@ def local_dns_cmd(
 ):
     """Perform DNS lookup."""
     from navig.commands.local import network_dns
+
     network_dns(hostname, ctx.obj)
 
 
@@ -4015,6 +4645,7 @@ def local_dns_cmd(
 def local_interfaces_cmd(ctx: typer.Context):
     """Show network interfaces."""
     from navig.commands.local import network_interfaces
+
     network_interfaces(ctx.obj)
 
 
@@ -4042,6 +4673,7 @@ def web_callback(ctx: typer.Context):
 def web_vhosts_new(ctx: typer.Context):
     """List virtual hosts (enabled and available)."""
     from navig.commands.webserver import list_vhosts
+
     list_vhosts(ctx.obj)
 
 
@@ -4049,6 +4681,7 @@ def web_vhosts_new(ctx: typer.Context):
 def web_test_new(ctx: typer.Context):
     """Test web server configuration syntax."""
     from navig.commands.webserver import test_config
+
     test_config(ctx.obj)
 
 
@@ -4059,7 +4692,8 @@ def web_enable_new(
 ):
     """Enable a web server site."""
     from navig.commands.webserver import enable_site
-    ctx.obj['site_name'] = site_name
+
+    ctx.obj["site_name"] = site_name
     enable_site(ctx.obj)
 
 
@@ -4070,7 +4704,8 @@ def web_disable_new(
 ):
     """Disable a web server site."""
     from navig.commands.webserver import disable_site
-    ctx.obj['site_name'] = site_name
+
+    ctx.obj["site_name"] = site_name
     disable_site(ctx.obj)
 
 
@@ -4081,7 +4716,8 @@ def web_module_enable_new(
 ):
     """Enable Apache module (Apache only)."""
     from navig.commands.webserver import enable_module
-    ctx.obj['module_name'] = module_name
+
+    ctx.obj["module_name"] = module_name
     enable_module(ctx.obj)
 
 
@@ -4092,7 +4728,8 @@ def web_module_disable_new(
 ):
     """Disable Apache module (Apache only)."""
     from navig.commands.webserver import disable_module
-    ctx.obj['module_name'] = module_name
+
+    ctx.obj["module_name"] = module_name
     disable_module(ctx.obj)
 
 
@@ -4100,6 +4737,7 @@ def web_module_disable_new(
 def web_reload_new(ctx: typer.Context):
     """Safely reload web server (tests config first)."""
     from navig.commands.webserver import reload_server
+
     reload_server(ctx.obj)
 
 
@@ -4107,6 +4745,7 @@ def web_reload_new(ctx: typer.Context):
 def web_recommend_new(ctx: typer.Context):
     """Display performance tuning recommendations."""
     from navig.commands.webserver import get_recommendations
+
     get_recommendations(ctx.obj)
 
 
@@ -4124,6 +4763,7 @@ def web_hestia_callback(ctx: typer.Context):
     """HestiaCP management - run without subcommand for interactive menu."""
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_hestia_menu
+
         launch_hestia_menu()
         raise typer.Exit()
 
@@ -4132,18 +4772,24 @@ def web_hestia_callback(ctx: typer.Context):
 def web_hestia_list(
     ctx: typer.Context,
     users: bool = typer.Option(False, "--users", "-u", help="List HestiaCP users"),
-    domains: bool = typer.Option(False, "--domains", "-d", help="List HestiaCP domains"),
-    user_filter: Optional[str] = typer.Option(None, "--user", help="Filter domains by username"),
+    domains: bool = typer.Option(
+        False, "--domains", "-d", help="List HestiaCP domains"
+    ),
+    user_filter: Optional[str] = typer.Option(
+        None, "--user", help="Filter domains by username"
+    ),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
 ):
     """List HestiaCP resources (users, domains)."""
-    ctx.obj['plain'] = plain
+    ctx.obj["plain"] = plain
     if users:
         from navig.commands.hestia import list_domains_cmd
+
         list_domains_cmd(user_filter, ctx.obj)
     else:
         # Default: show users
         from navig.commands.hestia import list_users_cmd
+
         list_users_cmd(ctx.obj)
 
 
@@ -4152,9 +4798,13 @@ def web_hestia_add(
     ctx: typer.Context,
     resource: str = typer.Argument(..., help="Resource type: user or domain"),
     name: str = typer.Argument(..., help="Username or domain name"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Password (for user)"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Password (for user)"
+    ),
     email: Optional[str] = typer.Option(None, "--email", "-e", help="Email (for user)"),
-    user: Optional[str] = typer.Option(None, "--user", "-u", help="Username (for domain)"),
+    user: Optional[str] = typer.Option(
+        None, "--user", "-u", help="Username (for domain)"
+    ),
 ):
     """Add HestiaCP user or domain."""
     if resource == "user":
@@ -4162,12 +4812,14 @@ def web_hestia_add(
             ch.error("Password and email required for user creation")
             raise typer.Exit(1)
         from navig.commands.hestia import add_user_cmd
+
         add_user_cmd(name, password, email, ctx.obj)
     elif resource == "domain":
         if not user:
             ch.error("Username required for domain creation (--user)")
             raise typer.Exit(1)
         from navig.commands.hestia import add_domain_cmd
+
         add_domain_cmd(user, name, ctx.obj)
     else:
         ch.error(f"Unknown resource type: {resource}. Use 'user' or 'domain'.")
@@ -4179,19 +4831,25 @@ def web_hestia_remove(
     ctx: typer.Context,
     resource: str = typer.Argument(..., help="Resource type: user or domain"),
     name: str = typer.Argument(..., help="Username or domain name"),
-    user: Optional[str] = typer.Option(None, "--user", "-u", help="Username (for domain)"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+    user: Optional[str] = typer.Option(
+        None, "--user", "-u", help="Username (for domain)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force deletion without confirmation"
+    ),
 ):
     """Remove HestiaCP user or domain."""
-    ctx.obj['force'] = force
+    ctx.obj["force"] = force
     if resource == "user":
         from navig.commands.hestia import delete_user_cmd
+
         delete_user_cmd(name, ctx.obj)
     elif resource == "domain":
         if not user:
             ch.error("Username required for domain deletion (--user)")
             raise typer.Exit(1)
         from navig.commands.hestia import delete_domain_cmd
+
         delete_domain_cmd(user, name, ctx.obj)
     else:
         ch.error(f"Unknown resource type: {resource}. Use 'user' or 'domain'.")
@@ -4202,30 +4860,40 @@ def web_hestia_remove(
 @app.command("webserver-list-vhosts", hidden=True)
 def webserver_list_vhosts_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig web vhosts']"""
-    ch.warning("'navig webserver-list-vhosts' is deprecated. Use 'navig web vhosts' instead.")
+    ch.warning(
+        "'navig webserver-list-vhosts' is deprecated. Use 'navig web vhosts' instead."
+    )
     from navig.commands.webserver import list_vhosts
+
     list_vhosts(ctx.obj)
 
 
 @app.command("webserver-test-config", hidden=True)
 def webserver_test_config_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig web test']"""
-    ch.warning("'navig webserver-test-config' is deprecated. Use 'navig web test' instead.")
+    ch.warning(
+        "'navig webserver-test-config' is deprecated. Use 'navig web test' instead."
+    )
     from navig.commands.webserver import test_config
+
     test_config(ctx.obj)
 
 
 @app.command("webserver-reload", hidden=True)
 def webserver_reload_cmd(ctx: typer.Context):
     """[DEPRECATED: Use 'navig web reload']"""
-    ch.warning("'navig webserver-reload' is deprecated. Use 'navig web reload' instead.")
+    ch.warning(
+        "'navig webserver-reload' is deprecated. Use 'navig web reload' instead."
+    )
     from navig.commands.webserver import reload_server
+
     reload_server(ctx.obj)
 
 
 # ============================================================================
 # FILE OPERATIONS (Legacy flat commands - deprecated, use 'navig file' group)
 # ============================================================================
+
 
 @app.command("upload", hidden=True)
 def upload_file(
@@ -4239,6 +4907,7 @@ def upload_file(
     """[DEPRECATED: Use 'navig file add'] Upload file/directory."""
     deprecation_warning("navig upload", "navig file add")
     from navig.commands.files import upload_file_cmd
+
     upload_file_cmd(local, remote, ctx.obj)
 
 
@@ -4254,6 +4923,7 @@ def download_file(
     """[DEPRECATED: Use 'navig file show --download'] Download file/directory."""
     deprecation_warning("navig download", "navig file show --download")
     from navig.commands.files import download_file_cmd
+
     download_file_cmd(remote, local, ctx.obj)
 
 
@@ -4265,6 +4935,7 @@ def list_remote(
     """[DEPRECATED: Use 'navig file list'] List remote directory."""
     deprecation_warning("navig list", "navig file list")
     from navig.commands.files import list_remote_directory
+
     list_remote_directory(remote_path, ctx.obj)
 
 
@@ -4272,14 +4943,19 @@ def list_remote(
 def delete_file(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file/directory path to delete"),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Delete directories recursively"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+    recursive: bool = typer.Option(
+        False, "--recursive", "-r", help="Delete directories recursively"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force deletion without confirmation"
+    ),
 ):
     """[DEPRECATED: Use 'navig file remove'] Delete remote file/directory."""
     deprecation_warning("navig delete", "navig file remove")
     from navig.commands.files_advanced import delete_file_cmd
-    ctx.obj['recursive'] = recursive
-    ctx.obj['force'] = force
+
+    ctx.obj["recursive"] = recursive
+    ctx.obj["force"] = force
     delete_file_cmd(remote, ctx.obj)
 
 
@@ -4287,14 +4963,17 @@ def delete_file(
 def make_directory(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote directory path to create"),
-    parents: bool = typer.Option(True, "--parents", "-p", help="Create parent directories as needed"),
+    parents: bool = typer.Option(
+        True, "--parents", "-p", help="Create parent directories as needed"
+    ),
     mode: str = typer.Option("755", "--mode", "-m", help="Permission mode (e.g., 755)"),
 ):
     """[DEPRECATED: Use 'navig file add --dir'] Create remote directory."""
     deprecation_warning("navig mkdir", "navig file add --dir")
     from navig.commands.files_advanced import mkdir_cmd
-    ctx.obj['parents'] = parents
-    ctx.obj['mode'] = mode
+
+    ctx.obj["parents"] = parents
+    ctx.obj["mode"] = mode
     mkdir_cmd(remote, ctx.obj)
 
 
@@ -4303,12 +4982,15 @@ def change_permissions(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file/directory path"),
     mode: str = typer.Argument(..., help="Permission mode (e.g., 755, 644)"),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Apply recursively"),
+    recursive: bool = typer.Option(
+        False, "--recursive", "-r", help="Apply recursively"
+    ),
 ):
     """[DEPRECATED: Use 'navig file edit --mode'] Change permissions."""
     deprecation_warning("navig chmod", "navig file edit --mode")
     from navig.commands.files_advanced import chmod_cmd
-    ctx.obj['recursive'] = recursive
+
+    ctx.obj["recursive"] = recursive
     chmod_cmd(remote, mode, ctx.obj)
 
 
@@ -4317,12 +4999,15 @@ def change_owner(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file/directory path"),
     owner: str = typer.Argument(..., help="New owner (user or user:group)"),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Apply recursively"),
+    recursive: bool = typer.Option(
+        False, "--recursive", "-r", help="Apply recursively"
+    ),
 ):
     """[DEPRECATED: Use 'navig file edit --owner'] Change ownership."""
     deprecation_warning("navig chown", "navig file edit --owner")
     from navig.commands.files_advanced import chown_cmd
-    ctx.obj['recursive'] = recursive
+
+    ctx.obj["recursive"] = recursive
     chown_cmd(remote, owner, ctx.obj)
 
 
@@ -4330,13 +5015,20 @@ def change_owner(
 def cat_file(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path to read"),
-    lines: Optional[int] = typer.Option(None, "--lines", "-n", help="Number of lines to show"),
-    head: bool = typer.Option(False, "--head", help="Show first N lines (use with --lines)"),
-    tail: bool = typer.Option(False, "--tail", "-t", help="Show last N lines (use with --lines)"),
+    lines: Optional[int] = typer.Option(
+        None, "--lines", "-n", help="Number of lines to show"
+    ),
+    head: bool = typer.Option(
+        False, "--head", help="Show first N lines (use with --lines)"
+    ),
+    tail: bool = typer.Option(
+        False, "--tail", "-t", help="Show last N lines (use with --lines)"
+    ),
 ):
     """[DEPRECATED: Use 'navig file show'] Read remote file contents."""
     deprecation_warning("navig cat", "navig file show")
     from navig.commands.files_advanced import cat_file_cmd
+
     cat_file_cmd(remote, ctx.obj, lines=lines, head=head, tail=tail)
 
 
@@ -4344,18 +5036,39 @@ def cat_file(
 def write_file(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path to write"),
-    content: Optional[str] = typer.Option(None, "--content", "-c", help="Content to write"),
-    stdin: bool = typer.Option(False, "--stdin", "-s", help="Read content from stdin (pipe)"),
-    from_file: Optional[Path] = typer.Option(None, "--from-file", "-f", help="Read content from local file"),
-    append: bool = typer.Option(False, "--append", "-a", help="Append to file instead of overwrite"),
-    mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Set file permissions after writing"),
-    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Set file owner after writing"),
+    content: Optional[str] = typer.Option(
+        None, "--content", "-c", help="Content to write"
+    ),
+    stdin: bool = typer.Option(
+        False, "--stdin", "-s", help="Read content from stdin (pipe)"
+    ),
+    from_file: Optional[Path] = typer.Option(
+        None, "--from-file", "-f", help="Read content from local file"
+    ),
+    append: bool = typer.Option(
+        False, "--append", "-a", help="Append to file instead of overwrite"
+    ),
+    mode: Optional[str] = typer.Option(
+        None, "--mode", "-m", help="Set file permissions after writing"
+    ),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Set file owner after writing"
+    ),
 ):
     """[DEPRECATED: Use 'navig file edit --content'] Write to remote file."""
     deprecation_warning("navig write-file", "navig file edit --content")
     from navig.commands.files_advanced import write_file_cmd
-    write_file_cmd(remote, content, ctx.obj, stdin=stdin, local_file=from_file,
-                   append=append, mode=mode, owner=owner)
+
+    write_file_cmd(
+        remote,
+        content,
+        ctx.obj,
+        stdin=stdin,
+        local_file=from_file,
+        append=append,
+        mode=mode,
+        owner=owner,
+    )
 
 
 @app.command("ls", hidden=True)
@@ -4369,6 +5082,7 @@ def ls_directory(
     """[DEPRECATED: Use 'navig file list'] List remote directory."""
     deprecation_warning("navig ls", "navig file list")
     from navig.commands.files_advanced import list_dir_cmd
+
     list_dir_cmd(remote, ctx.obj, all=all, long=long, human=human)
 
 
@@ -4377,11 +5091,14 @@ def tree_directory(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote directory path"),
     depth: int = typer.Option(2, "--depth", "-d", help="Maximum depth to display"),
-    dirs_only: bool = typer.Option(False, "--dirs-only", "-D", help="Show only directories"),
+    dirs_only: bool = typer.Option(
+        False, "--dirs-only", "-D", help="Show only directories"
+    ),
 ):
     """[DEPRECATED: Use 'navig file list --tree'] Show directory tree."""
     deprecation_warning("navig tree", "navig file list --tree")
     from navig.commands.files_advanced import tree_cmd
+
     tree_cmd(remote, ctx.obj, depth=depth, dirs_only=dirs_only)
 
 
@@ -4397,11 +5114,13 @@ def tree_directory(
 # ADVANCED DATABASE COMMANDS (DEPRECATED - use 'navig db <subcommand>')
 # ============================================================================
 
+
 @app.command("db-list", hidden=True)
 def list_databases(ctx: typer.Context):
     """[DEPRECATED] List all databases with sizes. Use: navig db list"""
     deprecation_warning("navig db-list", "navig db list")
     from navig.commands.database_advanced import list_databases_cmd
+
     list_databases_cmd(ctx.obj)
 
 
@@ -4413,6 +5132,7 @@ def list_tables(
     """[DEPRECATED] List tables in a database. Use: navig db tables <database>"""
     deprecation_warning("navig db-tables", "navig db tables")
     from navig.commands.database_advanced import list_tables_cmd
+
     list_tables_cmd(database, ctx.obj)
 
 
@@ -4424,6 +5144,7 @@ def optimize_table(
     """[DEPRECATED] Optimize database table. Use: navig db optimize <table>"""
     deprecation_warning("navig db-optimize", "navig db optimize")
     from navig.commands.database_advanced import optimize_table_cmd
+
     optimize_table_cmd(table, ctx.obj)
 
 
@@ -4435,6 +5156,7 @@ def repair_table(
     """[DEPRECATED] Repair database table. Use: navig db repair <table>"""
     deprecation_warning("navig db-repair", "navig db repair")
     from navig.commands.database_advanced import repair_table_cmd
+
     repair_table_cmd(table, ctx.obj)
 
 
@@ -4443,6 +5165,7 @@ def list_db_users(ctx: typer.Context):
     """[DEPRECATED] List database users. Use: navig db users"""
     deprecation_warning("navig db-users", "navig db users")
     from navig.commands.database_advanced import list_users_cmd
+
     list_users_cmd(ctx.obj)
 
 
@@ -4450,11 +5173,13 @@ def list_db_users(ctx: typer.Context):
 # DOCKER DATABASE COMMANDS (DEPRECATED - use 'navig db <subcommand>')
 # ============================================================================
 
+
 @app.command("db-containers", hidden=True)
 def db_containers(ctx: typer.Context):
     """[DEPRECATED] List Docker containers running database services. Use: navig db containers"""
     deprecation_warning("navig db-containers", "navig db containers")
     from navig.commands.db import db_containers_cmd
+
     db_containers_cmd(ctx.obj)
 
 
@@ -4462,31 +5187,49 @@ def db_containers(ctx: typer.Context):
 def db_query(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="SQL query to execute"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    database: Optional[str] = typer.Option(
+        None, "--database", "-d", help="Database name"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
 ):
     """[DEPRECATED] Execute SQL query on remote database. Use: navig db run <query>"""
     deprecation_warning("navig db-query", "navig db run")
     from navig.commands.db import db_query_cmd
+
     db_query_cmd(query, container, user, password, database, db_type, ctx.obj)
 
 
 @app.command("db-databases", hidden=True)
 def db_databases(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one database per line) for scripting"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one database per line) for scripting"
+    ),
 ):
     """[DEPRECATED] List all databases on remote server. Use: navig db list"""
     deprecation_warning("navig db-databases", "navig db list")
     from navig.commands.db import db_list_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     db_list_cmd(container, user, password, db_type, ctx.obj)
 
 
@@ -4494,16 +5237,25 @@ def db_databases(
 def db_show_tables(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one table per line) for scripting"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one table per line) for scripting"
+    ),
 ):
     """[DEPRECATED] List tables in a database. Use: navig db tables <database>"""
     deprecation_warning("navig db-show-tables", "navig db tables")
     from navig.commands.db import db_tables_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     db_tables_cmd(database, container, user, password, db_type, ctx.obj)
 
 
@@ -4511,30 +5263,48 @@ def db_show_tables(
 def db_dump(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name to dump"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file path"
+    ),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
 ):
     """[DEPRECATED] Dump/backup a database from remote server. Use: navig db dump"""
     deprecation_warning("navig db-dump", "navig db dump")
     from navig.commands.db import db_dump_cmd
+
     db_dump_cmd(database, output, container, user, password, db_type, ctx.obj)
 
 
 @app.command("db-shell", hidden=True)
 def db_shell(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    database: Optional[str] = typer.Option(
+        None, "--database", "-d", help="Database name"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
 ):
     """[DEPRECATED] Open interactive database shell via SSH. Use: navig db run --shell"""
     deprecation_warning("navig db-shell", "navig db run --shell")
     from navig.commands.db import db_shell_cmd
+
     db_shell_cmd(container, user, password, database, db_type, ctx.obj)
 
 
@@ -4542,16 +5312,20 @@ def db_shell(
 # SERVER MONITORING & MANAGEMENT (DEPRECATED - use 'navig log/monitor/system')
 # ============================================================================
 
+
 @app.command("logs", hidden=True)
 def view_logs(
     ctx: typer.Context,
-    service: str = typer.Argument(..., help="Service name (nginx, php-fpm, mysql, app, etc.)"),
+    service: str = typer.Argument(
+        ..., help="Service name (nginx, php-fpm, mysql, app, etc.)"
+    ),
     tail: bool = typer.Option(False, "--tail", "-f", help="Follow logs in real-time"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to display"),
 ):
     """[DEPRECATED] View logs. Use: navig log show <service>"""
     deprecation_warning("navig logs", "navig log show")
     from navig.commands.monitoring import view_service_logs
+
     view_service_logs(service, tail, lines, ctx.obj)
 
 
@@ -4560,17 +5334,21 @@ def health_check(ctx: typer.Context):
     """[DEPRECATED] Run health checks. Use: navig monitor show"""
     deprecation_warning("navig health", "navig monitor show")
     from navig.commands.monitoring import run_health_check
+
     run_health_check(ctx.obj)
 
 
 @app.command("restart", hidden=True)
 def restart_service(
     ctx: typer.Context,
-    service: str = typer.Argument(..., help="Service to restart (nginx|php-fpm|mysql|app|docker|all)"),
+    service: str = typer.Argument(
+        ..., help="Service to restart (nginx|php-fpm|mysql|app|docker|all)"
+    ),
 ):
     """[DEPRECATED] Restart service. Use: navig system run --restart <service>"""
     deprecation_warning("navig restart", "navig system run --restart")
     from navig.commands.monitoring import restart_remote_service
+
     restart_remote_service(service, ctx.obj)
 
 
@@ -4607,6 +5385,7 @@ def ai_ask(
 ):
     """Ask AI about server/configuration (canonical command)."""
     from navig.commands.ai import ask_ai
+
     ask_ai(question, model, ctx.obj)
 
 
@@ -4618,6 +5397,7 @@ def ai_explain(
 ):
     """Explain logs/errors using AI."""
     from navig.commands.ai import ask_ai
+
     question = f"Analyze and explain the last {lines} lines of the log file at {log_file}. Identify any errors, warnings, or issues and suggest solutions."
     ask_ai(question, None, ctx.obj)
 
@@ -4626,6 +5406,7 @@ def ai_explain(
 def ai_diagnose(ctx: typer.Context):
     """AI-powered issue diagnosis based on system state."""
     from navig.commands.assistant import analyze_cmd
+
     analyze_cmd(ctx.obj)
 
 
@@ -4633,6 +5414,7 @@ def ai_diagnose(ctx: typer.Context):
 def ai_suggest(ctx: typer.Context):
     """Get AI-powered optimization suggestions."""
     from navig.commands.ai import ask_ai
+
     question = "Analyze the current server configuration and suggest optimizations for performance, security, and reliability."
     ask_ai(question, None, ctx.obj)
 
@@ -4641,19 +5423,26 @@ def ai_suggest(ctx: typer.Context):
 def ai_show(
     ctx: typer.Context,
     status: bool = typer.Option(False, "--status", "-s", help="Show assistant status"),
-    context: bool = typer.Option(False, "--context", "-c", help="Show AI context summary"),
-    clipboard: bool = typer.Option(False, "--clipboard", help="Copy context to clipboard"),
+    context: bool = typer.Option(
+        False, "--context", "-c", help="Show AI context summary"
+    ),
+    clipboard: bool = typer.Option(
+        False, "--clipboard", help="Copy context to clipboard"
+    ),
     file: Optional[str] = typer.Option(None, "--file", help="Save context to file"),
 ):
     """Show AI assistant information (canonical command)."""
     if status:
         from navig.commands.assistant import status_cmd
+
         status_cmd(ctx.obj)
     elif context:
         from navig.commands.assistant import context_cmd
+
         context_cmd(ctx.obj, clipboard, file)
     else:
         from navig.commands.assistant import status_cmd
+
         status_cmd(ctx.obj)
 
 
@@ -4666,12 +5455,15 @@ def ai_run(
     """Run AI operations (canonical command)."""
     if analyze:
         from navig.commands.assistant import analyze_cmd
+
         analyze_cmd(ctx.obj)
     elif reset:
         from navig.commands.assistant import reset_cmd
+
         reset_cmd(ctx.obj)
     else:
         from navig.commands.assistant import analyze_cmd
+
         analyze_cmd(ctx.obj)
 
 
@@ -4679,13 +5471,16 @@ def ai_run(
 def ai_edit(ctx: typer.Context):
     """Configure AI assistant settings (interactive wizard)."""
     from navig.commands.assistant import config_cmd
+
     config_cmd(ctx.obj)
 
 
 @ai_app.command("models")
 def ai_models(
     ctx: typer.Context,
-    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="Filter by provider (e.g., openai, airllm)"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider", "-p", help="Filter by provider (e.g., openai, airllm)"
+    ),
 ):
     """List available AI models from all providers.
 
@@ -4696,6 +5491,7 @@ def ai_models(
     """
     from rich.console import Console
     from rich.table import Table
+
     console = Console()
 
     try:
@@ -4711,10 +5507,16 @@ def ai_models(
 
             if not pconfig.models:
                 if pname == "ollama":
-                    console.print(f"[bold]{pname}[/bold] [dim](models discovered dynamically)[/dim]")
+                    console.print(
+                        f"[bold]{pname}[/bold] [dim](models discovered dynamically)[/dim]"
+                    )
                 elif pname == "airllm":
-                    console.print(f"[bold]{pname}[/bold] [dim](local inference - 70B+ models on limited VRAM)[/dim]")
-                    console.print("  Suggested models (any HuggingFace model ID works):")
+                    console.print(
+                        f"[bold]{pname}[/bold] [dim](local inference - 70B+ models on limited VRAM)[/dim]"
+                    )
+                    console.print(
+                        "  Suggested models (any HuggingFace model ID works):"
+                    )
                     console.print("  • meta-llama/Llama-3.3-70B-Instruct")
                     console.print("  • Qwen/Qwen2.5-72B-Instruct")
                     console.print("  • deepseek-ai/deepseek-coder-33b-instruct")
@@ -4730,7 +5532,11 @@ def ai_models(
             table.add_column("Max Tokens", justify="right")
 
             for model in pconfig.models:
-                ctx_str = f"{model.context_window // 1000}K" if model.context_window >= 1000 else str(model.context_window)
+                ctx_str = (
+                    f"{model.context_window // 1000}K"
+                    if model.context_window >= 1000
+                    else str(model.context_window)
+                )
                 table.add_row(
                     model.id,
                     model.name,
@@ -4741,9 +5547,13 @@ def ai_models(
             console.print(table)
             console.print()
 
-        if provider and provider.lower() not in [p.lower() for p in BUILTIN_PROVIDERS.keys()]:
+        if provider and provider.lower() not in [
+            p.lower() for p in BUILTIN_PROVIDERS.keys()
+        ]:
             console.print(f"[yellow]Unknown provider: {provider}[/yellow]")
-            console.print(f"[dim]Available: {', '.join(BUILTIN_PROVIDERS.keys())}[/dim]")
+            console.print(
+                f"[dim]Available: {', '.join(BUILTIN_PROVIDERS.keys())}[/dim]"
+            )
 
     except ImportError:
         console.print("[yellow]Provider system not available.[/yellow]")
@@ -4752,29 +5562,42 @@ def ai_models(
 @ai_app.command("providers")
 def ai_providers(
     ctx: typer.Context,
-    add: Optional[str] = typer.Option(None, "--add", "-a", help="Add API key for provider (e.g., openai, anthropic)"),
-    remove: Optional[str] = typer.Option(None, "--remove", "-r", help="Remove API key for provider"),
-    test: Optional[str] = typer.Option(None, "--test", "-t", help="Test provider connection"),
+    add: Optional[str] = typer.Option(
+        None, "--add", "-a", help="Add API key for provider (e.g., openai, anthropic)"
+    ),
+    remove: Optional[str] = typer.Option(
+        None, "--remove", "-r", help="Remove API key for provider"
+    ),
+    test: Optional[str] = typer.Option(
+        None, "--test", "-t", help="Test provider connection"
+    ),
 ):
     """Manage AI providers and API keys."""
     from rich.console import Console
     from rich.table import Table
+
     console = Console()
 
     try:
         from navig.providers import BUILTIN_PROVIDERS, AuthProfileManager
+
         auth = AuthProfileManager()
 
         if add:
             # Add API key for provider
             import getpass
+
             provider = add.lower()
             if provider not in BUILTIN_PROVIDERS:
-                console.print(f"[yellow]⚠ Unknown provider '{provider}'. Known: {', '.join(BUILTIN_PROVIDERS.keys())}[/yellow]")
+                console.print(
+                    f"[yellow]⚠ Unknown provider '{provider}'. Known: {', '.join(BUILTIN_PROVIDERS.keys())}[/yellow]"
+                )
 
             api_key = getpass.getpass(f"Enter API key for {provider}: ")
             if api_key:
-                auth.add_api_key(provider=provider, api_key=api_key, profile_id=f"{provider}-default")
+                auth.add_api_key(
+                    provider=provider, api_key=api_key, profile_id=f"{provider}-default"
+                )
                 auth.save()
                 console.print(f"[green]✓ API key saved for {provider}[/green]")
             else:
@@ -4869,23 +5692,39 @@ def ai_providers(
         console.print(table)
         console.print()
         console.print("[dim]Add a key: navig ai providers --add <provider>[/dim]")
-        console.print("[dim]Test connection: navig ai providers --test <provider>[/dim]")
+        console.print(
+            "[dim]Test connection: navig ai providers --test <provider>[/dim]"
+        )
         console.print("[dim]Configure AirLLM: navig ai airllm --configure[/dim]")
         console.print("[dim]OAuth login: navig ai login openai-codex[/dim]")
 
     except ImportError:
-        console.print("[yellow]Provider system not available. Install httpx: pip install httpx[/yellow]")
+        console.print(
+            "[yellow]Provider system not available. Install httpx: pip install httpx[/yellow]"
+        )
 
 
 @ai_app.command("airllm")
 def ai_airllm(
     ctx: typer.Context,
-    configure: bool = typer.Option(False, "--configure", "-c", help="Configure AirLLM settings"),
-    model_path: Optional[str] = typer.Option(None, "--model-path", "-p", help="HuggingFace model ID or local path"),
-    max_vram: Optional[float] = typer.Option(None, "--max-vram", help="Maximum VRAM in GB"),
-    compression: Optional[str] = typer.Option(None, "--compression", help="Compression mode: 4bit, 8bit, or none"),
-    test: bool = typer.Option(False, "--test", "-t", help="Test AirLLM with a sample prompt"),
-    status: bool = typer.Option(False, "--status", "-s", help="Show AirLLM status and configuration"),
+    configure: bool = typer.Option(
+        False, "--configure", "-c", help="Configure AirLLM settings"
+    ),
+    model_path: Optional[str] = typer.Option(
+        None, "--model-path", "-p", help="HuggingFace model ID or local path"
+    ),
+    max_vram: Optional[float] = typer.Option(
+        None, "--max-vram", help="Maximum VRAM in GB"
+    ),
+    compression: Optional[str] = typer.Option(
+        None, "--compression", help="Compression mode: 4bit, 8bit, or none"
+    ),
+    test: bool = typer.Option(
+        False, "--test", "-t", help="Test AirLLM with a sample prompt"
+    ),
+    status: bool = typer.Option(
+        False, "--status", "-s", help="Show AirLLM status and configuration"
+    ),
 ):
     """Configure and manage AirLLM local inference provider.
 
@@ -4901,6 +5740,7 @@ def ai_airllm(
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
+
     console = Console()
 
     # Check if AirLLM is installed
@@ -4939,8 +5779,12 @@ def ai_airllm(
         config_table.add_row("Max VRAM", f"{config.max_vram_gb} GB")
         config_table.add_row("Compression", config.compression or "none")
         config_table.add_row("Device", config.device)
-        config_table.add_row("Layer Shards Path", config.layer_shards_path or "[dim]default[/dim]")
-        config_table.add_row("Prefetching", "enabled" if config.prefetching else "disabled")
+        config_table.add_row(
+            "Layer Shards Path", config.layer_shards_path or "[dim]default[/dim]"
+        )
+        config_table.add_row(
+            "Prefetching", "enabled" if config.prefetching else "disabled"
+        )
 
         console.print(config_table)
 
@@ -5000,7 +5844,9 @@ def ai_airllm(
                     updates[config_key] = value
                 config_manager.update_global_config(updates)
                 console.print()
-                console.print("[green]Configuration saved to ~/.navig/config.yaml[/green]")
+                console.print(
+                    "[green]Configuration saved to ~/.navig/config.yaml[/green]"
+                )
             except Exception as e:
                 console.print(f"[yellow]⚠ Could not save to config file: {e}[/yellow]")
 
@@ -5008,7 +5854,7 @@ def ai_airllm(
             console.print()
             console.print("[dim]Or set environment variables:[/dim]")
             for key, value in config_updates.items():
-                console.print(f"  export {key}=\"{value}\"")
+                console.print(f'  export {key}="{value}"')
         else:
             console.print("[yellow]No configuration options specified.[/yellow]")
             console.print("Use --model-path, --max-vram, or --compression")
@@ -5029,7 +5875,9 @@ def ai_airllm(
             raise typer.Exit(1)
 
         console.print(f"[dim]Testing AirLLM with model: {config.model_path}[/dim]")
-        console.print("[dim]This may take a while on first run (downloading/sharding model)...[/dim]")
+        console.print(
+            "[dim]This may take a while on first run (downloading/sharding model)...[/dim]"
+        )
         console.print()
 
         import asyncio
@@ -5056,12 +5904,14 @@ def ai_airllm(
         with console.status("[bold green]Running inference..."):
             result = asyncio.run(run_test())
 
-        if hasattr(result, 'content'):
+        if hasattr(result, "content"):
             console.print("[green]✓ AirLLM is working![/green]")
             console.print()
             console.print(Panel(result.content or "[no response]", title="Response"))
             if result.usage:
-                console.print(f"[dim]Tokens: {result.usage.get('prompt_tokens', 0)} prompt, {result.usage.get('completion_tokens', 0)} completion[/dim]")
+                console.print(
+                    f"[dim]Tokens: {result.usage.get('prompt_tokens', 0)} prompt, {result.usage.get('completion_tokens', 0)} completion[/dim]"
+                )
         else:
             console.print(f"[red]✗ Test failed: {result}[/red]")
             raise typer.Exit(1)
@@ -5071,10 +5921,13 @@ def ai_airllm(
 def ai_login(
     ctx: typer.Context,
     provider: str = typer.Argument(..., help="OAuth provider (e.g., openai-codex)"),
-    headless: bool = typer.Option(False, "--headless", help="Headless mode (no browser auto-open)"),
+    headless: bool = typer.Option(
+        False, "--headless", help="Headless mode (no browser auto-open)"
+    ),
 ):
     """Login to an AI provider using OAuth (e.g., OpenAI Codex)."""
     from rich.console import Console
+
     console = Console()
 
     try:
@@ -5087,7 +5940,9 @@ def ai_login(
 
         # Check if any OAuth providers are configured
         if not OAUTH_PROVIDERS:
-            console.print("[red]✗ OAuth authentication is not currently available.[/red]")
+            console.print(
+                "[red]✗ OAuth authentication is not currently available.[/red]"
+            )
             console.print()
             console.print("[yellow]Why?[/yellow]")
             console.print("OAuth requires provider-specific client registration.")
@@ -5103,7 +5958,9 @@ def ai_login(
         provider_lower = provider.lower()
         if provider_lower not in OAUTH_PROVIDERS:
             console.print(f"[red]✗ Unknown OAuth provider: {provider}[/red]")
-            console.print(f"[dim]Available: {', '.join(OAUTH_PROVIDERS.keys()) or 'none'}[/dim]")
+            console.print(
+                f"[dim]Available: {', '.join(OAUTH_PROVIDERS.keys()) or 'none'}[/dim]"
+            )
             raise typer.Exit(1)
 
         oauth_config = OAUTH_PROVIDERS[provider_lower]
@@ -5112,7 +5969,9 @@ def ai_login(
 
         if headless:
             # Headless mode
-            console.print("[yellow]Headless mode: Copy the URL below and open it in a browser.[/yellow]")
+            console.print(
+                "[yellow]Headless mode: Copy the URL below and open it in a browser.[/yellow]"
+            )
             console.print()
 
             def on_auth_url(url: str):
@@ -5121,7 +5980,9 @@ def ai_login(
                 console.print()
 
             def get_callback_input() -> str:
-                console.print("[bold]After signing in, paste the redirect URL here:[/bold]")
+                console.print(
+                    "[bold]After signing in, paste the redirect URL here:[/bold]"
+                )
                 return input("> ")
 
             result = run_oauth_flow_headless(
@@ -5153,7 +6014,9 @@ def ai_login(
             )
 
             console.print()
-            console.print(f"[green]✓ Successfully logged in to {oauth_config.name}![/green]")
+            console.print(
+                f"[green]✓ Successfully logged in to {oauth_config.name}![/green]"
+            )
             console.print(f"[dim]Profile saved: {profile_id}[/dim]")
 
             if result.credentials.account_id:
@@ -5161,7 +6024,9 @@ def ai_login(
 
             console.print()
             console.print("[dim]You can now use this provider with:[/dim]")
-            console.print(f"  navig ai ask 'your question' --model {provider_lower}:gpt-4o")
+            console.print(
+                f"  navig ai ask 'your question' --model {provider_lower}:gpt-4o"
+            )
         else:
             console.print(f"[red]✗ OAuth failed: {result.error}[/red]")
             raise typer.Exit(1)
@@ -5179,6 +6044,7 @@ def ai_logout(
 ):
     """Remove OAuth credentials for a provider."""
     from rich.console import Console
+
     console = Console()
 
     try:
@@ -5230,9 +6096,11 @@ def memory_callback(ctx: typer.Context):
 def _memory_show():
     """Display current user profile."""
     from rich.console import Console
+
     console = Console()
     try:
         from navig.memory.user_profile import get_profile
+
         profile = get_profile()
         console.print(profile.to_human_readable())
     except ImportError:
@@ -5254,14 +6122,16 @@ def memory_edit():
     from pathlib import Path
 
     from rich.console import Console
+
     console = Console()
 
-    profile_path = Path.home() / '.navig' / 'memory' / 'user_profile.json'
+    profile_path = Path.home() / ".navig" / "memory" / "user_profile.json"
 
     if not profile_path.exists():
         # Create empty profile first
         try:
             from navig.memory.user_profile import get_profile
+
             profile = get_profile()
             profile.save()
             console.print(f"[green]Created new profile at: {profile_path}[/green]")
@@ -5270,14 +6140,19 @@ def memory_edit():
             raise typer.Exit(1) from e
 
     # Get editor from environment
-    editor = os.environ.get('EDITOR', os.environ.get('VISUAL', 'notepad' if os.name == 'nt' else 'nano'))
+    editor = os.environ.get(
+        "EDITOR", os.environ.get("VISUAL", "notepad" if os.name == "nt" else "nano")
+    )
 
     console.print(f"[dim]Opening {profile_path} in {editor}...[/dim]")
 
     import subprocess
+
     try:
         subprocess.run([editor, str(profile_path)], check=True)
-        console.print("[green]Profile updated. Changes will be loaded on next agent start.[/green]")
+        console.print(
+            "[green]Profile updated. Changes will be loaded on next agent start.[/green]"
+        )
     except subprocess.CalledProcessError:
         console.print(f"[red]Failed to open editor: {editor}[/red]")
     except FileNotFoundError:
@@ -5292,14 +6167,18 @@ def memory_add(
 ):
     """Add a note to NAVIG's memory about you."""
     from rich.console import Console
+
     console = Console()
     try:
         from navig.memory.user_profile import get_profile
+
         profile = get_profile()
         note_obj = profile.add_note(note, category=category, source="user")
         profile.save()
         console.print(f"[green]✓ Added note:[/green] {note[:60]}...")
-        console.print(f"[dim]Category: {category} | Time: {note_obj.timestamp[:19]}[/dim]")
+        console.print(
+            f"[dim]Category: {category} | Time: {note_obj.timestamp[:19]}[/dim]"
+        )
     except ImportError:
         console.print("[yellow]Memory system not available.[/yellow]")
     except Exception as e:
@@ -5313,14 +6192,18 @@ def memory_search(
 ):
     """Search NAVIG's memory about you."""
     from rich.console import Console
+
     console = Console()
     try:
         from navig.memory.user_profile import get_profile
+
         profile = get_profile()
         results = profile.search_memory(query, limit=limit)
 
         if results:
-            console.print(f"[bold]Found {len(results)} result(s) for '{query}':[/bold]\n")
+            console.print(
+                f"[bold]Found {len(results)} result(s) for '{query}':[/bold]\n"
+            )
             for i, result in enumerate(results, 1):
                 console.print(f"  {i}. {result}")
         else:
@@ -5333,18 +6216,24 @@ def memory_search(
 
 @memory_app.command("clear")
 def memory_clear(
-    confirm: bool = typer.Option(False, "--confirm", help="Confirm clearing all memory"),
+    confirm: bool = typer.Option(
+        False, "--confirm", help="Confirm clearing all memory"
+    ),
 ):
     """Clear all memory (requires --confirm)."""
     from rich.console import Console
+
     console = Console()
     if not confirm:
-        console.print("[yellow]⚠️  This will delete all stored user profile data.[/yellow]")
+        console.print(
+            "[yellow]⚠️  This will delete all stored user profile data.[/yellow]"
+        )
         console.print("[dim]Run with --confirm to proceed.[/dim]")
         raise typer.Exit(1)
 
     try:
         from navig.memory.user_profile import get_profile
+
         profile = get_profile()
 
         if profile.clear(confirm=True):
@@ -5359,21 +6248,31 @@ def memory_clear(
 
 @memory_app.command("set")
 def memory_set(
-    field: str = typer.Argument(..., help="Field to set (e.g., identity.name, technical_context.stack)"),
+    field: str = typer.Argument(
+        ..., help="Field to set (e.g., identity.name, technical_context.stack)"
+    ),
     value: str = typer.Argument(..., help="Value to set"),
 ):
     """Set a specific profile field."""
     from rich.console import Console
+
     console = Console()
     try:
         from navig.memory.user_profile import get_profile
+
         profile = get_profile()
 
         # Handle list fields (comma-separated)
-        if field in ['technical_context.stack', 'technical_context.managed_hosts',
-                     'technical_context.primary_projects', 'work_patterns.active_hours',
-                     'work_patterns.common_tasks', 'goals', 'preferences.confirmation_required_for']:
-            value = [v.strip() for v in value.split(',')]
+        if field in [
+            "technical_context.stack",
+            "technical_context.managed_hosts",
+            "technical_context.primary_projects",
+            "work_patterns.active_hours",
+            "work_patterns.common_tasks",
+            "goals",
+            "preferences.confirmation_required_for",
+        ]:
+            value = [v.strip() for v in value.split(",")]
 
         updated = profile.update({field: value})
 
@@ -5381,8 +6280,10 @@ def memory_set(
             console.print(f"[green]✓ Updated {field} = {value}[/green]")
         else:
             console.print(f"[red]Failed to update {field}. Check field name.[/red]")
-            console.print("[dim]Valid fields: identity.name, identity.timezone, identity.role, "
-                         "technical_context.stack, goals, preferences.communication_style[/dim]")
+            console.print(
+                "[dim]Valid fields: identity.name, identity.timezone, identity.role, "
+                "technical_context.stack, goals, preferences.communication_style[/dim]"
+            )
     except ImportError:
         console.print("[yellow]Memory system not available.[/yellow]")
     except Exception as e:
@@ -5394,11 +6295,14 @@ def memory_set(
 def ai_legacy(
     ctx: typer.Context,
     question: str = typer.Argument(..., help="Natural language question"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override default AI model"),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m", help="Override default AI model"
+    ),
 ):
     """[DEPRECATED: Use 'navig ai ask'] Ask AI about server."""
     deprecation_warning("navig ai <question>", "navig ai ask <question>")
     from navig.commands.ai import ask_ai
+
     ask_ai(question, model, ctx.obj)
 
 
@@ -5421,6 +6325,7 @@ def assistant_callback(ctx: typer.Context):
     deprecation_warning("navig assistant", "navig ai")
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_assistant_menu
+
         launch_assistant_menu()
         raise typer.Exit()
 
@@ -5430,6 +6335,7 @@ def assistant_status(ctx: typer.Context):
     """[DEPRECATED: Use 'navig ai show --status']"""
     deprecation_warning("navig assistant status", "navig ai show --status")
     from navig.commands.assistant import status_cmd
+
     status_cmd(ctx.obj)
 
 
@@ -5438,18 +6344,22 @@ def assistant_analyze(ctx: typer.Context):
     """[DEPRECATED: Use 'navig ai diagnose']"""
     deprecation_warning("navig assistant analyze", "navig ai diagnose")
     from navig.commands.assistant import analyze_cmd
+
     analyze_cmd(ctx.obj)
 
 
 @assistant_app.command("context")
 def assistant_context(
     ctx: typer.Context,
-    clipboard: bool = typer.Option(False, "--clipboard", help="Copy context to clipboard"),
+    clipboard: bool = typer.Option(
+        False, "--clipboard", help="Copy context to clipboard"
+    ),
     file: Optional[str] = typer.Option(None, "--file", help="Save context to file"),
 ):
     """[DEPRECATED: Use 'navig ai show --context']"""
     deprecation_warning("navig assistant context", "navig ai show --context")
     from navig.commands.assistant import context_cmd
+
     context_cmd(ctx.obj, clipboard, file)
 
 
@@ -5458,6 +6368,7 @@ def assistant_reset(ctx: typer.Context):
     """[DEPRECATED: Use 'navig ai run --reset']"""
     deprecation_warning("navig assistant reset", "navig ai run --reset")
     from navig.commands.assistant import reset_cmd
+
     reset_cmd(ctx.obj)
 
 
@@ -5466,6 +6377,7 @@ def assistant_config(ctx: typer.Context):
     """[DEPRECATED: Use 'navig ai edit']"""
     deprecation_warning("navig assistant config", "navig ai edit")
     from navig.commands.assistant import config_cmd
+
     config_cmd(ctx.obj)
 
 
@@ -5487,6 +6399,7 @@ def hestia_callback(ctx: typer.Context):
     deprecation_warning("navig hestia", "navig web hestia")
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_hestia_menu
+
         launch_hestia_menu()
         raise typer.Exit()
 
@@ -5494,11 +6407,14 @@ def hestia_callback(ctx: typer.Context):
 @hestia_app.command("users")
 def hestia_list_users(
     ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one user per line) for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one user per line) for scripting"
+    ),
 ):
     """List HestiaCP users."""
     from navig.commands.hestia import list_users_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     list_users_cmd(ctx.obj)
 
 
@@ -5506,11 +6422,14 @@ def hestia_list_users(
 def hestia_list_domains(
     ctx: typer.Context,
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Filter by username"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one domain per line) for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one domain per line) for scripting"
+    ),
 ):
     """List HestiaCP domains."""
     from navig.commands.hestia import list_domains_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     list_domains_cmd(user, ctx.obj)
 
 
@@ -5523,6 +6442,7 @@ def hestia_add_user(
 ):
     """Add new HestiaCP user."""
     from navig.commands.hestia import add_user_cmd
+
     add_user_cmd(username, password, email, ctx.obj)
 
 
@@ -5530,11 +6450,14 @@ def hestia_add_user(
 def hestia_delete_user(
     ctx: typer.Context,
     username: str = typer.Argument(..., help="Username to delete"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force deletion without confirmation"
+    ),
 ):
     """Delete HestiaCP user."""
-    ctx.obj['force'] = force
+    ctx.obj["force"] = force
     from navig.commands.hestia import delete_user_cmd
+
     delete_user_cmd(username, ctx.obj)
 
 
@@ -5546,6 +6469,7 @@ def hestia_add_domain(
 ):
     """Add domain to HestiaCP user."""
     from navig.commands.hestia import add_domain_cmd
+
     add_domain_cmd(user, domain, ctx.obj)
 
 
@@ -5554,11 +6478,14 @@ def hestia_delete_domain(
     ctx: typer.Context,
     user: str = typer.Argument(..., help="Username"),
     domain: str = typer.Argument(..., help="Domain name to delete"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force deletion without confirmation"
+    ),
 ):
     """Delete domain from HestiaCP."""
-    ctx.obj['force'] = force
+    ctx.obj["force"] = force
     from navig.commands.hestia import delete_domain_cmd
+
     delete_domain_cmd(user, domain, ctx.obj)
 
 
@@ -5570,6 +6497,7 @@ def hestia_renew_ssl(
 ):
     """Renew SSL certificate for domain."""
     from navig.commands.hestia import renew_ssl_cmd
+
     renew_ssl_cmd(user, domain, ctx.obj)
 
 
@@ -5580,6 +6508,7 @@ def hestia_rebuild_web(
 ):
     """Rebuild web configuration for user."""
     from navig.commands.hestia import rebuild_web_cmd
+
     rebuild_web_cmd(user, ctx.obj)
 
 
@@ -5590,6 +6519,7 @@ def hestia_backup_user(
 ):
     """Backup HestiaCP user."""
     from navig.commands.hestia import backup_user_cmd
+
     backup_user_cmd(user, ctx.obj)
 
 
@@ -5611,6 +6541,7 @@ def template_callback(ctx: typer.Context):
     deprecation_warning("navig template", "navig flow template")
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_template_menu
+
         launch_template_menu()
         raise typer.Exit()
 
@@ -5618,11 +6549,14 @@ def template_callback(ctx: typer.Context):
 @template_app.command("list")
 def template_list(
     ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one template per line) for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one template per line) for scripting"
+    ),
 ):
     """List all available templates."""
     from navig.commands.template import list_templates_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     list_templates_cmd(ctx.obj)
 
 
@@ -5633,6 +6567,7 @@ def template_enable(
 ):
     """Enable an template."""
     from navig.commands.template import enable_template_cmd
+
     enable_template_cmd(name, ctx.obj)
 
 
@@ -5643,6 +6578,7 @@ def template_disable(
 ):
     """Disable an template."""
     from navig.commands.template import disable_template_cmd
+
     disable_template_cmd(name, ctx.obj)
 
 
@@ -5653,6 +6589,7 @@ def template_toggle(
 ):
     """Toggle template enabled/disabled state."""
     from navig.commands.template import toggle_template_cmd
+
     toggle_template_cmd(name, ctx.obj)
 
 
@@ -5663,6 +6600,7 @@ def template_info(
 ):
     """Show detailed information about an template."""
     from navig.commands.template import show_template_cmd
+
     show_template_cmd(name, ctx.obj)
 
 
@@ -5670,6 +6608,7 @@ def template_info(
 def template_validate(ctx: typer.Context):
     """Validate all template configurations."""
     from navig.commands.template import validate_templates_cmd
+
     validate_templates_cmd(ctx.obj)
 
 
@@ -5677,11 +6616,14 @@ def template_validate(ctx: typer.Context):
 def template_edit(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to edit"),
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
 ):
     """Edit host-specific template override file in $EDITOR."""
     from navig.commands.template import edit_template_cmd
-    ctx.obj['server'] = server
+
+    ctx.obj["server"] = server
     edit_template_cmd(name, ctx.obj)
 
 
@@ -5689,9 +6631,7 @@ def template_edit(
 # ADDON COMMANDS (alias for template commands)
 # ============================================================================
 
-addon_app = typer.Typer(
-    help="[DEPRECATED: Use 'navig flow template'] Addon commands"
-)
+addon_app = typer.Typer(help="[DEPRECATED: Use 'navig flow template'] Addon commands")
 app.add_typer(addon_app, name="addon", hidden=True)  # Deprecated
 
 
@@ -5705,6 +6645,7 @@ def addon_callback(ctx: typer.Context):
 def addon_list(ctx: typer.Context):
     """List available templates."""
     from navig.commands.template import addon_list_deprecated
+
     addon_list_deprecated(ctx.obj)
 
 
@@ -5715,6 +6656,7 @@ def addon_enable(
 ):
     """Enable a template."""
     from navig.commands.template import addon_enable_deprecated
+
     addon_enable_deprecated(name, ctx.obj)
 
 
@@ -5725,6 +6667,7 @@ def addon_disable(
 ):
     """Disable a template."""
     from navig.commands.template import addon_disable_deprecated
+
     addon_disable_deprecated(name, ctx.obj)
 
 
@@ -5735,6 +6678,7 @@ def addon_info(
 ):
     """Show template info."""
     from navig.commands.template import addon_info_deprecated
+
     addon_info_deprecated(name, ctx.obj)
 
 
@@ -5743,12 +6687,17 @@ def addon_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to run"),
     command: Optional[str] = typer.Argument(None, help="Template command to execute"),
-    args: Optional[List[str]] = typer.Argument(None, help="Arguments for the template command"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without changes"),
+    args: Optional[List[str]] = typer.Argument(
+        None, help="Arguments for the template command"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without changes"
+    ),
 ):
     """Run a template command (deprecated; use flow template run)."""
     deprecation_warning("navig addon run", "navig flow template run")
     from navig.commands.template import deploy_template_cmd
+
     deploy_template_cmd(
         name,
         command_name=command,
@@ -5762,10 +6711,13 @@ def addon_run(
 def addon_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to run/deploy"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without changes"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without changes"
+    ),
 ):
     """Run/deploy a template (deprecated)."""
     from navig.commands.template import addon_run_deprecated
+
     addon_run_deprecated(name, ctx.obj, dry_run=dry_run)
 
 
@@ -5780,15 +6732,22 @@ app.add_typer(server_template_app, name="server-template")
 @server_template_app.command("list")
 def server_template_list(
     ctx: typer.Context,
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
-    enabled_only: bool = typer.Option(False, "--enabled", "-e", help="Show only enabled templates"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one template per line) for scripting"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+    enabled_only: bool = typer.Option(
+        False, "--enabled", "-e", help="Show only enabled templates"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one template per line) for scripting"
+    ),
 ):
     """List template configurations for a server."""
     from navig.commands.server_template import list_server_templates_cmd
-    ctx.obj['server'] = server
-    ctx.obj['enabled_only'] = enabled_only
-    ctx.obj['plain'] = plain
+
+    ctx.obj["server"] = server
+    ctx.obj["enabled_only"] = enabled_only
+    ctx.obj["plain"] = plain
     list_server_templates_cmd(ctx.obj)
 
 
@@ -5796,11 +6755,14 @@ def server_template_list(
 def server_template_show(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to show"),
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
 ):
     """Show merged configuration for a server template."""
     from navig.commands.server_template import show_template_config_cmd
-    ctx.obj['server'] = server
+
+    ctx.obj["server"] = server
     show_template_config_cmd(template_name, ctx.obj)
 
 
@@ -5808,11 +6770,14 @@ def server_template_show(
 def server_template_enable(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to enable"),
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
 ):
     """Enable an template for a specific server."""
     from navig.commands.server_template import enable_server_template_cmd
-    ctx.obj['server'] = server
+
+    ctx.obj["server"] = server
     enable_server_template_cmd(template_name, ctx.obj)
 
 
@@ -5820,11 +6785,14 @@ def server_template_enable(
 def server_template_disable(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to disable"),
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
 ):
     """Disable an template for a specific server."""
     from navig.commands.server_template import disable_server_template_cmd
-    ctx.obj['server'] = server
+
+    ctx.obj["server"] = server
     disable_server_template_cmd(template_name, ctx.obj)
 
 
@@ -5832,13 +6800,18 @@ def server_template_disable(
 def server_template_set(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name"),
-    key_path: str = typer.Argument(..., help="Dot-separated config path (e.g., 'paths.web_root')"),
+    key_path: str = typer.Argument(
+        ..., help="Dot-separated config path (e.g., 'paths.web_root')"
+    ),
     value: str = typer.Argument(..., help="Value to set (JSON-parseable)"),
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
 ):
     """Set a custom value for a server template configuration."""
     from navig.commands.server_template import set_template_value_cmd
-    ctx.obj['server'] = server
+
+    ctx.obj["server"] = server
     set_template_value_cmd(template_name, key_path, value, ctx.obj)
 
 
@@ -5846,13 +6819,18 @@ def server_template_set(
 def server_template_sync(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to sync"),
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite all custom settings"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite all custom settings"
+    ),
 ):
     """Sync template configuration from template."""
     from navig.commands.server_template import sync_template_cmd
-    ctx.obj['server'] = server
-    ctx.obj['force'] = force
+
+    ctx.obj["server"] = server
+    ctx.obj["force"] = force
     sync_template_cmd(template_name, ctx.obj)
 
 
@@ -5860,13 +6838,18 @@ def server_template_sync(
 def server_template_init(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to initialize"),
-    server: Optional[str] = typer.Option(None, "--server", "-s", help="Server name (uses active if omitted)"),
-    enable: bool = typer.Option(False, "--enable", "-e", help="Enable template after initialization"),
+    server: Optional[str] = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+    enable: bool = typer.Option(
+        False, "--enable", "-e", help="Enable template after initialization"
+    ),
 ):
     """Manually initialize an template for a server."""
     from navig.commands.server_template import init_template_cmd
-    ctx.obj['server'] = server
-    ctx.obj['enable'] = enable
+
+    ctx.obj["server"] = server
+    ctx.obj["enable"] = enable
     init_template_cmd(template_name, ctx.obj)
 
 
@@ -5887,6 +6870,7 @@ def mcp_callback(ctx: typer.Context):
     """MCP management - run without subcommand for interactive menu."""
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_mcp_menu
+
         launch_mcp_menu()
         raise typer.Exit()
 
@@ -5898,6 +6882,7 @@ def mcp_search(
 ):
     """Search MCP directory for servers."""
     from navig.commands.mcp import search_mcp_cmd
+
     search_mcp_cmd(query, ctx.obj)
 
 
@@ -5908,6 +6893,7 @@ def mcp_install(
 ):
     """Install an MCP server."""
     from navig.commands.mcp import install_mcp_cmd
+
     install_mcp_cmd(name, ctx.obj)
 
 
@@ -5918,17 +6904,21 @@ def mcp_uninstall(
 ):
     """Uninstall an MCP server."""
     from navig.commands.mcp import uninstall_mcp_cmd
+
     uninstall_mcp_cmd(name, ctx.obj)
 
 
 @mcp_app.command("list")
 def mcp_list(
     ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one server per line) for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one server per line) for scripting"
+    ),
 ):
     """List installed MCP servers."""
     from navig.commands.mcp import list_mcp_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     list_mcp_cmd(ctx.obj)
 
 
@@ -5939,6 +6929,7 @@ def mcp_enable(
 ):
     """Enable an MCP server."""
     from navig.commands.mcp import enable_mcp_cmd
+
     enable_mcp_cmd(name, ctx.obj)
 
 
@@ -5949,26 +6940,33 @@ def mcp_disable(
 ):
     """Disable an MCP server."""
     from navig.commands.mcp import disable_mcp_cmd
+
     disable_mcp_cmd(name, ctx.obj)
 
 
 @mcp_app.command("start")
 def mcp_start(
     ctx: typer.Context,
-    name: str = typer.Argument(..., help="MCP server name to start (or 'all' for all enabled)"),
+    name: str = typer.Argument(
+        ..., help="MCP server name to start (or 'all' for all enabled)"
+    ),
 ):
     """Start an MCP server."""
     from navig.commands.mcp import start_mcp_cmd
+
     start_mcp_cmd(name, ctx.obj)
 
 
 @mcp_app.command("stop")
 def mcp_stop(
     ctx: typer.Context,
-    name: str = typer.Argument(..., help="MCP server name to stop (or 'all' for all running)"),
+    name: str = typer.Argument(
+        ..., help="MCP server name to stop (or 'all' for all running)"
+    ),
 ):
     """Stop an MCP server."""
     from navig.commands.mcp import stop_mcp_cmd
+
     stop_mcp_cmd(name, ctx.obj)
 
 
@@ -5979,6 +6977,7 @@ def mcp_restart(
 ):
     """Restart an MCP server."""
     from navig.commands.mcp import restart_mcp_cmd
+
     restart_mcp_cmd(name, ctx.obj)
 
 
@@ -5989,15 +6988,20 @@ def mcp_status(
 ):
     """Show detailed MCP server status."""
     from navig.commands.mcp import status_mcp_cmd
+
     status_mcp_cmd(name, ctx.obj)
 
 
 @mcp_app.command("serve")
 def mcp_serve(
     ctx: typer.Context,
-    transport: str = typer.Option("stdio", "--transport", "-t", help="Transport mode: stdio, websocket"),
+    transport: str = typer.Option(
+        "stdio", "--transport", "-t", help="Transport mode: stdio, websocket"
+    ),
     port: int = typer.Option(3001, "--port", "-p", help="Port for WebSocket mode"),
-    token: str = typer.Option(None, "--token", help="Auth token (auto-generated if omitted)"),
+    token: str = typer.Option(
+        None, "--token", help="Auth token (auto-generated if omitted)"
+    ),
 ):
     """Start NAVIG as an MCP server for AI assistants like Copilot.
 
@@ -6077,13 +7081,14 @@ def mcp_config_cmd(
 # App INITIALIZATION
 # ============================================================================
 
+
 @app.command("init-local")
 def init_local_command(
     ctx: typer.Context,
     copy_global: bool = typer.Option(
         False,
         "--copy-global",
-        help="Copy (not move) global configs from ~/.navig/ to app .navig/"
+        help="Copy (not move) global configs from ~/.navig/ to app .navig/",
     ),
 ):
     """
@@ -6100,7 +7105,8 @@ def init_local_command(
     host configs to be used across multiple apps.
     """
     from navig.commands.init import init_app
-    ctx.obj['copy_global'] = copy_global
+
+    ctx.obj["copy_global"] = copy_global
     init_app(ctx.obj)
 
 
@@ -6127,18 +7133,25 @@ def config_callback(ctx: typer.Context):
 @config_app.command("migrate")
 def config_migrate(
     ctx: typer.Context,
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be migrated without making changes"),
-    no_backup: bool = typer.Option(False, "--no-backup", help="Skip creating backups before migration"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be migrated without making changes"
+    ),
+    no_backup: bool = typer.Option(
+        False, "--no-backup", help="Skip creating backups before migration"
+    ),
 ):
     """Migrate legacy configurations to new format."""
     from navig.commands.config import migrate
+
     migrate(dry_run=dry_run, no_backup=no_backup)
 
 
 @config_app.command("test")
 def config_test(
     ctx: typer.Context,
-    host: Optional[str] = typer.Argument(None, help="Host name to validate (validates all if not specified)"),
+    host: Optional[str] = typer.Argument(
+        None, help="Host name to validate (validates all if not specified)"
+    ),
     scope: str = typer.Option(
         None,
         "--scope",
@@ -6149,7 +7162,9 @@ def config_test(
         "--strict",
         help="Treat warnings as errors",
     ),
-    json: bool = typer.Option(False, "--json", help="Output validation results as JSON"),
+    json: bool = typer.Option(
+        False, "--json", help="Output validation results as JSON"
+    ),
 ):
     """Alias for: navig config validate."""
     from navig.commands.config import validate
@@ -6167,7 +7182,9 @@ def config_test(
 @config_app.command("validate")
 def config_validate(
     ctx: typer.Context,
-    host: Optional[str] = typer.Argument(None, help="Host name to validate (validates all if not specified)"),
+    host: Optional[str] = typer.Argument(
+        None, help="Host name to validate (validates all if not specified)"
+    ),
     scope: str = typer.Option(
         None,
         "--scope",
@@ -6178,9 +7195,12 @@ def config_validate(
         "--strict",
         help="Treat warnings as errors",
     ),
-    json: bool = typer.Option(False, "--json", help="Output validation results as JSON"),
+    json: bool = typer.Option(
+        False, "--json", help="Output validation results as JSON"
+    ),
 ):
     from navig.commands.config import validate
+
     opts = dict(ctx.obj or {})
     if json:
         opts["json"] = True
@@ -6219,7 +7239,9 @@ def config_schema_install(
         "--write-vscode-settings",
         help="Write .vscode/settings.json yaml.schemas mappings in the current project",
     ),
-    json: bool = typer.Option(False, "--json", help="Output installation result as JSON"),
+    json: bool = typer.Option(
+        False, "--json", help="Output installation result as JSON"
+    ),
 ):
     """Install NAVIG YAML JSON Schemas for editor validation/autocomplete."""
     from navig.commands.config import install_schemas
@@ -6227,7 +7249,9 @@ def config_schema_install(
     opts = dict(ctx.obj or {})
     if json:
         opts["json"] = True
-    install_schemas(scope=scope, write_vscode_settings=write_vscode_settings, options=opts)
+    install_schemas(
+        scope=scope, write_vscode_settings=write_vscode_settings, options=opts
+    )
 
 
 @config_app.command("show")
@@ -6237,6 +7261,7 @@ def config_show(
 ):
     """Display host or app configuration."""
     from navig.commands.config import show
+
     show(target=target)
 
 
@@ -6244,6 +7269,7 @@ def config_show(
 def config_settings(ctx: typer.Context):
     """Display current NAVIG settings including execution mode and confirmation level."""
     from navig.commands.config import show_settings
+
     show_settings()
 
 
@@ -6260,13 +7286,16 @@ def config_set_mode(
         auto - Bypasses all confirmation prompts
     """
     from navig.commands.config import set_mode
+
     set_mode(mode)
 
 
 @config_app.command("set-confirmation-level")
 def config_set_confirmation_level(
     ctx: typer.Context,
-    level: str = typer.Argument(..., help="Confirmation level: 'critical', 'standard', or 'verbose'"),
+    level: str = typer.Argument(
+        ..., help="Confirmation level: 'critical', 'standard', or 'verbose'"
+    ),
 ):
     """
     Set the confirmation level for interactive mode.
@@ -6277,17 +7306,21 @@ def config_set_confirmation_level(
         verbose - Confirm all operations including reads
     """
     from navig.commands.config import set_confirmation_level
+
     set_confirmation_level(level)
 
 
 @config_app.command("set")
 def config_set(
     ctx: typer.Context,
-    key: str = typer.Argument(..., help="Configuration key (e.g., 'log_level', 'execution.mode')"),
+    key: str = typer.Argument(
+        ..., help="Configuration key (e.g., 'log_level', 'execution.mode')"
+    ),
     value: str = typer.Argument(..., help="Value to set"),
 ):
     """Set a global configuration value."""
     from navig.commands.config import set_config
+
     set_config(key, value)
 
 
@@ -6298,6 +7331,7 @@ def config_get(
 ):
     """Get a configuration value."""
     from navig.commands.config import get_config
+
     get_config(key)
 
 
@@ -6308,17 +7342,30 @@ def config_edit(
 ):
     """Open configuration in default editor."""
     from navig.commands.config import edit_config
+
     edit_config(target=target)
 
 
 @config_app.command("backup")
 def config_backup_cmd(
     ctx: typer.Context,
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path (auto-generated if not provided)"),
-    format: str = typer.Option("archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"),
-    include_secrets: bool = typer.Option(False, "--include-secrets", help="Include unredacted secrets (passwords, API keys)"),
-    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Encrypt the output with a password"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Encryption password (prompted if not provided)"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file path (auto-generated if not provided)"
+    ),
+    format: str = typer.Option(
+        "archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"
+    ),
+    include_secrets: bool = typer.Option(
+        False,
+        "--include-secrets",
+        help="Include unredacted secrets (passwords, API keys)",
+    ),
+    encrypt: bool = typer.Option(
+        False, "--encrypt", "-e", help="Encrypt the output with a password"
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Encryption password (prompted if not provided)"
+    ),
 ):
     """
     Export NAVIG configuration to a backup file.
@@ -6333,16 +7380,19 @@ def config_backup_cmd(
     """
     obj = ctx.obj or {}
     from navig.commands.config_backup import export_config
-    export_config({
-        'output': output,
-        'format': format,
-        'include_secrets': include_secrets,
-        'encrypt': encrypt,
-        'password': password,
-        'yes': obj.get('yes', False),
-        'confirm': obj.get('confirm', False),
-        'json': obj.get('json', False),
-    })
+
+    export_config(
+        {
+            "output": output,
+            "format": format,
+            "include_secrets": include_secrets,
+            "encrypt": encrypt,
+            "password": password,
+            "yes": obj.get("yes", False),
+            "confirm": obj.get("confirm", False),
+            "json": obj.get("json", False),
+        }
+    )
 
 
 # ============================================================================
@@ -6368,11 +7418,23 @@ def backup_callback(ctx: typer.Context):
 @backup_app.command("export")
 def backup_export(
     ctx: typer.Context,
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path (auto-generated if not provided)"),
-    format: str = typer.Option("archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"),
-    include_secrets: bool = typer.Option(False, "--include-secrets", help="Include unredacted secrets (passwords, API keys)"),
-    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Encrypt the output with a password"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Encryption password (prompted if not provided)"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file path (auto-generated if not provided)"
+    ),
+    format: str = typer.Option(
+        "archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"
+    ),
+    include_secrets: bool = typer.Option(
+        False,
+        "--include-secrets",
+        help="Include unredacted secrets (passwords, API keys)",
+    ),
+    encrypt: bool = typer.Option(
+        False, "--encrypt", "-e", help="Encrypt the output with a password"
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Encryption password (prompted if not provided)"
+    ),
 ):
     """
     Export NAVIG configuration to a backup file.
@@ -6386,24 +7448,33 @@ def backup_export(
         navig backup export --include-secrets --encrypt
     """
     from navig.commands.config_backup import export_config
-    export_config({
-        'output': output,
-        'format': format,
-        'include_secrets': include_secrets,
-        'encrypt': encrypt,
-        'password': password,
-        'yes': ctx.obj.get('yes', False),
-        'confirm': ctx.obj.get('confirm', False),
-        'json': ctx.obj.get('json', False),
-    })
+
+    export_config(
+        {
+            "output": output,
+            "format": format,
+            "include_secrets": include_secrets,
+            "encrypt": encrypt,
+            "password": password,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
 
 
 @backup_app.command("import")
 def backup_import(
     ctx: typer.Context,
     file: Path = typer.Argument(..., help="Backup file to import"),
-    merge: bool = typer.Option(True, "--merge/--replace", help="Merge with existing config (default) or replace"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Decryption password (prompted if needed)"),
+    merge: bool = typer.Option(
+        True,
+        "--merge/--replace",
+        help="Merge with existing config (default) or replace",
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Decryption password (prompted if needed)"
+    ),
 ):
     """
     Import NAVIG configuration from a backup file.
@@ -6416,49 +7487,70 @@ def backup_import(
         navig backup import encrypted-backup.tar.gz.enc --password mypassword
     """
     from navig.commands.config_backup import import_config
-    import_config({
-        'file': file,
-        'merge': merge,
-        'password': password,
-        'yes': ctx.obj.get('yes', False),
-        'confirm': ctx.obj.get('confirm', False),
-        'json': ctx.obj.get('json', False),
-    })
+
+    import_config(
+        {
+            "file": file,
+            "merge": merge,
+            "password": password,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
 
 
 @backup_app.command("show")
 def backup_show(
     ctx: typer.Context,
     file: Optional[Path] = typer.Argument(None, help="Backup file to inspect"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Decryption password if encrypted"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text for scripting"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Decryption password if encrypted"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text for scripting"
+    ),
 ):
     """Show backup details or list all backups (canonical command)."""
     if file:
         from navig.commands.navig_backup import inspect_export
-        inspect_export({
-            'file': file,
-            'password': password,
-            'json': ctx.obj.get('json', False),
-        })
+
+        inspect_export(
+            {
+                "file": file,
+                "password": password,
+                "json": ctx.obj.get("json", False),
+            }
+        )
     else:
         from navig.commands.navig_backup import list_exports
-        list_exports({
-            'json': ctx.obj.get('json', False),
-            'plain': plain,
-        })
+
+        list_exports(
+            {
+                "json": ctx.obj.get("json", False),
+                "plain": plain,
+            }
+        )
 
 
 @backup_app.command("run")
 def backup_run(
     ctx: typer.Context,
-    config: bool = typer.Option(False, "--config", help="Backup system configuration files"),
+    config: bool = typer.Option(
+        False, "--config", help="Backup system configuration files"
+    ),
     db_all: bool = typer.Option(False, "--db-all", help="Backup all databases"),
-    hestia: bool = typer.Option(False, "--hestia", help="Backup HestiaCP configuration"),
+    hestia: bool = typer.Option(
+        False, "--hestia", help="Backup HestiaCP configuration"
+    ),
     web: bool = typer.Option(False, "--web", help="Backup web server configuration"),
     all: bool = typer.Option(False, "--all", help="Run comprehensive backup"),
-    restore: Optional[str] = typer.Option(None, "--restore", help="Restore from a comprehensive backup by name"),
-    component: Optional[str] = typer.Option(None, "--component", help="Specific component to restore"),
+    restore: Optional[str] = typer.Option(
+        None, "--restore", help="Restore from a comprehensive backup by name"
+    ),
+    component: Optional[str] = typer.Option(
+        None, "--component", help="Specific component to restore"
+    ),
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
     compress: str = typer.Option(
         "gzip",
@@ -6470,9 +7562,7 @@ def backup_run(
 ):
     """Run server backup/restore operations (system config, DBs, Hestia, web)."""
     selected_count = sum(
-        1
-        for flag in [config, db_all, hestia, web, all, restore is not None]
-        if flag
+        1 for flag in [config, db_all, hestia, web, all, restore is not None] if flag
     )
 
     if selected_count != 1:
@@ -6485,7 +7575,7 @@ def backup_run(
     from navig.commands import backup as backup_cmds
 
     if restore is not None:
-        ctx.obj['force'] = force
+        ctx.obj["force"] = force
         backup_cmds.restore_backup_cmd(restore, component, ctx.obj)
         return
 
@@ -6505,44 +7595,56 @@ def backup_run(
 def backup_restore(
     ctx: typer.Context,
     backup_name: str = typer.Argument(..., help="Backup name to restore from"),
-    component: Optional[str] = typer.Option(None, "--component", "-c", help="Specific component to restore"),
+    component: Optional[str] = typer.Option(
+        None, "--component", "-c", help="Specific component to restore"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Restore from a comprehensive backup by name."""
     from navig.commands.backup import restore_backup_cmd
 
-    ctx.obj['force'] = force
+    ctx.obj["force"] = force
     restore_backup_cmd(backup_name, component, ctx.obj)
 
 
 @backup_app.command("list", hidden=True)
 def backup_list(
     ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one backup per line) for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one backup per line) for scripting"
+    ),
 ):
     """[DEPRECATED: Use 'navig backup show'] List available backups."""
     deprecation_warning("navig backup list", "navig backup show")
     from navig.commands.config_backup import list_exports
-    list_exports({
-        'json': ctx.obj.get('json', False),
-        'plain': plain,
-    })
+
+    list_exports(
+        {
+            "json": ctx.obj.get("json", False),
+            "plain": plain,
+        }
+    )
 
 
 @backup_app.command("inspect", hidden=True)
 def backup_inspect(
     ctx: typer.Context,
     file: Path = typer.Argument(..., help="Backup file to inspect"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Decryption password if encrypted"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Decryption password if encrypted"
+    ),
 ):
     """[DEPRECATED: Use 'navig backup show <file>'] Inspect backup contents."""
     deprecation_warning("navig backup inspect", "navig backup show <file>")
     from navig.commands.config_backup import inspect_export
-    inspect_export({
-        'file': file,
-        'password': password,
-        'json': ctx.obj.get('json', False),
-    })
+
+    inspect_export(
+        {
+            "file": file,
+            "password": password,
+            "json": ctx.obj.get("json", False),
+        }
+    )
 
 
 @backup_app.command("remove")
@@ -6552,12 +7654,15 @@ def backup_remove(
 ):
     """Remove/delete a backup file (canonical command)."""
     from navig.commands.config_backup import delete_export
-    delete_export({
-        'file': file,
-        'yes': ctx.obj.get('yes', False),
-        'confirm': ctx.obj.get('confirm', False),
-        'json': ctx.obj.get('json', False),
-    })
+
+    delete_export(
+        {
+            "file": file,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
 
 
 @backup_app.command("delete", hidden=True)
@@ -6568,22 +7673,37 @@ def backup_delete(
     """[DEPRECATED: Use 'navig backup remove'] Delete backup file."""
     deprecation_warning("navig backup delete", "navig backup remove")
     from navig.commands.config_backup import delete_export
-    delete_export({
-        'file': file,
-        'yes': ctx.obj.get('yes', False),
-        'confirm': ctx.obj.get('confirm', False),
-        'json': ctx.obj.get('json', False),
-    })
+
+    delete_export(
+        {
+            "file": file,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
 
 
 @backup_app.command("config")
 def backup_config_cmd(
     ctx: typer.Context,
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path (auto-generated if not provided)"),
-    format: str = typer.Option("archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"),
-    include_secrets: bool = typer.Option(False, "--include-secrets", help="Include unredacted secrets (passwords, API keys)"),
-    encrypt: bool = typer.Option(False, "--encrypt", "-e", help="Encrypt the output with a password"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Encryption password (prompted if not provided)"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file path (auto-generated if not provided)"
+    ),
+    format: str = typer.Option(
+        "archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"
+    ),
+    include_secrets: bool = typer.Option(
+        False,
+        "--include-secrets",
+        help="Include unredacted secrets (passwords, API keys)",
+    ),
+    encrypt: bool = typer.Option(
+        False, "--encrypt", "-e", help="Encrypt the output with a password"
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Encryption password (prompted if not provided)"
+    ),
 ):
     """
     Backup/export NAVIG configuration (hosts, apps, settings).
@@ -6598,16 +7718,19 @@ def backup_config_cmd(
     """
     obj = ctx.obj or {}
     from navig.commands.config_backup import export_config
-    export_config({
-        'output': output,
-        'format': format,
-        'include_secrets': include_secrets,
-        'encrypt': encrypt,
-        'password': password,
-        'yes': obj.get('yes', False),
-        'confirm': obj.get('confirm', False),
-        'json': obj.get('json', False),
-    })
+
+    export_config(
+        {
+            "output": output,
+            "format": format,
+            "include_secrets": include_secrets,
+            "encrypt": encrypt,
+            "password": password,
+            "yes": obj.get("yes", False),
+            "confirm": obj.get("confirm", False),
+            "json": obj.get("json", False),
+        }
+    )
 
 
 # ============================================================================
@@ -6641,47 +7764,56 @@ def flow_callback(ctx: typer.Context):
 def flow_list():
     """List all available flows."""
     from navig.commands.workflow import list_workflows
+
     list_workflows()
 
 
 @flow_app.command("show")
-def flow_show(
-    name: str = typer.Argument(..., help="Flow name")
-):
+def flow_show(name: str = typer.Argument(..., help="Flow name")):
     """Display flow definition and steps."""
     from navig.commands.workflow import show_workflow
+
     show_workflow(name)
 
 
 @flow_app.command("run")
 def flow_run(
     name: str = typer.Argument(..., help="Flow name"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without executing"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip all confirmation prompts"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without executing"
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip all confirmation prompts"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    var: Optional[List[str]] = typer.Option(None, "--var", "-V", help="Variable override (name=value)")
+    var: Optional[List[str]] = typer.Option(
+        None, "--var", "-V", help="Variable override (name=value)"
+    ),
 ):
     """Execute a flow."""
     from navig.commands.workflow import run_workflow
+
     run_workflow(name, dry_run=dry_run, yes=yes, verbose=verbose, var=var or [])
 
 
 @flow_app.command("test")
-def flow_test(
-    name: str = typer.Argument(..., help="Flow name")
-):
+def flow_test(name: str = typer.Argument(..., help="Flow name")):
     """Test/validate flow syntax and structure."""
     from navig.commands.workflow import validate_workflow
+
     validate_workflow(name)
 
 
 @flow_app.command("add")
 def flow_add(
     name: str = typer.Argument(..., help="New flow name"),
-    global_scope: bool = typer.Option(False, "--global", "-g", help="Create in global directory")
+    global_scope: bool = typer.Option(
+        False, "--global", "-g", help="Create in global directory"
+    ),
 ):
     """Create a new flow."""
     from navig.commands.workflow import create_workflow
+
     create_workflow(name, global_scope=global_scope)
 
 
@@ -6719,6 +7851,7 @@ def skills_list(
 ):
     """List available AI skills."""
     from navig.commands.skills import list_skills_cmd
+
     ctx.obj["plain"] = plain
     if json_output:
         ctx.obj["json"] = True
@@ -6740,6 +7873,7 @@ def skills_tree(
 ):
     """Show skills grouped by category."""
     from navig.commands.skills import tree_skills_cmd
+
     ctx.obj["plain"] = plain
     if json_output:
         ctx.obj["json"] = True
@@ -6751,7 +7885,10 @@ def skills_tree(
 @skills_app.command("show")
 def skills_show(
     ctx: typer.Context,
-    name: str = typer.Argument(..., help="Skill name (e.g., 'docker-manage', 'git-basics', 'official/docker-ops')"),
+    name: str = typer.Argument(
+        ...,
+        help="Skill name (e.g., 'docker-manage', 'git-basics', 'official/docker-ops')",
+    ),
     skills_dir: Optional[Path] = typer.Option(
         None,
         "--dir",
@@ -6762,6 +7899,7 @@ def skills_show(
 ):
     """Show detailed skill information (commands, examples, metadata)."""
     from navig.commands.skills import show_skill_cmd
+
     ctx.obj["plain"] = plain
     if json_output:
         ctx.obj["json"] = True
@@ -6777,7 +7915,9 @@ def skills_run(
         ...,
         help="Skill spec: <skill-name>:<command> or <skill-name> (runs entrypoint)",
     ),
-    args: Optional[List[str]] = typer.Argument(None, help="Arguments passed to the skill command"),
+    args: Optional[List[str]] = typer.Argument(
+        None, help="Arguments passed to the skill command"
+    ),
     skills_dir: Optional[Path] = typer.Option(
         None,
         "--dir",
@@ -6800,6 +7940,7 @@ def skills_run(
         navig skills run my-custom-skill   # runs entrypoint
     """
     from navig.commands.skills import run_skill_cmd
+
     if json_output:
         ctx.obj["json"] = True
     if yes:
@@ -6815,11 +7956,18 @@ def skills_run(
 def skills_synthesize(
     ctx: typer.Context,
     min_occurrences: int = typer.Option(
-        3, "--min-occurrences", "-m", min=1,
+        3,
+        "--min-occurrences",
+        "-m",
+        min=1,
         help="Minimum pattern repetitions to consider.",
     ),
     limit: int = typer.Option(
-        10, "--limit", "-n", min=1, max=100,
+        10,
+        "--limit",
+        "-n",
+        min=1,
+        max=100,
         help="Maximum number of patterns to analyse.",
     ),
     apply: bool = typer.Option(
@@ -6828,7 +7976,9 @@ def skills_synthesize(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview without writing any files."
     ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve all safe drafts."),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Auto-approve all safe drafts."
+    ),
 ) -> None:
     """
     Synthesize new skill YAML files from repeated command patterns.
@@ -6845,7 +7995,10 @@ def skills_synthesize(
 
     try:
         from navig.agent.pattern_analyzer import PatternAnalyzer  # type: ignore
-        from navig.agent.pattern_observer import DEFAULT_DB_PATH, PatternObserver  # type: ignore
+        from navig.agent.pattern_observer import (  # type: ignore
+            DEFAULT_DB_PATH,
+            PatternObserver,
+        )
         from navig.agent.skill_drafter import SkillDrafter  # type: ignore
     except ImportError as exc:
         ch.error(f"Synthesis pipeline not available: {exc}")
@@ -6876,6 +8029,7 @@ def skills_synthesize(
 
     # -- Preview table --------------------------------------------------------
     from rich.table import Table
+
     table = Table(title=f"Top {len(scored)} Synthesisable Patterns", show_lines=True)
     table.add_column("#", style="dim", width=3)
     table.add_column("Sequence", style="cyan")
@@ -6951,13 +8105,22 @@ def scaffold_callback(ctx: typer.Context):
 @scaffold_app.command("apply")
 def scaffold_apply(
     template_path: Path = typer.Argument(..., help="Path to YAML template file"),
-    target_dir: str = typer.Option(".", "--target-dir", "-d", help="Target directory (local or remote)"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Remote host to deploy to (defaults to local)"),
-    set_var: Optional[List[str]] = typer.Option(None, "--set", help="Set variable like key=value"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate without creating files"),
+    target_dir: str = typer.Option(
+        ".", "--target-dir", "-d", help="Target directory (local or remote)"
+    ),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Remote host to deploy to (defaults to local)"
+    ),
+    set_var: Optional[List[str]] = typer.Option(
+        None, "--set", help="Set variable like key=value"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Simulate without creating files"
+    ),
 ):
     """Generate files/directories from a template."""
     from navig.commands.scaffold import apply
+
     apply(template_path, target_dir, host, set_var, dry_run)
 
 
@@ -6975,6 +8138,7 @@ def flow_template_callback(ctx: typer.Context):
     """Template management - run without subcommand for interactive menu."""
     if ctx.invoked_subcommand is None:
         from navig.commands.interactive import launch_template_menu
+
         launch_template_menu()
         raise typer.Exit()
 
@@ -6982,11 +8146,14 @@ def flow_template_callback(ctx: typer.Context):
 @flow_template_app.command("list")
 def flow_template_list(
     ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="Output plain text for scripting"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text for scripting"
+    ),
 ):
     """List all available templates."""
     from navig.commands.template import list_templates_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     list_templates_cmd(ctx.obj)
 
 
@@ -6997,6 +8164,7 @@ def flow_template_show(
 ):
     """Show template details."""
     from navig.commands.template import show_template_cmd
+
     show_template_cmd(name, ctx.obj)
 
 
@@ -7007,6 +8175,7 @@ def flow_template_add(
 ):
     """Enable/add a template."""
     from navig.commands.template import enable_template_cmd
+
     enable_template_cmd(name, ctx.obj)
 
 
@@ -7017,6 +8186,7 @@ def flow_template_remove(
 ):
     """Disable/remove a template."""
     from navig.commands.template import disable_template_cmd
+
     disable_template_cmd(name, ctx.obj)
 
 
@@ -7025,11 +8195,16 @@ def flow_template_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to deploy"),
     command: Optional[str] = typer.Argument(None, help="Template command to run"),
-    args: Optional[List[str]] = typer.Argument(None, help="Arguments for the template command"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without changes"),
+    args: Optional[List[str]] = typer.Argument(
+        None, help="Arguments for the template command"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without changes"
+    ),
 ):
     """Deploy/run a template."""
     from navig.commands.template import deploy_template_cmd
+
     deploy_template_cmd(
         name,
         command_name=command,
@@ -7055,6 +8230,7 @@ def workflow_callback(ctx: typer.Context):
     deprecation_warning("navig workflow/task", "navig flow")
     if ctx.invoked_subcommand is None:
         from navig.commands.workflow import list_workflows
+
         list_workflows()
 
 
@@ -7062,98 +8238,110 @@ def workflow_callback(ctx: typer.Context):
 def workflow_list():
     """List all available workflows."""
     from navig.commands.workflow import list_workflows
+
     list_workflows()
 
 
 @workflow_app.command("show")
-def workflow_show(
-    name: str = typer.Argument(..., help="Workflow name")
-):
+def workflow_show(name: str = typer.Argument(..., help="Workflow name")):
     """Display workflow definition and steps."""
     from navig.commands.workflow import show_workflow
+
     show_workflow(name)
 
 
 @workflow_app.command("run")
 def workflow_run(
     name: str = typer.Argument(..., help="Workflow name"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without executing"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip all confirmation prompts"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without executing"
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip all confirmation prompts"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    var: Optional[List[str]] = typer.Option(None, "--var", "-V", help="Variable override (name=value)")
+    var: Optional[List[str]] = typer.Option(
+        None, "--var", "-V", help="Variable override (name=value)"
+    ),
 ):
     """Execute a workflow."""
     from navig.commands.workflow import run_workflow
+
     run_workflow(name, dry_run=dry_run, yes=yes, verbose=verbose, var=var or [])
 
 
 @workflow_app.command("test")
-def workflow_test(
-    name: str = typer.Argument(..., help="Workflow name")
-):
+def workflow_test(name: str = typer.Argument(..., help="Workflow name")):
     """Test/validate workflow syntax and structure (canonical command)."""
     from navig.commands.workflow import validate_workflow
+
     validate_workflow(name)
 
 
 @workflow_app.command("validate", hidden=True)
-def workflow_validate(
-    name: str = typer.Argument(..., help="Workflow name")
-):
+def workflow_validate(name: str = typer.Argument(..., help="Workflow name")):
     """[DEPRECATED: Use 'navig workflow test'] Validate workflow."""
     deprecation_warning("navig workflow validate", "navig workflow test")
     from navig.commands.workflow import validate_workflow
+
     validate_workflow(name)
 
 
 @workflow_app.command("add")
 def workflow_add(
     name: str = typer.Argument(..., help="New workflow name"),
-    global_scope: bool = typer.Option(False, "--global", "-g", help="Create in global directory")
+    global_scope: bool = typer.Option(
+        False, "--global", "-g", help="Create in global directory"
+    ),
 ):
     """Add/create a new workflow (canonical command)."""
     from navig.commands.workflow import create_workflow
+
     create_workflow(name, global_scope=global_scope)
 
 
 @workflow_app.command("create", hidden=True)
 def workflow_create(
     name: str = typer.Argument(..., help="New workflow name"),
-    global_scope: bool = typer.Option(False, "--global", "-g", help="Create in global directory")
+    global_scope: bool = typer.Option(
+        False, "--global", "-g", help="Create in global directory"
+    ),
 ):
     """[DEPRECATED: Use 'navig workflow add'] Create new workflow."""
     deprecation_warning("navig workflow create", "navig workflow add")
     from navig.commands.workflow import create_workflow
+
     create_workflow(name, global_scope=global_scope)
 
 
 @workflow_app.command("remove")
 def workflow_remove(
     name: str = typer.Argument(..., help="Workflow name"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation")
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Remove/delete a workflow (canonical command)."""
     from navig.commands.workflow import delete_workflow
+
     delete_workflow(name, force=force)
 
 
 @workflow_app.command("delete", hidden=True)
 def workflow_delete(
     name: str = typer.Argument(..., help="Workflow name"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation")
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """[DEPRECATED: Use 'navig workflow remove'] Delete workflow."""
     deprecation_warning("navig workflow delete", "navig workflow remove")
     from navig.commands.workflow import delete_workflow
+
     delete_workflow(name, force=force)
 
 
 @workflow_app.command("edit")
-def workflow_edit(
-    name: str = typer.Argument(..., help="Workflow name")
-):
+def workflow_edit(name: str = typer.Argument(..., help="Workflow name")):
     """Open workflow in default editor."""
     from navig.commands.workflow import edit_workflow
+
     edit_workflow(name)
 
 
@@ -7229,6 +8417,7 @@ class _LazyDispatchGroup(TyperGroup):
         from typer.main import get_command
 
         from navig.commands import dispatch as dispatch_module
+
         cmd = get_command(dispatch_module.dispatch_app)
         if hasattr(cmd, "commands"):
             for name, c in cmd.commands.items():
@@ -7278,6 +8467,7 @@ class _LazyContactsGroup(TyperGroup):
         from typer.main import get_command
 
         from navig.commands import dispatch as dispatch_module
+
         cmd = get_command(dispatch_module.contacts_app)
         if hasattr(cmd, "commands"):
             for name, c in cmd.commands.items():
@@ -7328,6 +8518,7 @@ def _gw_base_url() -> str:
     """Return local gateway base URL from config (gateway.port / host)."""
     try:
         from navig.config import get_config_manager
+
         raw = get_config_manager()._load_global_config()
     except Exception:
         raw = {}
@@ -7346,9 +8537,20 @@ def gateway_callback(ctx: typer.Context):
 
 @gateway_app.command("start")
 def gateway_start(
-    port: Optional[int] = typer.Option(None, "--port", "-p", help="Port (default: gateway.port from config, fallback 8765)"),
-    host: Optional[str] = typer.Option(None, "--host", help="Bind address (default: gateway.host from config, fallback 0.0.0.0)"),
-    background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
+    port: Optional[int] = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="Port (default: gateway.port from config, fallback 8765)",
+    ),
+    host: Optional[str] = typer.Option(
+        None,
+        "--host",
+        help="Bind address (default: gateway.host from config, fallback 0.0.0.0)",
+    ),
+    background: bool = typer.Option(
+        False, "--background", "-b", help="Run in background"
+    ),
 ):
     """
     Start the autonomous agent gateway server.
@@ -7370,10 +8572,11 @@ def gateway_start(
     # Fill port/host from config if not explicitly passed
     try:
         from navig.config import get_config_manager
+
         _raw = get_config_manager()._load_global_config()
     except Exception:
         _raw = {}
-    _gw_cfg = (_raw.get("gateway") or {})
+    _gw_cfg = _raw.get("gateway") or {}
     if port is None:
         port = int(_gw_cfg.get("port") or 8765)
     if host is None:
@@ -7386,10 +8589,10 @@ def gateway_start(
 
         # Build config dict for GatewayConfig
         raw_config = {
-            'gateway': {
-                'enabled': True,
-                'port': port,
-                'host': host,
+            "gateway": {
+                "enabled": True,
+                "port": port,
+                "host": host,
             }
         }
 
@@ -7517,7 +8720,9 @@ def gateway_status():
             # Show cron/heartbeat summary
             cron = data.get("cron", {})
             if cron:
-                ch.info(f"  Cron jobs: {cron.get('jobs', 0)} ({cron.get('enabled_jobs', 0)} enabled)")
+                ch.info(
+                    f"  Cron jobs: {cron.get('jobs', 0)} ({cron.get('enabled_jobs', 0)} enabled)"
+                )
 
             hb = data.get("heartbeat", {})
             if hb.get("running"):
@@ -7562,8 +8767,7 @@ def gateway_session(
 
         elif action == "show" and session_key:
             response = requests.get(
-                f"{ _gw_base_url()}/sessions/{session_key}",
-                timeout=5
+                f"{ _gw_base_url()}/sessions/{session_key}", timeout=5
             )
             if response.status_code == 200:
                 session = response.json()
@@ -7576,8 +8780,7 @@ def gateway_session(
 
         elif action == "clear" and session_key:
             response = requests.delete(
-                f"{ _gw_base_url()}/sessions/{session_key}",
-                timeout=5
+                f"{ _gw_base_url()}/sessions/{session_key}", timeout=5
             )
             if response.status_code == 200:
                 ch.success(f"Cleared session: {session_key}")
@@ -7628,9 +8831,18 @@ def bot_callback(ctx: typer.Context):
 
 @bot_app.command("start")
 def bot_start(
-    gateway: bool = typer.Option(False, "--gateway", "-g", help="Start with gateway (session persistence)"),
-    port: Optional[int] = typer.Option(None, "--port", "-p", help="Gateway port (default: gateway.port from config, fallback 8765)"),
-    background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
+    gateway: bool = typer.Option(
+        False, "--gateway", "-g", help="Start with gateway (session persistence)"
+    ),
+    port: Optional[int] = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="Gateway port (default: gateway.port from config, fallback 8765)",
+    ),
+    background: bool = typer.Option(
+        False, "--background", "-b", help="Run in background"
+    ),
 ):
     """
     Start the NAVIG Telegram bot.
@@ -7658,17 +8870,29 @@ def bot_start(
         ch.info("Starting NAVIG with Gateway + Telegram Bot...")
         ch.info(f"  Gateway: http://localhost:{port}")
         ch.info("  Bot: Telegram")
-        cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--port", str(port)]
+        cmd = [
+            sys.executable,
+            "-m",
+            "navig.daemon.telegram_worker",
+            "--port",
+            str(port),
+        ]
         if background:
             if sys.platform == "win32":
                 subprocess.Popen(
                     cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.CREATE_NO_WINDOW,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
             else:
-                subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             ch.success("Started in background")
         else:
             os.execv(sys.executable, cmd)
@@ -7681,12 +8905,18 @@ def bot_start(
             if sys.platform == "win32":
                 subprocess.Popen(
                     cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.CREATE_NO_WINDOW,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
             else:
-                subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             ch.success("Started in background")
         else:
             os.execv(sys.executable, cmd)
@@ -7696,21 +8926,29 @@ def bot_start(
 def bot_status():
     """Check if bot is running."""
     import subprocess
-    patterns = r'navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start'
+
+    patterns = (
+        r"navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start"
+    )
 
     # Check for running python processes with navig_bot
     try:
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             ps_cmd = (
                 "(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\") "
                 f"| Where-Object {{ $_.CommandLine -match '{patterns}' }} "
                 "| Select-Object -ExpandProperty ProcessId"
             )
             result = subprocess.run(
-                ['powershell', '-NoProfile', '-Command', ps_cmd],
-                capture_output=True, text=True
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
             )
-            pids = [line.strip() for line in result.stdout.splitlines() if line.strip().isdigit()]
+            pids = [
+                line.strip()
+                for line in result.stdout.splitlines()
+                if line.strip().isdigit()
+            ]
             if pids:
                 ch.success("Bot appears to be running")
                 ch.info(f"  PIDs: {', '.join(pids)}")
@@ -7718,8 +8956,7 @@ def bot_status():
                 ch.warning("Bot does not appear to be running")
         else:
             result = subprocess.run(
-                ['pgrep', '-f', patterns],
-                capture_output=True, text=True
+                ["pgrep", "-f", patterns], capture_output=True, text=True
             )
             if result.returncode == 0:
                 ch.success("Bot is running")
@@ -7734,30 +8971,41 @@ def bot_status():
 def bot_stop():
     """Stop all running NAVIG bot/gateway processes."""
     import subprocess
-    patterns = r'navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start'
+
+    patterns = (
+        r"navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start"
+    )
 
     try:
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             ps_cmd = (
                 "(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\") "
                 f"| Where-Object {{ $_.CommandLine -match '{patterns}' }} "
                 "| Select-Object -ExpandProperty ProcessId"
             )
             find_result = subprocess.run(
-                ['powershell', '-NoProfile', '-Command', ps_cmd],
-                capture_output=True, text=True
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
             )
-            pids = [line.strip() for line in find_result.stdout.splitlines() if line.strip().isdigit()]
+            pids = [
+                line.strip()
+                for line in find_result.stdout.splitlines()
+                if line.strip().isdigit()
+            ]
             if not pids:
                 ch.warning("No running processes found")
                 return
             for pid in pids:
-                subprocess.run(['taskkill', '/PID', pid, '/T', '/F'], capture_output=True, text=True)
+                subprocess.run(
+                    ["taskkill", "/PID", pid, "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                )
             ch.success(f"Stopped NAVIG bot/gateway processes: {', '.join(pids)}")
         else:
             result = subprocess.run(
-                ['pkill', '-f', patterns],
-                capture_output=True, text=True
+                ["pkill", "-f", patterns], capture_output=True, text=True
             )
             if result.returncode == 0:
                 ch.success("Stopped NAVIG bot/gateway")
@@ -7774,12 +9022,24 @@ app.add_typer(bot_app, name="bot")
 # START - QUICK LAUNCHER (ALIAS)
 # ============================================================================
 
+
 @app.command("start")
 def quick_start(
-    bot: bool = typer.Option(True, "--bot/--no-bot", "-b/-B", help="Start Telegram bot"),
-    gateway: bool = typer.Option(True, "--gateway/--no-gateway", "-g/-G", help="Start gateway"),
-    port: Optional[int] = typer.Option(None, "--port", "-p", help="Gateway port (default: gateway.port from config, fallback 8765)"),
-    background: bool = typer.Option(True, "--background/--foreground", "-d/-f", help="Run in background"),
+    bot: bool = typer.Option(
+        True, "--bot/--no-bot", "-b/-B", help="Start Telegram bot"
+    ),
+    gateway: bool = typer.Option(
+        True, "--gateway/--no-gateway", "-g/-G", help="Start gateway"
+    ),
+    port: Optional[int] = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="Gateway port (default: gateway.port from config, fallback 8765)",
+    ),
+    background: bool = typer.Option(
+        True, "--background/--foreground", "-d/-f", help="Run in background"
+    ),
 ):
     """
     Quick launcher - start NAVIG services with sensible defaults.
@@ -7805,17 +9065,29 @@ def quick_start(
 
     if gateway and bot:
         ch.info("Starting NAVIG (Gateway + Telegram Bot)...")
-        cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--port", str(port)]
+        cmd = [
+            sys.executable,
+            "-m",
+            "navig.daemon.telegram_worker",
+            "--port",
+            str(port),
+        ]
         if background:
             if sys.platform == "win32":
                 subprocess.Popen(
                     cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.CREATE_NO_WINDOW,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
             else:
-                subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             ch.success("Started in background")
             ch.info(f"  Gateway: http://localhost:{port}")
             ch.info("  Status: navig bot status")
@@ -7831,12 +9103,18 @@ def quick_start(
             if sys.platform == "win32":
                 subprocess.Popen(
                     cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.CREATE_NO_WINDOW,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
             else:
-                subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             ch.success("Started in background")
         else:
             os.execv(sys.executable, cmd)
@@ -7844,6 +9122,7 @@ def quick_start(
     elif gateway:
         ch.info(f"Starting NAVIG Gateway on port {port}...")
         from navig.commands.gateway import gateway_start
+
         gateway_start(port=port, host="0.0.0.0", background=background)
 
 
@@ -7891,8 +9170,14 @@ def heartbeat_status():
                 next_run = hb.get("next_run")
                 if next_run:
                     try:
-                        next_dt = datetime.fromisoformat(next_run.replace("Z", "+00:00"))
-                        now = datetime.now(next_dt.tzinfo) if next_dt.tzinfo else datetime.now()
+                        next_dt = datetime.fromisoformat(
+                            next_run.replace("Z", "+00:00")
+                        )
+                        now = (
+                            datetime.now(next_dt.tzinfo)
+                            if next_dt.tzinfo
+                            else datetime.now()
+                        )
                         diff = next_dt - now
                         minutes = int(diff.total_seconds() / 60)
                         if minutes > 0:
@@ -7932,7 +9217,7 @@ def heartbeat_trigger():
     try:
         response = requests.post(
             "{ _gw_base_url()}/heartbeat/trigger",
-            timeout=300  # Heartbeat can take a while
+            timeout=300,  # Heartbeat can take a while
         )
         if response.status_code == 200:
             result = response.json()
@@ -7962,8 +9247,7 @@ def heartbeat_history(
 
     try:
         response = requests.get(
-            f"{ _gw_base_url()}/heartbeat/history?limit={limit}",
-            timeout=5
+            f"{ _gw_base_url()}/heartbeat/history?limit={limit}", timeout=5
         )
         if response.status_code == 200:
             history = response.json().get("history", [])
@@ -7972,7 +9256,9 @@ def heartbeat_history(
                 for entry in history:
                     status = "✅" if entry.get("success") else "❌"
                     suppressed = " (OK)" if entry.get("suppressed") else ""
-                    ch.info(f"  {status} {entry.get('timestamp', '?')}{suppressed} - {entry.get('duration', 0):.1f}s")
+                    ch.info(
+                        f"  {status} {entry.get('timestamp', '?')}{suppressed} - {entry.get('duration', 0):.1f}s"
+                    )
             else:
                 ch.info("No heartbeat history")
         else:
@@ -7986,7 +9272,9 @@ def heartbeat_history(
 @heartbeat_app.command("configure")
 def heartbeat_configure(
     interval: int = typer.Option(None, "--interval", "-i", help="Interval in minutes"),
-    enable: bool = typer.Option(None, "--enable/--disable", help="Enable/disable heartbeat"),
+    enable: bool = typer.Option(
+        None, "--enable/--disable", help="Enable/disable heartbeat"
+    ),
 ):
     """Configure heartbeat settings."""
     config_manager = _get_config_manager()
@@ -8056,7 +9344,9 @@ def cron_list():
                     ch.info(f"      Next run: {next_run}")
             else:
                 ch.info("No scheduled jobs")
-                ch.info("Add one with: navig cron add \"job name\" \"every 30 minutes\" \"navig host test\"")
+                ch.info(
+                    'Add one with: navig cron add "job name" "every 30 minutes" "navig host test"'
+                )
         else:
             ch.error(f"Failed to list jobs: {response.status_code}")
     except requests.exceptions.ConnectionError:
@@ -8069,9 +9359,13 @@ def cron_list():
 @cron_app.command("add")
 def cron_add(
     name: str = typer.Argument(..., help="Job name"),
-    schedule: str = typer.Argument(..., help="Schedule (e.g., 'every 30 minutes', '0 * * * *')"),
+    schedule: str = typer.Argument(
+        ..., help="Schedule (e.g., 'every 30 minutes', '0 * * * *')"
+    ),
     command: str = typer.Argument(..., help="Command to run"),
-    disabled: bool = typer.Option(False, "--disabled", help="Create job in disabled state"),
+    disabled: bool = typer.Option(
+        False, "--disabled", help="Create job in disabled state"
+    ),
 ):
     """
     Add a new scheduled job.
@@ -8096,7 +9390,7 @@ def cron_add(
                 "command": command,
                 "enabled": not disabled,
             },
-            timeout=5
+            timeout=5,
         )
         if response.status_code == 200:
             job = response.json()
@@ -8121,10 +9415,7 @@ def cron_remove(
     import requests
 
     try:
-        response = requests.delete(
-            f"{ _gw_base_url()}/cron/jobs/{job_id}",
-            timeout=5
-        )
+        response = requests.delete(f"{ _gw_base_url()}/cron/jobs/{job_id}", timeout=5)
         if response.status_code == 200:
             ch.success(f"Removed job: {job_id}")
         else:
@@ -8146,8 +9437,7 @@ def cron_run(
 
     try:
         response = requests.post(
-            f"{ _gw_base_url()}/cron/jobs/{job_id}/run",
-            timeout=300
+            f"{ _gw_base_url()}/cron/jobs/{job_id}/run", timeout=300
         )
         if response.status_code == 200:
             result = response.json()
@@ -8174,8 +9464,7 @@ def cron_enable(
 
     try:
         response = requests.post(
-            f"{ _gw_base_url()}/cron/jobs/{job_id}/enable",
-            timeout=5
+            f"{ _gw_base_url()}/cron/jobs/{job_id}/enable", timeout=5
         )
         if response.status_code == 200:
             ch.success(f"Enabled job: {job_id}")
@@ -8196,8 +9485,7 @@ def cron_disable(
 
     try:
         response = requests.post(
-            f"{ _gw_base_url()}/cron/jobs/{job_id}/disable",
-            timeout=5
+            f"{ _gw_base_url()}/cron/jobs/{job_id}/disable", timeout=5
         )
         if response.status_code == 200:
             ch.success(f"Disabled job: {job_id}")
@@ -8229,7 +9517,9 @@ def cron_status():
                 ch.info(f"  Total jobs: {total_jobs}")
                 ch.info(f"  Enabled jobs: {enabled_jobs}")
                 if cron.get("next_job"):
-                    ch.info(f"  Next job: {cron.get('next_job')} in {cron.get('next_run_in', '?')}")
+                    ch.info(
+                        f"  Next job: {cron.get('next_job')} in {cron.get('next_run_in', '?')}"
+                    )
             else:
                 ch.warning("Cron service is not running")
                 ch.info("Start gateway to enable cron: navig gateway start")
@@ -8288,7 +9578,7 @@ def approve_list():
 
                 ch.console.print(
                     f"  [{req['id']}] {req['action']} ({req['level']}) - {req.get('description', '')}",
-                    style=level_color
+                    style=level_color,
                 )
         else:
             ch.error(f"Failed: {response.status_code}")
@@ -8355,6 +9645,7 @@ def approve_policy():
     """Show approval policy (patterns and levels)."""
     try:
         from navig.approval import ApprovalPolicy
+
         policy = ApprovalPolicy.default()
 
         ch.info("Approval Policy Patterns:")
@@ -8576,7 +9867,9 @@ def queue_callback(ctx: typer.Context):
 
 @queue_app.command("list")
 def queue_list(
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
+    status: Optional[str] = typer.Option(
+        None, "--status", "-s", help="Filter by status"
+    ),
     limit: int = typer.Option(20, "--limit", "-n", help="Max tasks to show"),
 ):
     """List queued tasks."""
@@ -8613,7 +9906,7 @@ def queue_list(
 
                 ch.console.print(
                     f"  [{task['id']}] {task['name']} - {task['status']}",
-                    style=status_color
+                    style=status_color,
                 )
         elif response.status_code == 503:
             ch.warning("Tasks module not available")
@@ -8686,9 +9979,9 @@ def queue_show(
             ch.console.print(f"  Handler: {data.get('handler')}")
             ch.console.print(f"  Status: {data.get('status')}")
             ch.console.print(f"  Priority: {data.get('priority')}")
-            if data.get('error'):
+            if data.get("error"):
                 ch.console.print(f"  Error: {data.get('error')}", style="red")
-            if data.get('result'):
+            if data.get("result"):
                 ch.console.print(f"  Result: {data.get('result')}")
         elif response.status_code == 404:
             ch.error(f"Task {task_id} not found")
@@ -8815,7 +10108,9 @@ def memory_sessions(
 
         if plain:
             for s in sessions:
-                print(f"{s.session_key}\t{s.message_count}\t{s.total_tokens}\t{s.updated_at.isoformat()}")
+                print(
+                    f"{s.session_key}\t{s.message_count}\t{s.total_tokens}\t{s.updated_at.isoformat()}"
+                )
         else:
             from rich.table import Table
 
@@ -8879,8 +10174,12 @@ def memory_history(
 
             for m in messages:
                 role_style = "bold cyan" if m.role == "user" else "bold green"
-                ch.console.print(f"[{role_style}]{m.role.upper()}[/] ({m.timestamp.strftime('%H:%M')})")
-                ch.console.print(m.content[:500] + ("..." if len(m.content) > 500 else ""))
+                ch.console.print(
+                    f"[{role_style}]{m.role.upper()}[/] ({m.timestamp.strftime('%H:%M')})"
+                )
+                ch.console.print(
+                    m.content[:500] + ("..." if len(m.content) > 500 else "")
+                )
                 ch.console.print()
 
         store.close()
@@ -8984,11 +10283,16 @@ def memory_knowledge(
 
                 for e in entries:
                     import json
-                    tags_list = json.loads(e.get('tags', '[]'))
+
+                    tags_list = json.loads(e.get("tags", "[]"))
                     table.add_row(
-                        e['key'],
-                        e.get('source', ''),
-                        e['content'][:50] + "..." if len(e['content']) > 50 else e['content'],
+                        e["key"],
+                        e.get("source", ""),
+                        (
+                            e["content"][:50] + "..."
+                            if len(e["content"]) > 50
+                            else e["content"]
+                        ),
                         ", ".join(tags_list),
                     )
 
@@ -9099,6 +10403,7 @@ def memory_stats():
 
 # Memory Bank Commands (file-based knowledge with vector search)
 
+
 @memory_app.command("bank")
 def memory_bank_status(
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
@@ -9115,7 +10420,9 @@ def memory_bank_status(
     try:
         from navig.memory import get_memory_manager
 
-        manager = get_memory_manager(use_embeddings=False)  # Don't load embeddings for status
+        manager = get_memory_manager(
+            use_embeddings=False
+        )  # Don't load embeddings for status
         status = manager.get_status()
 
         if plain:
@@ -9135,7 +10442,7 @@ def memory_bank_status(
             ch.console.print(f"  Embedded chunks: {status['embedded_chunks']}")
             ch.console.print(f"  Database size: {status['database_size_mb']} MB")
 
-            if status['embeddings_enabled']:
+            if status["embeddings_enabled"]:
                 ch.console.print(f"  Embedding model: {status['embedding_model']}")
             else:
                 ch.console.print("  Embeddings: [dim]disabled[/dim]")
@@ -9148,9 +10455,15 @@ def memory_bank_status(
 
 @memory_app.command("index")
 def memory_bank_index(
-    force: bool = typer.Option(False, "--force", "-f", help="Re-index even unchanged files"),
-    no_embed: bool = typer.Option(False, "--no-embed", help="Skip embedding generation"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show file-by-file progress"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Re-index even unchanged files"
+    ),
+    no_embed: bool = typer.Option(
+        False, "--no-embed", help="Skip embedding generation"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show file-by-file progress"
+    ),
 ):
     """Index files in the memory bank.
 
@@ -9167,7 +10480,9 @@ def memory_bank_index(
 
         def progress(file_path: str, status: str):
             if verbose:
-                icon = "✓" if status == "indexed" else "→" if status == "skipped" else "✗"
+                icon = (
+                    "✓" if status == "indexed" else "→" if status == "skipped" else "✗"
+                )
                 ch.console.print(f"  {icon} {file_path}")
 
         ch.info("Indexing memory bank...")
@@ -9179,7 +10494,9 @@ def memory_bank_index(
             progress_callback=progress if verbose else None,
         )
 
-        ch.success(f"Indexed {result.files_processed} files ({result.files_skipped} skipped)")
+        ch.success(
+            f"Indexed {result.files_processed} files ({result.files_skipped} skipped)"
+        )
         ch.console.print(f"  Created {result.chunks_created} chunks")
         ch.console.print(f"  Total tokens: {result.total_tokens:,}")
         ch.console.print(f"  Embedded: {result.chunks_embedded} chunks")
@@ -9206,7 +10523,9 @@ def memory_bank_search(
     file: str = typer.Option(None, "--file", "-f", help="Filter by file pattern"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
-    keyword_only: bool = typer.Option(False, "--keyword", "-k", help="Keyword-only search (no embeddings)"),
+    keyword_only: bool = typer.Option(
+        False, "--keyword", "-k", help="Keyword-only search (no embeddings)"
+    ),
 ):
     """Search the memory bank with hybrid search.
 
@@ -9259,15 +10578,23 @@ def memory_bank_search(
 
         if plain:
             for r in response.results:
-                print(f"{r.combined_score:.3f}\t{r.file_path}:{r.line_start}\t{r.snippet[:80]}")
+                print(
+                    f"{r.combined_score:.3f}\t{r.file_path}:{r.line_start}\t{r.snippet[:80]}"
+                )
         else:
-            ch.info(f"Found {len(response.results)} results ({response.search_time_ms:.1f}ms)")
+            ch.info(
+                f"Found {len(response.results)} results ({response.search_time_ms:.1f}ms)"
+            )
             ch.console.print()
 
             for i, r in enumerate(response.results, 1):
                 score_bar = "█" * int(r.combined_score * 10)
-                ch.console.print(f"[bold cyan]{i}.[/bold cyan] [dim]{r.citation()}[/dim]")
-                ch.console.print(f"   Score: [green]{score_bar}[/green] {r.combined_score:.3f}")
+                ch.console.print(
+                    f"[bold cyan]{i}.[/bold cyan] [dim]{r.citation()}[/dim]"
+                )
+                ch.console.print(
+                    f"   Score: [green]{score_bar}[/green] {r.combined_score:.3f}"
+                )
                 ch.console.print(f"   {r.snippet}")
                 ch.console.print()
 
@@ -9311,11 +10638,11 @@ def memory_bank_files(
             table.add_column("Indexed", style="dim")
 
             for f in files:
-                indexed_at = f['indexed_at'][:10] if f.get('indexed_at') else '-'
+                indexed_at = f["indexed_at"][:10] if f.get("indexed_at") else "-"
                 table.add_row(
-                    f['file_path'],
-                    str(f['chunk_count']),
-                    str(f['total_tokens']),
+                    f["file_path"],
+                    str(f["chunk_count"]),
+                    str(f["total_tokens"]),
                     indexed_at,
                 )
 
@@ -9365,6 +10692,7 @@ def memory_bank_clear(
 
 # ── Key Facts (Conversational Memory) Commands ────────────────
 
+
 @memory_app.command("facts")
 def memory_facts_list(
     category: str = typer.Option(None, "--category", "-c", help="Filter by category"),
@@ -9383,8 +10711,10 @@ def memory_facts_list(
         navig memory facts --json
     """
     import json as json_module
+
     try:
         from navig.memory.key_facts import get_key_fact_store
+
         store = get_key_fact_store()
         facts = store.get_active(limit=limit, category=category)
 
@@ -9397,15 +10727,20 @@ def memory_facts_list(
             return
 
         if json_output:
-            print(json_module.dumps([f.to_dict() for f in facts], indent=2, default=str))
+            print(
+                json_module.dumps([f.to_dict() for f in facts], indent=2, default=str)
+            )
             return
 
         if plain:
             for f in facts:
                 tags = ",".join(f.tags[:3]) if f.tags else ""
-                print(f"{f.id[:8]}\t{f.category}\t{f.confidence:.2f}\t{tags}\t{f.content[:80]}")
+                print(
+                    f"{f.id[:8]}\t{f.category}\t{f.confidence:.2f}\t{tags}\t{f.content[:80]}"
+                )
         else:
             from rich.table import Table
+
             table = Table(title=f"Key Facts ({len(facts)} active)")
             table.add_column("ID", style="dim", max_width=8)
             table.add_column("Category", style="cyan")
@@ -9414,7 +10749,11 @@ def memory_facts_list(
             table.add_column("Tags", style="dim", max_width=20)
 
             for f in facts:
-                conf_color = "green" if f.confidence >= 0.8 else "yellow" if f.confidence >= 0.6 else "red"
+                conf_color = (
+                    "green"
+                    if f.confidence >= 0.8
+                    else "yellow" if f.confidence >= 0.6 else "red"
+                )
                 table.add_row(
                     f.id[:8],
                     f.category,
@@ -9431,7 +10770,12 @@ def memory_facts_list(
 @memory_app.command("remember")
 def memory_remember(
     content: str = typer.Argument(..., help="Fact to remember"),
-    category: str = typer.Option("context", "--category", "-c", help="preference|decision|identity|technical|context"),
+    category: str = typer.Option(
+        "context",
+        "--category",
+        "-c",
+        help="preference|decision|identity|technical|context",
+    ),
     tags: str = typer.Option("", "--tags", "-t", help="Comma-separated tags"),
 ):
     """Manually add a key fact to memory.
@@ -9461,7 +10805,9 @@ def memory_remember(
         store = get_key_fact_store()
         result = store.upsert(fact)
         ch.success(f"Remembered: {result.content}")
-        ch.console.print(f"  ID: [dim]{result.id[:8]}[/dim]  Category: [cyan]{result.category}[/cyan]")
+        ch.console.print(
+            f"  ID: [dim]{result.id[:8]}[/dim]  Category: [cyan]{result.category}[/cyan]"
+        )
 
     except Exception as e:
         ch.error(f"Error: {e}")
@@ -9470,7 +10816,9 @@ def memory_remember(
 @memory_app.command("forget")
 def memory_forget(
     fact_id: str = typer.Argument(None, help="Fact ID (prefix) to forget"),
-    query: str = typer.Option(None, "--query", "-q", help="Search and forget matching facts"),
+    query: str = typer.Option(
+        None, "--query", "-q", help="Search and forget matching facts"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Remove a key fact from memory (soft-delete).
@@ -9481,6 +10829,7 @@ def memory_forget(
     """
     try:
         from navig.memory.key_facts import get_key_fact_store
+
         store = get_key_fact_store()
 
         if query:
@@ -9536,8 +10885,10 @@ def memory_fact_stats(
         navig memory fact-stats --json
     """
     import json as json_module
+
     try:
         from navig.memory.key_facts import get_key_fact_store
+
         store = get_key_fact_store()
         stats = store.get_stats()
 
@@ -9564,11 +10915,19 @@ def memory_fact_stats(
 @memory_app.command("sync")
 def memory_sync(
     ctx: typer.Context,
-    from_url: str = typer.Option(..., "--from", help="Source gateway URL (e.g. http://10.0.0.5:7422)."),
+    from_url: str = typer.Option(
+        ..., "--from", help="Source gateway URL (e.g. http://10.0.0.5:7422)."
+    ),
     formation: str = typer.Option("", "--formation", "-f", help="Formation ID filter."),
-    limit: int = typer.Option(500, "--limit", "-n", min=1, max=5000, help="Max chunks to pull."),
-    token: str = typer.Option("", "--token", "-t", help="Bearer token for remote gateway."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be imported without writing."),
+    limit: int = typer.Option(
+        500, "--limit", "-n", min=1, max=5000, help="Max chunks to pull."
+    ),
+    token: str = typer.Option(
+        "", "--token", "-t", help="Bearer token for remote gateway."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be imported without writing."
+    ),
 ) -> None:
     """
     Pull memory chunks from a remote NAVIG formation.
@@ -9609,9 +10968,7 @@ def memory_sync(
             raise typer.Exit(1) from exc
 
         chunks = (
-            payload.get("chunks", payload)
-            if isinstance(payload, dict)
-            else payload
+            payload.get("chunks", payload) if isinstance(payload, dict) else payload
         )
         if not isinstance(chunks, list):
             ch.error("Remote returned unexpected format.")
@@ -9624,6 +10981,7 @@ def memory_sync(
             raise typer.Exit(0)
 
         from navig.config import get_config_manager
+
         cfg = get_config_manager()
         db_path = cfg.storage_dir / "memory" / "chunks.db"
 
@@ -9643,6 +11001,7 @@ app.add_typer(memory_app, name="memory")
 # ============================================================================
 # INTERACTIVE MENU
 # ============================================================================
+
 
 @app.command("menu")
 def menu_command(ctx: typer.Context):
@@ -9671,6 +11030,7 @@ def menu_command(ctx: typer.Context):
     """
     try:
         from navig.commands.interactive import launch_menu
+
         launch_menu(ctx.obj)
     except ImportError as e:
         ch.error(f"Failed to load interactive menu: {e}")
@@ -9686,6 +11046,7 @@ def interactive_command(ctx: typer.Context):
     """Alias for 'menu' command - launch interactive interface."""
     try:
         from navig.commands.interactive import launch_menu
+
         launch_menu(ctx.obj)
     except ImportError as e:
         ch.error(f"Failed to load interactive menu: {e}")
@@ -9696,21 +11057,22 @@ def interactive_command(ctx: typer.Context):
         sys.exit(1)
 
 
-
 # ============================================================================
 # CONFIG MANAGEMENT
 # ============================================================================
 
 config_app = typer.Typer(
     help="Manage NAVIG settings and configuration",
-    callback=make_subcommand_callback("config")
+    callback=make_subcommand_callback("config"),
 )
 app.add_typer(config_app, name="config")
 
 
 @config_app.command("migrate")
 def config_migrate(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without saving"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview changes without saving"
+    ),
 ):
     """
     Migrate configuration to the latest version.
@@ -9729,7 +11091,7 @@ def config_migrate(
 
     try:
         # Load raw config to avoid auto-migration on load
-        with open(global_config_file, 'r', encoding='utf-8') as f:
+        with open(global_config_file, "r", encoding="utf-8") as f:
             raw_config = yaml.safe_load(f) or {}
 
         migrated, modified = migrate_config(raw_config)
@@ -9742,7 +11104,7 @@ def config_migrate(
             ch.info("Dry run: Configuration would be updated.")
             ch.info(f"New version: {migrated.get('version')}")
         else:
-            with open(global_config_file, 'w', encoding='utf-8') as f:
+            with open(global_config_file, "w", encoding="utf-8") as f:
                 yaml.dump(migrated, f, default_flow_style=False, sort_keys=False)
             ch.success(f"Configuration migrated to version {migrated.get('version')}")
 
@@ -9753,12 +11115,15 @@ def config_migrate(
 
 @config_app.command("audit")
 def config_audit(
-    fix: bool = typer.Option(False, "--fix", help="Attempt to fix issues automatically"),
+    fix: bool = typer.Option(
+        False, "--fix", help="Attempt to fix issues automatically"
+    ),
 ):
     """
     Audit configuration for security and validity.
     """
     from navig.commands.security import config_audit as run_audit
+
     run_audit(fix=fix)
 
 
@@ -9791,7 +11156,7 @@ def config_get(
     config = cm._load_global_config()
 
     # Traverse nested keys
-    keys = key.split('.')
+    keys = key.split(".")
     value = config
 
     try:
@@ -9817,7 +11182,9 @@ def config_get(
 @config_app.command("set")
 def config_set(
     key: str = typer.Argument(..., help="Configuration key (e.g. ai.model_preference)"),
-    value: str = typer.Argument(..., help="Value to set (JSON/YAML format for complex types)"),
+    value: str = typer.Argument(
+        ..., help="Value to set (JSON/YAML format for complex types)"
+    ),
 ):
     """
     Set a configuration value.
@@ -9840,11 +11207,11 @@ def config_set(
             ch.error("No global configuration found.")
             raise typer.Exit(1)
 
-        with open(global_config_file, 'r', encoding='utf-8') as f:
+        with open(global_config_file, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
 
         # Update nested key
-        keys = key.split('.')
+        keys = key.split(".")
         target = config
 
         for k in keys[:-1]:
@@ -9852,13 +11219,13 @@ def config_set(
                 target[k] = {}
             target = target[k]
             if not isinstance(target, dict):
-                 ch.error(f"Cannot set key '{key}' because '{k}' is not a dictionary.")
-                 raise typer.Exit(1)
+                ch.error(f"Cannot set key '{key}' because '{k}' is not a dictionary.")
+                raise typer.Exit(1)
 
         target[keys[-1]] = parsed_value
 
         # Save
-        with open(global_config_file, 'w', encoding='utf-8') as f:
+        with open(global_config_file, "w", encoding="utf-8") as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
         ch.success(f"Updated '{key}' to: {parsed_value}")
@@ -9912,13 +11279,22 @@ def calendar_list(
 
         if json_output:
             import json
-            ch.raw_print(json.dumps([{
-                "id": e.id,
-                "title": e.title,
-                "start": e.start.isoformat(),
-                "end": e.end.isoformat(),
-                "location": e.location,
-            } for e in events], indent=2))
+
+            ch.raw_print(
+                json.dumps(
+                    [
+                        {
+                            "id": e.id,
+                            "title": e.title,
+                            "start": e.start.isoformat(),
+                            "end": e.end.isoformat(),
+                            "location": e.location,
+                        }
+                        for e in events
+                    ],
+                    indent=2,
+                )
+            )
             return
 
         if not events:
@@ -9932,9 +11308,7 @@ def calendar_list(
 
         for event in events:
             table.add_row(
-                event.start.strftime("%m/%d %H:%M"),
-                event.title,
-                event.location or "-"
+                event.start.strftime("%m/%d %H:%M"), event.title, event.location or "-"
             )
 
         ch.console.print(table)
@@ -9980,7 +11354,9 @@ app.add_typer(email_app, name="email")
 @email_app.command("list")
 def email_list(
     limit: int = typer.Option(10, "--limit", "-n", help="Max messages to fetch"),
-    provider: str = typer.Option("gmail", "--provider", "-p", help="Provider: gmail, outlook, fastmail, imap"),
+    provider: str = typer.Option(
+        "gmail", "--provider", "-p", help="Provider: gmail, outlook, fastmail, imap"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """
@@ -9999,12 +11375,16 @@ def email_list(
         from navig.config import get_config_manager
 
         cm = get_config_manager()
-        email_config = cm.global_config.get('email', {})
+        email_config = cm.global_config.get("email", {})
 
-        email_addr = email_config.get('address') or os.environ.get('NAVIG_EMAIL_ADDRESS')
+        email_addr = email_config.get("address") or os.environ.get(
+            "NAVIG_EMAIL_ADDRESS"
+        )
         password = None
-        provider_key = str(email_config.get('provider') or provider or '').strip().lower()
-        legacy_password = email_config.get('password')
+        provider_key = (
+            str(email_config.get("provider") or provider or "").strip().lower()
+        )
+        legacy_password = email_config.get("password")
 
         # AUDIT DECISION:
         # Is this the correct implementation? Yes — vault-first lookup prevents reading plaintext
@@ -10014,10 +11394,11 @@ def email_list(
         try:
             if provider_key:
                 from navig.vault import get_vault
+
                 secret = get_vault().get_secret(
                     provider_key,
-                    key='password',
-                    caller='cli.email_list',
+                    key="password",
+                    caller="cli.email_list",
                 )
                 if secret:
                     password = secret.reveal()
@@ -10026,7 +11407,7 @@ def email_list(
             password = None
 
         if not password:
-            password = os.environ.get('NAVIG_EMAIL_PASSWORD')
+            password = os.environ.get("NAVIG_EMAIL_PASSWORD")
         if not password and legacy_password:
             password = legacy_password
             ch.warning(
@@ -10036,7 +11417,9 @@ def email_list(
 
         if not email_addr or not password:
             ch.warning("Email not configured. Using mock data.")
-            ch.dim("Set email.address in config and store credentials via 'navig email setup',")
+            ch.dim(
+                "Set email.address in config and store credentials via 'navig email setup',"
+            )
             ch.dim("or use env vars:")
             ch.dim("  NAVIG_EMAIL_ADDRESS, NAVIG_EMAIL_PASSWORD")
             email_provider = MockEmail()
@@ -10048,9 +11431,9 @@ def email_list(
             )
 
             providers_map = {
-                'gmail': GmailProvider,
-                'outlook': OutlookProvider,
-                'fastmail': FastmailProvider,
+                "gmail": GmailProvider,
+                "outlook": OutlookProvider,
+                "fastmail": FastmailProvider,
             }
 
             if provider in providers_map:
@@ -10063,13 +11446,22 @@ def email_list(
 
         if json_output:
             import json
-            ch.raw_print(json.dumps([{
-                "id": m.id,
-                "subject": m.subject,
-                "sender": m.sender,
-                "snippet": m.snippet,
-                "received_at": m.received_at.isoformat(),
-            } for m in messages], indent=2))
+
+            ch.raw_print(
+                json.dumps(
+                    [
+                        {
+                            "id": m.id,
+                            "subject": m.subject,
+                            "sender": m.sender,
+                            "snippet": m.snippet,
+                            "received_at": m.received_at.isoformat(),
+                        }
+                        for m in messages
+                    ],
+                    indent=2,
+                )
+            )
             return
 
         if not messages:
@@ -10085,7 +11477,7 @@ def email_list(
             table.add_row(
                 msg.sender[:25] if len(msg.sender) > 25 else msg.sender,
                 msg.subject,
-                msg.snippet[:40] + "..." if len(msg.snippet) > 40 else msg.snippet
+                msg.snippet[:40] + "..." if len(msg.snippet) > 40 else msg.snippet,
             )
 
         ch.console.print(table)
@@ -10110,13 +11502,14 @@ def email_setup(
 
         from navig.config import get_config_manager
         from navig.vault import get_vault
+
         provider = provider.strip().lower()
 
         ch.info(f"Setting up {provider} email...")
 
         email_addr = input("Email address: ").strip()
 
-        if provider == 'gmail':
+        if provider == "gmail":
             ch.dim("Gmail requires an App Password (not your regular password)")
             ch.dim("Generate at: https://myaccount.google.com/apppasswords")
 
@@ -10132,9 +11525,9 @@ def email_setup(
         )
 
         providers_map = {
-            'gmail': GmailProvider,
-            'outlook': OutlookProvider,
-            'fastmail': FastmailProvider,
+            "gmail": GmailProvider,
+            "outlook": OutlookProvider,
+            "fastmail": FastmailProvider,
         }
 
         if provider not in providers_map:
@@ -10142,6 +11535,7 @@ def email_setup(
             return
 
         import asyncio
+
         test_provider = providers_map[provider](email_addr, password)
         messages = asyncio.run(test_provider.list_unread(limit=1))
 
@@ -10152,16 +11546,16 @@ def email_setup(
         # Does it break any existing callers? No — runtime still supports env and legacy fallback.
         # Is there a simpler alternative? Yes, but storing plaintext in YAML is unacceptable for prod.
         vault = get_vault()
-        existing = vault.get(provider, caller='cli.email_setup')
-        metadata = {'email': email_addr}
+        existing = vault.get(provider, caller="cli.email_setup")
+        metadata = {"email": email_addr}
         if existing:
-            vault.update(existing.id, data={'password': password}, metadata=metadata)
+            vault.update(existing.id, data={"password": password}, metadata=metadata)
         else:
             vault.add(
                 provider=provider,
-                credential_type='email',
-                data={'password': password},
-                profile_id='default',
+                credential_type="email",
+                data={"password": password},
+                profile_id="default",
                 label=f"{provider} ({email_addr})",
                 metadata=metadata,
             )
@@ -10172,22 +11566,24 @@ def email_setup(
 
         config = {}
         if config_file.exists():
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open(config_file, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
 
-        existing_email = config.get('email')
+        existing_email = config.get("email")
         if not isinstance(existing_email, dict):
             existing_email = {}
 
-        existing_email.update({
-            'provider': provider,
-            'address': email_addr,
-        })
+        existing_email.update(
+            {
+                "provider": provider,
+                "address": email_addr,
+            }
+        )
         # Remove legacy plaintext secret if present.
-        existing_email.pop('password', None)
-        config['email'] = existing_email
+        existing_email.pop("password", None)
+        config["email"] = existing_email
 
-        with open(config_file, 'w', encoding='utf-8') as f:
+        with open(config_file, "w", encoding="utf-8") as f:
             yaml.dump(config, f, default_flow_style=False)
 
         ch.success("Email configuration saved (password stored in vault).")
@@ -10221,16 +11617,20 @@ def proactive_status():
         ch.console.print("\n[bold]Proactive Assistance Status[/bold]\n")
 
         # Calendar
-        calendar_config = cm.global_config.get('calendar', {})
-        if calendar_config.get('provider'):
-            ch.console.print(f"  📅 Calendar: [green]{calendar_config.get('provider')}[/green]")
+        calendar_config = cm.global_config.get("calendar", {})
+        if calendar_config.get("provider"):
+            ch.console.print(
+                f"  📅 Calendar: [green]{calendar_config.get('provider')}[/green]"
+            )
         else:
             ch.console.print("  📅 Calendar: [dim]Not configured[/dim]")
 
         # Email
-        email_config = cm.global_config.get('email', {})
-        if email_config.get('address'):
-            ch.console.print(f"  📧 Email: [green]{email_config.get('address')}[/green]")
+        email_config = cm.global_config.get("email", {})
+        if email_config.get("address"):
+            ch.console.print(
+                f"  📧 Email: [green]{email_config.get('address')}[/green]"
+            )
         else:
             ch.console.print("  📧 Email: [dim]Not configured[/dim]")
 
@@ -10261,8 +11661,6 @@ def proactive_test():
         ch.error(f"Error: {e}")
 
 
-
-
 # ============================================================================
 # DEFERRED COMMAND MODULE REGISTRATION
 # ============================================================================
@@ -10281,125 +11679,125 @@ def proactive_test():
 _EXTERNAL_CMD_MAP = {
     # name          →  (module_path,               attr_name)
     # ── QUANTUM VELOCITY K4: bridge/farmore/copilot moved here from module-level ──
-    "bridge":        ("navig.commands.bridge",        "bridge_app"),
-    "farmore":      ("navig.commands.farmore",      "farmore_app"),
-    "copilot":      ("navig.commands.copilot",      "copilot_app"),
-    "inbox":        ("navig.commands.inbox",        "inbox_app"),
-    "sync":         ("navig.commands.sync",         "sync_app"),
-    "agent":        ("navig.commands.agent",        "agent_app"),
-    "service":      ("navig.commands.service",      "service_app"),
-    "stack":        ("navig.commands.stack",         "stack_app"),
-    "tray":         ("navig.commands.tray",          "tray_app"),
-    "formation":    ("navig.commands.formation",     "formation_app"),
-    "council":      ("navig.commands.council",       "council_app"),
-    "auto":         ("navig.commands.auto",          "auto_app"),
-    "evolve":       ("navig.commands.evolution",     "evolution_app"),
-    "script":       ("navig.commands.script",        "script_app"),
-    "calendar":     ("navig.commands.calendar",      "calendar_app"),
-    "mode":         ("navig.commands.mode",          "mode_app"),
-    "email":        ("navig.commands.email",         "email_app"),
-    "voice":        ("navig.commands.voice",         "voice_app"),
-    "crash":        ("navig.commands.crash",         "crash_app"),
-    "telegram":     ("navig.commands.telegram",      "telegram_app"),
-    "tg":           ("navig.commands.telegram",      "telegram_app"),
-    "matrix":       ("navig.commands.matrix",        "matrix_app"),
-    "mx":           ("navig.commands.matrix",        "matrix_app"),
-    "store":        ("navig.commands.store",         "store_app"),
-    "cred":         ("navig.commands.vault",         "cred_app"),
+    "bridge": ("navig.commands.bridge", "bridge_app"),
+    "farmore": ("navig.commands.farmore", "farmore_app"),
+    "copilot": ("navig.commands.copilot", "copilot_app"),
+    "inbox": ("navig.commands.inbox", "inbox_app"),
+    "sync": ("navig.commands.sync", "sync_app"),
+    "agent": ("navig.commands.agent", "agent_app"),
+    "service": ("navig.commands.service", "service_app"),
+    "stack": ("navig.commands.stack", "stack_app"),
+    "tray": ("navig.commands.tray", "tray_app"),
+    "formation": ("navig.commands.formation", "formation_app"),
+    "council": ("navig.commands.council", "council_app"),
+    "auto": ("navig.commands.auto", "auto_app"),
+    "evolve": ("navig.commands.evolution", "evolution_app"),
+    "script": ("navig.commands.script", "script_app"),
+    "calendar": ("navig.commands.calendar", "calendar_app"),
+    "mode": ("navig.commands.mode", "mode_app"),
+    "email": ("navig.commands.email", "email_app"),
+    "voice": ("navig.commands.voice", "voice_app"),
+    "crash": ("navig.commands.crash", "crash_app"),
+    "telegram": ("navig.commands.telegram", "telegram_app"),
+    "tg": ("navig.commands.telegram", "telegram_app"),
+    "matrix": ("navig.commands.matrix", "matrix_app"),
+    "mx": ("navig.commands.matrix", "matrix_app"),
+    "store": ("navig.commands.store", "store_app"),
+    "cred": ("navig.commands.vault", "cred_app"),
     # Operating-mode profiles (node / builder / operator / architect)
-    "profile":      ("navig.commands.profile",       "profile_app"),
+    "profile": ("navig.commands.profile", "profile_app"),
     # Credential profiles (vault round-trip selection) — was the original "profile" entry
-    "cred-profile": ("navig.commands.vault",         "profile_app"),
-    "flux":         ("navig.commands.flux",          "flux_app"),
-    "fx":           ("navig.commands.flux",          "flux_app"),
-    "cortex":       ("navig.commands.cortex",        "cortex_app"),
-    "desktop":      ("navig.commands.desktop",       "desktop_app"),
-    "net":          ("navig.commands.net",             "net_app"),
-    "host":         ("navig.commands.host",        "host_app"),
-    "h":            ("navig.commands.host",        "host_app"),
-    "app":          ("navig.commands.app",         "app_app"),
-    "a":            ("navig.commands.app",         "app_app"),
-    "file":         ("navig.commands.files",       "file_app"),
-    "f":            ("navig.commands.files",       "file_app"),
-    "log":          ("navig.commands.log",         "log_app"),
-    "l":            ("navig.commands.log",         "log_app"),
-    "server":       ("navig.commands.server",      "server_app"),
-    "s":            ("navig.commands.server",      "server_app"),
-    "db":           ("navig.commands.db",          "db_app"),
-    "database":     ("navig.commands.db",          "db_app"),
+    "cred-profile": ("navig.commands.vault", "profile_app"),
+    "flux": ("navig.commands.flux", "flux_app"),
+    "fx": ("navig.commands.flux", "flux_app"),
+    "cortex": ("navig.commands.cortex", "cortex_app"),
+    "desktop": ("navig.commands.desktop", "desktop_app"),
+    "net": ("navig.commands.net", "net_app"),
+    "host": ("navig.commands.host", "host_app"),
+    "h": ("navig.commands.host", "host_app"),
+    "app": ("navig.commands.app", "app_app"),
+    "a": ("navig.commands.app", "app_app"),
+    "file": ("navig.commands.files", "file_app"),
+    "f": ("navig.commands.files", "file_app"),
+    "log": ("navig.commands.log", "log_app"),
+    "l": ("navig.commands.log", "log_app"),
+    "server": ("navig.commands.server", "server_app"),
+    "s": ("navig.commands.server", "server_app"),
+    "db": ("navig.commands.db", "db_app"),
+    "database": ("navig.commands.db", "db_app"),
     # ── Phase 2: Links database ───────────────────────────────────────────
-    "links":        ("navig.commands.links",       "links_app"),
+    "links": ("navig.commands.links", "links_app"),
     # ── Phase 3: Knowledge graph ──────────────────────────────────────────
-    "kg":           ("navig.commands.kg",          "kg_app"),
-    "knowledge":    ("navig.commands.kg",          "kg_app"),
+    "kg": ("navig.commands.kg", "kg_app"),
+    "knowledge": ("navig.commands.kg", "kg_app"),
     # ── Phase 4: Webhooks ─────────────────────────────────────────────────
-    "webhook":      ("navig.commands.webhook",     "webhook_app"),
-    "webhooks":     ("navig.commands.webhook",     "webhook_app"),
+    "webhook": ("navig.commands.webhook", "webhook_app"),
+    "webhooks": ("navig.commands.webhook", "webhook_app"),
     # ── Phase 3: Go cron daemon CLI ───────────────────────────────────────
     # (navig.commands.cron is the existing gateway-based CLI;
     #  navig.commands.cron_local targets the new Go YAML daemon directly)
-    "cron":         ("navig.commands.cron",        "cron_app"),
+    "cron": ("navig.commands.cron", "cron_app"),
     # ── P1-15: Self-diagnostics ───────────────────────────────────────────────
-    "doctor":       ("navig.commands.doctor",      "doctor_app"),
+    "doctor": ("navig.commands.doctor", "doctor_app"),
     # ── QUANTUM VELOCITY A: docker lazy dispatch ──────────────────────────────
     # Moved from 175-line inline block → navig/commands/docker.py :: docker_app
     # Saves parsing Typer decorators on every non-docker cold start.
-    "docker":       ("navig.commands.docker",      "docker_app"),
+    "docker": ("navig.commands.docker", "docker_app"),
     # ── Prompts: agent system-prompt management (.navig/store/prompts/) ───────
-    "prompts":      ("navig.commands.prompts",     "prompts_app"),
+    "prompts": ("navig.commands.prompts", "prompts_app"),
     # ── Browser: Playwright/gateway web automation ────────────────────────────
     # Extracted from inline definition → navig/commands/browser.py :: browser_app
-    "browser":      ("navig.commands.browser",     "browser_app"),
+    "browser": ("navig.commands.browser", "browser_app"),
     # ── Multi-network reliable dispatch (Phase 0/1/2) ─────────────────────────
-    "dispatch":     ("navig.commands.dispatch",    "dispatch_app"),
-    "contacts":     ("navig.commands.dispatch",    "contacts_app"),
-    "ct":           ("navig.commands.dispatch",    "contacts_app"),
+    "dispatch": ("navig.commands.dispatch", "dispatch_app"),
+    "contacts": ("navig.commands.dispatch", "contacts_app"),
+    "ct": ("navig.commands.dispatch", "contacts_app"),
     # ── NAVIG Bridge — standalone AI relay (no VS Code required) ─────────────
-    "bridge":       ("navig.commands.bridge",      "bridge_app"),
+    "bridge": ("navig.commands.bridge", "bridge_app"),
     # ── System paths inspection & MCP server registration ──────────────────────
-    "paths":        ("navig.commands.paths_cmd",   "paths_app"),
-    "mcp":          ("navig.commands.mcp_cmd",     "mcp_app"),
+    "paths": ("navig.commands.paths_cmd", "paths_app"),
+    "mcp": ("navig.commands.mcp_cmd", "mcp_app"),
     # ── Generic mention & keyword tracker ─────────────────────────────────────
-    "radar":        ("navig.commands.radar",       "radar_app"),
+    "radar": ("navig.commands.radar", "radar_app"),
     # ── Unified event observation system ──────────────────────────────────────
-    "watch":        ("navig.commands.watch_cmd",   "watch_app"),
+    "watch": ("navig.commands.watch_cmd", "watch_app"),
     # ── Flux Mesh: peer management, config sync, remote upgrade ───────────────
-    "mesh":         ("navig.commands.mesh",        "mesh_app"),
+    "mesh": ("navig.commands.mesh", "mesh_app"),
     # ── Debug / observability: toggle debug mode, show log sizes ─────────────
-    "debug":        ("navig.commands.debug_cmd",   "debug_app"),
+    "debug": ("navig.commands.debug_cmd", "debug_app"),
     # ── Memory: conversations, key-facts, sessions ────────────────────────────
-    "memory":       ("navig.commands.memory",      "memory_app"),
+    "memory": ("navig.commands.memory", "memory_app"),
     # ── Spaces context: personal / workspace / studio mode switcher ────────────
-    "spaces":       ("navig.commands.spaces",      "spaces_context_app"),
+    "spaces": ("navig.commands.spaces", "spaces_context_app"),
     # ── PERF: commands migrated from main.py unconditional try/except blocks ─
     # Were imported on EVERY CLI invocation; now dispatched lazily via this map.
-    "telemetry":  ("navig.commands.telemetry",   "telemetry_app"),
-    "wut":        ("navig.commands.wut",         "app"),
-    "eval":       ("navig.commands.eval",        "app"),
-    "agents":     ("navig.commands.agents",      "app"),
-    "webdash":    ("navig.commands.webdash",     "app"),
-    "explain":    ("navig.commands.explain",     "app"),
-    "snapshot":   ("navig.commands.snapshot",    "app"),
-    "replay":     ("navig.commands.replay",      "app"),
-    "cloud":      ("navig.commands.cloud",       "app"),
-    "benchmark":  ("navig.commands.benchmark",   "app"),
+    "telemetry": ("navig.commands.telemetry", "telemetry_app"),
+    "wut": ("navig.commands.wut", "app"),
+    "eval": ("navig.commands.eval", "app"),
+    "agents": ("navig.commands.agents", "app"),
+    "webdash": ("navig.commands.webdash", "app"),
+    "explain": ("navig.commands.explain", "app"),
+    "snapshot": ("navig.commands.snapshot", "app"),
+    "replay": ("navig.commands.replay", "app"),
+    "cloud": ("navig.commands.cloud", "app"),
+    "benchmark": ("navig.commands.benchmark", "app"),
     # ── Finance: beancount double-entry accounting (pip install navig[finance]) ──
-    "finance":    ("navig.commands.finance",     "finance_app"),
+    "finance": ("navig.commands.finance", "finance_app"),
     # ── Work: lifecycle/stage tracker for leads, projects, tasks, etc. ────────
-    "work":       ("navig.commands.work",        "work_app"),
+    "work": ("navig.commands.work", "work_app"),
     # ── Formerly eager-loaded inline — now lazy via this map ─────────────────
-    "origin":     ("navig.commands.origin",      "origin_app"),
-    "user":       ("navig.commands.user",        "user_app"),
-    "node":       ("navig.commands.node",        "node_app"),
-    "boot":       ("navig.commands.boot_cmd",    "boot_app"),
-    "space":      ("navig.commands.space",       "space_app"),
-    "blueprint":  ("navig.commands.blueprint",   "blueprint_app"),
-    "deck":       ("navig.commands.deck",        "deck_app"),
-    "portable":   ("navig.commands.portable",    "portable_app"),
-    "migrate":    ("navig.commands.migrate",     "migrate_app"),
-    "system":     ("navig.commands.system_cmd",  "system_app"),
+    "origin": ("navig.commands.origin", "origin_app"),
+    "user": ("navig.commands.user", "user_app"),
+    "node": ("navig.commands.node", "node_app"),
+    "boot": ("navig.commands.boot_cmd", "boot_app"),
+    "space": ("navig.commands.space", "space_app"),
+    "blueprint": ("navig.commands.blueprint", "blueprint_app"),
+    "deck": ("navig.commands.deck", "deck_app"),
+    "portable": ("navig.commands.portable", "portable_app"),
+    "migrate": ("navig.commands.migrate", "migrate_app"),
+    "system": ("navig.commands.system_cmd", "system_app"),
     # ── Mount: NTFS junction registry + PowerShell helper generation ──────────
-    "mount":      ("navig.commands.mount",       "mount_app"),
+    "mount": ("navig.commands.mount", "mount_app"),
 }
 
 
@@ -10433,10 +11831,16 @@ def _register_external_commands(*, register_all: bool = False):
         mod_path, attr = _EXTERNAL_CMD_MAP[target]
         try:
             mod = importlib.import_module(mod_path)
-            app.add_typer(getattr(mod, attr), name=target,
-                          hidden=(target in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")))
+            app.add_typer(
+                getattr(mod, attr),
+                name=target,
+                hidden=(
+                    target in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")
+                ),
+            )
         except Exception as _ie:
             import sys as _sys
+
             _sys.stderr.write(
                 f"[navig] \u26a0 command '{target}' unavailable (registration failed: {_ie})\n"
             )
@@ -10446,6 +11850,7 @@ def _register_external_commands(*, register_all: bool = False):
     if target == "ahk" and sys.platform == "win32":
         try:
             from navig.commands.ahk import ahk_app
+
             app.add_typer(ahk_app, name="ahk")
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -10465,10 +11870,16 @@ def _register_external_commands(*, register_all: bool = False):
     for cmd_name, (mod_path, attr) in _EXTERNAL_CMD_MAP.items():
         try:
             mod = importlib.import_module(mod_path)
-            app.add_typer(getattr(mod, attr), name=cmd_name,
-                          hidden=(cmd_name in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")))
+            app.add_typer(
+                getattr(mod, attr),
+                name=cmd_name,
+                hidden=(
+                    cmd_name in ("tg", "mx", "fx", "h", "a", "f", "l", "s", "database")
+                ),
+            )
         except Exception as _ie:
             import sys as _sys
+
             _sys.stderr.write(
                 f"[navig] \u26a0 command '{cmd_name}' unavailable (registration failed: {_ie})\n"
             )
@@ -10476,10 +11887,10 @@ def _register_external_commands(*, register_all: bool = False):
     if sys.platform == "win32":
         try:
             from navig.commands.ahk import ahk_app
+
             app.add_typer(ahk_app, name="ahk")
         except ImportError:
             pass  # optional dependency not installed; feature disabled
-
 
 
 # Legacy aliases for backward compatibility
@@ -10491,6 +11902,7 @@ def sql_query(
     """[DEPRECATED: Use 'navig db query'] Execute SQL query through tunnel."""
     ch.warning("'navig sql' is deprecated. Use 'navig db query' instead.")
     from navig.commands.db import db_query_cmd
+
     db_query_cmd(query, None, "root", None, None, None, ctx.obj)
 
 
@@ -10502,6 +11914,7 @@ def sql_file(
     """[DEPRECATED: Use 'navig db file'] Execute SQL file through tunnel."""
     ch.warning("'navig sqlfile' is deprecated. Use 'navig db file' instead.")
     from navig.commands.database import execute_sql_file
+
     execute_sql_file(file, ctx.obj)
 
 
@@ -10513,6 +11926,7 @@ def restore_db(
     """[DEPRECATED: Use 'navig db restore'] Restore database from backup file."""
     ch.warning("'navig restore' is deprecated. Use 'navig db restore' instead.")
     from navig.commands.database import restore_database
+
     restore_database(file, ctx.obj)
 
 
@@ -10524,6 +11938,7 @@ def backup_system_config_cmd(
     """[DEPRECATED] Backup system configuration files. Use: navig backup run --config"""
     deprecation_warning("navig backup-config", "navig backup run --config")
     from navig.commands.backup import backup_system_config
+
     backup_system_config(name, ctx.obj)
 
 
@@ -10531,11 +11946,14 @@ def backup_system_config_cmd(
 def backup_all_databases_cmd(
     ctx: typer.Context,
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
-    compress: str = typer.Option("gzip", "--compress", "-c", help="Compression: none|gzip|zstd"),
+    compress: str = typer.Option(
+        "gzip", "--compress", "-c", help="Compression: none|gzip|zstd"
+    ),
 ):
     """[DEPRECATED] Backup all databases with compression. Use: navig backup run --db-all"""
     deprecation_warning("navig backup-db-all", "navig backup run --db-all")
     from navig.commands.backup import backup_all_databases
+
     backup_all_databases(name, compress, ctx.obj)
 
 
@@ -10547,6 +11965,7 @@ def backup_hestia_cmd(
     """[DEPRECATED] Backup HestiaCP configuration. Use: navig backup run --hestia"""
     deprecation_warning("navig backup-hestia", "navig backup run --hestia")
     from navig.commands.backup import backup_hestia
+
     backup_hestia(name, ctx.obj)
 
 
@@ -10558,6 +11977,7 @@ def backup_web_config_cmd(
     """[DEPRECATED] Backup web server configurations. Use: navig backup run --web"""
     deprecation_warning("navig backup-web", "navig backup run --web")
     from navig.commands.backup import backup_web_config
+
     backup_web_config(name, ctx.obj)
 
 
@@ -10565,11 +11985,14 @@ def backup_web_config_cmd(
 def backup_all_cmd(
     ctx: typer.Context,
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
-    compress: str = typer.Option("gzip", "--compress", "-c", help="Compression for databases: none|gzip|zstd"),
+    compress: str = typer.Option(
+        "gzip", "--compress", "-c", help="Compression for databases: none|gzip|zstd"
+    ),
 ):
     """[DEPRECATED] Comprehensive backup. Use: navig backup run --all"""
     deprecation_warning("navig backup-all", "navig backup run --all")
     from navig.commands.backup import backup_all
+
     backup_all(name, compress, ctx.obj)
 
 
@@ -10578,6 +12001,7 @@ def list_backups_cmd(ctx: typer.Context):
     """[DEPRECATED] List all available backups. Use: navig backup list"""
     deprecation_warning("navig list-backups", "navig backup list")
     from navig.commands.backup import list_backups_cmd as list_backups
+
     list_backups(ctx.obj)
 
 
@@ -10585,13 +12009,16 @@ def list_backups_cmd(ctx: typer.Context):
 def restore_backup_cmd(
     ctx: typer.Context,
     backup_name: str = typer.Argument(..., help="Backup name to restore from"),
-    component: Optional[str] = typer.Option(None, "--component", "-c", help="Specific component to restore"),
+    component: Optional[str] = typer.Option(
+        None, "--component", "-c", help="Specific component to restore"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """[DEPRECATED] Restore from comprehensive backup. Use: navig backup restore"""
     deprecation_warning("navig restore-backup", "navig backup restore")
-    ctx.obj['force'] = force
+    ctx.obj["force"] = force
     from navig.commands.backup import restore_backup_cmd as restore_backup
+
     restore_backup(backup_name, component, ctx.obj)
 
 
@@ -10606,10 +12033,18 @@ def restore_backup_cmd(
 
 @app.command("update")
 def update_cmd(
-    check: bool = typer.Option(False, "--check", "-c", help="Check for updates only — do not apply."),
-    force: bool = typer.Option(False, "--force", "-f", help="Apply even if already on latest."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would happen, no changes."),
-    channel: Optional[str] = typer.Option(None, "--channel", help="Update channel: stable or beta.", hidden=True),
+    check: bool = typer.Option(
+        False, "--check", "-c", help="Check for updates only — do not apply."
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Apply even if already on latest."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would happen, no changes."
+    ),
+    channel: Optional[str] = typer.Option(
+        None, "--channel", help="Update channel: stable or beta.", hidden=True
+    ),
 ) -> None:
     """Check for and apply NAVIG self-updates.
 
@@ -10617,6 +12052,7 @@ def update_cmd(
     data-root migrations automatically after upgrading.
     """
     from navig.commands.update import _run_update  # noqa: PLC0415
+
     _run_update(check=check, force=force, dry_run=dry_run)
 
 
@@ -10627,4 +12063,3 @@ def update_cmd(
 if __name__ == "__main__":
     _register_external_commands()
     app()
-

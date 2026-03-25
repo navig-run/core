@@ -1,92 +1,83 @@
-﻿# NAVIG
-
-<p align="center">
-  <img src="navig-icons/navig-logo.svg" alt="NAVIG" width="120" />
+﻿<p align="center">
+  <img src="logo.svg" alt="NAVIG" width="100" />
 </p>
 
 <h1 align="center">NAVIG</h1>
 
 <p align="center">
   <strong>No Admin Visible In Graveyard</strong><br/>
-  Keep your servers alive. Forever.
+  The terminal was never the problem. The chaos around it was.
 </p>
 
 <p align="center">
-  <a href="https://github.com/navig-run/core/actions"><img src="https://img.shields.io/github/actions/workflow/status/navig-run/core/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/navig-run/core/actions"><img src="https://img.shields.io/github/actions/workflow/status/navig-run/navig-core/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
   <a href="https://pypi.org/project/navig/"><img src="https://img.shields.io/pypi/v/navig?style=flat-square&color=blue" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python 3.10+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/sponsors/navig-run"><img src="https://img.shields.io/badge/GitHub%20Sponsors-support-pink?style=flat-square" alt="GitHub Sponsors"></a>
+  <a href="https://github.com/sponsors/navig-run"><img src="https://img.shields.io/badge/GitHub%20Sponsors-support-pink?style=flat-square" alt="Sponsor"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform">
 </p>
 
 > [!WARNING]
-> **Experimental software**
-> NAVIG is under active development and not yet stable.
-> APIs, CLI commands, and config formats may change between releases.
-
-> 🧵 Not vibe-coded. ⚒️ Built by [@navig-run](https://github.com/navig-run) · solo founder · 
-
-
+> **NAVIG is experimental software under active development.**
+> APIs, CLI commands, and config formats may change between releases. Not yet recommended for production-critical environments without review.
 
 ---
 
-NAVIG is an infrastructure CLI and runtime for managing remote servers, databases, containers, tunnels, and operator workflows from one place.
+## What is NAVIG?
 
-It is built for people who are tired of juggling SSH sessions, scattered scripts, pasted commands, and fragile dashboards just to keep systems running.
+NAVIG is a **terminal-first infrastructure CLI and runtime** for people who are tired of juggling SSH sessions, scattered scripts, disconnected dashboards, and ad-hoc credentials just to keep their systems running.
 
-NAVIG combines direct infrastructure control with an AI-assisted operator layer, so you can inspect, operate, troubleshoot, and automate across multiple hosts from the terminal.
+It was built by one person — a solo founder managing a growing swarm of remote machines, projects, and operational overhead with no platform team to fall back on. The problem wasn't the terminal. The problem was everything fragmented around it: SSH in one place, SFTP in another, databases behind dashboards, secrets pasted into notes, logs spread across providers, and no single coherent surface to operate from.
+
+NAVIG is the result of refusing to accept that reality.
+
+It gives operators direct control over remote hosts, databases, containers, files, tunnels, and workflows — from one place, with structure, memory, and optional AI assistance that stays out of the way until it's actually useful.
+
+**One operator surface. For operators.**
 
 ---
 
-## What NAVIG does
+## Features
 
-| Feature | Description |
+| Capability | Description |
 |---|---|
 | **Multi-host management** | Add, switch, test, and operate remote hosts over SSH |
+| **Remote execution** | Run commands, pipe stdin, use base64 encoding for complex scripts |
 | **Database operations** | Query, dump, restore, and maintain MySQL, MariaDB, and PostgreSQL |
-| **Docker control** | Inspect containers, restart services, tail logs, and work with compose stacks |
-| **Remote execution** | Run commands, pass stdin, transfer files, and script repeatable operations |
-| **Web server management** | Manage nginx/apache configs, test changes, and reload safely |
+| **File operations** | Upload, download, read, edit, and list remote files safely |
+| **Docker & containers** | Inspect containers, restart services, tail logs, manage compose stacks |
+| **Web server control** | Manage nginx/apache configs, test changes, reload safely |
 | **Encrypted vault** | Store credentials without leaving secrets in plaintext config files |
-| **Workflows** | Define repeatable multi-step flows with preview and dry-run support |
-| **AI operator layer** | Use natural language in CLI or chat channels to assist with infra tasks |
-| **Mesh networking** | Peer-to-peer node discovery and command delegation over LAN |
+| **Workflows** | Define repeatable multi-step flows with dry-run and preview support |
+| **AI operator layer** | Natural language assistance for infra tasks — CLI, Telegram, or MCP |
+| **Mesh networking** | LAN peer-to-peer node discovery and command delegation |
 | **MCP integration** | Expose tools and resources to AI editors and compatible clients |
-
----
-
-## Why it exists
-
-Most infrastructure tools either stop at raw command execution or try to trap everything behind a web panel.
-
-NAVIG takes a different approach:
-
-- **terminal-first**
-- **operator-focused**
-- **remote-friendly**
-- **automation-ready**
-- **AI-assisted, not AI-dependent**
-
-You stay close to the real machine, but with better structure, safer workflows, and less repeated manual work.
+| **Daemon & gateway** | Background service with Telegram and Matrix channel support |
 
 ---
 
 ## Install
 
+### pipx (recommended)
+
+```bash
+pipx install navig
+```
+
 ### Linux / macOS / WSL
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/navig-run/core/main/install.sh | bash
+curl -fsSL https://navig.run/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/navig-run/core/main/install.ps1 | iex
+irm https://navig.run/install.ps1 | iex
 ```
 
-### From PyPI
+### pip
 
 ```bash
 pip install navig
@@ -94,19 +85,27 @@ pip install navig
 
 ### Install options
 
-| Parameter | Example | Description |
+| Option | Example | Description |
 |---|---|---|
-| `--version` | `bash -s -- --version 2.1.0` | Install a specific version |
-| `--dev` | `bash -s -- --dev` | Install development extras |
+| `--version` | `bash -s -- --version 2.4.14` | Pin a specific version |
+| `--dev` | `bash -s -- --dev` | Include development extras |
 | `--method git` | `bash -s -- --method git` | Install from source instead of PyPI |
 | `NAVIG_EXTRAS` | `NAVIG_EXTRAS=voice,keyring` | Enable optional extras |
-| `NAVIG_TELEGRAM_BOT_TOKEN` | `export NAVIG_TELEGRAM_BOT_TOKEN=...` | Preconfigure Telegram bot support during install |
+| `NAVIG_TELEGRAM_BOT_TOKEN` | `export NAVIG_TELEGRAM_BOT_TOKEN=...` | Pre-configure Telegram during install |
 
-### From source
+### Development Install
 
 ```bash
-git clone https://github.com/navig-run/core.git
-cd core
+git clone https://github.com/navig-run/core.git navig
+cd navig
+pip install -e ".[dev]"
+```
+
+With a virtual environment (optional but recommended):
+
+```bash
+git clone https://github.com/navig-run/core.git navig
+cd navig
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
@@ -123,26 +122,30 @@ navig --help
 
 ## Quick start
 
-Initialize NAVIG:
-
 ```bash
+# 1. Initialize — creates ~/.navig/, runs setup wizard
 navig init
-```
 
-This creates the local `.navig/` directory, runs the setup wizard, and helps you test your first host connection.
-
-Example flow:
-
-```bash
+# 2. Add a remote host
 navig host add
+
+# 3. Test the connection
 navig host test
+
+# 4. Set it as active
 navig host use <name>
+
+# 5. Run your first remote command
 navig run "uname -a"
 ```
+
+That's it. Everything else builds from here.
 
 ---
 
 ## Command reference
+
+The pattern is consistent across all resources:
 
 ```
 navig <resource> <action> [options]
@@ -167,7 +170,7 @@ navig <resource> <action> [options]
 |---|---|
 | `navig copilot` | AI-assisted troubleshooting and command guidance |
 | `navig flow` | Multi-step automation workflows |
-| `navig mcp` | MCP server for tool and AI editor integration |
+| `navig mcp` | MCP server for AI editor and tool integration |
 | `navig gateway` | Start and manage chat gateway (Telegram, Matrix) |
 
 ### Organisation
@@ -177,47 +180,45 @@ navig <resource> <action> [options]
 | `navig config` | View, validate, and manage configuration |
 | `navig vault` | Encrypted credential storage |
 | `navig workspace` | Multi-context operator workspace |
-| `navig mesh` | LAN peer-to-peer node discovery and delegation |
+| `navig mesh` | LAN peer discovery and command delegation |
 
-Run `navig help` or `navig help <topic>` for usage details.
+Run `navig help` or `navig help <topic>` for detailed usage. Every command also supports `--help`.
 
 ---
 
 ## AI and chat interfaces
 
-NAVIG can expose its operator layer through multiple interfaces:
+NAVIG can expose its operator layer through:
 
-- CLI
-- Telegram
+- CLI (`navig copilot`)
+- Telegram (via `navig gateway`)
 - Matrix
-- MCP-compatible editors and tools
-
-Example:
+- Any MCP-compatible editor (Cursor, Claude Desktop, VS Code)
 
 ```bash
-navig copilot ask "Explain why this container keeps restarting"
+navig copilot ask "Why does this container keep restarting?"
 ```
 
-The AI layer is there to assist with reasoning and workflow execution. It does not replace direct operator control.
+The AI layer assists with reasoning, context, and workflow execution. It does not replace direct operator control — the operator stays responsible, the operator stays in command.
 
 ---
 
 ## Configuration
 
-Global config lives in `~/.navig/` by default. Use `NAVIG_CONFIG_DIR` to override.
+Global config lives in `~/.navig/`. Override with `NAVIG_CONFIG_DIR`.
 
 ```
 ~/.navig/
-├── config.yaml
-├── vault/
+├── config.yaml       ← main config
+├── vault/            ← encrypted credentials
 ├── sessions/
 ├── workspace/
-│   ├── SOUL.md
+│   ├── SOUL.md       ← persistent operator identity
 │   └── HEARTBEAT.md
 └── logs/
 ```
 
-Project-specific overrides can live in a local `.navig/` directory at repository root.
+Project-specific overrides: place a `.navig/` directory at your repository root. Project config takes precedence over global config.
 
 See [`docs/user/CONFIG_SCHEMA.md`](docs/user/CONFIG_SCHEMA.md) and [`docs/user/USAGE_GUIDE.md`](docs/user/USAGE_GUIDE.md).
 
@@ -225,30 +226,43 @@ See [`docs/user/CONFIG_SCHEMA.md`](docs/user/CONFIG_SCHEMA.md) and [`docs/user/U
 
 ## Documentation
 
-| Guide | Path |
+| Guide | |
 |---|---|
-| **Installation** | [`docs/user/INSTALLATION.md`](docs/user/INSTALLATION.md) |
-| **Quick reference** | [`docs/user/QUICK_REFERENCE.md`](docs/user/QUICK_REFERENCE.md) |
-| **CLI commands** | [`docs/user/CLI_COMMANDS.md`](docs/user/CLI_COMMANDS.md) |
-| **Handbook** | [`docs/user/HANDBOOK.md`](docs/user/HANDBOOK.md) |
-| **Troubleshooting** | [`docs/user/troubleshooting.md`](docs/user/troubleshooting.md) |
-| **Telegram** | [`docs/features/TELEGRAM.md`](docs/features/TELEGRAM.md) |
-| **Plugin / pack development** | [navig-community](https://github.com/navig-run/community) |
-| **Production deployment** | [`docs/dev/PRODUCTION_DEPLOYMENT.md`](docs/dev/PRODUCTION_DEPLOYMENT.md) |
-| **Migration guide** | [`docs/dev/MIGRATION_GUIDE.md`](docs/dev/MIGRATION_GUIDE.md) |
+| Installation | [`docs/user/INSTALLATION.md`](docs/user/INSTALLATION.md) |
+| Quick reference | [`docs/user/QUICK_REFERENCE.md`](docs/user/QUICK_REFERENCE.md) |
+| CLI commands | [`docs/user/CLI_COMMANDS.md`](docs/user/CLI_COMMANDS.md) |
+| Handbook | [`docs/user/HANDBOOK.md`](docs/user/HANDBOOK.md) |
+| Troubleshooting | [`docs/user/troubleshooting.md`](docs/user/troubleshooting.md) |
+| Telegram setup | [`docs/features/TELEGRAM.md`](docs/features/TELEGRAM.md) |
+| Production deployment | [`docs/dev/PRODUCTION_DEPLOYMENT.md`](docs/dev/PRODUCTION_DEPLOYMENT.md) |
+| Migration guide | [`docs/dev/MIGRATION_GUIDE.md`](docs/dev/MIGRATION_GUIDE.md) |
+| Plugin / pack development | [navig-community](https://github.com/navig-run/community) |
 
 ---
 
 ## Development
 
 ```bash
+# Lint
 ruff check navig tests
 ruff format --check navig tests
+
+# Test
 pytest
+
+# Build
 python -m build
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution workflow.
+**Quick checks before a PR:**
+
+```bash
+python -c "import navig"             # no import errors
+navig --help                         # CLI loads in < 1s
+pytest tests/ -q                     # all green
+```
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution workflow, branch model, and commit conventions.
 
 ---
 
@@ -256,10 +270,10 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution workflow.
 
 | Channel | |
 |---|---|
-| Bug reports & features | [GitHub Issues](https://github.com/navig-run/core/issues) |
+| Bug reports & feature requests | [GitHub Issues](https://github.com/navig-run/core/issues) |
 | Ideas & discussion | [GitHub Discussions](https://github.com/navig-run/core/discussions) |
-| Telegram channel | [t.me/navigrun](https://t.me/navigrun) — news & announcements |
-| Telegram community | [t.me/+OyFMwN66c3M0NTk0](https://t.me/+OyFMwN66c3M0NTk0) — group for people running NAVIG |
+| Announcements | [t.me/navigrun](https://t.me/navigrun) |
+| Community group | [t.me/+OyFMwN66c3M0NTk0](https://t.me/+OyFMwN66c3M0NTk0) |
 | Security reports | [SECURITY.md](SECURITY.md) |
 
 ---
@@ -267,10 +281,10 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution workflow.
 ## Project structure
 
 ```
-core/
+navig/
 ├── navig/               # Main Python package
 │   ├── agent/           # AI client, providers, model routing
-│   ├── commands/        # CLI command modules
+│   ├── commands/        # CLI command modules (one file per group)
 │   ├── gateway/         # Chat and gateway integrations
 │   ├── daemon/          # Background service entry point
 │   └── resources/       # Default prompts, personas, assets
@@ -279,16 +293,14 @@ core/
 ├── scripts/             # Install and deployment scripts
 ├── deploy/              # Docker, systemd, hardening configs
 ├── docs/                # Documentation
-└── tests/               # Test suite
+└── tests/               # pytest test suite
 ```
 
 ---
 
-## Sponsor NAVIG
+## Sponsor
 
-NAVIG is built by one person and released as open-source software.
-
-If it saves you time, prevents mistakes, or becomes part of your workflow, consider backing it:
+NAVIG is built by one person and released as open-source. If it saves you time, prevents mistakes, or earns a place in your workflow:
 
 <p align="center">
   <a href="https://github.com/sponsors/navig-run"><img src="https://img.shields.io/badge/❤️_GitHub_Sponsors-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" height="40"></a>
@@ -296,24 +308,22 @@ If it saves you time, prevents mistakes, or becomes part of your workflow, consi
   <a href="https://buymeacoffee.com/navig-run"><img src="https://img.shields.io/badge/☕_Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee" height="40"></a>
 </p>
 
-| Tier | | What you're doing |
+| Tier | | |
 |---|---|---|
 | 📡 **Watcher** | $5/mo | Simple backing. Badge + optional name in supporters. |
 | ⚡ **Node Operator** | $10/mo | You run this in real workflows. Early betas + dev updates. |
-| 🏗️ **System Architect** | $25/mo | Long-term backing. Roadmap input + private changelogs. |
+| 🏗️ **System Architect** | $25/mo | Long-term support. Roadmap input + private changelogs. |
 | ⚡ **Signal Boost** | $10 one-time | Small direct contribution. |
 | 🚀 **Feature Sprint** | $50 one-time | Funds a focused development push. |
-| 🌐 **Founding Node** | $100 one-time | Permanent credit in `FOUNDERS.md`. Limited availability. |
+| 🌐 **Founding Node** | $100 one-time | Permanent credit in `FOUNDERS.md`. Limited. |
 
 See [FUNDING.md](FUNDING.md) for full details.
 
 ---
 
----
-
 ## Security
 
-If you found a vulnerability, please report it privately. See [`SECURITY.md`](SECURITY.md).
+Report vulnerabilities privately. See [`SECURITY.md`](SECURITY.md).
 
 ---
 
@@ -321,7 +331,10 @@ If you found a vulnerability, please report it privately. See [`SECURITY.md`](SE
 
 Apache-2.0 — see [`LICENSE`](LICENSE).
 
-Brand usage and official build identity are governed separately: [`TRADEMARK.md`](TRADEMARK.md) · [`GOVERNANCE.md`](GOVERNANCE.md)
+Brand usage and official build identity: [`TRADEMARK.md`](TRADEMARK.md) · [`GOVERNANCE.md`](GOVERNANCE.md)
 
+---
 
-
+<p align="center">
+  Forge-coded by <a href="https://github.com/miztizm">@miztizm</a>
+</p>

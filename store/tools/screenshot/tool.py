@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for screenshot (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -8,13 +9,15 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
 from common import err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
-from worker import cmd_take, cmd_monitors  # noqa: E402
+from worker import cmd_monitors, cmd_take  # noqa: E402
 
 TOOL = "screenshot"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig sys screenshot", description="Cross-platform screenshot capture")
+    parser = argparse.ArgumentParser(
+        prog="navig sys screenshot", description="Cross-platform screenshot capture"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_take = sub.add_parser("take", help="Capture a screenshot")

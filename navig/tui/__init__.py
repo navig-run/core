@@ -7,10 +7,12 @@ package only when you need the full TUI classes; use
 ``navig.tui.resolvers`` for status-badge helpers which have no Textual
 dependency.
 """
+
 from __future__ import annotations
 
 try:
     import textual  # noqa: F401  — version probe only
+
     _TEXTUAL_AVAILABLE = True
 except ImportError:
     _TEXTUAL_AVAILABLE = False

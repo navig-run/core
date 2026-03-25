@@ -1,7 +1,8 @@
 """navig.tui.widgets.summary_panel — Live configuration summary side-panel."""
+
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from textual.widgets import Static
 

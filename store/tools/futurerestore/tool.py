@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for futurerestore (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -14,7 +15,9 @@ TOOL = "futurerestore"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig ios futurerestore", description="futurerestore iOS OTA restorer")
+    parser = argparse.ArgumentParser(
+        prog="navig ios futurerestore", description="futurerestore iOS OTA restorer"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_restore = sub.add_parser("restore", help="Restore iOS device")

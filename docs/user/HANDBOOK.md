@@ -3971,7 +3971,7 @@ active_app = api.get_active_app()
 **Available SDK Methods:**
 - `run_remote(cmd, host)` - Execute command on remote host
 - `get_host_config(name)` - Get host configuration
-- `get_app_config(name)` - Get application configuration  
+- `get_app_config(name)` - Get application configuration
 - `get_active_host()` - Get currently active host
 - `get_active_app()` - Get currently active application
 - `get_config_value(key)` - Get global config value
@@ -3997,16 +3997,16 @@ class MyPlugin(PluginBase):
     @property
     def name(self) -> str:
         return "myplugin"
-    
+
     @property
     def app(self) -> typer.Typer:
         app = typer.Typer(help="My custom plugin")
-        
+
         @app.command()
         def hello():
             """Say hello"""
             print("Hello from myplugin!")
-        
+
         return app
 
 def register(app: typer.Typer):
@@ -4084,11 +4084,11 @@ steps:
   - name: Set host
     command: host use ${host}
     description: Connect to target server
-    
+
   - name: Restart service
     command: run "systemctl restart nginx"
     prompt: "Proceed with restart?"
-    
+
   - name: Health check
     command: health
     continue_on_error: true
@@ -4693,7 +4693,7 @@ heartbeat:
   enabled: true
   interval: 30  # minutes
   timeout: 300  # seconds (5 min max per check)
-  
+
 notifications:
   channel: telegram
   recipient: "12345678"  # Telegram user ID
@@ -7369,10 +7369,10 @@ variables:
 steps:
   - description: "First step"
     command: "navig host test ${host}"
-    
+
   - description: "Manual verification"
     notes: "Check this before continuing"
-    
+
   - description: "Risky operation"
     command: "navig db backup"
     prompt: "Create backup?"  # Ask confirmation
@@ -7908,8 +7908,8 @@ Unified component library used by both NAVIG Deck (browser extension) and NAVIG 
 | `navig bridge matrix vault-set <name>` | Store bridge credentials in encrypted vault |
 | `navig bridge matrix generate-config <name>` | Render config.yaml from vault-injected template |
 
-**14 GA bridges**: whatsapp · discord · telegram · messenger · instagram · linkedin · twitter · sms · email · nextcloud · line · wechat · tox · xmpp  
-**Resource limits**: 256 MB RAM / 50% CPU per bridge container (enforced in docker-compose + bench command)  
+**14 GA bridges**: whatsapp · discord · telegram · messenger · instagram · linkedin · twitter · sms · email · nextcloud · line · wechat · tox · xmpp
+**Resource limits**: 256 MB RAM / 50% CPU per bridge container (enforced in docker-compose + bench command)
 **See**: [`docs/MATRIX_BRIDGE_SETUP.md`](MATRIX_BRIDGE_SETUP.md)
 
 ---
@@ -8176,6 +8176,3 @@ navig portable disable           # Switch back to local ~/.navig/
 ```
 
 **Security:** Portable vaults use the same AES-256 encryption as `navig backup export --encrypt`. Always keep the vault passphrase separate from the drive.
-
-
-

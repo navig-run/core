@@ -1,4 +1,5 @@
 """navig.tui.widgets.check_row — System-check row widget."""
+
 from __future__ import annotations
 
 from textual.widgets import Static

@@ -5,6 +5,7 @@ All credential fields use password=True (masked display).
 Bindings: ctrl+s=save, escape=cancel.
 On save: posts SettingsSaved("Vault").
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -25,8 +26,8 @@ class VaultSettingsScreen(Screen):  # type: ignore[type-arg]
     """Vault-stored credential management (write-only)."""
 
     BINDINGS = [
-        Binding("ctrl+s",  "save",   "Save",   show=True),
-        Binding("escape",  "cancel", "Cancel", show=True),
+        Binding("ctrl+s", "save", "Save", show=True),
+        Binding("escape", "cancel", "Cancel", show=True),
     ]
 
     DEFAULT_CSS = """
@@ -70,9 +71,15 @@ class VaultSettingsScreen(Screen):  # type: ignore[type-arg]
     @staticmethod
     def _detect_existing() -> dict[str, bool]:
         """Return which vault keys already have entries."""
-        result = {"openai": False, "anthropic": False, "telegram": False, "custom": False}
+        result = {
+            "openai": False,
+            "anthropic": False,
+            "telegram": False,
+            "custom": False,
+        }
         try:
             from navig.tui.config_model import load_navig_json
+
             raw = load_navig_json() or {}
             profiles = raw.get("auth", {}).get("profiles", {})
             for key in result:
@@ -86,7 +93,11 @@ class VaultSettingsScreen(Screen):  # type: ignore[type-arg]
         ex = self._has_existing
 
         def _placeholder(key: str, name: str) -> str:
-            return f"{name} (already set — enter to replace)" if ex.get(key) else f"Paste {name} here"
+            return (
+                f"{name} (already set — enter to replace)"
+                if ex.get(key)
+                else f"Paste {name} here"
+            )
 
         with Vertical(id="vault-panel"):
             yield Label("Vault — Credentials", id="vault-title", markup=False)
@@ -148,17 +159,16 @@ class VaultSettingsScreen(Screen):  # type: ignore[type-arg]
 
     def _do_save(self) -> None:
         fields = {
-            "openai":     self.query_one("#vault-openai",    Input).value.strip(),
-            "anthropic":  self.query_one("#vault-anthropic", Input).value.strip(),
-            "telegram":   self.query_one("#vault-telegram",  Input).value.strip(),
-            "custom":     self.query_one("#vault-custom",    Input).value.strip(),
+            "openai": self.query_one("#vault-openai", Input).value.strip(),
+            "anthropic": self.query_one("#vault-anthropic", Input).value.strip(),
+            "telegram": self.query_one("#vault-telegram", Input).value.strip(),
+            "custom": self.query_one("#vault-custom", Input).value.strip(),
         }
 
         saved_any = False
         try:
-            from navig.commands.onboard import _store_in_vault
+            from navig.commands.onboard import _store_in_vault, save_config
             from navig.tui.config_model import DEFAULT_CONFIG_FILE, load_navig_json
-            from navig.commands.onboard import save_config
 
             raw = load_navig_json() or {}
             raw.setdefault("auth", {}).setdefault("profiles", {})

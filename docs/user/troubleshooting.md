@@ -245,7 +245,7 @@ echo $HOME  # $HOME won't be expanded by PowerShell
    ```bash
    # Windows
    netstat -ano | findstr :3306
-   
+
    # Linux/Mac
    lsof -i :3306
    ```
@@ -395,4 +395,3 @@ vault.
 
 **Fix:** The key is now resolved via the vault resolver before falling back to environment
 variables.
-

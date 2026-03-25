@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for yt_dlp (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -8,22 +9,34 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
 from common import err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
-from worker import cmd_download, cmd_info, cmd_formats  # noqa: E402
+from worker import cmd_download, cmd_formats, cmd_info  # noqa: E402
 
 TOOL = "yt_dlp"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig media yt", description="yt-dlp media downloader")
+    parser = argparse.ArgumentParser(
+        prog="navig media yt", description="yt-dlp media downloader"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_dl = sub.add_parser("download", help="Download media from URL")
     p_dl.add_argument("--url", required=True)
-    p_dl.add_argument("--output", default=None, help="Output directory or filename template")
-    p_dl.add_argument("--format", default="bestvideo+bestaudio/best", help="Format selector")
-    p_dl.add_argument("--audio", action="store_true", default=False, help="Extract audio only (mp3)")
-    p_dl.add_argument("--playlist", action="store_true", default=False, help="Download full playlist")
-    p_dl.add_argument("--subtitles", action="store_true", default=False, help="Embed subtitles")
+    p_dl.add_argument(
+        "--output", default=None, help="Output directory or filename template"
+    )
+    p_dl.add_argument(
+        "--format", default="bestvideo+bestaudio/best", help="Format selector"
+    )
+    p_dl.add_argument(
+        "--audio", action="store_true", default=False, help="Extract audio only (mp3)"
+    )
+    p_dl.add_argument(
+        "--playlist", action="store_true", default=False, help="Download full playlist"
+    )
+    p_dl.add_argument(
+        "--subtitles", action="store_true", default=False, help="Embed subtitles"
+    )
     p_dl.add_argument("--dry-run", action="store_true", default=False)
 
     p_info = sub.add_parser("info", help="Fetch metadata for a URL")
