@@ -1,0 +1,20 @@
+{
+  "name": "yt-dlp-media-download",
+  "description": "Download video/audio from YouTube and 1000+ sites using yt-dlp",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig media yt download --url {url}",
+    "navig media yt download --url {url} --audio",
+    "navig media yt download --url {url} --format {fmt} --output {dir}",
+    "navig media yt info --url {url}",
+    "navig media yt formats --url {url}"
+  ],
+  "requires": [
+    "yt-dlp in PATH (pip install yt-dlp or winget install yt-dlp)",
+    "ffmpeg recommended for format conversion and audio extraction"
+  ],
+  "id": "skill:yt-dlp-media-download",
+  "tools": [
+    "tool:media"
+  ]
+}

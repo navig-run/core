@@ -1,0 +1,5 @@
+{
+  "name": "postgres",
+  "description": "Comprehensive PostgreSQL management: queries, backups, user management, and performance analysis.",
+  "id": "skill:postgres"
+}

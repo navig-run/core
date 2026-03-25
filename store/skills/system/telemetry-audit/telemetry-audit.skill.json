@@ -1,0 +1,22 @@
+{
+  "name": "telemetry-audit",
+  "description": "Privacy audit \u2014 captures all outbound/inbound TCP connections from VS Code and Windows telemetry services, traces each remote endpoint to its owner (WHOIS/ASN/PTR/GeoIP), maps data categories, locates local staging files, and generates a classified risk report. Passive and read-only.",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig telemetry audit scan [--filter vscode|windows|all] [--no-resolve] [--save FILE]",
+    "navig telemetry audit whois --ip <IP> [--save FILE]",
+    "navig telemetry audit sources [--save FILE]",
+    "navig telemetry audit report [--filter all] [--save FILE]",
+    "navig telemetry audit cmdref"
+  ],
+  "requires": [
+    "Windows 10 22H2 / Windows 11 23H2 or later",
+    "Standard user for scan/sources/cmdref",
+    "Admin recommended for sources (ETL paths, registry)",
+    "Outbound HTTPS for whois (RDAP, BGPView, ipinfo.io)"
+  ],
+  "id": "skill:telemetry-audit",
+  "tools": [
+    "tool:telemetry"
+  ]
+}

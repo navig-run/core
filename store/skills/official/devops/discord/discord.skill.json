@@ -1,0 +1,5 @@
+{
+  "name": "discord-bot",
+  "description": "Send notifications, alerts, and deployment status updates to Discord channels.",
+  "id": "skill:discord"
+}

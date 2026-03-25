@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:windows",
+  "version": "1.0.0",
+  "name": "Windows",
+  "description": "Auto-generated scaffold for tool:windows",
+  "runtime": "python",
+  "entrypoint": "tools/windows.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

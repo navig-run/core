@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:tinynvidiaupdatechecker",
+  "version": "1.0.0",
+  "name": "Tinynvidiaupdatechecker",
+  "description": "Auto-generated scaffold for tool:tinynvidiaupdatechecker",
+  "runtime": "python",
+  "entrypoint": "tools/tinynvidiaupdatechecker.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

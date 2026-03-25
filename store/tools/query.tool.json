@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:query",
+  "version": "1.0.0",
+  "name": "Query",
+  "description": "Auto-generated scaffold for tool:query",
+  "runtime": "python",
+  "entrypoint": "tools/query.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

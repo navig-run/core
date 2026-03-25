@@ -169,16 +169,24 @@ def make_subcommand_callback(name: str):
 
 
 def show_compact_help():
-    """Display domain-grouped help using the registry renderer."""
-    try:
-        from navig.cli.help import render_root_help  # noqa: PLC0415
-        render_root_help()
-    except Exception:  # noqa: BLE001
-        # Absolute fallback: bare version line so we never crash on --help
-        from navig import __version__ as _v  # noqa: PLC0415
-        typer.echo(f"NAVIG v{_v}")
-        typer.echo("  navig <command> [options]")
-        typer.echo("  navig help <cmd>  for details")
+    """Render navig/help/index.md with Rich Markdown, or fall back to bare text."""
+    from pathlib import Path as _Path
+    _help_index = _Path(__file__).resolve().parent.parent / "help" / "index.md"
+    if _help_index.exists():
+        try:
+            from rich.console import Console as _Console
+            from rich.markdown import Markdown as _MD
+            _Console(legacy_windows=True).print(_MD(_help_index.read_text(encoding="utf-8")))
+            raise typer.Exit()
+        except typer.Exit:
+            raise
+        except Exception:
+            pass
+    # Fallback: minimal text so --help never crashes
+    from navig import __version__ as _v  # noqa: PLC0415
+    typer.echo(f"NAVIG v{_v}")
+    typer.echo("  navig <command> [options]")
+    typer.echo("  navig help <cmd>  for details")
     raise typer.Exit()
 
 
@@ -951,7 +959,8 @@ def help_command(
         raise typer.Exit()
 
     console = Console()
-    help_dir = Path(__file__).resolve().parent / "help"
+    # Help markdown files live at navig/help/, one level above navig/cli/
+    help_dir = Path(__file__).resolve().parent.parent / "help"
 
     md_topics = []
     if help_dir.exists():
@@ -968,7 +977,7 @@ def help_command(
 
     if not topic:
         if want_json:
-            console.print(
+            typer.echo(
                 jsonlib.dumps(
                     {
                         "topics": all_topics,
@@ -1010,7 +1019,7 @@ def help_command(
     if md_path.exists():
         content = md_path.read_text(encoding="utf-8")
         if want_json:
-            console.print(
+            typer.echo(
                 jsonlib.dumps(
                     {"topic": normalized, "content": content, "source": "markdown"},
                     indent=2,
@@ -1028,7 +1037,7 @@ def help_command(
     # Fall back to the centralized help registry.
     if normalized in HELP_REGISTRY:
         if want_json:
-            console.print(
+            typer.echo(
                 jsonlib.dumps(
                     {
                         "topic": normalized,
@@ -1402,7 +1411,7 @@ def search_command(
 # ONBOARDING & WORKSPACE (Agent-style setup)
 # ============================================================================
 
-@app.command("onboard")
+@app.command("onboard", hidden=True)
 def onboard_command(
     ctx: typer.Context,
     flow: str = typer.Option(
@@ -1464,61 +1473,119 @@ def init_command(
         False,
         "--reconfigure",
         "-r",
-        help="Re-run setup for existing installation",
+        help="Force re-run of the setup wizard even if already configured",
     ),
-    install_daemon: bool = typer.Option(
+    provider: bool = typer.Option(
         False,
-        "--install-daemon",
-        help="Install NAVIG as a system service",
+        "--provider",
+        help="Deep-link to AI Provider settings.",
     ),
-):
+    settings: bool = typer.Option(
+        False,
+        "--settings",
+        "-s",
+        help="Open the configuration status dashboard instead of the wizard",
+    ),
+) -> None:
     """
-    Interactive setup wizard for new NAVIG installations.
+    State-aware NAVIG setup gateway.
 
-    Guides you through:
-      - AI provider configuration (OpenRouter, OpenAI, Anthropic, Ollama)
-      - SSH key setup
-      - Telegram bot configuration
-      - Initial host setup
-      - Optional daemon installation
+    First run  → interactive setup wizard (TUI or Rich fallback)
+    Return     → configuration status dashboard
+
+    Deep-links:
+        navig init --provider    jump to AI-provider configuration
+        navig init --settings    open settings/status overview
+        navig init --reconfigure force the wizard to re-run
 
     Examples:
-        navig init                    # First-time setup
-        navig init --reconfigure      # Re-run for existing installation
-        navig init --install-daemon   # Include service installation
+        navig init               # auto: wizard on first run, dashboard after
+        navig init --reconfigure # always run wizard
+        navig init --provider    # configure AI provider
     """
+    from navig.commands.onboard import run_init_wizard
+    from navig.commands.init import _maybe_send_first_run_ping
+
+    if reconfigure:
+        run_init_wizard(mode="wizard", deep_link=provider or None)
+        return
+
+    if settings:
+        run_init_wizard(mode="dashboard", deep_link=None)
+        return
+
+    deep = "provider" if provider else None
+    run_init_wizard(mode="auto", deep_link=deep)
+
     try:
-        from navig.cli.wizard import SetupWizard
-        from navig.commands.init import _maybe_send_first_run_ping
-        from navig.workspace_ownership import (
-            detect_project_workspace_duplicates,
-            summarize_duplicates,
-        )
-        wizard = SetupWizard(reconfigure=reconfigure, install_daemon=install_daemon)
-        success = wizard.run()
-        if not success:
-            raise typer.Exit(1)
+        _maybe_send_first_run_ping()
+    except Exception:  # noqa: BLE001
+        pass
 
-        # Opt-in first-run telemetry ping (fire-and-forget, no secrets, no PII)
-        if not reconfigure:
-            _maybe_send_first_run_ping()
 
-        duplicates = detect_project_workspace_duplicates(project_root=Path.cwd())
-        if duplicates:
-            summary = summarize_duplicates(duplicates)
-            ch.warning(
-                "Project-level personal workspace duplicates detected. "
-                "Using ~/.navig/workspace as source of truth."
-            )
-            ch.dim(
-                f"conflicts={summary.get('duplicate_conflict', 0)}, "
-                f"identical={summary.get('duplicate_identical', 0)}, "
-                f"project_only={summary.get('project_only_legacy', 0)}"
-            )
-    except ImportError as _exc:
-        ch.error("Setup wizard not available")
-        ch.dim("  Install questionary: pip install questionary")
-        raise typer.Exit(1) from _exc
+@app.command("whoami")
+def whoami_command(
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        help="Show the identity file path before rendering the sigil card",
+    ),
+) -> None:
+    """Show your NAVIG node identity sigil card."""
+    if debug:
+        try:
+            from navig.platform.paths import navig_config_dir
+            state_file = navig_config_dir() / "state" / "entity.json"
+            ch.dim(f"  entity path: {state_file}")
+        except Exception:  # noqa: BLE001
+            pass
+    from navig.commands.whoami import run_whoami
+    run_whoami(debug=debug)
+
+
+@app.command("settings")
+def settings_command(
+    key: Optional[str] = typer.Argument(
+        None, help="Setting key, e.g. navig.ai.provider"
+    ),
+    value: Optional[str] = typer.Argument(
+        None, help="New value to write (triggers write mode)"
+    ),
+    layer: str = typer.Option(
+        "global",
+        "--layer",
+        "-l",
+        help="Target layer: global, project, or local",
+    ),
+    reset: bool = typer.Option(
+        False,
+        "--reset",
+        help="Remove key override and restore default",
+    ),
+    show_sources: bool = typer.Option(
+        False,
+        "--show-sources",
+        help="Show layer file paths in the header",
+    ),
+) -> None:
+    """
+    View or edit layered NAVIG settings (VSCode-style, 5 layers).
+
+    Examples:
+        navig settings                              # show all settings
+        navig settings navig.ai.provider            # inspect one key
+        navig settings navig.ai.provider openai     # write to global layer
+        navig settings navig.ai.model --reset       # remove override
+        navig settings --layer project --show-sources
+    """
+    from navig.commands.settings_cmd import run_settings
+    run_settings(
+        key=key,
+        value=value,
+        layer=layer,
+        reset=reset,
+        show_sources=show_sources,
+    )
 
 
 # TELEGRAM BOT MANAGEMENT, MATRIX MESSAGING, STORE MANAGEMENT
@@ -4072,8 +4139,7 @@ def web_hestia_list(
     """List HestiaCP resources (users, domains)."""
     ctx.obj['plain'] = plain
     if users:
-        # Also need list_exports to verify index exists if not provided
-        from navig.commands.config_backup import inspect_export, list_exportsmains_cmd
+        from navig.commands.hestia import list_domains_cmd
         list_domains_cmd(user_filter, ctx.obj)
     else:
         # Default: show users

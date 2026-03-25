@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:mouseclick",
+  "version": "1.0.0",
+  "name": "Mouseclick",
+  "description": "Auto-generated scaffold for tool:mouseclick",
+  "runtime": "python",
+  "entrypoint": "tools/mouseclick.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "docker-ops",
+  "description": "Standardized container management and orchestration using NAVIG's docker primitives.",
+  "id": "skill:docker"
+}

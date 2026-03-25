@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:fetchurl",
+  "version": "1.0.0",
+  "name": "Fetchurl",
+  "description": "Auto-generated scaffold for tool:fetchurl",
+  "runtime": "python",
+  "entrypoint": "tools/fetchurl.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:listhosts",
+  "version": "1.0.0",
+  "name": "Listhosts",
+  "description": "Auto-generated scaffold for tool:listhosts",
+  "runtime": "python",
+  "entrypoint": "tools/listhosts.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

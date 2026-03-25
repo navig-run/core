@@ -1,0 +1,16 @@
+{
+  "name": "package-manager",
+  "description": "Install, update, and manage packages on Linux using apt, yum, or dnf",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig run \"apt list --installed\"",
+    "navig run \"apt update && apt upgrade -y\"",
+    "navig run \"apt install -y {package}\"",
+    "navig run \"apt remove {package}\"",
+    "navig run \"apt search {query}\""
+  ],
+  "id": "skill:package-manager",
+  "tools": [
+    "tool:run"
+  ]
+}

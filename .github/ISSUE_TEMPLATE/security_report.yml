@@ -1,0 +1,17 @@
+name: Security report
+description: Report a potential security issue (private process preferred)
+title: "[Security]: "
+labels: [security]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not disclose exploit details publicly.
+        Prefer private reporting via SECURITY.md channels.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: High-level description without sensitive exploit steps.
+    validations:
+      required: true

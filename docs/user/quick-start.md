@@ -15,15 +15,26 @@
 ## Installation
 
 ```bash
-# Clone the repository
+# Install from PyPI
+pip install navig
+
+# Or install from source (for development)
 git clone https://github.com/navig-run/core.git
 cd core
-
-# Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # Verify installation
-python navig.py --version
+navig --version
+```
+
+**Quick-start with Telegram bot:**
+```bash
+# Linux/macOS — auto-configures Telegram on install
+NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>" bash install.sh
+
+# Windows PowerShell
+$env:NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
+.\install.ps1
 ```
 
 ## First Steps
@@ -56,7 +67,7 @@ navig host test
 navig run "ls -la"
 
 # View disk usage
-navig monitor disk
+navig host monitor show --disk
 
 # List databases
 navig db list
@@ -77,11 +88,11 @@ navig <group> <command> [options]
 | `host` | Manage remote hosts | `navig host list` |
 | `app` | Manage applications | `navig app list` |
 | `db` | Database operations | `navig db list` |
-| `monitor` | Server monitoring | `navig monitor health` |
-| `security` | Security management | `navig security firewall` |
+| `host monitor` | Server monitoring | `navig host monitor show` |
+| `host security` | Security management | `navig host security show --firewall` |
 | `web` | Web server control | `navig web vhosts` |
 | `docker` | Docker management | `navig docker ps` |
-| `tunnel` | SSH tunnel control | `navig tunnel start` |
+| `tunnel` | SSH tunnel control | `navig tunnel run` |
 | `backup` | Configuration backup | `navig backup export` |
 
 ### Interactive Mode
@@ -110,20 +121,20 @@ navig db dump mydb -o backup.sql
 
 ```bash
 # Upload file
-navig upload local.txt /remote/path/
+navig file add local.txt /remote/path/
 
 # Download file
-navig download /remote/file.txt ./local/
+navig file get /remote/file.txt ./local/
 ```
 
 ### Server Health Check
 
 ```bash
-# Quick health check
-navig monitor health
+# Health overview
+navig host monitor show
 
 # Detailed resource usage
-navig monitor resources
+navig host monitor show --resources
 ```
 
 ## Getting Help

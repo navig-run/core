@@ -1,0 +1,62 @@
+{
+  "tool_id": "vivetool",
+  "version": "1.0.0",
+  "upstream_version": "v0.3.4",
+  "upstream_updated": "2025-03-10",
+  "download": {
+    "windows": "https://github.com/thebookisclosed/ViVe/releases/download/v0.3.4/ViVeTool-v0.3.4-IntelAmd.zip"
+  },
+  "description": "Enable or disable hidden Windows feature flags by numeric ID using ViVeTool. Uses bundled ViVeTool.exe from C:/USB/system/vivetool/.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  true,
+    "writes_files": false,
+    "network":      false
+  },
+  "timeouts": { "default_sec": 15 },
+  "commands": [
+    {
+      "id": "enable",
+      "cli": ["sys", "vivetool", "enable"],
+      "summary": "Enable a hidden Windows feature flag by numeric ID",
+      "args": {
+        "flags": [
+          { "name": "--id",      "type": "int",  "required": true, "description": "Numeric Windows feature flag ID" },
+          { "name": "--dry-run", "type": "bool", "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "disable",
+      "cli": ["sys", "vivetool", "disable"],
+      "summary": "Disable a hidden Windows feature flag by numeric ID",
+      "args": {
+        "flags": [
+          { "name": "--id",      "type": "int",  "required": true },
+          { "name": "--dry-run", "type": "bool", "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "query",
+      "cli": ["sys", "vivetool", "query"],
+      "summary": "Query the current state of a Windows feature flag",
+      "args": {
+        "flags": [
+          { "name": "--id", "type": "int", "required": true }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

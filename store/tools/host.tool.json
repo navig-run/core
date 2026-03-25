@@ -1,0 +1,26 @@
+{
+  "id": "tool:host",
+  "name": "navig_host",
+  "description": "Execute NAVIG host operations.",
+  "version": "1.0",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "args": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Arguments for the command"
+      }
+    },
+    "required": [
+      "args"
+    ]
+  },
+  "execution": {
+    "type": "cli",
+    "target": "navig host"
+  },
+  "requires_approval": true
+}

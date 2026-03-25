@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:services",
+  "version": "1.0.0",
+  "name": "Services",
+  "description": "Auto-generated scaffold for tool:services",
+  "runtime": "python",
+  "entrypoint": "tools/services.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

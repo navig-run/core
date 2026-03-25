@@ -1,0 +1,21 @@
+{
+  "name": "gh-cli-github",
+  "description": "List/create PRs, issues, releases, and CI run status via the gh CLI",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig dev gh pr-list --repo {owner/repo}",
+    "navig dev gh pr-create --title {title} --base main",
+    "navig dev gh issue-list --repo {owner/repo}",
+    "navig dev gh release-list --repo {owner/repo}",
+    "navig dev gh status",
+    "navig dev gh run --repo {owner/repo}"
+  ],
+  "requires": [
+    "gh CLI in PATH (winget install GitHub.cli / brew install gh / apt install gh)",
+    "gh must be authenticated (gh auth login)"
+  ],
+  "id": "skill:gh-cli-github",
+  "tools": [
+    "tool:dev"
+  ]
+}

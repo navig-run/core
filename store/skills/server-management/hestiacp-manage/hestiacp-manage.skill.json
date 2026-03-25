@@ -1,0 +1,15 @@
+{
+  "name": "hestiacp-manage",
+  "description": "Manage HestiaCP servers, users, domains, and backups via NAVIG",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig run \"v-list-users\"",
+    "navig run \"v-list-web-domains {user}\"",
+    "navig run \"v-backup-user {user}\"",
+    "navig run \"v-list-databases {user}\""
+  ],
+  "id": "skill:hestiacp-manage",
+  "tools": [
+    "tool:run"
+  ]
+}

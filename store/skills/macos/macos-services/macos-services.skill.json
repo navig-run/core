@@ -1,0 +1,15 @@
+{
+  "name": "macos-services",
+  "description": "Manage macOS services and daemons using launchctl, plus system info and maintenance",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig run \"launchctl list\"",
+    "navig run \"launchctl kickstart system/{service}\"",
+    "navig run \"system_profiler SPSoftwareDataType\"",
+    "navig run \"top -l 1 -n 0 | head -10\""
+  ],
+  "id": "skill:macos-services",
+  "tools": [
+    "tool:run"
+  ]
+}

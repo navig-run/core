@@ -1,0 +1,13 @@
+{
+  "personaId": "navig",
+  "displayName": "Navig",
+  "wallpaper": "wallpaper.jpg",
+  "sounds": {
+    "startup": "sounds/startup.wav",
+    "notification": "sounds/notification.wav",
+    "shutdown": "sounds/shutdown.wav"
+  },
+  "soul": "soul.json",
+  "theme": "theme.json",
+  "appliedAt": ""
+}

@@ -1,0 +1,16 @@
+{
+  "name": "homebrew",
+  "description": "Manage Homebrew packages on macOS - install, update, search, cleanup",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig run \"brew list\"",
+    "navig run \"brew install {package}\"",
+    "navig run \"brew update && brew upgrade\"",
+    "navig run \"brew search {query}\"",
+    "navig run \"brew info {package}\""
+  ],
+  "id": "skill:homebrew",
+  "tools": [
+    "tool:run"
+  ]
+}

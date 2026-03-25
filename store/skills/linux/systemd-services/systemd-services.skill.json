@@ -1,0 +1,17 @@
+{
+  "name": "systemd-services",
+  "description": "Manage systemd services on Linux servers - start, stop, restart, enable, check logs",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig run \"systemctl status {service}\"",
+    "navig run \"systemctl start {service}\"",
+    "navig run \"systemctl stop {service}\"",
+    "navig run \"systemctl restart {service}\"",
+    "navig run \"systemctl enable {service}\"",
+    "navig run \"journalctl -u {service} --no-pager -n 50\""
+  ],
+  "id": "skill:systemd-services",
+  "tools": [
+    "tool:run"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "create-skill",
+  "description": "Help the user design and write new NAVIG SKILL.md files with safe, well-structured instructions",
+  "id": "skill:create-skill"
+}

@@ -192,13 +192,15 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
     # AUTOMATION
     # =========================================================================
     "flow": {
-        "desc": "Manage and execute reusable workflows",
+        "desc": "Manage and execute reusable workflows (canonical workflow command)",
         "commands": {
             "list": "list available flows",
             "show": "show flow definition",
             "run": "execute a flow",
             "test": "validate flow syntax",
             "add": "create new flow",
+            "remove": "delete a flow",
+            "edit": "edit flow definition",
         }
     },
     "skills": {
@@ -418,13 +420,13 @@ HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
         }
     },
     "task": {
-        "desc": "Task queue for async operations",
+        "desc": "Alias for 'flow' — run 'navig flow' for the canonical workflow command",
         "commands": {
-            "list": "list queued tasks",
-            "add": "add a task to queue",
-            "show": "show task details",
-            "cancel": "cancel a pending task",
-            "stats": "show queue statistics",
+            "list": "list available flows (same as: navig flow list)",
+            "run": "execute a flow (same as: navig flow run <name>)",
+            "show": "show flow definition (same as: navig flow show <name>)",
+            "add": "create new flow (same as: navig flow add)",
+            "test": "validate flow syntax (same as: navig flow test <name>)",
         }
     },
     "memory": {

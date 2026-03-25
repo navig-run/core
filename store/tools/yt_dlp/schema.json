@@ -1,0 +1,68 @@
+{
+  "tool_id": "yt_dlp",
+  "version": "1.0.0",
+  "upstream_version": "2026.02.04",
+  "upstream_updated": "2026-02-04",
+  "download": {
+    "windows": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.02.04/yt-dlp.exe",
+    "linux":   "https://github.com/yt-dlp/yt-dlp/releases/download/2026.02.04/yt-dlp_linux",
+    "mac":     "https://github.com/yt-dlp/yt-dlp/releases/download/2026.02.04/yt-dlp_macos"
+  },
+  "description": "Download videos, audio, or metadata from YouTube and 1000+ sites using yt-dlp. Cross-platform — requires yt-dlp installed (pip install yt-dlp).",
+  "os": ["windows", "linux", "mac"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  false,
+    "writes_files": true,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 300 },
+  "commands": [
+    {
+      "id": "download",
+      "cli": ["media", "yt", "download"],
+      "summary": "Download a video or playlist from a URL",
+      "args": {
+        "flags": [
+          { "name": "--url",     "type": "string", "required": true },
+          { "name": "--output",  "type": "string", "default": "%(title)s.%(ext)s", "description": "yt-dlp output template" },
+          { "name": "--format",  "type": "string", "default": "bestvideo+bestaudio/best", "description": "yt-dlp format selector" },
+          { "name": "--audio",   "type": "bool",   "default": false, "description": "Extract audio only (mp3)" },
+          { "name": "--dry-run", "type": "bool",   "default": false },
+          { "name": "--save",    "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "info",
+      "cli": ["media", "yt", "info"],
+      "summary": "Fetch metadata (title, duration, formats, thumbnail) without downloading",
+      "args": {
+        "flags": [
+          { "name": "--url",  "type": "string", "required": true },
+          { "name": "--save", "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "formats",
+      "cli": ["media", "yt", "formats"],
+      "summary": "List all available download formats for a URL",
+      "args": {
+        "flags": [
+          { "name": "--url", "type": "string", "required": true }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

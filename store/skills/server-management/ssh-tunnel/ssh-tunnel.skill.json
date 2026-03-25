@@ -1,0 +1,16 @@
+{
+  "name": "ssh-tunnel",
+  "description": "Create and manage SSH tunnels to access remote services (databases, web panels, APIs)",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig tunnel list",
+    "navig tunnel add {name} -l {local_port} -r {remote_port}",
+    "navig tunnel start {name}",
+    "navig tunnel stop {name}",
+    "navig tunnel status"
+  ],
+  "id": "skill:ssh-tunnel",
+  "tools": [
+    "tool:tunnel"
+  ]
+}

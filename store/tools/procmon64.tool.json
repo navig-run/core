@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:procmon64",
+  "version": "1.0.0",
+  "name": "Procmon64",
+  "description": "Auto-generated scaffold for tool:procmon64",
+  "runtime": "python",
+  "entrypoint": "tools/procmon64.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

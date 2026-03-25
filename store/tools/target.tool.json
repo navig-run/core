@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:target",
+  "version": "1.0.0",
+  "name": "Target",
+  "description": "Auto-generated scaffold for tool:target",
+  "runtime": "python",
+  "entrypoint": "tools/target.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

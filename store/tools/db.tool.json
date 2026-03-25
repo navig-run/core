@@ -1,0 +1,26 @@
+{
+  "id": "tool:db",
+  "name": "navig_db",
+  "description": "Execute NAVIG db operations.",
+  "version": "1.0",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "args": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Arguments for the command"
+      }
+    },
+    "required": [
+      "args"
+    ]
+  },
+  "execution": {
+    "type": "cli",
+    "target": "navig db"
+  },
+  "requires_approval": true
+}

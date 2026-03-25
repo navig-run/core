@@ -1,0 +1,26 @@
+# NAVIG Core — Code Owners
+# These owners are automatically requested for review on PRs that touch their areas.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default reviewer for all files
+*                           @navig-run
+
+# Core CLI and engine
+navig/commands/             @navig-run
+navig/engine/               @navig-run
+navig/agent/                @navig-run
+navig/core/                 @navig-run
+
+# Security-sensitive areas
+navig/gateway/              @navig-run
+navig/mesh/                 @navig-run
+navig/commands/ssh_keys.py  @navig-run
+deploy/                     @navig-run
+
+# CI/CD and release infra
+.github/                    @navig-run
+pyproject.toml              @navig-run
+
+# Docs
+docs/                       @navig-run
+README.md                   @navig-run

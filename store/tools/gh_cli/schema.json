@@ -1,0 +1,111 @@
+{
+  "tool_id": "gh_cli",
+  "version": "1.0.0",
+  "upstream_version": "v2.87.0",
+  "upstream_updated": "2026-02-18",
+  "download": {
+    "windows": "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_windows_amd64.zip",
+    "linux":   "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_linux_amd64.tar.gz",
+    "mac":     "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_macOS_arm64.zip"
+  },
+  "description": "GitHub CLI wrapper — create PRs, list issues, view repo status, manage releases. Cross-platform wrapper around the 'gh' binary. Requires gh installed and authenticated.",
+  "os": ["windows", "linux", "mac"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  false,
+    "writes_files": false,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 60 },
+  "commands": [
+    {
+      "id": "pr-list",
+      "cli": ["dev", "gh", "pr", "list"],
+      "summary": "List open pull requests for the current or specified repo",
+      "args": {
+        "flags": [
+          { "name": "--repo",   "type": "string", "default": null, "description": "owner/repo (defaults to current directory)" },
+          { "name": "--limit",  "type": "int",    "default": 20 },
+          { "name": "--state",  "type": "string", "default": "open", "description": "open|closed|merged|all" },
+          { "name": "--save",   "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "pr-create",
+      "cli": ["dev", "gh", "pr", "create"],
+      "summary": "Create a pull request",
+      "args": {
+        "flags": [
+          { "name": "--title",  "type": "string", "required": true },
+          { "name": "--body",   "type": "string", "default": "" },
+          { "name": "--base",   "type": "string", "default": "main", "description": "Target branch" },
+          { "name": "--draft",  "type": "bool",   "default": false },
+          { "name": "--dry-run","type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "issue-list",
+      "cli": ["dev", "gh", "issue", "list"],
+      "summary": "List issues for the current or specified repo",
+      "args": {
+        "flags": [
+          { "name": "--repo",   "type": "string", "default": null },
+          { "name": "--limit",  "type": "int",    "default": 20 },
+          { "name": "--state",  "type": "string", "default": "open" },
+          { "name": "--label",  "type": "string", "default": null },
+          { "name": "--save",   "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "release-list",
+      "cli": ["dev", "gh", "release", "list"],
+      "summary": "List releases for a repository",
+      "args": {
+        "flags": [
+          { "name": "--repo",  "type": "string", "default": null },
+          { "name": "--limit", "type": "int",    "default": 10 },
+          { "name": "--save",  "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "status",
+      "cli": ["dev", "gh", "status"],
+      "summary": "Show mentions, review requests, and assigned issues across all repos",
+      "args": {
+        "flags": [
+          { "name": "--save", "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "run",
+      "cli": ["dev", "gh", "run"],
+      "summary": "Pass arbitrary arguments directly to the gh binary",
+      "args": {
+        "flags": [
+          { "name": "--args", "type": "string", "required": true, "description": "Raw argument string to pass to gh" }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

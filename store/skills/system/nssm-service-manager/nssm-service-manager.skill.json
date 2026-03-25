@@ -1,0 +1,20 @@
+{
+  "name": "nssm-service-manager",
+  "description": "Install, start, stop, remove, and query Windows services using NSSM",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig sys nssm install --name {service} --exe {path}",
+    "navig sys nssm start --name {service}",
+    "navig sys nssm stop --name {service}",
+    "navig sys nssm status --name {service}",
+    "navig sys nssm remove --name {service} --yes"
+  ],
+  "requires": [
+    "nssm.exe (from C:\\USB\\system\\nssm\\win64\\nssm.exe)",
+    "Admin rights for install/remove"
+  ],
+  "id": "skill:nssm-service-manager",
+  "tools": [
+    "tool:sys"
+  ]
+}

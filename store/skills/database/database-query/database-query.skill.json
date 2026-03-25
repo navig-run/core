@@ -1,0 +1,15 @@
+{
+  "name": "database-query",
+  "description": "Query and manage databases on remote servers via NAVIG",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig db query \"{sql}\" -d {database}",
+    "navig db databases",
+    "navig db tables {database}",
+    "navig db dump {database}"
+  ],
+  "id": "skill:database-query",
+  "tools": [
+    "tool:db"
+  ]
+}

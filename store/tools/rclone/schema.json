@@ -1,0 +1,82 @@
+{
+  "tool_id": "rclone",
+  "version": "1.0.0",
+  "upstream_version": "v1.73.1",
+  "upstream_updated": "2026-02-17",
+  "download": {
+    "windows": "https://github.com/rclone/rclone/releases/download/v1.73.1/rclone-v1.73.1-windows-amd64.zip",
+    "linux":   "https://github.com/rclone/rclone/releases/download/v1.73.1/rclone-v1.73.1-linux-amd64.zip",
+    "mac":     "https://github.com/rclone/rclone/releases/download/v1.73.1/rclone-v1.73.1-osx-arm64.zip"
+  },
+  "description": "Cloud storage sync and management via rclone. Uses bundled rclone binary from C:/USB/network/rclone-browser/rclone/ on Windows; system rclone on Linux/Mac.",
+  "os": ["windows", "linux", "mac"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  false,
+    "writes_files": true,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 300 },
+  "commands": [
+    {
+      "id": "ls",
+      "cli": ["cloud", "rclone", "ls"],
+      "summary": "List files in a configured rclone remote",
+      "args": {
+        "flags": [
+          { "name": "--remote",  "type": "string", "required": true, "description": "rclone remote name (as configured in rclone.conf)" },
+          { "name": "--path",    "type": "string", "default": "" },
+          { "name": "--dry-run", "type": "bool",   "default": false },
+          { "name": "--save",    "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "sync",
+      "cli": ["cloud", "rclone", "sync"],
+      "summary": "Sync source to destination (destination is made identical to source)",
+      "args": {
+        "flags": [
+          { "name": "--source",      "type": "string", "required": true },
+          { "name": "--destination", "type": "string", "required": true },
+          { "name": "--dry-run",     "type": "bool",   "default": false, "description": "Pass --dry-run to rclone — shows changes without applying" },
+          { "name": "--save",        "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "copy",
+      "cli": ["cloud", "rclone", "copy"],
+      "summary": "Copy files from source to destination without deleting extras",
+      "args": {
+        "flags": [
+          { "name": "--source",      "type": "string", "required": true },
+          { "name": "--destination", "type": "string", "required": true },
+          { "name": "--dry-run",     "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "remotes",
+      "cli": ["cloud", "rclone", "remotes"],
+      "summary": "List configured rclone remotes",
+      "args": {
+        "flags": [
+          { "name": "--save", "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

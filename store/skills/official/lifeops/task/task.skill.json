@@ -1,0 +1,5 @@
+{
+  "name": "task-warrior",
+  "description": "Local task management using the powerful TaskWarrior CLI.",
+  "id": "skill:task"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "defender-exclusion-manage",
+  "description": "Add, remove, and list Windows Defender exclusions (paths and processes) via PowerShell",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig sys defender exclude path --path {path}",
+    "navig sys defender exclude process --name {process.exe}",
+    "navig sys defender exclude remove --path {path}",
+    "navig sys defender exclude list"
+  ],
+  "requires": [
+    "Windows Defender (built-in)",
+    "Admin rights for add/remove"
+  ],
+  "id": "skill:defender-exclusion-manage",
+  "tools": [
+    "tool:sys"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:vivetool",
+  "version": "1.0.0",
+  "name": "Vivetool",
+  "description": "Auto-generated scaffold for tool:vivetool",
+  "runtime": "python",
+  "entrypoint": "tools/vivetool.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

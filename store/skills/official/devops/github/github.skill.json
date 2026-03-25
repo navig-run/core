@@ -1,0 +1,5 @@
+{
+  "name": "github-cli",
+  "description": "Interact with GitHub: Manage PRs, Issues, Actions, and Releases.",
+  "id": "skill:github"
+}

@@ -1,0 +1,126 @@
+{
+  "skill:autohotkey-desktop-control": [
+    "tool:keysend",
+    "tool:windowresize",
+    "tool:windowmove",
+    "tool:mouseclick"
+  ],
+  "skill:containers-docker": [
+    "tool:list",
+    "tool:restart",
+    "tool:logs",
+    "tool:stats"
+  ],
+  "skill:database-postgresql-sqlite": [
+    "tool:list",
+    "tool:query",
+    "tool:size"
+  ],
+  "skill:navig-default-skill": [],
+  "skill:remote-named-hosts-via-ssh": [
+    "tool:runonhost",
+    "tool:checkhost",
+    "tool:listhosts"
+  ],
+  "skill:system-this-server": [
+    "tool:disk",
+    "tool:services",
+    "tool:ram",
+    "tool:uptime",
+    "tool:cpu",
+    "tool:servicestatus"
+  ],
+  "skill:web-fetch-search": [
+    "tool:fetchjson",
+    "tool:fetchurl",
+    "tool:search"
+  ],
+  "skill:cortexa11y": [],
+  "skill:file-operations": [],
+  "skill:git-basics": [],
+  "skill:file-transfer": [],
+  "skill:iperf3-network-test": [
+    "tool:iperf3"
+  ],
+  "skill:rclone-cloud-sync": [
+    "tool:rclone"
+  ],
+  "skill:screenshot-capture": [],
+  "skill:summarize-url": [
+    "tool:navig",
+    "tool:curl"
+  ],
+  "skill:yt-dlp-media-download": [
+    "tool:yt-dlp",
+    "tool:ffmpeg"
+  ],
+  "skill:database-query": [],
+  "skill:gh-cli-github": [
+    "tool:gh"
+  ],
+  "skill:github-status": [
+    "tool:gh"
+  ],
+  "skill:docker-restart-safe": [
+    "tool:packdocker-health"
+  ],
+  "skill:docker-manage": [],
+  "skill:package-manager": [],
+  "skill:systemd-services": [],
+  "skill:tmux-sessions": [],
+  "skill:homebrew": [],
+  "skill:macos-services": [],
+  "skill:create-skill": [],
+  "skill:navig": [],
+  "skill:windows-automation": [],
+  "skill:discord-bot": [],
+  "skill:docker-ops": [],
+  "skill:github-cli": [],
+  "skill:postgres": [],
+  "skill:ssh-helper": [],
+  "skill:nginx-web": [],
+  "skill:restic-backup": [],
+  "skill:calendar-cli": [],
+  "skill:fin-ledger": [],
+  "skill:knowledge-md": [],
+  "skill:media-factory": [],
+  "skill:task-warrior": [],
+  "skill:futurerestore-ios": [
+    "tool:target",
+    "tool:futurerestore",
+    "tool:valid",
+    "tool:itunes"
+  ],
+  "skill:procmon-capture": [
+    "tool:procmon64",
+    "tool:admin"
+  ],
+  "skill:telemetry-audit": [
+    "tool:standard",
+    "tool:admin",
+    "tool:windows",
+    "tool:outbound"
+  ],
+  "skill:check-disk-space": [],
+  "skill:hestiacp-manage": [],
+  "skill:ssh-tunnel": [],
+  "skill:system-status": [],
+  "skill:defender-exclusion-manage": [
+    "tool:admin",
+    "tool:windows"
+  ],
+  "skill:disk-space-basic": [],
+  "skill:nssm-service-manager": [
+    "tool:admin",
+    "tool:nssm"
+  ],
+  "skill:nvidia-driver-check": [
+    "tool:tinynvidiaupdatechecker",
+    "tool:windows"
+  ],
+  "skill:vivetool-feature-flags": [
+    "tool:admin",
+    "tool:vivetool"
+  ],
+  "skill:skill": []
+}

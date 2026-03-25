@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:logs",
+  "version": "1.0.0",
+  "name": "Logs",
+  "description": "Auto-generated scaffold for tool:logs",
+  "runtime": "python",
+  "entrypoint": "tools/logs.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

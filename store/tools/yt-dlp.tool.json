@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:yt-dlp",
+  "version": "1.0.0",
+  "name": "Yt Dlp",
+  "description": "Auto-generated scaffold for tool:yt-dlp",
+  "runtime": "python",
+  "entrypoint": "tools/yt-dlp.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "navig",
+  "description": "Core NAVIG CLI wrapper for host management, file operations, and remote execution.",
+  "id": "skill:core"
+}

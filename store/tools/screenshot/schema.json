@@ -1,0 +1,50 @@
+{
+  "tool_id": "screenshot",
+  "version": "1.0.0",
+  "upstream_version": "mss>=9.0.2 pillow>=11.1.0",
+  "upstream_note": "Python packages — install with: pip install mss pillow",
+  "download": {
+    "windows": "pip install mss pillow",
+    "linux":   "pip install mss pillow",
+    "mac":     "pip install mss pillow"
+  },
+  "description": "Take a screenshot of the full screen or a specific monitor. Cross-platform: uses Win32 API on Windows, screencapture on macOS, scrot/gnome-screenshot on Linux.",
+  "os": ["windows", "linux", "mac"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  false,
+    "writes_files": true,
+    "network":      false
+  },
+  "timeouts": { "default_sec": 15 },
+  "commands": [
+    {
+      "id": "take",
+      "cli": ["sys", "screenshot", "take"],
+      "summary": "Take a screenshot and save to a file",
+      "args": {
+        "flags": [
+          { "name": "--output",  "type": "string", "default": null,  "description": "Output file path (default: timestamped PNG in temp dir)" },
+          { "name": "--monitor", "type": "int",    "default": 0,     "description": "Monitor index (0 = all screens)" },
+          { "name": "--dry-run", "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "monitors",
+      "cli": ["sys", "screenshot", "monitors"],
+      "summary": "List all available monitors with their resolution and position",
+      "args": {
+        "flags": [],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "git-basics",
+  "version": "1.0.0",
+  "category": "devops",
+  "safety": "safe",
+  "description": "Common Git version control operations.",
+  "user_invocable": true,
+  "navig-commands": [
+    {
+      "name": "git-status",
+      "syntax": "navig git status",
+      "description": "Show working tree status."
+    },
+    {
+      "name": "git-log",
+      "syntax": "navig git log",
+      "description": "Show commit logs."
+    },
+    {
+      "name": "git-commit",
+      "syntax": "navig git commit -m <message>",
+      "description": "Commit changes.",
+      "risk": "moderate"
+    }
+  ],
+  "id": "skill:git-basics"
+}

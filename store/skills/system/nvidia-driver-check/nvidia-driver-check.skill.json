@@ -1,0 +1,16 @@
+{
+  "name": "nvidia-driver-check",
+  "description": "Check if a newer NVIDIA driver is available using TinyNvidiaUpdateChecker",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig sys nvidia check"
+  ],
+  "requires": [
+    "TinyNvidiaUpdateChecker.exe (from C:\\USB\\system\\nvidia-updater\\TinyNvidiaUpdateChecker.exe)",
+    "Windows + NVIDIA GPU"
+  ],
+  "id": "skill:nvidia-driver-check",
+  "tools": [
+    "tool:sys"
+  ]
+}

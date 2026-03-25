@@ -1,0 +1,5 @@
+{
+  "name": "ssh-helper",
+  "description": "Secure Shell (SSH) configuration and key management.",
+  "id": "skill:ssh"
+}

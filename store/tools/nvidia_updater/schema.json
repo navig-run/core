@@ -1,0 +1,37 @@
+{
+  "tool_id": "nvidia_updater",
+  "version": "1.0.0",
+  "upstream_version": "v1.22.1",
+  "upstream_updated": "2025-06-05",
+  "download": {
+    "windows": "https://github.com/ElPumpo/TinyNvidiaUpdateChecker/releases/download/v1.22.1/TinyNvidiaUpdateChecker.exe"
+  },
+  "description": "Check for newer NVIDIA GPU drivers without opening a browser. Uses TinyNvidiaUpdateChecker from C:/USB/system/nvidia-updater/.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  false,
+    "writes_files": false,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 30 },
+  "commands": [
+    {
+      "id": "check",
+      "cli": ["sys", "nvidia", "check"],
+      "summary": "Check if a newer NVIDIA driver is available (silent, no browser)",
+      "args": {
+        "flags": [
+          { "name": "--dry-run", "type": "bool",   "default": false },
+          { "name": "--save",    "type": "string", "default": null }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

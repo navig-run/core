@@ -1,0 +1,18 @@
+{
+  "$schema": "./tool.schema.json",
+  "id": "tool:iperf3",
+  "version": "1.0.0",
+  "name": "Iperf3",
+  "description": "Auto-generated scaffold for tool:iperf3",
+  "runtime": "python",
+  "entrypoint": "tools/iperf3.py",
+  "inputs": [],
+  "outputs": [],
+  "auth": {
+    "type": "none"
+  },
+  "rateLimits": {
+    "requestsPerMinute": 60
+  },
+  "errorPolicy": "skip"
+}

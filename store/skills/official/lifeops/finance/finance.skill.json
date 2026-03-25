@@ -1,0 +1,5 @@
+{
+  "name": "fin-ledger",
+  "description": "Sovereign financial tracking using plaintext accounting (hledger/beancount).",
+  "id": "skill:finance"
+}

@@ -1,0 +1,28 @@
+{
+  "name": "docker-restart-safe",
+  "version": "1.1.0",
+  "category": "devops",
+  "safety": "destructive",
+  "description": "Safely restart Docker containers with mandatory confirmation and state checks.",
+  "user_invocable": true,
+  "navig-commands": [
+    {
+      "name": "restart",
+      "syntax": "navig docker restart <container_name>",
+      "description": "Restart a container gracefully.",
+      "risk": "destructive",
+      "confirmation_msg": "\u26a0\ufe0f  WARNING: You are about to restart container '{container_name}'. This may cause downtime."
+    },
+    {
+      "name": "down",
+      "syntax": "navig docker down <compose_file>",
+      "description": "Stop and remove resources defined in a compose file.",
+      "risk": "destructive",
+      "confirmation_msg": "\u26a0\ufe0f  DESTRUCTIVE: This will stop all services in '{compose_file}' and remove networks."
+    }
+  ],
+  "requires": [
+    "pack:docker-health"
+  ],
+  "id": "skill:docker-restart-safe"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "futurerestore-ios",
+  "description": "Restore an iOS device to a specific firmware using a saved SHSH2 blob via futurerestore",
+  "user_invocable": true,
+  "navig-commands": [
+    "navig ios futurerestore restore --blob {shsh2} --ipsw {firmware.ipsw}",
+    "navig ios futurerestore restore --blob {shsh2} --ipsw {firmware.ipsw} --latest-sep --no-baseband --dry-run"
+  ],
+  "requires": [
+    "futurerestore.exe (from C:\\USB\\ios\\futurerestore\\futurerestore.exe)",
+    "Valid .shsh2 blob for target iOS version and device",
+    "Target .ipsw firmware file",
+    "iTunes or Apple Mobile Device Support installed"
+  ],
+  "id": "skill:futurerestore-ios",
+  "tools": [
+    "tool:ios"
+  ]
+}

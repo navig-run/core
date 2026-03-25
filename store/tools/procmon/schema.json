@@ -1,0 +1,50 @@
+{
+  "tool_id": "procmon",
+  "version": "1.0.0",
+  "upstream_version": "v4.01",
+  "upstream_updated": "2024-06-20",
+  "download": {
+    "windows": "https://download.sysinternals.com/files/ProcessMonitor.zip"
+  },
+  "description": "Silent Process Monitor trace capture — saves process/file/registry/network events to a PML file. Uses bundled Procmon64.exe from C:/USB/system/procmon/.",
+  "os": ["windows"],
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  true,
+    "writes_files": true,
+    "network":      false
+  },
+  "timeouts": { "default_sec": 120 },
+  "commands": [
+    {
+      "id": "capture",
+      "cli": ["sys", "procmon", "capture"],
+      "summary": "Start a silent Process Monitor trace, save to a .pml file",
+      "args": {
+        "flags": [
+          { "name": "--log-file",  "type": "string", "required": true,  "description": "Output .pml file path" },
+          { "name": "--duration",  "type": "int",    "default": 30,     "description": "Auto-stop after N seconds (0 = manual stop)" },
+          { "name": "--dry-run",   "type": "bool",   "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    },
+    {
+      "id": "stop",
+      "cli": ["sys", "procmon", "stop"],
+      "summary": "Stop a running Process Monitor capture",
+      "args": {
+        "flags": [
+          { "name": "--dry-run", "type": "bool", "default": false }
+        ],
+        "positionals": []
+      },
+      "backend_preference": "worker"
+    }
+  ]
+}

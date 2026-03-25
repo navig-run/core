@@ -1,5 +1,5 @@
 ﻿# ===============================================
-# NAVIG CLI вЂ” Git Ignore Configuration
+# NAVIG CLI Git Ignore Configuration
 # ===============================================
 # This file specifies intentionally untracked files that Git should ignore.
 # See: https://git-scm.com/docs/gitignore
@@ -142,15 +142,20 @@ discord-*.json              # Discord config with secrets
 **/.blackbox/               # Vault key directory (any depth)
 vault.salt                  # Vault salt file
 
+# AI tool configs and local dev scratch (NEVER commit)
+.gemini/                    # Gemini AI session data / keys
+.local/                     # Local dev scripts, drafts, WIP — see Directory Contract
+.secrets.baseline           # detect-secrets baseline — may contain hashed secrets
+
 # Cython compiled binaries (generated at build time, not committed)
-*.pyd                       # Cython/C extension вЂ” Windows
+*.pyd                       # Cython/C extension  Windows
 # *.so compiled by Cython are already covered by *.so above
 
 # NAVIG Configuration
-# .navig/ is project-local runtime state (plans, wiki, apps, logs) вЂ” user-specific, NOT for VCS
-# ~/.navig/ is the global user store вЂ” absolute path, not relevant as a gitignore rule
-.navig/*                    # Project-local NAVIG state вЂ” keep only profile.json
-!.navig/profile.json        # MVP allowlist вЂ” keep profile only
+# .navig/ is project-local runtime state (plans, wiki, apps, logs)  user-specific, NOT for VCS
+# ~/.navig/ is the global user store  absolute path, not relevant as a gitignore rule
+.navig/*                    # Project-local NAVIG state  keep only profile.json
+!.navig/profile.json        # MVP allowlist  keep profile only
 .archive/                   # Local archive / cleanup staging
 nohup.out                   # Background process output
 
@@ -173,7 +178,7 @@ audit_log.txt
 # Testing and Coverage
 # ===============================================
 .pytest_cache/              # Pytest cache
-.benchmarks/                # Benchmark results вЂ” local only, not for VCS
+.benchmarks/                # Benchmark results  local only, not for VCS
 .coverage                   # Coverage data
 htmlcov/                    # HTML coverage reports
 .tox/                       # Tox testing
@@ -192,11 +197,11 @@ site/                       # MkDocs build directory
 # App-Specific
 # ===============================================
 
-# Documentation and Tests (tracked вЂ” essential to the project)
+# Documentation and Tests (tracked  essential to the project)
 # docs/
 # tests/
 
-# Scripts вЂ” keep only public install/bootstrap entrypoints tracked
+# Scripts  keep only public install/bootstrap entrypoints tracked
 scripts/*
 !scripts/bootstrap_navig_linux.sh
 !scripts/github-bootstrap.sh
@@ -253,7 +258,9 @@ node_modules/
 
 # AI IDE Configuration
 .agents/                    # AI agent rules/skills — local only, not public
-.github/                    # GitHub config — local only, not public
+# Private AI instructions and Copilot prompt - not public:
+.github/instructions/**
+.github/copilot-instructions.md
 # Per-developer overrides only:
 .augment
 .clinerules
@@ -314,7 +321,7 @@ audit_slugs.py
 validate_prompts.py
 
 # Root output / tracking files
-audit_log.txt               # Agent session audit log вЂ” user-specific
+audit_log.txt               # Agent session audit log  user-specific
 ft4.txt                     # Dev scratch output
 latest.json                 # Stale release metadata artifact
 pytest_fail.txt
@@ -331,7 +338,7 @@ temp_restore/
 # Runtime local data (user-specific, not for VCS)
 userdata/
 
-# host/ вЂ” compiled binaries and runtime logs
+# host/  compiled binaries and runtime logs
 host/out.log
 host/build_errors.txt
 host/*.exe
@@ -339,7 +346,7 @@ host/*.exe
 # Community stub folder (separate repo at navig-community/)
 navig-community/
 
-# store/ at repo root is the built-in content package store вЂ” it IS tracked.
+# store/ at repo root is the built-in content package store  it IS tracked.
 # Only exclude generated/runtime artifacts within it if they appear:
 store/cache/
 store/tmp/
@@ -348,7 +355,7 @@ store/*.log
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
 
-# Private dev-only plugin вЂ” never commit
+# Private dev-only plugin  never commit
 navig/plugins/llm_bridge/
 navig/plugins/llm-bridge/
 
