@@ -16,9 +16,9 @@
 Thumbs.db                   # Windows thumbnail cache
 desktop.ini                 # Windows folder settings
 nul                         # Windows NUL device artifact
-.archive/              # Local archive — not for VCS
-.agents/               # Local AI agent configs — not for public repo
-.local/                # Local dev scripts, drafts, session artifacts — not for VCS
+.archive/
+.agents/
+.local/
 # ===============================================
 # Dev scripts generated during agent sessions
 # ===============================================
@@ -259,7 +259,7 @@ cython_debug/               # Cython debug symbols
 node_modules/
 
 # AI IDE Configuration
-.agents/                    # AI agent rules/skills — local only, not public
+.agents/
 # Private AI instructions and Copilot prompt - not public:
 .github/instructions/**
 .github/copilot-instructions.md
