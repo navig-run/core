@@ -1,28 +1,31 @@
 """
 NAVIG AutoHotkey v2 Adapter
 """
+
+from __future__ import annotations
+
 import os
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 
 @dataclass
 class AHKStatus:
     detected: bool = False
-    version: Optional[str] = None
-    executable_path: Optional[Path] = None
-    detection_method: Optional[str] = None
+    version: str | None = None
+    executable_path: Path | None = None
+    detection_method: str | None = None
 
     def to_dict(self):
         return {
-            'detected': self.detected,
-            'version': self.version,
-            'executable_path': str(self.executable_path) if self.executable_path else None,
-            'detection_method': self.detection_method
+            "detected": self.detected,
+            "version": self.version,
+            "executable_path": (str(self.executable_path) if self.executable_path else None),
+            "detection_method": self.detection_method,
         }
 
 
@@ -36,22 +39,26 @@ class WindowInfo:
     y: int
     width: int
     height: int
-    process_name: Optional[str] = None
+    process_name: str | None = None
     is_minimized: bool = False
     is_maximized: bool = False
 
     def to_dict(self):
         return {
-            'title': self.title,
-            'id': self.id,
-            'pid': self.pid,
-            'class_name': self.class_name,
-            'x': self.x,
-            'y': self.y,
-            'width': self.width,
-            'height': self.height,
-            'process_name': self.process_name,
-            'state': 'minimized' if self.is_minimized else ('maximized' if self.is_maximized else 'normal')
+            "title": self.title,
+            "id": self.id,
+            "pid": self.pid,
+            "class_name": self.class_name,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "process_name": self.process_name,
+            "state": (
+                "minimized"
+                if self.is_minimized
+                else ("maximized" if self.is_maximized else "normal")
+            ),
         }
 
 
@@ -69,10 +76,10 @@ class AHKAdapter:
     """Adapter for interacting with AutoHotkey v2."""
 
     def __init__(self):
-        self._executable: Optional[Path] = None
-        self._version: Optional[str] = None
+        self._executable: Path | None = None
+        self._version: str | None = None
         self._detected = False
-        self._detection_method: Optional[str] = None
+        self._detection_method: str | None = None
 
         # Paths
         # Use config or default locations
@@ -90,8 +97,6 @@ class AHKAdapter:
     def detect(self) -> AHKStatus:
         """Detect AHK installation."""
         # 1. Check PATH
-        exe_name = "AutoHotkey64.exe" if "64" in sys.version else "AutoHotkey32.exe"
-
         # Try finding standard executable name "AutoHotkey.exe" too (v2 often installs as this)
         candidates = ["AutoHotkey64.exe", "AutoHotkey32.exe", "AutoHotkey.exe"]
 
@@ -107,9 +112,19 @@ class AHKAdapter:
         # 2. Check standard install locations
         if not found_path:
             common_paths = [
-                Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "AutoHotkey" / "v2" / "AutoHotkey64.exe",
-                Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "AutoHotkey" / "v2" / "AutoHotkey.exe",
-                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "AutoHotkey" / "v2" / "AutoHotkey64.exe",
+                Path(os.environ.get("PROGRAMFILES", "C:/Program Files"))
+                / "AutoHotkey"
+                / "v2"
+                / "AutoHotkey64.exe",
+                Path(os.environ.get("PROGRAMFILES", "C:/Program Files"))
+                / "AutoHotkey"
+                / "v2"
+                / "AutoHotkey.exe",
+                Path(os.environ.get("LOCALAPPDATA", ""))
+                / "Programs"
+                / "AutoHotkey"
+                / "v2"
+                / "AutoHotkey64.exe",
             ]
             for p in common_paths:
                 if p.exists():
@@ -133,16 +148,16 @@ class AHKAdapter:
             # Running a tiny script to print version
             # A_AhkVersion
             cmd = [str(exe_path), "/ErrorStdOut", "*"]
-            process = subprocess.run(
+            process = subprocess.run(  # noqa: S603
                 cmd,
-                input="FileAppend A_AhkVersion, \"*\"",
+                input='FileAppend A_AhkVersion, "*"',
                 capture_output=True,
                 text=True,
-                timeout=2
+                timeout=2,
             )
             if process.returncode == 0:
                 return process.stdout.strip()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001,S110,S110
             pass  # best-effort; failure is non-critical
         return "Unknown"
 
@@ -151,7 +166,7 @@ class AHKAdapter:
             detected=self._detected,
             version=self._version,
             executable_path=self._executable,
-            detection_method=self._detection_method
+            detection_method=self._detection_method,
         )
 
     def is_available(self) -> bool:
@@ -171,7 +186,13 @@ To install AutoHotkey v2:
 NAVIG will automatically detect it in standard locations.
 """
 
-    def _run_ahk_subprocess(self, script_path_or_content: Union[Path, str], is_file: bool = True, args: List[str] = None, timeout: float = None) -> ExecutionResult:
+    def _run_ahk_subprocess(
+        self,
+        script_path_or_content: Path | str,
+        is_file: bool = True,
+        args: list[str] = None,
+        timeout: float = None,
+    ) -> ExecutionResult:
         if not self._executable:
             return ExecutionResult(False, stderr="AutoHotkey executable not found")
 
@@ -185,24 +206,25 @@ NAVIG will automatically detect it in standard locations.
         if is_file:
             cmd.append(str(script_path_or_content))
         else:
-            cmd.append("*") # Read from stdin
+            cmd.append("*")  # Read from stdin
             input_str = script_path_or_content
 
         if args:
             cmd.extend(args)
 
         import time
+
         start_time = time.time()
 
         try:
-            process = subprocess.run(
+            process = subprocess.run(  # noqa: S603
                 cmd,
                 input=input_str,
                 capture_output=True,
                 text=True,
-                encoding='utf-8',
-                errors='replace',
-                timeout=timeout or 30
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout or 30,
             )
 
             duration = time.time() - start_time
@@ -213,13 +235,23 @@ NAVIG will automatically detect it in standard locations.
                 stderr=process.stderr or "",
                 exit_code=process.returncode,
                 duration_seconds=duration,
-                status="COMPLETED" if process.returncode == 0 else "FAILED"
+                status="COMPLETED" if process.returncode == 0 else "FAILED",
             )
 
         except subprocess.TimeoutExpired:
-            return ExecutionResult(False, stderr="Execution timed out", status="TIMEOUT", duration_seconds=time.time() - start_time)
+            return ExecutionResult(
+                False,
+                stderr="Execution timed out",
+                status="TIMEOUT",
+                duration_seconds=time.time() - start_time,
+            )
         except Exception as e:
-            return ExecutionResult(False, stderr=str(e), status="FAILED", duration_seconds=time.time() - start_time)
+            return ExecutionResult(
+                False,
+                stderr=str(e),
+                status="FAILED",
+                duration_seconds=time.time() - start_time,
+            )
 
     def execute(self, code: str, timeout: float = None, force: bool = False) -> ExecutionResult:
         """Execute inline AHK code."""
@@ -227,11 +259,13 @@ NAVIG will automatically detect it in standard locations.
         full_code = "#Requires AutoHotkey v2.0\n#SingleInstance Force\n" + code
         return self._run_ahk_subprocess(full_code, is_file=False, timeout=timeout)
 
-    def execute_file(self, script_path: Path, args: List[str] = None, timeout: float = None) -> ExecutionResult:
+    def execute_file(
+        self, script_path: Path, args: list[str] = None, timeout: float = None
+    ) -> ExecutionResult:
         """Execute an AHK script file."""
         return self._run_ahk_subprocess(script_path, is_file=True, args=args, timeout=timeout)
 
-    def run_detached(self, script_path: Path, args: List[str] = None) -> int:
+    def run_detached(self, script_path: Path, args: list[str] = None) -> int:
         """Run script in background (detached). Returns PID."""
         if not self.executable.exists():
             return 0
@@ -242,12 +276,12 @@ NAVIG will automatically detect it in standard locations.
 
         try:
             # Popen without waiting, capturing nothing to detach
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # noqa: S603
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 cwd=str(script_path.parent),
-                creationflags=subprocess.DETACHED_PROCESS if sys.platform == 'win32' else 0
+                creationflags=(subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0),
             )
             return proc.pid
         except Exception:
@@ -255,14 +289,14 @@ NAVIG will automatically detect it in standard locations.
 
     # --- Primitives ---
 
-    def _run_primitive(self, name: str, args: List[str]) -> ExecutionResult:
+    def _run_primitive(self, name: str, args: list[str]) -> ExecutionResult:
         script_path = self._primitives_path / f"{name}.ahk"
         if not script_path.exists():
             return ExecutionResult(False, stderr=f"Primitive script not found: {script_path}")
 
         return self.execute_file(script_path, args=args)
 
-    def _run_workflow(self, name: str, args: List[str]) -> ExecutionResult:
+    def _run_workflow(self, name: str, args: list[str]) -> ExecutionResult:
         script_path = self._workflows_path / f"{name}.ahk"
         if not script_path.exists():
             return ExecutionResult(False, stderr=f"Workflow script not found: {script_path}")
@@ -288,45 +322,30 @@ NAVIG will automatically detect it in standard locations.
     def close_window(self, selector: str) -> ExecutionResult:
         return self._run_primitive("window_close", [selector])
 
-    def move_window(self, selector: str, x: int, y: int, width: int = None, height: int = None) -> ExecutionResult:
+    def move_window(
+        self, selector: str, x: int, y: int, width: int = None, height: int = None
+    ) -> ExecutionResult:
         args = [selector, str(x), str(y)]
         if width is not None and height is not None:
             args.extend([str(width), str(height)])
         return self._run_primitive("window_move", args)
 
     def maximize_window(self, selector: str) -> ExecutionResult:
-        code = f"WinMaximize \"{selector}\""
+        code = f'WinMaximize "{selector}"'
         return self.execute(code)
 
     def minimize_window(self, selector: str) -> ExecutionResult:
-        code = f"WinMinimize \"{selector}\""
+        code = f'WinMinimize "{selector}"'
         return self.execute(code)
 
-    def activate_window(self, selector: str) -> ExecutionResult:
-        code = f"WinActivate \"{selector}\""
-        return self.execute(code)
-
-    def get_clipboard(self) -> Optional[str]:
-        # AHK script to print clipboard
-        res = self.execute("FileAppend A_Clipboard, \"*\"")
-        if res.success:
-            return res.stdout
-        return None
-
-    def set_clipboard(self, content: str) -> ExecutionResult:
-        # Escape quotes for AHK string
-        safe_content = content.replace("`", "``").replace("\"", "`\"")
-        code = f"A_Clipboard := \"{safe_content}\""
-        return self.execute(code)
-
-    def get_all_windows(self) -> List[WindowInfo]:
+    def get_all_windows(self) -> list[WindowInfo]:
         """Get list of all visible windows."""
         # Use JSON for robust data transfer
-        script = r'''
+        script = r"""
         windows := WinGetList()
         jsonArray := "["
         first := true
-        
+
         for hwnd in windows {
             try {
                 style := WinGetStyle(hwnd)
@@ -334,7 +353,7 @@ NAVIG will automatically detect it in standard locations.
                 ; Actually WinGetList returns hidden windows too? Check default.
                 ; Default WinGetList mode is DetectHiddenWindows Off.
                 ; But style check is good.
-                
+
                 if (style & 0x10000000) {
                     title := WinGetTitle(hwnd)
                     if (title != "") {
@@ -345,25 +364,25 @@ NAVIG will automatically detect it in standard locations.
                         } catch {
                             process_name := ""
                         }
-                        
+
                         WinGetPos(&x, &y, &w, &h, hwnd)
                         minimized := (style & 0x20000000) ? 1 : 0
                         maximized := (style & 0x1000000) ? 1 : 0
-                        
+
                         if !first
                             jsonArray .= ","
                         first := false
-                        
+
                         ; Escape strings for JSON
                         titleEsc := StrReplace(title, "\", "\\")
                         titleEsc := StrReplace(titleEsc, '"', '\"')
                         titleEsc := StrReplace(titleEsc, "`n", " ")
                         titleEsc := StrReplace(titleEsc, "`r", "")
-                        
+
                         procEsc := StrReplace(process_name, "\", "\\")
                         procEsc .= "" ; Ensure string
-                        
-                        jsonObj := '{"hwnd":' . hwnd 
+
+                        jsonObj := '{"hwnd":' . hwnd
                         jsonObj .= ',"title":"' . titleEsc . '"'
                         jsonObj .= ',"class_name":"' . class_name . '"'
                         jsonObj .= ',"pid":' . pid
@@ -375,7 +394,7 @@ NAVIG will automatically detect it in standard locations.
                         jsonObj .= ',"minimized":' . minimized
                         jsonObj .= ',"maximized":' . maximized
                         jsonObj .= '}'
-                        
+
                         jsonArray .= jsonObj
                     }
                 }
@@ -385,29 +404,32 @@ NAVIG will automatically detect it in standard locations.
         try {
             FileAppend(jsonArray, "*")
         }
-        '''
+        """
 
         res = self.execute(script)
         windows = []
         if res.success and res.stdout:
             try:
                 import json
+
                 data = json.loads(res.stdout)
                 for item in data:
-                    windows.append(WindowInfo(
-                        title=item.get('title', ''),
-                        id=str(item.get('hwnd', '')),
-                        pid=item.get('pid', 0),
-                        class_name=item.get('class_name', ''),
-                        x=item.get('x', 0),
-                        y=item.get('y', 0),
-                        width=item.get('w', 0),
-                        height=item.get('h', 0),
-                        process_name=item.get('process_name', ''),
-                        is_minimized=item.get('minimized') == 1,
-                        is_maximized=item.get('maximized') == 1
-                    ))
-            except Exception:
+                    windows.append(
+                        WindowInfo(
+                            title=item.get("title", ""),
+                            id=str(item.get("hwnd", "")),
+                            pid=item.get("pid", 0),
+                            class_name=item.get("class_name", ""),
+                            x=item.get("x", 0),
+                            y=item.get("y", 0),
+                            width=item.get("w", 0),
+                            height=item.get("h", 0),
+                            process_name=item.get("process_name", ""),
+                            is_minimized=item.get("minimized") == 1,
+                            is_maximized=item.get("maximized") == 1,
+                        )
+                    )
+            except Exception:  # noqa: S110
                 # Log error if JSON parsing fails
                 pass
 
@@ -427,7 +449,7 @@ NAVIG will automatically detect it in standard locations.
 
     def restore_window(self, selector: str) -> ExecutionResult:
         """Restore window."""
-        code = f"WinRestore \"{selector}\""
+        code = f'WinRestore "{selector}"'
         return self.execute(code)
 
     def mouse_move(self, x: int, y: int, speed: int = 2) -> ExecutionResult:
@@ -436,22 +458,24 @@ NAVIG will automatically detect it in standard locations.
         code = f"MouseMove {x}, {y}, {speed}"
         return self.execute(code)
 
-    def drag_drop(self, x1: int, y1: int, x2: int, y2: int, button: str = "Left") -> ExecutionResult:
+    def drag_drop(
+        self, x1: int, y1: int, x2: int, y2: int, button: str = "Left"
+    ) -> ExecutionResult:
         """Drag and drop from (x1,y1) to (x2,y2)."""
-        code = f"MouseClickDrag \"{button}\", {x1}, {y1}, {x2}, {y2}"
+        code = f'MouseClickDrag "{button}", {x1}, {y1}, {x2}, {y2}'
         return self.execute(code)
 
-    def get_screen_size(self) -> Tuple[int, int]:
+    def get_screen_size(self) -> tuple[int, int]:
         """Get primary screen resolution."""
-        script = "FileAppend A_ScreenWidth \"|\" A_ScreenHeight, \"*\""
+        script = 'FileAppend A_ScreenWidth "|" A_ScreenHeight, "*"'
         res = self.execute(script)
         if res.success and "|" in res.stdout:
             try:
                 w, h = map(int, res.stdout.split("|"))
                 return (w, h)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S110
                 pass  # best-effort; failure is non-critical
-        return (1920, 1080) # Default fallback
+        return (1920, 1080)  # Default fallback
 
     def read_text(self, selector: str, control_id: str = "") -> str:
         """Extract text from window or control."""
@@ -473,14 +497,16 @@ NAVIG will automatically detect it in standard locations.
         code = f'ControlSetText "{safe_val}", "{control_id}", "{selector}"'
         return self.execute(code)
 
-    def click_control(self, selector: str, control_id: str, button: str = "Left", click_count: int = 1) -> ExecutionResult:
+    def click_control(
+        self, selector: str, control_id: str, button: str = "Left", click_count: int = 1
+    ) -> ExecutionResult:
         """Click a UI control."""
         code = f'ControlClick "{control_id}", "{selector}",, "{button}", {click_count}'
         return self.execute(code)
 
-    def get_focused_window(self) -> Optional[WindowInfo]:
+    def get_focused_window(self) -> WindowInfo | None:
         """Get the currently focused window."""
-        script = r'''
+        script = r"""
         try {
             hwnd := WinGetID("A")
             title := WinGetTitle("ahk_id " hwnd)
@@ -491,13 +517,13 @@ NAVIG will automatically detect it in standard locations.
             } catch {
                 x := 0, y := 0, w := 0, h := 0
             }
-            
+
             titleEsc := StrReplace(title, "\", "\\")
             titleEsc := StrReplace(titleEsc, '"', '\"')
             titleEsc := StrReplace(titleEsc, "`n", "\n")
             titleEsc := StrReplace(titleEsc, "`r", "")
-            
-            jsonObj := '{"hwnd":' . hwnd 
+
+            jsonObj := '{"hwnd":' . hwnd
             jsonObj .= ',"title":"' . titleEsc . '"'
             jsonObj .= ',"class_name":"' . class_name . '"'
             jsonObj .= ',"pid":' . pid
@@ -506,29 +532,30 @@ NAVIG will automatically detect it in standard locations.
             jsonObj .= ',"w":' . w
             jsonObj .= ',"h":' . h
             jsonObj .= '}'
-            
+
             FileAppend(jsonObj, "*")
         } catch {
             FileAppend("{}", "*")
         }
-        '''
+        """
         res = self.execute(script)
         if res.success and res.stdout and res.stdout != "{}":
             try:
                 import json
+
                 data = json.loads(res.stdout)
                 return WindowInfo(
-                    title=data.get('title', ''),
-                    id=str(data.get('hwnd', '')),
-                    pid=data.get('pid', 0),
-                    class_name=data.get('class_name', ''),
-                    x=data.get('x', 0),
-                    y=data.get('y', 0),
-                    width=data.get('w', 0),
-                    height=data.get('h', 0),
-                    process_name=""
+                    title=data.get("title", ""),
+                    id=str(data.get("hwnd", "")),
+                    pid=data.get("pid", 0),
+                    class_name=data.get("class_name", ""),
+                    x=data.get("x", 0),
+                    y=data.get("y", 0),
+                    width=data.get("w", 0),
+                    height=data.get("h", 0),
+                    process_name="",
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S110
                 pass  # best-effort; failure is non-critical
         return None
 
@@ -554,14 +581,14 @@ NAVIG will automatically detect it in standard locations.
 
     def set_clipboard(self, text: str) -> ExecutionResult:
         """Set clipboard content."""
-        safe = text.replace('`', '``').replace('"', '`"')
+        safe = text.replace("`", "``").replace('"', '`"')
         return self.execute(f'try A_Clipboard := "{safe}"')
 
     # === Process Management ===
 
-    def get_processes(self) -> List[Dict[str, Any]]:
+    def get_processes(self) -> list[dict[str, Any]]:
         """Get list of running processes with details."""
-        script = r'''
+        script = r"""
         processes := ComObjGet("winmgmts:").ExecQuery("SELECT * FROM Win32_Process")
         result := []
         for proc in processes {
@@ -575,10 +602,11 @@ NAVIG will automatically detect it in standard locations.
             }
         }
         FileAppend(JSON.stringify(result), "*")
-        '''
+        """
         res = self.execute(script)
         if res.success:
             import json
+
             try:
                 return json.loads(res.stdout)
             except Exception:
@@ -589,7 +617,7 @@ NAVIG will automatically detect it in standard locations.
         """Kill process by name or PID."""
         # Try as PID first (numeric)
         if identifier.isdigit():
-            script = f'try ProcessClose({identifier})'
+            script = f"try ProcessClose({identifier})"
         else:
             script = f'try ProcessClose("{identifier}")'
         return self.execute(script)
@@ -607,15 +635,18 @@ NAVIG will automatically detect it in standard locations.
 
     def process_exists(self, name: str) -> bool:
         """Check if process is running."""
-        script = f'try {{ if ProcessExist("{name}") {{ FileAppend("true", "*") }} else {{ FileAppend("false", "*") }} }}'
+        script = (
+            f'try {{ if ProcessExist("{name}") {{'
+            ' FileAppend("true", "*") }} else {{ FileAppend("false", "*") }} }}'
+        )
         res = self.execute(script)
         return res.success and res.stdout.strip() == "true"
 
     # === Multi-Monitor Support ===
 
-    def get_monitors(self) -> List[Dict[str, Any]]:
+    def get_monitors(self) -> list[dict[str, Any]]:
         """Get information about all monitors."""
-        script = r'''
+        script = r"""
         monitors := []
         Loop MonitorGetCount() {
             MonitorGet(A_Index, &left, &top, &right, &bottom)
@@ -634,10 +665,11 @@ NAVIG will automatically detect it in standard locations.
             monitors.Push(mon)
         }
         FileAppend(JSON.stringify(monitors), "*")
-        '''
+        """
         res = self.execute(script)
         if res.success:
             import json
+
             try:
                 return json.loads(res.stdout)
             except Exception:
@@ -646,7 +678,7 @@ NAVIG will automatically detect it in standard locations.
 
     def move_window_to_monitor(self, selector: str, monitor_index: int) -> ExecutionResult:
         """Move window to specific monitor."""
-        script = f'''
+        script = f"""
         try {{
             hwnd := WinExist("{selector}")
             if hwnd {{
@@ -654,7 +686,7 @@ NAVIG will automatically detect it in standard locations.
                 WinMove(left + 50, top + 50, , , hwnd)
             }}
         }}
-        '''
+        """
         return self.execute(script)
 
     # === Window State & Transparency ===
@@ -668,9 +700,9 @@ NAVIG will automatically detect it in standard locations.
         script = f'try WinSetTransparent({opacity}, "{selector}")'
         return self.execute(script)
 
-    def get_window_state(self, selector: str) -> Dict[str, bool]:
+    def get_window_state(self, selector: str) -> dict[str, bool]:
         """Get detailed window state."""
-        script = f'''
+        script = f"""
         try {{
             hwnd := WinExist("{selector}")
             if hwnd {{
@@ -684,14 +716,15 @@ NAVIG will automatically detect it in standard locations.
                 FileAppend(JSON.stringify(state), "*")
             }}
         }}
-        '''
+        """
         res = self.execute(script)
         if res.success:
             import json
+
             try:
                 data = json.loads(res.stdout)
                 return {k: bool(v) for k, v in data.items()}
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S110
                 pass  # best-effort; failure is non-critical
         return {"exists": False}
 
@@ -703,13 +736,13 @@ NAVIG will automatically detect it in standard locations.
         safe_msg = message.replace('"', '`"')
         duration_ms = duration * 1000
 
-        script = f'''
+        script = f"""
         try {{
             TrayTip("{safe_msg}", "{safe_title}", "Iconi Mute")
             Sleep({duration_ms})
             try TrayTip()
         }}
-        '''
+        """
         return self.execute(script)
 
     # === Sound Control ===
@@ -717,7 +750,7 @@ NAVIG will automatically detect it in standard locations.
     def set_volume(self, level: int) -> ExecutionResult:
         """Set master volume (0-100)."""
         level = max(0, min(100, level))
-        script = f'try SoundSetVolume({level})'
+        script = f"try SoundSetVolume({level})"
         return self.execute(script)
 
     def get_volume(self) -> int:
@@ -734,7 +767,7 @@ NAVIG will automatically detect it in standard locations.
     def mute(self, muted: bool = True) -> ExecutionResult:
         """Mute or unmute system audio."""
         value = 1 if muted else 0
-        script = f'try SoundSetMute({value})'
+        script = f"try SoundSetMute({value})"
         return self.execute(script)
 
     def is_muted(self) -> bool:
@@ -749,7 +782,7 @@ NAVIG will automatically detect it in standard locations.
         """Activate/focus a window."""
         if force:
             # Use more aggressive activation
-            script = f'''
+            script = f"""
             try {{
                 hwnd := WinExist("{selector}")
                 if hwnd {{
@@ -759,21 +792,21 @@ NAVIG will automatically detect it in standard locations.
                     WinWaitActive(hwnd, , 2)
                 }}
             }}
-            '''
+            """
         else:
             script = f'try WinActivate("{selector}")'
         return self.execute(script)
 
-    def get_active_window(self) -> Optional[WindowInfo]:
+    def get_active_window(self) -> WindowInfo | None:
         """Get currently active window."""
-        script = r'''
+        script = r"""
         try {
             hwnd := WinGetID("A")
             title := WinGetTitle(hwnd)
             class_name := WinGetClass(hwnd)
             pid := WinGetPID(hwnd)
             WinGetPos(&x, &y, &w, &h, hwnd)
-            
+
             state := Map()
             state["title"] := title
             state["hwnd"] := hwnd
@@ -783,36 +816,37 @@ NAVIG will automatically detect it in standard locations.
             state["y"] := y
             state["w"] := w
             state["h"] := h
-            
+
             FileAppend(JSON.stringify(state), "*")
         }
-        '''
+        """
         res = self.execute(script)
         if res.success and res.stdout:
             try:
                 import json
+
                 data = json.loads(res.stdout)
                 return WindowInfo(
-                    title=data.get('title', ''),
-                    id=str(data.get('hwnd', '')),
-                    pid=data.get('pid', 0),
-                    class_name=data.get('class_name', ''),
-                    x=data.get('x', 0),
-                    y=data.get('y', 0),
-                    width=data.get('w', 0),
-                    height=data.get('h', 0),
-                    process_name=""
+                    title=data.get("title", ""),
+                    id=str(data.get("hwnd", "")),
+                    pid=data.get("pid", 0),
+                    class_name=data.get("class_name", ""),
+                    x=data.get("x", 0),
+                    y=data.get("y", 0),
+                    width=data.get("w", 0),
+                    height=data.get("h", 0),
+                    process_name="",
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S110
                 pass  # best-effort; failure is non-critical
         return None
 
-    def find_windows(self, title_pattern: str = "", class_pattern: str = "") -> List[WindowInfo]:
+    def find_windows(self, title_pattern: str = "", class_pattern: str = "") -> list[WindowInfo]:
         """Find windows matching title or class pattern."""
         title_esc = title_pattern.replace('"', '`"')
         class_esc = class_pattern.replace('"', '`"')
 
-        script = f'''
+        script = f"""
         try {{
             windows := WinGetList("{title_esc}", "{class_esc}")
             result := []
@@ -836,24 +870,27 @@ NAVIG will automatically detect it in standard locations.
             }}
             FileAppend(JSON.stringify(result), "*")
         }}
-        '''
+        """
         res = self.execute(script)
         if res.success:
             import json
+
             try:
                 data = json.loads(res.stdout)
-                return [WindowInfo(
-                    title=w.get('title', ''),
-                    id=str(w.get('hwnd', '')),
-                    pid=w.get('pid', 0),
-                    class_name=w.get('class_name', ''),
-                    x=w.get('x', 0),
-                    y=w.get('y', 0),
-                    width=w.get('w', 0),
-                    height=w.get('h', 0),
-                    process_name=""
-                ) for w in data]
-            except Exception:  # noqa: BLE001
+                return [
+                    WindowInfo(
+                        title=w.get("title", ""),
+                        id=str(w.get("hwnd", "")),
+                        pid=w.get("pid", 0),
+                        class_name=w.get("class_name", ""),
+                        x=w.get("x", 0),
+                        y=w.get("y", 0),
+                        width=w.get("w", 0),
+                        height=w.get("h", 0),
+                        process_name="",
+                    )
+                    for w in data
+                ]
+            except Exception:  # noqa: BLE001,S110
                 pass  # best-effort; failure is non-critical
         return []
-

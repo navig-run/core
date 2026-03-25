@@ -50,7 +50,7 @@ VERBOSE=0
 HELP=0
 DEV_MODE=0
 MIN_PYTHON_MAJOR=3
-MIN_PYTHON_MINOR=8
+MIN_PYTHON_MINOR=10
 REPO_URL="https://github.com/navig-run/core.git"
 
 # ── Taglines ──────────────────────────────────────────────────
@@ -212,7 +212,7 @@ install_homebrew() {
 
 # ── Python Detection & Installation ──────────────────────────
 detect_python() {
-    local candidates=("python3" "python" "python3.12" "python3.11" "python3.10" "python3.9" "python3.8")
+    local candidates=("python3" "python" "python3.13" "python3.12" "python3.11" "python3.10")
     for cmd in "${candidates[@]}"; do
         if command -v "$cmd" &>/dev/null; then
             local ver
@@ -381,6 +381,30 @@ ensure_pip_user_bin_on_path() {
     done
 }
 
+# ── pipx detection & install ──────────────────────────────────
+check_install_pipx() {
+    if command -v pipx &>/dev/null; then
+        echo -e "${SUCCESS}✓${NC} pipx available"
+        return 0
+    fi
+    echo -e "${WARN}→${NC} Installing pipx (isolated installs)..."
+    if ! $PIP_CMD install --user pipx --quiet 2>/dev/null; then
+        echo -e "${WARN}!${NC} pipx install failed — using pip --user fallback"
+        return 0
+    fi
+    # Expose the freshly installed pipx in the current session
+    local user_base
+    user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
+    export PATH="${user_base}/bin:$PATH"
+    hash -r 2>/dev/null || true
+    if command -v pipx &>/dev/null; then
+        pipx ensurepath --quiet 2>/dev/null || true
+        echo -e "${SUCCESS}✓${NC} pipx installed and on PATH"
+    else
+        echo -e "${WARN}!${NC} pipx installed but not on PATH yet — restart shell or source ~/.bashrc"
+    fi
+}
+
 # ── Install via pip ───────────────────────────────────────────
 install_navig_pip() {
     local install_spec="navig"
@@ -515,7 +539,13 @@ start_telegram_daemon() {
 
     navig service install --bot --gateway --scheduler --no-start >/dev/null 2>&1 || true
     navig service start >/dev/null 2>&1 || true
-    echo -e "${SUCCESS}✓${NC} Telegram daemon start attempted"
+    sleep 2
+    if navig service status 2>/dev/null | grep -qiE "running|active|started"; then
+        echo -e "${SUCCESS}✓${NC} Telegram daemon is running"
+    else
+        echo -e "${WARN}!${NC} Daemon did not start automatically"
+        echo -e "  Run manually: ${INFO}navig service start${NC}"
+    fi
 }
 
 # ── Check existing installation ───────────────────────────────
@@ -570,6 +600,14 @@ main() {
     if [[ "$HELP" == "1" ]]; then
         print_usage
         return 0
+    fi
+
+    # Root guard — running as root is risky; require explicit opt-in
+    if [[ "$(id -u)" -eq 0 ]] && [[ "${NAVIG_ALLOW_ROOT:-0}" != "1" ]]; then
+        echo -e "${ERROR}Error: do not run the installer as root.${NC}"
+        echo -e "  NAVIG installs per-user, not system-wide."
+        echo -e "  To override: ${INFO}NAVIG_ALLOW_ROOT=1 bash install.sh${NC}"
+        exit 1
     fi
 
     print_banner
@@ -635,6 +673,10 @@ main() {
     else
         # Ensure pip user bin is on PATH for --user installs
         ensure_pip_user_bin_on_path
+        # Step 5.6: Offer pipx for isolated installs (non-root, non-venv)
+        if ! is_root && [[ -z "${VIRTUAL_ENV:-}" ]]; then
+            check_install_pipx
+        fi
         install_navig_pip
     fi
 
@@ -651,6 +693,15 @@ main() {
     local installed_version
     verify_install || true
     installed_version="$(resolve_navig_version)"
+
+    # Step 8.1: Store Telegram token in vault (requires navig on PATH; non-fatal)
+    if [[ -n "$TELEGRAM_TOKEN" ]] && command -v navig &>/dev/null; then
+        if navig vault set telegram_bot_token "$TELEGRAM_TOKEN" 2>/dev/null; then
+            echo -e "${SUCCESS}✓${NC} Telegram token stored in vault (dual-write complete)"
+        else
+            echo -e "${DIM}i${NC} Vault write skipped — token saved to .env and config.yaml"
+        fi
+    fi
 
     # ── Success ───────────────────────────────────────────────
     echo ""
@@ -682,9 +733,12 @@ main() {
 
     echo ""
     echo -e "Get started:"
-    echo -e "  ${INFO}navig${NC}                    Open interactive menu"
-    echo -e "  ${INFO}navig host add${NC}           Add your first server"
-    echo -e "  ${INFO}navig help${NC}               Show available commands"
+    echo -e "  ${INFO}navig${NC}                           Open interactive menu"
+    echo -e "  ${INFO}navig host add${NC}                  Add your first server"
+    echo -e "  ${INFO}navig help${NC}                      Show available commands"
+    echo ""
+    echo -e "First-run setup wizard auto-starts on next invocation."
+    echo -e "  To skip: ${INFO}NAVIG_SKIP_ONBOARDING=1 navig${NC}"
     echo ""
 
     if [[ "$INSTALL_METHOD" == "git" ]]; then
@@ -703,5 +757,10 @@ main() {
 if [[ "${NAVIG_INSTALL_SH_NO_RUN:-0}" != "1" ]]; then
     parse_args "$@"
     configure_verbose
+    # Tee all output to ~/.navig/logs/install.log from the start.
+    # The log dir is also created in setup_navig_config, but we need it
+    # before main() runs so the tee captures the full session.
+    mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
+    exec > >(tee -a "${HOME}/.navig/logs/install.log") 2>&1
     main
 fi

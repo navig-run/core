@@ -531,7 +531,16 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
 
 
 def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
-    """Optionally configure a Telegram bot token for notifications."""
+    """Optionally configure a Telegram bot token for notifications.
+
+    Token storage strategy (dual-write for broad compatibility):
+    1. Vault  — primary, secure (navig.vault.core_v2); requires vault-init step.
+    2. .env   — legacy; used by the shell/PS1 installers and daemon env loading.
+    3. config.yaml — legacy fallback for pre-vault installs; matches install.sh pattern.
+
+    All three writes are individually non-fatal.  Missing any one does not fail
+    the step \u2014 the token is preserved in at least one location.
+    """
     marker  = navig_dir / ".telegram_configured"
     config_path = navig_dir / "config.yaml"
 
@@ -555,18 +564,50 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
         if not token:
             return StepResult(status="skipped", output={"reason": "no token entered"})
 
+        writes: list[str] = []
+
+        # 1. Primary: vault (secure, per-user credential store)
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+            vault = get_vault_v2()
+            if vault is not None:
+                vault.put(
+                    "telegram_bot_token",
+                    json.dumps({"value": token}).encode(),
+                )
+                writes.append("vault")
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 2. Legacy: .env file (used by install.sh / install.ps1 and daemon env loading)
+        try:
+            env_path = navig_dir / ".env"
+            existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+            lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
+            lines.append(f"TELEGRAM_BOT_TOKEN={token}")
+            env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            env_path.chmod(0o600)
+            writes.append(".env")
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 3. Legacy: config.yaml (backward compat for pre-vault setups; mirrors installer pattern)
         try:
             import yaml  # type: ignore[import]
             cfg: dict[str, Any] = {}
             if config_path.exists():
                 cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            cfg.setdefault("gateway", {}).setdefault("telegram", {})["bot_token"] = token
+            cfg.setdefault("telegram", {})["bot_token"] = token
             config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+            writes.append("config.yaml")
         except Exception:  # noqa: BLE001
             pass
 
         marker.write_text("1", encoding="utf-8")
-        return StepResult(status="completed", output={"note": "token saved"})
+        return StepResult(
+            status="completed",
+            output={"note": f"token saved ({', '.join(writes) or 'nowhere'})"},
+        )
 
     def verify() -> bool:
         return marker.exists()
