@@ -59,12 +59,6 @@ It gives operators direct control over remote hosts, databases, containers, file
 
 ## Install
 
-### pipx (recommended)
-
-```bash
-pipx install navig
-```
-
 ### Linux / macOS / WSL
 
 ```bash
@@ -75,6 +69,12 @@ curl -fsSL https://navig.run/install.sh | bash
 
 ```powershell
 irm https://navig.run/install.ps1 | iex
+```
+
+### pipx
+
+```bash
+pipx install navig
 ```
 
 ### pip
