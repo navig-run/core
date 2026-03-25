@@ -18,6 +18,7 @@ desktop.ini                 # Windows folder settings
 nul                         # Windows NUL device artifact
 .archive/              # Local archive — not for VCS
 .agents/               # Local AI agent configs — not for public repo
+.local/                # Local dev scripts, drafts, session artifacts — not for VCS
 # ===============================================
 # Dev scripts generated during agent sessions
 # ===============================================
