@@ -1,3 +1,4 @@
+#Requires -Version 5.1
 # ─────────────────────────────────────────────────────────────
 # NAVIG Installer — Windows (PowerShell 5.1+)
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
@@ -27,6 +28,11 @@ param(
     [switch]$Verbose,
     [switch]$Help
 )
+
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Error "PowerShell 5.1 or higher is required. Download: https://aka.ms/PSWindows"
+    exit 1
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -440,7 +446,7 @@ function Test-NavigInstall {
         (Join-Path $HOME "AppData\Roaming\Python\Python313\Scripts"),
         (Join-Path $HOME "AppData\Roaming\Python\Python312\Scripts"),
         (Join-Path $HOME "AppData\Roaming\Python\Python311\Scripts"),
-        "C:\Python313\Scripts",
+        "C:\Python313\Scripts"
     )
 
     foreach ($p in $pipPaths) {
