@@ -55,10 +55,9 @@
 ## How to influence the roadmap
 
 - Open an issue or start a discussion on [GitHub](https://github.com/navig-run/core/discussions)
-- Sponsor development via [GitHub Sponsors](https://github.com/sponsors/navig-run) to accelerate specific areas
+- Sponsor development via [GitHub Sponsors](https://github.com/sponsors/miztizm) to accelerate specific areas
 - Contribute directly — see [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
-_Last updated: March 2026 · NAVIG v2.4.13_
-
+<!-- Last updated: March 2026 · NAVIG v2.4.13 -->
