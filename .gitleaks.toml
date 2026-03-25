@@ -1,4 +1,4 @@
-﻿[allowlist]
+[allowlist]
 description = "Global allowlist for mock test data"
 paths = [
     '''\.secrets\.baseline''',
