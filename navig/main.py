@@ -139,6 +139,64 @@ def _eprint(message: str) -> None:
     else:
         sys.stderr.write(str(message) + "\n")
 
+
+def _check_first_run() -> None:
+    """Trigger onboarding on first run if ~/.navig/onboarding.json is absent.
+
+    Safe to call on every invocation — returns immediately if already done.
+    Non-TTY environments (CI, scripts) auto-skip interactive Phase 2 steps
+    via _tty_check() guards already built into each Phase 2 step.
+
+    Opt-out: set NAVIG_SKIP_ONBOARDING=1 in the environment.
+    """
+    import os
+    from pathlib import Path
+
+    # Explicit opt-out for CI and scripted environments
+    if os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
+        return
+
+    # Shell-completion probes — must never block or print
+    if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
+        return
+
+    navig_dir = Path.home() / ".navig"
+
+    # Primary completion signal: the engine writes this artifact when done
+    if (navig_dir / "onboarding.json").exists():
+        return
+
+    # Avoid double-run when the user explicitly invokes onboarding sub-commands
+    _SKIP_CMDS = {"onboard", "quickstart", "service", "update", "version"}
+    if any(cmd in sys.argv[1:2] for cmd in _SKIP_CMDS):
+        return
+
+    try:
+        import socket
+
+        from navig.onboarding import EngineConfig, OnboardingEngine
+        from navig.onboarding.genesis import load_or_create
+        from navig.onboarding.steps import build_step_registry
+
+        cfg = EngineConfig(
+            navig_dir=navig_dir,
+            node_name=socket.gethostname(),
+        )
+        genesis = load_or_create(navig_dir, name=socket.gethostname())
+        steps = build_step_registry(cfg, genesis)
+        engine = OnboardingEngine(cfg, steps)
+
+        sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
+        sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip.\n\n")
+        sys.stdout.flush()
+
+        engine.run()
+
+        sys.stdout.write("\n  Setup complete. Run 'navig --help' to get started.\n\n")
+        sys.stdout.flush()
+    except Exception as exc:  # never crash main on onboarding failure
+        _eprint(f"[dim]First-run setup skipped: {exc}[/dim]")
+
 # Track plugin state for status command
 _loaded_plugins: List[str] = []
 _failed_plugins: List[Dict[str, str]] = []
@@ -504,6 +562,11 @@ def main() -> None:
             crash_handler.enable_debug()
             # We don't remove it from argv so Typer can still see it if needed,
             # but usually Typer handles its own parsing.
+
+        # First-run onboarding — fires when ~/.navig/onboarding.json is absent.
+        # Placed before the fast-path so bare `navig` on a fresh install shows
+        # the welcome wizard rather than just help text.
+        _check_first_run()
 
         if _maybe_handle_fast_path(sys.argv):
             return

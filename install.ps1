@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # ─────────────────────────────────────────────────────────────
 # NAVIG Installer — Windows (PowerShell 5.1+)
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
@@ -9,23 +9,22 @@
 #   .\install.ps1 -Dev
 #
 # Environment variables:
-#   NAVIG_VERSION          Pin version (e.g. "2.3.0")
-#   NAVIG_INSTALL_METHOD   "pip" (default) or "git"
-#   NAVIG_EXTRAS           Comma-separated extras (e.g. "voice,keyring")
+#   NAVIG_VERSION             Pin version (e.g. "2.3.0")
+#   NAVIG_INSTALL_METHOD      "pip" (default) or "git"
+#   NAVIG_EXTRAS              Comma-separated extras (e.g. "voice,keyring")
 #   NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for automatic bot setup
 # ─────────────────────────────────────────────────────────────
 [CmdletBinding()]
 param(
-    [string]$Version = $env:NAVIG_VERSION,
-    [string]$InstallMethod = $(if ($env:NAVIG_INSTALL_METHOD) { $env:NAVIG_INSTALL_METHOD } else { "pip" }),
-    [string]$Extras = $env:NAVIG_EXTRAS,
-    [string]$TelegramToken = $(if ($env:NAVIG_TELEGRAM_BOT_TOKEN) { $env:NAVIG_TELEGRAM_BOT_TOKEN } else { $env:TELEGRAM_BOT_TOKEN }),
-    [string]$GitDir = "$HOME\navig-core",
+    [string]$Version        = $env:NAVIG_VERSION,
+    [string]$InstallMethod  = $(if ($env:NAVIG_INSTALL_METHOD) { $env:NAVIG_INSTALL_METHOD } else { "pip" }),
+    [string]$Extras         = $env:NAVIG_EXTRAS,
+    [string]$TelegramToken  = $(if ($env:NAVIG_TELEGRAM_BOT_TOKEN) { $env:NAVIG_TELEGRAM_BOT_TOKEN } else { $env:TELEGRAM_BOT_TOKEN }),
+    [string]$GitDir         = "$HOME\navig-core",
     [switch]$Dev,
     [switch]$Production,
     [switch]$DryRun,
     [switch]$NoConfirm,
-    [switch]$Verbose,
     [switch]$Help
 )
 
@@ -34,84 +33,197 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
     exit 1
 }
 
+# ── Encoding — set before any Write-Host so Unicode renders correctly ──────
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+
 $ErrorActionPreference = "Stop"
 
-# ── Constants ─────────────────────────────────────────────────
-$REPO_URL = "https://github.com/navig-run/core.git"
+# ── Constants ──────────────────────────────────────────────────────────────
+$REPO_URL         = "https://github.com/navig-run/core.git"
 $MIN_PYTHON_MAJOR = 3
 $MIN_PYTHON_MINOR = 10
 
-# ── Taglines ──────────────────────────────────────────────────
-$TAGLINES = @(
-    "Your servers are in good hands now."
-    "No admin visible in graveyard? Perfect."
-    "SSH tunnels, remote ops - all in one CLI."
-    "Because server management shouldn't feel like surgery."
-    "Keeping uptime personal since 2024."
-    "One CLI to rule them all."
-    "Remote ops, local comfort."
-    "Born in the terminal. Lives in the cloud."
-    "Your devops sidekick. No cape required."
-    "Deploy, manage, survive. Repeat."
-    "Less SSH, more SHH - it just works."
-    "The quiet guardian of your infrastructure."
-    "Admin by day, daemon by night."
-)
+# ── Output helpers ─────────────────────────────────────────────────────────
+#   [->]  in-progress   [OK]  success   [!!]  failure   [i]  info
+function Write-NavStep  { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[->]" -NoNewline -ForegroundColor Cyan;    Write-Host "  $msg" }
+function Write-NavOk    { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[OK]" -NoNewline -ForegroundColor Green;   Write-Host "  $msg" }
+function Write-NavErr   { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[!!]" -NoNewline -ForegroundColor Red;     Write-Host "  $msg" }
+function Write-NavInfo  { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[i]"  -NoNewline -ForegroundColor DarkGray; Write-Host "  $msg" }
+function Write-NavHint  { param([string]$msg) Write-Host "      $msg" -ForegroundColor Yellow }
 
-function Get-Tagline {
-    $TAGLINES | Get-Random
+# ── Live spinner ───────────────────────────────────────────────────────────
+# Starts $Exe $ArgList as a child process, animates a spinner on the current
+# line, then overwrites with a success/failure indicator. Returns exit code.
+function Invoke-WithSpinner {
+    param(
+        [string]   $Label,
+        [string]   $Exe,
+        [string[]] $ArgList
+    )
+
+    $frames = @('|','/','-','\')   # ASCII spinner — works everywhere
+    $pad    = "                                        "
+    $tmpOut = [System.IO.Path]::GetTempFileName()
+    $tmpErr = [System.IO.Path]::GetTempFileName()
+
+    try {
+        $proc = Start-Process -FilePath $Exe -ArgumentList $ArgList `
+            -RedirectStandardOutput $tmpOut `
+            -RedirectStandardError  $tmpErr `
+            -NoNewWindow -PassThru
+
+        $i = 0
+        while (-not $proc.HasExited) {
+            $f = $frames[$i % $frames.Length]
+            Write-Host "`r  [ $f ]  $Label$pad" -NoNewline -ForegroundColor Cyan
+            Start-Sleep -Milliseconds 100
+            $i++
+        }
+        $code = $proc.ExitCode
+    } catch {
+        $code = 1
+    }
+
+    if ($code -eq 0) {
+        Write-Host "`r  " -NoNewline
+        Write-Host "[OK]" -NoNewline -ForegroundColor Green
+        Write-Host "  $Label$pad"
+    } else {
+        Write-Host "`r  " -NoNewline
+        Write-Host "[!!]" -NoNewline -ForegroundColor Red
+        Write-Host "  $Label$pad"
+        if ($VerbosePreference -ne 'SilentlyContinue') {
+            Get-Content $tmpErr -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
+        }
+    }
+
+    Remove-Item $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
+    return $code
 }
 
-# ── Output helpers ────────────────────────────────────────────
-function Write-Step  { param([string]$msg) Write-Host "  -> " -NoNewline -ForegroundColor Yellow; Write-Host $msg }
-function Write-Ok    { param([string]$msg) Write-Host "  OK " -NoNewline -ForegroundColor Green; Write-Host $msg }
-function Write-Err   { param([string]$msg) Write-Host "  ERR " -NoNewline -ForegroundColor Red; Write-Host $msg }
-function Write-Info  { param([string]$msg) Write-Host "  i  " -NoNewline -ForegroundColor Cyan; Write-Host $msg }
-
-# ── Banner ────────────────────────────────────────────────────
+# ── Banner ─────────────────────────────────────────────────────────────────
 function Show-Banner {
+    $art = @(
+        " _   _    _   __   ___ ____  "
+        "| \ | |  / \ |\ \ / /|_ _/ ___|"
+        "|  \| | / _ \| \ V /  | || |  _"
+        "| |\  |/ ___ \  | |   | || |_| |"
+        "|_| \_/_/   \_\ |_|  |___\____|"
+    )
+    $tagline = "Born in the terminal. Lives in the cloud."
+    $inner   = 74
+    $border  = "-" * $inner
+    $blank   = " " * $inner
+
     Write-Host ""
-    Write-Host @"
-    ╔╗╔┌─┐┬  ┬┬┌─┐
-    ║║║├─┤└┐┌┘││ ┬
-    ╝╚╝┴ ┴ └┘ ┴└─┘
-"@ -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  $(Get-Tagline)" -ForegroundColor DarkGray
+    Write-Host "  +-$border-+" -ForegroundColor Cyan
+    Write-Host "  | $blank |" -ForegroundColor Cyan
+
+    foreach ($line in $art) {
+        $padded = ("    " + $line).PadRight($inner)
+        Write-Host "  |" -NoNewline -ForegroundColor Cyan
+        Write-Host $padded -NoNewline -ForegroundColor White
+        Write-Host "|" -ForegroundColor Cyan
+    }
+
+    Write-Host "  | $blank |" -ForegroundColor Cyan
+
+    $tlen  = $tagline.Length
+    $lpad  = [int](($inner - $tlen) / 2)
+    $rpad  = $inner - $tlen - $lpad
+    $tline = (" " * $lpad) + $tagline + (" " * $rpad)
+    Write-Host "  |" -NoNewline -ForegroundColor Cyan
+    Write-Host $tline -NoNewline -ForegroundColor DarkGray
+    Write-Host "|" -ForegroundColor Cyan
+
+    Write-Host "  | $blank |" -ForegroundColor Cyan
+    Write-Host "  +-$border-+" -ForegroundColor Cyan
     Write-Host ""
 }
 
-# ── Usage ─────────────────────────────────────────────────────
+# ── Success banner ─────────────────────────────────────────────────────────
+function Show-SuccessBanner {
+    param([string]$InstalledVersion)
+
+    $verLabel = if ($InstalledVersion) { "  NAVIG v$InstalledVersion installed" } else { "  NAVIG installed" }
+    $inner    = 44
+
+    Write-Host ""
+    Write-Host "  +$("=" * $inner)+" -ForegroundColor Magenta
+    Write-Host "  |" -NoNewline -ForegroundColor Magenta
+    Write-Host $verLabel.PadRight($inner) -NoNewline -ForegroundColor White
+    Write-Host "|" -ForegroundColor Magenta
+    Write-Host "  |" -NoNewline -ForegroundColor Magenta
+    Write-Host "  Welcome aboard. Keep those servers".PadRight($inner) -NoNewline -ForegroundColor White
+    Write-Host "|" -ForegroundColor Magenta
+    Write-Host "  |" -NoNewline -ForegroundColor Magenta
+    Write-Host "  alive.".PadRight($inner) -NoNewline -ForegroundColor White
+    Write-Host "|" -ForegroundColor Magenta
+    Write-Host "  +$("=" * $inner)+" -ForegroundColor Magenta
+    Write-Host ""
+}
+
+# ── Get-started block ──────────────────────────────────────────────────────
+function Show-GetStarted {
+    param([string]$PipCmd, [string]$GitSource)
+
+    $configPath = "$env:USERPROFILE\.navig\"
+
+    Write-Host "  Get started:" -ForegroundColor White
+    Write-Host "    " -NoNewline; Write-Host "navig" -NoNewline -ForegroundColor Yellow; Write-Host "                    Open interactive menu"
+    Write-Host "    " -NoNewline; Write-Host "navig host add" -NoNewline -ForegroundColor Yellow; Write-Host "           Add your first server"
+    Write-Host "    " -NoNewline; Write-Host "navig help" -NoNewline -ForegroundColor Yellow; Write-Host "               Show all commands"
+    Write-Host ""
+
+    if ($GitSource) {
+        Write-Host "  " -NoNewline; Write-Host "Update: " -NoNewline -ForegroundColor White
+        Write-Host "cd $GitSource && git pull && pip install -e ." -ForegroundColor Yellow
+        Write-Host "  " -NoNewline; Write-Host "Source: " -NoNewline -ForegroundColor White
+        Write-Host $GitSource -ForegroundColor Yellow
+    } else {
+        Write-Host "  " -NoNewline; Write-Host "Update: " -NoNewline -ForegroundColor White
+        Write-Host "python.exe -m pip install --upgrade navig" -ForegroundColor Yellow
+    }
+    Write-Host "  " -NoNewline; Write-Host "Config: " -NoNewline -ForegroundColor White
+    Write-Host $configPath -ForegroundColor Yellow
+    Write-Host "  " -NoNewline; Write-Host "Docs:   " -NoNewline -ForegroundColor White
+    Write-Host "https://github.com/navig-run/core" -ForegroundColor Yellow
+    Write-Host ""
+}
+
+# ── Usage ──────────────────────────────────────────────────────────────────
 function Show-Usage {
     Write-Host @"
 NAVIG Installer for Windows
 
 Usage:
     irm https://navig.run/install.ps1 | iex
-  .\install.ps1 [OPTIONS]
+    .\install.ps1 [OPTIONS]
 
 Options:
   -Version <ver>    Install specific version (e.g. 2.3.0)
   -Dev              Install from git source (dev mode)
-  -GitDir <path>    Git checkout directory (default: ~/navig-core)
+  -GitDir <path>    Git checkout directory (default: $HOME\navig-core)
   -Extras <list>    Comma-separated extras: voice,keyring,dev
-    -TelegramToken    Telegram bot token for auto-configuration
+  -TelegramToken    Telegram bot token for auto-configuration
   -NoConfirm        Skip interactive prompts
   -DryRun           Preview actions without executing
   -Verbose          Show detailed output
   -Help             Show this help
 
 Environment variables:
-  NAVIG_VERSION          Pin version
-  NAVIG_INSTALL_METHOD   pip (default) or git
-  NAVIG_EXTRAS           Comma-separated extras
-    NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for auto setup
+  NAVIG_VERSION             Pin version
+  NAVIG_INSTALL_METHOD      pip (default) or git
+  NAVIG_EXTRAS              Comma-separated extras
+  NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for auto setup
 "@
 }
 
-# ── Python Detection ──────────────────────────────────────────
+# ── Python detection ──────────────────────────────────────────────────────
 function Find-Python {
-    # Prefer known-good user-installed Python paths over system/server paths
     $preferredPaths = @(
         (Join-Path $HOME "AppData\Local\Programs\Python\Python314-32\python.exe"),
         (Join-Path $HOME "AppData\Local\Programs\Python\Python314\python.exe"),
@@ -127,188 +239,150 @@ function Find-Python {
                 if ($verOutput -match '(\d+)\.(\d+)\.(\d+)') {
                     $major = [int]$Matches[1]; $minor = [int]$Matches[2]
                     if ($major -ge $MIN_PYTHON_MAJOR -and $minor -ge $MIN_PYTHON_MINOR) {
-                        Write-Ok "Python $verOutput found at $p"
+                        Write-NavOk "Python $verOutput found at $p"
                         return $p
                     }
                 }
             } catch {}
         }
     }
-    $candidates = @("python", "python3", "py -3")
 
-    foreach ($cmd in $candidates) {
+    foreach ($cmd in @("python", "python3", "py -3")) {
         try {
-            $parts = $cmd -split ' '
-            $exe = $parts[0]
-            $args = if ($parts.Length -gt 1) { $parts[1..($parts.Length-1)] } else { @() }
-
-            $verOutput = if ($args.Length -gt 0) {
-                & $exe @args --version 2>&1
-            } else {
-                & $exe --version 2>&1
-            }
-
+            $parts     = $cmd -split ' '
+            $exe       = $parts[0]
+            $cargs     = if ($parts.Length -gt 1) { $parts[1..($parts.Length-1)] } else { @() }
+            $verOutput = if ($cargs.Length -gt 0) { & $exe @cargs --version 2>&1 } else { & $exe --version 2>&1 }
             if ($verOutput -match '(\d+)\.(\d+)\.(\d+)') {
-                $major = [int]$Matches[1]
-                $minor = [int]$Matches[2]
+                $major = [int]$Matches[1]; $minor = [int]$Matches[2]
                 if ($major -ge $MIN_PYTHON_MAJOR -and $minor -ge $MIN_PYTHON_MINOR) {
-                    Write-Ok "Python $verOutput found"
+                    Write-NavOk "Python $verOutput found"
                     return $cmd
                 }
-            }
-        } catch {
-            # Command not found, try next
-        }
-    }
-    return $null
-}
-
-function Find-Pip {
-    param([string]$PythonCmd)
-
-    # Try python -m pip first
-    try {
-        $parts = $PythonCmd -split ' '
-        $exe = $parts[0]
-        $args = if ($parts.Length -gt 1) { $parts[1..($parts.Length-1)] + @("-m", "pip", "--version") } else { @("-m", "pip", "--version") }
-        $out = & $exe @args 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            return "$PythonCmd -m pip"
-        }
-    } catch {}
-
-    # Try standalone pip
-    foreach ($cmd in @("pip3", "pip")) {
-        try {
-            & $cmd --version 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                return $cmd
             }
         } catch {}
     }
     return $null
 }
 
-# ── Python Installation ──────────────────────────────────────
-function Install-PythonWindows {
-    Write-Step "Python not found. Installing via winget..."
+function Find-Pip {
+    param([string]$PythonCmd)
+    try {
+        $parts = $PythonCmd -split ' '
+        $exe   = $parts[0]
+        $cargs = if ($parts.Length -gt 1) { $parts[1..($parts.Length-1)] + @("-m","pip","--version") } else { @("-m","pip","--version") }
+        $out   = & $exe @cargs 2>&1
+        if ($LASTEXITCODE -eq 0) { return "$PythonCmd -m pip" }
+    } catch {}
+    foreach ($cmd in @("pip3","pip")) {
+        try {
+            & $cmd --version 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { return $cmd }
+        } catch {}
+    }
+    return $null
+}
 
-    # Try winget first
+# ── Python installation ────────────────────────────────────────────────────
+function Install-PythonWindows {
+    Write-NavStep "Python not found — installing via winget..."
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         try {
             winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements
-            # Refresh PATH
-            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
-            Write-Ok "Python installed via winget"
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
+            Write-NavOk "Python installed via winget"
             return $true
         } catch {
-            Write-Step "winget install failed, trying direct download..."
+            Write-NavStep "winget failed — falling back to direct download..."
         }
     }
-
-    # Direct download fallback
-    Write-Step "Downloading Python installer..."
-    $installerUrl = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
+    Write-NavStep "Downloading Python 3.12 installer..."
+    $installerUrl  = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
     $installerPath = Join-Path $env:TEMP "python-installer.exe"
-
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
-
-        Write-Step "Running Python installer (silent)..."
-        Start-Process -FilePath $installerPath -ArgumentList "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0" -Wait
-
-        # Refresh PATH
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
-
+        Write-NavStep "Running Python installer (silent)..."
+        Start-Process -FilePath $installerPath -ArgumentList "/quiet","InstallAllUsers=0","PrependPath=1","Include_test=0" -Wait
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
         Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
-        Write-Ok "Python installed"
+        Write-NavOk "Python installed"
         return $true
     } catch {
-        Write-Err "Failed to install Python. Please install manually from https://python.org"
+        Write-NavErr "Failed to install Python automatically"
+        Write-NavHint "Install manually from https://python.org then re-run this script"
         return $false
     }
 }
 
-# ── Git Detection & Installation ─────────────────────────────
+# ── Git detection & installation ──────────────────────────────────────────
 function Find-Git {
     if (Get-Command git -ErrorAction SilentlyContinue) {
-        Write-Ok "Git already installed"
+        Write-NavOk "Git available"
         return $true
     }
     return $false
 }
 
 function Install-GitWindows {
-    Write-Step "Installing Git..."
+    Write-NavStep "Installing Git..."
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         try {
             winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements
-            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
-            Write-Ok "Git installed via winget"
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
+            Write-NavOk "Git installed via winget"
             return $true
         } catch {
-            Write-Err "Git installation failed. Install manually from https://git-scm.com"
+            Write-NavErr "Git installation failed"
+            Write-NavHint "Install manually from https://git-scm.com"
             return $false
         }
     }
-    Write-Err "winget not available. Install Git manually from https://git-scm.com"
+    Write-NavErr "winget not available"
+    Write-NavHint "Install Git manually from https://git-scm.com"
     return $false
 }
 
-# ── SSH Check ─────────────────────────────────────────────────
+# ── SSH check ──────────────────────────────────────────────────────────────
 function Test-SSH {
     if (Get-Command ssh -ErrorAction SilentlyContinue) {
-        Write-Ok "SSH client available"
+        Write-NavOk "SSH client available"
         return $true
     }
-    Write-Info "SSH client not found. Windows 10+ includes OpenSSH - enable it in Settings > Optional Features"
-    return $true  # Non-blocking; navig can use paramiko fallback
+    Write-NavInfo "SSH client not found — enable OpenSSH in Settings > Optional Features"
+    return $true   # non-blocking: navig uses paramiko fallback
 }
 
-# ── Install via pip ───────────────────────────────────────────
+# ── Install via pip (with live spinner) ───────────────────────────────────
 function Install-NavigPip {
     param([string]$PipCmd)
 
     $installSpec = "navig"
-    if ($Version) {
-        $installSpec = "navig==$Version"
-    }
-    if ($Extras) {
-        $installSpec = "navig[$Extras]"
-        if ($Version) { $installSpec = "navig[$Extras]==$Version" }
-    }
-
-    Write-Step "Installing NAVIG via pip: $installSpec"
+    if ($Version) { $installSpec = "navig==$Version" }
+    if ($Extras)  { $installSpec = "navig[$Extras]"; if ($Version) { $installSpec = "navig[$Extras]==$Version" } }
 
     $pipParts = $PipCmd -split ' '
-    $exe = $pipParts[0]
-    $pipArgs = @()
-    if ($pipParts.Length -gt 1) {
-        $pipArgs += $pipParts[1..($pipParts.Length-1)]
-    }
-    $pipArgs += @("install", "--upgrade", $installSpec)
+    $exe      = $pipParts[0]
+    $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
+    $fullArgs = $baseArgs + @("install","--upgrade",$installSpec)
 
-    & $exe @pipArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "pip install failed"
-        Write-Host "  Try manually: pip install $installSpec" -ForegroundColor Cyan
+    $code = Invoke-WithSpinner -Label "Installing NAVIG  ($installSpec)" -Exe $exe -ArgList $fullArgs
+    if ($code -ne 0) {
+        Write-NavHint "Manual fallback:  pip install $installSpec"
         exit 1
     }
-
-    Write-Ok "NAVIG installed via pip"
 }
 
-# ── Install via git ───────────────────────────────────────────
+# ── Install via git ───────────────────────────────────────────────────────
 function Install-NavigGit {
     param([string]$PipCmd)
 
     $repoDir = $GitDir
 
     if (Test-Path "$repoDir\.git") {
-        Write-Step "Updating existing checkout: $repoDir"
+        Write-NavStep "Updating existing checkout: $repoDir"
     } else {
-        Write-Step "Cloning NAVIG from: $REPO_URL"
+        Write-NavStep "Cloning NAVIG from: $REPO_URL"
     }
 
     if (-not (Find-Git)) {
@@ -319,67 +393,43 @@ function Install-NavigGit {
         git clone $REPO_URL $repoDir
     } else {
         $dirty = git -C $repoDir status --porcelain 2>$null
-        if (-not $dirty) {
-            git -C $repoDir pull --rebase 2>$null
-        } else {
-            Write-Step "Repo is dirty; skipping git pull"
-        }
+        if (-not $dirty) { git -C $repoDir pull --rebase 2>$null }
+        else             { Write-NavInfo "Repo has local changes — skipping git pull" }
     }
 
-if ($Production) {
-        Write-Step "Installing NAVIG from source (production mode — no editable install)..."
-    } else {
-        Write-Step "Installing NAVIG in editable mode..."
-    }
     $pipParts = $PipCmd -split ' '
-    $exe = $pipParts[0]
-    $pipArgs = @()
-    if ($pipParts.Length -gt 1) { $pipArgs += $pipParts[1..($pipParts.Length-1)] }
+    $exe      = $pipParts[0]
+    $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
 
     if ($Production) {
-        # Non-editable: no __editable__ finder overhead (~20ms startup savings)
-        if ($Extras) {
-            $pipArgs += @("install", "${repoDir}[$Extras]")
-        } else {
-            $pipArgs += @("install", $repoDir)
-        }
-    } elseif ($Extras) {
-        $pipArgs += @("install", "-e", "${repoDir}[$Extras]")
+        $spec     = if ($Extras) { "${repoDir}[$Extras]" } else { $repoDir }
+        $fullArgs = $baseArgs + @("install",$spec)
     } else {
-        $pipArgs += @("install", "-e", $repoDir)
+        $spec     = if ($Extras) { "${repoDir}[$Extras]" } else { $repoDir }
+        $fullArgs = $baseArgs + @("install","-e",$spec)
     }
 
-    & $exe @pipArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "Editable install failed"
+    $code = Invoke-WithSpinner -Label "Installing NAVIG from source" -Exe $exe -ArgList $fullArgs
+    if ($code -ne 0) {
+        Write-NavErr "Editable install failed"
         exit 1
     }
-
-    Write-Ok "NAVIG installed from source"
-    Write-Info "Source: $repoDir"
+    Write-NavInfo "Source: $repoDir"
 }
 
-# ── Config directory setup ────────────────────────────────────
+# ── Config directory setup ────────────────────────────────────────────────
 function Initialize-NavigConfig {
-    $configDir = Join-Path $HOME ".navig"
-    $dirs = @("workspace", "logs", "cache")
-
-    if (-not (Test-Path $configDir)) {
-        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    $configDir = "$env:USERPROFILE\.navig"
+    foreach ($sub in @("","workspace","logs","cache")) {
+        $path = if ($sub) { Join-Path $configDir $sub } else { $configDir }
+        if (-not (Test-Path $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
     }
-    foreach ($d in $dirs) {
-        $sub = Join-Path $configDir $d
-        if (-not (Test-Path $sub)) {
-            New-Item -ItemType Directory -Path $sub -Force | Out-Null
-        }
-    }
-    Write-Ok "Config directory: $configDir"
+    Write-NavOk "Config directory ready at $configDir\"
 }
 
 function Configure-Telegram {
     if (-not $TelegramToken) { return }
-
-    $configDir = Join-Path $HOME ".navig"
+    $configDir = "$env:USERPROFILE\.navig"
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 
     $envFile = Join-Path $configDir ".env"
@@ -399,43 +449,40 @@ telegram:
   group_activation_mode: "mention"
 "@ | Set-Content -Encoding UTF8 $configFile
     }
-
-    Write-Ok "Telegram token configured"
+    Write-NavOk "Telegram token configured"
 }
 
 function Start-TelegramDaemon {
     if (-not $TelegramToken) { return }
-
     try { navig service install --bot --gateway --scheduler --no-start | Out-Null } catch {}
     try { navig service start | Out-Null } catch {}
-    Write-Ok "Telegram daemon start attempted"
+    Write-NavOk "Telegram daemon start attempted"
 }
 
-# ── Check existing installation ───────────────────────────────
+# ── Existing installation check ───────────────────────────────────────────
 function Test-ExistingNavig {
     if (Get-Command navig -ErrorAction SilentlyContinue) {
         try {
             $ver = navig --version 2>&1 | Select-Object -First 1
-            Write-Step "Existing NAVIG detected: $ver"
+            Write-NavInfo "Existing NAVIG detected: $ver — upgrading"
         } catch {
-            Write-Step "Existing NAVIG detected (version unknown)"
+            Write-NavInfo "Existing NAVIG detected — upgrading"
         }
         return $true
     }
     return $false
 }
 
-# ── Verify installation ──────────────────────────────────────
+# ── Verify installation ───────────────────────────────────────────────────
 function Test-NavigInstall {
-    # Refresh PATH
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + $env:PATH
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("PATH","User")   + ";" + $env:PATH
 
     if (Get-Command navig -ErrorAction SilentlyContinue) {
-        Write-Ok "navig command available"
+        Write-NavOk "navig command verified in PATH"
         return $true
     }
 
-    # Check common pip install locations
     $pipPaths = @(
         (Join-Path $HOME "AppData\Local\Programs\Python\Python314-32\Scripts"),
         (Join-Path $HOME "AppData\Local\Programs\Python\Python314\Scripts"),
@@ -452,150 +499,139 @@ function Test-NavigInstall {
     foreach ($p in $pipPaths) {
         if (Test-Path (Join-Path $p "navig.exe")) {
             $env:PATH = "$p;$env:PATH"
-            Write-Ok "navig found at: $p"
-            Write-Info "Add to PATH permanently: [Environment]::SetEnvironmentVariable('PATH', `"$p;`" + [Environment]::GetEnvironmentVariable('PATH', 'User'), 'User')"
+            Write-NavOk "navig found at $p"
+            Write-NavInfo "Add to PATH permanently:"
+            Write-NavHint "[Environment]::SetEnvironmentVariable('PATH', `"$p;`" + [Environment]::GetEnvironmentVariable('PATH','User'), 'User')"
             return $true
         }
     }
 
-    Write-Step "navig installed but not found on PATH"
-    Write-Info "You may need to restart your terminal"
+    Write-NavInfo "navig installed — restart your terminal to pick up PATH changes"
     return $false
 }
 
-# ── Get installed version ─────────────────────────────────────
+# ── Resolve installed version ─────────────────────────────────────────────
 function Get-NavigVersion {
     try {
+        $line = (pip show navig 2>$null) | Select-String 'Version:'
+        if ($line) { return ($line -replace 'Version:\s*','').Trim() }
+    } catch {}
+    try {
         $ver = navig --version 2>&1 | Select-Object -First 1
-        return $ver -replace '[^\d\.]', '' -replace '^\.'
-    } catch {
-        return ""
-    }
+        return ($ver -replace '[^\d\.]','') -replace '^\.+',''
+    } catch {}
+    return ""
 }
 
-# ── Main ──────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────
 function Main {
-    if ($Help) {
-        Show-Usage
-        return
-    }
-
-    if ($Dev) { $InstallMethod = "git" }
+    if ($Help) { Show-Usage; return }
+    if ($Dev)  { $InstallMethod = "git" }
 
     Show-Banner
 
     if ($DryRun) {
-        Write-Info "Dry run mode - no changes will be made"
-        Write-Host "  OS:              Windows $([System.Environment]::OSVersion.Version)" -ForegroundColor DarkGray
-        Write-Host "  Install method:  $InstallMethod" -ForegroundColor DarkGray
-        Write-Host "  Version:         $(if ($Version) { $Version } else { 'latest' })" -ForegroundColor DarkGray
-        Write-Host "  Extras:          $(if ($Extras) { $Extras } else { 'none' })" -ForegroundColor DarkGray
-        Write-Host "  Telegram:        $(if ($TelegramToken) { 'enabled' } else { 'disabled' })" -ForegroundColor DarkGray
-        Write-Host "  Git dir:         $GitDir" -ForegroundColor DarkGray
+        Write-NavInfo "Dry run — no changes will be made"
         Write-Host ""
-        Write-Host "  Dry run complete." -ForegroundColor DarkGray
+        Write-Host "  OS:              Windows $([System.Environment]::OSVersion.Version)" -ForegroundColor DarkGray
+        Write-Host "  Install method:  $InstallMethod"                                     -ForegroundColor DarkGray
+        Write-Host "  Version:         $(if ($Version) { $Version } else { 'latest' })"   -ForegroundColor DarkGray
+        Write-Host "  Extras:          $(if ($Extras)  { $Extras  } else { 'none'   })"   -ForegroundColor DarkGray
+        Write-Host "  Telegram:        $(if ($TelegramToken) { 'enabled' } else { 'disabled' })" -ForegroundColor DarkGray
+        Write-Host "  Git dir:         $GitDir"                                             -ForegroundColor DarkGray
+        Write-Host "  Config dir:      $env:USERPROFILE\.navig\"                           -ForegroundColor DarkGray
+        Write-Host ""
+        Write-NavInfo "Dry run complete — nothing was changed"
         return
     }
 
-    # Step 0: OS info
-    Write-Ok "Windows $([System.Environment]::OSVersion.Version) ($env:PROCESSOR_ARCHITECTURE)"
+    # Step 1: OS
+    $osVer = [System.Environment]::OSVersion.Version
+    Write-NavOk "Windows $osVer ($env:PROCESSOR_ARCHITECTURE)"
 
-    # Step 1: Check existing
+    # Step 2: Existing install?
     $isUpgrade = Test-ExistingNavig
 
-    # Step 2: Python
+    # Step 3: Python
+    Write-NavStep "Checking Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+..."
     $pythonCmd = Find-Python
     if (-not $pythonCmd) {
         if (-not (Install-PythonWindows)) {
-            Write-Err "Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+ is required"
+            Write-NavErr "Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+ is required"
+            Write-NavHint "Install from https://python.org or run:  winget install Python.Python.3.12"
             exit 1
         }
         $pythonCmd = Find-Python
         if (-not $pythonCmd) {
-            Write-Err "Python still not found after install. Restart terminal and try again."
+            Write-NavErr "Python still not found after install"
+            Write-NavHint "Restart this terminal and run the installer again"
             exit 1
         }
     }
 
-    # Step 3: pip
+    # Step 4: pip
+    Write-NavStep "Checking pip..."
     $pipCmd = Find-Pip -PythonCmd $pythonCmd
     if (-not $pipCmd) {
-        Write-Step "Installing pip..."
+        Write-NavStep "pip not found — bootstrapping via ensurepip..."
         $parts = $pythonCmd -split ' '
         & $parts[0] -m ensurepip --upgrade 2>$null
         $pipCmd = Find-Pip -PythonCmd $pythonCmd
         if (-not $pipCmd) {
-            Write-Err "pip is required but could not be installed"
+            Write-NavErr "pip is required but could not be installed"
+            Write-NavHint "Try running:  python -m ensurepip --upgrade"
             exit 1
         }
     }
-    Write-Ok "pip available"
+    Write-NavOk "pip available"
 
-    # Step 4: SSH
+    # Step 5: SSH
     Test-SSH | Out-Null
 
-    # Step 5: Install NAVIG
+    # Step 6: Install NAVIG
     if ($InstallMethod -eq "git") {
         Install-NavigGit -PipCmd $pipCmd
     } else {
         Install-NavigPip -PipCmd $pipCmd
     }
 
-    # Step 6: Config
+    # Step 7: Config directory
     Initialize-NavigConfig
 
-    # Step 6.5: Optional Telegram setup
+    # Step 8: Optional Telegram
     Configure-Telegram
-
-    # Step 6.6: Optional daemon start
     Start-TelegramDaemon
 
-    # Step 7: Verify
+    # Step 9: Verify PATH
     Test-NavigInstall | Out-Null
+
+    # Step 10: Success
     $installedVer = Get-NavigVersion
+    Show-SuccessBanner -InstalledVersion $installedVer
 
-    # ── Success ───────────────────────────────────────────────
-    Write-Host ""
-    if ($installedVer) {
-        Write-Host "  NAVIG installed successfully (v$installedVer)!" -ForegroundColor Green
-    } else {
-        Write-Host "  NAVIG installed successfully!" -ForegroundColor Green
-    }
-
-    if ($isUpgrade) {
-        $msgs = @(
-            "Upgraded and operational. Your servers barely noticed."
-            "New version, same mission. Keeping things alive."
-            "Patched and ready. Your infrastructure thanks you."
-        )
-        Write-Host "  $($msgs | Get-Random)" -ForegroundColor DarkGray
-    } else {
-        $msgs = @(
-            "Welcome aboard. Let's keep those servers alive."
-            "Ready to go. Run 'navig' to get started."
-            "Your devops workflow just leveled up."
-        )
-        Write-Host "  $($msgs | Get-Random)" -ForegroundColor DarkGray
-    }
-
-    Write-Host ""
-    Write-Host "  Get started:" -ForegroundColor White
-    Write-Host "    navig                    Open interactive menu" -ForegroundColor Cyan
-    Write-Host "    navig host add           Add your first server" -ForegroundColor Cyan
-    Write-Host "    navig help               Show available commands" -ForegroundColor Cyan
-    Write-Host ""
-
-    if ($InstallMethod -eq "git") {
-        Write-Host "  Source: $GitDir" -ForegroundColor Cyan
-        Write-Host "  Update: cd $GitDir; git pull; pip install -e ." -ForegroundColor Cyan
-    } else {
-        Write-Host "  Update: pip install --upgrade navig" -ForegroundColor Cyan
-    }
-
-    Write-Host "  Config: ~/.navig/" -ForegroundColor Cyan
-    Write-Host "  Docs:   https://github.com/navig-run/core" -ForegroundColor Cyan
-    Write-Host ""
+    $gitSource = if ($InstallMethod -eq "git") { $GitDir } else { $null }
+    Show-GetStarted -PipCmd $pipCmd -GitSource $gitSource
 }
 
-# ── Entry point ───────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────
 Main
+
+# ── Developer sync (set $env:NAVIG_DEV_SYNC=1 to activate) ───────────────
+# Copies installer + uninstaller scripts to the sibling navig-www project.
+# NOT triggered on end-user installs (irm navig.run/install.ps1 | iex).
+if ($env:NAVIG_DEV_SYNC -eq "1") {
+    $wwwDir = Join-Path $PSScriptRoot "..\navig-www"
+    if (-not (Test-Path $wwwDir)) {
+        Write-NavErr "navig-www directory not found at: $(Resolve-Path $wwwDir -ErrorAction SilentlyContinue)"
+        Write-NavHint "Copy manually:  Copy-Item install.ps1 ..\navig-www\install.ps1"
+        exit 1
+    }
+    foreach ($f in @("install.ps1", "install.sh", "uninstall.ps1", "uninstall.sh")) {
+        $src = Join-Path $PSScriptRoot $f
+        $dst = Join-Path $wwwDir $f
+        if (Test-Path $src) {
+            Copy-Item -Path $src -Destination $dst -Force
+            Write-NavOk "Synced $f -> navig-www"
+        }
+    }
+}

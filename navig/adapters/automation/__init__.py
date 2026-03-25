@@ -9,27 +9,29 @@ Currently supported:
 import sys
 
 # Conditional imports based on platform
-if sys.platform == 'win32':
+if sys.platform == "win32":
     try:
-        from .ahk import (
+        from .ahk import (  # noqa: F401
             AHKAdapter,
             AHKError,
             AHKExecutionError,
             AHKNotFoundError,
             AHKSafetyError,
         )
+
         __all__ = [
-            'AHKAdapter',
-            'AHKError',
-            'AHKNotFoundError',
-            'AHKExecutionError',
-            'AHKSafetyError',
+            "AHKAdapter",
+            "AHKError",
+            "AHKNotFoundError",
+            "AHKExecutionError",
+            "AHKSafetyError",
         ]
 
         # Also export AI module if available
         try:
-            from .ahk_ai import AHKAIGenerator, AHKScriptArchive
-            __all__.extend(['AHKAIGenerator', 'AHKScriptArchive'])
+            from .ahk_ai import AHKAIGenerator, AHKScriptArchive  # noqa: F401
+
+            __all__.extend(["AHKAIGenerator", "AHKScriptArchive"])
         except ImportError:
             pass  # optional dependency not installed; feature disabled
 
