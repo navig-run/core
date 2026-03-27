@@ -1,3 +1,4 @@
+#Requires -Version 5.1
 # ─────────────────────────────────────────────────────────────
 # NAVIG Installer - Windows (PowerShell 5.1+)
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
@@ -195,7 +196,7 @@ function Apply-NavigInstallDefaults {
         $Metadata.ContainsKey("InstallMethod") -and
         -not [string]::IsNullOrWhiteSpace($Metadata["InstallMethod"])
     ) {
-        $InstallMethod = $Metadata["InstallMethod"]
+        $script:InstallMethod = $Metadata["InstallMethod"]
     }
 
     if (
@@ -203,7 +204,7 @@ function Apply-NavigInstallDefaults {
         $Metadata.ContainsKey("GitDir") -and
         -not [string]::IsNullOrWhiteSpace($Metadata["GitDir"])
     ) {
-        $GitDir = $Metadata["GitDir"]
+        $script:GitDir = $Metadata["GitDir"]
     }
 
     if (
@@ -211,7 +212,7 @@ function Apply-NavigInstallDefaults {
         $Metadata.ContainsKey("InstallProfile") -and
         -not [string]::IsNullOrWhiteSpace($Metadata["InstallProfile"])
     ) {
-        $InstallProfile = $Metadata["InstallProfile"]
+        $script:InstallProfile = $Metadata["InstallProfile"]
     }
 }
 
@@ -409,6 +410,7 @@ function Invoke-WithSpinner {
     $tmpOut = [System.IO.Path]::GetTempFileName()
     $tmpErr = [System.IO.Path]::GetTempFileName()
 
+    $errorLines = @()
     try {
         $proc = Start-Process -FilePath $Exe -ArgumentList $ArgList `
             -RedirectStandardOutput $tmpOut `
@@ -423,8 +425,15 @@ function Invoke-WithSpinner {
             $i++
         }
         $code = $proc.ExitCode
+        # Capture error lines NOW before finally cleans up the temp file
+        if ($code -ne 0) {
+            $errorLines = @(Get-Content $tmpErr -ErrorAction SilentlyContinue)
+        }
     } catch {
         $code = 1
+    } finally {
+        # Always clean up temp files - even on CTRL+C or unhandled exception
+        Remove-Item $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
     }
 
     if ($code -eq 0) {
@@ -435,12 +444,11 @@ function Invoke-WithSpinner {
         Write-Host "`r  " -NoNewline
         Write-Host "[!!]" -NoNewline -ForegroundColor Red
         Write-Host "  $Label$pad"
-        $errLines = Get-Content $tmpErr -ErrorAction SilentlyContinue
-        if ($errLines -and $errLines.Count -gt 0) {
+        if ($errorLines -and $errorLines.Count -gt 0) {
             $showLines = if ($VerbosePreference -ne 'SilentlyContinue') {
-                $errLines
+                $errorLines
             } else {
-                $errLines | Select-Object -Last 6
+                $errorLines | Select-Object -Last 6
             }
             $showLines | Where-Object { $_ -match '\S' } | ForEach-Object {
                 Write-Host "       $_" -ForegroundColor DarkGray
@@ -448,7 +456,6 @@ function Invoke-WithSpinner {
         }
     }
 
-    Remove-Item $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
     return $code
 }
 
@@ -605,6 +612,7 @@ function Find-Python {
 
 function Find-Pip {
     param([string]$PythonCmd)
+    if ([string]::IsNullOrWhiteSpace($PythonCmd)) { return $null }
     try {
         $parts = $PythonCmd -split ' '
         $exe   = $parts[0]
@@ -627,29 +635,39 @@ function Install-PythonWindows {
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         try {
             winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements
-            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-            Write-NavOk "Python installed via winget"
-            return $true
+            if ($LASTEXITCODE -eq 0) {
+                $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
+                Write-NavOk "Python installed via winget"
+                return $true
+            } else {
+                Write-NavStep "winget exited $LASTEXITCODE - falling back to direct download..."
+            }
         } catch {
-            Write-NavStep "winget failed - falling back to direct download..."
+            Write-NavStep "winget failed ($($_.Exception.Message)) - falling back to direct download..."
         }
     }
     Write-NavStep "Downloading Python 3.12 installer..."
     $installerUrl  = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
-    $installerPath = Join-Path $env:TEMP "python-installer.exe"
+    $installerPath = Join-Path $env:TEMP "navig-python-installer-$([System.IO.Path]::GetRandomFileName()).exe"
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
         Write-NavStep "Running Python installer (silent)..."
-        Start-Process -FilePath $installerPath -ArgumentList "/quiet","InstallAllUsers=0","PrependPath=1","Include_test=0" -Wait
+        $proc = Start-Process -FilePath $installerPath -ArgumentList "/quiet","InstallAllUsers=0","PrependPath=1","Include_test=0" -Wait -PassThru
+        if ($proc.ExitCode -ne 0) {
+            Write-NavErr "Python installer exited with code $($proc.ExitCode)"
+            Write-NavHint "Install manually from https://python.org then re-run this script"
+            return $false
+        }
         $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-        Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
         Write-NavOk "Python installed"
         return $true
     } catch {
-        Write-NavErr "Failed to install Python automatically"
+        Write-NavErr "Failed to install Python automatically: $($_.Exception.Message)"
         Write-NavHint "Install manually from https://python.org then re-run this script"
         return $false
+    } finally {
+        Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -780,11 +798,30 @@ function Install-NavigGit {
     }
 
     if (-not (Test-Path $repoDir)) {
-        git clone $REPO_URL $repoDir
+        try {
+            Write-NavStep "Cloning NAVIG from: $REPO_URL"
+            & git clone $REPO_URL $repoDir 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-NavErr "git clone failed (exit $LASTEXITCODE). Check network and credentials."
+                exit 1
+            }
+        } catch {
+            Write-NavErr "git clone threw an exception: $($_.Exception.Message)"
+            exit 1
+        }
     } else {
-        $dirty = git -C $repoDir status --porcelain 2>$null
-        if (-not $dirty) { git -C $repoDir pull --rebase 2>$null }
-        else             { Write-NavInfo "Repo has local changes - skipping git pull" }
+        try {
+            $dirty = git -C $repoDir status --porcelain 2>&1
+            if ($LASTEXITCODE -ne 0) { Write-NavInfo "git status failed - skipping pull"; $dirty = "dirty" }
+            if (-not $dirty) {
+                & git -C $repoDir pull --rebase 2>&1
+                if ($LASTEXITCODE -ne 0) { Write-NavInfo "git pull --rebase failed (exit $LASTEXITCODE) - continuing with existing checkout" }
+            } else {
+                Write-NavInfo "Repo has local changes - skipping git pull"
+            }
+        } catch {
+            Write-NavInfo "git pull threw an exception ($($_.Exception.Message)) - continuing with existing checkout"
+        }
     }
 
     $pipParts = $PipCmd -split ' '
@@ -866,14 +903,19 @@ function Test-NavigInstall {
 
 # ── Resolve installed version ─────────────────────────────────────────────
 function Get-NavigVersion {
-    try {
-        $line = (pip show navig 2>$null) | Select-String 'Version:'
-        if ($line) { return ($line -replace 'Version:\s*','').Trim() }
-    } catch {}
+    # Try navig itself first (most reliable)
     try {
         $ver = navig --version 2>&1 | Select-Object -First 1
-        return ($ver -replace '[^\d\.]','') -replace '^\.+',''
+        if ($ver -match '(\d+\.\d+\.\d+)') { return $Matches[1] }
     } catch {}
+    # Fall back to pip show - avoid bare 'pip' which may throw under ErrorActionPreference=Stop
+    foreach ($pipCandidate in @("pip3","pip")) {
+        if (-not (Get-Command $pipCandidate -ErrorAction SilentlyContinue)) { continue }
+        try {
+            $line = (& $pipCandidate show navig 2>$null) | Select-String 'Version:'
+            if ($line) { return ($line -replace 'Version:\s*','').Trim() }
+        } catch {}
+    }
     return ""
 }
 
@@ -1375,18 +1417,19 @@ Main
 
 # ── Developer sync (set $env:NAVIG_DEV_SYNC=1 to activate) ───────────────
 if ($env:NAVIG_DEV_SYNC -eq "1") {
-    $wwwDir = Join-Path $PSScriptRoot "..\navig-www\public"
+    $devRoot = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PWD.Path } else { $PSScriptRoot }
+    $wwwDir = [System.IO.Path]::GetFullPath((Join-Path $devRoot "..\navig-www\public"))
     if (-not (Test-Path $wwwDir)) {
-        Write-NavErr "navig-www/public directory not found at: $(Resolve-Path $wwwDir -ErrorAction SilentlyContinue)"
+        Write-NavInfo "navig-www/public not found at: $wwwDir — skipping dev sync"
         Write-NavHint "Copy manually:  Copy-Item install.ps1 ..\navig-www\public\install.ps1"
-        exit 1
-    }
-    foreach ($f in @("install.ps1", "install.sh", "uninstall.sh")) {
-        $src = Join-Path $PSScriptRoot $f
-        $dst = Join-Path $wwwDir $f
-        if (Test-Path $src) {
-            Copy-Item -Path $src -Destination $dst -Force
-            Write-NavOk "Synced $f -> navig-www"
+    } else {
+        foreach ($f in @("install.ps1", "install.sh")) {
+            $src = Join-Path $devRoot $f
+            $dst = Join-Path $wwwDir $f
+            if (Test-Path $src) {
+                Copy-Item -Path $src -Destination $dst -Force
+                Write-NavOk "Synced $f -> navig-www"
+            }
         }
     }
 }
