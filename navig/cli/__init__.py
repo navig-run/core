@@ -1701,6 +1701,23 @@ def init_command(
         "-s",
         help="Open the configuration status dashboard instead of the wizard",
     ),
+    profile: str = typer.Option(
+        "",
+        "--profile",
+        "-p",
+        help="Run installer profile without wizard: node, operator, architect, system_standard, system_deep",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview installer actions without making any changes (use with --profile)",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Suppress installer output (use with --profile)",
+    ),
 ) -> None:
     """
     State-aware NAVIG setup gateway.
@@ -1708,7 +1725,13 @@ def init_command(
     First run  → interactive setup wizard (TUI or Rich fallback)
     Return     → configuration status dashboard
 
-    Deep-links:
+    Use --profile to run the non-interactive installer pipeline instead:
+
+        navig init --profile operator          # silent install (default profile)
+        navig init --profile node --dry-run    # preview minimal setup
+        navig init --profile system_standard   # + service daemon
+
+    Deep-links (interactive wizard only):
         navig init --provider    jump to AI-provider configuration
         navig init --settings    open settings/status overview
         navig init --reconfigure force the wizard to re-run
@@ -1718,6 +1741,25 @@ def init_command(
         navig init --reconfigure # always run wizard
         navig init --provider    # configure AI provider
     """
+    # ── Installer pipeline (non-interactive) ─────────────────────────────────
+    if profile:
+        from navig.installer import run_install
+        from navig.installer.profiles import VALID_PROFILES
+
+        if profile not in VALID_PROFILES:
+            import typer as _t
+
+            _t.echo(
+                f"Unknown profile '{profile}'. "
+                f"Valid: {', '.join(VALID_PROFILES)}",
+                err=True,
+            )
+            raise SystemExit(1)
+
+        run_install(profile=profile, dry_run=dry_run, quiet=quiet)
+        return
+
+    # ── Interactive wizard ────────────────────────────────────────────────────
     from navig.commands.init import _maybe_send_first_run_ping
     from navig.commands.onboard import run_init_wizard
 
@@ -1736,6 +1778,97 @@ def init_command(
         _maybe_send_first_run_ping()
     except Exception:  # noqa: BLE001
         pass
+
+
+@app.command("init-rollback")
+def init_rollback_command(
+    last: bool = typer.Option(
+        True,
+        "--last/--no-last",
+        help="Roll back the most recent installer run (default: True)",
+    ),
+    profile: str = typer.Option(
+        "",
+        "--profile",
+        "-p",
+        help="Roll back the most recent run of a specific profile",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be rolled back without making any changes",
+    ),
+) -> None:
+    """
+    Roll back the most recent installer run.
+
+    Reloads the JSONL manifest saved by ``navig init --profile`` and
+    reverses every reversible APPLIED action in reverse order.
+
+    Examples:
+        navig init-rollback                    # undo last run
+        navig init-rollback --profile operator # undo last operator run
+        navig init-rollback --dry-run          # preview rollback
+    """
+    from navig.installer.contracts import InstallerContext, ModuleState
+    from navig.installer.runner import rollback as run_rollback
+    from navig.installer.state import load_last
+
+    try:
+        from navig.platform.paths import navig_config_dir
+
+        config_dir = navig_config_dir()
+    except Exception:
+        import pathlib
+
+        config_dir = pathlib.Path.home() / ".navig"
+
+    records = load_last(config_dir=config_dir, profile=profile or None)
+    if not records:
+        ch.warning("No installer history found — nothing to roll back.")
+        return
+
+    from navig.installer.contracts import Action, Result
+
+    # Reconstruct minimal Action / Result pairs from the manifest
+    actions: list[Action] = []
+    results: list[Result] = []
+    for rec in records:
+        a = Action(
+            id=rec.get("action_id", "?"),
+            description=rec.get("description", ""),
+            module=rec.get("module", "?"),
+            reversible=rec.get("reversible", False),
+        )
+        r = Result(
+            action_id=a.id,
+            state=ModuleState(rec.get("state", "skipped")),
+            message=rec.get("message", ""),
+            undo_data=rec.get("undo_data") or {},
+        )
+        actions.append(a)
+        results.append(r)
+
+    reversible = [
+        (a, r)
+        for a, r in zip(actions, results)
+        if a.reversible and r.state == ModuleState.APPLIED
+    ]
+    if not reversible:
+        ch.info("No reversible applied actions found in the last run.")
+        return
+
+    ch.info(f"Rolling back {len(reversible)} action(s):")
+    for a, _ in reversible:
+        ch.dim(f"  ↩  {a.description}")
+
+    if dry_run:
+        ch.warning("[dry-run] No changes made.")
+        return
+
+    ctx = InstallerContext(config_dir=config_dir, profile=profile or "?")
+    run_rollback(actions=actions, results=results, ctx=ctx)
+    ch.success("Rollback complete.")
 
 
 @app.command("whoami")

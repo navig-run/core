@@ -1,4 +1,4 @@
-﻿<p align="center">
+<p align="center">
   <img src="logo.svg" alt="NAVIG" width="100" />
 </p>
 
@@ -38,6 +38,23 @@ It gives operators direct control over remote hosts, databases, containers, file
 
 ---
 
+## Why NAVIG?
+
+Most operators already have SSH. What they don't have is everything that should live around it:
+
+| You probably have | NAVIG adds |
+|---|---|
+| SSH client | Multi-host management with one active context |
+| Ad-hoc shell scripts | Named workflows with dry-run and preview |
+| Secrets in `.env` files | Encrypted vault with context-aware resolution |
+| `grep` in log files | Structured log tailing across hosts |
+| Copy-paste from Stack Overflow | AI operator layer with your infra as context |
+| One terminal per machine | Mesh networking and command delegation |
+
+NAVIG is not a configuration management tool (not Ansible). It is not a deployment platform (not Kubernetes). It is a **control plane for humans** — the thing you reach for when you need to do something to a real machine, right now, without writing a playbook.
+
+---
+
 ## Features
 
 | Capability | Description |
@@ -68,7 +85,10 @@ curl -fsSL https://navig.run/install.sh | bash
 ### Windows (PowerShell)
 
 ```powershell
-  & ([scriptblock]::Create((irm https://navig.run/install.ps1)))
+& ([scriptblock]::Create((irm https://navig.run/install.ps1)))
+```
+
+### pipx
 
 ```bash
 pipx install navig
@@ -134,9 +154,23 @@ navig host use <name>
 
 # 5. Run your first remote command
 navig run "uname -a"
+
+# 6. Ask the AI operator layer something about it
+navig copilot ask "what is consuming the most memory on this host?"
 ```
 
 That's it. Everything else builds from here.
+
+**Where to go next** — after that first `navig run`:
+
+| Command | What it does |
+|---|---|
+| `navig host add` | Add more hosts |
+| `navig vault set KEY=value` | Store secrets encrypted |
+| `navig db query "SELECT 1"` | Connect to a remote database |
+| `navig tunnel 5432` | Open an SSH tunnel to a port |
+| `navig workflow run deploy.yaml` | Run a multi-step workflow |
+| `navig copilot ask "..."` | Ask the AI operator layer anything |
 
 ---
 
@@ -280,16 +314,21 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contribution workflow, bra
 ```text
 navig/
 ├── navig/               # Main Python package
-│   ├── agent/           # AI client, providers, model routing
-│   ├── commands/        # CLI command modules (one file per group)
-│   ├── gateway/         # Chat and gateway integrations
+│   ├── cli/             # CLI app, commands registry, help system
+│   ├── commands/        # CLI command modules (one file per resource)
+│   ├── agents/          # Specialist agents (inbox router, etc.)
+│   ├── memory/          # Conversation store, knowledge base, RAG, embeddings
+│   ├── providers/       # AI provider clients, fallback manager, OAuth
+│   ├── gateway/         # Chat gateway (Telegram, Matrix) integrations
+│   ├── onboarding/      # First-run setup engine and wizard steps
 │   ├── daemon/          # Background service entry point
+│   ├── core/            # Config loader, migrations, crash handler
 │   └── resources/       # Default prompts, personas, assets
-├── skills/              # Skill packs
-├── templates/           # Scaffolding templates
+├── sdk/                 # Python SDK package
 ├── scripts/             # Install and deployment scripts
 ├── deploy/              # Docker, systemd, hardening configs
 ├── docs/                # Documentation
+├── packages/            # Optional add-on packages
 └── tests/               # pytest test suite
 ```
 

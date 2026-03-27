@@ -1,5 +1,5 @@
-﻿# ===============================================
-# NAVIG CLI Git Ignore Configuration
+# ===============================================
+# NAVIG CLI — Git Ignore Configuration
 # ===============================================
 # This file specifies intentionally untracked files that Git should ignore.
 # See: https://git-scm.com/docs/gitignore
@@ -16,9 +16,7 @@
 Thumbs.db                   # Windows thumbnail cache
 desktop.ini                 # Windows folder settings
 nul                         # Windows NUL device artifact
-.archive/
-.agents/
-.local/
+
 # ===============================================
 # Dev scripts generated during agent sessions
 # ===============================================
@@ -144,28 +142,22 @@ discord-*.json              # Discord config with secrets
 **/.blackbox/               # Vault key directory (any depth)
 vault.salt                  # Vault salt file
 
-# AI tool configs and local dev scratch (NEVER commit)
-.gemini/                    # Gemini AI session data / keys
-.local/                     # Local dev scripts, drafts, WIP — see Directory Contract
-.secrets.baseline           # detect-secrets baseline — may contain hashed secrets
-
 # Cython compiled binaries (generated at build time, not committed)
-*.pyd                       # Cython/C extension  Windows
+*.pyd                       # Cython/C extension — Windows
 # *.so compiled by Cython are already covered by *.so above
 
 # NAVIG Configuration
-# .navig/ is project-local runtime state (plans, wiki, apps, logs)  user-specific, NOT for VCS
-# ~/.navig/ is the global user store  absolute path, not relevant as a gitignore rule
-.navig/*                    # Project-local NAVIG state  keep only profile.json
-!.navig/profile.json        # MVP allowlist  keep profile only
-.archive/                   # Local archive / cleanup staging
+# ~/.navig/ is the global user store — never in a repo
+~/.navig/                   # Global user NAVIG config (shouldn't be in repo anyway)
+# .navig/ is TRACKED — plans/, brand/, wiki/, agents/ all live here
+# Only runtime / credential files inside it are ignored (see list below)
+.archive/                   # Local archive folder
 nohup.out                   # Background process output
 
 # ===============================================
 # Backups and Archives
 # ===============================================
 .backups/                   # Backup directory
-.labs/                      # Experimental lab directory
 .backup/                     # Local backup folder (singular)
 *.backup                    # Backup files
 *.bak                       # Backup files
@@ -175,12 +167,11 @@ nohup.out                   # Background process output
 *.tgz                       # Compressed archives
 *.rar                       # Archives
 *-upload.tgz                # Upload artifacts
-audit_log.txt
+
 # ===============================================
 # Testing and Coverage
 # ===============================================
 .pytest_cache/              # Pytest cache
-.benchmarks/                # Benchmark results  local only, not for VCS
 .coverage                   # Coverage data
 htmlcov/                    # HTML coverage reports
 .tox/                       # Tox testing
@@ -199,30 +190,9 @@ site/                       # MkDocs build directory
 # App-Specific
 # ===============================================
 
-# Documentation and Tests (tracked  essential to the project)
+# Documentation and Tests (tracked — essential to the project)
 # docs/
 # tests/
-
-# Scripts  keep only public install/bootstrap entrypoints tracked
-scripts/*
-!scripts/bootstrap_navig_linux.sh
-!scripts/github-bootstrap.sh
-!scripts/install_navig_factory_server.sh
-!scripts/install_navig_linux.sh
-!scripts/install_navig_linux_enhanced.sh
-!scripts/install_navig_macos.sh
-!scripts/install_navig_windows.ps1
-!scripts/install_navig_windows_enhanced.ps1
-!scripts/install_matrix_synapse_windows.cmd
-!scripts/install_matrix_synapse_windows.ps1
-!scripts/navig_quick_setup.ps1
-!scripts/navig_quick_setup.sh
-!scripts/precommit_navig_security.sh
-!scripts/navig-tunnel.service
-!scripts/navig-tunnel.sh
-!scripts/bridge-tunnel.service
-!scripts/README.md
-!scripts/release.sh
 
 # ===============================================
 # OS-Specific
@@ -256,20 +226,24 @@ cython_debug/               # Cython debug symbols
 # END OF .gitignore
 # ===============================================
 
-# Runtime dependencies (not committed)
-node_modules/
+# NAVIG runtime files inside 
+.navig/
+.backups/
+node_modules
 
 # AI IDE Configuration
-.agents/
-# Private AI instructions and Copilot prompt - not public:
-.github/instructions/**
-.github/copilot-instructions.md
+# .agents/ .claude/ .codex/ .gemini/ are TRACKED — auto-synced from
+# .github/copilot-instructions.md via scripts/sync-instructions.ps1
 # Per-developer overrides only:
 .augment
 .clinerules
 .cursorrules
 .windsurfrules
 .agent/
+.ruff_cache/
+
+# Archive (cleanup staging — never commit)
+.archive/
 
 # Bot stack (separate private repo)
 navig_ai.py
@@ -281,6 +255,9 @@ requirements-bot.txt
 # Private files
 knowledge/
 .env.remote
+
+# NAVIG reports (security scans, secret scans — never commit)
+.navig/reports/
 
 # Dev scratch / test output files in repo root (never commit)
 out*.txt
@@ -300,7 +277,6 @@ test_run.log
 test_vault.log
 failed_test*.txt
 raw_out.txt
-audit_log.txt
 cli_analysis.txt
 
 # Root-level dev scratch scripts (one-off, not part of package)
@@ -322,10 +298,11 @@ fix_escapes2.py
 audit_prompts.py
 audit_slugs.py
 validate_prompts.py
+_msg_rewrite.py
+_rewrite_history.py
+audit_log.txt
 
 # Root output / tracking files
-audit_log.txt               # Agent session audit log  user-specific
-ft4.txt                     # Dev scratch output
 latest.json                 # Stale release metadata artifact
 pytest_fail.txt
 tC_out*.txt
@@ -341,7 +318,7 @@ temp_restore/
 # Runtime local data (user-specific, not for VCS)
 userdata/
 
-# host/  compiled binaries and runtime logs
+# host/ — compiled binaries and runtime logs
 host/out.log
 host/build_errors.txt
 host/*.exe
@@ -349,88 +326,14 @@ host/*.exe
 # Community stub folder (separate repo at navig-community/)
 navig-community/
 
-# store/ at repo root is the built-in content package store  it IS tracked.
-# Only exclude generated/runtime artifacts within it if they appear:
-store/cache/
-store/tmp/
-store/*.log
+# Runtime store — live content lives in ~/.navig/store/, not in VCS
+store/
 
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
 
-# Private dev-only plugin  never commit
+# Private dev-only plugin — never commit
 navig/plugins/llm_bridge/
 navig/plugins/llm-bridge/
-
-# Rust/Cargo build outputs
-host/crates/**/target/
-nohup.out
-*.pdb
-
-
-# Root internal operational files (moved to .navig/)
-BOOTSTRAP_REPORT.md
-NEXT_ACTIONS.md
-GITHUB_MANUAL_OR_CLI_STEPS.md
-BRAND_USAGE.md
-OFFICIAL_BUILDS.md
-audit_log.txt
-nohup.out
-
-# Effective plain rules for MVP public tree
-.backups/
-.navig/**
-!.navig/
-!.navig/profile.json
-scripts/**
-!scripts/
-!scripts/bootstrap_navig_linux.sh
-!scripts/github-bootstrap.sh
-!scripts/install_navig_factory_server.sh
-!scripts/install_navig_linux.sh
-!scripts/install_navig_linux_enhanced.sh
-!scripts/install_navig_macos.sh
-!scripts/install_navig_windows.ps1
-!scripts/install_navig_windows_enhanced.ps1
-!scripts/install_matrix_synapse_windows.cmd
-!scripts/install_matrix_synapse_windows.ps1
-!scripts/navig_quick_setup.ps1
-!scripts/navig_quick_setup.sh
-!scripts/precommit_navig_security.sh
-!scripts/navig-tunnel.service
-!scripts/navig-tunnel.sh
-!scripts/bridge-tunnel.service
-!scripts/README.md
-!scripts/release.sh
-# ================================================
-# Agent-session temporary scripts and output dumps
-# ================================================
-# Fix/inspect one-off scripts (keep in .local/ if needed)
-/fix_*.py
-/inspect_*.py
-/replace_*.py
-/undo_fix.py
-# Lint output dumps
-/ruff_out*.txt
-# Test output dumps
-/pytest_out*.txt
-/pytest_final*.txt
-/pytest_sec*.txt
-/pytest_temp*.txt
-/tests_res.txt
-# Coverage output dumps
-/cov_*.txt
-/coverage_report.txt
-/full_cov.txt
-/session_cov.txt
-# General output dumps
-/err.txt
-/output.txt
-# Ruff F821 investigation artifacts
-/f821*.txt
-/f821*.json
-/new_f821.txt
-# Root-level HTML artifacts
-/*.html
-# Stale release metadata
-/latest.json
+`r`n# Rust`r`n**/target/
+`r`n# Local workspace`r`n.local/
