@@ -273,12 +273,17 @@ def action_run(
         ch.info("[dry-run] Command not executed.")
         return
 
+    import platform
     import subprocess
+
+    if platform.system().lower() == "windows":
+        args = ["cmd.exe", "/c", command]
+    else:
+        args = ["bash", "-c", command]
 
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            args,
             check=False,
         )
         if result.returncode != 0:

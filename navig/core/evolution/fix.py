@@ -81,14 +81,17 @@ Constraints:
 
             try:
                 # Replace {file} placeholder
-                cmd = self.check_command.replace("{file}", tmp_path)
+                cmd_str = self.check_command.replace("{file}", tmp_path)
 
-                # If command doesn't have {file}, append it?
-                # No, assume user knows what they are doing or runs a project-wide check that might fail
-                # if this file is isolated. Best practice: check ONLY this file.
+                import platform
 
-                info(f"Running validation: {cmd}")
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if platform.system().lower() == "windows":
+                    cmd_args = ["cmd.exe", "/c", cmd_str]
+                else:
+                    cmd_args = ["bash", "-c", cmd_str]
+
+                info(f"Running validation: {cmd_str}")
+                result = subprocess.run(cmd_args, capture_output=True, text=True)
 
                 if result.returncode != 0:
                     return f"Check Failed:\nStdout: {result.stdout}\nStderr: {result.stderr}"

@@ -693,10 +693,16 @@ class PackManager:
                 )
                 return result.returncode == 0
             else:
-                # Run as shell command
+                # Run as shell command safely
+                import platform
+
+                if platform.system().lower() == "windows":
+                    args = ["cmd.exe", "/c", command]
+                else:
+                    args = ["bash", "-c", command]
+
                 result = subprocess.run(
-                    command,
-                    shell=True,
+                    args,
                     capture_output=False,
                 )
                 return result.returncode == 0

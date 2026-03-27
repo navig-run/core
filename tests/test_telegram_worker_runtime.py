@@ -17,21 +17,35 @@ class _PreSetEvent:
 
 
 @pytest.mark.asyncio
-async def test_run_requires_token(monkeypatch):
+async def test_run_requires_token(monkeypatch, navig_log_capture):
     from navig.daemon import telegram_worker as tw
 
     monkeypatch.setattr(tw, "_load_env", lambda: None)
     monkeypatch.setattr(tw, "_telegram_config", lambda: {"bot_token": ""})
+    monkeypatch.setattr(tw.asyncio, "Event", _PreSetEvent)
+    fake_loop = SimpleNamespace(add_signal_handler=lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tw.asyncio, "get_running_loop", lambda: fake_loop)
+    monkeypatch.setattr(tw, "_start_gateway_http", AsyncMock())
+    monkeypatch.setattr(tw, "_stop_gateway_http", AsyncMock())
 
-    with pytest.raises(RuntimeError, match="TELEGRAM_BOT_TOKEN not configured"):
-        await tw._run()
+    await tw._run(enable_gateway=False)
+    combined = "\n".join(navig_log_capture)
+    assert (
+        "TELEGRAM_BOT_TOKEN not configured; Telegram bot will be disabled" in combined
+    )
 
 
 @pytest.mark.asyncio
-async def test_run_fails_when_channel_init_returns_none(monkeypatch):
+async def test_run_fails_when_channel_init_returns_none(monkeypatch, navig_log_capture):
     from navig.daemon import telegram_worker as tw
 
-    gateway = SimpleNamespace(config=SimpleNamespace(port=8789), channels={})
+    gateway = SimpleNamespace(
+        config=SimpleNamespace(port=8789), channels={}, mcp_client_manager=None
+    )
+
+    fake_loop = SimpleNamespace(add_signal_handler=lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tw.asyncio, "Event", _PreSetEvent)
+    monkeypatch.setattr(tw.asyncio, "get_running_loop", lambda: fake_loop)
 
     monkeypatch.setattr(tw, "_load_env", lambda: None)
     monkeypatch.setattr(
@@ -47,9 +61,12 @@ async def test_run_fails_when_channel_init_returns_none(monkeypatch):
     monkeypatch.setattr(tw, "_deck_config", lambda: {"enabled": False})
     monkeypatch.setattr(tw, "NavigGateway", lambda: gateway)
     monkeypatch.setattr(tw, "create_telegram_channel", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tw, "_start_gateway_http", AsyncMock())
+    monkeypatch.setattr(tw, "_stop_gateway_http", AsyncMock())
 
-    with pytest.raises(RuntimeError, match="Failed to initialize Telegram channel"):
-        await tw._run(enable_gateway=False)
+    await tw._run(enable_gateway=False)
+    combined = "\n".join(navig_log_capture)
+    assert "Failed to initialize Telegram channel" in combined
 
 
 @pytest.mark.asyncio

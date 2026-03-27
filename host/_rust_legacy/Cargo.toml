@@ -8,8 +8,8 @@ members = [
     "crates/core_events",
     "crates/core_plugins",
     "crates/core_os",
-    "crates/core_tray",
 ]
+exclude = ["crates/core_tray"]
 
 [workspace.dependencies]
 # ── Async runtime ─────────────────────────────────────────────────────────────
@@ -51,10 +51,8 @@ rand         = "0.8"
 tempfile   = "3.10"
 
 # ── Tray / UI ─────────────────────────────────────────────────────────────────
-# CVE glib < 0.20.0: upgraded tray-icon + muda to pull in gtk/glib >= 0.20
-tray-icon  = "0.21"
-muda       = "0.17"
-image      = { version = "0.25", default-features = false, features = ["png"] }
+# The archived tray crate remains in-tree for reference only, but it is excluded
+# from the frozen workspace and carries its own standalone dependency metadata.
 
 # ── OS utilities ─────────────────────────────────────────────────────────────
 keyring    = "3.0"

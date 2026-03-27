@@ -269,48 +269,17 @@ async def test_probe_llm_priority(paid_mock, free_mock, bridge_mock, ollama_mock
 
 def test_probe_llm_sync():
     # Should work in a non-async environment normally
-    with (
-        patch(
-            "navig.agent.llm_probe._probe_paid",
-            return_value=ProbeResult(True, "T3", "m", "n"),
-        ),
-        patch("navig.agent.llm_probe._probe_free_cloud", return_value=None),
-        patch(
-            "navig.agent.llm_probe._probe_ollama",
-            new_callable=AsyncMock,
-            return_value=None,
-        ),
-        patch(
-            "navig.agent.llm_probe._probe_bridge",
-            new_callable=AsyncMock,
-            return_value=None,
-        ),
-    ):
-
+    mock_coro = AsyncMock(return_value=ProbeResult(True, "T3", "m", "n"))
+    with patch("navig.agent.llm_probe.probe_llm", mock_coro):
         res = probe_llm_sync()
         assert res.tier == "T3"
 
 
 @pytest.mark.asyncio
 async def test_probe_llm_sync_in_loop():
-    # Calling sync wrapper inside an active event loop
-    with (
-        patch(
-            "navig.agent.llm_probe._probe_paid",
-            return_value=ProbeResult(True, "T3", "m", "n"),
-        ),
-        patch("navig.agent.llm_probe._probe_free_cloud", return_value=None),
-        patch(
-            "navig.agent.llm_probe._probe_ollama",
-            new_callable=AsyncMock,
-            return_value=None,
-        ),
-        patch(
-            "navig.agent.llm_probe._probe_bridge",
-            new_callable=AsyncMock,
-            return_value=None,
-        ),
-    ):
-
+    # Calling sync wrapper inside an active event loop — probe_llm_sync
+    # spawns a thread with asyncio.run(), so it must still work here.
+    mock_coro = AsyncMock(return_value=ProbeResult(True, "T3", "m", "n"))
+    with patch("navig.agent.llm_probe.probe_llm", mock_coro):
         res = probe_llm_sync()
         assert res.tier == "T3"

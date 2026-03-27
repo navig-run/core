@@ -475,6 +475,9 @@ def list_profiles():
     profiles = vault.list_profiles()
     active = vault.get_active_profile()
 
+    if active not in profiles:
+        profiles.append(active)
+
     con = _console()
     con.print("Available Profiles:")
     for p in profiles:

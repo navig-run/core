@@ -145,6 +145,13 @@ def log_dir() -> Path:
     return config_dir() / "logs"
 
 
+def blackbox_dir() -> Path:
+    """
+    NAVIG blackbox directory for telemetry events and crash reports.
+    """
+    return data_dir() / "blackbox"
+
+
 def cache_dir() -> Path:
     """
     NAVIG cache directory.

@@ -10,9 +10,8 @@
 //! 3. Create the typed event bus (`core_events`)
 //! 4. Load auth secrets and build token store (`core_auth`)
 //! 5. Start plugin registry + register Python subprocess (`core_plugins`)
-//! 6. Spawn tray icon thread (`core_tray`, if feature enabled)
-//! 7. Start Axum HTTP server (`core_api`) — blocks until shutdown
-//! 8. Graceful shutdown: stop plugins → publish DaemonStopping
+//! 6. Start Axum HTTP server (`core_api`) — blocks until shutdown
+//! 7. Graceful shutdown: stop plugins → publish DaemonStopping
 
 use core_api::{serve, AppState};
 use core_auth::{store::TokenStore, token::issue_token, Scope};
@@ -73,14 +72,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // ── 6. Tray ───────────────────────────────────────────────────────────────
-    #[cfg(feature = "tray")]
-    {
-        let tray = core_tray::TrayApp::new(events.clone());
-        tray.spawn();
-    }
-
-    // ── 7. HTTP server ────────────────────────────────────────────────────────
+    // ── 6. HTTP server ────────────────────────────────────────────────────────
     let bind  = args.bind.as_deref().unwrap_or(&config.server.bind).to_owned();
     let state = AppState::new(config.clone(), events.clone(), token_store);
 
@@ -101,7 +93,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // ── 8. Graceful shutdown ──────────────────────────────────────────────────
+    // ── 7. Graceful shutdown ──────────────────────────────────────────────────
     events.publish(Event::DaemonStopping { reason: "shutdown signal".into() });
     plugin_registry.stop_all().await;
     info!("navig-core-host stopped");

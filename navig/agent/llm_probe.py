@@ -301,15 +301,18 @@ async def probe_llm(prefer_local: bool = True) -> ProbeResult:
 def probe_llm_sync(prefer_local: bool = True) -> ProbeResult:
     """Synchronous wrapper around :func:`probe_llm` for non-async callers."""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Already in an event loop — run in a new thread
+        try:
+            asyncio.get_running_loop()
+            # Already inside a running event loop — offload to a new thread to
+            # avoid "cannot run nested event loop" errors.
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 future = ex.submit(asyncio.run, probe_llm(prefer_local))
                 return future.result(timeout=5)
-        return loop.run_until_complete(probe_llm(prefer_local))
+        except RuntimeError:
+            # No running event loop — safe to use asyncio.run() directly.
+            return asyncio.run(probe_llm(prefer_local))
     except Exception as exc:  # noqa: BLE001
         logger.debug("llm_probe: sync probe failed: {}", exc)
         return ProbeResult(reachable=False, tier="none", model="", note=TIER_GUIDE)
