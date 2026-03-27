@@ -33,11 +33,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from navig.installer.contracts import InstallerContext, ModuleState, Result
-from navig.installer.profiles import DEFAULT_PROFILE, VALID_PROFILES
-from navig.installer.planner import plan
-from navig.installer.runner import apply
 from navig.installer import state as _state
+from navig.installer.contracts import InstallerContext, ModuleState, Result
+from navig.installer.planner import plan
+from navig.installer.profiles import DEFAULT_PROFILE, VALID_PROFILES
+from navig.installer.runner import apply
 
 
 def run_install(
@@ -96,6 +96,7 @@ def run_install(
             manifest = _state.save(actions, results, ctx)
             if not quiet:
                 from navig import console_helper as ch
+
                 ch.dim(f"  manifest: {manifest}")
         except Exception:  # noqa: BLE001
             pass  # non-fatal
@@ -108,9 +109,11 @@ def run_install(
 
 # ─────────────────────── private console helpers ──────────────────────────────
 
+
 def _print_plan(actions, profile: str, dry_run: bool) -> None:
     try:
         from navig import console_helper as ch
+
         label = "[dry-run] " if dry_run else ""
         ch.header(f"{label}NAVIG Installer — profile: {profile}")
         for a in actions:
@@ -123,6 +126,7 @@ def _print_plan(actions, profile: str, dry_run: bool) -> None:
 def _print_results(results: List[Result], dry_run: bool) -> None:
     try:
         from navig import console_helper as ch
+
         for r in results:
             if r.state == ModuleState.APPLIED:
                 ch.success(f"  ✓ {r.message}")

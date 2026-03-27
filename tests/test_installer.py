@@ -92,8 +92,8 @@ class TestPlanner:
 
     def test_plan_missing_module_produces_placeholder(self, tmp_path, monkeypatch):
         """A profile module that doesn't exist yet yields a placeholder, not an error."""
-        from navig.installer.contracts import InstallerContext
         from navig.installer import planner
+        from navig.installer.contracts import InstallerContext
 
         monkeypatch.setattr(
             planner,
@@ -155,15 +155,26 @@ class TestRunner:
             ctx = InstallerContext(profile="node", dry_run=False, config_dir=tmp_path)
             # Build two sequential actions; second should not be reached
             actions = [
-                Action(id="core_cli.verify", description="check cli", module="core_cli"),
-                Action(id="config_paths.mkdir.root", description="mkdir root", module="config_paths"),
+                Action(
+                    id="core_cli.verify", description="check cli", module="core_cli"
+                ),
+                Action(
+                    id="config_paths.mkdir.root",
+                    description="mkdir root",
+                    module="config_paths",
+                ),
             ]
             results = apply(actions, ctx)
             assert len(results) == 1
             assert results[0].state == ModuleState.FAILED
 
     def test_rollback_calls_module_rollback(self, tmp_path):
-        from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
+        from navig.installer.contracts import (
+            Action,
+            InstallerContext,
+            ModuleState,
+            Result,
+        )
         from navig.installer.runner import rollback
 
         with patch("navig.installer.modules.shell_integration.rollback") as mock_rb:
@@ -214,7 +225,12 @@ class TestConfigPathsModule:
         assert result.state == ModuleState.APPLIED
 
     def test_rollback_removes_created_dir(self, tmp_path):
-        from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
+        from navig.installer.contracts import (
+            Action,
+            InstallerContext,
+            ModuleState,
+            Result,
+        )
         from navig.installer.modules.config_paths import rollback
 
         d = tmp_path / "new_empty"
@@ -235,7 +251,12 @@ class TestConfigPathsModule:
         assert not d.exists()
 
     def test_rollback_skips_preexisting_dir(self, tmp_path):
-        from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
+        from navig.installer.contracts import (
+            Action,
+            InstallerContext,
+            ModuleState,
+            Result,
+        )
         from navig.installer.modules.config_paths import rollback
 
         action = Action(
@@ -283,6 +304,7 @@ class TestCoreCLIModule:
 
     def test_apply_failure_when_navig_not_found(self, tmp_path):
         import subprocess as sp
+
         from navig.installer.contracts import Action, InstallerContext, ModuleState
         from navig.installer.modules import core_cli
 
@@ -353,15 +375,28 @@ class TestShellIntegrationModule:
 
 class TestState:
     def test_save_and_load_last(self, tmp_path):
-        from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
         from navig.installer import state as st
+        from navig.installer.contracts import (
+            Action,
+            InstallerContext,
+            ModuleState,
+            Result,
+        )
 
         ctx = InstallerContext(profile="node", config_dir=tmp_path)
         actions = [
-            Action(id="config_paths.mkdir.root", description="Create dir", module="config_paths")
+            Action(
+                id="config_paths.mkdir.root",
+                description="Create dir",
+                module="config_paths",
+            )
         ]
         results = [
-            Result(action_id="config_paths.mkdir.root", state=ModuleState.APPLIED, message="ok")
+            Result(
+                action_id="config_paths.mkdir.root",
+                state=ModuleState.APPLIED,
+                message="ok",
+            )
         ]
         manifest = st.save(actions, results, ctx)
         assert manifest.exists()
@@ -457,7 +492,9 @@ class TestTelegramModule:
         from navig.installer.contracts import InstallerContext
         from navig.installer.modules.telegram import plan
 
-        monkeypatch.setenv("NAVIG_TELEGRAM_BOT_TOKEN", "1234567890:AABBCCDDEEFFaabbccddeeff")
+        monkeypatch.setenv(
+            "NAVIG_TELEGRAM_BOT_TOKEN", "1234567890:AABBCCDDEEFFaabbccddeeff"
+        )
         ctx = InstallerContext(profile="operator", config_dir=tmp_path)
         actions = plan(ctx)
         assert len(actions) == 1
@@ -512,7 +549,12 @@ class TestTelegramModule:
         assert "TELEGRAM_BOT_TOKEN=test-token-123" in env_content
 
     def test_rollback_removes_marker_and_scrubs_env(self, tmp_path, monkeypatch):
-        from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
+        from navig.installer.contracts import (
+            Action,
+            InstallerContext,
+            ModuleState,
+            Result,
+        )
         from navig.installer.modules.telegram import rollback
 
         marker = tmp_path / ".telegram_configured"
@@ -530,7 +572,10 @@ class TestTelegramModule:
         result = Result(
             action_id="telegram.write",
             state=ModuleState.APPLIED,
-            undo_data={"env_path": str(env_path), "config_path": str(tmp_path / "config.yaml")},
+            undo_data={
+                "env_path": str(env_path),
+                "config_path": str(tmp_path / "config.yaml"),
+            },
         )
         ctx = InstallerContext(profile="operator", config_dir=tmp_path)
 
@@ -578,7 +623,12 @@ class TestMcpModule:
             assert (tmp_path / "mcp_servers.yaml").exists()
 
     def test_rollback_removes_created_config(self, tmp_path):
-        from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
+        from navig.installer.contracts import (
+            Action,
+            InstallerContext,
+            ModuleState,
+            Result,
+        )
         from navig.installer.modules.mcp import rollback
 
         cfg = tmp_path / "mcp_servers.yaml"
@@ -622,4 +672,3 @@ class TestProfileCoverage:
         from navig.installer.profiles import PROFILE_MODULES
 
         assert "tray" in PROFILE_MODULES["system_deep"]
-

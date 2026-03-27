@@ -555,7 +555,9 @@ def add_plugin_commands(app) -> None:
                 )
                 raise typer.Exit(1)
 
-            linked_entry = next((entry for entry in source_path.rglob("*") if entry.is_symlink()), None)
+            linked_entry = next(
+                (entry for entry in source_path.rglob("*") if entry.is_symlink()), None
+            )
             if linked_entry is not None:
                 ch.error(
                     "Invalid plugin path",

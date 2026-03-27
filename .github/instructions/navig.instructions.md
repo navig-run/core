@@ -25,7 +25,7 @@ navig run --b64 $b64
 # ❌ WRONG
 navig file add myfile.txt /tmp/ --force  # Flag doesn't exist!
 
-# ✅ CORRECT  
+# ✅ CORRECT
 navig file add myfile.txt /tmp/  # No confirmation needed
 ```
 **Remember**: `navig file add` uploads directly without prompts
@@ -212,7 +212,7 @@ navig run --b64 $b64
   - **(default)**: Tab-separated output - **USE THIS FOR USER DISPLAY** (compact AND readable)
   - `--plain` or `--raw`: Same as default but guaranteed no colors - use only for piping/scripting
   - `--json`: Structured JSON - **AVOID** (uses 5-10x more tokens due to envelope metadata)
-- **CRITICAL OUTPUT RULE**: 
+- **CRITICAL OUTPUT RULE**:
   - **For showing results to user**: Use default (no flags) - it's already token-efficient
   - **For parsing/scripting**: Use `--plain`
   - **NEVER use `--json`** for database queries shown to users (wastes tokens)
@@ -245,11 +245,11 @@ navig run --b64 $b64
   ```powershell
   # Simple backup
   navig db dump mydb -o backup.sql
-  
+
   # Backup with timestamp
   $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
   navig db dump mydb -o "backup-$timestamp.sql"
-  
+
   # Compress after dumping (manual)
   navig db dump mydb -o backup.sql
   gzip backup.sql  # Creates backup.sql.gz
@@ -529,7 +529,7 @@ echo env('APP_ENV');
 
 ## Output Format Rules
 - **FOR DATABASE QUERIES**: Use default output (no flags) - already compact, human-readable
-- **FOR SCRIPTING/PARSING**: Use `--plain` or `--raw` 
+- **FOR SCRIPTING/PARSING**: Use `--plain` or `--raw`
 - **AVOID `--json`**: It adds metadata envelope that wastes 5-10x tokens
 - **SUPPRESS PROMPTS**: Use `--yes` or `-y` to auto-confirm
 - **WHEN TO USE EACH**:
@@ -551,7 +551,7 @@ echo env('APP_ENV');
 
 
 ## Error Handling Rules
-- **ON CONNECTION ERROR**: 
+- **ON CONNECTION ERROR**:
   1. Run `navig host test` to verify connectivity
   2. Check `navig status` for tunnel state
   3. Suggest `navig host show` for diagnostics
@@ -719,4 +719,3 @@ curl -X POST http://127.0.0.1:8091/flow/email/intake -H 'content-type: applicati
 curl -X POST http://127.0.0.1:8091/flow/repo/propose -H 'content-type: application/json' -d '{}'
 curl -X POST http://127.0.0.1:8091/flow/briefing/daily
 ```
-

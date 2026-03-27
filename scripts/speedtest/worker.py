@@ -5,6 +5,7 @@ CLI path: net speedtest
 Also importable as a library:
   from worker import run_speedtest_cli, run_iperf3
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
-from common import ok, err, emit, Timer  # noqa: E402
+from common import Timer, emit, err, ok  # noqa: E402
 
 TOOL = "speedtest"
 
@@ -28,20 +29,22 @@ OS = platform.system()  # "Linux", "Darwin", "Windows"
 
 _INSTALL_HINTS: dict[str, dict[str, str]] = {
     "speedtest-cli": {
-        "Linux":   "pip install speedtest-cli  OR  sudo apt install speedtest-cli",
-        "Darwin":  "pip install speedtest-cli  OR  brew install speedtest-cli",
+        "Linux": "pip install speedtest-cli  OR  sudo apt install speedtest-cli",
+        "Darwin": "pip install speedtest-cli  OR  brew install speedtest-cli",
         "Windows": "pip install speedtest-cli",
     },
     "iperf3": {
-        "Linux":   "sudo apt install iperf3",
-        "Darwin":  "brew install iperf3",
+        "Linux": "sudo apt install iperf3",
+        "Darwin": "brew install iperf3",
         "Windows": "Download from https://iperf.fr/iperf-download.php — add to PATH",
     },
 }
 
 
 def _install_hint(binary: str) -> str:
-    return _INSTALL_HINTS.get(binary, {}).get(OS, f"Install '{binary}' for your platform")
+    return _INSTALL_HINTS.get(binary, {}).get(
+        OS, f"Install '{binary}' for your platform"
+    )
 
 
 def _find_binary(name: str) -> str | None:
@@ -65,12 +68,17 @@ def _find_binary(name: str) -> str | None:
 # Core runner — prints raw output when silent=False
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _run(cmd: list[str], label: str, silent: bool = False) -> subprocess.CompletedProcess:
+
+def _run(
+    cmd: list[str], label: str, silent: bool = False
+) -> subprocess.CompletedProcess:
     cmd_str = " ".join(str(c) for c in cmd)
     if not silent:
         print(f"\n[Method: {label}] Command: {cmd_str}")
         print("-" * 72)
-    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
     if not silent:
         if result.stdout:
             print(result.stdout, end="")
@@ -83,6 +91,7 @@ def _run(cmd: list[str], label: str, silent: bool = False) -> subprocess.Complet
 # ──────────────────────────────────────────────────────────────────────────────
 # speedtest-cli
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def run_speedtest_cli(silent: bool = False) -> dict:
     """Run speedtest-cli --json and return parsed result dict."""
@@ -108,11 +117,11 @@ def run_speedtest_cli(silent: bool = False) -> dict:
         data = json.loads(result.stdout)
         return {
             "download_mbps": round(data.get("download", 0) / 1_000_000, 2),
-            "upload_mbps":   round(data.get("upload",   0) / 1_000_000, 2),
-            "ping_ms":       round(data.get("ping", 0), 2),
-            "jitter_ms":     None,  # not exposed in speedtest-cli JSON
-            "server":        data.get("server", {}).get("host", "unknown"),
-            "timestamp":     data.get("timestamp", ""),
+            "upload_mbps": round(data.get("upload", 0) / 1_000_000, 2),
+            "ping_ms": round(data.get("ping", 0), 2),
+            "jitter_ms": None,  # not exposed in speedtest-cli JSON
+            "server": data.get("server", {}).get("host", "unknown"),
+            "timestamp": data.get("timestamp", ""),
         }
     except json.JSONDecodeError as exc:
         return {"error": f"Failed to parse speedtest-cli output: {exc}"}
@@ -122,6 +131,7 @@ def run_speedtest_cli(silent: bool = False) -> dict:
 # Ping helper (latency + jitter approximation)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _ping_stats(host: str, count: int = 5) -> tuple[float | None, float | None]:
     """Return (avg_ms, jitter_ms) from system ping. Both may be None on failure."""
     if OS == "Windows":
@@ -129,7 +139,9 @@ def _ping_stats(host: str, count: int = 5) -> tuple[float | None, float | None]:
     else:
         cmd = ["ping", "-c", str(count), host]
 
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    r = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
     out = r.stdout + r.stderr
 
     if r.returncode != 0:
@@ -159,9 +171,9 @@ def _ping_stats(host: str, count: int = 5) -> tuple[float | None, float | None]:
             if "min/avg/max" in line:
                 try:
                     stats = line.split("=")[-1].strip().split("/")
-                    min_ms  = float(stats[0])
-                    avg_ms  = float(stats[1])
-                    max_ms  = float(stats[2].split(" ")[0])
+                    min_ms = float(stats[0])
+                    avg_ms = float(stats[1])
+                    max_ms = float(stats[2].split(" ")[0])
                     jitter_ms = round((max_ms - min_ms) / 2, 2)
                 except (ValueError, IndexError):
                     pass  # malformed value; skip
@@ -172,6 +184,7 @@ def _ping_stats(host: str, count: int = 5) -> tuple[float | None, float | None]:
 # ──────────────────────────────────────────────────────────────────────────────
 # iperf3 helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _parse_iperf3(raw: str, direction: str) -> tuple[float | None, float | None]:
     """Parse iperf3 --json output. Returns (speed_mbps, jitter_ms_or_None)."""
@@ -221,7 +234,9 @@ def run_iperf3(server: str, port: int = 5201, silent: bool = False) -> dict:
     time.sleep(1)
 
     # Jitter (UDP)
-    udp_res = _run(base + ["-u", "-b", "100M", "-t", "5"], "iperf3 [jitter/UDP]", silent=silent)
+    udp_res = _run(
+        base + ["-u", "-b", "100M", "-t", "5"], "iperf3 [jitter/UDP]", silent=silent
+    )
     jitter_ms: float | None = None
     if udp_res.returncode == 0:
         _, jitter_ms = _parse_iperf3(udp_res.stdout, "send")
@@ -231,11 +246,11 @@ def run_iperf3(server: str, port: int = 5201, silent: bool = False) -> dict:
     effective_jitter = jitter_ms if jitter_ms is not None else ping_jitter
 
     result: dict = {
-        "server":        f"{server}:{port}",
+        "server": f"{server}:{port}",
         "download_mbps": download_mbps,
-        "upload_mbps":   upload_mbps,
-        "ping_ms":       ping_ms,
-        "jitter_ms":     effective_jitter,
+        "upload_mbps": upload_mbps,
+        "ping_ms": ping_ms,
+        "jitter_ms": effective_jitter,
     }
     if upload_err:
         result["upload_error"] = upload_err
@@ -249,6 +264,7 @@ def run_iperf3(server: str, port: int = 5201, silent: bool = False) -> dict:
 # Worker command handlers (navig scripts protocol)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def cmd_run(args: dict) -> dict:
     t = Timer()
     server = args.get("iperf3_server")
@@ -258,7 +274,12 @@ def cmd_run(args: dict) -> dict:
     silent = args.get("silent", True)
 
     if not skip_ip and not server:
-        return err(TOOL, "run", ["iperf3_server is required unless skip_iperf3=true"], ms=t.ms())
+        return err(
+            TOOL,
+            "run",
+            ["iperf3_server is required unless skip_iperf3=true"],
+            ms=t.ms(),
+        )
 
     summary: dict = {}
 

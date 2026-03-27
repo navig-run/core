@@ -27,14 +27,14 @@ pip install -e .
 navig --version
 ```
 
-**Quick-start with Telegram bot:**
+**Bootstrap Telegram during first-run setup:**
 ```bash
-# Linux/macOS — auto-configures Telegram on install
-NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>" bash install.sh
+# Linux/macOS
+NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>" navig init --profile operator
 
 # Windows PowerShell
 $env:NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
-.\install.ps1
+navig init --profile operator
 ```
 
 ## First Steps

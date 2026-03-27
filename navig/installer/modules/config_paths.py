@@ -17,7 +17,7 @@ description = "Create ~/.navig directory structure"
 
 # Subdirectories that must always exist under config_dir
 _SUBDIRS = [
-    "",          # config_dir itself
+    "",  # config_dir itself
     "workspace",
     "logs",
     "cache",

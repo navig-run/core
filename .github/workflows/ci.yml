@@ -49,7 +49,14 @@ jobs:
         run: ruff format --check navig tests
 
       - name: Test
-        run: pytest
+        run: >
+          pytest
+          --cov=navig.gateway.server
+          --cov=navig.daemon.telegram_worker
+          --cov=navig.daemon.service_manager
+          --cov=navig.contracts
+          --cov-report=term-missing
+          --cov-fail-under=75
 
       - name: Build
         run: python -m build

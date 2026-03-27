@@ -159,17 +159,17 @@ wiki:
   version: "1.0"
   default_language: en
   link_style: wiki           # Use [[wiki-links]]
-  
+
   ai:
     auto_process_inbox: true
     auto_translate: true
     auto_categorize: true
     auto_move: false         # Require confirmation
     rewrite_style: preserve  # preserve | standardize | summarize
-  
+
   cleanup:
     archive_after_days: 365
-  
+
   publish:
     default_visibility: private
     exclude_patterns:
@@ -186,5 +186,3 @@ wiki:
 4. **Hub for planning** → Roadmap, tasks, retrospectives
 5. **Technical for devs** → APIs, architecture, decisions
 6. **Set visibility** → Control what gets published
-
-

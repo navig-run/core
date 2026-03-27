@@ -59,14 +59,14 @@ function Test-SSHFSInstalled {
 
 function Install-Prerequisites {
     Write-NavigLog "=== CHECKING PREREQUISITES ===" "INFO"
-    
+
     # Check for Chocolatey
     $chocoInstalled = $null -ne (Get-Command choco -ErrorAction SilentlyContinue)
-    
+
     if (-not $chocoInstalled) {
         Write-NavigLog "Chocolatey not found. Install from: https://chocolatey.org/" "WARNING"
     }
-    
+
     # Check rclone
     if (-not (Test-RcloneInstalled)) {
         Write-NavigLog "rclone not installed" "WARNING"
@@ -78,7 +78,7 @@ function Install-Prerequisites {
     } else {
         Write-NavigLog "✓ rclone installed" "SUCCESS"
     }
-    
+
     # Check SSHFS-Win
     if (-not (Test-SSHFSInstalled)) {
         Write-NavigLog "SSHFS-Win not installed" "WARNING"
@@ -100,18 +100,18 @@ function Mount-LinuxShare {
         [string]$Drive,
         [string]$User
     )
-    
+
     if (-not (Test-SSHFSInstalled)) {
         Write-NavigLog "SSHFS-Win is not installed!" "ERROR"
         Write-NavigLog "Install with: choco install sshfs -y" "INFO"
         return
     }
-    
+
     Write-NavigLog "Mounting Linux share from ${User}@${HostName}:${Path} to ${Drive}" "INFO"
-    
+
     # Using SSHFS-Win via net use
     $remotePath = "\\sshfs\${User}@${HostName}${Path}"
-    
+
     try {
         net use $Drive $remotePath
         Write-NavigLog "✓ Successfully mounted ${Drive}" "SUCCESS"
@@ -127,15 +127,15 @@ function Mount-CloudDrive {
         [string]$Remote,
         [string]$Drive
     )
-    
+
     if (-not (Test-RcloneInstalled)) {
         Write-NavigLog "rclone is not installed!" "ERROR"
         Write-NavigLog "Install with: choco install rclone -y" "INFO"
         return
     }
-    
+
     Write-NavigLog "Mounting cloud drive '$Remote' to ${Drive}" "INFO"
-    
+
     # List available remotes
     $remotes = rclone listremotes
     if ($remotes -notcontains "${Remote}:") {
@@ -144,15 +144,15 @@ function Mount-CloudDrive {
         Write-NavigLog "Configure with: rclone config" "INFO"
         return
     }
-    
+
     # Mount using rclone
     $mountPoint = "${Drive}\"
-    
+
     Write-NavigLog "Starting rclone mount (this runs in background)..." "INFO"
     Start-Process -FilePath "rclone" -ArgumentList "mount ${Remote}: ${mountPoint} --vfs-cache-mode full" -WindowStyle Hidden
-    
+
     Start-Sleep -Seconds 3
-    
+
     if (Test-Path $mountPoint) {
         Write-NavigLog "✓ Successfully mounted ${Drive}" "SUCCESS"
         Write-NavigLog "Access your cloud files at: ${Drive}" "INFO"
@@ -163,25 +163,25 @@ function Mount-CloudDrive {
 
 function Mount-NavigHost {
     Write-NavigLog "=== MOUNT NAVIG HOST VIA SMB/SFTP ===" "INFO"
-    
+
     # Check if NAVIG CLI is available
     $navigInstalled = $null -ne (Get-Command navig -ErrorAction SilentlyContinue)
-    
+
     if (-not $navigInstalled) {
         Write-NavigLog "NAVIG CLI not found in PATH" "WARNING"
         Write-NavigLog "Make sure NAVIG is installed and in your PATH" "INFO"
         return
     }
-    
+
     # Get active host
     try {
         $activeHost = navig host show --json 2>$null | ConvertFrom-Json
         Write-NavigLog "Active NAVIG host: $($activeHost.hostname)" "INFO"
-        
+
         # Option 1: SSH Tunnel + SSHFS
         Write-Host "`nOption 1: Mount via SSHFS"
         Write-Host "Command: net use Z: \\sshfs\$($activeHost.username)@$($activeHost.hostname)/home/$($activeHost.username)"
-        
+
         # Option 2: rclone SFTP
         Write-Host "`nOption 2: Configure rclone SFTP remote"
         Write-Host "1. Run: rclone config"
@@ -192,11 +192,11 @@ function Mount-NavigHost {
         Write-Host "6. User: $($activeHost.username)"
         Write-Host "7. Use SSH key from: $($activeHost.ssh_key_path)"
         Write-Host "Then mount: rclone mount navig-ubuntu: Z:\ --vfs-cache-mode full"
-        
+
         # Option 3: If Samba is installed on Linux
         Write-Host "`nOption 3: SMB Share (if Samba is installed on Linux)"
         Write-Host "Command: net use Z: \\$($activeHost.hostname)\share /user:$($activeHost.username)"
-        
+
     } catch {
         Write-NavigLog "Could not get NAVIG host info" "ERROR"
     }
@@ -204,9 +204,9 @@ function Mount-NavigHost {
 
 function Get-MountedDrives {
     Write-NavigLog "=== MOUNTED NETWORK DRIVES ===" "INFO"
-    
+
     Get-PSDrive -PSProvider FileSystem | Where-Object { $_.DisplayRoot -ne $null } | Format-Table Name, Root, DisplayRoot -AutoSize
-    
+
     # Check for rclone mounts
     $rcloneProcesses = Get-Process -Name rclone -ErrorAction SilentlyContinue
     if ($rcloneProcesses) {
@@ -217,20 +217,20 @@ function Get-MountedDrives {
 
 function Dismount-AllDrives {
     Write-NavigLog "=== UNMOUNTING ALL NETWORK DRIVES ===" "WARNING"
-    
+
     # Unmount network drives
     Get-PSDrive -PSProvider FileSystem | Where-Object { $_.DisplayRoot -ne $null } | ForEach-Object {
         Write-Host "Unmounting: $($_.Name)"
         net use "$($_.Name):" /delete /y
     }
-    
+
     # Stop rclone processes
     $rcloneProcesses = Get-Process -Name rclone -ErrorAction SilentlyContinue
     if ($rcloneProcesses) {
         Write-Host "Stopping rclone processes..."
         $rcloneProcesses | Stop-Process -Force
     }
-    
+
     Write-NavigLog "✓ All drives unmounted" "SUCCESS"
 }
 
@@ -251,11 +251,11 @@ if ($MountLinux) {
         Write-Host "Example: .\mount_remote_drives.ps1 -MountLinux -Host 'ubuntu-server' -RemotePath '/home/user' -DriveLetter 'Z:' -Username 'user'"
         exit 1
     }
-    
+
     if (-not $Username) {
         $Username = Read-Host "Enter SSH username"
     }
-    
+
     Mount-LinuxShare -HostName $Host -Path $RemotePath -Drive $DriveLetter -User $Username
     exit 0
 }
@@ -266,7 +266,7 @@ if ($MountCloud) {
         Write-Host "Example: .\mount_remote_drives.ps1 -MountCloud -CloudName 'gdrive' -DriveLetter 'Y:'"
         exit 1
     }
-    
+
     Mount-CloudDrive -Remote $CloudName -Drive $DriveLetter
     exit 0
 }

@@ -162,5 +162,3 @@ navig-core/
 - Tools/adapters register in `navig/tools/` registry pattern
 - Config is YAML-based at `~/.navig/config.yaml` (global) and `.navig/` (project)
 - Always run `pytest tests/` to validate changes to command logic
-
-

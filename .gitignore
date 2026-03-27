@@ -226,7 +226,7 @@ cython_debug/               # Cython debug symbols
 # END OF .gitignore
 # ===============================================
 
-# NAVIG runtime files inside 
+# NAVIG runtime files inside
 .navig/
 .backups/
 node_modules
