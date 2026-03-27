@@ -124,9 +124,7 @@ def register_deck_routes(
                     and "\\" not in f.name
                     and not f.name.startswith(".")
                 ):
-                    app.router.add_get(
-                        f"/deck/{f.name}", lambda req, fp=f: web.FileResponse(fp)
-                    )
+                    app.router.add_get(f"/deck/{f.name}", lambda req, fp=f: web.FileResponse(fp))
             # SPA catch-all — serve index.html for all /deck/* routes
             app.router.add_get("/deck/{path:.*}", handle_deck_index)
             app.router.add_get("/deck", handle_deck_index)
