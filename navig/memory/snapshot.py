@@ -104,14 +104,16 @@ def load_snapshot_policies(
 def _load_policies_from_yaml() -> Dict[str, Any]:
     """Read memory.api_snapshot_policies from the NAVIG global config."""
     try:
-        from navig.core.config_loader import load_config
+        from navig.config import get_config_manager
 
-        cfg = load_config()
-        mem = getattr(cfg, "memory", None)
-        if mem and hasattr(mem, "api_snapshot_policies"):
-            return mem.api_snapshot_policies or {}
+        cfg_mgr = get_config_manager()
+        cfg = cfg_mgr.global_config or {}
+        mem = cfg.get("memory", {}) if isinstance(cfg, dict) else {}
+        if isinstance(mem, dict) and "api_snapshot_policies" in mem:
+            return mem["api_snapshot_policies"] or {}
+
         # Also try raw dict access
-        raw = cfg if isinstance(cfg, dict) else {}
+        raw = cfg if isinstance(cfg, dict) else getattr(cfg, "__dict__", {})
         return raw.get("memory", {}).get("api_snapshot_policies", {})
     except Exception:
         return {}

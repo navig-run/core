@@ -2166,7 +2166,7 @@ def execute_sql_query(state: MenuState):
             f"[{COLORS['accent']}]Executing query...[/{COLORS['accent']}]",
             spinner="dots",
         ):
-            database.execute_sql({"query": query})
+            database.execute_sql(query, {})
         show_status("Query executed successfully.", "success")
         state.history.add(f'navig sql "{query[:50]}..."', "Execute SQL query", True)
     except Exception as e:
@@ -2192,7 +2192,7 @@ def execute_sql_file(state: MenuState):
             f"[{COLORS['accent']}]Executing SQL file...[/{COLORS['accent']}]",
             spinner="dots",
         ):
-            database.execute_sql_file({"file": filepath})
+            database.execute_sql_file(filepath, {})
         show_status(f"SQL file executed successfully: {filepath}", "success")
         state.history.add(
             f"navig sqlfile {filepath}", f"Execute SQL file {Path(filepath).name}", True
@@ -2219,8 +2219,8 @@ def execute_db_backup(state: MenuState):
             f"[{COLORS['accent']}]Creating backup...[/{COLORS['accent']}]",
             spinner="dots",
         ):
-            options = {"path": backup_path} if backup_path else {}
-            database.backup_database(options)
+            options = {}
+            database.backup_database(backup_path if backup_path else None, options)
         show_status("Database backup created successfully.", "success")
         state.history.add("navig backup", "Backup database", True)
     except Exception as e:
@@ -2265,7 +2265,7 @@ def execute_db_restore(state: MenuState):
             f"[{COLORS['accent']}]Restoring database...[/{COLORS['accent']}]",
             spinner="dots",
         ):
-            database.restore_database({"file": backup_path, "yes": False})
+            database.restore_database(backup_path, {"yes": False})
         show_status("Database restored successfully.", "success")
         state.history.add(f"navig restore {backup_path}", "Restore database", True)
     except Exception as e:
@@ -3592,7 +3592,7 @@ def launch_menu(options: Dict[str, Any]):
 
                     # ===== DEV INTELLIGENCE =====
                     elif selection == "Copilot Sessions":
-                        _launch_copilot_sessions(state)
+                        _launch_ask_sessions(state)
                     elif selection == "Memory & Knowledge":
                         _launch_memory_menu(state)
 
@@ -3657,7 +3657,7 @@ def _run_navig_cmd(state: MenuState, cmd_parts: list, label: str) -> None:
     console.input(f"\n[{COLORS['dim']}]  Press Enter to continue…[/]")
 
 
-def _launch_copilot_sessions(state: MenuState) -> None:
+def _launch_ask_sessions(state: MenuState) -> None:
     """Launch the Copilot Sessions browser from the main menu."""
     clear_screen()
     console.print(
@@ -3665,24 +3665,14 @@ def _launch_copilot_sessions(state: MenuState) -> None:
     )
     console.print()
     console.print(f"[{COLORS['dim']}]  Commands:[/]")
+    console.print("  [bright_cyan]navig ask sessions[/]          — list all sessions")
+    console.print("  [bright_cyan]navig ask sessions stats[/]    — storage statistics")
+    console.print("  [bright_cyan]navig ask sessions search Q[/] — full-text search")
+    console.print("  [bright_cyan]navig ask sessions view ID[/]  — inspect a session")
     console.print(
-        "  [bright_cyan]navig copilot sessions[/]          — list all sessions"
+        "  [bright_cyan]navig ask sessions export[/]   — export to JSON/MD/CSV"
     )
-    console.print(
-        "  [bright_cyan]navig copilot sessions stats[/]    — storage statistics"
-    )
-    console.print(
-        "  [bright_cyan]navig copilot sessions search Q[/] — full-text search"
-    )
-    console.print(
-        "  [bright_cyan]navig copilot sessions view ID[/]  — inspect a session"
-    )
-    console.print(
-        "  [bright_cyan]navig copilot sessions export[/]   — export to JSON/MD/CSV"
-    )
-    console.print(
-        "  [bright_cyan]navig copilot sessions delete ID[/]— delete a session"
-    )
+    console.print("  [bright_cyan]navig ask sessions delete ID[/]— delete a session")
     console.print()
 
     options = [
@@ -3700,18 +3690,18 @@ def _launch_copilot_sessions(state: MenuState) -> None:
         clear_screen()
         _run_navig_cmd(
             state,
-            ["copilot", "sessions", "list", "--limit", "50"],
+            ["ask", "sessions", "list", "--limit", "50"],
             "List Copilot sessions",
         )
     elif selection == "Show statistics":
         clear_screen()
-        _run_navig_cmd(state, ["copilot", "sessions", "stats"], "Copilot session stats")
+        _run_navig_cmd(state, ["ask", "sessions", "stats"], "Copilot session stats")
     elif selection == "Search sessions":
         query = console.input(f"[{COLORS['accent']}]Search query: [/]").strip()
         if query:
             clear_screen()
             _run_navig_cmd(
-                state, ["copilot", "sessions", "search", query], f"Search: {query}"
+                state, ["ask", "sessions", "search", query], f"Search: {query}"
             )
 
 

@@ -162,7 +162,7 @@ navig host use <name>
 navig run "uname -a"
 
 # 6. Ask the AI operator layer something about it
-navig copilot ask "what is consuming the most memory on this host?"
+navig ask ask "what is consuming the most memory on this host?"
 ```
 
 That's it. Everything else builds from here.
@@ -176,7 +176,7 @@ That's it. Everything else builds from here.
 | `navig db query "SELECT 1"` | Connect to a remote database |
 | `navig tunnel 5432` | Open an SSH tunnel to a port |
 | `navig workflow run deploy.yaml` | Run a multi-step workflow |
-| `navig copilot ask "..."` | Ask the AI operator layer anything |
+| `navig ask ask "..."` | Ask the AI operator layer anything |
 
 ---
 
@@ -205,7 +205,7 @@ navig <resource> <action> [options]
 
 | Command | What it does |
 |---|---|
-| `navig copilot` | AI-assisted troubleshooting and command guidance |
+| `navig ask` | AI-assisted troubleshooting and command guidance |
 | `navig flow` | Multi-step automation workflows |
 | `navig mcp` | MCP server for AI editor and tool integration |
 | `navig gateway` | Start and manage chat gateway (Telegram, Matrix) |
@@ -227,13 +227,13 @@ Run `navig help` or `navig help <topic>` for detailed usage. Every command also 
 
 NAVIG can expose its operator layer through:
 
-- CLI (`navig copilot`)
+- CLI (`navig ask`)
 - Telegram (via `navig gateway`)
 - Matrix
 - Any MCP-compatible editor (Cursor, Claude Desktop, VS Code)
 
 ```bash
-navig copilot ask "Why does this container keep restarting?"
+navig ask ask "Why does this container keep restarting?"
 ```
 
 The AI layer assists with reasoning, context, and workflow execution. It does not replace direct operator control — the operator stays responsible, the operator stays in command.

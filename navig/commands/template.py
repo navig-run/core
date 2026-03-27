@@ -386,7 +386,7 @@ def deploy_template_cmd(
     run_remote_command(final_command, options)
 
 
-def deploy_template_cmd(
+def deploy_template_overview_cmd(
     name: str, dry_run: bool = False, ctx_obj: Dict[str, Any] = None
 ):
     """Deploy/run a template (enable and surface available commands)."""
@@ -692,4 +692,4 @@ def addon_info_deprecated(name: str, options: Dict[str, Any]):
 
 def addon_run_deprecated(name: str, options: Dict[str, Any], dry_run: bool = False):
     """Alias for 'navig flow template run'."""
-    deploy_template_cmd(name, dry_run=dry_run, ctx_obj=options)
+    deploy_template_overview_cmd(name, dry_run=dry_run, ctx_obj=options)

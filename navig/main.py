@@ -666,6 +666,7 @@ def main() -> None:
     4. Run the CLI
     """
     try:
+        from navig.config import reset_config_manager, set_config_cache_bypass
         from navig.core.crash_handler import crash_handler
 
         # Check for debug flag early to configure handler
@@ -673,6 +674,11 @@ def main() -> None:
             crash_handler.enable_debug()
             # We don't remove it from argv so Typer can still see it if needed,
             # but usually Typer handles its own parsing.
+
+        no_cache_requested = "--no-cache" in sys.argv
+        set_config_cache_bypass(no_cache_requested)
+        if no_cache_requested:
+            reset_config_manager()
 
         # First-run onboarding — fires when ~/.navig/onboarding.json is absent.
         # Placed before the fast-path so bare `navig` on a fresh install shows

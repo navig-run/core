@@ -1,4 +1,4 @@
-﻿---
+---
 applyTo: '**'
 ---
 
@@ -50,10 +50,10 @@ applyTo: '**'
 ## Core Mandate
 **ALWAYS** use the `NAVIG` tool for the following operations. Manual intervention or alternative tools should be avoided unless explicitly necessary for debugging.
 
-1.  **Remote Production Server:** All operations, deployments, and monitoring.
-2.  **Local Database:** All local database manipulations, queries, and setups.
-3.  **Database Changes:** Migrations, schema updates, and seeding.
-4.  **Server Configurations:** Environment variable adjustments and service configs.
+1. **Remote Production Server:** All operations, deployments, and monitoring.
+2. **Local Database:** All local database manipulations, queries, and setups.
+3. **Database Changes:** Migrations, schema updates, and seeding.
+4. **Server Configurations:** Environment variable adjustments and service configs.
 
 ## 1. Quick Start & Overview
 
@@ -1025,6 +1025,7 @@ navig run "tail -n 100 /var/log/nginx/error.log"
 
 ---
 
+<a id="42--complex-commands-heredocs-json-special-characters"></a>
 ### 4.2 ⚠️ Complex Commands (Heredocs, JSON, Special Characters)
 
 **THE PROBLEM:**
@@ -4152,6 +4153,7 @@ For complete documentation, see `docs/WORKFLOWS.md`.
 
 ---
 
+<a id="22-ai-integration-mcp--wiki-rag"></a>
 ## 22. ⭐ AI Integration (MCP & Wiki RAG)
 
 NAVIG integrates with AI assistants like GitHub Copilot and Claude via the Model Context Protocol (MCP).
@@ -5759,6 +5761,7 @@ navig index scan   # one-time or run regularly
 
 ---
 
+<a id="25-autonomous-agent-mode"></a>
 ## 25. ⭐ Autonomous Agent Mode
 
 NAVIG Agent Mode transforms your CLI tool into a living, autonomous entity that monitors, thinks, and acts.
@@ -5909,7 +5912,7 @@ $env:NAVIG_EMAIL_myhost_PASSWORD  = "xxxx xxxx xxxx xxxx"
 [Environment]::SetEnvironmentVariable("NAVIG_EMAIL_myhost_PASSWORD", "xxxx xxxx xxxx xxxx", "User")
 ```
 
-4. Add accounts in `~/.navig/agent/config.yaml` under `ears.email_accounts` (see Section 25.4)
+1. Add accounts in `~/.navig/agent/config.yaml` under `ears.email_accounts` (see Section 25.4)
 
 **Verification:**
 
@@ -6162,6 +6165,7 @@ See [AGENT_GOALS.md](AGENT_GOALS.md) for comprehensive guide on goal planning, d
 
 ---
 
+<a id="26-information-retrieval"></a>
 ## 26. ⭐ Information Retrieval (Web Search, Prices, Weather)
 
 NAVIG now understands information retrieval queries beyond DevOps operations. When you ask about prices, weather, or general knowledge, NAVIG intelligently routes your query to the appropriate handler.
@@ -6427,6 +6431,7 @@ export BRAVE_API_KEY="your-api-key"
 
 ---
 
+<a id="27-advanced-ai-features-new"></a>
 ## 27. ⭐ Advanced AI Features (NEW)
 
 ### 27.1 Perplexity Search Provider
@@ -6614,6 +6619,7 @@ result = await coordinator.delegate_task(
 
 ---
 
+<a id="28-operations-dashboard-tui"></a>
 ## 28. ⭐ Operations Dashboard TUI
 
 Real-time terminal-based dashboard for infrastructure monitoring and operations overview.
@@ -6694,6 +6700,7 @@ For the active host:
 
 ---
 
+<a id="29-command-history--replay"></a>
 ## 29. ⭐ Command History & Replay
 
 NAVIG records all operations for auditing, replay, and debugging. Track what was done, when, and by whom—then replay or undo operations as needed.
@@ -6902,6 +6909,7 @@ The history system integrates with:
 
 ---
 
+<a id="30-intelligent-suggestions--quick-actions"></a>
 ## 30. ⭐ Intelligent Suggestions & Quick Actions
 
 NAVIG learns from your usage patterns and provides intelligent command suggestions plus quick action shortcuts.
@@ -7142,6 +7150,7 @@ navig trigger add "Disk Alert" \
 
 ---
 
+<a id="32-operations-insights--analytics"></a>
 ## 32. ⭐ Operations Insights & Analytics
 
 The insights system provides analytics and intelligence on your command patterns, helping you understand usage, detect anomalies, and optimize operations.
@@ -7697,6 +7706,7 @@ cfg.cache_dir      # platform cache dir (AppData\Local\NAVIG\Cache on Win)
 
 ---
 
+<a id="33-additional-documentation"></a>
 ## 35. Additional Documentation
 
 For specialized topics, see these detailed guides:
@@ -7902,7 +7912,7 @@ Unified component library used by both NAVIG Deck (browser extension) and NAVIG 
 - **API v1**: Auth, devices, workspaces, plugins marketplace, AI proxy (metered), sync, billing
 - **Models**: User, Device, License, Plan, Plugin, PluginInstall, PluginVersion, Workspace
 
-### NAVIG Copilot (`packages/navig-copilot`)
+### NAVIG Ask (`packages/navig-ask`)
 - **Type**: VS Code extension (v3.5.0)
 - **AI Model**: GPT-5.2 Thinking (default), fallback chain to GPT-4, Claude, Copilot
 - **Pipeline**: ChatMonitor -> PatternMatcher -> SessionManager -> Responder (auto-continue)

@@ -2,9 +2,12 @@
 
 Routes: /api/voice/transcribe, /api/voice/synthesize, /api/voice/poll_wake, /api/command
 
-Note: aiohttp is resolved lazily so that PENDING_WAKES can be imported by
-wake_word.py without requiring aiohttp to be installed.  The RuntimeError is
-surfaced only when a request handler function is actually called.
+Design note:
+    ``PENDING_WAKES`` lives at module level and has **no** aiohttp dependency so
+    that ``wake_word.py`` can do ``from navig.gateway.routes.voice import PENDING_WAKES``
+    without aiohttp being installed.  All aiohttp-requiring helpers are imported
+    lazily inside each handler closure, and any ``RuntimeError`` for missing
+    aiohttp is raised only when a handler is actually invoked.
 """
 
 from __future__ import annotations
@@ -16,45 +19,41 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-# Lazy aiohttp import — do NOT raise at module level so that other modules
-# (e.g. wake_word.py) can import PENDING_WAKES without aiohttp installed.
-_aiohttp_web = None
-
-
-def _get_web():
-    global _aiohttp_web
-    if _aiohttp_web is not None:
-        return _aiohttp_web
-    try:
-        from aiohttp import web as _web  # noqa: PLC0415
-
-        _aiohttp_web = _web
-        return _web
-    except ImportError as exc:
-        raise RuntimeError(
-            "aiohttp is required for gateway routes (pip install aiohttp)"
-        ) from exc
-
-
 if TYPE_CHECKING:
-    from aiohttp import web  # noqa: F811
+    from aiohttp import web
 
     from navig.gateway.server import NavigGateway  # noqa: F401
 
 from navig.debug_logger import get_debug_logger
-from navig.gateway.routes.common import (
-    json_error_response,
-    json_ok,
-    require_bearer_auth,
-)
-from navig.voice.stt import get_stt
-from navig.voice.tts import get_tts
 from navig.voice.wake_word import WakeWordDetection
 
 logger = get_debug_logger()
 
-# Global queue for wake word events detected by the backend engine (polled by rust bridge)
+# ---------------------------------------------------------------------------
+# Global queue — importable WITHOUT aiohttp (used by wake_word._notify_bridge)
+# ---------------------------------------------------------------------------
 PENDING_WAKES: deque[WakeWordDetection] = deque(maxlen=10)
+
+
+# ---------------------------------------------------------------------------
+# Lazy helpers — resolved once on first handler invocation
+# ---------------------------------------------------------------------------
+
+
+def _route_helpers():
+    """Return (json_ok, json_error_response, require_bearer_auth) lazily."""
+    from navig.gateway.routes.common import (  # noqa: PLC0415
+        json_error_response,
+        json_ok,
+        require_bearer_auth,
+    )
+
+    return json_ok, json_error_response, require_bearer_auth
+
+
+# ---------------------------------------------------------------------------
+# Route registration
+# ---------------------------------------------------------------------------
 
 
 def register(app, gateway):
@@ -68,6 +67,7 @@ def register(app, gateway):
 def _transcribe(gw):
     async def h(r):  # type: aiohttp.web.Request  # noqa: ANN001
         # Allow anonymous local access; Rust bridge is expected to send the token.
+        _, _, require_bearer_auth = _route_helpers()
         _auth = require_bearer_auth(r, gw, allow_anonymous=True)
         reader = await r.multipart()
         audio_bytes = None
@@ -84,6 +84,7 @@ def _transcribe(gw):
                 is_voice = val.decode("utf-8").strip().lower() == "true"
 
         if not audio_bytes:
+            _, json_error_response, _ = _route_helpers()
             return json_error_response("Missing audio part", status=400)
 
         # Write bytes to a temp file; STT.transcribe() requires a Path.
@@ -94,7 +95,10 @@ def _transcribe(gw):
                 tmp.write(audio_bytes)
                 tmp_path = Path(tmp.name)
 
+            from navig.voice.stt import get_stt  # noqa: PLC0415
+
             stt = get_stt()
+            json_ok, json_error_response, _ = _route_helpers()
             result = await stt.transcribe(tmp_path, is_voice=is_voice)
             if not result.success:
                 return json_error_response(
@@ -115,6 +119,7 @@ def _transcribe(gw):
             )
         except Exception as e:
             logger.exception("Transcribe failed")
+            _, json_error_response, _ = _route_helpers()
             return json_error_response(
                 "Transcription failed", details={"error": str(e)}, status=500
             )
@@ -133,9 +138,13 @@ def _synthesize(gw):
         data = await r.json()
         text = data.get("text")
         if not text:
+            _, json_error_response, _ = _route_helpers()
             return json_error_response("Missing 'text'", status=400)
 
         try:
+            from navig.voice.tts import get_tts  # noqa: PLC0415
+
+            json_ok, json_error_response, _ = _route_helpers()
             tts = get_tts()
             result = await tts.synthesize(text)
             if not result.success or not result.audio_path:
@@ -160,6 +169,7 @@ def _synthesize(gw):
             )
         except Exception as e:
             logger.exception("Synthesize failed")
+            _, json_error_response, _ = _route_helpers()
             return json_error_response(
                 "Synthesis failed", details={"error": str(e)}, status=500
             )
@@ -172,9 +182,11 @@ def _command(gw):
         data = await r.json()
         text = data.get("text")
         if not text:
+            _, json_error_response, _ = _route_helpers()
             return json_error_response("Missing 'text'", status=400)
 
         try:
+            json_ok, json_error_response, _ = _route_helpers()
             start_ts = time.monotonic()
             resp = await gw.router.route_message(
                 channel="desktop_voice",
@@ -194,6 +206,7 @@ def _command(gw):
             )
         except Exception as e:
             logger.exception("Command failed")
+            _, json_error_response, _ = _route_helpers()
             return json_error_response(
                 "Command failed", details={"error": str(e)}, status=500
             )

@@ -581,7 +581,7 @@ def _dispatch(command: str) -> None:  # noqa: C901
     try:
         from navig.commands.interactive import (  # type: ignore[attr-defined]
             MenuState,
-            _launch_copilot_sessions,
+            _launch_ask_sessions,
             _launch_memory_menu,
             execute_remote_command_menu,
             execute_wiki_menu,
@@ -634,7 +634,7 @@ def _dispatch(command: str) -> None:  # noqa: C901
         "config": show_configuration_menu,
         "history": show_command_history,
         "help": show_quick_help,
-        "copilot": _launch_copilot_sessions,
+        "copilot": _launch_ask_sessions,
         "memory": _launch_memory_menu,
     }
 

@@ -31,7 +31,7 @@ def _load_config() -> dict:
         # AUDIT self-check: Break callers? no - callers can still enable gateway explicitly in config.
         # AUDIT self-check: Simpler alternative? yes - flip the default boolean only.
         "gateway": False,
-        "gateway_port": 8765,
+        "gateway_port": 8789,
         "scheduler": False,
         "health_port": 0,
         "engagement": True,
@@ -79,7 +79,7 @@ def main() -> None:
         )
 
     if cfg.get("gateway", False):
-        daemon.add_gateway(port=cfg.get("gateway_port", 8765))
+        daemon.add_gateway(port=cfg.get("gateway_port", 8789))
 
     if cfg.get("scheduler", False):
         daemon.add_scheduler()

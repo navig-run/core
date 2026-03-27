@@ -55,7 +55,7 @@ def firewall_status(options):
     console.print(f"\n[cyan]═══ Firewall Status - {server_name} ═══[/cyan]\n")
 
     # Get UFW status
-    result = remote_ops.execute_command("sudo ufw status verbose")
+    result = remote_ops.execute_command("sudo ufw status verbose", server_config)
 
     if result["exit_code"] != 0:
         console.print(
@@ -127,7 +127,7 @@ def firewall_add_rule(port, protocol, allow_from, options):
 
     console.print(f"\n[cyan]Adding firewall rule:[/cyan] {rule_desc}")
 
-    result = remote_ops.execute_command(command)
+    result = remote_ops.execute_command(command, server_config)
 
     if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall rule added successfully")
@@ -170,7 +170,7 @@ def firewall_remove_rule(port, protocol, options):
 
     console.print(f"\n[cyan]Removing firewall rule:[/cyan] {rule_desc}")
 
-    result = remote_ops.execute_command(command)
+    result = remote_ops.execute_command(command, server_config)
 
     if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall rule removed successfully")
@@ -206,7 +206,7 @@ def firewall_enable(options):
     console.print("\n[cyan]Enabling UFW firewall...[/cyan]")
 
     # Use --force to avoid interactive prompt
-    result = remote_ops.execute_command("sudo ufw --force enable")
+    result = remote_ops.execute_command("sudo ufw --force enable", server_config)
 
     if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall enabled successfully")
@@ -242,7 +242,7 @@ def firewall_disable(options):
 
     console.print("\n[cyan]Disabling UFW firewall...[/cyan]")
 
-    result = remote_ops.execute_command("sudo ufw disable")
+    result = remote_ops.execute_command("sudo ufw disable", server_config)
 
     if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall disabled successfully")
@@ -284,7 +284,7 @@ def fail2ban_status(options):
 
     # Check if Fail2Ban is running
     service_result = remote_ops.execute_command(
-        "systemctl is-active fail2ban 2>/dev/null"
+        "systemctl is-active fail2ban 2>/dev/null", server_config
     )
     service_status = (
         service_result["stdout"].strip()
@@ -300,7 +300,9 @@ def fail2ban_status(options):
     console.print(f"[green]✓[/green] Fail2Ban service: {service_status}")
 
     # Get jail status
-    jails_result = remote_ops.execute_command("sudo fail2ban-client status 2>/dev/null")
+    jails_result = remote_ops.execute_command(
+        "sudo fail2ban-client status 2>/dev/null", server_config
+    )
 
     if jails_result["exit_code"] != 0:
         console.print("[red]✗[/red] Failed to get Fail2Ban status")
@@ -324,7 +326,7 @@ def fail2ban_status(options):
         for jail in jail_names:
             # Get jail-specific status
             jail_status = remote_ops.execute_command(
-                f"sudo fail2ban-client status {jail} 2>/dev/null"
+                f"sudo fail2ban-client status {jail} 2>/dev/null", server_config
             )
 
             if jail_status["exit_code"] == 0:
@@ -397,7 +399,7 @@ def fail2ban_unban(ip_address, jail, options):
 
     console.print(f"\n[cyan]Unbanning:[/cyan] {target}")
 
-    result = remote_ops.execute_command(command)
+    result = remote_ops.execute_command(command, server_config)
 
     if result["exit_code"] == 0:
         console.print("[green]✓[/green] IP address unbanned successfully")
@@ -476,7 +478,8 @@ def ssh_audit(options):
 
         for check in checks:
             result = remote_ops.execute_command(
-                f"grep '{check['pattern']}' /etc/ssh/sshd_config | grep -v '^#' | tail -1"
+                f"grep '{check['pattern']}' /etc/ssh/sshd_config | grep -v '^#' | tail -1",
+                server_config,
             )
 
             current_value = "not set"
@@ -551,12 +554,12 @@ def check_security_updates(options):
         task = progress.add_task("[cyan]Updating package lists...", total=100)
 
         # Update package lists
-        remote_ops.execute_command("sudo apt-get update -qq")
+        remote_ops.execute_command("sudo apt-get update -qq", server_config)
         progress.update(task, completed=50)
 
         # Check for security updates
         result = remote_ops.execute_command(
-            "apt-get upgrade -s 2>/dev/null | grep -i security"
+            "apt-get upgrade -s 2>/dev/null | grep -i security", server_config
         )
         progress.update(task, completed=100)
 
@@ -603,7 +606,9 @@ def audit_connections(options):
 
     # Established connections
     console.print("[bold]Established Connections:[/bold]")
-    est_result = remote_ops.execute_command("ss -tunap 2>/dev/null | grep ESTAB")
+    est_result = remote_ops.execute_command(
+        "ss -tunap 2>/dev/null | grep ESTAB", server_config
+    )
 
     if est_result["exit_code"] == 0 and est_result["stdout"].strip():
         lines = est_result["stdout"].strip().split("\n")
@@ -620,7 +625,9 @@ def audit_connections(options):
 
     # Listening ports
     console.print("\n[bold]Listening Ports:[/bold]")
-    listen_result = remote_ops.execute_command("ss -tuln 2>/dev/null | grep LISTEN")
+    listen_result = remote_ops.execute_command(
+        "ss -tuln 2>/dev/null | grep LISTEN", server_config
+    )
 
     if listen_result["exit_code"] == 0 and listen_result["stdout"].strip():
         lines = listen_result["stdout"].strip().split("\n")
@@ -634,7 +641,7 @@ def audit_connections(options):
     # Check for suspicious processes
     console.print("\n[bold]Suspicious Process Check:[/bold]")
     susp_result = remote_ops.execute_command(
-        "ps aux 2>/dev/null | grep -E 'nc|ncat|netcat' | grep -v grep"
+        "ps aux 2>/dev/null | grep -E 'nc|ncat|netcat' | grep -v grep", server_config
     )
 
     if susp_result["exit_code"] == 0 and susp_result["stdout"].strip():

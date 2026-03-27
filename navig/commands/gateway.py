@@ -21,18 +21,16 @@ except ImportError:
 
 def _gw_base_url() -> str:
     """Return the local gateway base URL from config (gateway.port / gateway.host)."""
-    try:
-        from navig.config import get_config_manager
+    from navig.gateway.client import gateway_base_url
 
-        raw = get_config_manager()._load_global_config()
-    except Exception as _e:
-        _logger.debug(f"Could not load gateway config: {_e}")
-        raw = {}
-    gw = raw.get("gateway", {}) or {}
-    port = int(gw.get("port") or 8765)
-    host = str(gw.get("host") or "0.0.0.0")
-    # Always connect via localhost regardless of bind address
-    return f"http://localhost:{port}"
+    return gateway_base_url()
+
+
+def _gateway_request_headers() -> Dict[str, str]:
+    """Return auth headers for gateway admin requests when configured."""
+    from navig.gateway.client import gateway_request_headers
+
+    return gateway_request_headers()
 
 
 gateway_app = typer.Typer(
@@ -48,7 +46,7 @@ def gateway_start(
         None,
         "--port",
         "-p",
-        help="Port to run gateway on (default: gateway.port from config, fallback 8765)",
+        help="Port to run gateway on (default: gateway.port from config, fallback 8789)",
     ),
     host: Optional[str] = typer.Option(
         None,
@@ -86,7 +84,7 @@ def gateway_start(
         _raw = {}
     _gw_cfg = _raw.get("gateway") or {}
     if port is None:
-        port = int(_gw_cfg.get("port") or 8765)
+        port = int(_gw_cfg.get("port") or 8789)
     if host is None:
         host = str(_gw_cfg.get("host") or "0.0.0.0")
 
@@ -138,7 +136,11 @@ def gateway_stop():
         _base = _gw_base_url()
         # First check if gateway is running
         try:
-            health_response = requests.get(f"{_base}/health", timeout=2)
+            health_response = requests.get(
+                f"{_base}/health",
+                headers=_gateway_request_headers(),
+                timeout=2,
+            )
             if health_response.status_code != 200:
                 ch.warning("Gateway does not appear to be running")
                 return
@@ -148,7 +150,11 @@ def gateway_stop():
 
         # Try to stop via API
         try:
-            response = requests.post(f"{_base}/shutdown", timeout=5)
+            response = requests.post(
+                f"{_base}/shutdown",
+                headers=_gateway_request_headers(),
+                timeout=5,
+            )
             if response.status_code == 200:
                 ch.success("Gateway shutdown signal sent")
             else:
@@ -189,11 +195,14 @@ def gateway_status(
         pass
 
     # ── Gateway daemon check (local HTTP) ─────────────────────────────────────
-    def _http_alive(url: str, timeout: float = 2.0) -> bool:
+    def _http_alive(
+        url: str, timeout: float = 2.0, headers: Optional[Dict[str, str]] = None
+    ) -> bool:
         try:
             import urllib.request
 
-            with urllib.request.urlopen(url, timeout=timeout) as r:
+            req = urllib.request.Request(url, headers=headers or {})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.status < 500
         except Exception:  # noqa: BLE001
             return False
@@ -254,7 +263,10 @@ def gateway_status(
 
     # ── Daemon/gateway API ────────────────────────────────────────────────────
     gw_port = int(raw_cfg.get("gateway", {}).get("port") or 8789)
-    gw_live = _http_alive(f"http://localhost:{gw_port}/health")
+    gw_live = _http_alive(
+        f"http://localhost:{gw_port}/health",
+        headers=_gateway_request_headers(),
+    )
 
     channels = [
         {
@@ -441,7 +453,11 @@ def gateway_session(
 
         _base = _gw_base_url()
         if action == "list":
-            response = requests.get(f"{_base}/sessions", timeout=5)
+            response = requests.get(
+                f"{_base}/sessions",
+                headers=_gateway_request_headers(),
+                timeout=5,
+            )
             if response.status_code == 200:
                 sessions = response.json().get("sessions", [])
                 if sessions:
@@ -454,7 +470,11 @@ def gateway_session(
                 ch.error(f"Failed to list sessions: {response.status_code}")
 
         elif action == "show" and session_key:
-            response = requests.get(f"{_base}/sessions/{session_key}", timeout=5)
+            response = requests.get(
+                f"{_base}/sessions/{session_key}",
+                headers=_gateway_request_headers(),
+                timeout=5,
+            )
             if response.status_code == 200:
                 session = response.json()
                 ch.info(f"Session: {session_key}")
@@ -463,7 +483,11 @@ def gateway_session(
                 ch.error(f"Session not found: {session_key}")
 
         elif action == "clear" and session_key:
-            response = requests.delete(f"{_base}/sessions/{session_key}", timeout=5)
+            response = requests.delete(
+                f"{_base}/sessions/{session_key}",
+                headers=_gateway_request_headers(),
+                timeout=5,
+            )
             if response.status_code == 200:
                 ch.success(f"Session cleared: {session_key}")
             else:

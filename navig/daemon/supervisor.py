@@ -299,7 +299,7 @@ class NavigDaemon:
         self,
         *,
         python_exe: Optional[str] = None,
-        port: int = 8765,
+        port: int = 8789,
     ) -> None:
         """Register the gateway server as a supervised child."""
         python = python_exe or sys.executable
