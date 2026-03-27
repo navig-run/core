@@ -106,6 +106,7 @@ func (d *Driver) Launch(config browser.SessionLaunchConfig) (*browser.SessionInf
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserDataDir(dir),
+		chromedp.Flag("no-sandbox", true),
 	)
 
 	// Inject custom executable path if found via scanner or requested

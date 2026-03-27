@@ -70,6 +70,7 @@ func TestNavBrowser_SelfHealingVaultLogin(t *testing.T) {
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
+		chromedp.Flag("no-sandbox", true),
 	)
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()

@@ -132,6 +132,7 @@ func (nb *NavBrowser) Launch(config browser.SessionLaunchConfig) (*browser.Sessi
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserDataDir(dir),
 		chromedp.Flag("disable-dev-shm-usage", true), // required for Docker/CI
+		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-background-networking", true),
 		chromedp.Flag("disable-client-side-phishing-detection", true),
 	)
