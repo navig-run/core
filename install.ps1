@@ -174,7 +174,8 @@ function Print-Done { param([string]$Version)
     $verStr = if ($Version) { "NAVIG $Version" } else { "NAVIG" }
     nl
     clr "  $tl$line$tr" "Green"; nl
-    clr "  $vt" "Green"; clr "  $($verStr.PadRight($lw))  " "White"; clr $vt "Green"; nl
+    $inner = ("  " + $verStr).PadRight($lw + 2)
+    clr "  $vt" "Green"; clr $inner "White"; clr $vt "Green"; nl
     clr "  $bl$line$br" "Green"; nl
     nl
     clr "     " "DarkGray"; clr "navig --version" "Yellow"; clr "   confirm install"   "DarkGray"; nl
@@ -459,9 +460,12 @@ function Remove-NavigPathArtifacts {
     } catch { Add-UninstallFailure "Remove PATH entries" $_.Exception.Message }
 }
 
-function Invoke-NavigUninstall { param([switch]$PreserveUserData, [switch]$ForReinstall)
+function Invoke-NavigUninstall { param([switch]$PreserveUserData, [switch]$ForReinstall, [string]$Version = "")
     Reset-NavigUninstallState
-    if (-not $ForReinstall) { Write-Step "Uninstalling" "NAVIG" }
+    if (-not $ForReinstall) {
+        $navStr = if ($Version) { "NAVIG $Version" } else { "NAVIG" }
+        Write-Step "Removing" $navStr
+    }
     Stop-NavigBackgroundArtifacts
     Write-Step "Removing files..."
     Remove-NavigFiles -PreserveUserData:$PreserveUserData
@@ -530,7 +534,7 @@ function Main {
     }
 
     if ($normalizedAction -eq "uninstall") {
-        $result = Invoke-NavigUninstall
+        $result = Invoke-NavigUninstall -Version $ver
         exit $(if ($result.Success) { 0 } else { 1 })
     }
 
