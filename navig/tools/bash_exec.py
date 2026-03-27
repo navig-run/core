@@ -63,7 +63,11 @@ class BashExecTool(BaseTool):
     """
 
     name = "bash_exec"
-    description = "Execute a shell command locally in the daemon environment."
+    description = (
+        "Execute a system command safely.  The command string is split by "
+        "shlex and passed to the OS without shell interpolation.  "
+        "Set requires_approval=True for any command that modifies state."
+    )
     owner_only = True
     parameters = [
         {
@@ -91,13 +95,6 @@ class BashExecTool(BaseTool):
             "required": False,
         },
     ]
-
-    name = "bash_exec"
-    description = (
-        "Execute a system command safely.  The command string is split by "
-        "shlex and passed to the OS without shell interpolation.  "
-        "Set requires_approval=True for any command that modifies state."
-    )
 
     def _build_env(self, extra: dict[str, str] | None) -> dict[str, str]:
         env = dict(os.environ)

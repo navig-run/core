@@ -5,7 +5,7 @@ Direct access to VS Code Copilot via the MCP Bridge from the command line.
 Works over the SSH tunnel — requires an active Bridge connection.
 
 Usage:
-    navig ask ask "How do I configure nginx rate limiting?"
+    navig ask "How do I configure nginx rate limiting?"
     navig ask explain /var/log/nginx/error.log --lines 50
     navig ask suggest --topic security
     navig ask status
@@ -110,8 +110,8 @@ def copilot_ask(
     Ask Copilot a question and get a response.
 
     Examples:
-        navig ask ask "How do I set up a reverse proxy in nginx?"
-        navig ask ask "Explain Python decorators" --model gpt-4o
+        navig ask "How do I set up a reverse proxy in nginx?"
+        navig ask "Explain Python decorators" --model gpt-4o
     """
     messages = []
     if system:

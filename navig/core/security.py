@@ -720,7 +720,9 @@ def run_security_audit(
     }
 
     return {
-        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+        "timestamp": __import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .isoformat(),
         "summary": summary,
         "findings": [f.to_dict() for f in findings],
         "passed": summary["critical"] == 0,

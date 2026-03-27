@@ -161,7 +161,7 @@ navig run "echo hello from NAVIG && uname -a"
 navig file list ~ --tree --depth 2
 
 # Ask the AI operator layer something
-navig ask ask "what process is using the most CPU right now?"
+navig ask "what process is using the most CPU right now?"
 ```
 
 That's a complete first run — no remote server required.
@@ -187,7 +187,7 @@ navig host use <name>
 navig run "uname -a"
 
 # 6. Ask the AI operator layer something about it
-navig ask ask "what is consuming the most memory on this host?"
+navig ask "what is consuming the most memory on this host?"
 ```
 
 That's it. Everything else builds from here.
@@ -201,7 +201,7 @@ That's it. Everything else builds from here.
 | `navig db query "SELECT 1"` | Connect to a remote database |
 | `navig tunnel 5432` | Open an SSH tunnel to a port |
 | `navig workflow run deploy.yaml` | Run a multi-step workflow |
-| `navig ask ask "..."` | Ask the AI operator layer anything |
+| `navig ask "..."` | Ask the AI operator layer anything |
 
 ---
 
@@ -258,7 +258,7 @@ NAVIG can expose its operator layer through:
 - Any MCP-compatible editor (Cursor, Claude Desktop, VS Code)
 
 ```bash
-navig ask ask "Why does this container keep restarting?"
+navig ask "Why does this container keep restarting?"
 ```
 
 The AI layer assists with reasoning, context, and workflow execution. It does not replace direct operator control — the operator stays responsible, the operator stays in command.

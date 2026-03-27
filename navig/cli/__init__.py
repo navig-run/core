@@ -11866,8 +11866,6 @@ _EXTERNAL_CMD_MAP = {
     "dispatch": ("navig.commands.dispatch", "dispatch_app"),
     "contacts": ("navig.commands.dispatch", "contacts_app"),
     "ct": ("navig.commands.dispatch", "contacts_app"),
-    # ── NAVIG Bridge — standalone AI relay (no VS Code required) ─────────────
-    "bridge": ("navig.commands.bridge", "bridge_app"),
     # ── System paths inspection & MCP server registration ──────────────────────
     "paths": ("navig.commands.paths_cmd", "paths_app"),
     "mcp": ("navig.commands.mcp_cmd", "mcp_app"),
