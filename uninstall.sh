@@ -185,11 +185,11 @@ detect_os() {
         msys*|cygwin*|mingw*)
             echo -e "${C_YELLOW}${C_BOLD}Warning:${C_NC} install.sh does not run on native Windows (Git Bash / MSYS)."
             echo -e "  This uninstaller targets ${C_CYAN}WSL2${C_NC} or a ${C_CYAN}Linux${C_NC} environment."
-            echo -e "  For native Windows use ${C_CYAN}uninstall.ps1${C_NC} instead."
+            echo -e "  For native Windows use ${C_CYAN}install.ps1${C_NC} instead."
             echo ""
             if ! "$SILENT"; then
                 if ! confirm "Continue anyway in this shell environment? (not recommended)" "y/N"; then
-                    echo -e "  Aborted. Run ${C_CYAN}uninstall.ps1${C_NC} on Windows."
+                    echo -e "  Aborted. Run ${C_CYAN}install.ps1${C_NC} on Windows."
                     _ABORTED=false   # clean exit, not error
                     exit 0
                 fi
@@ -636,7 +636,6 @@ run_developer_sync() {
         return 0
     fi
 
-    local src_ps1="${script_dir}/uninstall.ps1"
     local src_sh="${script_dir}/uninstall.sh"
 
     if [[ -f "$src_sh" ]]; then
@@ -649,15 +648,6 @@ run_developer_sync() {
         log_skip "$src_sh"
     fi
 
-    if [[ -f "$src_ps1" ]]; then
-        if cp -f "$src_ps1" "$www_dir/uninstall.ps1" 2>/dev/null; then
-            log_ok "Synced: uninstall.ps1 -> $www_dir/uninstall.ps1"
-        else
-            log_warn "Developer sync failed for uninstall.ps1"
-        fi
-    else
-        log_skip "$src_ps1"
-    fi
 }
 
 # ── Exit summary ──────────────────────────────────────────────
