@@ -12,8 +12,9 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,9 @@ class ToolResult:
     name: str
     success: bool
     output: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     elapsed_ms: float = 0.0
-    status_events: List[str] = field(default_factory=list)
+    status_events: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """One-line human-readable summary of the result."""
@@ -67,8 +68,8 @@ class BaseTool(ABC):
     @abstractmethod
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         """Execute the tool with the given args.
 
@@ -79,7 +80,7 @@ class BaseTool(ABC):
 
     async def _emit(
         self,
-        on_status: Optional[StatusCallback],
+        on_status: StatusCallback | None,
         step: str,
         detail: str = "",
         progress: int = 0,
@@ -96,30 +97,30 @@ class ToolRegistry:
     """Registry of all available tools.  Thread-safe singleton pattern."""
 
     def __init__(self) -> None:
-        self._tools: Dict[str, BaseTool] = {}
+        self._tools: dict[str, BaseTool] = {}
 
     def register(self, tool: BaseTool) -> None:
         """Register a tool by its ``name`` attribute."""
         self._tools[tool.name] = tool
         logger.debug("Tool registered: %s", tool.name)
 
-    def get(self, name: str) -> Optional[BaseTool]:
+    def get(self, name: str) -> BaseTool | None:
         """Look up a tool by name.  Returns None if not registered."""
         return self._tools.get(name)
 
-    def names(self) -> List[str]:
+    def names(self) -> list[str]:
         """Return sorted list of registered tool names."""
         return sorted(self._tools.keys())
 
-    def get_meta_map(self) -> Dict[str, Dict[str, Any]]:
+    def get_meta_map(self) -> dict[str, dict[str, Any]]:
         """Return a mapping of all tools for UI integration."""
         return {tool.name: tool.get_meta() for tool in self._tools.values()}
 
     async def run_tool(
         self,
         name: str,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         """Run a tool by name, isolating all exceptions.
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 logger = logging.getLogger("navig.safety_guard")
 
@@ -116,7 +115,7 @@ def require_human_confirmation_if_destructive(
     is_uncensored: bool,
     planned_action: str,
     auto_approve: bool = False,
-    context: Optional[str] = None,
+    context: str | None = None,
 ) -> bool:
     """
     Check if a planned action is destructive and require confirmation.

@@ -21,11 +21,10 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 # ── Category keyword map ─────────────────────────────────────
 
-_CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+_CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "wiki/technical": [
         "api",
         "endpoint",
@@ -178,28 +177,28 @@ class _BM25:
     K1 = 1.5
     B = 0.75
 
-    def __init__(self, corpus: Dict[str, List[str]]) -> None:
-        self.labels: List[str] = list(corpus.keys())
-        self.docs: List[List[str]] = [v for v in corpus.values()]
+    def __init__(self, corpus: dict[str, list[str]]) -> None:
+        self.labels: list[str] = list(corpus.keys())
+        self.docs: list[list[str]] = [v for v in corpus.values()]
 
         # Build IDF and freq maps
         N = len(self.docs)
-        df: Dict[str, int] = {}
+        df: dict[str, int] = {}
         for doc in self.docs:
             for term in set(doc):
                 df[term] = df.get(term, 0) + 1
 
-        self.idf: Dict[str, float] = {}
+        self.idf: dict[str, float] = {}
         for term, freq in df.items():
             self.idf[term] = math.log((N - freq + 0.5) / (freq + 0.5) + 1)
 
         avdl = sum(len(d) for d in self.docs) / N if N else 1.0
         self.avdl = avdl
 
-    def score(self, query_terms: List[str], doc_idx: int) -> float:
+    def score(self, query_terms: list[str], doc_idx: int) -> float:
         doc = self.docs[doc_idx]
         dl = len(doc)
-        tf_map: Dict[str, int] = {}
+        tf_map: dict[str, int] = {}
         for t in doc:
             tf_map[t] = tf_map.get(t, 0) + 1
 
@@ -214,7 +213,7 @@ class _BM25:
             score += self.idf[term] * norm_tf
         return score
 
-    def rank(self, query_terms: List[str]) -> List[Tuple[str, float]]:
+    def rank(self, query_terms: list[str]) -> list[tuple[str, float]]:
         scored = [
             (self.labels[i], self.score(query_terms, i))
             for i in range(len(self.labels))
@@ -233,7 +232,7 @@ _SCORER = _BM25(_CATEGORY_KEYWORDS)
 class ClassifyResult:
     category: str
     confidence: float  # 0.0 – 1.0
-    alternatives: List[Tuple[str, float]] = field(default_factory=list)
+    alternatives: list[tuple[str, float]] = field(default_factory=list)
     method: str = "bm25"  # "bm25" | "llm"
     explanation: str = ""
 
@@ -259,7 +258,7 @@ class Classifier:
         self,
         content: str,
         filename: str = "",
-        extra_context: Optional[str] = None,
+        extra_context: str | None = None,
     ) -> ClassifyResult:
         """
         Classify text content (or filename) into a routing category.
@@ -317,7 +316,7 @@ class Classifier:
         self,
         content: str,
         filename: str,
-        extra_context: Optional[str],
+        extra_context: str | None,
     ) -> ClassifyResult:
         from navig.llm_generate import generate_text
 

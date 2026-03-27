@@ -8,7 +8,7 @@ and retry logic. Based on robust fallback architecture.
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple, TypeVar
+from typing import TypeVar
 
 from .auth import AuthProfileManager
 from .clients import (
@@ -30,7 +30,7 @@ class FallbackCandidate:
     provider_name: str
     model: str
     priority: int = 0
-    config: Optional[ProviderConfig] = None
+    config: ProviderConfig | None = None
 
 
 @dataclass
@@ -41,7 +41,7 @@ class FallbackResult:
     provider_used: str
     model_used: str
     attempts: int
-    candidates_tried: List[str]
+    candidates_tried: list[str]
 
 
 @dataclass
@@ -74,29 +74,29 @@ class FallbackManager:
 
     def __init__(
         self,
-        auth_manager: Optional[AuthProfileManager] = None,
-        providers: Optional[Dict[str, ProviderConfig]] = None,
+        auth_manager: AuthProfileManager | None = None,
+        providers: dict[str, ProviderConfig] | None = None,
     ):
         self.auth = auth_manager or AuthProfileManager()
         self.providers = providers or BUILTIN_PROVIDERS.copy()
-        self._cooldowns: Dict[str, CooldownEntry] = {}
-        self._clients: Dict[str, BaseProviderClient] = {}
+        self._cooldowns: dict[str, CooldownEntry] = {}
+        self._clients: dict[str, BaseProviderClient] = {}
 
     def add_provider(self, config: ProviderConfig):
         """Add or update a provider configuration."""
         self.providers[config.name.lower()] = config
 
-    def get_provider(self, name: str) -> Optional[ProviderConfig]:
+    def get_provider(self, name: str) -> ProviderConfig | None:
         """Get provider by name."""
         return self.providers.get(name.lower())
 
-    def _get_cooldown_key(self, provider: str, model: Optional[str] = None) -> str:
+    def _get_cooldown_key(self, provider: str, model: str | None = None) -> str:
         """Generate cooldown key for provider/model."""
         if model:
             return f"{provider}:{model}"
         return provider
 
-    def is_in_cooldown(self, provider: str, model: Optional[str] = None) -> bool:
+    def is_in_cooldown(self, provider: str, model: str | None = None) -> bool:
         """Check if provider/model is in cooldown."""
         key = self._get_cooldown_key(provider, model)
         entry = self._cooldowns.get(key)
@@ -111,9 +111,7 @@ class FallbackManager:
 
         return True
 
-    def get_cooldown_remaining(
-        self, provider: str, model: Optional[str] = None
-    ) -> float:
+    def get_cooldown_remaining(self, provider: str, model: str | None = None) -> float:
         """Get remaining cooldown time in seconds."""
         key = self._get_cooldown_key(provider, model)
         entry = self._cooldowns.get(key)
@@ -127,8 +125,8 @@ class FallbackManager:
     def mark_failure(
         self,
         provider: str,
-        model: Optional[str] = None,
-        error: Optional[ProviderError] = None,
+        model: str | None = None,
+        error: ProviderError | None = None,
     ):
         """
         Mark a provider/model as failed and apply cooldown.
@@ -157,7 +155,7 @@ class FallbackManager:
             failure_count=failure_count,
         )
 
-    def mark_success(self, provider: str, model: Optional[str] = None):
+    def mark_success(self, provider: str, model: str | None = None):
         """Mark provider/model as successful, clearing cooldown."""
         key = self._get_cooldown_key(provider, model)
         if key in self._cooldowns:
@@ -169,11 +167,11 @@ class FallbackManager:
     def resolve_candidates(
         self,
         primary_model: str,
-        primary_provider: Optional[str] = None,
-        fallback_models: Optional[List[str]] = None,
-        allowlist: Optional[Set[str]] = None,
-        blocklist: Optional[Set[str]] = None,
-    ) -> List[FallbackCandidate]:
+        primary_provider: str | None = None,
+        fallback_models: list[str] | None = None,
+        allowlist: set[str] | None = None,
+        blocklist: set[str] | None = None,
+    ) -> list[FallbackCandidate]:
         """
         Resolve ordered list of fallback candidates.
 
@@ -187,8 +185,8 @@ class FallbackManager:
         Returns:
             Ordered list of fallback candidates
         """
-        candidates: List[FallbackCandidate] = []
-        seen: Set[str] = set()
+        candidates: list[FallbackCandidate] = []
+        seen: set[str] = set()
 
         def add_candidate(provider: str, model: str, priority: int):
             key = f"{provider}:{model}"
@@ -217,14 +215,14 @@ class FallbackManager:
             )
 
         # Parse model string (may include provider prefix)
-        def parse_model_spec(spec: str) -> Tuple[Optional[str], str]:
+        def parse_model_spec(spec: str) -> tuple[str | None, str]:
             if ":" in spec and "/" not in spec.split(":")[0]:
                 provider, model = spec.split(":", 1)
                 return provider, model
             return None, spec
 
         # Infer provider from model name
-        def infer_provider(model: str) -> Optional[str]:
+        def infer_provider(model: str) -> str | None:
             model_lower = model.lower()
             if model_lower.startswith("gpt-") or model_lower.startswith("o1"):
                 return "openai"
@@ -296,9 +294,9 @@ class FallbackManager:
     async def run_with_fallback(
         self,
         request: CompletionRequest,
-        fallback_models: Optional[List[str]] = None,
-        allowlist: Optional[Set[str]] = None,
-        blocklist: Optional[Set[str]] = None,
+        fallback_models: list[str] | None = None,
+        allowlist: set[str] | None = None,
+        blocklist: set[str] | None = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ) -> FallbackResult:
@@ -332,8 +330,8 @@ class FallbackManager:
                 error_type="no_candidates",
             )
 
-        candidates_tried: List[str] = []
-        last_error: Optional[ProviderError] = None
+        candidates_tried: list[str] = []
+        last_error: ProviderError | None = None
         total_attempts = 0
 
         for candidate in candidates:
@@ -408,7 +406,7 @@ class FallbackManager:
 
 
 # Global instance
-_fallback_manager: Optional[FallbackManager] = None
+_fallback_manager: FallbackManager | None = None
 
 
 def get_fallback_manager() -> FallbackManager:
@@ -420,12 +418,12 @@ def get_fallback_manager() -> FallbackManager:
 
 
 async def complete_with_fallback(
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     model: str = "gpt-4o-mini",
-    fallback_models: Optional[List[str]] = None,
+    fallback_models: list[str] | None = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
-    tools: Optional[List[Dict]] = None,
+    tools: list[dict] | None = None,
 ) -> FallbackResult:
     """
     Convenience function for completion with fallback.

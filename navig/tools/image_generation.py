@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import httpx
@@ -78,8 +78,8 @@ class ImageGenerationConfig:
 
     # Provider settings
     provider: ImageProvider = ImageProvider.OPENAI
-    openai_api_key: Optional[str] = None
-    stability_api_key: Optional[str] = None
+    openai_api_key: str | None = None
+    stability_api_key: str | None = None
     local_api_url: str = "http://localhost:7860"  # A1111/ComfyUI
 
     # Default generation parameters
@@ -96,7 +96,7 @@ class ImageGenerationConfig:
     rate_limit_delay: float = 1.0
 
     @classmethod
-    def from_env(cls) -> "ImageGenerationConfig":
+    def from_env(cls) -> ImageGenerationConfig:
         """Create config from environment variables."""
         return cls(
             provider=ImageProvider(os.environ.get("IMAGE_PROVIDER", "openai")),
@@ -108,7 +108,7 @@ class ImageGenerationConfig:
         )
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ImageGenerationConfig":
+    def from_dict(cls, data: dict[str, Any]) -> ImageGenerationConfig:
         """Create config from dictionary."""
         return cls(
             provider=ImageProvider(data.get("provider", "openai")),
@@ -128,22 +128,22 @@ class GeneratedImage:
     """A generated image result."""
 
     prompt: str
-    revised_prompt: Optional[str]  # Provider's enhanced prompt
+    revised_prompt: str | None  # Provider's enhanced prompt
     provider: ImageProvider
     size: str
 
     # Image data (one of these will be set)
-    url: Optional[str] = None  # Remote URL
-    b64_data: Optional[str] = None  # Base64 encoded data
-    local_path: Optional[str] = None  # Local file path
+    url: str | None = None  # Remote URL
+    b64_data: str | None = None  # Base64 encoded data
+    local_path: str | None = None  # Local file path
 
     # Metadata
     generation_time: float = 0.0
-    model: Optional[str] = None
-    seed: Optional[int] = None
+    model: str | None = None
+    seed: int | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "prompt": self.prompt,
             "revised_prompt": self.revised_prompt,
@@ -198,7 +198,7 @@ class ImageGenerator:
         image = await generator.generate("A sunset over mountains")
     """
 
-    def __init__(self, config: Optional[ImageGenerationConfig] = None):
+    def __init__(self, config: ImageGenerationConfig | None = None):
         """
         Initialize image generator.
 
@@ -211,7 +211,7 @@ class ImageGenerator:
             )
 
         self.config = config or ImageGenerationConfig.from_env()
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent)
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -229,13 +229,13 @@ class ImageGenerator:
     async def generate(
         self,
         prompt: str,
-        size: Optional[ImageSize] = None,
-        quality: Optional[ImageQuality] = None,
-        style: Optional[ImageStyle] = None,
+        size: ImageSize | None = None,
+        quality: ImageQuality | None = None,
+        style: ImageStyle | None = None,
         n: int = 1,
-        provider: Optional[ImageProvider] = None,
+        provider: ImageProvider | None = None,
         save: bool = True,
-    ) -> List[GeneratedImage]:
+    ) -> list[GeneratedImage]:
         """
         Generate images from a text prompt.
 
@@ -290,7 +290,7 @@ class ImageGenerator:
         quality: ImageQuality,
         style: ImageStyle,
         n: int,
-    ) -> List[GeneratedImage]:
+    ) -> list[GeneratedImage]:
         """Generate images using OpenAI DALL-E."""
         api_key = self.config.openai_api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -350,7 +350,7 @@ class ImageGenerator:
         prompt: str,
         size: ImageSize,
         n: int,
-    ) -> List[GeneratedImage]:
+    ) -> list[GeneratedImage]:
         """Generate images using Stability AI."""
         api_key = self.config.stability_api_key or os.environ.get("STABILITY_API_KEY")
         if not api_key:
@@ -407,7 +407,7 @@ class ImageGenerator:
         prompt: str,
         size: ImageSize,
         n: int,
-    ) -> List[GeneratedImage]:
+    ) -> list[GeneratedImage]:
         """Generate images using local model (Automatic1111 API)."""
         client = await self._get_client()
 
@@ -454,7 +454,7 @@ class ImageGenerator:
         self,
         image_path: str,
         prompt: str,
-        mask_path: Optional[str] = None,
+        mask_path: str | None = None,
     ) -> GeneratedImage:
         """
         Edit an existing image.

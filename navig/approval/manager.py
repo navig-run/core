@@ -2,10 +2,11 @@
 
 import asyncio
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from navig.debug_logger import get_debug_logger
 
@@ -30,7 +31,7 @@ class ApprovalRequest:
     channel: str
     user_id: str
     created_at: datetime = field(default_factory=datetime.now)
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     status: ApprovalStatus = ApprovalStatus.PENDING
 
     def to_dict(self) -> dict:
@@ -59,27 +60,27 @@ class ApprovalManager:
     def __init__(
         self,
         gateway: Optional["NavigGateway"] = None,
-        policy: Optional[ApprovalPolicy] = None,
+        policy: ApprovalPolicy | None = None,
         audit_log: Optional["AuditLog"] = None,
     ):
         self.gateway = gateway
         self.policy = policy or ApprovalPolicy()
-        self._audit_log: Optional["AuditLog"] = audit_log
+        self._audit_log: AuditLog | None = audit_log
 
         # Pending approvals by ID
-        self._pending: Dict[str, ApprovalRequest] = {}
+        self._pending: dict[str, ApprovalRequest] = {}
 
         # Approval futures for async waiting
-        self._futures: Dict[str, asyncio.Future] = {}
+        self._futures: dict[str, asyncio.Future] = {}
 
         # Cleanup task
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
 
         # Event callbacks
         self._on_request_callbacks: list = []
 
         # Registered handlers by name (e.g., 'gateway', 'telegram')
-        self._handlers: Dict[str, Any] = {}
+        self._handlers: dict[str, Any] = {}
 
     def set_audit_log(self, audit_log: "AuditLog") -> None:
         """Wire in the audit log (called from gateway after both are initialised)."""
@@ -136,7 +137,7 @@ class ApprovalManager:
             del self._handlers[name]
             logger.debug(f"Unregistered approval handler: {name}")
 
-    def get_handler(self, name: str) -> Optional[Any]:
+    def get_handler(self, name: str) -> Any | None:
         """Get a registered handler by name."""
         return self._handlers.get(name)
 
@@ -173,7 +174,7 @@ class ApprovalManager:
         session_key: str = "cli:default",
         channel: str = "cli",
         user_id: str = "anonymous",
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> bool:
         """
         Request approval for a command.
@@ -298,7 +299,7 @@ class ApprovalManager:
         return True
 
     def get_pending(
-        self, channel: Optional[str] = None, user_id: Optional[str] = None
+        self, channel: str | None = None, user_id: str | None = None
     ) -> list:
         """Get pending approval requests, optionally filtered."""
         requests = list(self._pending.values())
@@ -315,7 +316,7 @@ class ApprovalManager:
         """List pending approval requests. Alias for testing compatibility."""
         return list(self._pending.values())
 
-    def get_request(self, request_id: str) -> Optional[dict]:
+    def get_request(self, request_id: str) -> dict | None:
         """Get a specific request by ID."""
         request = self._pending.get(request_id)
         return request.to_dict() if request else None

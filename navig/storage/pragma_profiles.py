@@ -18,7 +18,7 @@ Database → Profile mapping:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class PragmaProfile:
     locking_mode: str = "NORMAL"
     auto_vacuum: str = "NONE"  # NONE | FULL | INCREMENTAL
 
-    def to_pragma_dict(self) -> Dict[str, Any]:
+    def to_pragma_dict(self) -> dict[str, Any]:
         """Return ``{pragma_name: value}`` ready for ``PRAGMA x = y`` execution."""
         return {
             "journal_mode": self.journal_mode,
@@ -120,7 +120,7 @@ DURABLE = PragmaProfile(
 
 # ── Database → Profile mapping ────────────────────────────────
 
-DB_PROFILES: Dict[str, PragmaProfile] = {
+DB_PROFILES: dict[str, PragmaProfile] = {
     "runtime.db": FAST,
     "memory.db": BALANCED,
     "matrix.db": BALANCED,

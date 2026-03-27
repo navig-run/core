@@ -14,7 +14,7 @@ For simple/internal sites use navig.browser.controller (faster, no overhead).
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -62,9 +62,9 @@ class StealthConfig:
     user_data_dir: str = "~/.navig/browser/profiles/stealth"
     timeout_ms: int = 30000
     screenshot_dir: str = "~/.navig/screenshots"
-    proxy: Optional[str] = None
-    allowed_domains: List[str] = field(default_factory=list)
-    blocked_domains: List[str] = field(default_factory=list)
+    proxy: str | None = None
+    allowed_domains: list[str] = field(default_factory=list)
+    blocked_domains: list[str] = field(default_factory=list)
 
     @classmethod
     def from_config(cls, config: dict) -> "StealthConfig":
@@ -97,7 +97,7 @@ class StealthController:
         await controller.stop()
     """
 
-    def __init__(self, config: Optional[StealthConfig] = None):
+    def __init__(self, config: StealthConfig | None = None):
         self.config = config or StealthConfig()
         self._playwright = None
         self._context = None  # persistent context (browser + cookies combined)
@@ -123,7 +123,7 @@ class StealthController:
         user_data = Path(self.config.user_data_dir).expanduser()
         user_data.mkdir(parents=True, exist_ok=True)
 
-        launch_kwargs: Dict[str, Any] = {
+        launch_kwargs: dict[str, Any] = {
             "channel": self.config.channel,
             "headless": self.config.headless,
             "no_viewport": True,  # critical stealth setting
@@ -182,7 +182,7 @@ class StealthController:
 
     async def navigate(
         self, url: str, wait_until: str = "domcontentloaded"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         await self._ensure_started()
         if not self._check_domain(url):
             raise ValueError(f"Domain not allowed: {url}")
@@ -219,9 +219,9 @@ class StealthController:
 
     async def screenshot(
         self,
-        name: Optional[str] = None,
+        name: str | None = None,
         full_page: bool = False,
-        selector: Optional[str] = None,
+        selector: str | None = None,
     ) -> str:
         await self._ensure_started()
         if not name:
@@ -244,7 +244,7 @@ class StealthController:
         await self._ensure_started()
         return await self._page.content()
 
-    async def get_text(self, selector: Optional[str] = None) -> str:
+    async def get_text(self, selector: str | None = None) -> str:
         await self._ensure_started()
         if selector:
             el = await self._page.query_selector(selector)
@@ -259,16 +259,16 @@ class StealthController:
         await self._ensure_started()
         return await self._page.title()
 
-    async def get_cookies(self) -> List[Dict[str, Any]]:
+    async def get_cookies(self) -> list[dict[str, Any]]:
         await self._ensure_started()
         return await self._context.cookies()
 
-    async def set_cookies(self, cookies: List[Dict[str, Any]]):
+    async def set_cookies(self, cookies: list[dict[str, Any]]):
         await self._ensure_started()
         await self._context.add_cookies(cookies)
 
     async def wait_for_selector(
-        self, selector: str, timeout: Optional[int] = None, state: str = "visible"
+        self, selector: str, timeout: int | None = None, state: str = "visible"
     ) -> bool:
         await self._ensure_started()
         try:

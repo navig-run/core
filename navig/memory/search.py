@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.memory.embeddings import EmbeddingProvider
@@ -70,7 +70,7 @@ class SearchResult:
 
     # Context
     snippet: str = ""
-    highlights: List[str] = field(default_factory=list)
+    highlights: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -100,7 +100,7 @@ class SearchResponse:
     """Complete search response with results and metadata."""
 
     query: str
-    results: List[SearchResult]
+    results: list[SearchResult]
     total_matches: int = 0
     search_time_ms: float = 0.0
 
@@ -170,9 +170,9 @@ class HybridSearch:
 
     def __init__(
         self,
-        storage: "MemoryStorage",
-        embedding_provider: Optional["EmbeddingProvider"] = None,
-        config: Optional[SearchConfig] = None,
+        storage: MemoryStorage,
+        embedding_provider: EmbeddingProvider | None = None,
+        config: SearchConfig | None = None,
     ):
         self.storage = storage
         self.embedding_provider = embedding_provider
@@ -181,8 +181,8 @@ class HybridSearch:
     def search(
         self,
         query: str,
-        limit: Optional[int] = None,
-        file_filter: Optional[str] = None,
+        limit: int | None = None,
+        file_filter: str | None = None,
         vector_only: bool = False,
         keyword_only: bool = False,
     ) -> SearchResponse:
@@ -206,9 +206,9 @@ class HybridSearch:
         limit = limit or self.config.default_limit
 
         # Get results from both methods
-        vector_results: Dict[str, float] = {}
-        keyword_results: Dict[str, float] = {}
-        chunks: Dict[str, "MemoryChunk"] = {}
+        vector_results: dict[str, float] = {}
+        keyword_results: dict[str, float] = {}
+        chunks: dict[str, MemoryChunk] = {}
 
         # Vector search
         if not keyword_only and self.embedding_provider:
@@ -226,7 +226,7 @@ class HybridSearch:
                     chunks[chunk.id] = chunk
 
         # Combine and rank results
-        combined_scores: Dict[str, Dict[str, float]] = {}
+        combined_scores: dict[str, dict[str, float]] = {}
         all_chunk_ids = set(vector_results.keys()) | set(keyword_results.keys())
 
         # Find max keyword score for normalization
@@ -320,8 +320,8 @@ class HybridSearch:
         self,
         query: str,
         limit: int,
-        file_filter: Optional[str] = None,
-    ) -> List[tuple["MemoryChunk", float]]:
+        file_filter: str | None = None,
+    ) -> list[tuple[MemoryChunk, float]]:
         """Perform vector similarity search."""
         if not self.embedding_provider:
             return []
@@ -357,8 +357,8 @@ class HybridSearch:
         self,
         query: str,
         limit: int,
-        file_filter: Optional[str] = None,
-    ) -> List[tuple["MemoryChunk", float]]:
+        file_filter: str | None = None,
+    ) -> list[tuple[MemoryChunk, float]]:
         """Perform BM25 keyword search."""
         return self.storage.search_fts_simple(query, limit)
 
@@ -391,7 +391,7 @@ class HybridSearch:
 
         return snippet.replace("\n", " ").strip()
 
-    def _extract_highlights(self, content: str, query: str) -> List[str]:
+    def _extract_highlights(self, content: str, query: str) -> list[str]:
         """Extract matching phrases from content."""
         highlights = []
         query_words = set(query.lower().split())
@@ -490,7 +490,7 @@ class HybridSearch:
             vector_candidates=len(chunks),
         )
 
-    def suggest_queries(self, partial: str, limit: int = 5) -> List[str]:
+    def suggest_queries(self, partial: str, limit: int = 5) -> list[str]:
         """
         Suggest query completions based on indexed content.
 

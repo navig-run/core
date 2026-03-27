@@ -12,8 +12,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 from navig.lazy_loader import lazy_import
@@ -149,7 +147,7 @@ def webhook_add_inbound(
 def webhook_add_outbound(
     name: str = typer.Option(..., "--name", "-n", help="Human-readable name"),
     url: str = typer.Option(..., "--url", "-u", help="Target URL to POST events to"),
-    events: Optional[str] = typer.Option(
+    events: str | None = typer.Option(
         None,
         "--events",
         "-e",

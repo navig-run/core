@@ -14,7 +14,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -40,7 +40,7 @@ def _token_from_ctx(ctx: InstallerContext) -> str:
 # ── module API ────────────────────────────────────────────────────────────────
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     if _marker(ctx).exists():
         return []
 
@@ -105,7 +105,10 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
         lines.append(f"TELEGRAM_BOT_TOKEN={token}")
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         if sys.platform != "win32":
-            env_path.chmod(0o600)
+            try:
+                env_path.chmod(0o600)
+            except (OSError, PermissionError):
+                pass
         writes.append(".env")
     except Exception:  # noqa: BLE001
         pass

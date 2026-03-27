@@ -4,7 +4,6 @@ Scaffold Commands
 
 import os
 from pathlib import Path
-from typing import List
 
 import typer
 
@@ -27,7 +26,7 @@ def apply(
     host: str = typer.Option(
         None, "--host", "-h", help="Remote host to deploy to (defaults to local)"
     ),
-    set_var: List[str] = typer.Option(
+    set_var: list[str] = typer.Option(
         None, "--set", help="Set variable like key=value"
     ),
     dry_run: bool = typer.Option(

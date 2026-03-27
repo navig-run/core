@@ -7,7 +7,7 @@ Supports Debian/Ubuntu (apt) and RHEL/CentOS (yum/dnf).
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.adapters.os.base import OSAdapter, PackageInfo
 
@@ -22,7 +22,7 @@ class LinuxAdapter(OSAdapter):
     - pacman for Arch Linux
     """
 
-    def __init__(self, distro: Optional[str] = None):
+    def __init__(self, distro: str | None = None):
         """
         Initialize Linux adapter.
 
@@ -30,7 +30,7 @@ class LinuxAdapter(OSAdapter):
             distro: Linux distribution name (auto-detected if not provided)
         """
         self._distro = distro
-        self._package_manager: Optional[str] = None
+        self._package_manager: str | None = None
 
     @property
     def name(self) -> str:
@@ -69,7 +69,7 @@ class LinuxAdapter(OSAdapter):
         }
         return commands.get(self.package_manager, commands["apt"])
 
-    def parse_package_list(self, output: str) -> List[PackageInfo]:
+    def parse_package_list(self, output: str) -> list[PackageInfo]:
         """Parse package list output based on package manager format."""
         packages = []
 
@@ -176,7 +176,7 @@ class LinuxAdapter(OSAdapter):
     def get_system_info_command(self) -> str:
         return "uname -a && cat /etc/os-release 2>/dev/null || cat /etc/*-release 2>/dev/null"
 
-    def parse_system_info(self, output: str) -> Dict[str, Any]:
+    def parse_system_info(self, output: str) -> dict[str, Any]:
         """Parse Linux system info output."""
         info = {}
 

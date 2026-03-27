@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from navig.tools.router import ToolRegistry
 
 
-def register_tools(registry: "ToolRegistry") -> None:
+def register_tools(registry: ToolRegistry) -> None:
     from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 
     registry.register(

@@ -13,7 +13,6 @@ from __future__ import annotations
 import shutil
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -26,7 +25,7 @@ _MARKER = "# navig shell integration"
 # ─────────────────────── plan ─────────────────────────────────────────────────
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     if sys.platform == "win32":
         return []  # No-op on Windows
 
@@ -34,7 +33,7 @@ def plan(ctx: InstallerContext) -> List[Action]:
     if bin_dir is None:
         return []
 
-    actions: List[Action] = []
+    actions: list[Action] = []
     for rc in _shell_rc_candidates():
         content = rc.read_text(encoding="utf-8", errors="replace")
         if _MARKER in content:
@@ -99,13 +98,13 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
 # ─────────────────────── helpers ──────────────────────────────────────────────
 
 
-def _shell_rc_candidates() -> List[Path]:
+def _shell_rc_candidates() -> list[Path]:
     home = Path.home()
     candidates = [home / ".bashrc", home / ".zshrc", home / ".profile"]
     return [p for p in candidates if p.exists()]
 
 
-def _navig_bin_dir() -> Optional[Path]:
+def _navig_bin_dir() -> Path | None:
     """Find the directory that contains the navig executable."""
     navig_exe = shutil.which("navig")
     if navig_exe:

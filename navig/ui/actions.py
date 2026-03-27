@@ -9,7 +9,6 @@ navig.ui.actions — Layer 4 action blocks, fallback messages, and action queue.
 from __future__ import annotations
 
 import sys
-from typing import List, Optional
 
 from navig.ui.icons import icon
 from navig.ui.models import ActionItem
@@ -23,7 +22,7 @@ _RISK_STYLE = {
 
 
 def render_actions(
-    items: List[ActionItem],
+    items: list[ActionItem],
     *,
     title: str = "Recommended actions",
 ) -> None:
@@ -58,7 +57,7 @@ def render_fallback(
     cmd: str,
     reason: str = "Daemon offline",
     *,
-    alternatives: Optional[List[str]] = None,
+    alternatives: list[str] | None = None,
 ) -> None:
     """Show an inline fallback block when primary path is unavailable. Never raises."""
     try:
@@ -80,7 +79,7 @@ def render_fallback(
 
 
 def render_action_queue(
-    items: List[ActionItem],
+    items: list[ActionItem],
     *,
     title: str = "Action queue",
 ) -> None:

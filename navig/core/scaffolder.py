@@ -9,7 +9,7 @@ import os
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import jinja2
 import yaml
@@ -29,10 +29,10 @@ class Scaffolder:
             autoescape=False,  # We are generating code/config, not HTML
         )
 
-    def validate_template(self, template_path: Path) -> Dict[str, Any]:
+    def validate_template(self, template_path: Path) -> dict[str, Any]:
         """Load and validate a template file."""
         try:
-            with open(template_path, "r", encoding="utf-8") as f:
+            with open(template_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid YAML in template: {e}") from e
@@ -47,9 +47,9 @@ class Scaffolder:
 
     def generate(
         self,
-        template_data: Dict[str, Any],
+        template_data: dict[str, Any],
         target_dir: Path,
-        variables: Dict[str, Any] = None,
+        variables: dict[str, Any] = None,
     ) -> None:
         """
         Generate the scaffold structure in the target directory.
@@ -71,7 +71,7 @@ class Scaffolder:
         self._process_structure(structure, target_dir, merged_vars)
 
     def generate_to_temp_archive(
-        self, template_data: Dict[str, Any], variables: Dict[str, Any] = None
+        self, template_data: dict[str, Any], variables: dict[str, Any] = None
     ) -> Path:
         """
         Generate scaffold to a temporary directory and return path to a tar.gz archive.
@@ -95,7 +95,7 @@ class Scaffolder:
         return Path(archive_path)
 
     def _process_structure(
-        self, items: List[Dict[str, Any]], current_path: Path, variables: Dict[str, Any]
+        self, items: list[dict[str, Any]], current_path: Path, variables: dict[str, Any]
     ):
         """Recursively process structure items."""
         for item in items:
@@ -122,7 +122,7 @@ class Scaffolder:
             else:
                 self._create_file(item, item_path, mode, variables)
 
-    def _check_condition(self, item: Dict[str, Any], variables: Dict[str, Any]) -> bool:
+    def _check_condition(self, item: dict[str, Any], variables: dict[str, Any]) -> bool:
         """Check 'condition' field using Jinja2 expression evaluation."""
         condition = item.get("condition")
         if condition is None:
@@ -151,24 +151,27 @@ class Scaffolder:
             ch.warning(f"Failed to evaluate condition '{condition}': {e}")
             return False
 
-    def _create_directory(self, path: Path, mode: Optional[str]):
+    def _create_directory(self, path: Path, mode: str | None):
         """Create directory with optional mode."""
         path.mkdir(parents=True, exist_ok=True)
         if mode:
             try:
                 # Convert permissions like "0755" to integer
                 # If generated on Windows, chmod might have limited effect but we try
-                path.chmod(int(mode, 8))
+                try:
+                    path.chmod(int(mode, 8))
+                except (OSError, PermissionError):
+                    pass
             except Exception:
                 # On Windows this often fails or is ignored, so we warn but don't stop
                 pass
 
     def _create_file(
         self,
-        item: Dict[str, Any],
+        item: dict[str, Any],
         path: Path,
-        mode: Optional[str],
-        variables: Dict[str, Any],
+        mode: str | None,
+        variables: dict[str, Any],
     ):
         """Create a file from content or source."""
         content = ""
@@ -191,6 +194,9 @@ class Scaffolder:
                 f.write(content)
 
             if mode:
-                path.chmod(int(mode, 8))
+                try:
+                    path.chmod(int(mode, 8))
+                except (OSError, PermissionError):
+                    pass
         except Exception as e:
-            raise IOError(f"Failed to create file {path}: {e}") from e
+            raise OSError(f"Failed to create file {path}: {e}") from e

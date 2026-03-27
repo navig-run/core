@@ -25,7 +25,6 @@ import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 from navig.identity.models import SocialLink, UserProfile
 
@@ -51,10 +50,10 @@ CREATE TABLE IF NOT EXISTS navig_identities (
 
 # ── Singleton ───────────────────────────────────────────────────────────
 
-_store: Optional["IdentityStore"] = None
+_store: IdentityStore | None = None
 
 
-def get_identity_store(db_path: Optional[Path] = None) -> "IdentityStore":
+def get_identity_store(db_path: Path | None = None) -> IdentityStore:
     """Return (or create) the global IdentityStore singleton."""
     global _store
     if _store is None:
@@ -64,7 +63,7 @@ def get_identity_store(db_path: Optional[Path] = None) -> "IdentityStore":
     return _store
 
 
-def get_user_preferred_channel(user_id: str) -> Optional[str]:
+def get_user_preferred_channel(user_id: str) -> str | None:
     """Helper called by comms dispatcher for channel="auto".
 
     ``user_id`` may be a stringified telegram_id.
@@ -95,7 +94,7 @@ class IdentityStore:
 
     # ---- CRUD ----------------------------------------------------------
 
-    def get(self, telegram_id: int) -> Optional[UserProfile]:
+    def get(self, telegram_id: int) -> UserProfile | None:
         row = self._conn.execute(
             "SELECT * FROM navig_identities WHERE telegram_id = ?",
             (telegram_id,),
@@ -167,14 +166,14 @@ class IdentityStore:
         self._conn.commit()
         return cur.rowcount > 0
 
-    def list_all(self, limit: int = 100) -> List[UserProfile]:
+    def list_all(self, limit: int = 100) -> list[UserProfile]:
         rows = self._conn.execute(
             "SELECT * FROM navig_identities ORDER BY updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [self._row_to_profile(r) for r in rows]
 
-    def search_by_wallet(self, wallet: str) -> Optional[UserProfile]:
+    def search_by_wallet(self, wallet: str) -> UserProfile | None:
         row = self._conn.execute(
             "SELECT * FROM navig_identities WHERE ton_wallet_address = ?",
             (wallet,),

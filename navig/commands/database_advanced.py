@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
-from typing import Any, Dict
+from typing import Any
 
 from rich.table import Table
 
@@ -115,7 +115,10 @@ def _create_mysql_config_file(db_user: str, db_password: str) -> str:
 
     try:
         # Set file permissions to 0600 (read/write for owner only)
-        os.chmod(temp_path, 0o600)
+        try:
+            os.chmod(temp_path, 0o600)
+        except (OSError, PermissionError):
+            pass
 
         # Write MySQL config format
         config_content = f"""[client]
@@ -136,7 +139,7 @@ password={db_password}
         raise RuntimeError(f"Failed to create secure MySQL config: {e}") from e
 
 
-def list_databases_cmd(options: Dict[str, Any]):
+def list_databases_cmd(options: dict[str, Any]):
     """List all databases with sizes.
 
     SECURITY: No SQL injection risk - uses parameterized query via information_schema.
@@ -242,7 +245,7 @@ def list_databases_cmd(options: Dict[str, Any]):
                 pass  # Cleanup - file deletion failed
 
 
-def optimize_table_cmd(table: str, options: Dict[str, Any]):
+def optimize_table_cmd(table: str, options: dict[str, Any]):
     """Optimize database table.
 
     SECURITY:

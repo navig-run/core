@@ -7,7 +7,7 @@ reloading/restarting operations.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -20,7 +20,7 @@ from navig.remote import RemoteOperations
 console = Console()
 
 
-def list_vhosts(options: Dict[str, Any]) -> None:
+def list_vhosts(options: dict[str, Any]) -> None:
     """
     List virtual hosts for Apache or Nginx.
 
@@ -151,7 +151,7 @@ def list_vhosts(options: Dict[str, Any]) -> None:
             console.print(json.dumps({"error": str(e)}, indent=2))
 
 
-def test_config(options: Dict[str, Any]) -> None:
+def test_config(options: dict[str, Any]) -> None:
     """
     Test web server configuration syntax.
 
@@ -259,7 +259,7 @@ def test_config(options: Dict[str, Any]) -> None:
             console.print(json.dumps({"error": str(e)}, indent=2))
 
 
-def enable_site(options: Dict[str, Any]) -> None:
+def enable_site(options: dict[str, Any]) -> None:
     """
     Enable a web server site.
 
@@ -353,7 +353,7 @@ def enable_site(options: Dict[str, Any]) -> None:
             console.print(json.dumps({"error": str(e)}, indent=2))
 
 
-def disable_site(options: Dict[str, Any]) -> None:
+def disable_site(options: dict[str, Any]) -> None:
     """
     Disable a web server site.
 
@@ -447,7 +447,7 @@ def disable_site(options: Dict[str, Any]) -> None:
             console.print(json.dumps({"error": str(e)}, indent=2))
 
 
-def enable_module(options: Dict[str, Any]) -> None:
+def enable_module(options: dict[str, Any]) -> None:
     """
     Enable a web server module (Apache only).
 
@@ -544,7 +544,7 @@ def enable_module(options: Dict[str, Any]) -> None:
             console.print(json.dumps({"error": str(e)}, indent=2))
 
 
-def disable_module(options: Dict[str, Any]) -> None:
+def disable_module(options: dict[str, Any]) -> None:
     """
     Disable a web server module (Apache only).
 
@@ -641,7 +641,7 @@ def disable_module(options: Dict[str, Any]) -> None:
             console.print(json.dumps({"error": str(e)}, indent=2))
 
 
-def reload_server(options: Dict[str, Any]) -> None:
+def reload_server(options: dict[str, Any]) -> None:
     """
     Safely reload web server configuration.
 
@@ -770,7 +770,7 @@ def reload_server(options: Dict[str, Any]) -> None:
             console.print(json.dumps({"error": str(e)}, indent=2))
 
 
-def get_recommendations(options: Dict[str, Any]) -> None:
+def get_recommendations(options: dict[str, Any]) -> None:
     """
     Display performance tuning recommendations.
 

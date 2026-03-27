@@ -22,7 +22,6 @@ Usage
 
 import asyncio
 import re
-from typing import Optional
 
 import typer
 
@@ -51,22 +50,22 @@ def run_cortex(
     no_vision: bool = typer.Option(
         False, "--no-vision", help="Never use vision; a11y only"
     ),
-    template_name: Optional[str] = typer.Option(
+    template_name: str | None = typer.Option(
         None, "--template", help="Force a specific template (e.g. 'example-app')"
     ),
     no_template: bool = typer.Option(
         False, "--no-template", help="Skip template auto-detection; always use AI loop"
     ),
-    email: Optional[str] = typer.Option(
+    email: str | None = typer.Option(
         None, "--email", help="Email/username for template login flow"
     ),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", help="Password for template login flow"
     ),
-    post_text: Optional[str] = typer.Option(
+    post_text: str | None = typer.Option(
         None, "--post", help="Text to post for template post flow"
     ),
-    cdp_port: Optional[int] = typer.Option(
+    cdp_port: int | None = typer.Option(
         None,
         "--cdp-port",
         help="Attach to existing Chrome at this CDP port instead of launching a new browser",
@@ -143,7 +142,7 @@ def run_cortex(
 
         # ── AI Loop (fallback or explicit) ────────────────────────────────
         orchestrator = CortexOrchestrator(goal=goal, driver=driver)
-        last_step_result: Optional[dict] = None
+        last_step_result: dict | None = None
 
         try:
             ch.info(f"Navigating to {start_url} ...")

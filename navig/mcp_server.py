@@ -20,9 +20,10 @@ import asyncio
 import json
 import secrets
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import ConfigManager
@@ -32,10 +33,10 @@ class MCPProtocolHandler:
     """Handles MCP JSON-RPC protocol over stdio."""
 
     def __init__(self):
-        self.tools: Dict[str, Dict[str, Any]] = {}
-        self.resources: Dict[str, Dict[str, Any]] = {}
-        self.prompts: Dict[str, Dict[str, Any]] = {}
-        self._handlers: Dict[str, Callable] = {}
+        self.tools: dict[str, dict[str, Any]] = {}
+        self.resources: dict[str, dict[str, Any]] = {}
+        self.prompts: dict[str, dict[str, Any]] = {}
+        self._handlers: dict[str, Callable] = {}
         self._running = False
         self._config = ConfigManager()
 
@@ -177,7 +178,7 @@ class MCPProtocolHandler:
     # MCP Protocol Handlers
     # =========================================================================
 
-    def _handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_initialize(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle MCP initialize request."""
         return {
             "protocolVersion": "2024-11-05",
@@ -185,19 +186,19 @@ class MCPProtocolHandler:
             "serverInfo": {"name": "navig-mcp-server", "version": "1.0.0"},
         }
 
-    def _handle_initialized(self, params: Dict[str, Any]) -> None:
+    def _handle_initialized(self, params: dict[str, Any]) -> None:
         """Handle MCP initialized notification."""
         return None
 
-    def _handle_ping(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_ping(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle ping request."""
         return {}
 
-    def _handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return list of available tools."""
         return {"tools": list(self.tools.values())}
 
-    def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool call."""
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
@@ -221,11 +222,11 @@ class MCPProtocolHandler:
                 "content": [{"type": "text", "text": f"Tool error: {str(e)}"}],
             }
 
-    def _handle_resources_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_resources_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return list of available resources."""
         return {"resources": list(self.resources.values())}
 
-    def _handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
         """Read a resource."""
         uri = params.get("uri")
 
@@ -252,11 +253,11 @@ class MCPProtocolHandler:
                 "content": [{"type": "text", "text": f"Resource error: {str(e)}"}],
             }
 
-    def _handle_prompts_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return list of available prompts."""
         return {"prompts": []}
 
-    def _handle_prompts_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_prompts_get(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get a specific prompt."""
         return {"messages": []}
 
@@ -264,7 +265,7 @@ class MCPProtocolHandler:
     # Tool Implementations
     # =========================================================================
 
-    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    def _execute_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """Execute a tool and return result."""
         handler = getattr(self, "_tool_handlers", {}).get(tool_name)
         if handler:
@@ -339,7 +340,7 @@ class MCPProtocolHandler:
     # Server Loop
     # =========================================================================
 
-    def handle_message(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def handle_message(self, message: dict[str, Any]) -> dict[str, Any] | None:
         """Handle a single JSON-RPC message."""
         method = message.get("method")
         params = message.get("params", {})
@@ -395,9 +396,7 @@ class MCPProtocolHandler:
         self._running = False
 
 
-def start_mcp_server(
-    mode: str = "stdio", port: int = 3001, token: Optional[str] = None
-):
+def start_mcp_server(mode: str = "stdio", port: int = 3001, token: str | None = None):
     """Start the NAVIG MCP server.
 
     Args:
@@ -416,7 +415,7 @@ def start_mcp_server(
 
 
 def _run_websocket_server(
-    handler: MCPProtocolHandler, port: int, token: Optional[str] = None
+    handler: MCPProtocolHandler, port: int, token: str | None = None
 ):
     """Start a WebSocket MCP server with optional token auth.
 
@@ -453,7 +452,7 @@ def _run_websocket_server(
     debounce_seconds = 1.5
     poll_interval_seconds = 1.0
     max_notification_bytes = 131072
-    notification_state: Dict[str, Dict[str, Any]] = {
+    notification_state: dict[str, dict[str, Any]] = {
         topic: {
             "last_seen_digest": None,
             "last_seen_at": None,
@@ -509,7 +508,7 @@ def _run_websocket_server(
                     state["last_seen_digest"] = digest
                     state["last_seen_at"] = now
 
-                    params: Dict[str, Any] = {
+                    params: dict[str, Any] = {
                         "uri": uri,
                         "changed_at": now.isoformat(),
                     }
@@ -684,7 +683,7 @@ def _run_websocket_server(
         ch.info("MCP WebSocket server stopped.")
 
 
-def generate_vscode_mcp_config() -> Dict[str, Any]:
+def generate_vscode_mcp_config() -> dict[str, Any]:
     """Generate VS Code MCP configuration for Copilot integration."""
     import sys
 
@@ -701,7 +700,7 @@ def generate_vscode_mcp_config() -> Dict[str, Any]:
     }
 
 
-def generate_claude_mcp_config() -> Dict[str, Any]:
+def generate_claude_mcp_config() -> dict[str, Any]:
     """Generate Claude Desktop MCP configuration."""
     import sys
 

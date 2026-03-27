@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -241,7 +240,7 @@ def dry_run(
 
 @inbox_app.command("filter")
 def filter_cmd(
-    path: Optional[str] = typer.Option(
+    path: str | None = typer.Option(
         None,
         "--path",
         "-p",
@@ -354,7 +353,7 @@ def filter_cmd(
 
 @inbox_app.command("watch")
 def watch_cmd(
-    path: Optional[str] = typer.Option(
+    path: str | None = typer.Option(
         None,
         "--path",
         "-p",
@@ -572,7 +571,7 @@ def add_url_cmd(
 
 @inbox_app.command("ui")
 def ui_cmd(
-    path: Optional[str] = typer.Option(
+    path: str | None = typer.Option(
         None, "--path", "-p", help="Project root (default: auto-detected)"
     ),
     no_llm: bool = typer.Option(False, "--no-llm", help="BM25 only, no LLM"),

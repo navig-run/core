@@ -16,7 +16,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.store.base import BaseStore
 
@@ -41,9 +41,9 @@ class MatrixRoom:
     joined_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "room_id": self.room_id,
             "alias": self.alias,
@@ -56,7 +56,7 @@ class MatrixRoom:
         }
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "MatrixRoom":
+    def from_row(cls, row: sqlite3.Row) -> MatrixRoom:
         return cls(
             room_id=row["room_id"],
             alias=row["alias"] or "",
@@ -77,13 +77,13 @@ class MatrixEvent:
     room_id: str
     sender: str
     event_type: str
-    content: Dict[str, Any] = field(default_factory=dict)
+    content: dict[str, Any] = field(default_factory=dict)
     origin_ts: int = 0
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "event_id": self.event_id,
             "room_id": self.room_id,
@@ -94,7 +94,7 @@ class MatrixEvent:
         }
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "MatrixEvent":
+    def from_row(cls, row: sqlite3.Row) -> MatrixEvent:
         return cls(
             event_id=row["event_id"],
             room_id=row["room_id"],
@@ -113,11 +113,11 @@ class MatrixBridge:
     id: int = 0
     room_id: str = ""
     bridge_type: str = ""  # telegram | deck | webhook
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     active: bool = True
     created_at: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "room_id": self.room_id,
@@ -127,7 +127,7 @@ class MatrixBridge:
         }
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "MatrixBridge":
+    def from_row(cls, row: sqlite3.Row) -> MatrixBridge:
         return cls(
             id=row["id"],
             room_id=row["room_id"],
@@ -158,7 +158,7 @@ class MatrixStore(BaseStore):
 
     SCHEMA_VERSION = 3
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         if db_path is None:
             db_path = Path.home() / ".navig" / "matrix.db"
         super().__init__(Path(db_path))
@@ -270,14 +270,14 @@ class MatrixStore(BaseStore):
             )
             conn.commit()
 
-    def get_room(self, room_id: str) -> Optional[MatrixRoom]:
+    def get_room(self, room_id: str) -> MatrixRoom | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM rooms WHERE room_id = ?", (room_id,)
         ).fetchone()
         return MatrixRoom.from_row(row) if row else None
 
-    def list_rooms(self, purpose: Optional[str] = None) -> List[MatrixRoom]:
+    def list_rooms(self, purpose: str | None = None) -> list[MatrixRoom]:
         conn = self._get_conn()
         if purpose:
             rows = conn.execute(
@@ -324,7 +324,7 @@ class MatrixStore(BaseStore):
             )
             conn.commit()
 
-    def add_events_batch(self, events: List[MatrixEvent]) -> int:
+    def add_events_batch(self, events: list[MatrixEvent]) -> int:
         """Bulk insert events. Returns count inserted."""
         conn = self._get_conn()
         count = 0
@@ -357,9 +357,9 @@ class MatrixStore(BaseStore):
         room_id: str,
         *,
         limit: int = 50,
-        since_ts: Optional[int] = None,
-        event_type: Optional[str] = None,
-    ) -> List[MatrixEvent]:
+        since_ts: int | None = None,
+        event_type: str | None = None,
+    ) -> list[MatrixEvent]:
         conn = self._get_conn()
         query = "SELECT * FROM events WHERE room_id = ?"
         params: list = [room_id]
@@ -374,7 +374,7 @@ class MatrixStore(BaseStore):
         rows = conn.execute(query, params).fetchall()
         return [MatrixEvent.from_row(r) for r in rows]
 
-    def count_events(self, room_id: Optional[str] = None) -> int:
+    def count_events(self, room_id: str | None = None) -> int:
         conn = self._get_conn()
         if room_id:
             row = conn.execute(
@@ -428,7 +428,7 @@ class MatrixStore(BaseStore):
             conn.commit()
             return cur.lastrowid or 0
 
-    def get_bridges(self, room_id: Optional[str] = None) -> List[MatrixBridge]:
+    def get_bridges(self, room_id: str | None = None) -> list[MatrixBridge]:
         conn = self._get_conn()
         if room_id:
             rows = conn.execute(
@@ -467,7 +467,7 @@ class MatrixStore(BaseStore):
             )
             conn.commit()
 
-    def get_device_trust(self, user_id: str, device_id: str) -> Optional[str]:
+    def get_device_trust(self, user_id: str, device_id: str) -> str | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT trust_state FROM device_trust WHERE user_id = ? AND device_id = ?",
@@ -475,9 +475,7 @@ class MatrixStore(BaseStore):
         ).fetchone()
         return row["trust_state"] if row else None
 
-    def list_trusted_devices(
-        self, user_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def list_trusted_devices(self, user_id: str | None = None) -> list[dict[str, Any]]:
         conn = self._get_conn()
         if user_id:
             rows = conn.execute(
@@ -492,7 +490,7 @@ class MatrixStore(BaseStore):
 
     # ── Stats / Diagnostics ───────────────────────────────────
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return aggregate stats for diagnostics or webhook push."""
         return {
             "rooms": self.count_rooms(),

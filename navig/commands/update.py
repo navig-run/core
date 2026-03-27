@@ -8,7 +8,6 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 
@@ -43,7 +42,7 @@ class _Result:
     ok: bool = True
     note: str = ""
     elapsed: float = 0.0
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 def _step_git(src_dir, force):
@@ -408,7 +407,7 @@ def _update_callback(
         "--dry-run",
         help="[legacy] Dry-run — alias for 'navig update run --dry-run'.",
     ),
-    channel: Optional[str] = typer.Option(None, "--channel", hidden=True),
+    channel: str | None = typer.Option(None, "--channel", hidden=True),
 ) -> None:
     """Upgrade NAVIG.
 
@@ -438,10 +437,10 @@ def _update_callback(
 
 @update_app.command("check")
 def update_check(
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host (default: local)."
     ),
-    group: Optional[str] = typer.Option(None, "--group", "-g", help="Host group name."),
+    group: str | None = typer.Option(None, "--group", "-g", help="Host group name."),
     all_hosts: bool = typer.Option(
         False, "--all", "-a", help="Check all configured hosts."
     ),
@@ -514,10 +513,10 @@ def update_check(
 
 @update_app.command("run")
 def update_run(
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host (default: local)."
     ),
-    group: Optional[str] = typer.Option(None, "--group", "-g", help="Host group."),
+    group: str | None = typer.Option(None, "--group", "-g", help="Host group."),
     all_hosts: bool = typer.Option(
         False, "--all", "-a", help="Update all configured hosts."
     ),
@@ -615,7 +614,7 @@ def update_run(
 @update_app.command("rollback")
 def update_rollback(
     version: str = typer.Argument(..., help="Version to roll back to, e.g. 2.4.15"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host (default: local)."
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
@@ -664,7 +663,7 @@ def update_rollback(
 
 @update_app.command("status")
 def update_status(
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host (default: local)."
     ),
     json_out: bool = typer.Option(False, "--json", help="Output JSON."),
@@ -754,7 +753,7 @@ def update_status(
 @update_app.command("history")
 def update_history_cmd(
     limit: int = typer.Option(20, "--limit", "-n", help="How many entries to show."),
-    node_id: Optional[str] = typer.Option(None, "--node", help="Filter by node ID."),
+    node_id: str | None = typer.Option(None, "--node", help="Filter by node ID."),
     json_out: bool = typer.Option(False, "--json", help="Output JSON."),
 ) -> None:
     """Show recent update history."""

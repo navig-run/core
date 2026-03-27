@@ -6,8 +6,9 @@ Ensures seamless upgrades by transforming old config structures
 into the current schema.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 from packaging import version as pkg_version
 from rich.console import Console
@@ -26,14 +27,14 @@ class Migration:
     from_version: str
     to_version: str
     description: str
-    apply: Callable[[Dict[str, Any]], Dict[str, Any]]
+    apply: Callable[[dict[str, Any]], dict[str, Any]]
 
 
 class MigrationManager:
     """Manages and applies configuration migrations."""
 
     def __init__(self):
-        self.migrations: List[Migration] = []
+        self.migrations: list[Migration] = []
         self._register_core_migrations()
 
     def _register_core_migrations(self):
@@ -51,7 +52,7 @@ class MigrationManager:
         """Register a new migration."""
         self.migrations.append(migration)
 
-    def get_pending_migrations(self, current_version: str) -> List[Migration]:
+    def get_pending_migrations(self, current_version: str) -> list[Migration]:
         """
         Get list of migrations that need to be applied.
         Sorts by version.
@@ -77,7 +78,7 @@ class MigrationManager:
         # Sort by version
         return sorted(pending, key=lambda x: pkg_version.parse(x.from_version))
 
-    def apply_migrations(self, config: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    def apply_migrations(self, config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         """
         Apply all pending migrations to the configuration.
 
@@ -128,7 +129,7 @@ class MigrationManager:
 
     # --- Migration Logic implementations ---
 
-    def _migrate_0_9_to_1_0(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _migrate_0_9_to_1_0(self, config: dict[str, Any]) -> dict[str, Any]:
         """
         Migrate from v0.9 (Legacy) to v1.0.
 
@@ -155,6 +156,6 @@ class MigrationManager:
 migration_manager = MigrationManager()
 
 
-def migrate_config(config: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+def migrate_config(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Helper to apply migrations using default manager."""
     return migration_manager.apply_migrations(config)

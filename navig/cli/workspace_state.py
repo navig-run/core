@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 context_app = typer.Typer(
@@ -46,10 +44,10 @@ def context_show(
 @context_app.command("set")
 def context_set(
     ctx: typer.Context,
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host to set as project default"
     ),
-    app_name: Optional[str] = typer.Option(
+    app_name: str | None = typer.Option(
         None, "--app", "-a", help="App to set as project default"
     ),
 ):
@@ -85,7 +83,7 @@ index_app = typer.Typer(
 @index_app.command("scan")
 def index_scan(
     ctx: typer.Context,
-    root: Optional[str] = typer.Argument(
+    root: str | None = typer.Argument(
         None, help="Project root directory (default: current directory)"
     ),
     incremental: bool = typer.Option(
@@ -121,7 +119,7 @@ def index_scan(
 def index_search(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="Search query"),
-    root: Optional[str] = typer.Option(
+    root: str | None = typer.Option(
         None, "--root", "-r", help="Project root directory"
     ),
     top_k: int = typer.Option(10, "--top", "-k", help="Max results to return"),
@@ -162,7 +160,7 @@ def index_search(
 @index_app.command("stats")
 def index_stats(
     ctx: typer.Context,
-    root: Optional[str] = typer.Option(
+    root: str | None = typer.Option(
         None, "--root", "-r", help="Project root directory"
     ),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
@@ -190,7 +188,7 @@ def index_stats(
 @index_app.command("drop")
 def index_drop(
     ctx: typer.Context,
-    root: Optional[str] = typer.Option(
+    root: str | None = typer.Option(
         None, "--root", "-r", help="Project root directory"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -238,17 +236,17 @@ def history_callback(ctx: typer.Context):
 def history_list(
     ctx: typer.Context,
     limit: int = typer.Option(20, "--limit", "-l", help="Number of entries to show"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Filter by host"),
-    type_filter: Optional[str] = typer.Option(
+    host: str | None = typer.Option(None, "--host", "-h", help="Filter by host"),
+    type_filter: str | None = typer.Option(
         None, "--type", "-t", help="Filter by operation type"
     ),
-    status: Optional[str] = typer.Option(
+    status: str | None = typer.Option(
         None, "--status", "-s", help="Filter by status (success/failed)"
     ),
-    search: Optional[str] = typer.Option(
+    search: str | None = typer.Option(
         None, "--search", "-q", help="Search in command text"
     ),
-    since: Optional[str] = typer.Option(
+    since: str | None = typer.Option(
         None, "--since", help="Time filter (e.g., 1h, 24h, 7d)"
     ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
@@ -294,7 +292,7 @@ def history_replay(
     dry_run: bool = typer.Option(
         False, "--dry-run", "-n", help="Show what would be done"
     ),
-    modify: Optional[str] = typer.Option(
+    modify: str | None = typer.Option(
         None, "--modify", "-m", help="Modify command before replay"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),

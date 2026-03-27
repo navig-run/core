@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.formations.types import AgentSpec, Formation
 
@@ -20,8 +20,8 @@ class FormationValidationError(Exception):
     def __init__(
         self,
         message: str,
-        path: Optional[Path] = None,
-        errors: Optional[List[str]] = None,
+        path: Path | None = None,
+        errors: list[str] | None = None,
     ):
         self.path = path
         self.errors = errors or []
@@ -33,7 +33,7 @@ class FormationValidationError(Exception):
 
 # --- JSON Schemas ---
 
-AGENT_SCHEMA: Dict[str, Any] = {
+AGENT_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "NAVIG Agent Specification",
     "type": "object",
@@ -113,7 +113,7 @@ AGENT_SCHEMA: Dict[str, Any] = {
     "additionalProperties": False,
 }
 
-FORMATION_SCHEMA: Dict[str, Any] = {
+FORMATION_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "NAVIG Formation Manifest",
     "type": "object",
@@ -179,7 +179,7 @@ FORMATION_SCHEMA: Dict[str, Any] = {
     "additionalProperties": False,
 }
 
-PROFILE_SCHEMA: Dict[str, Any] = {
+PROFILE_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "NAVIG Workspace Profile",
     "type": "object",
@@ -194,8 +194,8 @@ PROFILE_SCHEMA: Dict[str, Any] = {
 
 
 def _validate_with_jsonschema(
-    data: Dict[str, Any], schema: Dict[str, Any]
-) -> List[str]:
+    data: dict[str, Any], schema: dict[str, Any]
+) -> list[str]:
     """Validate data against JSON Schema. Returns list of error messages."""
     try:
         import jsonschema
@@ -209,9 +209,9 @@ def _validate_with_jsonschema(
         return _validate_manually(data, schema)
 
 
-def _validate_manually(data: Dict[str, Any], schema: Dict[str, Any]) -> List[str]:
+def _validate_manually(data: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     """Fallback validation without jsonschema library."""
-    errors: List[str] = []
+    errors: list[str] = []
     if not isinstance(data, dict):
         return ["Root must be an object"]
 
@@ -253,7 +253,7 @@ def _validate_manually(data: Dict[str, Any], schema: Dict[str, Any]) -> List[str
     return errors
 
 
-def validate_agent_data(data: Dict[str, Any], path: Optional[Path] = None) -> AgentSpec:
+def validate_agent_data(data: dict[str, Any], path: Path | None = None) -> AgentSpec:
     """Validate agent data and return AgentSpec. Raises FormationValidationError."""
     errors = _validate_with_jsonschema(data, AGENT_SCHEMA)
     if errors:
@@ -275,8 +275,8 @@ def validate_agent_file(path: Path) -> AgentSpec:
 
 
 def validate_formation_data(
-    data: Dict[str, Any], path: Optional[Path] = None
-) -> Tuple[Dict[str, Any], List[str]]:
+    data: dict[str, Any], path: Path | None = None
+) -> tuple[dict[str, Any], list[str]]:
     """Validate formation data. Returns (data, errors)."""
     errors = _validate_with_jsonschema(data, FORMATION_SCHEMA)
 
@@ -312,8 +312,6 @@ def validate_formation_file(path: Path) -> Formation:
     return Formation.from_dict(data, source_path=path)
 
 
-def validate_profile_data(
-    data: Dict[str, Any], path: Optional[Path] = None
-) -> List[str]:
+def validate_profile_data(data: dict[str, Any], path: Path | None = None) -> list[str]:
     """Validate profile.json data. Returns list of errors."""
     return _validate_with_jsonschema(data, PROFILE_SCHEMA)

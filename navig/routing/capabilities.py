@@ -8,8 +8,6 @@ model from the available provider.
 
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Set
-
 # ── Canonical capability tags ───────────────────────────────────────
 
 CAPABILITY_TAGS = frozenset(
@@ -33,8 +31,8 @@ class ModeProfile:
 
     def __init__(
         self,
-        required: Set[str],
-        preferred: Set[str] | None = None,
+        required: set[str],
+        preferred: set[str] | None = None,
         cost_target: str = "medium",
         latency_target: str = "medium",
     ):
@@ -43,14 +41,14 @@ class ModeProfile:
         self.cost_target = cost_target
         self.latency_target = latency_target
 
-    def score_model(self, model_caps: FrozenSet[str]) -> int:
+    def score_model(self, model_caps: frozenset[str]) -> int:
         """Score a model against this profile. -1 = doesn't meet required."""
         if not self.required.issubset(model_caps):
             return -1
         return len(self.preferred & model_caps)
 
 
-MODE_CAPABILITIES: Dict[str, ModeProfile] = {
+MODE_CAPABILITIES: dict[str, ModeProfile] = {
     "coding": ModeProfile(
         required={"coder"},
         preferred={"format_strict", "strong", "fast"},
@@ -89,7 +87,7 @@ MODE_CAPABILITIES: Dict[str, ModeProfile] = {
 # handles model selection based on purpose.  These tables are used
 # only for daemon-side fallback providers.
 
-OPENROUTER_MODELS: Dict[str, FrozenSet[str]] = {
+OPENROUTER_MODELS: dict[str, frozenset[str]] = {
     "anthropic/claude-sonnet-4.5": frozenset(
         {"fast", "strong", "coder", "format_strict"}
     ),
@@ -108,7 +106,7 @@ OPENROUTER_MODELS: Dict[str, FrozenSet[str]] = {
     "qwen/qwen-72b": frozenset({"strong", "coder", "long_context"}),
 }
 
-GITHUB_MODELS: Dict[str, FrozenSet[str]] = {
+GITHUB_MODELS: dict[str, frozenset[str]] = {
     "gpt-4o": frozenset({"fast", "coder", "format_strict", "tool_capable"}),
     "gpt-4o-mini": frozenset({"fast", "format_strict", "tool_capable"}),
     "Meta-Llama-3.1-405B-Instruct": frozenset({"strong", "long_context"}),
@@ -116,7 +114,7 @@ GITHUB_MODELS: Dict[str, FrozenSet[str]] = {
     "Mistral-Nemo": frozenset({"fast"}),
 }
 
-OLLAMA_MODELS: Dict[str, FrozenSet[str]] = {
+OLLAMA_MODELS: dict[str, frozenset[str]] = {
     "qwen2.5-coder:14b": frozenset({"fast", "coder"}),
     "qwen2.5-coder:7b": frozenset({"fast", "coder"}),
     "llama3.2": frozenset({"fast"}),
@@ -127,7 +125,7 @@ OLLAMA_MODELS: Dict[str, FrozenSet[str]] = {
 
 # ── Mode → preferred model per provider (fallback selection) ───────
 
-MODE_MODEL_PREFERENCE: Dict[str, Dict[str, str]] = {
+MODE_MODEL_PREFERENCE: dict[str, dict[str, str]] = {
     "coding": {
         "openrouter": "anthropic/claude-sonnet-4.5",
         "github_models": "gpt-4o",

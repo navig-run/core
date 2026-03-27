@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class CredentialType(str, Enum):
@@ -50,19 +50,19 @@ class Credential:
     profile_id: str
     credential_type: CredentialType
     label: str
-    data: Dict[str, Any]  # Decrypted secrets
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any]  # Decrypted secrets
+    metadata: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    last_used_at: Optional[datetime] = None
+    last_used_at: datetime | None = None
 
     @staticmethod
     def generate_id() -> str:
         """Generate a short unique credential ID."""
         return str(uuid.uuid4())[:8]
 
-    def get_secret(self, key: str = "api_key") -> Optional[str]:
+    def get_secret(self, key: str = "api_key") -> str | None:
         """Get a secret value from the credential data."""
         return self.data.get(key)
 
@@ -94,8 +94,8 @@ class CredentialInfo:
     label: str
     enabled: bool
     created_at: datetime
-    last_used_at: Optional[datetime]
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    last_used_at: datetime | None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
         status = "✓" if self.enabled else "✗"
@@ -118,7 +118,7 @@ class TestResult:
 
     success: bool
     message: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     tested_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __str__(self) -> str:
@@ -127,7 +127,7 @@ class TestResult:
 
 
 # Provider presets for common configurations
-PROVIDER_PRESETS: Dict[str, Dict[str, Any]] = {
+PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
     "gmail": {
         "credential_type": CredentialType.EMAIL,
         "metadata": {
@@ -220,9 +220,9 @@ class VaultItem:
     id: str
     kind: VaultItemKind
     label: str
-    provider: Optional[str]
+    provider: str | None
     payload: bytes  # Decrypted payload
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 

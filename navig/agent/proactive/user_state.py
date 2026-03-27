@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -71,9 +71,9 @@ class InteractionRecord:
 
     timestamp: float
     message_type: str  # 'command', 'chat', 'greeting', 'question'
-    command: Optional[str] = None
-    response_time_ms: Optional[float] = None
-    sentiment: Optional[str] = None  # 'positive', 'neutral', 'frustrated'
+    command: str | None = None
+    response_time_ms: float | None = None
+    sentiment: str | None = None  # 'positive', 'neutral', 'frustrated'
 
 
 @dataclass
@@ -82,18 +82,18 @@ class UsageStats:
 
     total_messages: int = 0
     total_commands: int = 0
-    command_counts: Dict[str, int] = field(default_factory=dict)
-    first_seen: Optional[float] = None
-    last_seen: Optional[float] = None
+    command_counts: dict[str, int] = field(default_factory=dict)
+    first_seen: float | None = None
+    last_seen: float | None = None
     active_days: int = 0
     avg_session_length_min: float = 0.0
-    peak_hours: List[int] = field(default_factory=list)
-    features_used: Dict[str, int] = field(default_factory=dict)
-    last_greeting: Optional[float] = None
-    last_checkin: Optional[float] = None
-    last_capability_promo: Optional[float] = None
-    last_feedback_ask: Optional[float] = None
-    feedback_responses: List[Dict[str, Any]] = field(default_factory=list)
+    peak_hours: list[int] = field(default_factory=list)
+    features_used: dict[str, int] = field(default_factory=dict)
+    last_greeting: float | None = None
+    last_checkin: float | None = None
+    last_capability_promo: float | None = None
+    last_feedback_ask: float | None = None
+    feedback_responses: list[dict[str, Any]] = field(default_factory=list)
 
 
 class UserStateTracker:
@@ -106,12 +106,12 @@ class UserStateTracker:
     actions to take.
     """
 
-    def __init__(self, state_dir: Optional[Path] = None):
+    def __init__(self, state_dir: Path | None = None):
         self.state_dir = state_dir or Path.home() / ".navig" / "engagement"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         # In-memory state
-        self._interactions: List[InteractionRecord] = []
+        self._interactions: list[InteractionRecord] = []
         self._max_interactions = 500
         self.stats = UsageStats()
         self.preferences = UserPreferences()
@@ -127,9 +127,9 @@ class UserStateTracker:
     def record_interaction(
         self,
         message_type: str = "chat",
-        command: Optional[str] = None,
-        response_time_ms: Optional[float] = None,
-        sentiment: Optional[str] = None,
+        command: str | None = None,
+        response_time_ms: float | None = None,
+        sentiment: str | None = None,
     ):
         """Record a user interaction event."""
         now = time.time()
@@ -169,7 +169,7 @@ class UserStateTracker:
         hour = datetime.fromtimestamp(now).hour
         if hour not in self.stats.peak_hours:
             # Keep top 5 peak hours based on interaction count
-            hour_counts: Dict[int, int] = {}
+            hour_counts: dict[int, int] = {}
             for rec in self._interactions:
                 h = datetime.fromtimestamp(rec.timestamp).hour
                 hour_counts[h] = hour_counts.get(h, 0) + 1
@@ -194,7 +194,7 @@ class UserStateTracker:
             self.stats.last_feedback_ask = now
         self._save_state()
 
-    def record_feedback(self, feedback: str, rating: Optional[int] = None):
+    def record_feedback(self, feedback: str, rating: int | None = None):
         """Record user feedback from self-improvement dialogue."""
         self.stats.feedback_responses.append(
             {
@@ -268,7 +268,7 @@ class UserStateTracker:
         hour = datetime.now().hour
         return self.active_hours_start <= hour < self.active_hours_end
 
-    def hours_since(self, event_type: str) -> Optional[float]:
+    def hours_since(self, event_type: str) -> float | None:
         """Get hours since a specific proactive event type."""
         now = time.time()
         ts = None
@@ -287,7 +287,7 @@ class UserStateTracker:
             return None
         return (now - ts) / 3600
 
-    def get_underused_features(self, known_features: List[str]) -> List[str]:
+    def get_underused_features(self, known_features: list[str]) -> list[str]:
         """Identify features the user hasn't tried or rarely uses."""
         used = set(self.stats.features_used.keys())
         never_used = [f for f in known_features if f not in used]
@@ -301,7 +301,7 @@ class UserStateTracker:
 
         return never_used + rarely_used
 
-    def get_frequent_commands(self, top_n: int = 5) -> List[tuple]:
+    def get_frequent_commands(self, top_n: int = 5) -> list[tuple]:
         """Get most frequently used commands."""
         sorted_cmds = sorted(
             self.stats.command_counts.items(), key=lambda x: x[1], reverse=True
@@ -461,7 +461,7 @@ class UserStateTracker:
 
 # ── Singleton accessor ────────────────────────────────────────
 
-_tracker_instance: Optional[UserStateTracker] = None
+_tracker_instance: UserStateTracker | None = None
 
 
 def get_user_state_tracker() -> UserStateTracker:

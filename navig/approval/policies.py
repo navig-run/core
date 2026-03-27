@@ -3,7 +3,6 @@
 import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List
 
 
 class ApprovalLevel(Enum):
@@ -64,7 +63,7 @@ DEFAULT_NEVER_PATTERNS = [
 
 # Actions that auto-approve will accept when auto_evolve_enabled is True.
 # Mirrors the VS Code navig-bridge WHITELIST constant — keep in sync.
-DEFAULT_AUTO_EVOLVE_WHITELIST: List[str] = [
+DEFAULT_AUTO_EVOLVE_WHITELIST: list[str] = [
     "fix",
     "skill.patch",
     "workflow.update",
@@ -81,28 +80,28 @@ class ApprovalPolicy:
     timeout_seconds: int = 120
     default_action: str = "deny"
 
-    safe_patterns: List[str] = field(
+    safe_patterns: list[str] = field(
         default_factory=lambda: DEFAULT_SAFE_PATTERNS.copy()
     )
-    confirm_patterns: List[str] = field(
+    confirm_patterns: list[str] = field(
         default_factory=lambda: DEFAULT_CONFIRM_PATTERNS.copy()
     )
-    dangerous_patterns: List[str] = field(
+    dangerous_patterns: list[str] = field(
         default_factory=lambda: DEFAULT_DANGEROUS_PATTERNS.copy()
     )
-    never_patterns: List[str] = field(
+    never_patterns: list[str] = field(
         default_factory=lambda: DEFAULT_NEVER_PATTERNS.copy()
     )
 
     # Per-channel settings
-    auto_approve_users: List[str] = field(default_factory=list)
+    auto_approve_users: list[str] = field(default_factory=list)
 
     # ── Auto-Evolve / Auto-Approve ───────────────────────────────────────────
     # When True, CONFIRM-level commands in auto_evolve_whitelist are approved
     # without user interaction.  DANGEROUS and NEVER are never auto-approved.
     # Gate: audit_log must be live (is_auto_evolve_allowed() checks this).
     auto_evolve_enabled: bool = False
-    auto_evolve_whitelist: List[str] = field(
+    auto_evolve_whitelist: list[str] = field(
         default_factory=lambda: DEFAULT_AUTO_EVOLVE_WHITELIST.copy()
     )
 

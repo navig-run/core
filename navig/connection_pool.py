@@ -14,7 +14,7 @@ import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 # Lazy paramiko import
 _paramiko = None
@@ -71,7 +71,7 @@ class SSHConnection:
         except Exception:
             return False
 
-    def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
+    def execute(self, command: str, timeout: int = 30) -> tuple[bool, str, str]:
         """
         Execute a command on this connection.
 
@@ -191,14 +191,14 @@ class SSHConnectionPool:
                 cls._instance.close_all()
                 cls._instance = None
 
-    def _make_key(self, ssh_config: Dict[str, Any]) -> str:
+    def _make_key(self, ssh_config: dict[str, Any]) -> str:
         """Create a unique key for the connection."""
         host = ssh_config.get("host", "")
         port = ssh_config.get("port", 22)
         user = ssh_config.get("user", "")
         return f"{user}@{host}:{port}"
 
-    def _create_connection(self, ssh_config: Dict[str, Any]) -> SSHConnection:
+    def _create_connection(self, ssh_config: dict[str, Any]) -> SSHConnection:
         """Create a new SSH connection."""
         paramiko = _get_paramiko()
         if not paramiko:
@@ -258,7 +258,7 @@ class SSHConnectionPool:
             conn.close()
             self._stats["connections_closed"] += 1
 
-    def get_connection(self, ssh_config: Dict[str, Any]) -> SSHConnection:
+    def get_connection(self, ssh_config: dict[str, Any]) -> SSHConnection:
         """
         Get a pooled connection or create a new one.
 
@@ -318,7 +318,7 @@ class SSHConnectionPool:
         # Connection stays in pool, just update last_used
         conn.last_used = time.time()
 
-    def close_connection(self, ssh_config: Dict[str, Any]):
+    def close_connection(self, ssh_config: dict[str, Any]):
         """Explicitly close and remove a connection from the pool."""
         key = self._make_key(ssh_config)
 
@@ -337,7 +337,7 @@ class SSHConnectionPool:
             self._connections.clear()
 
     @property
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get pool statistics."""
         with self._lock:
             return {
@@ -356,7 +356,7 @@ class SSHConnectionPool:
         with self._lock:
             return len(self._connections)
 
-    def get_connection_info(self) -> list[Dict[str, Any]]:
+    def get_connection_info(self) -> list[dict[str, Any]]:
         """Get info about all active connections."""
         with self._lock:
             return [
@@ -373,10 +373,10 @@ class SSHConnectionPool:
 
 # Convenience function for one-off commands using the pool
 def execute_ssh_pooled(
-    ssh_config: Dict[str, Any],
+    ssh_config: dict[str, Any],
     command: str,
     timeout: int = 30,
-) -> Tuple[bool, str, str]:
+) -> tuple[bool, str, str]:
     """
     Execute an SSH command using the connection pool.
 

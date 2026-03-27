@@ -45,8 +45,9 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.ipc_pipe")
 
@@ -125,12 +126,12 @@ class IPCPipeClient:
     handling).
     """
 
-    def __init__(self, address: Optional[str] = None, timeout: float = IPC_TIMEOUT_S):
+    def __init__(self, address: str | None = None, timeout: float = IPC_TIMEOUT_S):
         self.address = address or _pipe_address()
         self.timeout = timeout
 
     # ------------------------------------------------------------------
-    def send(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def send(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         """
         Send *payload* to the daemon and return the parsed response dict.
 
@@ -146,7 +147,7 @@ class IPCPipeClient:
             logger.debug("IPC pipe send failed: %s", exc)
             return None
 
-    def _send_windows(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _send_windows(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         from multiprocessing.connection import Client as _Client
 
         conn = _Client(self.address, family="AF_PIPE")
@@ -158,7 +159,7 @@ class IPCPipeClient:
         finally:
             conn.close()
 
-    def _send_unix(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _send_unix(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         import socket as _socket
 
         sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
@@ -178,7 +179,7 @@ class IPCPipeClient:
             sock.close()
 
 
-def _recvall(sock, n: int) -> Optional[bytes]:
+def _recvall(sock, n: int) -> bytes | None:
     """Receive exactly *n* bytes from *sock*, or return None on EOF."""
     buf = bytearray()
     while len(buf) < n:
@@ -204,14 +205,14 @@ class IPCPipeServer:
 
     def __init__(
         self,
-        handler: Callable[[Dict[str, Any]], Dict[str, Any]],
-        address: Optional[str] = None,
+        handler: Callable[[dict[str, Any]], dict[str, Any]],
+        address: str | None = None,
         backlog: int = 16,
     ):
         self.handler = handler
         self.address = address or _pipe_address()
         self.backlog = backlog
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
     def start(self) -> None:
@@ -274,7 +275,10 @@ class IPCPipeServer:
             pass  # file already gone; expected
         with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as server:
             server.bind(self.address)
-            os.chmod(self.address, 0o600)
+            try:
+                os.chmod(self.address, 0o600)
+            except (OSError, PermissionError):
+                pass
             server.listen(self.backlog)
             server.settimeout(1.0)  # poll for stop_event every second
             logger.info("IPC unix socket listening on %s", self.address)
@@ -332,10 +336,8 @@ class ShadowIPCBridge:
 
     def __init__(
         self,
-        ws_send_fn: Optional[
-            Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
-        ] = None,
-        pipe_address: Optional[str] = None,
+        ws_send_fn: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
+        pipe_address: str | None = None,
     ):
         """
         Args:
@@ -351,9 +353,9 @@ class ShadowIPCBridge:
     # ------------------------------------------------------------------
     def call(
         self,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         shadow: bool = True,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Send *payload* to the daemon using the fastest available path.
 
@@ -390,7 +392,7 @@ class ShadowIPCBridge:
 
     # ------------------------------------------------------------------
     def _shadow_validate(
-        self, payload: Dict[str, Any], fast_result: Dict[str, Any]
+        self, payload: dict[str, Any], fast_result: dict[str, Any]
     ) -> None:
         """Run the WebSocket path and compare against the fast result."""
         global _shadow_match_count
@@ -431,7 +433,7 @@ class ShadowIPCBridge:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def get_pipe_status() -> Dict[str, Any]:
+def get_pipe_status() -> dict[str, Any]:
     """Return a diagnostics dict for `navig evolve status`."""
     return {
         "address": _pipe_address(),

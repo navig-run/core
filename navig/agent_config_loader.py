@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
 
 logger = logging.getLogger("navig.agent_config_loader")
 
@@ -43,15 +42,15 @@ if PYDANTIC_OK:
     class AgentIdentity(BaseModel):
         """Agent identity/domain configuration."""
 
-        domains: List[str] = Field(default_factory=list)
+        domains: list[str] = Field(default_factory=list)
         philosophy: str = ""
         model_config = ConfigDict(extra="allow")
 
     class AgentVoice(BaseModel):
         """Agent voice/personality traits."""
 
-        traits: List[str] = Field(default_factory=list)
-        signature_phrases: List[str] = Field(default_factory=list)
+        traits: list[str] = Field(default_factory=list)
+        signature_phrases: list[str] = Field(default_factory=list)
         model_config = ConfigDict(extra="allow")
 
     class AgentJsonConfig(BaseModel):
@@ -101,13 +100,13 @@ else:
 # ─────────────────────────────────────────────────────────────
 
 # Cache loaded configs
-_agent_config_cache: Dict[str, Optional[AgentJsonConfig]] = {}
+_agent_config_cache: dict[str, AgentJsonConfig | None] = {}
 
 
 def load_agent_json(
     agent_id: str,
-    search_paths: Optional[List[Path]] = None,
-) -> Optional[AgentJsonConfig]:
+    search_paths: list[Path] | None = None,
+) -> AgentJsonConfig | None:
     """
     Load an agent's optional agent.json configuration.
 
@@ -180,10 +179,10 @@ def load_agent_json(
     return None
 
 
-def _parse_agent_json(path: Path, agent_id: str) -> Optional[AgentJsonConfig]:
+def _parse_agent_json(path: Path, agent_id: str) -> AgentJsonConfig | None:
     """Parse and validate a single agent.json file."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         cfg = AgentJsonConfig.model_validate(data)
         _agent_config_cache[agent_id] = cfg

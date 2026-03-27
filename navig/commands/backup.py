@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from rich.table import Table
 
@@ -44,7 +44,7 @@ def _run_scp_command(
 
 def _verify_disk_space(
     backup_dir: Path, estimated_size_mb: float = 100.0, safety_margin: float = 1.5
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Verify sufficient disk space before backup.
 
@@ -102,12 +102,15 @@ def _create_mysql_config_file(user: str, password: str) -> str:
     """
     fd, config_path = tempfile.mkstemp(suffix=".cnf", text=True)
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write("[client]\n")
             f.write(f"user={user}\n")
             f.write(f"password={password}\n")
         # Set restrictive permissions (owner read/write only)
-        os.chmod(config_path, 0o600)
+        try:
+            os.chmod(config_path, 0o600)
+        except (OSError, PermissionError):
+            pass
         return config_path
     except Exception:
         try:
@@ -135,7 +138,7 @@ def _cleanup_failed_backup(backup_dir: Path, error_msg: str):
     ch.error(f"Backup failed: {error_msg}")
 
 
-def backup_system_config(name: Optional[str], options: Dict[str, Any]):
+def backup_system_config(name: str | None, options: dict[str, Any]):
     """Backup system configuration files."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -220,7 +223,7 @@ def backup_system_config(name: Optional[str], options: Dict[str, Any]):
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w") as f:
+    with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
     if options.get("json"):
@@ -231,7 +234,7 @@ def backup_system_config(name: Optional[str], options: Dict[str, Any]):
         ch.info(f"   Files backed up: {success_count}/{len(config_files)}")
 
 
-def backup_all_databases(name: Optional[str], compress: str, options: Dict[str, Any]):
+def backup_all_databases(name: str | None, compress: str, options: dict[str, Any]):
     """Backup all databases with compression."""
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
@@ -346,7 +349,7 @@ def backup_all_databases(name: Optional[str], compress: str, options: Dict[str, 
             ]
 
             try:
-                with open(dump_file, "w") as f:
+                with open(dump_file, "w", encoding="utf-8") as f:
                     subprocess.run(
                         dump_cmd, stdout=f, stderr=subprocess.PIPE, check=True
                     )
@@ -434,7 +437,7 @@ def backup_all_databases(name: Optional[str], compress: str, options: Dict[str, 
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w") as f:
+    with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
     if options.get("json"):
@@ -446,7 +449,7 @@ def backup_all_databases(name: Optional[str], compress: str, options: Dict[str, 
         ch.info(f"   Total size: {total_size:.2f} MB")
 
 
-def backup_hestia(name: Optional[str], options: Dict[str, Any]):
+def backup_hestia(name: str | None, options: dict[str, Any]):
     """Backup comprehensive HestiaCP configuration."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -597,7 +600,7 @@ def backup_hestia(name: Optional[str], options: Dict[str, Any]):
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w") as f:
+    with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
     if options.get("json"):
@@ -609,7 +612,7 @@ def backup_hestia(name: Optional[str], options: Dict[str, Any]):
         ch.info(f"   Total size: {total_size:.2f} MB")
 
 
-def backup_web_config(name: Optional[str], options: Dict[str, Any]):
+def backup_web_config(name: str | None, options: dict[str, Any]):
     """Backup web server configurations."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -764,7 +767,7 @@ def backup_web_config(name: Optional[str], options: Dict[str, Any]):
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w") as f:
+    with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
     if options.get("json"):
@@ -776,7 +779,7 @@ def backup_web_config(name: Optional[str], options: Dict[str, Any]):
         ch.info(f"   Apache files: {len(results['apache'])}")
 
 
-def backup_all(name: Optional[str], compress: str, options: Dict[str, Any]):
+def backup_all(name: str | None, compress: str, options: dict[str, Any]):
     """Comprehensive backup of all server components."""
     from navig.config import get_config_manager
 
@@ -815,7 +818,7 @@ def backup_all(name: Optional[str], compress: str, options: Dict[str, Any]):
     ch.info(f"   Location: {config_manager.backups_dir / backup_name}")
 
 
-def list_backups_cmd(options: Dict[str, Any]):
+def list_backups_cmd(options: dict[str, Any]):
     """List all available backups."""
     from navig.config import get_config_manager
 
@@ -888,7 +891,7 @@ def list_backups_cmd(options: Dict[str, Any]):
 
 
 def restore_backup_cmd(
-    backup_name: str, component: Optional[str], options: Dict[str, Any]
+    backup_name: str, component: str | None, options: dict[str, Any]
 ):
     """Restore from backup (with confirmation)."""
     from navig.config import get_config_manager

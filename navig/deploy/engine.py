@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from navig.deploy.adapters import build_adapter
 from navig.deploy.health import HealthChecker
@@ -45,7 +46,7 @@ class DeployEngine:
     def __init__(
         self,
         config: DeployConfig,
-        server_config: Dict[str, Any],
+        server_config: dict[str, Any],
         remote_ops: Any,
         cache_dir: Path,
         project_root: Path = Path("."),
@@ -59,8 +60,8 @@ class DeployEngine:
         self._verbose = verbose
         self._dry_run = False  # set at run() time
 
-        self._rollback_mgr: Optional[RollbackManager] = None
-        self._snapshot: Optional[SnapshotRecord] = None
+        self._rollback_mgr: RollbackManager | None = None
+        self._snapshot: SnapshotRecord | None = None
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -71,7 +72,7 @@ class DeployEngine:
         dry_run: bool = False,
         skip_backup: bool = False,
         auto_rollback: bool = True,
-        on_progress: Optional[ProgressCallback] = None,
+        on_progress: ProgressCallback | None = None,
     ) -> DeployResult:
         """
         Execute the full deploy lifecycle.
@@ -79,7 +80,7 @@ class DeployEngine:
         Returns a DeployResult. Caller is responsible for output rendering.
         """
         self._dry_run = dry_run
-        phases: List[PhaseResult] = []
+        phases: list[PhaseResult] = []
         started_at = datetime.now(tz=timezone.utc)
         host_name = self._server.get("name", self._server.get("host", "unknown"))
         app_name = self._cfg.app or "app"
@@ -202,8 +203,8 @@ class DeployEngine:
         phase = DeployPhase.PRE_CHECK
         emit(phase, "start", "")
 
-        checks: List[str] = []
-        errors: List[str] = []
+        checks: list[str] = []
+        errors: list[str] = []
 
         # 1. SSH reachable
         if not dry_run:
@@ -482,8 +483,8 @@ class DeployEngine:
     # ------------------------------------------------------------------
 
     def _build_rsync_cmd(
-        self, source: str, target: str, excludes: List[str]
-    ) -> List[str]:
+        self, source: str, target: str, excludes: list[str]
+    ) -> list[str]:
         server = self._server
         host = f"{server['user']}@{server['host']}"
         port = server.get("port", 22)
@@ -523,7 +524,7 @@ class DeployEngine:
         return "synced"
 
     @staticmethod
-    def _get_git_ref() -> Optional[str]:
+    def _get_git_ref() -> str | None:
         """Try to get current HEAD git short hash."""
         try:
             r = subprocess.run(

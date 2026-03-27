@@ -22,9 +22,10 @@ import asyncio
 import importlib
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 from navig.tools.schemas import ToolCallAction, ToolResult, ToolResultStatus
 
@@ -88,31 +89,31 @@ class ToolMeta:
     status_message: str = ""
 
     # Parameter schema (for LLM prompt injection)
-    parameters_schema: Dict[str, Any] = field(default_factory=dict)
+    parameters_schema: dict[str, Any] = field(default_factory=dict)
 
     # Lazy loading
-    module_path: Optional[str] = None
-    handler_name: Optional[str] = None
+    module_path: str | None = None
+    handler_name: str | None = None
 
     # Pre-loaded handler (alternative to lazy loading)
-    handler: Optional[ToolHandler] = None
+    handler: ToolHandler | None = None
 
     # Tags for filtering
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
     # Config requirements (env vars or config keys)
-    required_config: List[str] = field(default_factory=list)
+    required_config: list[str] = field(default_factory=list)
 
     # Optional output schema (JSON Schema) for this tool's return value
-    output_schema: Optional[Dict[str, Any]] = None
+    output_schema: dict[str, Any] | None = None
 
     def is_available(self) -> bool:
         """Check if tool is available for execution."""
         return self.status == ToolStatus.AVAILABLE
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize for display / LLM prompt schema injection."""
-        d: Dict[str, Any] = {
+        d: dict[str, Any] = {
             "name": self.name,
             "domain": self.domain.value,
             "description": self.description,
@@ -125,9 +126,9 @@ class ToolMeta:
             d["output_schema"] = self.output_schema
         return d
 
-    def to_openapi_schema(self) -> Dict[str, Any]:
+    def to_openapi_schema(self) -> dict[str, Any]:
         """Return an OpenAPI 3.0 operation object for this tool."""
-        schema: Dict[str, Any] = {
+        schema: dict[str, Any] = {
             "operationId": self.name,
             "summary": self.description,
             "tags": [self.domain.value],
@@ -158,7 +159,7 @@ class ToolMeta:
 # Tool Aliases (flexible lookup)
 # =============================================================================
 
-TOOL_ALIASES: Dict[str, str] = {
+TOOL_ALIASES: dict[str, str] = {
     "search": "web_search",
     "google": "web_search",
     "fetch": "web_fetch",
@@ -186,8 +187,8 @@ class ToolRegistry:
     """
 
     def __init__(self) -> None:
-        self._tools: Dict[str, ToolMeta] = {}
-        self._handlers: Dict[str, ToolHandler] = {}
+        self._tools: dict[str, ToolMeta] = {}
+        self._handlers: dict[str, ToolHandler] = {}
         self._initialized: bool = False
 
     def initialize(self) -> None:
@@ -225,7 +226,7 @@ class ToolRegistry:
     def register(
         self,
         meta: ToolMeta,
-        handler: Optional[ToolHandler] = None,
+        handler: ToolHandler | None = None,
     ) -> None:
         """
         Register a tool.
@@ -242,7 +243,7 @@ class ToolRegistry:
 
     # -- Lookup ---------------------------------------------------------------
 
-    def normalize_tool_name(self, raw: str) -> Optional[str]:
+    def normalize_tool_name(self, raw: str) -> str | None:
         """Normalize a tool name or alias to its canonical name."""
         key = raw.strip().lower().replace("-", "_")
         if key in TOOL_ALIASES:
@@ -251,7 +252,7 @@ class ToolRegistry:
             return key
         return None
 
-    def get_tool(self, name: str) -> Optional[ToolMeta]:
+    def get_tool(self, name: str) -> ToolMeta | None:
         """Get tool metadata by name or alias."""
         if not self._initialized:
             self.initialize()
@@ -260,7 +261,7 @@ class ToolRegistry:
             return None
         return self._tools.get(canonical)
 
-    def get_handler(self, name: str) -> Optional[ToolHandler]:
+    def get_handler(self, name: str) -> ToolHandler | None:
         """
         Get or lazy-load the handler for a tool.
 
@@ -301,8 +302,8 @@ class ToolRegistry:
     def list_tools(
         self,
         available_only: bool = False,
-        domain: Optional[ToolDomain] = None,
-    ) -> List[ToolMeta]:
+        domain: ToolDomain | None = None,
+    ) -> list[ToolMeta]:
         """List registered tools with optional filters."""
         if not self._initialized:
             self.initialize()
@@ -317,7 +318,7 @@ class ToolRegistry:
 
         return sorted(tools, key=lambda t: (t.domain.value, t.name))
 
-    def list_domains(self) -> List[str]:
+    def list_domains(self) -> list[str]:
         """List all domains that have registered tools."""
         if not self._initialized:
             self.initialize()
@@ -325,14 +326,14 @@ class ToolRegistry:
 
     def get_tools_for_llm_prompt(
         self, available_only: bool = True
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Return a JSON-serializable list of tool descriptors
         suitable for injection into the LLM system prompt.
         """
         return [t.to_dict() for t in self.list_tools(available_only=available_only)]
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Summary of tool registry state."""
         if not self._initialized:
             self.initialize()
@@ -344,7 +345,7 @@ class ToolRegistry:
             "tools": [t.to_dict() for t in tools],
         }
 
-    def names(self) -> List[str]:
+    def names(self) -> list[str]:
         """Return a list of all registered tool names."""
         if not self._initialized:
             self.initialize()
@@ -352,7 +353,7 @@ class ToolRegistry:
 
     def to_markdown_summary(
         self,
-        domain: Optional[ToolDomain] = None,
+        domain: ToolDomain | None = None,
     ) -> str:
         """Return a Markdown table summarising registered tools."""
         tools = self.list_tools(domain=domain)
@@ -368,9 +369,9 @@ class ToolRegistry:
             )
         return "\n".join(lines)
 
-    def to_openapi_schema(self) -> Dict[str, Any]:
+    def to_openapi_schema(self) -> dict[str, Any]:
         """Return an OpenAPI 3.0 document for all registered tools."""
-        paths: Dict[str, Any] = {}
+        paths: dict[str, Any] = {}
         for meta in self.list_tools():
             paths[f"/tools/{meta.name}"] = {
                 "post": meta.to_openapi_schema(),
@@ -395,14 +396,14 @@ class ToolRouter:
 
     def __init__(
         self,
-        registry: Optional[ToolRegistry] = None,
-        safety_policy: Optional[Dict[str, Any]] = None,
+        registry: ToolRegistry | None = None,
+        safety_policy: dict[str, Any] | None = None,
     ) -> None:
         self.registry = registry or get_tool_registry()
         self._policy = safety_policy or {}
         # Set of tool names blocked by policy
-        self._blocked: Set[str] = set(self._policy.get("blocked_tools", []))
-        self._require_confirmation: Set[str] = set(
+        self._blocked: set[str] = set(self._policy.get("blocked_tools", []))
+        self._require_confirmation: set[str] = set(
             self._policy.get("require_confirmation", [])
         )
         self._max_calls_per_turn: int = self._policy.get("max_calls_per_turn", 10)
@@ -568,7 +569,7 @@ class ToolRouter:
                 latency_ms=latency,
             )
 
-    async def async_execute(self, action: ToolCallAction) -> "ToolResult":
+    async def async_execute(self, action: ToolCallAction) -> ToolResult:
         """Async wrapper around execute() — fires the same hooks and awaits async handlers."""
         result = self.execute(action)
         # Some handlers are coroutines (async def) — await the output if needed
@@ -576,7 +577,7 @@ class ToolRouter:
             result.output = await result.output
         return result
 
-    def execute_multi(self, actions: List[ToolCallAction]) -> List[ToolResult]:
+    def execute_multi(self, actions: list[ToolCallAction]) -> list[ToolResult]:
         """Execute multiple tool calls sequentially, respecting max_calls_per_turn."""
         results = []
         for i, action in enumerate(actions):
@@ -597,8 +598,8 @@ class ToolRouter:
 # Global Singletons
 # =============================================================================
 
-_registry: Optional[ToolRegistry] = None
-_router: Optional[ToolRouter] = None
+_registry: ToolRegistry | None = None
+_router: ToolRouter | None = None
 
 
 def get_tool_registry() -> ToolRegistry:
@@ -610,7 +611,7 @@ def get_tool_registry() -> ToolRegistry:
     return _registry
 
 
-def get_tool_router(safety_policy: Optional[Dict[str, Any]] = None) -> ToolRouter:
+def get_tool_router(safety_policy: dict[str, Any] | None = None) -> ToolRouter:
     """Get the global ToolRouter singleton."""
     global _router
     if _router is None:

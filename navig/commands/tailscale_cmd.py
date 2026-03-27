@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -76,7 +75,7 @@ def ts_ping(
 
 @tailscale_app.command("ip")
 def ts_ip(
-    peer: Optional[str] = typer.Argument(None, help="Peer name (omit for self)."),
+    peer: str | None = typer.Argument(None, help="Peer name (omit for self)."),
 ) -> None:
     """Show Tailscale IP of self or a peer."""
     from navig.integrations.tailscale import Tailscale  # noqa: PLC0415

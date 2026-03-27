@@ -7,8 +7,9 @@ Based on multi-provider architecture.
 
 import json
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
@@ -30,9 +31,9 @@ class Message:
 
     role: str  # "system", "user", "assistant", "tool"
     content: str
-    name: Optional[str] = None
-    tool_call_id: Optional[str] = None
-    tool_calls: Optional[List[Dict]] = None
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict] | None = None
 
 
 @dataclass
@@ -41,9 +42,9 @@ class ToolDefinition:
 
     name: str
     description: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
 
-    def to_openai_format(self) -> Dict[str, Any]:
+    def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI function format."""
         return {
             "type": "function",
@@ -54,7 +55,7 @@ class ToolDefinition:
             },
         }
 
-    def to_anthropic_format(self) -> Dict[str, Any]:
+    def to_anthropic_format(self) -> dict[str, Any]:
         """Convert to Anthropic tool format."""
         return {
             "name": self.name,
@@ -67,14 +68,14 @@ class ToolDefinition:
 class CompletionRequest:
     """Request for chat completion."""
 
-    messages: List[Message]
+    messages: list[Message]
     model: str
     temperature: float = 0.7
     max_tokens: int = 4096
-    tools: Optional[List[ToolDefinition]] = None
-    tool_choice: Optional[str] = None  # "auto", "none", or specific tool name
+    tools: list[ToolDefinition] | None = None
+    tool_choice: str | None = None  # "auto", "none", or specific tool name
     stream: bool = False
-    stop: Optional[List[str]] = None
+    stop: list[str] | None = None
 
 
 @dataclass
@@ -90,12 +91,12 @@ class ToolCall:
 class CompletionResponse:
     """Response from chat completion."""
 
-    content: Optional[str] = None
-    tool_calls: Optional[List[ToolCall]] = None
-    finish_reason: Optional[str] = None
-    usage: Optional[Dict[str, int]] = None
-    model: Optional[str] = None
-    provider: Optional[str] = None
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    finish_reason: str | None = None
+    usage: dict[str, int] | None = None
+    model: str | None = None
+    provider: str | None = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -107,11 +108,9 @@ class ProviderError(Exception):
     """Error from a provider."""
 
     message: str
-    status_code: Optional[int] = None
-    error_type: Optional[str] = (
-        None  # "auth", "rate_limit", "billing", "invalid_request"
-    )
-    provider: Optional[str] = None
+    status_code: int | None = None
+    error_type: str | None = None  # "auth", "rate_limit", "billing", "invalid_request"
+    provider: str | None = None
     retryable: bool = False
 
     def __str__(self):
@@ -124,7 +123,7 @@ class BaseProviderClient(ABC):
     def __init__(
         self,
         config: ProviderConfig,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: float = 60.0,
     ):
         self.config = config
@@ -154,7 +153,7 @@ class BaseProviderClient(ABC):
             )
         return self._client
 
-    def _build_headers(self) -> Dict[str, str]:
+    def _build_headers(self) -> dict[str, str]:
         """Build request headers."""
         headers = {
             "Content-Type": "application/json",
@@ -186,7 +185,7 @@ class BaseProviderClient(ABC):
         result = await self.complete(request)
         yield result
 
-    def get_available_models(self) -> List[ModelDefinition]:
+    def get_available_models(self) -> list[ModelDefinition]:
         """Get list of available models for this provider."""
         return self.config.models
 
@@ -237,7 +236,7 @@ class OpenAIClient(BaseProviderClient):
         client = await self._get_client()
 
         # Build request body
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "model": request.model,
             "messages": [
                 {"role": m.role, "content": m.content} for m in request.messages
@@ -300,7 +299,7 @@ class OpenAIClient(BaseProviderClient):
 class AnthropicClient(BaseProviderClient):
     """Client for Anthropic Claude API."""
 
-    def _build_headers(self) -> Dict[str, str]:
+    def _build_headers(self) -> dict[str, str]:
         """Build Anthropic-specific headers."""
         headers = {
             "Content-Type": "application/json",
@@ -327,7 +326,7 @@ class AnthropicClient(BaseProviderClient):
                 messages.append({"role": m.role, "content": m.content})
 
         # Build request body
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
             "max_tokens": request.max_tokens,
@@ -401,7 +400,7 @@ class AnthropicClient(BaseProviderClient):
 
 
 # Client factory mapping
-CLIENT_CLASSES: Dict[ModelApi, type] = {
+CLIENT_CLASSES: dict[ModelApi, type] = {
     ModelApi.OPENAI_COMPLETIONS: OpenAIClient,
     ModelApi.OPENAI_RESPONSES: OpenAIClient,
     ModelApi.ANTHROPIC_MESSAGES: AnthropicClient,
@@ -410,9 +409,9 @@ CLIENT_CLASSES: Dict[ModelApi, type] = {
 
 def create_client(
     config: ProviderConfig,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     timeout: float = 60.0,
-    airllm_config: Optional[Any] = None,
+    airllm_config: Any | None = None,
 ) -> BaseProviderClient:
     """
     Create a provider client based on configuration.
@@ -445,6 +444,6 @@ def create_client(
     return client_class(config, api_key=api_key, timeout=timeout)
 
 
-def get_builtin_provider(name: str) -> Optional[ProviderConfig]:
+def get_builtin_provider(name: str) -> ProviderConfig | None:
     """Get a built-in provider configuration by name."""
     return BUILTIN_PROVIDERS.get(name.lower())

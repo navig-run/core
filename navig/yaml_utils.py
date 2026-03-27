@@ -2,23 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Union
 
 import yaml
 
 YamlPathItem = Union[str, int]
-YamlPath = Tuple[YamlPathItem, ...]
+YamlPath = tuple[YamlPathItem, ...]
 
 
 @dataclass(frozen=True)
 class YamlDocument:
     data: Any
     # Maps a path (tuple) to a 1-based line number.
-    line_map: Dict[YamlPath, int]
+    line_map: dict[YamlPath, int]
 
 
 def _node_to_python(
-    node: yaml.Node, path: YamlPath, line_map: Dict[YamlPath, int]
+    node: yaml.Node, path: YamlPath, line_map: dict[YamlPath, int]
 ) -> Any:
     # Record the start line for this node as a best-effort fallback.
     if hasattr(node, "start_mark") and node.start_mark is not None:
@@ -28,13 +28,13 @@ def _node_to_python(
         return node.value
 
     if isinstance(node, yaml.SequenceNode):
-        items: List[Any] = []
+        items: list[Any] = []
         for idx, child in enumerate(node.value):
             items.append(_node_to_python(child, path + (idx,), line_map))
         return items
 
     if isinstance(node, yaml.MappingNode):
-        obj: Dict[str, Any] = {}
+        obj: dict[str, Any] = {}
         for key_node, value_node in node.value:
             key = _node_to_python(key_node, path + ("<key>",), line_map)
             if not isinstance(key, str):
@@ -62,6 +62,6 @@ def load_yaml_with_lines(path: Path) -> YamlDocument:
     if node is None:
         return YamlDocument(data=None, line_map={((),): 1})
 
-    line_map: Dict[YamlPath, int] = {}
+    line_map: dict[YamlPath, int] = {}
     data = _node_to_python(node, (), line_map)
     return YamlDocument(data=data, line_map=line_map)

@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.inbox.hooks")
 
@@ -41,20 +42,20 @@ class HookEvent:
     source_type: str  # "file" | "url" | "telegram"
     filename: str
     content: str  # raw text (may be empty for binary files)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Set by classifier stage
-    category: Optional[str] = None
-    confidence: Optional[float] = None
+    category: str | None = None
+    confidence: float | None = None
 
     # Set by router stage
-    destination: Optional[str] = None
-    route_status: Optional[str] = None
+    destination: str | None = None
+    route_status: str | None = None
 
     fired_at: float = field(default_factory=time.time)
 
 
-HookFn = Callable[[HookEvent], Optional[HookEvent]]
+HookFn = Callable[[HookEvent], HookEvent | None]
 
 
 class HookSystem:
@@ -80,12 +81,12 @@ class HookSystem:
     )
 
     def __init__(self) -> None:
-        self._hooks: Dict[str, List[HookFn]] = {s: [] for s in self.STAGES}
+        self._hooks: dict[str, list[HookFn]] = {s: [] for s in self.STAGES}
 
     def register(
         self,
         stage: str,
-        fn: Optional[HookFn] = None,
+        fn: HookFn | None = None,
     ) -> Any:
         """
         Register a hook.  Can be used as a decorator or direct call.
@@ -133,7 +134,7 @@ class HookSystem:
                 logger.warning("Hook %s raised unexpectedly: %s", hook.__name__, exc)
         return event
 
-    def clear(self, stage: Optional[str] = None) -> None:
+    def clear(self, stage: str | None = None) -> None:
         """Remove all hooks (or hooks for a specific stage)."""
         if stage:
             self._hooks[stage] = []

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Optional, TypedDict
+from typing import Any, TypedDict
 
 import json_repair  # ships py.typed — fully typed, no ignore needed
 
@@ -96,7 +96,7 @@ class PlanExtractor:
             logger.debug("PlanExtractor.extract: all strategies failed: %s", exc)
             return None
 
-    def _extract_plan(self, raw: str) -> Optional[ValidatedPlan]:
+    def _extract_plan(self, raw: str) -> ValidatedPlan | None:
         """
         Convenience pipeline: extract raw JSON then validate and type it.
 
@@ -124,7 +124,7 @@ class PlanValidator:
     """
 
     @classmethod
-    def validate(cls, data: Any) -> Optional[ValidatedPlan]:
+    def validate(cls, data: Any) -> ValidatedPlan | None:
         """
         Return a ``ValidatedPlan`` if *data* satisfies the plan schema, else ``None``.
 

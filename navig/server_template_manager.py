@@ -8,7 +8,7 @@ auto-detection, customization, and sync capabilities.
 import copy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -38,8 +38,8 @@ class ServerTemplateManager:
 
     def __init__(
         self,
-        config_manager: Optional[ConfigManager] = None,
-        template_manager: Optional[TemplateManager] = None,
+        config_manager: ConfigManager | None = None,
+        template_manager: TemplateManager | None = None,
     ):
         """
         Initialize ServerTemplateManager.
@@ -66,8 +66,8 @@ class ServerTemplateManager:
         template_dir.mkdir(parents=True, exist_ok=True)
 
     def initialize_templates_from_detection(
-        self, server_name: str, detected_templates: Dict[str, Dict[str, Any]]
-    ) -> Dict[str, bool]:
+        self, server_name: str, detected_templates: dict[str, dict[str, Any]]
+    ) -> dict[str, bool]:
         """
         Initialize template configurations from auto-detection results.
 
@@ -181,7 +181,7 @@ class ServerTemplateManager:
 
     def get_template_config(
         self, server_name: str, template_name: str, include_template: bool = True
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get merged template configuration for a server.
 
@@ -259,7 +259,7 @@ class ServerTemplateManager:
 
         if custom_config_file:
             try:
-                with open(custom_config_file, "r", encoding="utf-8") as f:
+                with open(custom_config_file, encoding="utf-8") as f:
                     custom_config = yaml.safe_load(f)
 
                 # Deep merge custom config
@@ -315,11 +315,11 @@ class ServerTemplateManager:
 
         custom_config = {}
         if yaml_config_file.exists():
-            with open(yaml_config_file, "r", encoding="utf-8") as f:
+            with open(yaml_config_file, encoding="utf-8") as f:
                 custom_config = yaml.safe_load(f) or {}
         elif json_config_file.exists():
             # Migrate from JSON to YAML
-            with open(json_config_file, "r", encoding="utf-8") as f:
+            with open(json_config_file, encoding="utf-8") as f:
                 import json
 
                 custom_config = json.load(f)
@@ -399,7 +399,7 @@ class ServerTemplateManager:
 
     def list_server_templates(
         self, server_name: str, enabled_only: bool = False
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         List all template configurations for a server.
 
@@ -497,7 +497,7 @@ class ServerTemplateManager:
 
         return True
 
-    def _deep_merge(self, base: Dict, overlay: Dict) -> Dict:
+    def _deep_merge(self, base: dict, overlay: dict) -> dict:
         """
         Deep merge two dictionaries.
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import ssl
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
@@ -24,8 +24,8 @@ class SiteCheckTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         url: str = args.get("url", "")
         if not url:
@@ -48,8 +48,8 @@ class SiteCheckTool(BaseTool):
 
         t0 = time.monotonic()
         redirect_chain: list[str] = []
-        status_code: Optional[int] = None
-        cert_expiry: Optional[str] = None
+        status_code: int | None = None
+        cert_expiry: str | None = None
 
         try:
             await self._emit(on_status, "Establishing connection…", "", 40)
@@ -111,12 +111,12 @@ class SiteCheckTool(BaseTool):
             )
 
 
-async def _get_cert_expiry(hostname: str) -> Optional[str]:
+async def _get_cert_expiry(hostname: str) -> str | None:
     """Return TLS cert expiry date string, or None on failure."""
     import asyncio
     import datetime
 
-    def _sync_check() -> Optional[str]:
+    def _sync_check() -> str | None:
         ctx = ssl.create_default_context()
         try:
             with ctx.wrap_socket(

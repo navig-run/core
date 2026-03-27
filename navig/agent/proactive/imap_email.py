@@ -12,7 +12,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from imaplib import IMAP4_SSL
 from smtplib import SMTP_SSL
-from typing import List, Optional
 
 from navig.agent.proactive.providers import EmailMessage, EmailProvider
 
@@ -57,7 +56,7 @@ class IMAPEmailProvider(EmailProvider):
         self.imap_port = imap_port
         self.smtp_port = smtp_port
 
-    async def list_unread(self, limit: int = 10) -> List[EmailMessage]:
+    async def list_unread(self, limit: int = 10) -> list[EmailMessage]:
         """
         Fetch unread emails from inbox.
 
@@ -119,7 +118,7 @@ class IMAPEmailProvider(EmailProvider):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _fetch)
 
-    async def draft_email(self, to: List[str], subject: str, body: str) -> str:
+    async def draft_email(self, to: list[str], subject: str, body: str) -> str:
         """
         Create a draft email (saves to Drafts folder via IMAP APPEND).
 
@@ -165,7 +164,7 @@ class IMAPEmailProvider(EmailProvider):
         return await loop.run_in_executor(None, _create_draft)
 
     async def send_email(
-        self, to: List[str], subject: str, body: str, html_body: Optional[str] = None
+        self, to: list[str], subject: str, body: str, html_body: str | None = None
     ) -> bool:
         """
         Send email via SMTP.
@@ -292,8 +291,8 @@ def get_email_provider(
     provider_name: str,
     email_address: str,
     password: str,
-    host: Optional[str] = None,
-    port: Optional[int] = None,
+    host: str | None = None,
+    port: int | None = None,
 ) -> IMAPEmailProvider:
     """
     Factory to create an email provider by name.

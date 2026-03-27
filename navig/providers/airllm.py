@@ -7,8 +7,9 @@ Uses the airllm library for memory-efficient model loading and generation.
 
 import asyncio
 import os
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any
 
 from .clients import (
     BaseProviderClient,
@@ -40,13 +41,13 @@ class AirLLMConfig:
     max_vram_gb: float = 8.0
 
     # Compression mode: "4bit", "8bit", or None
-    compression: Optional[str] = None
+    compression: str | None = None
 
     # Layer shards saving path (optional)
-    layer_shards_path: Optional[str] = None
+    layer_shards_path: str | None = None
 
     # HuggingFace token for gated models
-    hf_token: Optional[str] = None
+    hf_token: str | None = None
 
     # Enable prefetching (overlap loading and compute)
     prefetching: bool = True
@@ -62,7 +63,7 @@ class AirLLMConfig:
     device: str = "cuda"  # "cuda", "cpu", "mps" (for macOS)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AirLLMConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "AirLLMConfig":
         """Create config from dictionary."""
         return cls(
             model_path=data.get("model_path", ""),
@@ -95,7 +96,7 @@ class AirLLMConfig:
             device=os.environ.get("AIRLLM_DEVICE", "cuda"),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
             "model_path": self.model_path,
@@ -127,8 +128,8 @@ class AirLLMClient(BaseProviderClient):
     def __init__(
         self,
         config: ProviderConfig,
-        airllm_config: Optional[AirLLMConfig] = None,
-        api_key: Optional[str] = None,  # Unused, kept for interface compatibility
+        airllm_config: AirLLMConfig | None = None,
+        api_key: str | None = None,  # Unused, kept for interface compatibility
         timeout: float = 300.0,  # Longer timeout for local inference
     ):
         super().__init__(config, api_key=api_key, timeout=timeout)
@@ -138,7 +139,7 @@ class AirLLMClient(BaseProviderClient):
 
         # Model instance (lazy loaded)
         self._model = None
-        self._current_model_path: Optional[str] = None
+        self._current_model_path: str | None = None
 
     def _ensure_airllm(self) -> None:
         """Ensure AirLLM is available."""
@@ -216,7 +217,7 @@ class AirLLMClient(BaseProviderClient):
                 retryable=False,
             ) from e
 
-    def _format_prompt(self, messages: List[Message]) -> str:
+    def _format_prompt(self, messages: list[Message]) -> str:
         """
         Format messages into a prompt string.
 
@@ -397,7 +398,7 @@ class AirLLMClient(BaseProviderClient):
         response = await self.complete(request)
         yield response
 
-    def get_available_models(self) -> List[ModelDefinition]:
+    def get_available_models(self) -> list[ModelDefinition]:
         """
         Get list of suggested models for AirLLM.
 
@@ -442,7 +443,7 @@ class AirLLMClient(BaseProviderClient):
             ),
         ]
 
-    async def list_local_models(self) -> List[str]:
+    async def list_local_models(self) -> list[str]:
         """
         List models in the configured layer_shards_path.
 
@@ -486,7 +487,7 @@ class AirLLMClient(BaseProviderClient):
 
 
 def create_airllm_client(
-    airllm_config: Optional[AirLLMConfig] = None,
+    airllm_config: AirLLMConfig | None = None,
     timeout: float = 300.0,
 ) -> AirLLMClient:
     """
@@ -526,7 +527,7 @@ def is_airllm_available() -> bool:
     return AIRLLM_AVAILABLE
 
 
-def get_airllm_vram_recommendations() -> Dict[str, str]:
+def get_airllm_vram_recommendations() -> dict[str, str]:
     """Get VRAM recommendations for different model sizes."""
     return {
         "7B models": "4GB VRAM minimum, 8GB recommended",

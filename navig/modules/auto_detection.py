@@ -11,7 +11,7 @@ Background monitoring system that detects issues before they become critical:
 import json
 import re
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -39,7 +39,7 @@ class AutoDetection:
         stderr: str = "",
         stdout: str = "",
         duration: float = 0.0,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ):
         """
         Log command execution for monitoring and analysis.
@@ -57,7 +57,7 @@ class AutoDetection:
         try:
             # Load existing history
             if history_file.exists():
-                with open(history_file, "r") as f:
+                with open(history_file) as f:
                     history = json.load(f)
             else:
                 history = []
@@ -87,7 +87,7 @@ class AutoDetection:
                 history = history[-max_entries:]
 
             # Save
-            with open(history_file, "w") as f:
+            with open(history_file, "w", encoding="utf-8") as f:
                 json.dump(history, f, indent=2)
 
             # Trigger analysis if command failed
@@ -102,7 +102,7 @@ class AutoDetection:
         command: str,
         exit_code: int,
         stderr: str,
-        context: Optional[Dict[str, Any]],
+        context: dict[str, Any] | None,
     ):
         """
         Analyze command failure and detect issues.
@@ -173,13 +173,13 @@ class AutoDetection:
         else:
             return "unknown"
 
-    def _load_error_patterns(self) -> List[Dict[str, Any]]:
+    def _load_error_patterns(self) -> list[dict[str, Any]]:
         """Load error patterns from JSON file."""
         patterns_file = self.ai_context_dir / "error_patterns.json"
 
         try:
             if patterns_file.exists():
-                with open(patterns_file, "r") as f:
+                with open(patterns_file) as f:
                     return json.load(f)
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -192,7 +192,7 @@ class AutoDetection:
         severity: str,
         description: str,
         error_message: str,
-        context: Optional[Dict[str, Any]],
+        context: dict[str, Any] | None,
     ):
         """Log a detected issue."""
         issues_file = self.ai_context_dir / "detected_issues.json"
@@ -200,7 +200,7 @@ class AutoDetection:
         try:
             # Load existing issues
             if issues_file.exists():
-                with open(issues_file, "r") as f:
+                with open(issues_file) as f:
                     issues = json.load(f)
             else:
                 issues = []
@@ -219,15 +219,15 @@ class AutoDetection:
             issues.append(issue)
 
             # Save
-            with open(issues_file, "w") as f:
+            with open(issues_file, "w", encoding="utf-8") as f:
                 json.dump(issues, f, indent=2)
 
         except Exception as e:
             ch.dim(f"Could not log detected issue: {e}")
 
     def collect_performance_metrics(
-        self, remote_ops, server_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, remote_ops, server_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Collect current performance metrics from remote server.
 
@@ -315,7 +315,7 @@ class AutoDetection:
                 "error": str(e),
             }
 
-    def update_performance_baseline(self, server_name: str, metrics: Dict[str, Any]):
+    def update_performance_baseline(self, server_name: str, metrics: dict[str, Any]):
         """
         Update performance baseline for a server.
 
@@ -329,7 +329,7 @@ class AutoDetection:
         try:
             # Load existing baseline
             if baseline_file.exists():
-                with open(baseline_file, "r") as f:
+                with open(baseline_file) as f:
                     baseline = json.load(f)
             else:
                 baseline = {
@@ -350,15 +350,15 @@ class AutoDetection:
             baseline["averages"] = self._calculate_averages(baseline["metrics_history"])
 
             # Save
-            with open(baseline_file, "w") as f:
+            with open(baseline_file, "w", encoding="utf-8") as f:
                 json.dump(baseline, f, indent=2)
 
         except Exception as e:
             ch.dim(f"Could not update performance baseline: {e}")
 
     def _calculate_averages(
-        self, metrics_history: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, metrics_history: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Calculate rolling averages from metrics history."""
         if not metrics_history:
             return {}

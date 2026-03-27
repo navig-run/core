@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -51,7 +51,7 @@ Do nothing
 
         return ask_ai_with_context(prompt, system_prompt=self._system_prompt)
 
-    def _validate(self, artifact: str, context: Any) -> Optional[str]:
+    def _validate(self, artifact: str, context: Any) -> str | None:
         """Validate frontmatter and markdown structure."""
         if not artifact.startswith("---"):
             return "Missing YAML frontmatter start (---)"

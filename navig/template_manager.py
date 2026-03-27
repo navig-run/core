@@ -6,9 +6,10 @@ Hot-swappable. Versioned. Traceable.
 """
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -30,7 +31,7 @@ class TemplateSchema:
     ]
 
     @staticmethod
-    def validate(metadata: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    def validate(metadata: dict[str, Any]) -> tuple[bool, str | None]:
         """Validate template metadata against schema."""
         # Check required fields
         for field in TemplateSchema.REQUIRED_FIELDS:
@@ -63,7 +64,7 @@ class Template:
         self.name = template_dir.name
         self.metadata_file, self.metadata_format = self._find_metadata_file()
         self.metadata = self._load_metadata()
-        self.hooks: Dict[str, Callable] = {}
+        self.hooks: dict[str, Callable] = {}
         self._loaded = False
 
     def _find_metadata_file(self) -> tuple[Path, str]:
@@ -87,9 +88,9 @@ class Template:
                 f"Expected template.yaml or template.json"
             )
 
-    def _load_metadata(self) -> Dict[str, Any]:
+    def _load_metadata(self) -> dict[str, Any]:
         """Load template metadata from YAML or JSON file."""
-        with open(self.metadata_file, "r", encoding="utf-8") as f:
+        with open(self.metadata_file, encoding="utf-8") as f:
             if self.metadata_format == "yaml":
                 metadata = yaml.safe_load(f)
             else:
@@ -158,25 +159,25 @@ class Template:
             except Exception as e:
                 ch.error(f"Hook '{hook_name}' failed for template '{self.name}': {e}")
 
-    def get_paths(self) -> Dict[str, str]:
+    def get_paths(self) -> dict[str, str]:
         """Get server paths defined by this template."""
         return self.metadata.get("paths", {})
 
-    def get_services(self) -> Dict[str, str]:
+    def get_services(self) -> dict[str, str]:
         """Get services defined by this template."""
         return self.metadata.get("services", {})
 
-    def get_commands(self) -> List[Dict[str, str]]:
+    def get_commands(self) -> list[dict[str, str]]:
         """Get common commands defined by this template."""
         return self.metadata.get("commands", [])
 
-    def get_env_vars(self) -> Dict[str, str]:
+    def get_env_vars(self) -> dict[str, str]:
         """Get environment variables defined by this template."""
         return self.metadata.get("env_vars", {})
 
     def check_dependencies(
-        self, available_templates: List[str]
-    ) -> tuple[bool, List[str]]:
+        self, available_templates: list[str]
+    ) -> tuple[bool, list[str]]:
         """Check if all dependencies are met."""
         dependencies = self.metadata.get("dependencies", [])
         missing = [dep for dep in dependencies if dep not in available_templates]
@@ -200,7 +201,7 @@ class TemplateManager:
             └── README.md
     """
 
-    def __init__(self, templates_dir: Optional[Path] = None):
+    def __init__(self, templates_dir: Path | None = None):
         # Resolve built-in templates from the content store
         if templates_dir is None:
             try:
@@ -214,14 +215,14 @@ class TemplateManager:
                 )
 
         self.templates_dir = templates_dir
-        self.templates: Dict[str, Template] = {}
+        self.templates: dict[str, Template] = {}
         self._ensure_directory()
 
     def _ensure_directory(self):
         """Create templates directory if it doesn't exist."""
         self.templates_dir.mkdir(parents=True, exist_ok=True)
 
-    def discover_templates(self) -> List[str]:
+    def discover_templates(self) -> list[str]:
         """Scan templates directory and discover all available templates (YAML or JSON)."""
         discovered = []
 
@@ -248,11 +249,11 @@ class TemplateManager:
 
         return discovered
 
-    def get_template(self, name: str) -> Optional[Template]:
+    def get_template(self, name: str) -> Template | None:
         """Get template by name."""
         return self.templates.get(name)
 
-    def list_templates(self, enabled_only: bool = False) -> List[Template]:
+    def list_templates(self, enabled_only: bool = False) -> list[Template]:
         """List all templates, optionally filtering by enabled status."""
         templates = list(self.templates.values())
         if enabled_only:
@@ -347,7 +348,7 @@ class TemplateManager:
             except Exception as e:
                 ch.error(f"Failed to load template '{template.name}': {e}")
 
-    def apply_template_config(self, server_config: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_template_config(self, server_config: dict[str, Any]) -> dict[str, Any]:
         """Apply enabled template configurations to server config."""
         for template in self.list_templates(enabled_only=True):
             # Merge paths
@@ -373,14 +374,14 @@ class TemplateManager:
 
         return server_config
 
-    def get_template_commands(self) -> List[Dict[str, str]]:
+    def get_template_commands(self) -> list[dict[str, str]]:
         """Get all common commands from enabled templates."""
         commands = []
         for template in self.list_templates(enabled_only=True):
             commands.extend(template.get_commands())
         return commands
 
-    def validate_all_templates(self) -> Dict[str, bool]:
+    def validate_all_templates(self) -> dict[str, bool]:
         """Validate all template configurations."""
         results = {}
         for name, template in self.templates.items():

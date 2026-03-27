@@ -43,7 +43,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +68,12 @@ class HitLChannel(ABC):
 
     @abstractmethod
     async def choose(
-        self, question: str, options: List[str], timeout: int = 300
+        self, question: str, options: list[str], timeout: int = 300
     ) -> str:
         """Show options and wait for a selection. Returns selected option or ''."""
 
     @abstractmethod
-    async def notify(self, message: str, screenshot_path: Optional[str] = None) -> bool:
+    async def notify(self, message: str, screenshot_path: str | None = None) -> bool:
         """Send a notification. Returns True on success."""
 
     def record_success(self) -> None:
@@ -111,7 +111,7 @@ class MatrixHitLChannel(HitLChannel):
         """
         self._bot_provider = bot_provider
         self._room_id = room_id
-        self._pending: Dict[str, asyncio.Future] = {}  # corr_id → Future
+        self._pending: dict[str, asyncio.Future] = {}  # corr_id → Future
 
     def _bot(self):
         return self._bot_provider()
@@ -123,7 +123,7 @@ class MatrixHitLChannel(HitLChannel):
         except Exception:
             return False
 
-    async def notify(self, message: str, screenshot_path: Optional[str] = None) -> bool:
+    async def notify(self, message: str, screenshot_path: str | None = None) -> bool:
         try:
             bot = self._bot()
             if not bot or not bot.is_running:
@@ -185,7 +185,7 @@ class MatrixHitLChannel(HitLChannel):
             self._pending.pop(corr, None)
 
     async def choose(
-        self, question: str, options: List[str], timeout: int = 300
+        self, question: str, options: list[str], timeout: int = 300
     ) -> str:
         """Present numbered choices. User replies with the number."""
         numbered = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options))
@@ -229,7 +229,7 @@ class TelegramHitLChannel(HitLChannel):
         except Exception:
             return False
 
-    async def notify(self, message: str, screenshot_path: Optional[str] = None) -> bool:
+    async def notify(self, message: str, screenshot_path: str | None = None) -> bool:
         try:
             await self._bridge().send_notification(
                 message, screenshot_path=screenshot_path
@@ -252,7 +252,7 @@ class TelegramHitLChannel(HitLChannel):
             return ""
 
     async def choose(
-        self, question: str, options: List[str], timeout: int = 300
+        self, question: str, options: list[str], timeout: int = 300
     ) -> str:
         try:
             result = await self._bridge().pause_and_ask(question, options)
@@ -314,7 +314,7 @@ class SMSHitLChannel(HitLChannel):
             logger.warning("SMS send failed: %s", exc)
             return False
 
-    async def notify(self, message: str, screenshot_path: Optional[str] = None) -> bool:
+    async def notify(self, message: str, screenshot_path: str | None = None) -> bool:
         # SMS can't send images; strip screenshot reference
         ok = await self._send_sms(f"NAVIG: {message}")
         if ok:
@@ -334,7 +334,7 @@ class SMSHitLChannel(HitLChannel):
         return ""  # Can't wait for SMS reply without inbound webhook
 
     async def choose(
-        self, question: str, options: List[str], timeout: int = 300
+        self, question: str, options: list[str], timeout: int = 300
     ) -> str:
         numbered = " | ".join(f"{i+1}:{opt}" for i, opt in enumerate(options))
         await self._send_sms(f"NAVIG: {question} [{numbered}] Reply via dashboard.")
@@ -358,13 +358,13 @@ class CommsRouter:
     Preference is persisted in the knowledge graph.
     """
 
-    def __init__(self, channels: List[HitLChannel]) -> None:
+    def __init__(self, channels: list[HitLChannel]) -> None:
         self._channels = channels
         self._preferred_idx = 0  # index into channels of currently preferred channel
 
     # ── Core API ─────────────────────────────────────────────────────────────
 
-    async def notify(self, message: str, screenshot_path: Optional[str] = None) -> bool:
+    async def notify(self, message: str, screenshot_path: str | None = None) -> bool:
         """Send a one-way notification. Tries channels in priority order."""
         for ch in self._priority_order():
             ok = await ch.notify(message, screenshot_path=screenshot_path)
@@ -389,7 +389,7 @@ class CommsRouter:
         return ""
 
     async def choose(
-        self, question: str, options: List[str], timeout: int = 300
+        self, question: str, options: list[str], timeout: int = 300
     ) -> str:
         """Present choices. Returns selected option or '' if all channels fail."""
         for ch in self._priority_order():
@@ -405,7 +405,7 @@ class CommsRouter:
         self,
         task_description: str,
         success: bool,
-        screenshot_path: Optional[str] = None,
+        screenshot_path: str | None = None,
     ) -> None:
         icon = "✅" if success else "❌"
         status = "completed" if success else "FAILED"
@@ -418,7 +418,7 @@ class CommsRouter:
         self,
         signal: str,  # "captcha" | "2fa" | "blocked"
         context: str = "",  # extra info (URL, service name)
-        screenshot_path: Optional[str] = None,
+        screenshot_path: str | None = None,
     ) -> str:
         """
         Called when browser executor detects NeedsHuman.
@@ -456,7 +456,7 @@ class CommsRouter:
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
-    def _priority_order(self) -> List[HitLChannel]:
+    def _priority_order(self) -> list[HitLChannel]:
         """Return channels starting from preferred, skipping disabled ones."""
         all_ch = (
             self._channels[self._preferred_idx :]
@@ -471,7 +471,7 @@ class CommsRouter:
         except ValueError:
             pass  # malformed value; skip
 
-    def status(self) -> List[Dict[str, Any]]:
+    def status(self) -> list[dict[str, Any]]:
         """Return status of all channels."""
         return [
             {
@@ -486,7 +486,7 @@ class CommsRouter:
 
 # ─────────────────────────── singleton factory ───────────────────────────────
 
-_router_instance: Optional[CommsRouter] = None
+_router_instance: CommsRouter | None = None
 
 
 def get_comms_router() -> CommsRouter:
@@ -504,7 +504,7 @@ def get_comms_router() -> CommsRouter:
     if _router_instance is not None:
         return _router_instance
 
-    channels: List[HitLChannel] = []
+    channels: list[HitLChannel] = []
 
     # ── 1. Matrix (primary) ───────────────────────────────────────────────────
     try:

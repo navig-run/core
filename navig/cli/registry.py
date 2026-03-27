@@ -15,16 +15,14 @@ and shell-completion generators can consume it without importing the full CLI.
 
 from __future__ import annotations
 
-import importlib
-import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
-def get_schema() -> Dict[str, Any]:
+def get_schema() -> dict[str, Any]:
     """Return a stable JSON-serialisable schema of all registered CLI commands.
 
     The schema structure is::
@@ -52,8 +50,8 @@ def get_schema() -> Dict[str, Any]:
     introspection failure for a sub-group is silently skipped so that
     ``navig --schema`` always returns something useful.
     """
-    groups: List[Dict[str, Any]] = []
-    flat_commands: List[Dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
+    flat_commands: list[dict[str, Any]] = []
 
     try:
         from navig.cli.help_dictionaries import HELP_REGISTRY
@@ -61,7 +59,7 @@ def get_schema() -> Dict[str, Any]:
         for topic, info in HELP_REGISTRY.items():
             desc = info.get("desc", "")
             commands_dict = info.get("commands", {})
-            commands: List[Dict[str, str]] = [
+            commands: list[dict[str, str]] = [
                 {"name": cmd_name, "description": cmd_desc}
                 for cmd_name, cmd_desc in commands_dict.items()
             ]

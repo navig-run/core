@@ -7,7 +7,6 @@ while reducing the size of the root CLI module.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -21,7 +20,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def upload_file(
         ctx: typer.Context,
         local: Path = typer.Argument(..., help="Local file/directory path"),
-        remote: Optional[str] = typer.Argument(
+        remote: str | None = typer.Argument(
             None,
             help="Remote path (smart detection if omitted)",
         ),
@@ -36,7 +35,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def download_file(
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file/directory path"),
-        local: Optional[Path] = typer.Argument(
+        local: Path | None = typer.Argument(
             None,
             help="Local path (smart detection if omitted)",
         ),
@@ -132,7 +131,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def cat_file(
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file path to read"),
-        lines: Optional[int] = typer.Option(
+        lines: int | None = typer.Option(
             None, "--lines", "-n", help="Number of lines to show"
         ),
         head: bool = typer.Option(
@@ -152,22 +151,22 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def write_file(
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file path to write"),
-        content: Optional[str] = typer.Option(
+        content: str | None = typer.Option(
             None, "--content", "-c", help="Content to write"
         ),
         stdin: bool = typer.Option(
             False, "--stdin", "-s", help="Read content from stdin (pipe)"
         ),
-        from_file: Optional[Path] = typer.Option(
+        from_file: Path | None = typer.Option(
             None, "--from-file", "-f", help="Read content from local file"
         ),
         append: bool = typer.Option(
             False, "--append", "-a", help="Append to file instead of overwrite"
         ),
-        mode: Optional[str] = typer.Option(
+        mode: str | None = typer.Option(
             None, "--mode", "-m", help="Set file permissions after writing"
         ),
-        owner: Optional[str] = typer.Option(
+        owner: str | None = typer.Option(
             None, "--owner", "-o", help="Set file owner after writing"
         ),
     ):
@@ -278,17 +277,17 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def db_query(
         ctx: typer.Context,
         query: str = typer.Argument(..., help="SQL query to execute"),
-        container: Optional[str] = typer.Option(
+        container: str | None = typer.Option(
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: Optional[str] = typer.Option(
+        password: str | None = typer.Option(
             None, "--password", "-p", help="Database password"
         ),
-        database: Optional[str] = typer.Option(
+        database: str | None = typer.Option(
             None, "--database", "-d", help="Database name"
         ),
-        db_type: Optional[str] = typer.Option(
+        db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
     ):
@@ -301,14 +300,14 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("db-databases", hidden=True)
     def db_databases(
         ctx: typer.Context,
-        container: Optional[str] = typer.Option(
+        container: str | None = typer.Option(
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: Optional[str] = typer.Option(
+        password: str | None = typer.Option(
             None, "--password", "-p", help="Database password"
         ),
-        db_type: Optional[str] = typer.Option(
+        db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
         plain: bool = typer.Option(
@@ -328,14 +327,14 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def db_show_tables(
         ctx: typer.Context,
         database: str = typer.Argument(..., help="Database name"),
-        container: Optional[str] = typer.Option(
+        container: str | None = typer.Option(
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: Optional[str] = typer.Option(
+        password: str | None = typer.Option(
             None, "--password", "-p", help="Database password"
         ),
-        db_type: Optional[str] = typer.Option(
+        db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
         plain: bool = typer.Option(
@@ -355,17 +354,17 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def db_dump(
         ctx: typer.Context,
         database: str = typer.Argument(..., help="Database name to dump"),
-        output: Optional[Path] = typer.Option(
+        output: Path | None = typer.Option(
             None, "--output", "-o", help="Output file path"
         ),
-        container: Optional[str] = typer.Option(
+        container: str | None = typer.Option(
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: Optional[str] = typer.Option(
+        password: str | None = typer.Option(
             None, "--password", "-p", help="Database password"
         ),
-        db_type: Optional[str] = typer.Option(
+        db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
     ):
@@ -378,17 +377,17 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("db-shell", hidden=True)
     def db_shell(
         ctx: typer.Context,
-        container: Optional[str] = typer.Option(
+        container: str | None = typer.Option(
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: Optional[str] = typer.Option(
+        password: str | None = typer.Option(
             None, "--password", "-p", help="Database password"
         ),
-        database: Optional[str] = typer.Option(
+        database: str | None = typer.Option(
             None, "--database", "-d", help="Database name"
         ),
-        db_type: Optional[str] = typer.Option(
+        db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
     ):

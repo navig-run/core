@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Union
 
 # =============================================================================
 # Stream Events
@@ -72,7 +73,7 @@ class ExecutionContext:
     session_id: str = ""
     agent_id: str = ""
     cwd: str = ""
-    env: Dict[str, str] = field(default_factory=dict)
+    env: dict[str, str] = field(default_factory=dict)
     owner_only: bool = False
 
 
@@ -81,10 +82,10 @@ class ExecutionRequest:
     """Bundled invocation encapsulating the tool call and rules."""
 
     tool_name: str
-    args: Dict[str, Any]
+    args: dict[str, Any]
     context: ExecutionContext = field(default_factory=ExecutionContext)
     timeout_s: float = 120.0
-    cancellation_token: Optional[asyncio.Event] = None
+    cancellation_token: asyncio.Event | None = None
     request_id: str = ""
     lane: str = "main"
 
@@ -111,7 +112,7 @@ class ExecutionResult:
 
     state: EndState
     output: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     elapsed_ms: float = 0.0
 
 
@@ -128,11 +129,11 @@ class ToolSpec:
     name: str = ""
     description: str = ""
     domain: str = "system"
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
     requires_approval: bool = False
     owner_only: bool = False
 
-    def get_meta(self) -> Dict[str, Any]:
+    def get_meta(self) -> dict[str, Any]:
         """Returns JSON schema representation compatible with existing router."""
         return {
             "id": self.id,
@@ -143,7 +144,7 @@ class ToolSpec:
             "domain": self.domain,
         }
 
-    def validate_args(self, args: Dict[str, Any]) -> bool:
+    def validate_args(self, args: dict[str, Any]) -> bool:
         # Simplistic validation stub until JSON Schema engine is ready
         return True
 
@@ -155,5 +156,5 @@ class SkillSpec:
     id: str
     name: str
     description: str
-    tools: List[ToolSpec] = field(default_factory=list)
+    tools: list[ToolSpec] = field(default_factory=list)
     version: str = "1.0.0"

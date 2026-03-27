@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -68,10 +68,10 @@ class CronJob:
     timeout_seconds: int = 300
     retry_count: int = 0
     max_retries: int = 3
-    last_run: Optional[datetime] = None
-    next_run: Optional[datetime] = None
-    last_status: Optional[JobStatus] = None
-    last_output: Optional[str] = None
+    last_run: datetime | None = None
+    next_run: datetime | None = None
+    last_status: JobStatus | None = None
+    last_output: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def to_dict(self) -> dict:
@@ -144,7 +144,7 @@ class CronParser:
     ]
 
     @classmethod
-    def parse(cls, schedule: str) -> Optional[timedelta]:
+    def parse(cls, schedule: str) -> timedelta | None:
         """
         Parse schedule string to interval.
 
@@ -281,18 +281,18 @@ class CronService:
         self,
         gateway: "NavigGateway",
         storage_path: Path,
-        config: Optional[CronConfig] = None,
+        config: CronConfig | None = None,
     ):
         self.gateway = gateway
         self.storage_path = storage_path
         self.config = config or CronConfig()
 
         # Jobs indexed by ID
-        self.jobs: Dict[str, CronJob] = {}
+        self.jobs: dict[str, CronJob] = {}
 
         # Running state
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
         # Semaphore for concurrent job limit
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_jobs)
@@ -416,7 +416,7 @@ class CronService:
 
         return job
 
-    def update_job(self, job_id: str, **kwargs) -> Optional[CronJob]:
+    def update_job(self, job_id: str, **kwargs) -> CronJob | None:
         """Update a job's properties."""
         if job_id not in self.jobs:
             return None
@@ -469,11 +469,11 @@ class CronService:
         self._save_jobs()
         return True
 
-    def list_jobs(self) -> List[CronJob]:
+    def list_jobs(self) -> list[CronJob]:
         """List all jobs."""
         return list(self.jobs.values())
 
-    def get_job(self, job_id: str) -> Optional[CronJob]:
+    def get_job(self, job_id: str) -> CronJob | None:
         """Get a specific job."""
         return self.jobs.get(job_id)
 
@@ -619,7 +619,7 @@ class CronService:
 
         return response
 
-    async def run_job_now(self, job_id: str) -> Optional[str]:
+    async def run_job_now(self, job_id: str) -> str | None:
         """Manually trigger a job."""
         job = self.jobs.get(job_id)
         if not job:
@@ -630,7 +630,7 @@ class CronService:
 
         return job.last_output
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get cron service status."""
         now = datetime.now()
 

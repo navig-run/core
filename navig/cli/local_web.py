@@ -6,8 +6,6 @@ bootstrap and routing while preserving command names and legacy aliases.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 from navig.cli._callbacks import show_subcommand_help
@@ -77,7 +75,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     @software_app.command("list")
     def software_list_cmd(
         ctx: typer.Context,
-        limit: Optional[int] = typer.Option(
+        limit: int | None = typer.Option(
             None, "--limit", "-l", help="Limit number of results"
         ),
     ):
@@ -295,7 +293,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
         domains: bool = typer.Option(
             False, "--domains", "-d", help="List HestiaCP domains"
         ),
-        user_filter: Optional[str] = typer.Option(
+        user_filter: str | None = typer.Option(
             None, "--user", help="Filter domains by username"
         ),
         plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
@@ -314,13 +312,13 @@ def register_local_web_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         resource: str = typer.Argument(..., help="Resource type: user or domain"),
         name: str = typer.Argument(..., help="Username or domain name"),
-        password: Optional[str] = typer.Option(
+        password: str | None = typer.Option(
             None, "--password", "-p", help="Password (for user)"
         ),
-        email: Optional[str] = typer.Option(
+        email: str | None = typer.Option(
             None, "--email", "-e", help="Email (for user)"
         ),
-        user: Optional[str] = typer.Option(
+        user: str | None = typer.Option(
             None, "--user", "-u", help="Username (for domain)"
         ),
     ):
@@ -348,7 +346,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         resource: str = typer.Argument(..., help="Resource type: user or domain"),
         name: str = typer.Argument(..., help="Username or domain name"),
-        user: Optional[str] = typer.Option(
+        user: str | None = typer.Option(
             None, "--user", "-u", help="Username (for domain)"
         ),
         force: bool = typer.Option(

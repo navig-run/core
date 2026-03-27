@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class MatrixAdminClient:
         self.homeserver_url = homeserver_url.rstrip("/")
         self.admin_token = admin_token
         self.container_name = container_name
-        self._server_type: Optional[str] = (
+        self._server_type: str | None = (
             None  # "conduit" | "synapse" | "dendrite" | None
         )
 
@@ -73,7 +73,7 @@ class MatrixAdminClient:
         self._server_type = "unknown"
         return "unknown"
 
-    def _auth_headers(self) -> Dict[str, str]:
+    def _auth_headers(self) -> dict[str, str]:
         if self.admin_token:
             return {"Authorization": f"Bearer {self.admin_token}"}
         return {}
@@ -163,7 +163,7 @@ class MatrixAdminClient:
         self,
         uses_allowed: int = 1,
         expiry: str = "7d",
-    ) -> Optional[str]:
+    ) -> str | None:
         """Create a registration token (Synapse only, Conduit uses open/closed)."""
         server = await self._detect_server()
         import httpx
@@ -174,7 +174,7 @@ class MatrixAdminClient:
 
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    data: Dict[str, Any] = {}
+                    data: dict[str, Any] = {}
                     if uses_allowed:
                         data["uses_allowed"] = uses_allowed
                     if expiry_ms:
@@ -195,7 +195,7 @@ class MatrixAdminClient:
         logger.warning("Registration tokens not supported on %s", server)
         return None
 
-    async def list_registration_tokens(self) -> List[Dict[str, Any]]:
+    async def list_registration_tokens(self) -> list[dict[str, Any]]:
         """List active registration tokens (Synapse only)."""
         server = await self._detect_server()
         import httpx
@@ -234,7 +234,7 @@ class MatrixAdminClient:
 
     # ── User management ──
 
-    async def list_users(self) -> List[Dict[str, Any]]:
+    async def list_users(self) -> list[dict[str, Any]]:
         """List all registered users."""
         server = await self._detect_server()
         import httpx
@@ -270,7 +270,7 @@ class MatrixAdminClient:
 
         return []
 
-    async def get_user(self, mxid: str) -> Optional[Dict[str, Any]]:
+    async def get_user(self, mxid: str) -> dict[str, Any] | None:
         """Get info about a specific user."""
         server = await self._detect_server()
         import httpx
@@ -346,7 +346,7 @@ class MatrixAdminClient:
 # Singleton
 # =============================================================================
 
-_admin_client: Optional[MatrixAdminClient] = None
+_admin_client: MatrixAdminClient | None = None
 
 
 def get_admin_client() -> MatrixAdminClient:

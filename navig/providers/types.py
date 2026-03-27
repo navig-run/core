@@ -7,7 +7,7 @@ Supports multiple AI providers with unified interface.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Union
 
 
 class ModelApi(str, Enum):
@@ -43,7 +43,7 @@ class ModelCost:
     cache_read: float = 0.0
     cache_write: float = 0.0
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         return {
             "input": self.input,
             "output": self.output,
@@ -68,16 +68,16 @@ class ModelDefinition:
 
     id: str
     name: str
-    api: Optional[ModelApi] = None
+    api: ModelApi | None = None
     reasoning: bool = False
-    input: List[ModelInput] = field(default_factory=lambda: [ModelInput.TEXT])
+    input: list[ModelInput] = field(default_factory=lambda: [ModelInput.TEXT])
     cost: ModelCost = field(default_factory=ModelCost)
     context_window: int = 128000
     max_tokens: int = 8192
-    headers: Dict[str, str] = field(default_factory=dict)
-    compat: Optional[ModelCompatConfig] = None
+    headers: dict[str, str] = field(default_factory=dict)
+    compat: ModelCompatConfig | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -97,16 +97,16 @@ class ProviderConfig:
 
     name: str
     base_url: str
-    api_key: Optional[str] = None  # Can be literal key or env var name
+    api_key: str | None = None  # Can be literal key or env var name
     auth: AuthMode = AuthMode.API_KEY
     api: ModelApi = ModelApi.OPENAI_COMPLETIONS
-    headers: Dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
     auth_header: bool = True  # Whether to send Authorization header
-    models: List[ModelDefinition] = field(default_factory=list)
+    models: list[ModelDefinition] = field(default_factory=list)
     enabled: bool = True
     priority: int = 100  # Lower = higher priority for fallback
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "baseUrl": self.base_url,
@@ -126,12 +126,12 @@ class ProvidersConfig:
     """Top-level providers configuration."""
 
     mode: Literal["merge", "replace"] = "merge"
-    default_provider: Optional[str] = None
-    default_model: Optional[str] = None
-    providers: Dict[str, ProviderConfig] = field(default_factory=dict)
-    fallback_order: List[str] = field(default_factory=list)
+    default_provider: str | None = None
+    default_model: str | None = None
+    providers: dict[str, ProviderConfig] = field(default_factory=dict)
+    fallback_order: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "mode": self.mode,
             "defaultProvider": self.default_provider,
@@ -152,7 +152,7 @@ class ApiKeyCredential:
 
     provider: str
     key: str
-    email: Optional[str] = None
+    email: str | None = None
     type: str = field(default="api_key", init=False)
 
 
@@ -162,8 +162,8 @@ class TokenCredential:
 
     provider: str
     token: str
-    expires: Optional[int] = None  # ms since epoch
-    email: Optional[str] = None
+    expires: int | None = None  # ms since epoch
+    email: str | None = None
     type: str = field(default="token", init=False)
 
 
@@ -173,10 +173,10 @@ class OAuthCredential:
 
     provider: str
     access_token: str
-    refresh_token: Optional[str] = None
-    expires_at: Optional[int] = None  # ms since epoch
-    client_id: Optional[str] = None
-    email: Optional[str] = None
+    refresh_token: str | None = None
+    expires_at: int | None = None  # ms since epoch
+    client_id: str | None = None
+    email: str | None = None
     type: str = field(default="oauth", init=False)
 
 
@@ -187,11 +187,11 @@ AuthProfileCredential = Union[ApiKeyCredential, TokenCredential, OAuthCredential
 class ProfileUsageStats:
     """Usage statistics for a profile."""
 
-    last_used: Optional[int] = None
-    cooldown_until: Optional[int] = None
+    last_used: int | None = None
+    cooldown_until: int | None = None
     error_count: int = 0
-    last_failure_at: Optional[int] = None
-    failure_reason: Optional[str] = None
+    last_failure_at: int | None = None
+    failure_reason: str | None = None
 
 
 @dataclass
@@ -199,19 +199,19 @@ class AuthProfileStore:
     """Storage for authentication profiles."""
 
     version: int = 1
-    profiles: Dict[str, AuthProfileCredential] = field(default_factory=dict)
-    order: Dict[str, List[str]] = field(default_factory=dict)  # provider -> profile IDs
-    last_good: Dict[str, str] = field(
+    profiles: dict[str, AuthProfileCredential] = field(default_factory=dict)
+    order: dict[str, list[str]] = field(default_factory=dict)  # provider -> profile IDs
+    last_good: dict[str, str] = field(
         default_factory=dict
     )  # provider -> last successful profile
-    usage_stats: Dict[str, ProfileUsageStats] = field(default_factory=dict)
+    usage_stats: dict[str, ProfileUsageStats] = field(default_factory=dict)
 
 
 # ============================================================================
 # Built-in Provider Definitions
 # ============================================================================
 
-BUILTIN_PROVIDERS: Dict[str, ProviderConfig] = {
+BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
     "google": ProviderConfig(
         name="google",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai",
@@ -496,7 +496,7 @@ BUILTIN_PROVIDERS: Dict[str, ProviderConfig] = {
 
 # Environment variable mapping for providers
 # Kept in sync with navig.providers.registry.ALL_PROVIDERS[*].env_vars
-PROVIDER_ENV_VARS: Dict[str, List[str]] = {
+PROVIDER_ENV_VARS: dict[str, list[str]] = {
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "openrouter": ["OPENROUTER_API_KEY"],
@@ -521,7 +521,7 @@ PROVIDER_ENV_VARS: Dict[str, List[str]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def builtin_provider_configs() -> List[ProviderConfig]:
+def builtin_provider_configs() -> list[ProviderConfig]:
     """
     Return all built-in ``ProviderConfig`` entries as an ordered list.
 

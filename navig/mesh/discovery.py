@@ -29,7 +29,6 @@ import json
 import socket
 import struct
 import time
-from typing import Optional
 
 from navig.debug_logger import get_debug_logger
 from navig.mesh.auth import attach_hmac, verify_payload
@@ -55,7 +54,7 @@ def _build_packet(
     registry: NodeRegistry,
     ptype: str,
     seq: int = 0,
-    secret: Optional[bytes] = None,
+    secret: bytes | None = None,
 ) -> bytes:
     """Serialize a discovery packet from the local self record.
 
@@ -93,8 +92,8 @@ def _build_packet(
 
 def _parse_packet(
     data: bytes,
-    secret: Optional[bytes] = None,
-) -> Optional[NodeRecord]:
+    secret: bytes | None = None,
+) -> NodeRecord | None:
     """Parse incoming UDP packet into a NodeRecord. Returns None on any error.
 
     When *secret* is provided the packet **must** carry a valid BLAKE2b HMAC;
@@ -171,7 +170,7 @@ class MeshDiscovery:
         packet loss and log it without blocking normal operation.
     """
 
-    def __init__(self, registry: NodeRegistry, secret: Optional[bytes] = None):
+    def __init__(self, registry: NodeRegistry, secret: bytes | None = None):
         """Initialise MeshDiscovery.
 
         Args:
@@ -184,12 +183,12 @@ class MeshDiscovery:
                       resolve the secret from config / env before passing it.
         """
         self._registry = registry
-        self._secret: Optional[bytes] = secret
-        self._sender: Optional[socket.socket] = None
-        self._receiver: Optional[socket.socket] = None
-        self._listen_task: Optional[asyncio.Task] = None
-        self._heartbeat_task: Optional[asyncio.Task] = None
-        self._probe_task: Optional[asyncio.Task] = None
+        self._secret: bytes | None = secret
+        self._sender: socket.socket | None = None
+        self._receiver: socket.socket | None = None
+        self._listen_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
+        self._probe_task: asyncio.Task | None = None
         self._running = False
         self._seq: int = 0  # monotonic per-node packet sequence counter
         self._peer_seqs: dict = {}  # node_id -> last seen seq (loss detection)
@@ -300,20 +299,22 @@ class MeshDiscovery:
         try:
             import aiohttp
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(
                     url,
                     timeout=aiohttp.ClientTimeout(total=PROBE_TIMEOUT_S),
-                ) as resp:
-                    rtt_ms = (time.monotonic() - t0) * 1000
-                    if resp.status == 200:
-                        self._registry.record_probe_success(peer.node_id, rtt_ms)
-                        logger.debug(
-                            f"[mesh.probe] {peer.node_id} OK " f"rtt={rtt_ms:.0f}ms"
-                        )
-                    else:
-                        self._registry.record_probe_failure(peer.node_id)
-                        logger.debug(f"[mesh.probe] {peer.node_id} HTTP {resp.status}")
+                ) as resp,
+            ):
+                rtt_ms = (time.monotonic() - t0) * 1000
+                if resp.status == 200:
+                    self._registry.record_probe_success(peer.node_id, rtt_ms)
+                    logger.debug(
+                        f"[mesh.probe] {peer.node_id} OK " f"rtt={rtt_ms:.0f}ms"
+                    )
+                else:
+                    self._registry.record_probe_failure(peer.node_id)
+                    logger.debug(f"[mesh.probe] {peer.node_id} HTTP {resp.status}")
         except ImportError:
             pass  # aiohttp not installed — skip probing silently
         except Exception as e:

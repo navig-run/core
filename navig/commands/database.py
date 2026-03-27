@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -19,12 +19,15 @@ def _create_mysql_config_file(user: str, password: str) -> str:
     """
     fd, config_path = tempfile.mkstemp(suffix=".cnf", text=True)
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write("[client]\n")
             f.write(f"user={user}\n")
             f.write(f"password={password}\n")
         # Set restrictive permissions (owner read/write only)
-        os.chmod(config_path, 0o600)
+        try:
+            os.chmod(config_path, 0o600)
+        except (OSError, PermissionError):
+            pass
         return config_path
     except Exception:
         try:
@@ -34,7 +37,7 @@ def _create_mysql_config_file(user: str, password: str) -> str:
         raise
 
 
-def execute_sql(query: str, options: Dict[str, Any]):
+def execute_sql(query: str, options: dict[str, Any]):
     """Execute SQL query through tunnel."""
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
@@ -132,7 +135,7 @@ def execute_sql(query: str, options: Dict[str, Any]):
             pass  # best-effort cleanup
 
 
-def execute_sql_file(file: Path, options: Dict[str, Any]):
+def execute_sql_file(file: Path, options: dict[str, Any]):
     """Execute SQL file through tunnel."""
     if not file.exists():
         ch.error(f"File not found: {file}")
@@ -142,7 +145,7 @@ def execute_sql_file(file: Path, options: Dict[str, Any]):
     execute_sql(query, options)
 
 
-def backup_database(path: Optional[Path], options: Dict[str, Any]):
+def backup_database(path: Path | None, options: dict[str, Any]):
     """Backup database."""
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
@@ -206,7 +209,7 @@ def backup_database(path: Optional[Path], options: Dict[str, Any]):
         ]
 
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 result = subprocess.run(
                     mysqldump_cmd, stdout=f, stderr=subprocess.PIPE, text=True
                 )
@@ -254,7 +257,7 @@ def backup_database(path: Optional[Path], options: Dict[str, Any]):
             pass  # best-effort cleanup
 
 
-def restore_database(file: Path, options: Dict[str, Any]):
+def restore_database(file: Path, options: dict[str, Any]):
     """Restore database from backup file with transaction support."""
     from navig.config import get_config_manager
     from navig.tunnel import TunnelManager
@@ -368,7 +371,7 @@ def restore_database(file: Path, options: Dict[str, Any]):
         ]
 
         try:
-            with open(file, "r") as f:
+            with open(file) as f:
                 result = subprocess.run(
                     mysql_cmd, stdin=f, capture_output=True, text=True
                 )

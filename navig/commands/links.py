@@ -18,7 +18,6 @@ Commands:
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import typer
 
@@ -60,14 +59,12 @@ def _rprint(*args, **kwargs):
 @links_app.command("add")
 def add_link(
     url: str = typer.Argument(..., help="URL to bookmark"),
-    title: Optional[str] = typer.Option(None, "--title", "-t", help="Page title"),
-    notes: Optional[str] = typer.Option(
+    title: str | None = typer.Option(None, "--title", "-t", help="Page title"),
+    notes: str | None = typer.Option(
         None, "--notes", "-n", help="Notes about this link"
     ),
-    tags: Optional[str] = typer.Option(
-        None, "--tags", "-T", help="Comma-separated tags"
-    ),
-    cred: Optional[str] = typer.Option(
+    tags: str | None = typer.Option(None, "--tags", "-T", help="Comma-separated tags"),
+    cred: str | None = typer.Option(
         None, "--cred", "-c", help="Vault credential ID for auto-login"
     ),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
@@ -99,8 +96,8 @@ def add_link(
 
 @links_app.command("list")
 def list_links(
-    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag"),
-    cred: Optional[str] = typer.Option(
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag"),
+    cred: str | None = typer.Option(
         None, "--cred", "-c", help="Filter by vault credential ID"
     ),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum number of results"),
@@ -224,7 +221,7 @@ def show_link(
 @links_app.command("open")
 def open_link(
     link_id: str = typer.Argument(..., help="Link ID"),
-    profile: Optional[str] = typer.Option(
+    profile: str | None = typer.Option(
         None, "--profile", "-p", help="Browser profile to use"
     ),
     headless: bool = typer.Option(False, "--headless", help="Open in headless mode"),
@@ -285,14 +282,12 @@ def open_link(
 @links_app.command("edit")
 def edit_link(
     link_id: str = typer.Argument(..., help="Link ID"),
-    title: Optional[str] = typer.Option(None, "--title", "-t"),
-    notes: Optional[str] = typer.Option(None, "--notes", "-n"),
-    tags: Optional[str] = typer.Option(
+    title: str | None = typer.Option(None, "--title", "-t"),
+    notes: str | None = typer.Option(None, "--notes", "-n"),
+    tags: str | None = typer.Option(
         None, "--tags", "-T", help="Comma-separated tags (replaces existing)"
     ),
-    cred: Optional[str] = typer.Option(
-        None, "--cred", "-c", help="Vault credential ID"
-    ),
+    cred: str | None = typer.Option(None, "--cred", "-c", help="Vault credential ID"),
 ):
     """Edit link metadata."""
     db = _db()
@@ -352,7 +347,7 @@ def import_links(
     file: str = typer.Argument(
         ..., help="Path to JSON file (array of {url, title, notes, tags})"
     ),
-    cred: Optional[str] = typer.Option(
+    cred: str | None = typer.Option(
         None, "--cred", "-c", help="Apply this vault cred to all imported links"
     ),
 ):

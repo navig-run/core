@@ -7,10 +7,10 @@ All credential data is encrypted before writing to disk.
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, List, Optional
 
 from .encryption import VaultEncryption
 from .types import Credential, CredentialInfo, CredentialType
@@ -132,7 +132,10 @@ class VaultStorage:
         try:
             import os
 
-            os.chmod(self.vault_path, 0o600)
+            try:
+                os.chmod(self.vault_path, 0o600)
+            except (OSError, PermissionError):
+                pass
         except OSError:
             pass  # best-effort cleanup
 
@@ -178,7 +181,7 @@ class VaultStorage:
             )
             conn.commit()
 
-    def get(self, credential_id: str) -> Optional[Credential]:
+    def get(self, credential_id: str) -> Credential | None:
         """
         Get credential by ID.
 
@@ -200,7 +203,7 @@ class VaultStorage:
 
     def get_by_provider_profile(
         self, provider: str, profile_id: str = "default"
-    ) -> Optional[Credential]:
+    ) -> Credential | None:
         """
         Get credential by provider and profile.
 
@@ -231,10 +234,10 @@ class VaultStorage:
 
     def list_all(
         self,
-        provider: Optional[str] = None,
-        profile_id: Optional[str] = None,
+        provider: str | None = None,
+        profile_id: str | None = None,
         include_disabled: bool = True,
-    ) -> List[CredentialInfo]:
+    ) -> list[CredentialInfo]:
         """
         List credentials (metadata only, no secrets).
 
@@ -247,7 +250,7 @@ class VaultStorage:
             List of CredentialInfo objects (no secret data)
         """
         query = "SELECT * FROM credentials WHERE 1=1"
-        params: List[str] = []
+        params: list[str] = []
 
         if provider:
             query += " AND provider = ?"
@@ -348,8 +351,8 @@ class VaultStorage:
             conn.commit()
 
     def get_audit_log(
-        self, credential_id: Optional[str] = None, limit: int = 100
-    ) -> List[dict]:
+        self, credential_id: str | None = None, limit: int = 100
+    ) -> list[dict]:
         """
         Get audit log entries.
 
@@ -381,7 +384,7 @@ class VaultStorage:
 
             return [dict(row) for row in rows]
 
-    def count(self, provider: Optional[str] = None, enabled_only: bool = False) -> int:
+    def count(self, provider: str | None = None, enabled_only: bool = False) -> int:
         """
         Count credentials in vault.
 
@@ -393,7 +396,7 @@ class VaultStorage:
             Number of matching credentials
         """
         query = "SELECT COUNT(*) FROM credentials WHERE 1=1"
-        params: List[str] = []
+        params: list[str] = []
 
         if provider:
             query += " AND provider = ?"

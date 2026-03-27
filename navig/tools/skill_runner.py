@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import shlex
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -37,8 +37,8 @@ class SkillRunTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         skill_id: str = str(args.get("skill_id", "")).strip()
         command: str = str(args.get("command", "")).strip()
@@ -157,7 +157,7 @@ class SkillRunTool(BaseTool):
         )
 
 
-def _find_navig_bin() -> List[str]:
+def _find_navig_bin() -> list[str]:
     """Return the argv prefix for the navig CLI binary.
 
     Always returns a *list* so callers can safely do::

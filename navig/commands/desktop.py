@@ -20,7 +20,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -107,9 +106,9 @@ class _DesktopClient:
 
     def find_element(
         self,
-        name: Optional[str],
-        class_name: Optional[str],
-        control_type: Optional[str],
+        name: str | None,
+        class_name: str | None,
+        control_type: str | None,
         depth: int,
     ) -> list:
         params: dict = {"depth": depth}
@@ -197,13 +196,13 @@ def desktop_ping(
 
 @desktop_app.command("find")
 def desktop_find(
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None, "--name", "-n", help="Filter by element Name."
     ),
-    class_name: Optional[str] = typer.Option(
+    class_name: str | None = typer.Option(
         None, "--class", "-c", help="Filter by ClassName."
     ),
-    control_type: Optional[str] = typer.Option(
+    control_type: str | None = typer.Option(
         None, "--type", "-t", help="Filter by control type (e.g. Button, Edit)."
     ),
     depth: int = typer.Option(5, "--depth", "-d", help="Search depth."),

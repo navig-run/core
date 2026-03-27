@@ -4,7 +4,7 @@ NAVIG Gateway CLI Commands
 Commands for managing the autonomous agent gateway server.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import typer
 
@@ -26,7 +26,7 @@ def _gw_base_url() -> str:
     return gateway_base_url()
 
 
-def _gateway_request_headers() -> Dict[str, str]:
+def _gateway_request_headers() -> dict[str, str]:
     """Return auth headers for gateway admin requests when configured."""
     from navig.gateway.client import gateway_request_headers
 
@@ -42,13 +42,13 @@ gateway_app = typer.Typer(
 
 @gateway_app.command("start")
 def gateway_start(
-    port: Optional[int] = typer.Option(
+    port: int | None = typer.Option(
         None,
         "--port",
         "-p",
         help="Port to run gateway on (default: gateway.port from config, fallback 8789)",
     ),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None,
         "--host",
         help="Host to bind to (default: gateway.host from config, fallback 0.0.0.0)",
@@ -196,7 +196,7 @@ def gateway_status(
 
     # ── Gateway daemon check (local HTTP) ─────────────────────────────────────
     def _http_alive(
-        url: str, timeout: float = 2.0, headers: Optional[Dict[str, str]] = None
+        url: str, timeout: float = 2.0, headers: dict[str, str] | None = None
     ) -> bool:
         try:
             import urllib.request
@@ -513,22 +513,22 @@ def gateway_session(
 # Each wrapper calls the underlying Typer command with appropriate defaults.
 
 
-def status_cmd(ctx: Dict[str, Any]) -> None:
+def status_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for gateway status command (interactive menu)."""
     gateway_status()
 
 
-def start_cmd(ctx: Dict[str, Any]) -> None:
+def start_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for gateway start command (interactive menu)."""
     # Start in foreground mode for interactive use — port/host come from config
     gateway_start(port=None, host=None, background=False)
 
 
-def stop_cmd(ctx: Dict[str, Any]) -> None:
+def stop_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for gateway stop command (interactive menu)."""
     gateway_stop()
 
 
-def session_cmd(ctx: Dict[str, Any]) -> None:
+def session_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for gateway session list command (interactive menu)."""
     gateway_session(action="list", session_key=None)

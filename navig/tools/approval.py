@@ -36,8 +36,9 @@ from __future__ import annotations
 import enum
 import os
 import threading
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -68,9 +69,9 @@ class ApprovalRequest:
 
     tool_name: str
     safety_level: str  # SafetyLevel.value string
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
     reason: str = ""  # agent-supplied justification
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 # Type alias — approval backends are async callables
@@ -122,7 +123,7 @@ class ApprovalGate:
     The gate is bypassed entirely when ``NAVIG_ALLOW_ALL_COMMANDS=1``.
     """
 
-    def __init__(self, backend: Optional[ApprovalBackend] = None) -> None:
+    def __init__(self, backend: ApprovalBackend | None = None) -> None:
         self._backend: ApprovalBackend = backend or _log_and_approve
 
     @property
@@ -137,9 +138,9 @@ class ApprovalGate:
         self,
         tool_name: str,
         safety_level: str,
-        parameters: Optional[Dict[str, Any]] = None,
+        parameters: dict[str, Any] | None = None,
         reason: str = "",
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> ApprovalDecision:
         """
         Evaluate whether a tool call may proceed.
@@ -188,7 +189,7 @@ class ApprovalGate:
 # Singleton
 # =============================================================================
 
-_gate_instance: Optional[ApprovalGate] = None
+_gate_instance: ApprovalGate | None = None
 _gate_lock = threading.Lock()
 
 

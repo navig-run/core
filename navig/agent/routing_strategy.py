@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from loguru import logger
 
@@ -250,7 +250,7 @@ _TIER_BOUNDARIES = {
 class ClassificationResult:
     """Full scoring breakdown for a single request."""
 
-    tier: Optional[RequestTier]
+    tier: RequestTier | None
     """Resolved tier — None means ambiguous (below confidence threshold)."""
 
     score: float
@@ -274,7 +274,7 @@ class ClassificationResult:
 
 def _score_token_count(
     tokens: int, simple_threshold: int = 500, complex_threshold: int = 2000
-) -> tuple[float, Optional[str]]:
+) -> tuple[float, str | None]:
     if tokens < simple_threshold:
         return -1.0, f"short ({tokens} tokens)"
     if tokens > complex_threshold:
@@ -291,7 +291,7 @@ def _score_keywords(
     score_low: float,
     score_high: float,
     signal_label: str,
-) -> tuple[float, Optional[str]]:
+) -> tuple[float, str | None]:
     matches = [kw for kw in keywords if kw.lower() in text]
     count = len(matches)
     preview = ", ".join(matches[:3])
@@ -302,21 +302,21 @@ def _score_keywords(
     return score_none, None
 
 
-def _score_multi_step(text: str) -> tuple[float, Optional[str]]:
+def _score_multi_step(text: str) -> tuple[float, str | None]:
     for pat in _MULTI_STEP_PATTERNS:
         if pat.search(text):
             return 0.5, "multi-step"
     return 0.0, None
 
 
-def _score_question_complexity(text: str) -> tuple[float, Optional[str]]:
+def _score_question_complexity(text: str) -> tuple[float, str | None]:
     count = text.count("?")
     if count > 3:
         return 0.5, f"{count} questions"
     return 0.0, None
 
 
-def _score_agentic(text: str) -> tuple[float, Optional[str], float]:
+def _score_agentic(text: str) -> tuple[float, str | None, float]:
     """Returns (dimension_score, signal, raw_agentic_score)."""
     matched = [kw for kw in _AGENTIC_KEYWORDS if kw.lower() in text]
     count = len(matched)
@@ -341,7 +341,7 @@ def _calibrate_confidence(distance: float, steepness: float = 8.0) -> float:
 def classify_request(
     messages: list[dict[str, Any]],
     *,
-    tools: Optional[list[Any]] = None,
+    tools: list[Any] | None = None,
     profile: RoutingProfile = "auto",
     max_tokens_force_complex: int = 8000,
     confidence_threshold: float = 0.60,
@@ -401,7 +401,7 @@ def classify_request(
 
     # Score dimensions against user text (lowercased)
     ut = user_text.lower()
-    dimensions: dict[str, tuple[float, Optional[str]]] = {}
+    dimensions: dict[str, tuple[float, str | None]] = {}
 
     dimensions["tokenCount"] = _score_token_count(estimated_tokens)
     dimensions["codePresence"] = _score_keywords(
@@ -487,7 +487,7 @@ def classify_request(
     mc = _TIER_BOUNDARIES["medium_complex"]
     cr = _TIER_BOUNDARIES["complex_reasoning"]
 
-    tier: Optional[RequestTier]
+    tier: RequestTier | None
     distance: float
 
     if weighted_score < sm:
@@ -541,7 +541,7 @@ def classify_prompt(
     prompt: str,
     *,
     system_prompt: str = "",
-    tools: Optional[list[Any]] = None,
+    tools: list[Any] | None = None,
     profile: RoutingProfile = "auto",
 ) -> ClassificationResult:
     """
@@ -560,7 +560,7 @@ def classify_prompt(
     return classify_request(messages, tools=tools, profile=profile)
 
 
-def tier_rank(tier: Optional[RequestTier]) -> int:
+def tier_rank(tier: RequestTier | None) -> int:
     """Numeric rank for tier comparison (SIMPLE=0, MEDIUM=1, COMPLEX=2, REASONING=3, AGENTIC=4)."""
     return {"SIMPLE": 0, "MEDIUM": 1, "COMPLEX": 2, "REASONING": 3, "AGENTIC": 4}.get(
         tier or "MEDIUM", 1

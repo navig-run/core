@@ -4,10 +4,11 @@ NAVIG Vault Core - Main CredentialsVault Class
 The primary API for credential management across all NAVIG components.
 """
 
+import builtins
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from .encryption import VaultEncryption
 from .secret_str import SecretStr
@@ -62,7 +63,7 @@ class CredentialsVault:
 
     def __init__(
         self,
-        vault_path: Optional[Path] = None,
+        vault_path: Path | None = None,
         auto_migrate: bool = True,
     ):
         """
@@ -108,7 +109,7 @@ class CredentialsVault:
         """
         return self._active_profile
 
-    def list_profiles(self) -> List[str]:
+    def list_profiles(self) -> list[str]:
         """
         List all unique profile IDs in the vault.
 
@@ -138,11 +139,11 @@ class CredentialsVault:
     def add(
         self,
         provider: str,
-        credential_type: Union[str, CredentialType],
-        data: Dict[str, Any],
+        credential_type: str | CredentialType,
+        data: dict[str, Any],
         profile_id: str = "default",
-        label: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        label: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Add a new credential to the vault.
@@ -199,9 +200,9 @@ class CredentialsVault:
     def get(
         self,
         provider: str,
-        profile_id: Optional[str] = None,
+        profile_id: str | None = None,
         caller: str = "unknown",
-    ) -> Optional[Credential]:
+    ) -> Credential | None:
         """
         Get credential for a provider.
 
@@ -243,7 +244,7 @@ class CredentialsVault:
 
     def get_by_id(
         self, credential_id: str, caller: str = "unknown"
-    ) -> Optional[Credential]:
+    ) -> Credential | None:
         """
         Get credential by its ID.
 
@@ -264,9 +265,9 @@ class CredentialsVault:
         self,
         provider: str,
         key: str = "api_key",
-        profile_id: Optional[str] = None,
+        profile_id: str | None = None,
         caller: str = "unknown",
-    ) -> Optional[SecretStr]:
+    ) -> SecretStr | None:
         """
         Get a specific secret value wrapped in SecretStr.
 
@@ -297,9 +298,9 @@ class CredentialsVault:
 
     def list(
         self,
-        provider: Optional[str] = None,
-        profile_id: Optional[str] = None,
-    ) -> List[CredentialInfo]:
+        provider: str | None = None,
+        profile_id: str | None = None,
+    ) -> list[CredentialInfo]:
         """
         List credentials (metadata only, no secrets).
 
@@ -317,9 +318,9 @@ class CredentialsVault:
     def update(
         self,
         credential_id: str,
-        data: Optional[Dict[str, Any]] = None,
-        label: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
+        label: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """
         Update credential data.
@@ -402,8 +403,8 @@ class CredentialsVault:
         self,
         credential_id: str,
         new_profile_id: str,
-        new_label: Optional[str] = None,
-    ) -> Optional[str]:
+        new_label: str | None = None,
+    ) -> str | None:
         """
         Clone credential to a new profile.
 
@@ -465,9 +466,7 @@ class CredentialsVault:
 
         return result
 
-    def test_provider(
-        self, provider: str, profile_id: Optional[str] = None
-    ) -> TestResult:
+    def test_provider(self, provider: str, profile_id: str | None = None) -> TestResult:
         """
         Test credential for a specific provider/profile.
 
@@ -493,9 +492,9 @@ class CredentialsVault:
     def get_api_key(
         self,
         provider: str,
-        profile_id: Optional[str] = None,
+        profile_id: str | None = None,
         caller: str = "unknown",
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Get API key with environment variable fallback.
 
@@ -527,7 +526,7 @@ class CredentialsVault:
         # Environment variable fallback
         return self._get_env_key(provider)
 
-    def _get_env_key(self, provider: str) -> Optional[str]:
+    def _get_env_key(self, provider: str) -> str | None:
         """Get API key from environment variables."""
         # Import here to avoid circular imports
         try:
@@ -553,9 +552,9 @@ class CredentialsVault:
 
     def get_audit_log(
         self,
-        credential_id: Optional[str] = None,
+        credential_id: str | None = None,
         limit: int = 100,
-    ) -> List[dict]:
+    ) -> builtins.list[dict]:
         """
         Get audit log entries.
 
@@ -574,7 +573,7 @@ class CredentialsVault:
 
     def count(
         self,
-        provider: Optional[str] = None,
+        provider: str | None = None,
         enabled_only: bool = False,
     ) -> int:
         """
@@ -620,7 +619,7 @@ class CredentialsVault:
                 provider = cred_data.get("provider", "unknown")
 
                 # Map old format to new
-                vault_data: Dict[str, Any] = {}
+                vault_data: dict[str, Any] = {}
                 if cred_type == "api_key":
                     vault_data["api_key"] = cred_data.get("key", "")
                 elif cred_type == "oauth":

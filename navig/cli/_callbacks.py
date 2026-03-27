@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 from navig import __version__
@@ -14,7 +12,7 @@ ch = lazy_import("navig.console_helper")
 _HACKER_QUOTES: list | None = None
 
 
-def show_subcommand_help(name: str, ctx: Optional[typer.Context] = None):
+def show_subcommand_help(name: str, ctx: typer.Context | None = None):
     """Display compact help for a subcommand using the help registry."""
     from rich.console import Console
     from rich.table import Table

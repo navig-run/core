@@ -7,7 +7,7 @@ ordered list of UpdateTarget objects.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -16,7 +16,7 @@ class UpdateTarget:
 
     node_id: str  # "local" or hostname
     type: str = "local"  # "local" | "ssh"
-    server_config: Optional[Dict] = field(default=None, repr=False)
+    server_config: dict | None = field(default=None, repr=False)
 
     @property
     def is_local(self) -> bool:
@@ -40,10 +40,10 @@ class TargetResolver:
     # ------------------------------------------------------------------
     def resolve(
         self,
-        host: Optional[str] = None,
-        group: Optional[str] = None,
+        host: str | None = None,
+        group: str | None = None,
         all_hosts: bool = False,
-    ) -> List[UpdateTarget]:
+    ) -> list[UpdateTarget]:
         """Return ordered list of targets.
 
         Priority: all_hosts > group > host > default(local).
@@ -61,8 +61,8 @@ class TargetResolver:
         return [UpdateTarget(node_id="local", type="local")]
 
     # ------------------------------------------------------------------
-    def _all_targets(self) -> List[UpdateTarget]:
-        targets: List[UpdateTarget] = [UpdateTarget(node_id="local", type="local")]
+    def _all_targets(self) -> list[UpdateTarget]:
+        targets: list[UpdateTarget] = [UpdateTarget(node_id="local", type="local")]
         try:
             host_names = self._cm.list_hosts() or []
         except Exception:
@@ -75,13 +75,13 @@ class TargetResolver:
                 )
         return targets
 
-    def _group_targets(self, group: str) -> List[UpdateTarget]:
+    def _group_targets(self, group: str) -> list[UpdateTarget]:
         try:
             host_names = self._cm.get_group_hosts(group)
         except Exception as exc:
             raise ValueError(str(exc)) from exc
 
-        targets: List[UpdateTarget] = []
+        targets: list[UpdateTarget] = []
         for name in host_names:
             if name in ("local", "localhost"):
                 targets.append(UpdateTarget(node_id="local", type="local"))
@@ -93,7 +93,7 @@ class TargetResolver:
                 )
         return targets
 
-    def _host_targets(self, host: str) -> List[UpdateTarget]:
+    def _host_targets(self, host: str) -> list[UpdateTarget]:
         if host in ("local", "localhost"):
             return [UpdateTarget(node_id="local", type="local")]
         cfg = self._load_host(host)
@@ -104,7 +104,7 @@ class TargetResolver:
             )
         return [UpdateTarget(node_id=host, type="ssh", server_config=cfg)]
 
-    def _load_host(self, name: str) -> Optional[Dict]:
+    def _load_host(self, name: str) -> dict | None:
         try:
             return self._cm.load_host_config(name)
         except Exception:

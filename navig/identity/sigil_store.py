@@ -28,7 +28,7 @@ def _identity_path() -> Path:
 _SCHEMA_VERSION = 1
 
 
-def persist_entity(entity: "NaviEntity") -> None:
+def persist_entity(entity: NaviEntity) -> None:
     """Save entity fields to ~/.navig/entity.json. Creates directories if needed."""
     path = _identity_path()
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -5,13 +5,13 @@ Provides pre/post execution hooks for the proactive assistant system.
 """
 
 import time
-from typing import Any, Dict
+from typing import Any
 
 from navig import console_helper as ch
 
 
 def pre_execution_check(
-    ctx_obj: Dict[str, Any], command: str, args: Dict[str, Any]
+    ctx_obj: dict[str, Any], command: str, args: dict[str, Any]
 ) -> bool:
     """
     Check for pre-execution warnings before running a command.
@@ -66,7 +66,7 @@ def pre_execution_check(
 
 
 def post_execution_log(
-    ctx_obj: Dict[str, Any],
+    ctx_obj: dict[str, Any],
     command: str,
     exit_code: int,
     stdout: str = "",
@@ -116,7 +116,7 @@ def post_execution_log(
 
 
 def analyze_and_suggest_solutions(
-    ctx_obj: Dict[str, Any], command: str, exit_code: int, error_message: str
+    ctx_obj: dict[str, Any], command: str, exit_code: int, error_message: str
 ):
     """
     Analyze error and display suggested solutions.

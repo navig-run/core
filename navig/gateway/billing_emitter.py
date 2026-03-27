@@ -29,7 +29,7 @@ import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def _now_iso() -> str:
@@ -41,7 +41,7 @@ def _now_iso() -> str:
 
 # Map action slugs → billing event_type + units
 # Unknown actions default to event_type==action, units==1
-_ACTION_MAP: Dict[str, tuple[str, int]] = {
+_ACTION_MAP: dict[str, tuple[str, int]] = {
     "mission.create": ("mission.create", 1),
     "mission.advance.start": ("mission.start", 1),
     "mission.advance.retry": ("mission.retry", 1),
@@ -63,7 +63,7 @@ class BillingEmitter:
     Call ``emit()`` after a successful policy ALLOW to record a chargeable event.
     """
 
-    def __init__(self, log_path: Optional[Path] = None) -> None:
+    def __init__(self, log_path: Path | None = None) -> None:
         if log_path is None:
             log_path = Path.home() / ".navig" / "runtime" / "billing.jsonl"
         self._path = log_path
@@ -76,11 +76,11 @@ class BillingEmitter:
         self,
         actor: str,
         action: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Write one billing record (non-blocking, thread-safe)."""
         event_type, units = _ACTION_MAP.get(action, (action, 1))
-        record: Dict[str, Any] = {
+        record: dict[str, Any] = {
             "ts": _now_iso(),
             "actor": actor,
             "action": action,
@@ -91,11 +91,10 @@ class BillingEmitter:
             record["metadata"] = metadata
 
         line = json.dumps(record, ensure_ascii=False)
-        with self._lock:
-            with open(self._path, "a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
+        with self._lock, open(self._path, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
 
-    def tail(self, n: int = 50) -> List[Dict[str, Any]]:
+    def tail(self, n: int = 50) -> list[dict[str, Any]]:
         """Return the last *n* billing records (oldest-first)."""
         if not self._path.exists():
             return []

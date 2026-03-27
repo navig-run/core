@@ -22,7 +22,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rich.align import Align
 from rich.console import Console
@@ -149,7 +149,7 @@ def _check_pid_alive(pid: int) -> bool:
         return False
 
 
-def _detect_daemon_status() -> Dict[str, Any]:
+def _detect_daemon_status() -> dict[str, Any]:
     """Detect NAVIG daemon supervisor status."""
     info = {"status": "stopped", "pid": None, "children": []}
     if DAEMON_PID_FILE.exists():
@@ -176,8 +176,8 @@ def _detect_daemon_status() -> Dict[str, Any]:
 
 
 def _detect_child_status(
-    daemon_info: Dict[str, Any], child_name: str
-) -> Dict[str, Any]:
+    daemon_info: dict[str, Any], child_name: str
+) -> dict[str, Any]:
     """Extract a specific child status from daemon state."""
     for child in daemon_info.get("children", []):
         if child.get("name") == child_name:
@@ -196,14 +196,14 @@ def _detect_child_status(
     return {"status": "unknown", "pid": None, "restarts": 0, "enabled": False}
 
 
-def _detect_gateway_status() -> Dict[str, Any]:
+def _detect_gateway_status() -> dict[str, Any]:
     """Detect NAVIG Gateway status via port check."""
     if _check_port(GATEWAY_PORT):
         return {"status": "running", "port": GATEWAY_PORT}
     return {"status": "stopped", "port": GATEWAY_PORT}
 
 
-def _detect_tunnels() -> List[Dict[str, Any]]:
+def _detect_tunnels() -> list[dict[str, Any]]:
     """Load active SSH tunnels from cache."""
     if not TUNNELS_FILE.exists():
         return []
@@ -227,7 +227,7 @@ def _detect_tunnels() -> List[Dict[str, Any]]:
         return []
 
 
-def _detect_pool_stats() -> Dict[str, Any]:
+def _detect_pool_stats() -> dict[str, Any]:
     """Get SSH connection pool stats (safe — no import error if pool unused)."""
     try:
         from navig.connection_pool import SSHConnectionPool
@@ -253,10 +253,10 @@ class KeyReader:
     """Non-blocking keyboard reader for the dashboard."""
 
     def __init__(self):
-        self._keys: List[str] = []
+        self._keys: list[str] = []
         self._lock = threading.Lock()
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def start(self):
         self._running = True
@@ -266,7 +266,7 @@ class KeyReader:
     def stop(self):
         self._running = False
 
-    def get_key(self) -> Optional[str]:
+    def get_key(self) -> str | None:
         with self._lock:
             return self._keys.pop(0) if self._keys else None
 
@@ -419,8 +419,8 @@ def create_layout(cols: int = 120, rows: int = 30) -> Layout:
 
 
 def make_header(
-    active_host: Optional[str],
-    active_app: Optional[str],
+    active_host: str | None,
+    active_app: str | None,
     event_count: int,
     error_count: int,
     uptime_s: float,
@@ -449,7 +449,7 @@ def make_header(
     return Panel(" │ ".join(parts), border_style="cyan")
 
 
-def make_services_panel(op_state: Dict[str, Any], cols: int = 120) -> Panel:
+def make_services_panel(op_state: dict[str, Any], cols: int = 120) -> Panel:
     """Core operational services status panel."""
     daemon = op_state.get("daemon", {})
     bot = op_state.get("telegram_bot", {})
@@ -552,7 +552,7 @@ def make_services_panel(op_state: Dict[str, Any], cols: int = 120) -> Panel:
     return Panel(table, title="[bold]⚡ Core Services[/bold]", border_style="cyan")
 
 
-def make_tunnels_panel(tunnels: List[Dict[str, Any]], cols: int = 120) -> Panel:
+def make_tunnels_panel(tunnels: list[dict[str, Any]], cols: int = 120) -> Panel:
     """Active SSH tunnels panel."""
     compact = cols < 90
 
@@ -602,7 +602,7 @@ def make_tunnels_panel(tunnels: List[Dict[str, Any]], cols: int = 120) -> Panel:
 
 
 def make_hosts_panel(
-    config_manager, hosts_status: Dict[str, Any], cols: int = 120
+    config_manager, hosts_status: dict[str, Any], cols: int = 120
 ) -> Panel:
     """Remote host connectivity panel."""
     compact = cols < 90
@@ -680,7 +680,7 @@ def make_kraken_panel(frame_idx: int, compact: bool = False) -> Panel:
     )
 
 
-def make_tip_panel(activity_log: List[str]) -> Panel:
+def make_tip_panel(activity_log: list[str]) -> Panel:
     """Deep sea tips and activity feed."""
     tip = TENTACLE_TIPS[int(time.time() / 10) % len(TENTACLE_TIPS)]
     recent = activity_log[-3:] if activity_log else []
@@ -764,8 +764,8 @@ class DashboardState:
     """All mutable dashboard state."""
 
     def __init__(self):
-        self.hosts_status: Dict[str, Dict[str, Any]] = {}
-        self.op_state: Dict[str, Any] = (
+        self.hosts_status: dict[str, dict[str, Any]] = {}
+        self.op_state: dict[str, Any] = (
             {}
         )  # daemon, telegram_bot, gateway, scheduler, pool, tunnels
         self.last_hosts_check: float = 0
@@ -778,7 +778,7 @@ class DashboardState:
         self.events: int = 0
         self.errors: int = 0
         self.started_at: float = time.time()
-        self.activity_log: List[str] = []
+        self.activity_log: list[str] = []
 
     def log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -794,8 +794,8 @@ class DashboardState:
 
 
 def check_host_connectivity(
-    host_config: Dict[str, Any], timeout: int = 5
-) -> Dict[str, Any]:
+    host_config: dict[str, Any], timeout: int = 5
+) -> dict[str, Any]:
     """Ping-based connectivity check."""
     try:
         host = host_config.get("host", host_config.get("ip"))

@@ -9,7 +9,6 @@ model_router.py with a single canonical implementation that returns
 from __future__ import annotations
 
 import re
-from typing import List, Tuple
 
 # ── Patterns (ported from llm_router.py + model_router.py) ─────────
 
@@ -59,7 +58,7 @@ _BIG_TASK_PATTERNS = re.compile(
 _QUESTION_ENDINGS = re.compile(r"\?\s*$")
 
 
-def detect_mode(text: str) -> Tuple[str, float, List[str]]:
+def detect_mode(text: str) -> tuple[str, float, list[str]]:
     """
     Classify user input into a task mode with confidence score.
 
@@ -70,7 +69,7 @@ def detect_mode(text: str) -> Tuple[str, float, List[str]]:
         reasons: list of strings explaining the classification
     """
     text = text.strip()
-    reasons: List[str] = []
+    reasons: list[str] = []
 
     if not text:
         return "small_talk", 0.95, ["empty_input"]

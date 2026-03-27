@@ -19,7 +19,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ TERMINAL_STATES = frozenset(
 )
 
 # Valid state transitions  (from_state → set of allowed to_states)
-ALLOWED_TRANSITIONS: Dict[MissionStatus, frozenset] = {
+ALLOWED_TRANSITIONS: dict[MissionStatus, frozenset] = {
     MissionStatus.QUEUED: frozenset({MissionStatus.RUNNING, MissionStatus.CANCELLED}),
     MissionStatus.RUNNING: frozenset(
         {
@@ -101,28 +101,28 @@ class Mission:
 
     # Identity
     mission_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    node_id: Optional[str] = None
+    node_id: str | None = None
     capability: str = ""
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     priority: int = MissionPriority.NORMAL.value
 
     # State
     status: MissionStatus = MissionStatus.QUEUED
 
     # Output
-    result: Optional[Any] = None
-    error: Optional[str] = None
+    result: Any | None = None
+    error: str | None = None
 
     # Timestamps
     created_at: str = field(default_factory=lambda: _now_iso())
-    queued_at: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    queued_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
     # Config
-    timeout_secs: Optional[float] = None
-    tags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    timeout_secs: float | None = None
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # ── State machine ─────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ class Mission:
         return self.status in TERMINAL_STATES
 
     @property
-    def duration_secs(self) -> Optional[float]:
+    def duration_secs(self) -> float | None:
         """Wall-clock duration from start to completion, or None if not complete."""
         if self.started_at and self.completed_at:
             start = datetime.fromisoformat(self.started_at)
@@ -188,7 +188,7 @@ class Mission:
 
     # ── Serialization ────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value
         return d
@@ -197,13 +197,13 @@ class Mission:
         return json.dumps(self.to_dict(), indent=2)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Mission":
+    def from_dict(cls, data: dict[str, Any]) -> Mission:
         data = dict(data)
         data["status"] = MissionStatus(data.get("status", "queued"))
         return cls(**data)
 
     @classmethod
-    def from_json(cls, raw: str) -> "Mission":
+    def from_json(cls, raw: str) -> Mission:
         return cls.from_dict(json.loads(raw))
 
     def __repr__(self) -> str:

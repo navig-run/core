@@ -6,7 +6,6 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 @dataclass
@@ -17,14 +16,14 @@ class ScriptEntry:
     created_at: str
     success_count: int = 0
     last_used: str = ""
-    tags: List[str] = None
+    tags: list[str] = None
 
     def to_dict(self):
         return asdict(self)
 
 
 class ScriptLibrary:
-    def __init__(self, storage_dir: Optional[Path] = None):
+    def __init__(self, storage_dir: Path | None = None):
         if storage_dir is None:
             # Default to ~/.navig/ahk_library
             self.storage_dir = Path.home() / ".navig" / "ahk_library"
@@ -37,13 +36,13 @@ class ScriptLibrary:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         (self.storage_dir / "scripts").mkdir(exist_ok=True)
 
-        self._index: Dict[str, ScriptEntry] = {}
+        self._index: dict[str, ScriptEntry] = {}
         self._load_index()
 
     def _load_index(self):
         if self.index_file.exists():
             try:
-                with open(self.index_file, "r", encoding="utf-8") as f:
+                with open(self.index_file, encoding="utf-8") as f:
                     data = json.load(f)
                     for k, v in data.items():
                         self._index[k] = ScriptEntry(**v)
@@ -55,7 +54,7 @@ class ScriptLibrary:
         with open(self.index_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-    def save_script(self, goal: str, script: str, tags: List[str] = None) -> str:
+    def save_script(self, goal: str, script: str, tags: list[str] = None) -> str:
         """Save a new script to the library."""
         import hashlib
 
@@ -83,7 +82,7 @@ class ScriptLibrary:
 
         return script_id
 
-    def find_script(self, goal: str) -> Optional[ScriptEntry]:
+    def find_script(self, goal: str) -> ScriptEntry | None:
         """Find a script matching the goal (exact match for now)."""
         # AUDIT: MANUAL REVIEW REQUIRED — fuzzy retrieval strategy requires benchmarked ranking design and corpus migration.
         # Consider fuzzy match or semantic embeddings here for larger libraries
@@ -100,5 +99,5 @@ class ScriptLibrary:
             entry.last_used = datetime.now().isoformat()
             self._save_index()
 
-    def list_scripts(self) -> List[ScriptEntry]:
+    def list_scripts(self) -> list[ScriptEntry]:
         return list(self._index.values())

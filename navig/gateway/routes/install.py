@@ -115,7 +115,7 @@ function copy(id) {{
 """
 
 
-def register(app: "web.Application", gateway: "NavigGateway") -> None:
+def register(app: web.Application, gateway: NavigGateway) -> None:
     app.router.add_get("/install", _html(gateway))
     app.router.add_get("/install/windows", _windows(gateway))
     app.router.add_get("/install/linux", _linux(gateway))
@@ -126,7 +126,7 @@ def register(app: "web.Application", gateway: "NavigGateway") -> None:
 # ─────────────────────────── helpers ─────────────────────────────────────────
 
 
-def _get_my_url(gw: "NavigGateway") -> str:
+def _get_my_url(gw: NavigGateway) -> str:
     """Best guess at this machine's reachable gateway URL from other LAN machines."""
     try:
         ip = gw.config.get("gateway", {}).get("host") or _lan_ip()
@@ -149,15 +149,15 @@ def _lan_ip() -> str:
         s.close()
 
 
-def _mesh_token(gw: "NavigGateway") -> str:
+def _mesh_token(gw: NavigGateway) -> str:
     return gw.config.get("gateway", {}).get("mesh_token", "")
 
 
 # ─────────────────────────── route handlers ──────────────────────────────────
 
 
-def _html(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _html(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         url = _get_my_url(gw)
         token = _mesh_token(gw)
         win = _ps1_oneliner(url, token)
@@ -177,8 +177,8 @@ def _html(gw: "NavigGateway"):
     return h
 
 
-def _windows(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _windows(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         url = _get_my_url(gw)
         token = _mesh_token(gw)
         script = _ps1_oneliner(url, token)
@@ -187,8 +187,8 @@ def _windows(gw: "NavigGateway"):
     return h
 
 
-def _linux(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _linux(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         url = _get_my_url(gw)
         token = _mesh_token(gw)
         script = _bash_oneliner(url, token)
@@ -197,10 +197,10 @@ def _linux(gw: "NavigGateway"):
     return h
 
 
-def _config(gw: "NavigGateway"):
+def _config(gw: NavigGateway):
     """Return a minimal JSON bootstrap config so a new node can join without browsing."""
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         import json
 
         url = _get_my_url(gw)

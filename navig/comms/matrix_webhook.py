@@ -18,7 +18,7 @@ import hmac
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,9 @@ def _sign(payload: str, secret: str) -> str:
 
 
 async def push_matrix_stats(
-    endpoint: Optional[str] = None,
-    secret: Optional[str] = None,
-    stats: Optional[Dict[str, Any]] = None,
+    endpoint: str | None = None,
+    secret: str | None = None,
+    stats: dict[str, Any] | None = None,
 ) -> bool:
     """
     Push Matrix store stats to the Cloudflare D1 stats endpoint.

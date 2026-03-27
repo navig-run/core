@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # User-level canonical locations
 USER_NAVIG_DIR = Path.home() / ".navig"
@@ -53,7 +52,7 @@ GENERATED_DEFAULT_FILES = {
 class WorkspaceDuplicate:
     file_name: str
     project_path: Path
-    user_path: Optional[Path]
+    user_path: Path | None
     status: str
 
 
@@ -71,7 +70,7 @@ def classify_workspace_file(file_name: str) -> str:
     )
 
 
-def is_project_workspace_path(path: Path, project_root: Optional[Path] = None) -> bool:
+def is_project_workspace_path(path: Path, project_root: Path | None = None) -> bool:
     """Return True when path points to a project-local .navig/workspace directory."""
     try:
         resolved = path.expanduser().resolve()
@@ -83,10 +82,10 @@ def is_project_workspace_path(path: Path, project_root: Optional[Path] = None) -
 
 
 def resolve_personal_workspace_path(
-    requested_workspace: Optional[Path],
+    requested_workspace: Path | None,
     *,
-    project_root: Optional[Path] = None,
-) -> tuple[Path, Optional[Path]]:
+    project_root: Path | None = None,
+) -> tuple[Path, Path | None]:
     """
     Resolve canonical user workspace path, preserving legacy project path as fallback.
 
@@ -123,9 +122,9 @@ def _sha256(path: Path) -> str:
 
 def detect_project_workspace_duplicates(
     *,
-    project_root: Optional[Path] = None,
-    user_workspace: Optional[Path] = None,
-) -> List[WorkspaceDuplicate]:
+    project_root: Path | None = None,
+    user_workspace: Path | None = None,
+) -> list[WorkspaceDuplicate]:
     """
     Detect personal/state file duplication between project and user workspace.
 
@@ -135,7 +134,7 @@ def detect_project_workspace_duplicates(
     project_workspace = root / PROJECT_WORKSPACE_SUBPATH
     user_ws = (user_workspace or USER_WORKSPACE_DIR).expanduser()
 
-    duplicates: List[WorkspaceDuplicate] = []
+    duplicates: list[WorkspaceDuplicate] = []
     if not project_workspace.is_dir():
         return duplicates
 
@@ -172,8 +171,8 @@ def detect_project_workspace_duplicates(
     return duplicates
 
 
-def summarize_duplicates(duplicates: List[WorkspaceDuplicate]) -> Dict[str, int]:
-    summary: Dict[str, int] = {
+def summarize_duplicates(duplicates: list[WorkspaceDuplicate]) -> dict[str, int]:
+    summary: dict[str, int] = {
         "duplicate_conflict": 0,
         "duplicate_identical": 0,
         "project_only_legacy": 0,

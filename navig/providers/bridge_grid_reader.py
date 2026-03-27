@@ -28,7 +28,6 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 # Must match PRIMARY_TTL_MS in navig-bridge extension.ts (15 000 ms)
 PRIMARY_TTL_SECONDS: float = 15.0
@@ -41,10 +40,10 @@ _PROBE_INTERVAL: float = 5.0
 
 _bridge_grid_path: Path = Path.home() / ".navig" / "bridge-grid.json"
 _last_read_ts: float = 0.0
-_cached_result: Optional[dict] = None
+_cached_result: dict | None = None
 
 
-def read_bridge_grid(*, force: bool = False) -> Optional[dict]:
+def read_bridge_grid(*, force: bool = False) -> dict | None:
     """Return parsed bridge-grid.json data if valid, else ``None``.
 
     Results are cached for ``_PROBE_INTERVAL`` seconds to avoid constant
@@ -62,7 +61,7 @@ def read_bridge_grid(*, force: bool = False) -> Optional[dict]:
     return _cached_result
 
 
-def _read_and_validate() -> Optional[dict]:
+def _read_and_validate() -> dict | None:
     try:
         text = _bridge_grid_path.read_text(encoding="utf-8")
         data = json.loads(text)
@@ -99,7 +98,7 @@ def is_bridge_grid_alive(*, force: bool = False) -> bool:
     return read_bridge_grid(force=force) is not None
 
 
-def get_llm_port(*, force: bool = False) -> Optional[int]:
+def get_llm_port(*, force: bool = False) -> int | None:
     """Return the live LlmServer WebSocket port, or ``None``."""
     data = read_bridge_grid(force=force)
     if data:
@@ -107,7 +106,7 @@ def get_llm_port(*, force: bool = False) -> Optional[int]:
     return None
 
 
-def get_bridge_port(*, force: bool = False) -> Optional[int]:
+def get_bridge_port(*, force: bool = False) -> int | None:
     """Return the live CopilotBridgeProvider HTTP port, or ``None``."""
     data = read_bridge_grid(force=force)
     if data:

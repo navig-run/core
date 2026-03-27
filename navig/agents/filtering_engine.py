@@ -22,10 +22,10 @@ import hashlib
 import logging
 import re
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,8 @@ class FilterResult:
     changed: bool = False  # File was actually written
     would_change: bool = False  # Dry-run detected a potential change
     skipped: bool = False  # File is not eligible (not .md, etc.)
-    error: Optional[str] = None  # Non-None if processing failed
-    rules_applied: List[str] = field(default_factory=list)
+    error: str | None = None  # Non-None if processing failed
+    rules_applied: list[str] = field(default_factory=list)
 
 
 # ── Normalization helpers ─────────────────────────────────────────────────────
@@ -163,11 +163,11 @@ class FilteringEngine:
     def __init__(
         self,
         project_root: Path,
-        on_change: Optional[Callable[[Path], None]] = None,
+        on_change: Callable[[Path], None] | None = None,
     ) -> None:
         self.project_root = Path(project_root).resolve()
         self.on_change = on_change
-        self._last_hashes: Dict[str, str] = {}
+        self._last_hashes: dict[str, str] = {}
         self._stop_event = threading.Event()
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -254,7 +254,7 @@ class FilteringEngine:
 
         return result
 
-    def scan_and_filter(self, dry_run: bool = False) -> List[FilterResult]:
+    def scan_and_filter(self, dry_run: bool = False) -> list[FilterResult]:
         """
         Walk all eligible .navig/ subdirectories and filter each .md file.
 
@@ -267,7 +267,7 @@ class FilteringEngine:
         would_change, skipped, or error).  Files that are clean (no change
         needed) are omitted from the result list.
         """
-        results: List[FilterResult] = []
+        results: list[FilterResult] = []
         inbox_abs = (self.project_root / INBOX_RELATIVE).resolve()
 
         for rel in SCAN_ROOTS:
@@ -303,7 +303,7 @@ class FilteringEngine:
         self,
         interval_secs: float = 5.0,
         dry_run: bool = False,
-        max_cycles: Optional[int] = None,
+        max_cycles: int | None = None,
     ) -> None:
         """
         Blocking polling loop.  Checks for new or modified files every
@@ -343,9 +343,9 @@ class FilteringEngine:
 
     # ── Internals ────────────────────────────────────────────────────────────
 
-    def _collect_all_md_files(self, inbox_abs: Path) -> List[Path]:
+    def _collect_all_md_files(self, inbox_abs: Path) -> list[Path]:
         """Return all .md files under SCAN_ROOTS, excluding inbox."""
-        files: List[Path] = []
+        files: list[Path] = []
         for rel in SCAN_ROOTS:
             scan_dir = self.project_root / rel
             if not scan_dir.exists():

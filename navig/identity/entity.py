@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Dict, List
 
 # ── Design tokens: archetypes & palettes ────────────────────────────────────
 
-ENTITY_ARCHETYPES: List[str] = [
+ENTITY_ARCHETYPES: list[str] = [
     "Leviathan",
     "Wraith",
     "Chimera",
@@ -35,7 +34,7 @@ ENTITY_ARCHETYPES: List[str] = [
 # Palette layout: [bg_hint,  entity_primary,  entity_accent]
 # All palettes live in the NAVIG oceanic universe — deep sea / kraken / void.
 # Entity color uniqueness comes from WHICH ocean variant they drew.
-PALETTES: Dict[str, List[str]] = {
+PALETTES: dict[str, list[str]] = {
     # electric abyss — the core NAVIG signature
     "abyssal": ["#060B1A", "#00D4FF", "#0057FF"],
     # bioluminescent deep — living light in the dark
@@ -48,7 +47,7 @@ PALETTES: Dict[str, List[str]] = {
     "kraken_gold": ["#0C0B04", "#F0B429", "#FF9F1C"],
 }
 
-SUBSYSTEMS: List[str] = [
+SUBSYSTEMS: list[str] = [
     "vault",
     "gateway",
     "mesh",
@@ -60,7 +59,7 @@ SUBSYSTEMS: List[str] = [
 # ── Machine name generation ──────────────────────────────────────────────────
 # Curated morpheme banks — phonetically optimised for impact + memorability.
 # Prefixes: strong consonant openings, monosyllabic punch.
-_NAME_PREFIXES: List[str] = [
+_NAME_PREFIXES: list[str] = [
     "VOID",
     "IRON",
     "DRIFT",
@@ -87,7 +86,7 @@ _NAME_PREFIXES: List[str] = [
     "FELL",
 ]
 # Suffixes: evocative endings — space/sea/predator register.
-_NAME_SUFFIXES: List[str] = [
+_NAME_SUFFIXES: list[str] = [
     "KITE",
     "SHADOW",
     "PULSE",
@@ -132,7 +131,7 @@ def generate_machine_name(seed: str) -> str:
 #   MID    → mid-tone             (▒ ⣶ ⣤ ┼ ┯)
 #   LIGHT  → dim/receding         (░ ⣀ ⠿ ⠶ ⠤)
 #   VOID   → negative space (spaces weighted highest for breathing room)
-_SIGIL_GLYPHS: List[str] = [
+_SIGIL_GLYPHS: list[str] = [
     # dense — weight 4
     "▓",
     "▓",
@@ -183,9 +182,9 @@ class NaviEntity:
     name: str  # e.g. "WRAITH-4A7F"
     archetype: str
     palette_key: str
-    sigil_matrix: List[List[str]]  # N×N symmetric glyph grid
-    sigil_compact: List[List[str]]  # 5×5 fallback for narrow terminals
-    subsystem_order: List[str]
+    sigil_matrix: list[list[str]]  # N×N symmetric glyph grid
+    sigil_compact: list[list[str]]  # 5×5 fallback for narrow terminals
+    subsystem_order: list[str]
     resonance: int  # 0–100, cosmetic "entity strength"
 
 
@@ -223,13 +222,13 @@ def derive_entity(seed: str) -> NaviEntity:
     )
 
 
-def _generate_sigil(rng: random.Random, size: int) -> List[List[str]]:
+def _generate_sigil(rng: random.Random, size: int) -> list[list[str]]:
     """
     Build an N×N symmetric glyph grid.
     Left half (including centre column) is randomly sampled;
     right half is mirrored — creating the QR-sigil aesthetic.
     """
-    grid: List[List[str]] = []
+    grid: list[list[str]] = []
     half = size // 2 + 1  # centre column included in left
     for _ in range(size):
         left = [rng.choice(_SIGIL_GLYPHS) for _ in range(half)]

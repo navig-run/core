@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import discord
@@ -42,10 +43,10 @@ class DiscordChannelConfig:
 
     def __init__(
         self,
-        token: Optional[str] = None,
-        allowed_guilds: Optional[List[int]] = None,
-        allowed_users: Optional[List[int]] = None,
-        allowed_channels: Optional[List[int]] = None,
+        token: str | None = None,
+        allowed_guilds: list[int] | None = None,
+        allowed_users: list[int] | None = None,
+        allowed_channels: list[int] | None = None,
         command_prefix: str = "!navig",
         respond_to_mentions: bool = True,
         respond_to_dms: bool = True,
@@ -71,7 +72,7 @@ class DiscordChannelConfig:
         self.respond_to_dms = respond_to_dms
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DiscordChannelConfig":
+    def from_dict(cls, data: dict[str, Any]) -> DiscordChannelConfig:
         """Create config from dictionary."""
         return cls(
             token=data.get("token"),
@@ -98,7 +99,7 @@ class DiscordChannel:
     def __init__(
         self,
         config: DiscordChannelConfig,
-        message_handler: Callable[[str, str, str, Dict[str, Any]], asyncio.Future],
+        message_handler: Callable[[str, str, str, dict[str, Any]], asyncio.Future],
     ):
         """
         Initialize Discord channel.
@@ -167,9 +168,7 @@ class DiscordChannel:
                 if (
                     self.config.respond_to_mentions
                     and self.bot.user in message.mentions
-                ):
-                    should_respond = True
-                elif message.content.startswith(self.config.command_prefix):
+                ) or message.content.startswith(self.config.command_prefix):
                     should_respond = True
 
             if not should_respond:
@@ -326,7 +325,7 @@ class DiscordChannel:
             return True
         return channel_id in self.config.allowed_channels
 
-    def _build_metadata(self, message: discord.Message) -> Dict[str, Any]:
+    def _build_metadata(self, message: discord.Message) -> dict[str, Any]:
         """Build metadata from Discord message."""
         metadata = {
             "channel_id": str(message.channel.id),
@@ -445,8 +444,8 @@ def is_discord_available() -> bool:
 
 
 def create_discord_channel(
-    config: Optional[DiscordChannelConfig] = None,
-    message_handler: Optional[Callable] = None,
+    config: DiscordChannelConfig | None = None,
+    message_handler: Callable | None = None,
 ) -> DiscordChannel:
     """
     Create a Discord channel adapter.

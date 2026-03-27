@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from navig.agent.nervous_system import NervousSystem
@@ -41,9 +41,9 @@ class HealthStatus:
     state: ComponentState
     message: str = ""
     last_check: datetime = field(default_factory=datetime.now)
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "healthy": self.healthy,
             "state": self.state.name,
@@ -61,14 +61,14 @@ class Component(ABC):
     Provides unified lifecycle management and health monitoring.
     """
 
-    def __init__(self, name: str, nervous_system: Optional["NervousSystem"] = None):
+    def __init__(self, name: str, nervous_system: NervousSystem | None = None):
         self.name = name
         self.nervous_system = nervous_system
         self._state = ComponentState.CREATED
-        self._started_at: Optional[datetime] = None
-        self._error: Optional[Exception] = None
+        self._started_at: datetime | None = None
+        self._error: Exception | None = None
         self._restart_count = 0
-        self._last_health_check: Optional[HealthStatus] = None
+        self._last_health_check: HealthStatus | None = None
 
     @property
     def state(self) -> ComponentState:
@@ -179,15 +179,15 @@ class Component(ABC):
         self._last_health_check = status
         return status
 
-    def set_nervous_system(self, nervous_system: "NervousSystem") -> None:
+    def set_nervous_system(self, nervous_system: NervousSystem) -> None:
         """Set the nervous system for event communication."""
         self.nervous_system = nervous_system
 
     async def emit(
         self,
-        event_type: "EventType",
-        data: Optional[Dict[str, Any]] = None,
-        priority: Optional["EventPriority"] = None,
+        event_type: EventType,
+        data: dict[str, Any] | None = None,
+        priority: EventPriority | None = None,
     ) -> None:
         """Emit an event through the nervous system."""
         if self.nervous_system:
@@ -200,7 +200,7 @@ class Component(ABC):
                 priority=priority or EventPriority.NORMAL,
             )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get component status as dictionary."""
         return {
             "name": self.name,
@@ -234,7 +234,7 @@ class Component(ABC):
         """
         pass
 
-    async def _on_health_check(self) -> Dict[str, Any]:
+    async def _on_health_check(self) -> dict[str, Any]:
         """
         Internal health check implementation.
 

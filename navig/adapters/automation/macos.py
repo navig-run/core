@@ -5,7 +5,6 @@ macOS Automation Adapter using AppleScript and osascript
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -165,7 +164,7 @@ class MacOSAdapter:
                 False, stderr="Mouse move requires cliclick (brew install cliclick)"
             )
 
-    def get_focused_window(self) -> Optional[WindowInfo]:
+    def get_focused_window(self) -> WindowInfo | None:
         """Get currently focused window."""
         script = """
         tell application "System Events"

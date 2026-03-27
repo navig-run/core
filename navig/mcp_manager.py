@@ -7,7 +7,7 @@ MCP servers provide context and tools to AI assistants.
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -15,7 +15,7 @@ from navig import console_helper as ch
 class MCPServer:
     """Represents an MCP server instance."""
 
-    def __init__(self, name: str, config: Dict[str, Any]):
+    def __init__(self, name: str, config: dict[str, Any]):
         """Initialize MCP server.
 
         Args:
@@ -109,7 +109,7 @@ class MCPServer:
         self.stop()
         return self.start()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get server status information."""
         return {
             "name": self.name,
@@ -126,7 +126,7 @@ class MCPManager:
 
     MCP_DIRECTORY_URL = "https://mcp.so/directory"
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Path | None = None):
         """Initialize MCP manager.
 
         Args:
@@ -139,7 +139,7 @@ class MCPManager:
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
         self.servers_file = self.config_dir / "servers.json"
-        self.servers: Dict[str, MCPServer] = {}
+        self.servers: dict[str, MCPServer] = {}
 
         self._load_servers()
 
@@ -150,7 +150,7 @@ class MCPManager:
             return
 
         try:
-            with open(self.servers_file, "r") as f:
+            with open(self.servers_file) as f:
                 servers_config = json.load(f)
 
             for name, config in servers_config.items():
@@ -169,7 +169,7 @@ class MCPManager:
                 name: server.config for name, server in self.servers.items()
             }
 
-            with open(self.servers_file, "w") as f:
+            with open(self.servers_file, "w", encoding="utf-8") as f:
                 json.dump(servers_config, f, indent=2)
 
             ch.dim(f"Saved {len(self.servers)} MCP server(s)")
@@ -177,7 +177,7 @@ class MCPManager:
         except Exception as e:
             ch.error(f"Failed to save MCP servers: {e}")
 
-    def search_directory(self, query: str) -> List[Dict[str, Any]]:
+    def search_directory(self, query: str) -> list[dict[str, Any]]:
         """Search MCP directory for servers.
 
         Args:
@@ -435,7 +435,7 @@ class MCPManager:
 
     def list_servers(
         self, enabled_only: bool = False, running_only: bool = False
-    ) -> List[MCPServer]:
+    ) -> list[MCPServer]:
         """List MCP servers.
 
         Args:
@@ -455,7 +455,7 @@ class MCPManager:
 
         return servers
 
-    def get_server(self, name: str) -> Optional[MCPServer]:
+    def get_server(self, name: str) -> MCPServer | None:
         """Get MCP server by name."""
         return self.servers.get(name)
 

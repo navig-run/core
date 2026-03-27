@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -38,7 +37,7 @@ service_app = typer.Typer(
 # =========================================================================
 @service_app.command("install")
 def service_install(
-    method: Optional[str] = typer.Option(
+    method: str | None = typer.Option(
         None,
         "--method",
         "-m",
@@ -304,7 +303,7 @@ def service_status(
 # =========================================================================
 @service_app.command("uninstall")
 def service_uninstall(
-    method: Optional[str] = typer.Option(
+    method: str | None = typer.Option(
         None, "--method", "-m", help="nssm, task, or systemd"
     ),
 ):
@@ -340,7 +339,7 @@ def service_uninstall(
 def service_logs(
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
-    child: Optional[str] = typer.Option(
+    child: str | None = typer.Option(
         None, "--child", "-c", help="Show specific child log (e.g. 'children')"
     ),
 ):
@@ -369,7 +368,7 @@ def service_logs(
         ch.info(f"Following {log_file.name} (Ctrl+C to stop)...")
         import time
 
-        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+        with open(log_file, encoding="utf-8", errors="replace") as f:
             # Go to end
             f.seek(0, 2)
             try:

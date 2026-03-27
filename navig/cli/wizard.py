@@ -14,7 +14,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Try questionary first, fall back to simple prompts
 try:
@@ -58,7 +58,7 @@ class SetupWizard:
 
     def __init__(self, reconfigure: bool = False):
         self.reconfigure = reconfigure
-        self.config: Dict[str, Any] = {}
+        self.config: dict[str, Any] = {}
         self.navig_dir = Path.home() / ".navig"
         self.config_file = self.navig_dir / "config.yaml"
 
@@ -229,7 +229,7 @@ class SetupWizard:
                 if save_env:
                     env_file = self.navig_dir / ".env"
                     env_file.parent.mkdir(parents=True, exist_ok=True)
-                    with open(env_file, "a") as f:
+                    with open(env_file, "a", encoding="utf-8") as f:
                         f.write(f"\n{env_var}={api_key}\n")
                     print(f"  ✅ Saved to {env_file}")
 
@@ -394,7 +394,7 @@ class SetupWizard:
             # Save token to .env
             env_file = self.navig_dir / ".env"
             env_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(env_file, "a") as f:
+            with open(env_file, "a", encoding="utf-8") as f:
                 f.write(f"\nTELEGRAM_BOT_TOKEN={bot_token}\n")
             print(f"  ✅ Token saved to {env_file}")
         else:
@@ -470,7 +470,7 @@ class SetupWizard:
 
         # Load existing config if reconfiguring
         if self.reconfigure and self.config_file.exists():
-            with open(self.config_file, "r") as f:
+            with open(self.config_file) as f:
                 existing = yaml.safe_load(f) or {}
                 # Merge new config into existing
                 for key, value in self.config.items():
@@ -481,14 +481,17 @@ class SetupWizard:
                 self.config = existing
 
         # Write config
-        with open(self.config_file, "w") as f:
+        with open(self.config_file, "w", encoding="utf-8") as f:
             yaml.dump(self.config, f, default_flow_style=False, sort_keys=False)
 
         print(f"  ✅ Configuration saved to {self.config_file}")
 
         # Set permissions
         try:
-            os.chmod(self.config_file, 0o600)
+            try:
+                os.chmod(self.config_file, 0o600)
+            except (OSError, PermissionError):
+                pass
             print("  ✅ File permissions set (600)")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical

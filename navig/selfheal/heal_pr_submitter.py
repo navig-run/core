@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -54,7 +54,7 @@ class HealPRSubmitter:
 
     def __init__(self) -> None:
         # Token resolved lazily so this class can be imported without env vars.
-        self._token: Optional[str] = None
+        self._token: str | None = None
 
     # ------------------------------------------------------------------ #
     #  Public methods                                                      #
@@ -67,7 +67,7 @@ class HealPRSubmitter:
         stderr: str,
         exit_code: int,
         patch_text: str,
-        host: Optional[str] = None,
+        host: str | None = None,
     ) -> str:
         """Create a GitHub PR for an auto-heal patch.
 
@@ -142,7 +142,7 @@ class HealPRSubmitter:
         stderr: str,
         exit_code: int,
         patch_text: str,
-        host: Optional[str] = None,
+        host: str | None = None,
     ) -> Path:
         """Persist a heal patch locally when GitHub is unreachable.
 
@@ -159,7 +159,7 @@ class HealPRSubmitter:
 
         import json
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "ts": ts,
             "failure_class": failure_class,
             "original_cmd": original_cmd,
@@ -226,7 +226,7 @@ class HealPRSubmitter:
         original_cmd: str,
         stderr: str,
         exit_code: int,
-        host: Optional[str],
+        host: str | None,
         patch_text: str,
         ts: str,
     ) -> str:

@@ -10,7 +10,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -31,7 +30,7 @@ LOCK_FILE = Path.home() / ".navig" / "tray.lock"
 INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install-tray.ps1"
 
 
-def _is_tray_running() -> tuple[bool, Optional[int]]:
+def _is_tray_running() -> tuple[bool, int | None]:
     """Check if tray app is already running."""
     if not LOCK_FILE.exists():
         return False, None

@@ -58,7 +58,7 @@ class ContributeConfig:
     clone_path: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ContributeConfig":
+    def from_dict(cls, d: dict[str, Any]) -> ContributeConfig:
         """Construct a :class:`ContributeConfig` from a raw config dict.
 
         Unknown keys are silently ignored; missing keys fall back to defaults.

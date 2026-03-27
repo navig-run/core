@@ -12,7 +12,7 @@ Inspired by advanced config inclusion patterns.
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any
 
 import yaml
 
@@ -39,11 +39,11 @@ class CircularDependencyError(ConfigLoaderError):
 
 
 def load_config(
-    path: Union[str, Path],
-    schema_type: Optional[str] = None,
-    context: Optional[Dict[str, Any]] = None,
+    path: str | Path,
+    schema_type: str | None = None,
+    context: dict[str, Any] | None = None,
     strict: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Load configuration from a file with advanced features.
 
@@ -90,7 +90,7 @@ def load_config(
     return config
 
 
-def _load_yaml_recursive(path: Path, seen_paths: Set[Path], depth: int = 0) -> Any:
+def _load_yaml_recursive(path: Path, seen_paths: set[Path], depth: int = 0) -> Any:
     """
     Recursively load YAML and resolve includes.
     """
@@ -103,7 +103,7 @@ def _load_yaml_recursive(path: Path, seen_paths: Set[Path], depth: int = 0) -> A
 
     seen_paths.add(path)
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         try:
             data = yaml.safe_load(f) or {}
         except yaml.YAMLError as e:
@@ -114,7 +114,7 @@ def _load_yaml_recursive(path: Path, seen_paths: Set[Path], depth: int = 0) -> A
 
 
 def _process_includes(
-    data: Any, base_dir: Path, seen_paths: Set[Path], depth: int
+    data: Any, base_dir: Path, seen_paths: set[Path], depth: int
 ) -> Any:
     """
     Traverse data structure and resolve $include directives.

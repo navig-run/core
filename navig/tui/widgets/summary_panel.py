@@ -24,12 +24,12 @@ class SummaryPanel(Static):
     }
     """
 
-    def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+    def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
         super().__init__("", **kwargs)
         self._cfg = cfg
         self._status = "unbound"
 
-    def refresh_from(self, cfg: "NavigConfig") -> None:
+    def refresh_from(self, cfg: NavigConfig) -> None:
         self._cfg = cfg
         self.refresh()
 

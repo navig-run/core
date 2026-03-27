@@ -37,8 +37,9 @@ import json
 import logging
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class RoutingDecision:
     max_tokens: int = 512
     temperature: float = 0.7
     reason: str = ""
-    overrides: Dict[str, Any] = field(default_factory=dict)
+    overrides: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -94,7 +95,7 @@ class ModelSlot:
     api_key: str = ""  # Override per-slot
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "ModelSlot":
+    def from_dict(cls, d: dict[str, Any]) -> ModelSlot:
         defaults = d.get("defaults", {})
         return cls(
             provider=d.get("provider", ""),
@@ -132,10 +133,10 @@ class RoutingConfig:
     @classmethod
     def from_dict(
         cls,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         default_model: str = "",
-        global_cfg: Dict[str, Any] = None,
-    ) -> "RoutingConfig":
+        global_cfg: dict[str, Any] = None,
+    ) -> RoutingConfig:
         """
         Build from config dict.  Accepts both the new ``models`` schema
         and the legacy flat ``ai.routing`` keys.
@@ -318,7 +319,7 @@ def heuristic_route(message: str, cfg: RoutingConfig) -> RoutingDecision:
       3. Long message (>350 chars) without code              → big
       4. Everything else                                     → small
     """
-    reasons: List[str] = []
+    reasons: list[str] = []
 
     # ── 1. Coder detection ──
     has_code = False
@@ -517,14 +518,14 @@ class HybridRouter:
 
     def __init__(self, cfg: RoutingConfig):
         self.cfg = cfg
-        self._providers: Dict[str, Any] = {}  # lazy-cached per provider key
+        self._providers: dict[str, Any] = {}  # lazy-cached per provider key
 
     @classmethod
     def from_config(
         cls,
-        global_config: Dict[str, Any],
+        global_config: dict[str, Any],
         default_model: str = "",
-    ) -> "HybridRouter":
+    ) -> HybridRouter:
         """Build a HybridRouter from the merged NAVIG config dict."""
         ai_cfg = global_config.get("ai", {})
         routing_raw = ai_cfg.get("routing", {})
@@ -552,7 +553,7 @@ class HybridRouter:
             except ImportError:
                 logger.error("llm_providers module not available")
                 return None
-            kwargs: Dict[str, Any] = {}
+            kwargs: dict[str, Any] = {}
             if slot.base_url:
                 kwargs["base_url"] = slot.base_url
             if slot.api_key:
@@ -612,7 +613,7 @@ class HybridRouter:
 
     async def call(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         decision: RoutingDecision,
     ):
         """
@@ -683,7 +684,7 @@ class HybridRouter:
 
     # ── Diagnostics ──
 
-    def status_summary(self) -> Dict[str, Any]:
+    def status_summary(self) -> dict[str, Any]:
         """Return a dict for /status endpoint and logs."""
         return {
             "enabled": self.cfg.enabled,

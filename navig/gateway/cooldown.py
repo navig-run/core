@@ -29,7 +29,6 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +53,7 @@ class CooldownTracker:
     Thread-safe for use across asyncio tasks and sync helpers.
     """
 
-    DEFAULT_COOLDOWNS: Dict[str, float] = {
+    DEFAULT_COOLDOWNS: dict[str, float] = {
         # Dangerous runtime mutations get longer cooldowns
         "mission.complete": 10.0,
         "node.register": 5.0,
@@ -65,7 +64,7 @@ class CooldownTracker:
 
     def __init__(self, default_cooldown_seconds: float = 30.0) -> None:
         self._default_s = default_cooldown_seconds
-        self._entries: Dict[str, CooldownEntry] = {}
+        self._entries: dict[str, CooldownEntry] = {}
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -75,8 +74,8 @@ class CooldownTracker:
     def check_and_consume(
         self,
         key: str,
-        actor: Optional[str] = None,
-    ) -> Tuple[bool, float]:
+        actor: str | None = None,
+    ) -> tuple[bool, float]:
         """
         Check whether *key* is past its cooldown, and consume one slot.
 
@@ -121,14 +120,14 @@ class CooldownTracker:
                 if full_key == key or full_key.startswith(f"{key}:"):
                     entry.cooldown_s = seconds
 
-    def reset(self, key: str, actor: Optional[str] = None) -> None:
+    def reset(self, key: str, actor: str | None = None) -> None:
         """Force-reset a cooldown (e.g., after admin override)."""
         full_key = f"{key}:{actor}" if actor else key
         with self._lock:
             self._entries.pop(full_key, None)
         logger.info("CooldownTracker reset key=%s actor=%s", key, actor)
 
-    def stats(self) -> Dict[str, Dict]:
+    def stats(self) -> dict[str, dict]:
         """Return current state of all tracked keys (for dashboards)."""
         now = time.monotonic()
         with self._lock:

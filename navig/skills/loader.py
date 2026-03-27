@@ -125,7 +125,7 @@ class Skill:
     description: str = ""
     user_invocable: bool = True
 
-    def to_spec(self) -> "SkillSpec":
+    def to_spec(self) -> SkillSpec:
         """Convert this loaded text-definition into a typed runtime pipeline abstraction."""
         from navig.tools.interfaces import SkillSpec
 

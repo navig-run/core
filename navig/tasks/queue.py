@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -64,23 +64,23 @@ class Task:
 
     name: str
     handler: str
-    params: Dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = field(default_factory=dict)
     priority: int = TaskPriority.NORMAL.value
-    dependencies: List[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
     max_retries: int = 0
     retry_delay: float = 5.0
-    timeout: Optional[float] = None
+    timeout: float | None = None
 
     # Auto-generated/managed fields
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     created_at: datetime = field(default_factory=datetime.now)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     status: TaskStatus = TaskStatus.PENDING
     result: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     retry_count: int = 0
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __lt__(self, other: "Task") -> bool:
         """Compare by priority for heap ordering."""
@@ -179,16 +179,16 @@ class TaskQueue:
         await queue.complete(task.id, result={"size": "1.2GB"})
     """
 
-    def __init__(self, persist_path: Optional[str] = None):
+    def __init__(self, persist_path: str | None = None):
         """
         Initialize task queue.
 
         Args:
             persist_path: Optional path to persist queue state
         """
-        self._heap: List[Task] = []  # Priority heap
-        self._tasks: Dict[str, Task] = {}  # id -> Task
-        self._completed: Set[str] = set()  # Completed task IDs
+        self._heap: list[Task] = []  # Priority heap
+        self._tasks: dict[str, Task] = {}  # id -> Task
+        self._completed: set[str] = set()  # Completed task IDs
         self._lock = asyncio.Lock()
         self._task_added_event = asyncio.Event()
 
@@ -252,8 +252,8 @@ class TaskQueue:
             return task
 
     async def get_next(
-        self, wait: bool = False, timeout: Optional[float] = None
-    ) -> Optional[Task]:
+        self, wait: bool = False, timeout: float | None = None
+    ) -> Task | None:
         """
         Get next ready task from queue.
 
@@ -412,15 +412,15 @@ class TaskQueue:
 
             return task
 
-    async def get(self, task_id: str) -> Optional[Task]:
+    async def get(self, task_id: str) -> Task | None:
         """Get task by ID."""
         return self._tasks.get(task_id)
 
     async def list_tasks(
         self,
-        status: Optional[TaskStatus] = None,
+        status: TaskStatus | None = None,
         limit: int = 100,
-    ) -> List[Task]:
+    ) -> list[Task]:
         """
         List tasks with optional status filter.
 
@@ -500,7 +500,7 @@ class TaskQueue:
                 "completed": list(self._completed),
             }
 
-            with open(self._persist_path, "w") as f:
+            with open(self._persist_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to persist task queue: {e}")
@@ -533,7 +533,7 @@ class TaskQueue:
         except Exception as e:
             logger.error(f"Failed to load task queue: {e}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get queue statistics."""
         status_counts = {}
         for task in self._tasks.values():

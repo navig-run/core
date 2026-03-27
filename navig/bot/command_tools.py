@@ -10,14 +10,15 @@ Each command is defined with:
 - parameters: JSON schema for command arguments
 """
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from collections.abc import Callable
+from typing import Any
 
 # ============================================================================
 # COMMAND FUNCTION SCHEMAS
 # These are used by AI function calling to understand user intent
 # ============================================================================
 
-COMMAND_TOOLS: List[Dict[str, Any]] = [
+COMMAND_TOOLS: list[dict[str, Any]] = [
     # -------------- Core Commands --------------
     {
         "type": "function",
@@ -854,12 +855,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
 # ============================================================================
 
 
-def _build_command_string(cmd: str, args: Dict[str, Any]) -> str:
+def _build_command_string(cmd: str, args: dict[str, Any]) -> str:
     """Build a command string from function name and arguments."""
     return cmd
 
 
-COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
+COMMAND_HANDLER_MAP: dict[str, str | Callable[[dict[str, Any]], str]] = {
     # Core
     "start": "/start",
     "help": lambda args: f"/help {args.get('topic', '')}".strip(),
@@ -940,7 +941,7 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
 }
 
 
-def _build_tunnel_cmd(args: Dict[str, Any]) -> str:
+def _build_tunnel_cmd(args: dict[str, Any]) -> str:
     """Build tunnel command string."""
     action = args.get("action", "list")
     name = args.get("tunnel_name", "")
@@ -949,7 +950,7 @@ def _build_tunnel_cmd(args: Dict[str, Any]) -> str:
     return f"/tunnel {action} {name}".strip()
 
 
-def _build_backup_cmd(args: Dict[str, Any]) -> str:
+def _build_backup_cmd(args: dict[str, Any]) -> str:
     """Build backup command string."""
     action = args.get("action", "list")
     target = args.get("target", "")
@@ -958,7 +959,7 @@ def _build_backup_cmd(args: Dict[str, Any]) -> str:
     return f"/backup {action} {target}".strip()
 
 
-def _build_hestia_cmd(args: Dict[str, Any]) -> str:
+def _build_hestia_cmd(args: dict[str, Any]) -> str:
     """Build hestia command string."""
     resource = args.get("resource", "")
     user = args.get("user", "")
@@ -967,7 +968,7 @@ def _build_hestia_cmd(args: Dict[str, Any]) -> str:
     return f"/hestia {resource} {user}".strip()
 
 
-def _build_remind_cmd(args: Dict[str, Any]) -> str:
+def _build_remind_cmd(args: dict[str, Any]) -> str:
     """Build remind command string."""
     message = args.get("message", "")
     duration = args.get("duration", 30)
@@ -980,7 +981,7 @@ def _build_remind_cmd(args: Dict[str, Any]) -> str:
     return f"/remind {duration}{short_unit} {message}"
 
 
-def get_command_string(function_name: str, args: Dict[str, Any]) -> Optional[str]:
+def get_command_string(function_name: str, args: dict[str, Any]) -> str | None:
     """
     Convert a function call to a command string.
 
@@ -1000,7 +1001,7 @@ def get_command_string(function_name: str, args: Dict[str, Any]) -> Optional[str
     return handler
 
 
-def get_tool_by_name(name: str) -> Optional[Dict[str, Any]]:
+def get_tool_by_name(name: str) -> dict[str, Any] | None:
     """Get a tool definition by its function name."""
     for tool in COMMAND_TOOLS:
         if tool.get("function", {}).get("name") == name:
@@ -1008,7 +1009,7 @@ def get_tool_by_name(name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def get_all_tool_names() -> List[str]:
+def get_all_tool_names() -> list[str]:
     """Get list of all available tool/function names."""
     return [tool["function"]["name"] for tool in COMMAND_TOOLS]
 
@@ -1018,7 +1019,7 @@ def get_all_tool_names() -> List[str]:
 # Keywords that help identify user intent for pattern-based matching
 # ============================================================================
 
-INTENT_KEYWORDS: Dict[str, List[str]] = {
+INTENT_KEYWORDS: dict[str, list[str]] = {
     # Monitoring
     "disk": ["disk", "space", "storage", "filesystem", "drive", "hdd", "ssd"],
     "memory": ["memory", "ram", "mem", "free memory", "available memory"],

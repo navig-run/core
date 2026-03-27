@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 def _utc_now() -> datetime:
@@ -29,7 +29,7 @@ def _to_iso_z(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _parse_iso(dt_str: str) -> Optional[datetime]:
+def _parse_iso(dt_str: str) -> datetime | None:
     try:
         s = dt_str.strip()
         if s.endswith("Z"):
@@ -47,8 +47,8 @@ def global_cache_dir() -> Path:
 class CacheReadResult:
     hit: bool
     expired: bool
-    data: Optional[Any]
-    cached_at: Optional[str]
+    data: Any | None
+    cached_at: str | None
 
 
 def read_json_cache(

@@ -2,12 +2,12 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
 
-def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any]):
+def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
     """Upload file/directory."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -89,7 +89,7 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
         ch.info("  4. SSH connection: Test with 'navig run \"echo test\"'")
 
 
-def download_file_cmd(remote: str, local: Optional[Path], options: Dict[str, Any]):
+def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
     """Download file/directory."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -129,7 +129,7 @@ def download_file_cmd(remote: str, local: Optional[Path], options: Dict[str, Any
         ch.info("  4. Network timeout: Check connection with 'navig tunnel status'")
 
 
-def list_remote_directory(remote_path: str, options: Dict[str, Any]):
+def list_remote_directory(remote_path: str, options: dict[str, Any]):
     """List remote directory contents."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -152,7 +152,7 @@ def list_remote_directory(remote_path: str, options: Dict[str, Any]):
 
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import typer
 
@@ -177,7 +177,7 @@ def file_callback(ctx: typer.Context):
 def file_add(
     ctx: typer.Context,
     local: Path = typer.Argument(..., help="Local file/directory path"),
-    remote: Optional[str] = typer.Argument(
+    remote: str | None = typer.Argument(
         None, help="Remote path (auto-detected if omitted)"
     ),
     dir: bool = typer.Option(
@@ -233,10 +233,10 @@ def file_list(
 def file_show(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path"),
-    download: Optional[Path] = typer.Option(
+    download: Path | None = typer.Option(
         None, "--download", "-d", help="Download to local path"
     ),
-    lines: Optional[str] = typer.Option(
+    lines: str | None = typer.Option(
         None, "--lines", "-n", help="Number of lines or range (e.g., 50 or 100-200)"
     ),
     head: bool = typer.Option(False, "--head", help="Show first N lines"),
@@ -260,16 +260,16 @@ def file_show(
 def file_edit(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path"),
-    content: Optional[str] = typer.Option(
+    content: str | None = typer.Option(
         None, "--content", "-c", help="Content to write"
     ),
-    mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Set permissions"),
-    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Set ownership"),
+    mode: str | None = typer.Option(None, "--mode", "-m", help="Set permissions"),
+    owner: str | None = typer.Option(None, "--owner", "-o", help="Set ownership"),
     append: bool = typer.Option(
         False, "--append", "-a", help="Append instead of overwrite"
     ),
     stdin: bool = typer.Option(False, "--stdin", "-s", help="Read from stdin"),
-    from_file: Optional[Path] = typer.Option(
+    from_file: Path | None = typer.Option(
         None, "--from-file", "-f", help="Read from local file"
     ),
 ):
@@ -305,7 +305,7 @@ def file_edit(
 def file_get(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path"),
-    local: Optional[Path] = typer.Argument(None, help="Local destination path"),
+    local: Path | None = typer.Argument(None, help="Local destination path"),
 ):
     """Download file from remote."""
     from navig.commands.files import download_file_cmd

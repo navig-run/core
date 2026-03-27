@@ -11,21 +11,22 @@ Upgraded implementation:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, Static
+from textual.widgets import Button, Label
 
 from navig.tui.messages import SettingsSaved
 from navig.tui.resolvers import SECTIONS, StatusBadge
 from navig.tui.widgets.status_row import StatusRow
 
 # Deep-link key → import path for settings screens
-_DEEPLINK_SCREENS: Dict[str, str] = {
+_DEEPLINK_SCREENS: dict[str, str] = {
     "/settings/gateway": "navig.tui.screens.settings.gateway.GatewaySettingsScreen",
     "/settings/agents": "navig.tui.screens.settings.agents.AgentSettingsScreen",
     "/settings/vault": "navig.tui.screens.settings.vault.VaultSettingsScreen",
@@ -42,7 +43,7 @@ def _import_screen_class(dotted: str):  # type: ignore[return]
     return getattr(module, cls_name)
 
 
-def _build_sorted_badges(badges: Sequence[StatusBadge]) -> List[StatusBadge]:
+def _build_sorted_badges(badges: Sequence[StatusBadge]) -> list[StatusBadge]:
     """Return badges with error rows first, then warn, then ok/missing."""
     errors = [b for b in badges if b.status == "error"]
     warns = [b for b in badges if b.status == "warn"]
@@ -121,15 +122,15 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
     def __init__(
         self,
         *args: Any,
-        deep_link: Optional[str] = None,
+        deep_link: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._deep_link = deep_link
         # section_key -> StatusRow widget id (built on compose)
-        self._row_ids: Dict[str, str] = {}
+        self._row_ids: dict[str, str] = {}
         # resolved badges cache before compose
-        self._pending_badges: List[tuple[str, StatusBadge]] = []
+        self._pending_badges: list[tuple[str, StatusBadge]] = []
 
     # ------------------------------------------------------------------
     # Compose
@@ -200,7 +201,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
     def _apply_badges(self, badges: list[tuple[str, StatusBadge]]) -> None:
         """Sort and update all StatusRow widgets on the main thread."""
         # Re-sort: errors first, then warn, then ok/missing
-        section_map: Dict[str, StatusBadge] = dict(badges)
+        section_map: dict[str, StatusBadge] = dict(badges)
         all_keys_ordered = [k for k, _ in SECTIONS]
         sorted_badges = _build_sorted_badges(
             [section_map[k] for k in all_keys_ordered if k in section_map]

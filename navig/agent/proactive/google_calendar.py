@@ -7,7 +7,6 @@ Provides real integration with Google Calendar API.
 import datetime
 import os.path
 import pickle
-from typing import List
 
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -62,7 +61,7 @@ class GoogleCalendar(CalendarProvider):
 
     async def list_events(
         self, start: datetime.datetime, end: datetime.datetime
-    ) -> List[CalendarEvent]:
+    ) -> list[CalendarEvent]:
         """List events from primary calendar."""
         if not self.service:
             print("[GoogleCalendar] Not authenticated, returning empty list.")

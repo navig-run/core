@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ── Capability ────────────────────────────────────────────────────────────────
 
@@ -31,23 +31,23 @@ class Capability:
     slug: str
     version: str = "1.0.0"
     description: str = ""
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # ── Serialization ────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Capability":
+    def from_dict(cls, data: dict[str, Any]) -> Capability:
         return cls(**data)
 
     @classmethod
-    def from_json(cls, raw: str) -> "Capability":
+    def from_json(cls, raw: str) -> Capability:
         return cls.from_dict(json.loads(raw))
 
     def __repr__(self) -> str:
@@ -82,8 +82,8 @@ class TrustScore:
     success_count: int = 0
     failure_count: int = 0
     cancel_count: int = 0
-    avg_duration_secs: Optional[float] = None
-    computed_at: Optional[str] = None
+    avg_duration_secs: float | None = None
+    computed_at: str | None = None
 
     def __post_init__(self) -> None:
         self.score = max(0.0, min(1.0, self.score))
@@ -98,8 +98,8 @@ class TrustScore:
     def compute(
         cls,
         node_id: str,
-        receipts: List[Any],  # List[ExecutionReceipt] — avoid circular import
-    ) -> "TrustScore":
+        receipts: list[Any],  # List[ExecutionReceipt] — avoid circular import
+    ) -> TrustScore:
         """
         Compute a TrustScore from a list of ExecutionReceipts.
 
@@ -144,18 +144,18 @@ class TrustScore:
 
     # ── Serialization ────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrustScore":
+    def from_dict(cls, data: dict[str, Any]) -> TrustScore:
         return cls(**data)
 
     @classmethod
-    def from_json(cls, raw: str) -> "TrustScore":
+    def from_json(cls, raw: str) -> TrustScore:
         return cls.from_dict(json.loads(raw))
 
     def __repr__(self) -> str:

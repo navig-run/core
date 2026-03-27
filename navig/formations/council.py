@@ -15,7 +15,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from concurrent.futures import as_completed
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 from navig.formations.types import AgentSpec, Formation
@@ -47,7 +47,7 @@ def _call_agent(
     context: str,
     round_num: int,
     other_roles: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Call AI for a single agent. Returns response dict."""
     start = time.time()
 
@@ -127,8 +127,8 @@ def run_council(
     formation: Formation,
     question: str,
     rounds: int = 1,
-    timeout_per_agent: Optional[float] = None,
-) -> Dict[str, Any]:
+    timeout_per_agent: float | None = None,
+) -> dict[str, Any]:
     """Run a multi-agent council deliberation.
 
     Args:
@@ -163,12 +163,12 @@ def run_council(
     }
 
     start_total = time.time()
-    all_rounds: List[Dict[str, Any]] = []
+    all_rounds: list[dict[str, Any]] = []
     previous_context = ""
 
     for round_num in range(1, rounds + 1):
         logger.info(f"[COUNCIL] Round {round_num}/{rounds}")
-        round_responses: List[Dict[str, Any]] = []
+        round_responses: list[dict[str, Any]] = []
 
         # Build list of agents to call
         agents_to_call = []
@@ -206,7 +206,7 @@ def run_council(
                     for agent, other_str in agents_to_call
                 }
 
-                results_by_id: Dict[str, Dict[str, Any]] = {}
+                results_by_id: dict[str, dict[str, Any]] = {}
                 for future in as_completed(future_map, timeout=timeout + 5):
                     agent_id = future_map[future]
                     try:
@@ -295,7 +295,7 @@ def run_council(
 def _generate_final_decision(
     formation: Formation,
     question: str,
-    rounds: List[Dict[str, Any]],
+    rounds: list[dict[str, Any]],
     timeout: float,
 ) -> str:
     """Have the default agent synthesize all responses into a final decision."""

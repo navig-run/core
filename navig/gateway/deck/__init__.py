@@ -53,9 +53,9 @@ logger = logging.getLogger(__name__)
 def register_deck_routes(
     app: "web.Application",
     bot_token: str = "",
-    allowed_users: Optional[List[int]] = None,
+    allowed_users: list[int] | None = None,
     require_auth: bool = True,
-    deck_cfg: Optional[Dict[str, Any]] = None,
+    deck_cfg: dict[str, Any] | None = None,
 ):
     """
     Register all Deck API and static file routes on the gateway app.

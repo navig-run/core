@@ -32,9 +32,10 @@ import asyncio
 import logging
 import time
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.voice.session_manager")
 
@@ -79,25 +80,25 @@ class SessionTiming:
     """Latency breakdown for diagnostics and guardrails."""
 
     activated_at: float = field(default_factory=time.monotonic)
-    listening_at: Optional[float] = None
-    processing_at: Optional[float] = None
-    responding_at: Optional[float] = None
-    completed_at: Optional[float] = None
+    listening_at: float | None = None
+    processing_at: float | None = None
+    responding_at: float | None = None
+    completed_at: float | None = None
 
     @property
-    def wake_to_listen_ms(self) -> Optional[float]:
+    def wake_to_listen_ms(self) -> float | None:
         if self.listening_at:
             return (self.listening_at - self.activated_at) * 1000
         return None
 
     @property
-    def stt_latency_ms(self) -> Optional[float]:
+    def stt_latency_ms(self) -> float | None:
         if self.processing_at and self.listening_at:
             return (self.processing_at - self.listening_at) * 1000
         return None
 
     @property
-    def total_ms(self) -> Optional[float]:
+    def total_ms(self) -> float | None:
         if self.completed_at:
             return (self.completed_at - self.activated_at) * 1000
         return None
@@ -117,15 +118,15 @@ class VoiceSession:
     timing: SessionTiming = field(default_factory=SessionTiming)
 
     # Content accumulated during the session
-    audio_chunks: List[bytes] = field(default_factory=list)
-    transcript: Optional[str] = None
-    response_text: Optional[str] = None
-    audio_path: Optional[str] = None  # path to synthesised audio file
+    audio_chunks: list[bytes] = field(default_factory=list)
+    transcript: str | None = None
+    response_text: str | None = None
+    audio_path: str | None = None  # path to synthesised audio file
 
     # Error details (only populated in ERROR state)
-    error: Optional[str] = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "state": self.state.value,
@@ -148,13 +149,13 @@ class VoiceSession:
 # ---------------------------------------------------------------------------
 
 # Signature: (session) -> (transcript: str | None)
-STTCallable = Callable[[VoiceSession], Coroutine[Any, Any, Optional[str]]]
+STTCallable = Callable[[VoiceSession], Coroutine[Any, Any, str | None]]
 
 # Signature: (transcript: str) -> (response_text: str)
 LLMCallable = Callable[[str], Coroutine[Any, Any, str]]
 
 # Signature: (response_text: str) -> (audio_path: str | None)
-TTSCallable = Callable[[str], Coroutine[Any, Any, Optional[str]]]
+TTSCallable = Callable[[str], Coroutine[Any, Any, str | None]]
 
 # Signature: (session: VoiceSession) -> None
 SessionCallback = Callable[[VoiceSession], Coroutine[Any, Any, None]]
@@ -185,7 +186,7 @@ class SessionConfig:
     log_timing: bool = True
 
     # Optional: URL to POST wake-word events to navig-echo bridge.
-    echo_bridge_url: Optional[str] = None
+    echo_bridge_url: str | None = None
 
     # Seconds to wait for echo bridge HTTP call.
     echo_bridge_timeout: float = 1.0
@@ -222,14 +223,14 @@ class VoiceSessionManager:
 
     def __init__(
         self,
-        config: Optional[SessionConfig] = None,
+        config: SessionConfig | None = None,
         *,
-        stt_fn: Optional[STTCallable] = None,
-        llm_fn: Optional[LLMCallable] = None,
-        tts_fn: Optional[TTSCallable] = None,
-        on_state_change: Optional[SessionCallback] = None,
-        on_session_complete: Optional[SessionCallback] = None,
-        event_bridge: Optional[Any] = None,  # navig.event_bridge.EventBridge
+        stt_fn: STTCallable | None = None,
+        llm_fn: LLMCallable | None = None,
+        tts_fn: TTSCallable | None = None,
+        on_state_change: SessionCallback | None = None,
+        on_session_complete: SessionCallback | None = None,
+        event_bridge: Any | None = None,  # navig.event_bridge.EventBridge
     ):
         self.config = config or SessionConfig()
         self._stt_fn = stt_fn
@@ -239,11 +240,11 @@ class VoiceSessionManager:
         self._on_session_complete = on_session_complete
         self._event_bridge = event_bridge
 
-        self._sessions: Dict[str, VoiceSession] = {}
-        self._tasks: Dict[str, asyncio.Task] = {}
+        self._sessions: dict[str, VoiceSession] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
-        self._interrupt_events: Dict[str, asyncio.Event] = {}
-        self._audio_queues: Dict[str, asyncio.Queue] = {}
+        self._interrupt_events: dict[str, asyncio.Event] = {}
+        self._audio_queues: dict[str, asyncio.Queue] = {}
         self._running = False
 
     # ------------------------------------------------------------------ #
@@ -277,9 +278,7 @@ class VoiceSessionManager:
     # Public API
     # ------------------------------------------------------------------ #
 
-    async def activate(
-        self, keyword: str, score: float = 1.0
-    ) -> Optional[VoiceSession]:
+    async def activate(self, keyword: str, score: float = 1.0) -> VoiceSession | None:
         """Signal a wake-word detection and start a new session.
 
         Returns the new session, or None if max_concurrent_sessions exceeded.
@@ -329,7 +328,7 @@ class VoiceSessionManager:
 
         return session
 
-    async def feed_audio(self, chunk: bytes, session_id: Optional[str] = None) -> None:
+    async def feed_audio(self, chunk: bytes, session_id: str | None = None) -> None:
         """Push a raw audio chunk into the active session's buffer.
 
         If session_id is None, targets the most-recently-activated session.
@@ -350,7 +349,7 @@ class VoiceSessionManager:
                 len(chunk),
             )
 
-    async def stop_listening(self, session_id: Optional[str] = None) -> None:
+    async def stop_listening(self, session_id: str | None = None) -> None:
         """Manually signal end-of-audio for the session (triggers STT)."""
         sid = session_id or self._latest_active_id()
         if sid is None:
@@ -360,7 +359,7 @@ class VoiceSessionManager:
             # None sentinel signals end of audio stream
             await q.put(None)
 
-    async def interrupt(self, session_id: Optional[str] = None) -> None:
+    async def interrupt(self, session_id: str | None = None) -> None:
         """Interrupt and cancel the active session."""
         sid = session_id or self._latest_active_id()
         if sid is None:
@@ -374,12 +373,12 @@ class VoiceSessionManager:
             logger.info("Session %s interrupted", sid)
 
     @property
-    def active_session(self) -> Optional[VoiceSession]:
+    def active_session(self) -> VoiceSession | None:
         """Return the most recently activated non-idle session, or None."""
         sid = self._latest_active_id()
         return self._sessions.get(sid) if sid else None
 
-    def get_session(self, session_id: str) -> Optional[VoiceSession]:
+    def get_session(self, session_id: str) -> VoiceSession | None:
         return self._sessions.get(session_id)
 
     # ------------------------------------------------------------------ #
@@ -417,7 +416,7 @@ class VoiceSessionManager:
                 except Exception as exc:
                     logger.error("Session %s: STT error: %s", session_id, exc)
 
-            response_text: Optional[str] = None
+            response_text: str | None = None
             if transcript and self._llm_fn:
                 try:
                     response_text = await asyncio.wait_for(
@@ -487,7 +486,7 @@ class VoiceSessionManager:
           - Interrupt event is set
         Returns concatenated audio bytes.
         """
-        chunks: List[bytes] = []
+        chunks: list[bytes] = []
         deadline = time.monotonic() + self.config.max_listen_seconds
 
         while True:
@@ -597,7 +596,7 @@ class VoiceSessionManager:
     # Internals
     # ------------------------------------------------------------------ #
 
-    def _latest_active_id(self) -> Optional[str]:
+    def _latest_active_id(self) -> str | None:
         """Return the most-recently activated non-completed session id."""
         for sid, sess in reversed(list(self._sessions.items())):
             if sess.state not in (SessionState.IDLE, SessionState.ERROR):
@@ -619,11 +618,11 @@ class VoiceSessionManager:
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
-_manager: Optional[VoiceSessionManager] = None
+_manager: VoiceSessionManager | None = None
 
 
 def get_session_manager(
-    config: Optional[SessionConfig] = None, **kwargs
+    config: SessionConfig | None = None, **kwargs
 ) -> VoiceSessionManager:
     """Return (or create) the global VoiceSessionManager singleton."""
     global _manager

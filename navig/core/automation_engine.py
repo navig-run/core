@@ -8,7 +8,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -24,18 +24,18 @@ from navig.core.safe_eval import safe_eval
 @dataclass
 class WorkflowStep:
     action: str
-    args: Dict[str, Any]
-    platform_override: Optional[Dict[str, Any]] = None
-    capture: Optional[str] = None
-    if_condition: Optional[str] = None
+    args: dict[str, Any]
+    platform_override: dict[str, Any] | None = None
+    capture: str | None = None
+    if_condition: str | None = None
 
 
 @dataclass
 class Workflow:
     name: str
-    steps: List[WorkflowStep]
+    steps: list[WorkflowStep]
     description: str = ""
-    variables: Dict[str, str] = None
+    variables: dict[str, str] = None
 
 
 class WorkflowEngine:
@@ -43,7 +43,7 @@ class WorkflowEngine:
         self._navig_root = Path(__file__).parent.parent.parent
         self._workflows_dir = self._navig_root / "workflows"
         self._workflows_dir.mkdir(exist_ok=True)
-        self._workflow_cache: Dict[str, Tuple[float, Workflow]] = {}
+        self._workflow_cache: dict[str, tuple[float, Workflow]] = {}
 
         # Lazy load adapters
         self._ahk = None
@@ -85,7 +85,7 @@ class WorkflowEngine:
             return self.macos
         return None
 
-    def load_workflow(self, name: str) -> Optional[Workflow]:
+    def load_workflow(self, name: str) -> Workflow | None:
         """Load workflow from YAML file."""
         # Check standard locations
         possible_paths = [
@@ -110,7 +110,7 @@ class WorkflowEngine:
                 if mtime == cached_mtime:
                     return cached_wf
 
-            with open(target_path, "r", encoding="utf-8") as f:
+            with open(target_path, encoding="utf-8") as f:
                 data = yaml.load(f, Loader=SafeLoader)
 
             steps = []
@@ -137,7 +137,7 @@ class WorkflowEngine:
             error(f"Failed to load workflow {name}: {e}")
             return None
 
-    def execute_workflow(self, workflow: Workflow, variables: Dict[str, str] = None):
+    def execute_workflow(self, workflow: Workflow, variables: dict[str, str] = None):
         """Execute a cross-platform workflow."""
         info(f"Executing workflow: {workflow.name}")
 
@@ -207,7 +207,7 @@ class WorkflowEngine:
 
         return current_vars
 
-    def _execute_action(self, action: str, args: Dict[str, Any]) -> Any:
+    def _execute_action(self, action: str, args: dict[str, Any]) -> Any:
         """Dispatch action to appropriate adapter."""
         # Platform-independent actions
         if action == "wait":

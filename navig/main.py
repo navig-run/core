@@ -18,7 +18,6 @@ Plugin Loading:
 
 import shutil
 import sys
-from typing import Dict, List
 
 
 def _fast_help_text(version: str) -> str:
@@ -60,7 +59,7 @@ def _fast_help_text(version: str) -> str:
     )
 
 
-def _maybe_handle_fast_path(argv: List[str]) -> bool:
+def _maybe_handle_fast_path(argv: list[str]) -> bool:
     """Handle ultra-fast invocations without importing the full CLI.
 
     We only intercept cases where Typer would show top-level help/version,
@@ -102,7 +101,7 @@ def _maybe_handle_fast_path(argv: List[str]) -> bool:
     return False
 
 
-def _handle_start_command(extra_args: List[str]) -> bool:
+def _handle_start_command(extra_args: list[str]) -> bool:
     """Launch the NAVIG Kraken Dashboard (Rich TUI).
 
     `navig start` is a convenient alias for `navig dashboard`.
@@ -205,8 +204,8 @@ def _check_first_run() -> None:
 
 
 # Track plugin state for status command
-_loaded_plugins: List[str] = []
-_failed_plugins: List[Dict[str, str]] = []
+_loaded_plugins: list[str] = []
+_failed_plugins: list[dict[str, str]] = []
 
 
 def load_plugins_into_app(app) -> None:
@@ -243,7 +242,7 @@ def load_plugins_into_app(app) -> None:
         _eprint(f"[yellow]⚠ Plugin system error: {e}[/yellow]")
 
 
-def _should_skip_plugin_loading(argv: List[str]) -> bool:
+def _should_skip_plugin_loading(argv: list[str]) -> bool:
     """Return True when plugin loading should be skipped for fast startup.
 
     We skip plugin discovery for commands that only need core CLI wiring:
@@ -320,7 +319,7 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
         # We can't easily import Config here without overhead, so we construct the default path
         cache_file = Path.home() / ".navig" / "data" / "plugins_cache.json"
         if cache_file.exists():
-            with open(cache_file, "r", encoding="utf-8") as f:
+            with open(cache_file, encoding="utf-8") as f:
                 cached_data = json.load(f)
             plugins = cached_data.get("plugins", {})
             cached_names = set(plugins.keys())
@@ -374,8 +373,8 @@ def add_plugin_commands(app) -> None:
         no_args_is_help=True,
     )
 
-    def _plugin_identifiers(info) -> List[str]:
-        identifiers: List[str] = []
+    def _plugin_identifiers(info) -> list[str]:
+        identifiers: list[str] = []
         for candidate in (info.name, info.path.name):
             if candidate and candidate not in identifiers:
                 identifiers.append(candidate)
@@ -734,7 +733,7 @@ def main() -> None:
         crash_handler.handle_exception(e)
 
 
-def _handle_powershell_parsing_error(argv: List[str]) -> None:
+def _handle_powershell_parsing_error(argv: list[str]) -> None:
     """Detect if PowerShell mangled the command and provide helpful guidance.
 
     This catches errors BEFORE navig even parses the command, when PowerShell

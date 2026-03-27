@@ -10,7 +10,7 @@ Generate comprehensive context summaries for external AI assistants:
 import json
 import platform
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any
 
 
 class ContextGenerator:
@@ -31,7 +31,7 @@ class ContextGenerator:
 
     def generate_context_summary(
         self, config_manager, remote_ops=None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Generate comprehensive context summary for AI assistants.
 
@@ -95,8 +95,8 @@ class ContextGenerator:
             return "unknown"
 
     def _build_server_context(
-        self, server_config: Dict[str, Any], remote_ops=None
-    ) -> Dict[str, Any]:
+        self, server_config: dict[str, Any], remote_ops=None
+    ) -> dict[str, Any]:
         """Build server context information."""
         server_ctx = {
             "name": server_config.get("name"),
@@ -131,8 +131,8 @@ class ContextGenerator:
         return server_ctx
 
     def _get_services_status(
-        self, remote_ops, server_config: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, remote_ops, server_config: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Get status of common services."""
         services = ["nginx", "mysql", "php-fpm", "redis", "postgresql"]
         services_status = []
@@ -166,8 +166,8 @@ class ContextGenerator:
         return services_status
 
     def _get_resource_usage(
-        self, remote_ops, server_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, remote_ops, server_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """Get current resource usage."""
         try:
             # Use auto_detection module if available
@@ -181,7 +181,7 @@ class ContextGenerator:
 
         return {"status": "unavailable"}
 
-    def _get_recent_operations(self, limit: int = 20) -> List[Dict[str, Any]]:
+    def _get_recent_operations(self, limit: int = 20) -> list[dict[str, Any]]:
         """Get recent command operations."""
         history_file = self.ai_context_dir / "command_history.json"
 
@@ -189,7 +189,7 @@ class ContextGenerator:
             if not history_file.exists():
                 return []
 
-            with open(history_file, "r") as f:
+            with open(history_file) as f:
                 history = json.load(f)
 
             # Return last N entries
@@ -198,7 +198,7 @@ class ContextGenerator:
         except (OSError, json.JSONDecodeError, TypeError):
             return []
 
-    def _get_active_issues(self) -> List[Dict[str, Any]]:
+    def _get_active_issues(self) -> list[dict[str, Any]]:
         """Get active detected issues."""
         issues_file = self.ai_context_dir / "detected_issues.json"
 
@@ -206,7 +206,7 @@ class ContextGenerator:
             if not issues_file.exists():
                 return []
 
-            with open(issues_file, "r") as f:
+            with open(issues_file) as f:
                 issues = json.load(f)
 
             # Filter for active issues from last 24 hours
@@ -223,7 +223,7 @@ class ContextGenerator:
         except (OSError, json.JSONDecodeError, KeyError, ValueError):
             return []
 
-    def _get_recent_errors(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def _get_recent_errors(self, hours: int = 24) -> list[dict[str, Any]]:
         """Get recent errors."""
         # Use error_resolution module if available
         if hasattr(self.assistant, "error_resolution"):
@@ -232,7 +232,7 @@ class ContextGenerator:
 
         return []
 
-    def _generate_summary(self, context: Dict[str, Any]) -> str:
+    def _generate_summary(self, context: dict[str, Any]) -> str:
         """Generate human-readable context summary."""
         lines = []
 

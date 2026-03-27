@@ -10,10 +10,11 @@ Enables multi-agent orchestration with:
 
 import asyncio
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -48,10 +49,10 @@ class AgentInfo:
     agent_id: str
     name: str
     role: AgentRole
-    capabilities: List[str]
-    endpoint: Optional[str] = None  # HTTP/WS endpoint if remote
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    last_heartbeat: Optional[datetime] = None
+    capabilities: list[str]
+    endpoint: str | None = None  # HTTP/WS endpoint if remote
+    metadata: dict[str, Any] = field(default_factory=dict)
+    last_heartbeat: datetime | None = None
     status: str = "active"
 
 
@@ -64,12 +65,12 @@ class AgentMessage:
     from_agent: str
     to_agent: str  # Can be "*" for broadcast
     content: Any
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
-    reply_to: Optional[str] = None  # For response messages
+    reply_to: str | None = None  # For response messages
     ttl: int = 60  # Time-to-live in seconds
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "message_id": self.message_id,
@@ -84,7 +85,7 @@ class AgentMessage:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentMessage":
+    def from_dict(cls, data: dict[str, Any]) -> "AgentMessage":
         """Create from dictionary."""
         return cls(
             message_id=data["message_id"],
@@ -106,12 +107,12 @@ class TaskRequest:
     task_id: str
     task_type: str
     description: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
     priority: int = 5  # 1-10, higher = more important
     timeout: int = 300  # seconds
     require_confirmation: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
             "task_type": self.task_type,
@@ -130,10 +131,10 @@ class TaskResult:
     task_id: str
     success: bool
     result: Any
-    error: Optional[str] = None
+    error: str | None = None
     execution_time: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
             "success": self.success,
@@ -151,8 +152,8 @@ class AgentRegistry:
     """
 
     def __init__(self):
-        self._agents: Dict[str, AgentInfo] = {}
-        self._capabilities_index: Dict[str, List[str]] = {}  # capability -> agent_ids
+        self._agents: dict[str, AgentInfo] = {}
+        self._capabilities_index: dict[str, list[str]] = {}  # capability -> agent_ids
 
     def register(self, agent: AgentInfo) -> bool:
         """Register an agent."""
@@ -188,20 +189,20 @@ class AgentRegistry:
         logger.info(f"Unregistered agent: {agent.name} ({agent_id})")
         return True
 
-    def get(self, agent_id: str) -> Optional[AgentInfo]:
+    def get(self, agent_id: str) -> AgentInfo | None:
         """Get agent by ID."""
         return self._agents.get(agent_id)
 
-    def find_by_capability(self, capability: str) -> List[AgentInfo]:
+    def find_by_capability(self, capability: str) -> list[AgentInfo]:
         """Find agents with a specific capability."""
         agent_ids = self._capabilities_index.get(capability, [])
         return [self._agents[aid] for aid in agent_ids if aid in self._agents]
 
-    def find_by_role(self, role: AgentRole) -> List[AgentInfo]:
+    def find_by_role(self, role: AgentRole) -> list[AgentInfo]:
         """Find agents with a specific role."""
         return [a for a in self._agents.values() if a.role == role]
 
-    def list_all(self) -> List[AgentInfo]:
+    def list_all(self) -> list[AgentInfo]:
         """List all registered agents."""
         return list(self._agents.values())
 
@@ -220,8 +221,8 @@ class MessageBus:
 
     def __init__(self, registry: AgentRegistry):
         self.registry = registry
-        self._handlers: Dict[str, Callable] = {}  # agent_id -> message handler
-        self._pending_responses: Dict[str, asyncio.Future] = {}
+        self._handlers: dict[str, Callable] = {}  # agent_id -> message handler
+        self._pending_responses: dict[str, asyncio.Future] = {}
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._running = False
 
@@ -242,7 +243,7 @@ class MessageBus:
         message: AgentMessage,
         wait_response: bool = False,
         timeout: float = 30.0,
-    ) -> Optional[AgentMessage]:
+    ) -> AgentMessage | None:
         """
         Send a message to an agent.
 
@@ -354,7 +355,7 @@ class AgentCoordinator:
     def __init__(self):
         self.registry = AgentRegistry()
         self.bus = MessageBus(self.registry)
-        self._shared_context: Dict[str, Any] = {}
+        self._shared_context: dict[str, Any] = {}
 
     async def start(self):
         """Start the coordinator."""
@@ -369,7 +370,7 @@ class AgentCoordinator:
         agent_id: str,
         name: str,
         role: AgentRole,
-        capabilities: List[str],
+        capabilities: list[str],
         handler: Callable,
         **metadata,
     ):
@@ -393,8 +394,8 @@ class AgentCoordinator:
         self,
         task: TaskRequest,
         from_agent: str,
-        to_agent: Optional[str] = None,
-    ) -> Optional[TaskResult]:
+        to_agent: str | None = None,
+    ) -> TaskResult | None:
         """
         Delegate a task to an agent.
 
@@ -453,7 +454,7 @@ class AgentCoordinator:
         self,
         from_agent: str,
         to_agent: str,
-        conversation_context: Dict[str, Any],
+        conversation_context: dict[str, Any],
         reason: str = "",
     ) -> bool:
         """
@@ -494,7 +495,7 @@ class AgentCoordinator:
             "updated_at": datetime.now().isoformat(),
         }
 
-    def get_shared_context(self, key: Optional[str] = None) -> Any:
+    def get_shared_context(self, key: str | None = None) -> Any:
         """Get shared context."""
         if key:
             return self._shared_context.get(key, {}).get("value")
@@ -547,7 +548,7 @@ class AgentCoordinator:
 
 
 # Global coordinator instance
-_coordinator: Optional[AgentCoordinator] = None
+_coordinator: AgentCoordinator | None = None
 
 
 def get_coordinator() -> AgentCoordinator:

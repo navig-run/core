@@ -12,10 +12,11 @@ Automatic notification system for:
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class Notification:
     message: str
     priority: NotificationPriority = NotificationPriority.NORMAL
     created_at: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_telegram_message(self) -> str:
         """Format for Telegram."""
@@ -71,8 +72,8 @@ class ScheduledTask:
     time: time  # Time of day to run
     func: Callable
     enabled: bool = True
-    days: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])  # Mon-Sun
-    last_run: Optional[datetime] = None
+    days: list[int] = field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])  # Mon-Sun
+    last_run: datetime | None = None
 
 
 class ChannelNotifier(ABC):
@@ -127,17 +128,17 @@ class TelegramNotifier(ChannelNotifier):
         self.chat_id = chat_id
 
         # Notification queue
-        self.queue: List[Notification] = []
+        self.queue: list[Notification] = []
         self._queue_lock = asyncio.Lock()
 
         # 30-second batching window for non-critical notifications
         self._batch_window_sec = 30
-        self._batch_buffer: List[Notification] = []
-        self._batch_timer: Optional[asyncio.Task] = None
+        self._batch_buffer: list[Notification] = []
+        self._batch_timer: asyncio.Task | None = None
 
         # Scheduled tasks
-        self.scheduled_tasks: List[ScheduledTask] = []
-        self._scheduler_task: Optional[asyncio.Task] = None
+        self.scheduled_tasks: list[ScheduledTask] = []
+        self._scheduler_task: asyncio.Task | None = None
         self._running = False
 
         # Proactive engagement coordinator
@@ -327,7 +328,7 @@ class TelegramNotifier(ChannelNotifier):
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")
 
-    async def _send_batched(self, notifications: List[Notification]):
+    async def _send_batched(self, notifications: list[Notification]):
         """Send batched notifications."""
         if not notifications:
             return
@@ -403,7 +404,7 @@ class TelegramNotifier(ChannelNotifier):
     # Scheduled Task Implementations
     # ========================================================================
 
-    async def _morning_briefing(self) -> Optional[Notification]:
+    async def _morning_briefing(self) -> Notification | None:
         """Generate morning briefing."""
         now = datetime.now()
 
@@ -425,7 +426,7 @@ class TelegramNotifier(ChannelNotifier):
             priority=NotificationPriority.NORMAL,
         )
 
-    async def _evening_summary(self) -> Optional[Notification]:
+    async def _evening_summary(self) -> Notification | None:
         """Generate evening summary — NAVIG lore-flavored, day/hour-aware."""
         import random
 
@@ -484,7 +485,7 @@ class TelegramNotifier(ChannelNotifier):
             priority=NotificationPriority.LOW,
         )
 
-    async def _heartbeat_check(self) -> Optional[Notification]:
+    async def _heartbeat_check(self) -> Notification | None:
         """Lightweight in-process health check.
 
         The old implementation shelled out to ``navig agent heartbeat``
@@ -515,7 +516,7 @@ class TelegramNotifier(ChannelNotifier):
             logger.error("Heartbeat check error: %s", e)
             return None
 
-    async def _engagement_tick(self) -> Optional[Notification]:
+    async def _engagement_tick(self) -> Notification | None:
         """
         Run proactive engagement evaluation.
 
@@ -573,7 +574,7 @@ class TelegramNotifier(ChannelNotifier):
     def record_user_interaction(
         self,
         message_type: str = "chat",
-        command: Optional[str] = None,
+        command: str | None = None,
     ):
         """
         Record a user interaction for engagement tracking.
@@ -615,8 +616,8 @@ class NotificationManager:
             return
 
         self._initialized = True
-        self.telegram: Optional[TelegramNotifier] = None
-        self._channels: Dict[str, ChannelNotifier] = {}
+        self.telegram: TelegramNotifier | None = None
+        self._channels: dict[str, ChannelNotifier] = {}
 
     def configure_telegram(self, telegram_channel, chat_id: int):
         """Configure Telegram notifications."""

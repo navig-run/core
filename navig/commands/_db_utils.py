@@ -30,8 +30,11 @@ def create_mysql_config_file(user: str, password: str) -> str:
     fd, config_path = tempfile.mkstemp(prefix="navig_mysql_", suffix=".cnf", text=True)
     try:
         # Set restrictive permissions before writing secrets
-        os.chmod(config_path, 0o600)
-        with os.fdopen(fd, "w") as f:
+        try:
+            os.chmod(config_path, 0o600)
+        except (OSError, PermissionError):
+            pass
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write("[client]\n")
             f.write(f"user={user}\n")
             f.write(f"password={password}\n")

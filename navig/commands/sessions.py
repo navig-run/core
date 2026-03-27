@@ -21,7 +21,6 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 
@@ -45,7 +44,7 @@ sessions_app = typer.Typer(
 class ChatTurn:
     role: str  # "user" | "assistant"
     text: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
     def short(self, n: int = 120) -> str:
         t = self.text.strip().replace("\n", " ")
@@ -58,10 +57,10 @@ class ChatSession:
     path: Path
     workspace_hash: str
     workspace_label: str
-    created_at: Optional[datetime] = None
-    turns: List[ChatTurn] = field(default_factory=list)
+    created_at: datetime | None = None
+    turns: list[ChatTurn] = field(default_factory=list)
     file_bytes: int = 0
-    parse_error: Optional[str] = None
+    parse_error: str | None = None
 
     @property
     def turn_count(self) -> int:
@@ -133,7 +132,7 @@ def _workspace_label(ws_path: Path) -> str:
     return ws_path.name[:12]
 
 
-def _discover_all_sessions(*, fast: bool = False) -> List[ChatSession]:
+def _discover_all_sessions(*, fast: bool = False) -> list[ChatSession]:
     """Scan all workspaceStorage hashes and return every chat session found.
 
     fast=True  — metadata-only scan (~100x faster, fine for list/stats).
@@ -143,7 +142,7 @@ def _discover_all_sessions(*, fast: bool = False) -> List[ChatSession]:
     if not root.exists():
         return []
 
-    results: List[ChatSession] = []
+    results: list[ChatSession] = []
     for ws_dir in sorted(root.iterdir()):
         if not ws_dir.is_dir():
             continue
@@ -249,7 +248,7 @@ def _parse_session(
     # ── Full parse (needed for `view` and `search`) ────────────────────────────
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        all_requests: List[dict] = []
+        all_requests: list[dict] = []
 
         for line in lines:
             line = line.strip()
@@ -309,7 +308,7 @@ def _parse_session(
             if isinstance(response, dict):
                 parts = response.get("value", [])
                 if isinstance(parts, list):
-                    chunks: List[str] = []
+                    chunks: list[str] = []
                     for part in parts:
                         if isinstance(part, dict):
                             kind_p = part.get("kind", "")
@@ -348,10 +347,10 @@ def _human_size(b: int) -> str:
 
 
 def _all_sessions_or_die(
-    workspace: Optional[str] = None,
+    workspace: str | None = None,
     *,
     fast: bool = False,
-) -> List[ChatSession]:
+) -> list[ChatSession]:
     """Load all sessions, optionally filtered by workspace label."""
     all_s = _discover_all_sessions(fast=fast)
     if not all_s:
@@ -379,7 +378,7 @@ def sessions_callback(ctx: typer.Context):
 
 @sessions_app.command("list")
 def _cmd_list(
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w", help="Filter by workspace name"
     ),
     limit: int = typer.Option(30, "--limit", "-n", help="Max sessions to show (0=all)"),
@@ -438,7 +437,7 @@ def _cmd_list(
 
 @sessions_app.command("stats")
 def _cmd_stats(
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w", help="Filter by workspace"
     ),
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
@@ -578,7 +577,7 @@ def _cmd_view(
 @sessions_app.command("search")
 def _cmd_search(
     query: str = typer.Argument(..., help="Search query (case-insensitive)"),
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w", help="Limit to workspace"
     ),
     limit: int = typer.Option(10, "--limit", "-n", help="Max results"),
@@ -590,7 +589,7 @@ def _cmd_search(
 
     all_s = _all_sessions_or_die(workspace, fast=False)
     q = query.lower()
-    results: List[tuple] = []  # (session, turn, snippet)
+    results: list[tuple] = []  # (session, turn, snippet)
 
     for sess in all_s:
         for turn in sess.turns:
@@ -641,14 +640,12 @@ def _cmd_search(
 
 @sessions_app.command("export")
 def _cmd_export(
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output file path"
-    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
     fmt: str = typer.Option("json", "--format", "-f", help="Format: json, md, csv"),
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w", help="Filter by workspace"
     ),
-    session_id: Optional[str] = typer.Option(
+    session_id: str | None = typer.Option(
         None, "--session", "-s", help="Export single session"
     ),
     empty: bool = typer.Option(False, "--empty", help="Include empty sessions"),
@@ -725,10 +722,10 @@ def _cmd_export(
 
 @sessions_app.command("delete")
 def _cmd_delete(
-    session_id: Optional[str] = typer.Argument(
+    session_id: str | None = typer.Argument(
         None, help="Session ID to delete (partial match OK)"
     ),
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w", help="Delete all sessions from workspace"
     ),
     keep: int = typer.Option(
@@ -747,7 +744,7 @@ def _cmd_delete(
         navig ask sessions delete --all --yes
     """
     all_s = _discover_all_sessions(fast=True)
-    targets: List[ChatSession] = []
+    targets: list[ChatSession] = []
 
     if all_sessions:
         targets = list(all_s)

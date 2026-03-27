@@ -4,7 +4,7 @@ Server Management Commands
 The Schema tracks all assets. Every server. Every operation.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -13,7 +13,7 @@ from navig.discovery import ServerDiscovery
 config_manager = get_config_manager()
 
 
-def list_servers(options: Dict[str, Any]):
+def list_servers(options: dict[str, Any]):
     """List all configured servers."""
     servers = config_manager.list_servers()
     active_server = config_manager.get_active_server()
@@ -60,7 +60,7 @@ def list_servers(options: Dict[str, Any]):
     ch.print_table(table)
 
 
-def use_server(name: str, options: Dict[str, Any]):
+def use_server(name: str, options: dict[str, Any]):
     """Switch active server context."""
     if not config_manager.server_exists(name):
         ch.error(
@@ -75,7 +75,7 @@ def use_server(name: str, options: Dict[str, Any]):
         ch.success(f"Switched to server: {name}")
 
 
-def show_current_server(options: Dict[str, Any]):
+def show_current_server(options: dict[str, Any]):
     """Show currently active server."""
     active = config_manager.get_active_server()
 
@@ -94,7 +94,7 @@ def show_current_server(options: Dict[str, Any]):
         ch.error("Error loading server config", str(e))
 
 
-def set_default_server(name: str, options: Dict[str, Any]):
+def set_default_server(name: str, options: dict[str, Any]):
     """Set default server."""
     if not config_manager.server_exists(name):
         ch.error(f"Server '{name}' not found")
@@ -106,7 +106,7 @@ def set_default_server(name: str, options: Dict[str, Any]):
         ch.success(f"Default server set to: {name}")
 
 
-def add_server(name: str, options: Dict[str, Any]):
+def add_server(name: str, options: dict[str, Any]):
     """Add new server configuration (interactive wizard with auto-discovery)."""
     if config_manager.server_exists(name):
         ch.error(f"Server '{name}' already exists.")
@@ -331,7 +331,7 @@ def add_server(name: str, options: Dict[str, Any]):
         ch.success(f"✓ Active server set to: {name}")
 
 
-def remove_server(name: str, options: Dict[str, Any]):
+def remove_server(name: str, options: dict[str, Any]):
     """Remove server configuration."""
     if not config_manager.server_exists(name):
         ch.error(f"Server '{name}' not found.")
@@ -351,7 +351,7 @@ def remove_server(name: str, options: Dict[str, Any]):
     ch.success(f"Server '{name}' removed.")
 
 
-def inspect_server(options: Dict[str, Any]):
+def inspect_server(options: dict[str, Any]):
     """Auto-discover server details and update configuration."""
     from navig.server_template_manager import ServerTemplateManager
 
@@ -475,7 +475,7 @@ def inspect_server(options: Dict[str, Any]):
         ch.info(f"Templates: {', '.join(detected_templates.keys())}", style="cyan")
 
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import typer
 
@@ -507,7 +507,7 @@ def server_list(
         False, "--containers", help="List Docker containers"
     ),
     all: bool = typer.Option(False, "--all", "-a", help="Show all (including stopped)"),
-    filter: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter by name"),
+    filter: str | None = typer.Option(None, "--filter", "-f", help="Filter by name"),
     hestia_users: bool = typer.Option(
         False, "--hestia-users", help="List HestiaCP users"
     ),
@@ -545,7 +545,7 @@ def server_list(
 @server_app.command("show")
 def server_show(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Container to inspect"
     ),
     stats: bool = typer.Option(False, "--stats", help="Show container stats"),
@@ -583,23 +583,21 @@ def server_test(
 @server_app.command("run")
 def server_run(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Container name"
     ),
-    command: Optional[str] = typer.Option(
+    command: str | None = typer.Option(
         None, "--command", "--cmd", help="Command to execute"
     ),
-    enable: Optional[str] = typer.Option(
-        None, "--enable", help="Enable site/container"
-    ),
-    disable: Optional[str] = typer.Option(
+    enable: str | None = typer.Option(None, "--enable", help="Enable site/container"),
+    disable: str | None = typer.Option(
         None, "--disable", help="Disable site/container"
     ),
-    restart: Optional[str] = typer.Option(
+    restart: str | None = typer.Option(
         None, "--restart", help="Restart service/container"
     ),
-    stop: Optional[str] = typer.Option(None, "--stop", help="Stop container"),
-    start: Optional[str] = typer.Option(None, "--start", help="Start container"),
+    stop: str | None = typer.Option(None, "--stop", help="Stop container"),
+    start: str | None = typer.Option(None, "--start", help="Start container"),
     reload: bool = typer.Option(False, "--reload", help="Reload web server"),
     update_packages: bool = typer.Option(
         False, "--update-packages", help="Update system packages"

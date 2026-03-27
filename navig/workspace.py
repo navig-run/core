@@ -11,7 +11,7 @@ import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.workspace_ownership import (
     USER_NAVIG_DIR,
@@ -51,8 +51,8 @@ class WorkspaceManager:
 
     def __init__(
         self,
-        workspace_path: Optional[Path] = None,
-        config_path: Optional[Path] = None,
+        workspace_path: Path | None = None,
+        config_path: Path | None = None,
     ):
         """
         Initialize the workspace manager.
@@ -151,18 +151,18 @@ class WorkspaceManager:
         )
         return USER_WORKSPACE_DIR
 
-    def _candidate_workspace_paths(self) -> List[Path]:
+    def _candidate_workspace_paths(self) -> list[Path]:
         """Return workspace paths in read-priority order."""
         paths = [self.workspace_path]
         if self.legacy_workspace_path and self.legacy_workspace_path not in paths:
             paths.append(self.legacy_workspace_path)
         return paths
 
-    def _load_config(self) -> Optional[Dict[str, Any]]:
+    def _load_config(self) -> dict[str, Any] | None:
         """Load configuration from JSON file."""
         if self.config_path.exists():
             try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
+                with open(self.config_path, encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
                 logger.warning(f"Failed to load config: {e}")
@@ -209,7 +209,7 @@ class WorkspaceManager:
 
         return "\n\n---\n\n".join(content_parts)
 
-    def get_file_content(self, filename: str) -> Optional[str]:
+    def get_file_content(self, filename: str) -> str | None:
         """Get content of a specific workspace file."""
         for ws_path in self._candidate_workspace_paths():
             file_path = ws_path / filename
@@ -268,7 +268,7 @@ class WorkspaceManager:
             for ws_path in self._candidate_workspace_paths()
         )
 
-    def get_agent_identity(self) -> Dict[str, str]:
+    def get_agent_identity(self) -> dict[str, str]:
         """
         Extract agent identity from IDENTITY.md.
 
@@ -293,7 +293,7 @@ class WorkspaceManager:
 
         return identity
 
-    def get_user_preferences(self) -> Dict[str, Any]:
+    def get_user_preferences(self) -> dict[str, Any]:
         """
         Extract user preferences from USER.md.
 

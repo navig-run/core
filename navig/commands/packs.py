@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -62,24 +62,24 @@ class PackManifest:
 
     # Dependencies
     requires_navig: str = ">=2.0.0"
-    requires_packs: List[str] = field(default_factory=list)
+    requires_packs: list[str] = field(default_factory=list)
 
     # Content
-    steps: List[Dict[str, Any]] = field(default_factory=list)
-    variables: Dict[str, Any] = field(default_factory=dict)
-    workflows: List[str] = field(default_factory=list)  # For bundles
-    quick_actions: List[Dict[str, str]] = field(default_factory=list)
+    steps: list[dict[str, Any]] = field(default_factory=list)
+    variables: dict[str, Any] = field(default_factory=dict)
+    workflows: list[str] = field(default_factory=list)  # For bundles
+    quick_actions: list[dict[str, str]] = field(default_factory=list)
 
     # Metadata
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     homepage: str = ""
     license: str = "MIT"
 
     # Installation info (not in file)
-    source_path: Optional[Path] = None
-    installed_at: Optional[str] = None
+    source_path: Path | None = None
+    installed_at: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         d = asdict(self)
         d["type"] = self.type.value if isinstance(self.type, PackType) else self.type
@@ -90,7 +90,7 @@ class PackManifest:
 
     @classmethod
     def from_dict(
-        cls, data: Dict[str, Any], source_path: Optional[Path] = None
+        cls, data: dict[str, Any], source_path: Path | None = None
     ) -> "PackManifest":
         """Create from dictionary."""
         # Handle type enum
@@ -124,14 +124,14 @@ class PackStep:
     """A single step in a runbook or checklist."""
 
     description: str
-    command: Optional[str] = None
-    notes: Optional[str] = None
-    prompt: Optional[str] = None  # Confirmation prompt
+    command: str | None = None
+    notes: str | None = None
+    prompt: str | None = None  # Confirmation prompt
     continue_on_error: bool = False
-    skip_if: Optional[str] = None  # Condition to skip
+    skip_if: str | None = None  # Condition to skip
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PackStep":
+    def from_dict(cls, data: dict[str, Any]) -> "PackStep":
         """Create from dictionary."""
         return cls(
             description=data.get("description", ""),
@@ -171,7 +171,7 @@ class PackManager:
         self.local_dir.mkdir(parents=True, exist_ok=True)
 
         # Cache
-        self._packs: Dict[str, PackManifest] = {}
+        self._packs: dict[str, PackManifest] = {}
         self._loaded = False
 
     def _get_builtin_dir(self) -> Path:
@@ -253,7 +253,7 @@ class PackManager:
     def _load_pack_from_file(self, pack_file: Path, source: str):
         """Load a pack from a YAML file."""
         try:
-            with open(pack_file, "r", encoding="utf-8") as f:
+            with open(pack_file, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             if not data or not isinstance(data, dict):
@@ -279,10 +279,10 @@ class PackManager:
 
     def list_packs(
         self,
-        pack_type: Optional[PackType] = None,
-        tag: Optional[str] = None,
+        pack_type: PackType | None = None,
+        tag: str | None = None,
         installed_only: bool = False,
-    ) -> List[PackManifest]:
+    ) -> list[PackManifest]:
         """
         List available packs.
 
@@ -314,7 +314,7 @@ class PackManager:
 
         return sorted(packs, key=lambda p: p.name.lower())
 
-    def get_pack(self, name: str) -> Optional[PackManifest]:
+    def get_pack(self, name: str) -> PackManifest | None:
         """Get a pack by name."""
         self._load_packs()
 
@@ -339,7 +339,7 @@ class PackManager:
         self,
         source: str,
         force: bool = False,
-    ) -> Optional[PackManifest]:
+    ) -> PackManifest | None:
         """
         Install a pack from a source.
 
@@ -384,10 +384,10 @@ class PackManager:
         self,
         source_path: Path,
         force: bool = False,
-    ) -> Optional[PackManifest]:
+    ) -> PackManifest | None:
         """Install a pack from a file."""
         try:
-            with open(source_path, "r", encoding="utf-8") as f:
+            with open(source_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             if not data:
@@ -450,7 +450,7 @@ class PackManager:
     def run_pack(
         self,
         name: str,
-        variables: Optional[Dict[str, Any]] = None,
+        variables: dict[str, Any] | None = None,
         dry_run: bool = False,
         interactive: bool = True,
     ) -> bool:
@@ -490,7 +490,7 @@ class PackManager:
     def _run_checklist(
         self,
         pack: PackManifest,
-        variables: Dict[str, Any],
+        variables: dict[str, Any],
         dry_run: bool,
         interactive: bool,
     ) -> bool:
@@ -561,7 +561,7 @@ class PackManager:
     def _run_runbook(
         self,
         pack: PackManifest,
-        variables: Dict[str, Any],
+        variables: dict[str, Any],
         dry_run: bool,
         interactive: bool,
     ) -> bool:
@@ -619,7 +619,7 @@ class PackManager:
     def _run_workflow(
         self,
         pack: PackManifest,
-        variables: Dict[str, Any],
+        variables: dict[str, Any],
         dry_run: bool,
     ) -> bool:
         """Run a workflow pack using the workflow engine."""
@@ -667,7 +667,7 @@ class PackManager:
             ch.error(f"Failed to install quick actions: {e}")
             return False
 
-    def _substitute_vars(self, text: str, variables: Dict[str, Any]) -> str:
+    def _substitute_vars(self, text: str, variables: dict[str, Any]) -> str:
         """Substitute ${var} placeholders."""
         import re
 
@@ -710,8 +710,8 @@ class PackManager:
         name: str,
         pack_type: PackType = PackType.RUNBOOK,
         description: str = "",
-        steps: Optional[List[Dict[str, Any]]] = None,
-    ) -> Optional[Path]:
+        steps: list[dict[str, Any]] | None = None,
+    ) -> Path | None:
         """
         Create a new pack in the local directory.
 
@@ -750,7 +750,7 @@ class PackManager:
 
         return os.environ.get("USER", os.environ.get("USERNAME", "Unknown"))
 
-    def search_packs(self, query: str) -> List[PackManifest]:
+    def search_packs(self, query: str) -> list[PackManifest]:
         """Search packs by name, description, or tags."""
         self._load_packs()
 
@@ -793,8 +793,8 @@ class PackManager:
 
 
 def list_packs(
-    pack_type: Optional[str] = None,
-    tag: Optional[str] = None,
+    pack_type: str | None = None,
+    tag: str | None = None,
     installed_only: bool = False,
     plain: bool = False,
     json_out: bool = False,
@@ -969,7 +969,7 @@ def uninstall_pack(name: str, force: bool = False):
 
 def run_pack(
     name: str,
-    variables: Optional[Dict[str, str]] = None,
+    variables: dict[str, str] | None = None,
     dry_run: bool = False,
     yes: bool = False,
 ):

@@ -11,7 +11,7 @@ Provides commands for:
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 from navig.operation_recorder import (
@@ -24,12 +24,12 @@ from navig.operation_recorder import (
 
 def show_history(
     limit: int = 20,
-    host: Optional[str] = None,
-    operation_type: Optional[str] = None,
-    status: Optional[str] = None,
-    search: Optional[str] = None,
-    since: Optional[str] = None,
-    opts: Dict[str, Any] = None,
+    host: str | None = None,
+    operation_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    since: str | None = None,
+    opts: dict[str, Any] = None,
 ) -> None:
     """
     Show command history with filtering.
@@ -149,7 +149,7 @@ def show_history(
         console.print("[dim]Use 'navig history replay <id>' to re-run[/dim]")
 
 
-def show_operation_details(op_id: str, opts: Dict[str, Any] = None) -> None:
+def show_operation_details(op_id: str, opts: dict[str, Any] = None) -> None:
     """
     Show detailed information about a specific operation.
 
@@ -233,8 +233,8 @@ def show_operation_details(op_id: str, opts: Dict[str, Any] = None) -> None:
 def replay_operation(
     op_id: str,
     dry_run: bool = False,
-    modify: Optional[str] = None,
-    opts: Dict[str, Any] = None,
+    modify: str | None = None,
+    opts: dict[str, Any] = None,
 ) -> None:
     """
     Replay a previous operation.
@@ -314,7 +314,7 @@ def replay_operation(
         ch.error(f"Failed to replay: {e}")
 
 
-def undo_operation(op_id: str, opts: Dict[str, Any] = None) -> None:
+def undo_operation(op_id: str, opts: dict[str, Any] = None) -> None:
     """
     Undo a reversible operation.
 
@@ -376,7 +376,7 @@ def export_history(
     output_file: str,
     format: str = "json",
     limit: int = 1000,
-    opts: Dict[str, Any] = None,
+    opts: dict[str, Any] = None,
 ) -> None:
     """
     Export operation history to file.
@@ -407,7 +407,7 @@ def export_history(
         ch.error(f"Export failed: {e}")
 
 
-def clear_history(opts: Dict[str, Any] = None) -> None:
+def clear_history(opts: dict[str, Any] = None) -> None:
     """Clear all operation history."""
     opts = opts or {}
 
@@ -423,7 +423,7 @@ def clear_history(opts: Dict[str, Any] = None) -> None:
     ch.success(f"Cleared {count} operations from history")
 
 
-def history_stats(opts: Dict[str, Any] = None) -> None:
+def history_stats(opts: dict[str, Any] = None) -> None:
     """Show history statistics."""
     opts = opts or {}
     want_json = opts.get("json", False)
@@ -501,7 +501,7 @@ def history_stats(opts: Dict[str, Any] = None) -> None:
 # Helper functions
 
 
-def _parse_since(since: str) -> Optional[str]:
+def _parse_since(since: str) -> str | None:
     """Parse a 'since' parameter like '1h', '24h', '7d' into ISO timestamp."""
     import re
 

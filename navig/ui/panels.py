@@ -12,7 +12,6 @@ Layout contract (4 layers):
 from __future__ import annotations
 
 import sys
-from typing import List, Optional
 
 from navig.ui.models import CauseScore, Metric
 from navig.ui.theme import SAFE_MODE, SEVERITY_STYLE, console
@@ -24,7 +23,7 @@ def render_primary_state(
     detail: str,
     style: str = "white",
     *,
-    hint: Optional[str] = None,
+    hint: str | None = None,
 ) -> None:
     """Layer 2 — primary state line. Never raises."""
     try:
@@ -43,7 +42,7 @@ def render_primary_state(
 
 
 def render_explanation(
-    causes: List[CauseScore],
+    causes: list[CauseScore],
     *,
     title: str = "Why this is happening",
 ) -> None:
@@ -73,7 +72,7 @@ def render_explanation(
 
 
 def render_metrics_panel(
-    metrics: List[Metric],
+    metrics: list[Metric],
     *,
     title: str = "Metrics",
 ) -> None:

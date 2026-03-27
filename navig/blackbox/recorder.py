@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from .types import BlackboxEvent, EventType
 
@@ -50,9 +49,9 @@ class BlackboxRecorder:
         self,
         event_type: EventType,
         payload: dict,
-        tags: Optional[list[str]] = None,
+        tags: list[str] | None = None,
         source: str = "navig",
-    ) -> Optional[BlackboxEvent]:
+    ) -> BlackboxEvent | None:
         """Append an event to the JSONL stream.
 
         Returns the event, or None if recording is disabled.
@@ -82,10 +81,10 @@ class BlackboxRecorder:
 
     def read_events(
         self,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         limit: int = 500,
-        event_type: Optional[EventType] = None,
+        event_type: EventType | None = None,
     ) -> list[BlackboxEvent]:
         """Read and filter events from the JSONL stream.
 
@@ -143,7 +142,7 @@ class BlackboxRecorder:
         except OSError:
             return 0
 
-    def last_event_ts(self) -> Optional[datetime]:
+    def last_event_ts(self) -> datetime | None:
         """Timestamp of the most recent event."""
         events = self.tail(1)
         return events[0].timestamp if events else None
@@ -163,10 +162,10 @@ class BlackboxRecorder:
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 
-_recorder: Optional[BlackboxRecorder] = None
+_recorder: BlackboxRecorder | None = None
 
 
-def get_recorder(blackbox_dir: Optional[Path] = None) -> BlackboxRecorder:
+def get_recorder(blackbox_dir: Path | None = None) -> BlackboxRecorder:
     """Return (or create) the global BlackboxRecorder singleton."""
     global _recorder
     if _recorder is None:

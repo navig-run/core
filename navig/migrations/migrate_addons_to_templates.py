@@ -15,7 +15,7 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import yaml
 
@@ -44,10 +44,10 @@ class AddonToTemplateMigration:
         self.templates_dir = self.repo_root / "store" / "templates"
 
         # Migration results
-        self.migrated_repo: List[str] = []
-        self.migrated_user: List[str] = []
-        self.skipped: List[Tuple[str, str]] = []  # (path, reason)
-        self.errors: List[Tuple[str, str]] = []  # (path, error message)
+        self.migrated_repo: list[str] = []
+        self.migrated_user: list[str] = []
+        self.skipped: list[tuple[str, str]] = []  # (path, reason)
+        self.errors: list[tuple[str, str]] = []  # (path, error message)
 
     def run(self) -> bool:
         """
@@ -222,15 +222,15 @@ class AddonToTemplateMigration:
 
                 self.migrated_user.append(f"{server_name}/{addon_name}")
 
-    def _load_file(self, path: Path) -> Dict[str, Any]:
+    def _load_file(self, path: Path) -> dict[str, Any]:
         """Load JSON or YAML file."""
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             if path.suffix == ".json":
                 return json.load(f)
             else:
                 return yaml.safe_load(f) or {}
 
-    def _save_yaml(self, path: Path, content: Dict[str, Any]):
+    def _save_yaml(self, path: Path, content: dict[str, Any]):
         """Save content as YAML with header comment."""
         with open(path, "w", encoding="utf-8") as f:
             # Add migration comment
@@ -303,7 +303,7 @@ def migrate_addons_to_templates(dry_run: bool = False, force: bool = False) -> b
 
 
 # CLI integration
-def migrate_addons_to_templates_cmd(options: Dict[str, Any]):
+def migrate_addons_to_templates_cmd(options: dict[str, Any]):
     """CLI command handler for addons-to-templates migration."""
     dry_run = options.get("dry_run", False)
     force = options.get("force", False)

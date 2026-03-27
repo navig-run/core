@@ -15,7 +15,7 @@ Usage::
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.installer.contracts import Action, InstallerContext, Result
@@ -23,13 +23,13 @@ if TYPE_CHECKING:
 from navig.installer.contracts import ModuleState, Result
 
 
-def apply(actions: "List[Action]", ctx: "InstallerContext") -> "List[Result]":
+def apply(actions: list[Action], ctx: InstallerContext) -> list[Result]:
     """Apply *actions* sequentially; stop on the first FAILED result.
 
     In dry_run mode every action is wrapped in a SKIPPED result without
     calling any module logic.
     """
-    results: List[Result] = []
+    results: list[Result] = []
 
     for action in actions:
         # --- dry-run fast path ---
@@ -75,9 +75,9 @@ def apply(actions: "List[Action]", ctx: "InstallerContext") -> "List[Result]":
 
 
 def rollback(
-    actions: "List[Action]",
-    results: "List[Result]",
-    ctx: "InstallerContext",
+    actions: list[Action],
+    results: list[Result],
+    ctx: InstallerContext,
 ) -> None:
     """Roll back applied actions in reverse order (best-effort)."""
     applied_pairs = [

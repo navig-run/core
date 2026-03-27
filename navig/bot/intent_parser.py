@@ -19,7 +19,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.bot.command_tools import (
     COMMAND_HANDLER_MAP,
@@ -34,25 +34,25 @@ logger = logging.getLogger(__name__)
 class IntentParseResult:
     """Result from intent parsing."""
 
-    command: Optional[str]  # Function name e.g., "docker_ps"
-    args: Dict[str, Any]  # Arguments e.g., {"container": "nginx"}
+    command: str | None  # Function name e.g., "docker_ps"
+    args: dict[str, Any]  # Arguments e.g., {"container": "nginx"}
     confidence: float  # 0.0 to 1.0
     raw_message: str  # Original user input
     method: str = "none"  # "ai", "pattern", or "none"
-    suggested_command: Optional[str] = None  # /docker ps
+    suggested_command: str | None = None  # /docker ps
 
     @property
     def is_command(self) -> bool:
         """Check if a command was detected."""
         return self.command is not None and self.confidence > 0
 
-    def to_command_string(self) -> Optional[str]:
+    def to_command_string(self) -> str | None:
         """Convert parsed intent to executable command string."""
         if not self.command:
             return None
         return get_command_string(self.command, self.args)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging/debugging."""
         return {
             "command": self.command,
@@ -101,7 +101,7 @@ class IntentParser:
         self.ai_timeout = ai_timeout
 
         # Cache for common patterns
-        self._pattern_cache: Dict[str, IntentParseResult] = {}
+        self._pattern_cache: dict[str, IntentParseResult] = {}
         self._cache_max_size = 100
 
         # Compile regex patterns
@@ -206,7 +206,7 @@ class IntentParser:
 
     def _compile_patterns(self):
         """Pre-compile regex patterns for faster matching."""
-        self._patterns: List[Tuple[re.Pattern, str, Dict[str, Any], float]] = []
+        self._patterns: list[tuple[re.Pattern, str, dict[str, Any], float]] = []
 
         # Pattern format: (regex, command_name, args_extractor, confidence)
         pattern_defs = [
@@ -530,7 +530,7 @@ class IntentParser:
     async def parse_intent(
         self,
         user_message: str,
-        conversation_history: Optional[List[Dict[str, str]]] = None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> IntentParseResult:
         """
         Parse user message to detect command intent.
@@ -605,7 +605,7 @@ class IntentParser:
     async def _parse_with_ai(
         self,
         message: str,
-        history: Optional[List[Dict[str, str]]] = None,
+        history: list[dict[str, str]] | None = None,
     ) -> IntentParseResult:
         """Use AI function calling to detect intent."""
         from navig.ai import ask_ai_with_context
@@ -851,7 +851,7 @@ def _normalize_unit(unit: str) -> str:
     return "minutes"
 
 
-def _crypto_symbol(name: str) -> Dict[str, str]:
+def _crypto_symbol(name: str) -> dict[str, str]:
     """Convert crypto name to symbol."""
     name_map = {
         "bitcoin": "BTC",
@@ -878,13 +878,13 @@ class ConfirmationHandler:
     """
 
     def __init__(self):
-        self.pending: Dict[int, IntentParseResult] = {}  # user_id -> pending result
+        self.pending: dict[int, IntentParseResult] = {}  # user_id -> pending result
 
     def set_pending(self, user_id: int, result: IntentParseResult):
         """Store a pending command awaiting confirmation."""
         self.pending[user_id] = result
 
-    def get_pending(self, user_id: int) -> Optional[IntentParseResult]:
+    def get_pending(self, user_id: int) -> IntentParseResult | None:
         """Get pending command for user."""
         return self.pending.get(user_id)
 

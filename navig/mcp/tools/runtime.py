@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 
 def register(server: Any) -> None:
@@ -96,7 +96,7 @@ def register(server: Any) -> None:
     )
 
 
-def _tool_runtime_list_nodes(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_runtime_list_nodes(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """List registered Nodes."""
     from navig.contracts.node import NodeStatus
     from navig.contracts.store import get_runtime_store
@@ -108,7 +108,7 @@ def _tool_runtime_list_nodes(server: Any, args: Dict[str, Any]) -> Dict[str, Any
     return {"nodes": [n.to_dict() for n in nodes], "count": len(nodes)}
 
 
-def _tool_runtime_create_mission(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_runtime_create_mission(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Create a new Mission."""
     from navig.contracts.mission import Mission
     from navig.contracts.store import get_runtime_store
@@ -128,7 +128,7 @@ def _tool_runtime_create_mission(server: Any, args: Dict[str, Any]) -> Dict[str,
     return {"mission": m.to_dict(), "ok": True}
 
 
-def _tool_runtime_mission_action(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_runtime_mission_action(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Advance a Mission lifecycle."""
     from navig.contracts.store import get_runtime_store
 
@@ -145,7 +145,7 @@ def _tool_runtime_mission_action(server: Any, args: Dict[str, Any]) -> Dict[str,
         return {"error": str(e)}
 
 
-def _tool_runtime_list_missions(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_runtime_list_missions(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """List Missions."""
     from navig.contracts.mission import MissionStatus
     from navig.contracts.store import get_runtime_store
@@ -161,7 +161,7 @@ def _tool_runtime_list_missions(server: Any, args: Dict[str, Any]) -> Dict[str, 
     return {"missions": [m.to_dict() for m in missions], "count": len(missions)}
 
 
-def _tool_runtime_list_receipts(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_runtime_list_receipts(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """List ExecutionReceipts."""
     from navig.contracts.store import get_runtime_store
 
@@ -174,7 +174,7 @@ def _tool_runtime_list_receipts(server: Any, args: Dict[str, Any]) -> Dict[str, 
     return {"receipts": [r.to_dict() for r in receipts], "count": len(receipts)}
 
 
-def _tool_runtime_trust_score(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_runtime_trust_score(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Compute TrustScore for a Node."""
     from navig.contracts.store import get_runtime_store
 

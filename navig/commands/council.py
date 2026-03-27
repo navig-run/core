@@ -5,7 +5,6 @@ Multi-agent deliberation via the Council Engine.
 """
 
 import json as json_module
-from typing import Optional
 
 import typer
 
@@ -41,7 +40,7 @@ def council_run(
     ),
     json_output: bool = typer.Option(False, "--json", help="Full JSON output"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
-    timeout: Optional[float] = typer.Option(
+    timeout: float | None = typer.Option(
         None, "--timeout", "-t", help="Per-agent timeout in seconds"
     ),
 ):

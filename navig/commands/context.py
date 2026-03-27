@@ -7,13 +7,13 @@ including project-local context files and context inspection.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
 
 
-def show_context(opts: Dict[str, Any]) -> None:
+def show_context(opts: dict[str, Any]) -> None:
     """
     Show current context resolution with source information.
 
@@ -142,7 +142,7 @@ def show_context(opts: Dict[str, Any]) -> None:
 
 
 def set_context(
-    host: Optional[str] = None, app: Optional[str] = None, opts: Dict[str, Any] = None
+    host: str | None = None, app: str | None = None, opts: dict[str, Any] = None
 ) -> None:
     """
     Set project-local context in .navig/config.yaml.
@@ -201,7 +201,7 @@ def set_context(
         ch.info(f"  App: {app}")
 
 
-def clear_context(opts: Dict[str, Any] = None) -> None:
+def clear_context(opts: dict[str, Any] = None) -> None:
     """
     Clear project-local context (remove active_host/active_app from .navig/config.yaml).
     """
@@ -243,7 +243,7 @@ def clear_context(opts: Dict[str, Any] = None) -> None:
     ch.dim(f"Context will now resolve from: {source}")
 
 
-def init_context(opts: Dict[str, Any] = None) -> None:
+def init_context(opts: dict[str, Any] = None) -> None:
     """
     Initialize .navig directory in current project.
 

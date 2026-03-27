@@ -16,8 +16,6 @@ Usage:
     browser = await get_browser_auto(url)
 """
 
-from typing import Optional, Union
-
 from navig.browser.controller import BrowserConfig, BrowserController
 from navig.browser.stealth import StealthConfig, StealthController
 from navig.debug_logger import get_debug_logger
@@ -27,10 +25,10 @@ logger = get_debug_logger()
 
 def get_browser(
     stealth: bool = False,
-    cdp_port: Optional[int] = None,
-    browser_config: Optional[BrowserConfig] = None,
-    stealth_config: Optional[StealthConfig] = None,
-) -> Union[BrowserController, StealthController]:
+    cdp_port: int | None = None,
+    browser_config: BrowserConfig | None = None,
+    stealth_config: StealthConfig | None = None,
+) -> BrowserController | StealthController:
     """
     Return the appropriate browser controller for the task.
 
@@ -60,9 +58,9 @@ def get_browser(
 
 async def get_browser_auto(
     url: str,
-    browser_config: Optional[BrowserConfig] = None,
-    stealth_config: Optional[StealthConfig] = None,
-) -> Union[BrowserController, StealthController]:
+    browser_config: BrowserConfig | None = None,
+    stealth_config: StealthConfig | None = None,
+) -> BrowserController | StealthController:
     """
     Try Tier-1 navigation; if blocked (403/429/timeout), switch to Tier-2.
 
@@ -103,12 +101,12 @@ async def get_browser_auto(
 # ── Convenience aliases ────────────────────────────────────────────────────────
 
 
-def fast_browser(config: Optional[BrowserConfig] = None) -> BrowserController:
+def fast_browser(config: BrowserConfig | None = None) -> BrowserController:
     """Return a Tier-1 BrowserController (vanilla Playwright)."""
     return BrowserController(config)
 
 
-def stealth_browser(config: Optional[StealthConfig] = None) -> StealthController:
+def stealth_browser(config: StealthConfig | None = None) -> StealthController:
     """Return a Tier-2 StealthController (Patchright)."""
     return StealthController(config)
 

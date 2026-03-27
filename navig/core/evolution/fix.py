@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, info, success
@@ -10,7 +10,7 @@ from navig.core.evolution.base import BaseEvolver
 class FixEvolver(BaseEvolver):
     """Evolves existing code to fix bugs or add features."""
 
-    def __init__(self, target_file: Path, check_command: Optional[str] = None):
+    def __init__(self, target_file: Path, check_command: str | None = None):
         super().__init__()
         self.target_file = target_file
         self.check_command = check_command
@@ -52,7 +52,7 @@ Constraints:
 
         return ask_ai_with_context(prompt, system_prompt=self._system_prompt)
 
-    def _validate(self, artifact: str, context: Any) -> Optional[str]:
+    def _validate(self, artifact: str, context: Any) -> str | None:
         # 1. Basic syntax check if python
         import re
 

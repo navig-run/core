@@ -14,13 +14,12 @@ from __future__ import annotations
 import json
 import logging
 import struct
-from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 # ── Module-level availability flag ────────────────────────────
 
-_VEC_AVAILABLE: Optional[bool] = None
+_VEC_AVAILABLE: bool | None = None
 
 
 def _check_vec() -> bool:
@@ -40,12 +39,12 @@ def _check_vec() -> bool:
 # ── Helpers ───────────────────────────────────────────────────
 
 
-def floats_to_blob(floats: List[float]) -> bytes:
+def floats_to_blob(floats: list[float]) -> bytes:
     """Pack a list of floats into a little-endian float32 BLOB."""
     return struct.pack(f"<{len(floats)}f", *floats)
 
 
-def blob_to_floats(blob: bytes) -> List[float]:
+def blob_to_floats(blob: bytes) -> list[float]:
     """Unpack a little-endian float32 BLOB into a list of floats."""
     count = len(blob) // 4
     return list(struct.unpack(f"<{count}f", blob))
@@ -104,7 +103,7 @@ class VectorIndex:
 
     # ── Write ─────────────────────────────────────────────────
 
-    def upsert(self, chunk_id: str, embedding: List[float]) -> None:
+    def upsert(self, chunk_id: str, embedding: list[float]) -> None:
         """Insert or replace a single embedding."""
         if not self.available:
             return
@@ -115,7 +114,7 @@ class VectorIndex:
         )
         self._conn.commit()
 
-    def upsert_batch(self, items: List[Tuple[str, List[float]]]) -> int:
+    def upsert_batch(self, items: list[tuple[str, list[float]]]) -> int:
         """Insert/replace many embeddings in one transaction."""
         if not self.available or not items:
             return 0
@@ -137,10 +136,10 @@ class VectorIndex:
 
     def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         *,
         limit: int = 20,
-    ) -> List[Tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """
         Top-K approximate nearest-neighbour search.
 
@@ -183,7 +182,7 @@ class VectorIndex:
             return 0
 
         migrated = 0
-        batch: List[Tuple[str, bytes]] = []
+        batch: list[tuple[str, bytes]] = []
 
         for row in rows:
             try:

@@ -11,7 +11,7 @@ This module handles:
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import yaml
 
@@ -39,7 +39,7 @@ def detect_format(config_path: Path) -> str:
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     if not config:
@@ -59,7 +59,7 @@ def detect_format(config_path: Path) -> str:
     )
 
 
-def extract_webserver_type(config: Dict[str, Any]) -> str:
+def extract_webserver_type(config: dict[str, Any]) -> str:
     """
     Extract webserver type from old format config.
 
@@ -102,7 +102,7 @@ def extract_webserver_type(config: Dict[str, Any]) -> str:
 
 def migrate_config(
     old_path: Path, new_path: Path
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Convert old format configuration to new format.
 
@@ -128,7 +128,7 @@ def migrate_config(
         raise FileNotFoundError(f"Old configuration file not found: {old_path}")
 
     # Load old configuration
-    with open(old_path, "r", encoding="utf-8") as f:
+    with open(old_path, encoding="utf-8") as f:
         old_config = yaml.safe_load(f)
 
     if not old_config:
@@ -221,7 +221,7 @@ def backup_config(config_path: Path) -> Path:
     return backup_path
 
 
-def save_config(config: Dict[str, Any], path: Path) -> None:
+def save_config(config: dict[str, Any], path: Path) -> None:
     """
     Save configuration to YAML file.
 
@@ -240,7 +240,7 @@ def save_config(config: Dict[str, Any], path: Path) -> None:
 
 def migrate_all_configs(
     old_dir: Path, new_dir: Path, dry_run: bool = False, backup: bool = True
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Migrate all configurations from old directory to new directory.
 

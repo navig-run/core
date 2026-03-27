@@ -23,7 +23,7 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
@@ -56,7 +56,7 @@ class LLMResponse:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     finish_reason: str = ""
-    raw: Dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 # ── Base class ──────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ class LLMProvider:
     async def chat(
         self,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 512,
         **kwargs,
@@ -103,7 +103,7 @@ class LLMProvider:
     async def chat_stream(
         self,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4096,
         **kwargs,
@@ -493,7 +493,7 @@ class McpBridgeProvider(LLMProvider):
     async def chat(
         self,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4096,
         **kwargs,
@@ -559,7 +559,7 @@ class McpBridgeProvider(LLMProvider):
     async def chat_stream(
         self,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4096,
         **kwargs,
@@ -653,9 +653,9 @@ class GitHubModelsProvider(LLMProvider):
             **kwargs,
         )
         # Track rate limit state per model: model → timestamp when limit was hit
-        self._rate_limited: Dict[str, float] = {}
+        self._rate_limited: dict[str, float] = {}
         # Track consecutive failures per model
-        self._fail_counts: Dict[str, int] = defaultdict(int)
+        self._fail_counts: dict[str, int] = defaultdict(int)
 
     @staticmethod
     def _resolve_token() -> str:
@@ -690,7 +690,7 @@ class GitHubModelsProvider(LLMProvider):
             pass  # best-effort; failure is non-critical
         return ""
 
-    def _get_fallback_chain(self, model: str) -> List[str]:
+    def _get_fallback_chain(self, model: str) -> list[str]:
         """Get the ordered fallback chain for a model, starting with the model itself."""
         chain_name = self.MODEL_TO_CHAIN.get(model, "high_quality")
         chain = list(self.FALLBACK_CHAINS.get(chain_name, []))
@@ -1082,7 +1082,7 @@ class AirLLMProvider(LLMProvider):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         model: str = "",
         temperature: float = 0.7,
         max_tokens: int = 512,
@@ -1103,7 +1103,7 @@ class AirLLMProvider(LLMProvider):
 
     async def chat_stream(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         model: str = "",
         temperature: float = 0.7,
         max_tokens: int = 512,
@@ -1168,7 +1168,7 @@ def create_provider(name: str, **kwargs) -> LLMProvider:
     return cls(**kwargs)
 
 
-def list_provider_names() -> List[str]:
+def list_provider_names() -> list[str]:
     """Return canonical provider names."""
     return sorted({cls.name for cls in _PROVIDER_MAP.values()})
 

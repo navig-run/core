@@ -10,7 +10,6 @@ Usage::
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 import typer
 
@@ -97,7 +96,7 @@ def run(service: str, host: str = "production-01") -> None:
 @app.command()
 def diagnose_cmd(
     service: str = typer.Argument(..., help="Service name to diagnose"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host (default: production-01)"
     ),
 ) -> None:

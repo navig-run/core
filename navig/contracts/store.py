@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from navig.contracts.capability import TrustScore
 from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
@@ -38,11 +37,11 @@ class RuntimeStore:
         store.flush()                   # write all to disk
     """
 
-    def __init__(self, store_dir: Optional[Path] = None) -> None:
+    def __init__(self, store_dir: Path | None = None) -> None:
         self._dir = Path(store_dir) if store_dir else _DEFAULT_STORE_DIR
-        self._nodes: Dict[str, Node] = {}
-        self._missions: Dict[str, Mission] = {}
-        self._receipts: Dict[str, ExecutionReceipt] = {}
+        self._nodes: dict[str, Node] = {}
+        self._missions: dict[str, Mission] = {}
+        self._receipts: dict[str, ExecutionReceipt] = {}
         self._load()
 
     # ── Node CRUD ─────────────────────────────────────────────────────
@@ -51,13 +50,13 @@ class RuntimeStore:
         self._nodes[node.node_id] = node
         return node
 
-    def get_node(self, node_id: str) -> Optional[Node]:
+    def get_node(self, node_id: str) -> Node | None:
         return self._nodes.get(node_id)
 
     def list_nodes(
         self,
-        status: Optional[NodeStatus] = None,
-    ) -> List[Node]:
+        status: NodeStatus | None = None,
+    ) -> list[Node]:
         nodes = list(self._nodes.values())
         if status is not None:
             nodes = [n for n in nodes if n.status == status]
@@ -74,15 +73,15 @@ class RuntimeStore:
         self._missions[mission.mission_id] = mission
         return mission
 
-    def get_mission(self, mission_id: str) -> Optional[Mission]:
+    def get_mission(self, mission_id: str) -> Mission | None:
         return self._missions.get(mission_id)
 
     def list_missions(
         self,
-        node_id: Optional[str] = None,
-        status: Optional[MissionStatus] = None,
+        node_id: str | None = None,
+        status: MissionStatus | None = None,
         limit: int = 100,
-    ) -> List[Mission]:
+    ) -> list[Mission]:
         missions = list(self._missions.values())
         if node_id:
             missions = [m for m in missions if m.node_id == node_id]
@@ -125,7 +124,7 @@ class RuntimeStore:
         mission_id: str,
         succeeded: bool,
         result=None,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> ExecutionReceipt:
         """
         Mark a mission complete and create its ExecutionReceipt atomically.
@@ -158,15 +157,15 @@ class RuntimeStore:
 
     # ── Receipt access ────────────────────────────────────────────────
 
-    def get_receipt(self, receipt_id: str) -> Optional[ExecutionReceipt]:
+    def get_receipt(self, receipt_id: str) -> ExecutionReceipt | None:
         return self._receipts.get(receipt_id)
 
     def list_receipts(
         self,
-        node_id: Optional[str] = None,
-        mission_id: Optional[str] = None,
+        node_id: str | None = None,
+        mission_id: str | None = None,
         limit: int = 100,
-    ) -> List[ExecutionReceipt]:
+    ) -> list[ExecutionReceipt]:
         receipts = list(self._receipts.values())
         if node_id:
             receipts = [r for r in receipts if r.node_id == node_id]
@@ -249,7 +248,7 @@ class RuntimeStore:
 
 # ── Singleton ──────────────────────────────────────────────────────────────────
 
-_instance: Optional[RuntimeStore] = None
+_instance: RuntimeStore | None = None
 
 
 def get_runtime_store() -> RuntimeStore:
@@ -259,7 +258,7 @@ def get_runtime_store() -> RuntimeStore:
     return _instance
 
 
-def reset_runtime_store(store_dir: Optional[Path] = None) -> RuntimeStore:
+def reset_runtime_store(store_dir: Path | None = None) -> RuntimeStore:
     """Create a fresh store (use in tests)."""
     global _instance
     _instance = RuntimeStore(store_dir)

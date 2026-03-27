@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional, Union
 
 from navig.comms.types import (
     CommsChannel,
@@ -65,8 +64,8 @@ async def send_user_notification(
     channel: CommsChannel,
     target: NotificationTarget,
     message: str,
-    options: Optional[NotificationOptions] = None,
-) -> Union[DeliveryResult, FanoutResult]:
+    options: NotificationOptions | None = None,
+) -> DeliveryResult | FanoutResult:
     """Send a notification via the selected channel(s).
 
     Parameters

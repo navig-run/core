@@ -11,15 +11,13 @@ is handled by the onboarding wizard (navig/onboarding/steps.py).
 
 from __future__ import annotations
 
-from typing import List
-
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
 name = "vault_bootstrap"
 description = "Initialise vault (create key file if absent)"
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     return [
         Action(
             id="vault_bootstrap.init",

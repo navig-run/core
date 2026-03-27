@@ -5,7 +5,7 @@ import re
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def register(server: Any) -> None:
@@ -195,13 +195,13 @@ def register(server: Any) -> None:
     )
 
 
-def _tool_agent_status_get(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_status_get(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Return agent install/runtime status for control plane clients."""
     config_path = Path.home() / ".navig" / "agent" / "config.yaml"
     pid_path = Path.home() / ".navig" / "agent" / "agent.pid"
     installed = config_path.exists()
     running = False
-    pid: Optional[int] = None
+    pid: int | None = None
 
     if pid_path.exists():
         try:
@@ -249,7 +249,7 @@ def _tool_agent_status_get(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
 
 def _resolve_goal_storage_dir() -> Path:
     """Resolve the most likely goal storage directory."""
-    candidates: List[Path] = []
+    candidates: list[Path] = []
     try:
         from navig.agent.config import AgentConfig
 
@@ -278,7 +278,7 @@ def _get_goal_planner():
     return GoalPlanner(storage_dir=storage_dir)
 
 
-def _tool_agent_goal_list(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_goal_list(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """List goals with summary fields for dashboard clients."""
     from navig.agent.goals import GoalState
 
@@ -313,7 +313,7 @@ def _tool_agent_goal_list(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _tool_agent_goal_add(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_goal_add(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Add a new agent goal."""
     planner = _get_goal_planner()
     description = args.get("description", "").strip()
@@ -332,7 +332,7 @@ def _tool_agent_goal_add(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _tool_agent_goal_start(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_goal_start(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Start an existing goal."""
     planner = _get_goal_planner()
     goal_id = str(args.get("id", "")).strip()
@@ -348,7 +348,7 @@ def _tool_agent_goal_start(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _tool_agent_goal_cancel(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_goal_cancel(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Cancel an existing goal."""
     planner = _get_goal_planner()
     goal_id = str(args.get("id", "")).strip()
@@ -364,14 +364,14 @@ def _tool_agent_goal_cancel(server: Any, args: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
-def _read_recent_remediation_log(limit: int = 100) -> List[Dict[str, Any]]:
+def _read_recent_remediation_log(limit: int = 100) -> list[dict[str, Any]]:
     """Parse recent remediation log lines into structured entries."""
     log_path = Path.home() / ".navig" / "logs" / "remediation.log"
     if not log_path.exists():
         return []
 
     lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     regex = re.compile(r"^\[(?P<ts>[^\]]+)\] \[(?P<level>[^\]]+)\] (?P<msg>.*)$")
     for line in lines[-limit:]:
         m = regex.match(line)
@@ -387,10 +387,10 @@ def _read_recent_remediation_log(limit: int = 100) -> List[Dict[str, Any]]:
     return entries
 
 
-def _tool_agent_remediation_list(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_remediation_list(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """List remediation actions and recent remediation log lines."""
     limit = max(1, int(args.get("limit", 100)))
-    actions: List[Dict[str, Any]] = []
+    actions: list[dict[str, Any]] = []
     source = "none"
 
     try:
@@ -415,7 +415,7 @@ def _tool_agent_remediation_list(server: Any, args: Dict[str, Any]) -> Dict[str,
     }
 
 
-def _tool_agent_learning_run(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Analyze agent logs and return pattern counts plus recommendations."""
     from collections import defaultdict
 
@@ -441,7 +441,7 @@ def _tool_agent_learning_run(server: Any, args: Dict[str, Any]) -> Dict[str, Any
     for log_file in (debug_log, remediation_log):
         if not log_file.exists():
             continue
-        with open(log_file, "r", encoding="utf-8", errors="ignore") as handle:
+        with open(log_file, encoding="utf-8", errors="ignore") as handle:
             for line in handle:
                 line = line.strip()
                 if not line:
@@ -463,7 +463,7 @@ def _tool_agent_learning_run(server: Any, args: Dict[str, Any]) -> Dict[str, Any
                         if len(examples[pattern_name]) < 3:
                             examples[pattern_name].append(line)
 
-    recommendations: List[str] = []
+    recommendations: list[str] = []
     if counts.get("connection_failed", 0) > 10:
         recommendations.append("Review network connectivity and firewall rules.")
     if counts.get("permission_denied", 0) > 5:
@@ -497,7 +497,7 @@ def _tool_agent_learning_run(server: Any, args: Dict[str, Any]) -> Dict[str, Any
     return result
 
 
-def _get_service_capabilities() -> Dict[str, Any]:
+def _get_service_capabilities() -> dict[str, Any]:
     """Return platform/elevation capability flags for service operations."""
     system = platform.system().lower()
     is_elevated = False
@@ -536,7 +536,7 @@ def _get_service_capabilities() -> Dict[str, Any]:
     }
 
 
-def _tool_agent_service_status(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_service_status(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Return OS service status for NAVIG agent."""
     capabilities = _get_service_capabilities()
     try:
@@ -557,7 +557,7 @@ def _tool_agent_service_status(server: Any, args: Dict[str, Any]) -> Dict[str, A
         }
 
 
-def _tool_agent_component_restart(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_component_restart(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Queue a component restart through remediation engine."""
     from navig.agent.remediation import RemediationEngine
 
@@ -583,7 +583,7 @@ def _tool_agent_component_restart(server: Any, args: Dict[str, Any]) -> Dict[str
     }
 
 
-def _tool_agent_remediation_retry(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_remediation_retry(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Retry a remediation action by ID."""
     from navig.agent.remediation import RemediationEngine
 
@@ -608,7 +608,7 @@ def _tool_agent_remediation_retry(server: Any, args: Dict[str, Any]) -> Dict[str
     }
 
 
-def _tool_agent_service_install(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_service_install(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Install NAVIG agent as service."""
     try:
         from navig.agent.service import ServiceInstaller
@@ -625,7 +625,7 @@ def _tool_agent_service_install(server: Any, args: Dict[str, Any]) -> Dict[str, 
         return {"error": f"service install failed: {e}"}
 
 
-def _tool_agent_service_uninstall(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_agent_service_uninstall(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Uninstall NAVIG agent service."""
     try:
         from navig.agent.service import ServiceInstaller

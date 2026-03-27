@@ -17,7 +17,6 @@ Timeout policy: 5 s connect, 8 s read — tight enough for onboarding UX.
 from __future__ import annotations
 
 import smtplib
-import socket
 from dataclasses import dataclass, field
 
 _CONNECT_TIMEOUT = 5.0
@@ -31,15 +30,15 @@ class ValidationResult:
     info: dict = field(default_factory=dict)
 
     @classmethod
-    def success(cls, **info) -> "ValidationResult":
+    def success(cls, **info) -> ValidationResult:
         return cls(ok=True, info=info)
 
     @classmethod
-    def failure(cls, field_: str, message: str) -> "ValidationResult":
+    def failure(cls, field_: str, message: str) -> ValidationResult:
         return cls(ok=False, errors=[{"field": field_, "message": message}])
 
     @classmethod
-    def timeout(cls, service: str) -> "ValidationResult":
+    def timeout(cls, service: str) -> ValidationResult:
         return cls(
             ok=False,
             errors=[
@@ -170,7 +169,7 @@ def validate_smtp(host: str, port: str | int) -> ValidationResult:
                 "smtp_host",
                 f"EHLO rejected: {code} {msg.decode('utf-8', errors='replace')[:60]}",
             )
-    except socket.timeout:
+    except TimeoutError:
         return ValidationResult.timeout(f"SMTP server {host}:{port_int}")
     except ConnectionRefusedError:
         return ValidationResult.failure(

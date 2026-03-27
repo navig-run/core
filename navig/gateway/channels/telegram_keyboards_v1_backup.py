@@ -26,7 +26,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from navig.gateway.channels.telegram import TelegramChannel
@@ -115,7 +115,7 @@ def classify_response(text: str) -> ContentCategory:
 # Followup generator (fast heuristic, no LLM)
 # ────────────────────────────────────────────────────────────────
 
-_FOLLOWUP_TEMPLATES: Dict[ContentCategory, List[str]] = {
+_FOLLOWUP_TEMPLATES: dict[ContentCategory, list[str]] = {
     ContentCategory.CODE: [
         "🔍 Explain this code",
         "🧪 Add unit tests",
@@ -183,7 +183,7 @@ class CallbackEntry:
     user_message: str  # original user message
     ai_response: str  # full AI response text
     category: str  # ContentCategory value
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
 
 
@@ -196,7 +196,7 @@ class CallbackStore:
     """
 
     def __init__(self, max_entries: int = 500):
-        self._store: Dict[str, CallbackEntry] = {}
+        self._store: dict[str, CallbackEntry] = {}
         self._max = max_entries
 
     def put(self, key: str, entry: CallbackEntry) -> None:
@@ -208,7 +208,7 @@ class CallbackStore:
                 del self._store[k]
         self._store[key] = entry
 
-    def get(self, key: str) -> Optional[CallbackEntry]:
+    def get(self, key: str) -> CallbackEntry | None:
         return self._store.get(key)
 
     def remove(self, key: str) -> None:
@@ -246,7 +246,7 @@ class ResponseKeyboardBuilder:
 
     def __init__(
         self,
-        store: Optional[CallbackStore] = None,
+        store: CallbackStore | None = None,
         include_followups: bool = True,
         include_actions: bool = True,
         include_feedback: bool = True,
@@ -265,8 +265,8 @@ class ResponseKeyboardBuilder:
         ai_response: str,
         user_message: str = "",
         message_id: int = 0,
-        category_hint: Optional[str] = None,
-    ) -> Optional[List[List[Dict[str, str]]]]:
+        category_hint: str | None = None,
+    ) -> list[list[dict[str, str]]] | None:
         """
         Build the keyboard for an AI response.
 
@@ -279,7 +279,7 @@ class ResponseKeyboardBuilder:
         )
 
         msg_hash = _short_hash(f"{user_message}:{message_id}")
-        rows: List[List[Dict[str, str]]] = []
+        rows: list[list[dict[str, str]]] = []
 
         # 1. Quick Reply Suggestions (up to 1 row of 2-3 buttons)
         if self.include_followups:
@@ -329,8 +329,8 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
         user_message: str = "",
         ai_response: str = "",
-        extra: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, str]:
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, str]:
         """Create a single inline keyboard button dict."""
         # Truncate label
         label = text[:MAX_BUTTON_TEXT]
@@ -360,7 +360,7 @@ class ResponseKeyboardBuilder:
         ai_response: str,
         user_message: str,
         msg_hash: str,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Generate 2-3 follow-up suggestion buttons."""
         templates = _FOLLOWUP_TEMPLATES.get(
             category, _FOLLOWUP_TEMPLATES[ContentCategory.CONVERSATIONAL]
@@ -387,9 +387,9 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
         user_message: str,
         ai_response: str,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Generate contextual action buttons."""
-        actions: List[Tuple[str, str]] = []
+        actions: list[tuple[str, str]] = []
 
         # Always offer regenerate
         actions.append(("🔄 Regenerate", "regen"))
@@ -426,7 +426,7 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
         user_message: str,
         ai_response: str,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Generate structured navigation buttons for comparisons/lists."""
         if category == ContentCategory.COMPARISON:
             tabs = [
@@ -458,7 +458,7 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
         user_message: str,
         ai_response: str,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Show more / collapse button for long responses."""
         return [
             self._make_button(
@@ -475,7 +475,7 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
         user_message: str,
         ai_response: str,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Rating/feedback row."""
         return [
             self._make_button("👍", "fb_up", msg_hash, user_message, ai_response),
@@ -491,7 +491,7 @@ class ResponseKeyboardBuilder:
 # ────────────────────────────────────────────────────────────────
 
 # Action → AI prompt template
-_ACTION_PROMPTS: Dict[str, str] = {
+_ACTION_PROMPTS: dict[str, str] = {
     "regen": (
         'The user asked: "{user_message}"\n'
         "Your previous answer was not satisfactory. "
@@ -566,11 +566,11 @@ class CallbackHandler:
     extract code, send feedback acknowledgement, or edit the message.
     """
 
-    def __init__(self, channel: "TelegramChannel"):
+    def __init__(self, channel: TelegramChannel):
         self.channel = channel
         self.store = get_callback_store()
 
-    async def handle(self, callback_query: Dict[str, Any]) -> None:
+    async def handle(self, callback_query: dict[str, Any]) -> None:
         """
         Process a callback_query from Telegram.
 
@@ -737,7 +737,7 @@ class CallbackHandler:
 
     async def _get_ai_response(
         self, prompt: str, user_id: int, entry: CallbackEntry
-    ) -> Optional[str]:
+    ) -> str | None:
         """Get AI response for an action prompt via the gateway pipeline."""
         if self.channel.on_message:
             try:

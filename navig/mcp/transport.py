@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -25,7 +25,7 @@ class MCPTransport(ABC):
         pass
 
     @abstractmethod
-    async def send(self, data: str) -> Optional[str]:
+    async def send(self, data: str) -> str | None:
         """Send request and wait for response (if request has ID)."""
         pass
 
@@ -60,9 +60,9 @@ class StdioTransport(MCPTransport):
         self.env = env
         self.cwd = cwd
 
-        self._process: Optional[asyncio.subprocess.Process] = None
-        self._pending: Dict[Any, asyncio.Future] = {}
-        self._reader_task: Optional[asyncio.Task] = None
+        self._process: asyncio.subprocess.Process | None = None
+        self._pending: dict[Any, asyncio.Future] = {}
+        self._reader_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
     async def connect(self):
@@ -135,7 +135,7 @@ class StdioTransport(MCPTransport):
         self._process = None
         logger.info("MCP stdio transport disconnected")
 
-    async def send(self, data: str) -> Optional[str]:
+    async def send(self, data: str) -> str | None:
         """Send request and wait for response."""
         if not self._process or not self._process.stdin:
             raise RuntimeError("Transport not connected")
@@ -251,8 +251,8 @@ class SSETransport(MCPTransport):
         self.headers = headers or {}
 
         self._session = None
-        self._sse_task: Optional[asyncio.Task] = None
-        self._pending: Dict[Any, asyncio.Future] = {}
+        self._sse_task: asyncio.Task | None = None
+        self._pending: dict[Any, asyncio.Future] = {}
 
     async def connect(self):
         """Create HTTP session and start SSE listener."""
@@ -286,7 +286,7 @@ class SSETransport(MCPTransport):
         self._pending.clear()
         logger.info("MCP SSE transport disconnected")
 
-    async def send(self, data: str) -> Optional[str]:
+    async def send(self, data: str) -> str | None:
         """Send request via HTTP POST."""
         if not self._session:
             raise RuntimeError("Transport not connected")

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.skills.loader import Skill
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 # Constants
 # =============================================================================
 
-_PLATFORM_MAP: Dict[str, str] = {
+_PLATFORM_MAP: dict[str, str] = {
     "linux": "linux",
     "darwin": "darwin",
     "win32": "windows",
@@ -74,13 +74,13 @@ class SkillEligibilityContext:
     platform: str = "all"
     safety_max: str = "elevated"
     user_invocable_only: bool = False
-    required_tags: List[str] = field(default_factory=list)
-    excluded_tags: List[str] = field(default_factory=list)
+    required_tags: list[str] = field(default_factory=list)
+    excluded_tags: list[str] = field(default_factory=list)
 
     # -- Constructors ---------------------------------------------------------
 
     @classmethod
-    def default(cls) -> "SkillEligibilityContext":
+    def default(cls) -> SkillEligibilityContext:
         """Factory: sensible defaults for interactive agent sessions.
 
         Detects the current OS automatically.
@@ -94,7 +94,7 @@ class SkillEligibilityContext:
         )
 
     @classmethod
-    def permissive(cls) -> "SkillEligibilityContext":
+    def permissive(cls) -> SkillEligibilityContext:
         """Factory: no restrictions — all skills eligible.
 
         Useful for trusted daemon contexts or testing.
@@ -106,7 +106,7 @@ class SkillEligibilityContext:
         )
 
     @classmethod
-    def strict(cls) -> "SkillEligibilityContext":
+    def strict(cls) -> SkillEligibilityContext:
         """Factory: safe skills only, user-invocable only.
 
         Suitable for untrusted or sandboxed user-facing deployments.
@@ -124,7 +124,7 @@ class SkillEligibilityContext:
 # =============================================================================
 
 
-def is_eligible(skill: "Skill", ctx: SkillEligibilityContext) -> bool:
+def is_eligible(skill: Skill, ctx: SkillEligibilityContext) -> bool:
     """Return True if *skill* meets all criteria in *ctx*.
 
     Checks (in order, short-circuits on first failure):
@@ -189,10 +189,10 @@ def is_eligible(skill: "Skill", ctx: SkillEligibilityContext) -> bool:
 
 
 def filter_skills(
-    skill_ids: List[str],
-    all_skills: Dict[str, "Skill"],
+    skill_ids: list[str],
+    all_skills: dict[str, Skill],
     ctx: SkillEligibilityContext,
-) -> List[str]:
+) -> list[str]:
     """
     Filter *skill_ids* to those whose Skill objects pass is_eligible().
 
@@ -205,7 +205,7 @@ def filter_skills(
         Ordered list of IDs that remain eligible.
         IDs that are not present in *all_skills* are silently dropped.
     """
-    result: List[str] = []
+    result: list[str] = []
     for sid in skill_ids:
         skill = all_skills.get(sid)
         if skill is None:

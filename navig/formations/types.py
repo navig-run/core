@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -18,20 +18,20 @@ class AgentSpec:
     id: str
     name: str
     role: str
-    traits: List[str]
+    traits: list[str]
     personality: str
-    scope: List[str]
+    scope: list[str]
     system_prompt: str
-    kpis: List[str] = field(default_factory=list)
+    kpis: list[str] = field(default_factory=list)
     council_weight: float = 1.0
-    api_dependencies: List[str] = field(default_factory=list)
-    tools: List[str] = field(default_factory=list)
-    source_path: Optional[Path] = None
+    api_dependencies: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list)
+    source_path: Path | None = None
 
     @classmethod
     def from_dict(
-        cls, data: Dict[str, Any], source_path: Optional[Path] = None
-    ) -> "AgentSpec":
+        cls, data: dict[str, Any], source_path: Path | None = None
+    ) -> AgentSpec:
         return cls(
             id=data["id"],
             name=data["name"],
@@ -47,7 +47,7 @@ class AgentSpec:
             source_path=source_path,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -74,7 +74,7 @@ class ApiConnector:
     description: str = ""
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ApiConnector":
+    def from_dict(cls, data: dict[str, Any]) -> ApiConnector:
         return cls(
             name=data["name"],
             type=data.get("type", "rest_api"),
@@ -92,20 +92,20 @@ class Formation:
     name: str
     version: str
     description: str
-    agents: List[str]  # agent IDs
+    agents: list[str]  # agent IDs
     default_agent: str
-    aliases: List[str] = field(default_factory=list)
-    api_connectors: List[ApiConnector] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
+    api_connectors: list[ApiConnector] = field(default_factory=list)
     brief_templates: list = field(
         default_factory=list
     )  # List[str] or List[dict] — both formats supported
-    source_path: Optional[Path] = None
-    loaded_agents: Dict[str, AgentSpec] = field(default_factory=dict)
+    source_path: Path | None = None
+    loaded_agents: dict[str, AgentSpec] = field(default_factory=dict)
 
     @classmethod
     def from_dict(
-        cls, data: Dict[str, Any], source_path: Optional[Path] = None
-    ) -> "Formation":
+        cls, data: dict[str, Any], source_path: Path | None = None
+    ) -> Formation:
         connectors = [ApiConnector.from_dict(c) for c in data.get("api_connectors", [])]
         return cls(
             id=data["id"],
@@ -120,7 +120,7 @@ class Formation:
             source_path=source_path,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -149,10 +149,10 @@ class ProfileConfig:
 
     version: int
     profile: str
-    overrides: Dict[str, Any] = field(default_factory=dict)
+    overrides: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ProfileConfig":
+    def from_dict(cls, data: dict[str, Any]) -> ProfileConfig:
         raw_ver = data.get("version", 1)
         # Accept both int and string versions for backward compat
         version = int(float(raw_ver)) if isinstance(raw_ver, str) else int(raw_ver)
@@ -162,8 +162,8 @@ class ProfileConfig:
             overrides=data.get("overrides", {}),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {"version": self.version, "profile": self.profile}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"version": self.version, "profile": self.profile}
         if self.overrides:
             d["overrides"] = self.overrides
         return d

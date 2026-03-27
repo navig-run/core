@@ -6,8 +6,6 @@ reducing root module size.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 from navig.deprecation import deprecation_warning
@@ -56,7 +54,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         clipboard: bool = typer.Option(
             False, "--clipboard", help="Copy context to clipboard"
         ),
-        file: Optional[str] = typer.Option(None, "--file", help="Save context to file"),
+        file: str | None = typer.Option(None, "--file", help="Save context to file"),
     ):
         """[DEPRECATED: Use 'navig ai show --context']"""
         deprecation_warning("navig assistant context", "navig ai show --context")
@@ -113,7 +111,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     @hestia_app.command("domains")
     def hestia_list_domains(
         ctx: typer.Context,
-        user: Optional[str] = typer.Option(
+        user: str | None = typer.Option(
             None, "--user", "-u", help="Filter by username"
         ),
         plain: bool = typer.Option(

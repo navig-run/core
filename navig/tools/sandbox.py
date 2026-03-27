@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -55,11 +55,11 @@ class SandboxConfig:
     # Security
     read_only_root: bool = True  # Read-only root filesystem
     no_new_privileges: bool = True  # Prevent privilege escalation
-    cap_drop: List[str] = field(default_factory=lambda: ["ALL"])
+    cap_drop: list[str] = field(default_factory=lambda: ["ALL"])
 
     # Image settings
     default_image: str = "python:3.11-slim"  # Default container image
-    allowed_images: List[str] = field(
+    allowed_images: list[str] = field(
         default_factory=lambda: [
             "python:3.11-slim",
             "python:3.12-slim",
@@ -70,11 +70,11 @@ class SandboxConfig:
     )
 
     # Paths
-    workspace_mount: Optional[str] = None  # Host path to mount as workspace
-    output_dir: Optional[str] = None  # Directory for output files
+    workspace_mount: str | None = None  # Host path to mount as workspace
+    output_dir: str | None = None  # Directory for output files
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SandboxConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "SandboxConfig":
         """Create config from dictionary."""
         return cls(
             memory_limit=data.get("memory_limit", "512m"),
@@ -98,15 +98,15 @@ class SandboxResult:
 
     execution_id: str
     status: SandboxStatus
-    exit_code: Optional[int] = None
+    exit_code: int | None = None
     stdout: str = ""
     stderr: str = ""
     execution_time: float = 0.0
-    container_id: Optional[str] = None
-    error: Optional[str] = None
-    output_files: List[str] = field(default_factory=list)
+    container_id: str | None = None
+    error: str | None = None
+    output_files: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "execution_id": self.execution_id,
             "status": self.status.value,
@@ -129,7 +129,7 @@ class DockerSandbox:
         result = await sandbox.execute("python script.py", image="python:3.11-slim")
     """
 
-    def __init__(self, config: Optional[SandboxConfig] = None):
+    def __init__(self, config: SandboxConfig | None = None):
         """
         Initialize Docker sandbox.
 
@@ -137,7 +137,7 @@ class DockerSandbox:
             config: Sandbox configuration
         """
         self.config = config or SandboxConfig()
-        self._docker_available: Optional[bool] = None
+        self._docker_available: bool | None = None
 
     async def is_available(self) -> bool:
         """Check if Docker is available."""
@@ -161,11 +161,11 @@ class DockerSandbox:
     async def execute(
         self,
         command: str,
-        image: Optional[str] = None,
+        image: str | None = None,
         working_dir: str = "/workspace",
-        env: Optional[Dict[str, str]] = None,
-        files: Optional[Dict[str, str]] = None,  # filename -> content
-        timeout: Optional[int] = None,
+        env: dict[str, str] | None = None,
+        files: dict[str, str] | None = None,  # filename -> content
+        timeout: int | None = None,
     ) -> SandboxResult:
         """
         Execute a command in a sandboxed container.
@@ -290,8 +290,8 @@ class DockerSandbox:
         command: str,
         workspace_path: str,
         working_dir: str,
-        env: Optional[Dict[str, str]] = None,
-    ) -> List[str]:
+        env: dict[str, str] | None = None,
+    ) -> list[str]:
         """Build the docker run command with security options."""
         cmd = [
             "docker",
@@ -427,7 +427,7 @@ class DockerSandbox:
 # Convenience function
 async def sandboxed_execute(
     command: str,
-    config: Optional[SandboxConfig] = None,
+    config: SandboxConfig | None = None,
     **kwargs,
 ) -> SandboxResult:
     """

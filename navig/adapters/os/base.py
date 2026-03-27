@@ -6,7 +6,7 @@ Abstract base class for OS-specific operations.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -15,10 +15,10 @@ class PackageInfo:
 
     name: str
     version: str
-    description: Optional[str] = None
-    source: Optional[str] = None  # e.g., 'winget', 'apt', 'brew'
+    description: str | None = None
+    source: str | None = None  # e.g., 'winget', 'apt', 'brew'
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "version": self.version,
@@ -34,9 +34,9 @@ class SecurityCheck:
     category: str  # e.g., 'firewall', 'updates', 'users'
     status: str  # 'ok', 'warning', 'critical'
     message: str
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "category": self.category,
             "status": self.status,
@@ -77,7 +77,7 @@ class OSAdapter(ABC):
         pass
 
     @abstractmethod
-    def parse_package_list(self, output: str) -> List[PackageInfo]:
+    def parse_package_list(self, output: str) -> list[PackageInfo]:
         """
         Parse the output of the package list command.
 
@@ -134,7 +134,7 @@ class OSAdapter(ABC):
         pass
 
     @abstractmethod
-    def parse_system_info(self, output: str) -> Dict[str, Any]:
+    def parse_system_info(self, output: str) -> dict[str, Any]:
         """Parse system information output."""
         pass
 

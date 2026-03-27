@@ -13,9 +13,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,8 @@ def _format_inbox_md(
     room_id: str,
     room_name: str,
     body: str,
-    timestamp: Optional[datetime] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    timestamp: datetime | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Format a Matrix message as a NAVIG inbox markdown file."""
     ts = timestamp or datetime.now(tz=timezone.utc)
@@ -91,8 +92,8 @@ class MatrixInboxBridge:
         project_root: Path,
         *,
         auto_process: bool = False,
-        filter_rooms: Optional[List[str]] = None,
-        filter_senders: Optional[List[str]] = None,
+        filter_rooms: list[str] | None = None,
+        filter_senders: list[str] | None = None,
         ignore_notices: bool = True,
     ):
         self.project_root = Path(project_root)
@@ -107,7 +108,7 @@ class MatrixInboxBridge:
         self._inbox_dir.mkdir(parents=True, exist_ok=True)
 
         self._message_count = 0
-        self._on_persist_callbacks: List[Callable] = []
+        self._on_persist_callbacks: list[Callable] = []
 
     @property
     def inbox_dir(self) -> Path:
@@ -127,7 +128,7 @@ class MatrixInboxBridge:
         room_name: str = "",
         msg_type: str = "m.text",
         event_id: str = "",
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """
         Callback compatible with ``NavigMatrixBot.on_message()``.
 
@@ -215,9 +216,9 @@ class MatrixInboxBridge:
     def list_messages(
         self,
         *,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List persisted Matrix inbox messages."""
         messages = []
         if not self._inbox_dir.exists():
@@ -299,9 +300,9 @@ class MatrixInboxBridge:
     # ── Internal ──
 
     @staticmethod
-    def _parse_frontmatter(content: str) -> Dict[str, str]:
+    def _parse_frontmatter(content: str) -> dict[str, str]:
         """Extract YAML frontmatter as a flat dict."""
-        result: Dict[str, str] = {}
+        result: dict[str, str] = {}
         if not content.startswith("---"):
             return result
         end = content.find("---", 3)
@@ -335,7 +336,7 @@ class MatrixInboxBridge:
         return text[:max_len] + ("..." if len(text) > max_len else "")
 
 
-def get_inbox_bridge(project_root: Optional[Path] = None) -> MatrixInboxBridge:
+def get_inbox_bridge(project_root: Path | None = None) -> MatrixInboxBridge:
     """Factory for MatrixInboxBridge with sensible defaults."""
     if project_root is None:
         # Walk up to find .navig/

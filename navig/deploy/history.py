@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +25,15 @@ class DeployHistory:
         self._keep = keep
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-    def append(self, result_dict: Dict[str, Any]) -> None:
+    def append(self, result_dict: dict[str, Any]) -> None:
         """Append one deploy result. Trims log to keep_last entries."""
         with self._path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(result_dict, ensure_ascii=False) + "\n")
         self._trim()
 
     def read(
-        self, limit: int = 10, app: Optional[str] = None, host: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, limit: int = 10, app: str | None = None, host: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Read deploy history entries, newest-first.
 
@@ -46,7 +46,7 @@ class DeployHistory:
             return []
 
         lines = self._path.read_text(encoding="utf-8").splitlines()
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         for line in reversed(lines):
             line = line.strip()
             if not line:

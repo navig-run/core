@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -86,10 +86,10 @@ class PersonalityProfile:
     humor_enabled: bool = True
 
     # Response templates
-    templates: Dict[str, List[str]] = field(default_factory=dict)
+    templates: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PersonalityProfile":
+    def from_dict(cls, data: dict[str, Any]) -> PersonalityProfile:
         """Create profile from dictionary."""
         verbosity_str = data.get("verbosity", "normal").upper()
         try:
@@ -117,7 +117,7 @@ class PersonalityProfile:
         )
 
     @classmethod
-    def load(cls, path: Path) -> "PersonalityProfile":
+    def load(cls, path: Path) -> PersonalityProfile:
         """Load profile from YAML file."""
         if not path.exists():
             return cls()
@@ -127,7 +127,7 @@ class PersonalityProfile:
 
         return cls.from_dict(data)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,
@@ -254,7 +254,7 @@ class Soul(Component):
     def __init__(
         self,
         config: PersonalityConfig,
-        nervous_system: Optional[NervousSystem] = None,
+        nervous_system: NervousSystem | None = None,
     ):
         super().__init__("soul", nervous_system)
         self.config = config
@@ -263,8 +263,8 @@ class Soul(Component):
         self._profile = self._load_profile(config.profile)
 
         # Load SOUL.md content
-        self._soul_content: Optional[str] = None
-        self._soul_loaded_from: Optional[Path] = None
+        self._soul_content: str | None = None
+        self._soul_loaded_from: Path | None = None
         self._load_soul_file()
 
         # Current mood
@@ -274,7 +274,7 @@ class Soul(Component):
 
         # Interaction tracking
         self._interaction_count = 0
-        self._last_interaction: Optional[datetime] = None
+        self._last_interaction: datetime | None = None
 
     def _load_soul_file(self) -> None:
         """
@@ -310,7 +310,7 @@ class Soul(Component):
         self._soul_content = None
         self._soul_loaded_from = None
 
-    def get_soul_content(self) -> Optional[str]:
+    def get_soul_content(self) -> str | None:
         """Get the loaded SOUL.md content."""
         return self._soul_content
 
@@ -421,7 +421,7 @@ I am your autonomous operations companion. I help manage both your computer syst
                 EventType.COMMAND_FAILED, self._on_command_failed
             )
 
-    async def _on_health_check(self) -> Dict[str, Any]:
+    async def _on_health_check(self) -> dict[str, Any]:
         """Health check for soul."""
         return {
             "profile": self._profile.name,
@@ -467,7 +467,7 @@ I am your autonomous operations companion. I help manage both your computer syst
                 },
             )
 
-    def get_mood(self) -> Tuple[Mood, str]:
+    def get_mood(self) -> tuple[Mood, str]:
         """Get current mood and reason."""
         return self._mood, self._mood_reason
 
@@ -602,7 +602,7 @@ Conversational responses:
         """Get current personality profile."""
         return self._profile
 
-    def list_profiles(self) -> List[str]:
+    def list_profiles(self) -> list[str]:
         """List available personality profiles."""
         profiles = list(BUILTIN_PROFILES.keys())
 
@@ -616,7 +616,7 @@ Conversational responses:
 
         return profiles
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get soul status."""
         return {
             **super().get_status(),

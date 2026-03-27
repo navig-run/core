@@ -21,7 +21,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from navig.gateway.channels.telegram import TelegramChannel
@@ -174,7 +174,7 @@ class CallbackEntry:
     user_message: str
     ai_response: str
     category: str
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
 
 
@@ -185,7 +185,7 @@ class CallbackStore:
     """
 
     def __init__(self, max_entries: int = 500):
-        self._store: Dict[str, CallbackEntry] = {}
+        self._store: dict[str, CallbackEntry] = {}
         self._max = max_entries
 
     def put(self, key: str, entry: CallbackEntry) -> None:
@@ -196,7 +196,7 @@ class CallbackStore:
                 del self._store[k]
         self._store[key] = entry
 
-    def get(self, key: str) -> Optional[CallbackEntry]:
+    def get(self, key: str) -> CallbackEntry | None:
         return self._store.get(key)
 
     def remove(self, key: str) -> None:
@@ -223,7 +223,7 @@ class ResponseKeyboardBuilder:
     Max 2 rows × 3 buttons. Buttons shown only when they save typing.
     """
 
-    def __init__(self, store: Optional[CallbackStore] = None):
+    def __init__(self, store: CallbackStore | None = None):
         self.store = store or get_callback_store()
 
     def build(
@@ -232,9 +232,9 @@ class ResponseKeyboardBuilder:
         user_message: str = "",
         message_id: int = 0,
         *,
-        profile_override: Optional[str] = None,
-        approval_actions: Optional[List[Dict[str, str]]] = None,
-    ) -> Optional[List[List[Dict[str, str]]]]:
+        profile_override: str | None = None,
+        approval_actions: list[dict[str, str]] | None = None,
+    ) -> list[list[dict[str, str]]] | None:
         """
         Build inline keyboard for an AI response.
 
@@ -266,7 +266,7 @@ class ResponseKeyboardBuilder:
             return None
 
         msg_hash = _short_hash(f"{user_message}:{message_id}")
-        rows: List[List[Dict[str, str]]] = []
+        rows: list[list[dict[str, str]]] = []
 
         if profile == KeyboardProfile.ACTION:
             rows = self._build_action_rows(
@@ -290,8 +290,8 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
         user_message: str = "",
         ai_response: str = "",
-        extra: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, str]:
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, str]:
         label = text[:MAX_BUTTON_TEXT]
         cb_key = f"{action}:{msg_hash}"
         if len(cb_key) > MAX_CALLBACK_DATA:
@@ -315,8 +315,8 @@ class ResponseKeyboardBuilder:
         user_message: str,
         ai_response: str,
         category: ContentCategory,
-        approval_actions: Optional[List[Dict[str, str]]] = None,
-    ) -> List[List[Dict[str, str]]]:
+        approval_actions: list[dict[str, str]] | None = None,
+    ) -> list[list[dict[str, str]]]:
         """Action profile: [Approve] [Alternative] [Cancel] or custom."""
         if approval_actions:
             row = []
@@ -369,7 +369,7 @@ class ResponseKeyboardBuilder:
         user_message: str,
         ai_response: str,
         category: ContentCategory,
-    ) -> List[List[Dict[str, str]]]:
+    ) -> list[list[dict[str, str]]]:
         """
         Expand profile: context-aware row 1 + optional feedback row 2.
 
@@ -465,7 +465,7 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
         user_message: str,
         ai_response: str,
-    ) -> List[List[Dict[str, str]]]:
+    ) -> list[list[dict[str, str]]]:
         """Feedback profile: just [👍] [👎]."""
         return [
             [
@@ -479,7 +479,7 @@ class ResponseKeyboardBuilder:
 # CallbackHandler
 # ────────────────────────────────────────────────────────────────
 
-_ACTION_PROMPTS: Dict[str, str] = {
+_ACTION_PROMPTS: dict[str, str] = {
     "regen": (
         'The user asked: "{user_message}"\n'
         "Your previous answer was not satisfactory. "
@@ -570,7 +570,7 @@ def _settings_hub_text(session: Any) -> str:
     )
 
 
-def build_audio_keyboard(session: Any) -> List[List[Dict[str, Any]]]:
+def build_audio_keyboard(session: Any) -> list[list[dict[str, Any]]]:
     """Inline keyboard rows for /audio — input/output voice routing."""
 
     def _on(active: bool) -> str:
@@ -642,7 +642,7 @@ def build_audio_keyboard(session: Any) -> List[List[Dict[str, Any]]]:
 build_settings_keyboard = build_audio_keyboard
 
 
-def build_settings_hub_keyboard(session: Any = None) -> List[List[Dict[str, Any]]]:
+def build_settings_hub_keyboard(session: Any = None) -> list[list[dict[str, Any]]]:
     """Main /settings hub — pro inline navigation panel."""
     return [
         [
@@ -661,11 +661,11 @@ def build_settings_hub_keyboard(session: Any = None) -> List[List[Dict[str, Any]
 class CallbackHandler:
     """Handle Telegram callback_query events (inline button presses)."""
 
-    def __init__(self, channel: "TelegramChannel"):
+    def __init__(self, channel: TelegramChannel):
         self.channel = channel
         self.store = get_callback_store()
 
-    async def handle(self, callback_query: Dict[str, Any]) -> None:
+    async def handle(self, callback_query: dict[str, Any]) -> None:
         cb_id = callback_query.get("id", "")
         cb_data = callback_query.get("data", "")
         message = callback_query.get("message", {})
@@ -887,7 +887,7 @@ class CallbackHandler:
     async def _handle_approval_action(
         self,
         entry: CallbackEntry,
-        user_id: Optional[int],
+        user_id: int | None,
         approved: bool,
     ) -> tuple[bool, str]:
         """Route Telegram approval callbacks through channel-level approval responder."""
@@ -1636,7 +1636,7 @@ class CallbackHandler:
         except Exception as exc:
             logger.debug("Audio settings refresh failed: %s", exc)
 
-    async def _get_ai_response(self, prompt: str, user_id: int) -> Optional[str]:
+    async def _get_ai_response(self, prompt: str, user_id: int) -> str | None:
         if self.channel.on_message:
             try:
                 return await self.channel.on_message(

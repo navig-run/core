@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -101,7 +101,7 @@ class TriggerCondition:
         except (ValueError, TypeError):
             return False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.type,
             "operator": self.operator,
@@ -110,7 +110,7 @@ class TriggerCondition:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TriggerCondition":
+    def from_dict(cls, data: dict[str, Any]) -> "TriggerCondition":
         return cls(
             type=data.get("type", ""),
             operator=data.get("operator", "eq"),
@@ -125,11 +125,11 @@ class TriggerAction:
 
     type: ActionType
     target: str  # Command, workflow name, webhook URL, etc.
-    params: Dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = field(default_factory=dict)
     on_failure: str = "continue"  # continue, stop, retry
     retries: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.type.value,
             "target": self.target,
@@ -139,7 +139,7 @@ class TriggerAction:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TriggerAction":
+    def from_dict(cls, data: dict[str, Any]) -> "TriggerAction":
         return cls(
             type=ActionType(data.get("type", "command")),
             target=data.get("target", ""),
@@ -157,12 +157,12 @@ class Trigger:
     name: str
     type: TriggerType
     description: str = ""
-    conditions: List[TriggerCondition] = field(default_factory=list)
-    actions: List[TriggerAction] = field(default_factory=list)
+    conditions: list[TriggerCondition] = field(default_factory=list)
+    actions: list[TriggerAction] = field(default_factory=list)
     status: TriggerStatus = TriggerStatus.ENABLED
     cooldown_seconds: int = 60  # Min time between firings
     max_fires_per_hour: int = 10
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
     last_fired: str = ""
@@ -202,7 +202,7 @@ class Trigger:
                 pass  # malformed value; skip
         return True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -224,7 +224,7 @@ class Trigger:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Trigger":
+    def from_dict(cls, data: dict[str, Any]) -> "Trigger":
         return cls(
             id=data.get("id", ""),
             name=data.get("name", "Unnamed"),
@@ -254,7 +254,7 @@ class TriggerEvent:
 
     type: TriggerType
     source: str  # Where event came from
-    data: Dict[str, Any]  # Event payload
+    data: dict[str, Any]  # Event payload
     timestamp: str = ""
 
     def __post_init__(self):
@@ -308,7 +308,7 @@ class TriggerManager:
         self.triggers_dir.mkdir(parents=True, exist_ok=True)
 
         # In-memory cache
-        self._triggers: Dict[str, Trigger] = {}
+        self._triggers: dict[str, Trigger] = {}
         self._loaded = False
 
     def _ensure_loaded(self):
@@ -323,7 +323,7 @@ class TriggerManager:
 
         if self.triggers_file.exists():
             try:
-                with open(self.triggers_file, "r", encoding="utf-8") as f:
+                with open(self.triggers_file, encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
 
                 for trigger_data in data.get("triggers", []):
@@ -410,17 +410,17 @@ class TriggerManager:
         self._save_triggers()
         return True
 
-    def get_trigger(self, trigger_id: str) -> Optional[Trigger]:
+    def get_trigger(self, trigger_id: str) -> Trigger | None:
         """Get a trigger by ID."""
         self._ensure_loaded()
         return self._triggers.get(trigger_id)
 
     def list_triggers(
         self,
-        type_filter: Optional[TriggerType] = None,
-        status_filter: Optional[TriggerStatus] = None,
-        tag_filter: Optional[str] = None,
-    ) -> List[Trigger]:
+        type_filter: TriggerType | None = None,
+        status_filter: TriggerStatus | None = None,
+        tag_filter: str | None = None,
+    ) -> list[Trigger]:
         """List triggers with optional filtering."""
         self._ensure_loaded()
 
@@ -457,7 +457,7 @@ class TriggerManager:
     # EVENT PROCESSING
     # ========================================================================
 
-    def process_event(self, event: TriggerEvent) -> List[TriggerResult]:
+    def process_event(self, event: TriggerEvent) -> list[TriggerResult]:
         """
         Process an event against all triggers.
 
@@ -566,7 +566,7 @@ class TriggerManager:
         except Exception as e:
             return False, str(e)
 
-    def _run_command(self, command: str, params: Dict[str, Any]) -> tuple[bool, str]:
+    def _run_command(self, command: str, params: dict[str, Any]) -> tuple[bool, str]:
         """Run a navig command."""
         import os
         import subprocess
@@ -605,7 +605,7 @@ class TriggerManager:
             return False, str(e)
 
     def _run_workflow(
-        self, workflow_name: str, params: Dict[str, Any]
+        self, workflow_name: str, params: dict[str, Any]
     ) -> tuple[bool, str]:
         """Run a workflow."""
         from navig.commands.workflow import WorkflowManager
@@ -630,7 +630,7 @@ class TriggerManager:
         channel: str,
         trigger: Trigger,
         event: TriggerEvent,
-        params: Dict[str, Any],
+        params: dict[str, Any],
     ) -> tuple[bool, str]:
         """Send notification via specified channel."""
         message = params.get("message", f"Trigger '{trigger.name}' fired")
@@ -663,7 +663,7 @@ class TriggerManager:
             return False, f"Unknown notification channel: {channel}"
 
     def _call_webhook(
-        self, url: str, trigger: Trigger, event: TriggerEvent, params: Dict[str, Any]
+        self, url: str, trigger: Trigger, event: TriggerEvent, params: dict[str, Any]
     ) -> tuple[bool, str]:
         """Call external webhook."""
         try:
@@ -698,7 +698,7 @@ class TriggerManager:
         except Exception as e:
             return False, str(e)
 
-    def _run_script(self, script_path: str, params: Dict[str, Any]) -> tuple[bool, str]:
+    def _run_script(self, script_path: str, params: dict[str, Any]) -> tuple[bool, str]:
         """Run a script file."""
         import subprocess
         import sys
@@ -747,7 +747,7 @@ class TriggerManager:
 
     def fire_trigger(
         self, trigger_id: str, dry_run: bool = False
-    ) -> Optional[TriggerResult]:
+    ) -> TriggerResult | None:
         """Manually fire a trigger."""
         trigger = self.get_trigger(trigger_id)
         if not trigger:
@@ -780,10 +780,10 @@ class TriggerManager:
 
     def get_history(
         self,
-        trigger_id: Optional[str] = None,
+        trigger_id: str | None = None,
         limit: int = 50,
         success_only: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get trigger execution history."""
         history = []
 
@@ -791,7 +791,7 @@ class TriggerManager:
             return history
 
         try:
-            with open(self.history_file, "r", encoding="utf-8") as f:
+            with open(self.history_file, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
                         entry = json.loads(line)
@@ -809,14 +809,14 @@ class TriggerManager:
         # Return most recent first
         return list(reversed(history[-limit:]))
 
-    def clear_history(self, trigger_id: Optional[str] = None) -> int:
+    def clear_history(self, trigger_id: str | None = None) -> int:
         """Clear trigger history."""
         if not self.history_file.exists():
             return 0
 
         if trigger_id is None:
             # Clear all
-            count = sum(1 for _ in open(self.history_file, "r"))
+            count = sum(1 for _ in open(self.history_file))
             self.history_file.unlink()
             return count
 
@@ -824,7 +824,7 @@ class TriggerManager:
         kept = []
         removed = 0
 
-        with open(self.history_file, "r", encoding="utf-8") as f:
+        with open(self.history_file, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     entry = json.loads(line)
@@ -845,9 +845,9 @@ class TriggerManager:
 
 
 def list_triggers(
-    type_filter: Optional[str] = None,
-    status_filter: Optional[str] = None,
-    tag: Optional[str] = None,
+    type_filter: str | None = None,
+    status_filter: str | None = None,
+    tag: str | None = None,
     plain: bool = False,
     json_out: bool = False,
 ):
@@ -1193,7 +1193,7 @@ def fire_trigger(trigger_id: str):
 
 
 def show_trigger_history(
-    trigger_id: Optional[str] = None,
+    trigger_id: str | None = None,
     limit: int = 20,
     plain: bool = False,
     json_out: bool = False,
@@ -1255,7 +1255,7 @@ def show_trigger_history(
     ch.console.print(table)
 
 
-def clear_trigger_history(trigger_id: Optional[str] = None, force: bool = False):
+def clear_trigger_history(trigger_id: str | None = None, force: bool = False):
     """Clear trigger history."""
     import typer
 

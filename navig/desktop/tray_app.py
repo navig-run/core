@@ -36,7 +36,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 # Fix console encoding on Windows
 if sys.platform == "win32":
@@ -96,7 +95,7 @@ class TraySettings:
         SETTINGS_FILE.write_text(json.dumps(self.__dict__, indent=2))
 
     @classmethod
-    def load(cls) -> "TraySettings":
+    def load(cls) -> TraySettings:
         if SETTINGS_FILE.exists():
             try:
                 data = json.loads(SETTINGS_FILE.read_text())
@@ -113,9 +112,9 @@ class ProcessState:
     """Track a managed subprocess."""
 
     name: str
-    process: Optional[subprocess.Popen] = None
+    process: subprocess.Popen | None = None
     status: Status = Status.STOPPED
-    started_at: Optional[datetime] = None
+    started_at: datetime | None = None
     restart_count: int = 0
     last_error: str = ""
 
@@ -154,14 +153,14 @@ class NavigTray:
             name="Daemon"
         )  # New: supervised daemon (bot+gateway+scheduler)
         self._icon = None
-        self._health_thread: Optional[threading.Thread] = None
+        self._health_thread: threading.Thread | None = None
         self._running = False
         self._python = self.settings.python_exe or PYTHON_EXE
 
         # Find the best icon
         self._icon_path = self._find_icon()
 
-    def _find_icon(self) -> Optional[Path]:
+    def _find_icon(self) -> Path | None:
         """Find a NAVIG icon file."""
         candidates = [
             PROJECT_ROOT / "navig-icons" / "navig-main-256.png",
@@ -375,9 +374,11 @@ class NavigTray:
             for _ in range(16):
                 time.sleep(0.5)
                 alive = False
-                if self.daemon.process and self.daemon.is_alive:
-                    alive = True
-                elif self._is_daemon_running():
+                if (
+                    self.daemon.process
+                    and self.daemon.is_alive
+                    or self._is_daemon_running()
+                ):
                     alive = True
                 if not alive:
                     break

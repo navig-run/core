@@ -57,7 +57,7 @@ class BlackboxEvent:
         payload: dict[str, Any],
         tags: list[str] | None = None,
         source: str = "navig",
-    ) -> "BlackboxEvent":
+    ) -> BlackboxEvent:
         return BlackboxEvent(
             id=str(uuid.uuid4())[:8],
             event_type=event_type,
@@ -81,7 +81,7 @@ class BlackboxEvent:
         )
 
     @classmethod
-    def from_dict(cls, data: dict) -> "BlackboxEvent":
+    def from_dict(cls, data: dict) -> BlackboxEvent:
         return cls(
             id=data["id"],
             event_type=EventType(data["event_type"]),

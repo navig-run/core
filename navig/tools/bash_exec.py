@@ -22,8 +22,9 @@ import logging
 import os
 import shlex
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from navig.tools.registry import BaseTool, ToolResult
 
@@ -41,8 +42,8 @@ class ApprovalRequiredError(RuntimeError):
 @dataclass
 class _ExecArgs:
     command: str
-    cwd: Optional[str] = None
-    env_extra: Optional[Dict[str, str]] = None
+    cwd: str | None = None
+    env_extra: dict[str, str] | None = None
     timeout: float = _DEFAULT_TIMEOUT
     max_output: int = _MAX_OUTPUT_CHARS
     requires_approval: bool = False
@@ -98,7 +99,7 @@ class BashExecTool(BaseTool):
         "Set requires_approval=True for any command that modifies state."
     )
 
-    def _build_env(self, extra: Optional[Dict[str, str]]) -> Dict[str, str]:
+    def _build_env(self, extra: dict[str, str] | None) -> dict[str, str]:
         env = dict(os.environ)
         if extra:
             env.update(extra)
@@ -106,8 +107,8 @@ class BashExecTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[Callable[[str], None]] = None,
+        args: dict[str, Any],
+        on_status: Callable[[str], None] | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
 

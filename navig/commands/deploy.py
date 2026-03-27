@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import typer
 import yaml
@@ -62,7 +62,7 @@ _MSG_COL_WIDTH = 60
 # ============================================================================
 
 
-def _load_deploy_yaml(project_root: Path) -> Dict[str, Any]:
+def _load_deploy_yaml(project_root: Path) -> dict[str, Any]:
     """Load .navig/deploy.yaml from the project root. Returns {} if absent."""
     candidate = project_root / ".navig" / "deploy.yaml"
     if not candidate.exists():
@@ -75,9 +75,9 @@ def _load_deploy_yaml(project_root: Path) -> Dict[str, Any]:
 
 
 def _resolve_context(
-    host_flag: Optional[str],
-    app_flag: Optional[str],
-    deploy_yaml: Dict[str, Any],
+    host_flag: str | None,
+    app_flag: str | None,
+    deploy_yaml: dict[str, Any],
     config_manager: Any,
 ) -> tuple[str, str]:
     """Resolve active host and app name. CLI flag > deploy.yaml > active context."""
@@ -113,8 +113,8 @@ class _ProgressRenderer:
 
     def __init__(self, dry_run: bool = False):
         self._dry_run = dry_run
-        self._phases: List[tuple] = []  # (phase, status, msg, elapsed)
-        self._phase_start: Dict[str, float] = {}
+        self._phases: list[tuple] = []  # (phase, status, msg, elapsed)
+        self._phase_start: dict[str, float] = {}
         self._current_line_len = 0
 
     def on_progress(self, phase: Any, status: str, msg: str) -> None:
@@ -188,10 +188,10 @@ class _ProgressRenderer:
 
 @deploy_app.command("run")
 def deploy_run(
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host name (overrides active context)"
     ),
-    app: Optional[str] = typer.Option(
+    app: str | None = typer.Option(
         None, "--app", "-a", help="App name (overrides active context)"
     ),
     dry_run: bool = typer.Option(
@@ -278,8 +278,8 @@ def deploy_run(
 
 @deploy_app.command("rollback")
 def deploy_rollback(
-    host: Optional[str] = typer.Option(None, "--host", "-H", help="Target host name"),
-    app: Optional[str] = typer.Option(None, "--app", "-a", help="App name"),
+    host: str | None = typer.Option(None, "--host", "-H", help="Target host name"),
+    app: str | None = typer.Option(None, "--app", "-a", help="App name"),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview rollback without executing"
     ),
@@ -376,8 +376,8 @@ def deploy_rollback(
 @deploy_app.command("history")
 def deploy_history(
     limit: int = typer.Option(10, "--limit", "-n", help="Number of entries to show"),
-    host: Optional[str] = typer.Option(None, "--host", "-H", help="Filter by host"),
-    app: Optional[str] = typer.Option(None, "--app", "-a", help="Filter by app"),
+    host: str | None = typer.Option(None, "--host", "-H", help="Filter by host"),
+    app: str | None = typer.Option(None, "--app", "-a", help="Filter by app"),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show recent deploy history."""
@@ -428,8 +428,8 @@ def deploy_history(
 
 @deploy_app.command("status")
 def deploy_status(
-    host: Optional[str] = typer.Option(None, "--host", "-H", help="Target host"),
-    app: Optional[str] = typer.Option(None, "--app", "-a", help="App name"),
+    host: str | None = typer.Option(None, "--host", "-H", help="Target host"),
+    app: str | None = typer.Option(None, "--app", "-a", help="App name"),
 ):
     """Show the status of the last deploy."""
     from navig.config import get_config_manager
@@ -558,7 +558,7 @@ def deploy_init(
 
     # Apply commands
     default_apply = hints.get("apply_commands", [])
-    apply_cmds: List[str] = []
+    apply_cmds: list[str] = []
     if default_apply:
         console.print(f"\nDetected apply commands: {default_apply}")
         if typer.confirm("Use these apply commands?", default=True):
@@ -571,14 +571,14 @@ def deploy_init(
         apply_cmds = [c.strip() for c in raw.split(",") if c.strip()]
 
     # Build YAML structure
-    doc: Dict[str, Any] = {"version": "1"}
+    doc: dict[str, Any] = {"version": "1"}
 
     doc["push"] = {"source": source, "target": target}
 
     if apply_cmds:
         doc["apply"] = {"commands": apply_cmds}
 
-    restart_blk: Dict[str, Any] = {"adapter": adapter}
+    restart_blk: dict[str, Any] = {"adapter": adapter}
     if service:
         restart_blk["service"] = service
     if adapter == "docker-compose":
@@ -624,8 +624,8 @@ def deploy_init(
 
 @deploy_app.command("check")
 def deploy_check(
-    host: Optional[str] = typer.Option(None, "--host", "-H", help="Target host"),
-    app: Optional[str] = typer.Option(None, "--app", "-a", help="App name"),
+    host: str | None = typer.Option(None, "--host", "-H", help="Target host"),
+    app: str | None = typer.Option(None, "--app", "-a", help="App name"),
 ):
     """Validate .navig/deploy.yaml and test connectivity — no deploy executed."""
     from navig.config import get_config_manager
@@ -746,14 +746,14 @@ def _detect_project_root(config_manager: Any) -> Path:
     return Path.cwd()
 
 
-def _detect_runtime_hints(project_root: Path) -> Dict[str, Any]:
+def _detect_runtime_hints(project_root: Path) -> dict[str, Any]:
     """
     Inspect the project to suggest sane defaults for init.
 
     Returns a dict with optional keys:
       build_dir, adapter, apply_commands
     """
-    hints: Dict[str, Any] = {}
+    hints: dict[str, Any] = {}
 
     if (project_root / "package.json").exists():
         hints["adapter"] = "pm2"

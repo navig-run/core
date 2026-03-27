@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.browser.template_runner")
 
@@ -65,7 +65,7 @@ class TemplateRunner:
         logger.info("[Templates] Loaded %d templates", count)
         return count
 
-    def find_template(self, url: str) -> Optional[dict]:
+    def find_template(self, url: str) -> dict | None:
         """Find the best matching template for a URL.
         Returns None if no site-specific template matches."""
         from urllib.parse import urlparse
@@ -81,7 +81,7 @@ class TemplateRunner:
 
         return None  # No site-specific template
 
-    def get_template_by_name(self, name: str) -> Optional[dict]:
+    def get_template_by_name(self, name: str) -> dict | None:
         """Retrieve a template by site name or file name."""
         for tmpl in self._templates:
             if (

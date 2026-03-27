@@ -14,7 +14,7 @@ Author: Navig Team
 import json
 import re
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -54,7 +54,7 @@ def _health_icon(health: str) -> str:
     return f"[yellow]{_safe_symbol(chr(0x1f7e1), '?')} unknown[/yellow]"
 
 
-def monitor_resources(options: Dict[str, Any]) -> None:
+def monitor_resources(options: dict[str, Any]) -> None:
     """
     Monitor real-time resource usage (CPU, RAM, disk, network).
 
@@ -237,7 +237,7 @@ def monitor_resources(options: Dict[str, Any]) -> None:
             console.print("\n[green]✓[/green] All metrics within normal range")
 
 
-def monitor_disk(threshold: int, options: Dict[str, Any]) -> None:
+def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
     """
     Monitor disk space with custom threshold alerts.
 
@@ -346,7 +346,7 @@ def monitor_disk(threshold: int, options: Dict[str, Any]) -> None:
             console.print(f"\n[green]✓[/green] All disks below {threshold}% threshold")
 
 
-def monitor_services(options: Dict[str, Any]) -> None:
+def monitor_services(options: dict[str, Any]) -> None:
     """
     Check health status of critical services.
 
@@ -485,7 +485,7 @@ def monitor_services(options: Dict[str, Any]) -> None:
             console.print("\n[green]✓[/green] All installed services are running")
 
 
-def monitor_network(options: Dict[str, Any]) -> None:
+def monitor_network(options: dict[str, Any]) -> None:
     """
     Monitor network statistics and connections.
 
@@ -597,7 +597,7 @@ def monitor_network(options: Dict[str, Any]) -> None:
         console.print("\n", table)
 
 
-def health_check(options: Dict[str, Any]) -> None:
+def health_check(options: dict[str, Any]) -> None:
     """
     Comprehensive health check combining all monitoring aspects.
 
@@ -643,7 +643,7 @@ def health_check(options: Dict[str, Any]) -> None:
     console.print("\n[green]✓[/green] Health check complete")
 
 
-def generate_report(options: Dict[str, Any]) -> None:
+def generate_report(options: dict[str, Any]) -> None:
     """
     Generate comprehensive monitoring report and save to file.
 
@@ -796,7 +796,7 @@ def generate_report(options: Dict[str, Any]) -> None:
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_file = reports_dir / f"health-report_{app_name}_{timestamp_str}.json"
 
-    with open(report_file, "w") as f:
+    with open(report_file, "w", encoding="utf-8") as f:
         json.dump(report, indent=2, fp=f)
 
     # Display summary

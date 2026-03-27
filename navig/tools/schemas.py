@@ -22,7 +22,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger("navig.tools.schemas")
 
@@ -69,7 +69,7 @@ class ToolCallAction:
     """
 
     tool: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
     request_id: str = ""
 
@@ -104,7 +104,7 @@ class MultiStepAction:
         reason: Optional justification for the chain.
     """
 
-    steps: List[ToolCallAction] = field(default_factory=list)
+    steps: list[ToolCallAction] = field(default_factory=list)
     reason: str = ""
 
     @property
@@ -131,13 +131,13 @@ class ToolResult:
     output: Any = None
     error: str = ""
     latency_ms: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
         return self.status == ToolResultStatus.SUCCESS
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize for LLM consumption or logging."""
         return {
             "tool": self.tool,
@@ -201,7 +201,7 @@ def _find_bare_json_objects(text: str) -> list[str]:
     return results
 
 
-def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+def _extract_json(text: str) -> dict[str, Any] | None:
     """
     Extract the first valid JSON object from LLM output.
 

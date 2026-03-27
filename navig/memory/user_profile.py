@@ -14,7 +14,7 @@ import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def _get_memory_dir() -> Path:
@@ -40,7 +40,7 @@ class MemoryNote:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "MemoryNote":
+    def from_dict(cls, data: dict) -> MemoryNote:
         return cls(**data)
 
     def to_markdown(self) -> str:
@@ -52,16 +52,16 @@ class MemoryNote:
 class UserIdentity:
     """Core identity information about the user."""
 
-    name: Optional[str] = None
-    role: Optional[str] = None
-    timezone: Optional[str] = None
-    location: Optional[str] = None
+    name: str | None = None
+    role: str | None = None
+    timezone: str | None = None
+    location: str | None = None
 
     def to_dict(self) -> dict:
         return {k: v for k, v in asdict(self).items() if v is not None}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "UserIdentity":
+    def from_dict(cls, data: dict) -> UserIdentity:
         return cls(
             name=data.get("name"),
             role=data.get("role"),
@@ -74,13 +74,13 @@ class UserIdentity:
 class WorkPatterns:
     """Work habits and preferences."""
 
-    active_hours: List[str] = field(
+    active_hours: list[str] = field(
         default_factory=list
     )  # e.g., ["9-17 EST", "weekdays"]
-    deploy_preferences: Dict[str, Any] = field(
+    deploy_preferences: dict[str, Any] = field(
         default_factory=dict
     )  # e.g., {"preferred_day": "friday", "window": "evening"}
-    common_tasks: List[str] = field(
+    common_tasks: list[str] = field(
         default_factory=list
     )  # e.g., ["docker restart", "db backup"]
 
@@ -88,7 +88,7 @@ class WorkPatterns:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "WorkPatterns":
+    def from_dict(cls, data: dict) -> WorkPatterns:
         return cls(
             active_hours=data.get("active_hours", []),
             deploy_preferences=data.get("deploy_preferences", {}),
@@ -100,16 +100,16 @@ class WorkPatterns:
 class TechnicalContext:
     """Technical environment and stack."""
 
-    stack: List[str] = field(
+    stack: list[str] = field(
         default_factory=list
     )  # e.g., ["Laravel", "Docker", "PostgreSQL"]
-    managed_hosts: List[str] = field(
+    managed_hosts: list[str] = field(
         default_factory=list
     )  # e.g., ["myserver", "production"]
-    primary_projects: List[str] = field(
+    primary_projects: list[str] = field(
         default_factory=list
     )  # e.g., ["my-saas", "api-backend"]
-    preferences: List[str] = field(
+    preferences: list[str] = field(
         default_factory=list
     )  # e.g., ["Python", "CLI tools", "Docker"]
 
@@ -117,7 +117,7 @@ class TechnicalContext:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TechnicalContext":
+    def from_dict(cls, data: dict) -> TechnicalContext:
         return cls(
             stack=data.get("stack", []),
             managed_hosts=data.get("managed_hosts", []),
@@ -130,11 +130,11 @@ class TechnicalContext:
 class UserPreferences:
     """Communication and operational preferences."""
 
-    communication_style: Optional[str] = None  # e.g., "concise", "detailed", "casual"
-    alert_thresholds: Dict[str, Any] = field(
+    communication_style: str | None = None  # e.g., "concise", "detailed", "casual"
+    alert_thresholds: dict[str, Any] = field(
         default_factory=dict
     )  # e.g., {"disk_warning": 80, "cpu_critical": 95}
-    confirmation_required_for: List[str] = field(
+    confirmation_required_for: list[str] = field(
         default_factory=list
     )  # e.g., ["delete", "restart_production"]
 
@@ -144,7 +144,7 @@ class UserPreferences:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "UserPreferences":
+    def from_dict(cls, data: dict) -> UserPreferences:
         return cls(
             communication_style=data.get("communication_style"),
             alert_thresholds=data.get("alert_thresholds", {}),
@@ -158,15 +158,15 @@ class InteractionStats:
 
     total_sessions: int = 0
     total_commands: int = 0
-    most_used_commands: Dict[str, int] = field(default_factory=dict)
-    last_active: Optional[str] = None
-    first_seen: Optional[str] = None
+    most_used_commands: dict[str, int] = field(default_factory=dict)
+    last_active: str | None = None
+    first_seen: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "InteractionStats":
+    def from_dict(cls, data: dict) -> InteractionStats:
         return cls(
             total_sessions=data.get("total_sessions", 0),
             total_commands=data.get("total_commands", 0),
@@ -201,8 +201,8 @@ class UserProfile:
     technical_context: TechnicalContext = field(default_factory=TechnicalContext)
     preferences: UserPreferences = field(default_factory=UserPreferences)
     stats: InteractionStats = field(default_factory=InteractionStats)
-    goals: List[str] = field(default_factory=list)
-    notes: List[MemoryNote] = field(default_factory=list)
+    goals: list[str] = field(default_factory=list)
+    notes: list[MemoryNote] = field(default_factory=list)
 
     # File paths
     _profile_path: Path = field(
@@ -229,7 +229,7 @@ class UserProfile:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "UserProfile":
+    def from_dict(cls, data: dict) -> UserProfile:
         """Create from dictionary."""
         return cls(
             identity=UserIdentity.from_dict(data.get("identity", {})),
@@ -244,13 +244,13 @@ class UserProfile:
         )
 
     @classmethod
-    def load(cls, profile_path: Optional[Path] = None) -> "UserProfile":
+    def load(cls, profile_path: Path | None = None) -> UserProfile:
         """Load profile from disk or create empty one."""
         path = profile_path or (_get_memory_dir() / "user_profile.json")
 
         if path.exists():
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     data = json.load(f)
                 profile = cls.from_dict(data)
                 profile._profile_path = path
@@ -310,7 +310,7 @@ class UserProfile:
 
         return note
 
-    def update(self, updates: Dict[str, Any], auto_save: bool = True) -> List[str]:
+    def update(self, updates: dict[str, Any], auto_save: bool = True) -> list[str]:
         """
         Update profile with new data.
 
@@ -376,7 +376,7 @@ class UserProfile:
         self.stats.record_command(command)
         # Don't save every command - batch saves happen periodically
 
-    def search_memory(self, query: str, limit: int = 10) -> List[str]:
+    def search_memory(self, query: str, limit: int = 10) -> list[str]:
         """
         Search notes and profile for relevant context.
         Simple keyword search (can be upgraded to semantic later).
@@ -630,7 +630,7 @@ class UserProfile:
 
 
 # Singleton instance
-_profile_instance: Optional[UserProfile] = None
+_profile_instance: UserProfile | None = None
 _profile_lock = threading.Lock()
 
 

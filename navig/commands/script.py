@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -50,9 +49,7 @@ def list_scripts():
 @script_app.command("run")
 def run_script(
     name: str = typer.Argument(..., help="Script name (without extension)"),
-    args: Optional[list[str]] = typer.Argument(
-        None, help="Arguments to pass to script"
-    ),
+    args: list[str] | None = typer.Argument(None, help="Arguments to pass to script"),
 ):
     """Run a Python script."""
     scripts_dir = _get_scripts_dir()
@@ -140,7 +137,7 @@ if __name__ == "__main__":
     main()
 """
 
-    with open(script_path, "w") as f:
+    with open(script_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     ch.success(f"Created script: {script_path}")

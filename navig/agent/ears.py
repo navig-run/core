@@ -16,9 +16,10 @@ from __future__ import annotations
 import asyncio
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from navig.agent.component import Component
 from navig.agent.config import EarsConfig
@@ -31,16 +32,16 @@ class InputMessage:
 
     source: str  # telegram, mcp, api, webhook
     content: str
-    user_id: Optional[str] = None
-    channel_id: Optional[str] = None
-    metadata: Dict[str, Any] = None
+    user_id: str | None = None
+    channel_id: str | None = None
+    metadata: dict[str, Any] = None
     timestamp: datetime = None
 
     def __post_init__(self):
         self.metadata = self.metadata or {}
         self.timestamp = self.timestamp or datetime.now()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "source": self.source,
             "content": self.content,
@@ -57,7 +58,7 @@ class InputListener(ABC):
     def __init__(self, name: str):
         self.name = name
         self._running = False
-        self._message_callback: Optional[Callable[[InputMessage], Any]] = None
+        self._message_callback: Callable[[InputMessage], Any] | None = None
 
     def set_callback(self, callback: Callable[[InputMessage], Any]) -> None:
         """Set callback for received messages."""
@@ -84,11 +85,11 @@ class InputListener(ABC):
 class TelegramListener(InputListener):
     """Telegram bot input listener."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__("telegram")
         self.config = config
         self._bot = None
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Start Telegram bot polling."""
@@ -129,11 +130,11 @@ class TelegramListener(InputListener):
 class MCPListener(InputListener):
     """MCP (Model Context Protocol) server listener."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__("mcp")
         self.config = config
         self._server = None
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Start MCP server."""
@@ -246,7 +247,7 @@ class EmailListener(InputListener):
         label = account_config.get("label", account_config.get("address", "email"))
         super().__init__(f"email:{label}")
         self.account = account_config
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
         if not self.account.get("enabled", True):
@@ -310,7 +311,7 @@ class EmailListener(InputListener):
 class WebhookListener(InputListener):
     """Webhook receiver for external service integration."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__("webhook")
         self.config = config
         self._server = None
@@ -382,19 +383,19 @@ class Ears(Component):
     def __init__(
         self,
         config: EarsConfig,
-        nervous_system: Optional[NervousSystem] = None,
+        nervous_system: NervousSystem | None = None,
     ):
         super().__init__("ears", nervous_system)
         self.config = config
 
         # Input listeners
-        self._listeners: Dict[str, InputListener] = {}
+        self._listeners: dict[str, InputListener] = {}
 
         # Message queue for the brain
         self._message_queue: asyncio.Queue[InputMessage] = asyncio.Queue()
 
         # Statistics
-        self._message_counts: Dict[str, int] = {}
+        self._message_counts: dict[str, int] = {}
 
     async def _on_start(self) -> None:
         """Start all configured listeners."""
@@ -466,7 +467,7 @@ class Ears(Component):
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-    async def _on_health_check(self) -> Dict[str, Any]:
+    async def _on_health_check(self) -> dict[str, Any]:
         """Health check for ears."""
         return {
             "listeners": {
@@ -495,8 +496,8 @@ class Ears(Component):
         )
 
     async def get_next_message(
-        self, timeout: Optional[float] = None
-    ) -> Optional[InputMessage]:
+        self, timeout: float | None = None
+    ) -> InputMessage | None:
         """Get next message from queue."""
         try:
             if timeout:
@@ -512,6 +513,6 @@ class Ears(Component):
         """Check if there are pending messages."""
         return not self._message_queue.empty()
 
-    def get_listener_status(self) -> Dict[str, bool]:
+    def get_listener_status(self) -> dict[str, bool]:
         """Get status of all listeners."""
         return {name: listener._running for name, listener in self._listeners.items()}

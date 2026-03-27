@@ -24,7 +24,6 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 __all__ = [
     "ENV_VAULT_LABELS",
@@ -184,7 +183,7 @@ def _normalize_names(names: str | list[str] | tuple[str, ...] | None) -> list[st
 def resolve_secret(
     env_vars: str | list[str] | tuple[str, ...],
     vault_labels: str | list[str] | tuple[str, ...] | None = None,
-) -> Optional[str]:
+) -> str | None:
     """Resolve a runtime secret from env first, then vault.
 
     If *vault_labels* is omitted, candidate labels are inferred from the first
@@ -220,7 +219,7 @@ def resolve_secret(
 def resolve_json_str(
     env_vars: str | list[str] | tuple[str, ...],
     vault_labels: str | list[str] | tuple[str, ...] | None = None,
-) -> Optional[str]:
+) -> str | None:
     """Resolve a JSON secret blob from env first, then vault.
 
     Environment values may be either raw JSON strings or filesystem paths to a

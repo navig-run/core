@@ -26,8 +26,9 @@ import platform
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from navig.storage.pragma_profiles import PragmaProfile, profile_for_db
 from navig.storage.query_timer import QueryTimer, get_query_timer
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 # ── Custom SQL functions ──────────────────────────────────────
 
 
-def _sql_cosine_distance(a: bytes, b: bytes) -> Optional[float]:
+def _sql_cosine_distance(a: bytes, b: bytes) -> float | None:
     """
     Cosine distance between two float32 BLOBs.
 
@@ -64,7 +65,7 @@ def _sql_cosine_distance(a: bytes, b: bytes) -> Optional[float]:
         return None
 
 
-def _sql_json_extract_text(json_str: Optional[str], key: str) -> Optional[str]:
+def _sql_json_extract_text(json_str: str | None, key: str) -> str | None:
     """Extract a string from a JSON object.  Registered as ``json_text(json, key)``."""
     if not json_str:
         return None
@@ -92,7 +93,7 @@ class _StmtCache:
 
     def __init__(self, conn: sqlite3.Connection, max_size: int = 128):
         self._conn = conn
-        self._cache: Dict[int, sqlite3.Cursor] = {}
+        self._cache: dict[int, sqlite3.Cursor] = {}
         self._max = max_size
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
@@ -142,13 +143,13 @@ class Engine:
     def __init__(
         self,
         *,
-        query_timer: Optional[QueryTimer] = None,
+        query_timer: QueryTimer | None = None,
         slow_threshold_ms: float = 20.0,
     ):
         self._local = threading.local()
-        self._write_locks: Dict[str, threading.Lock] = {}
-        self._batchers: Dict[str, WriteBatcher] = {}
-        self._stmt_caches: Dict[int, _StmtCache] = {}
+        self._write_locks: dict[str, threading.Lock] = {}
+        self._batchers: dict[str, WriteBatcher] = {}
+        self._stmt_caches: dict[int, _StmtCache] = {}
         self._meta_lock = threading.Lock()
         self.timer = query_timer or get_query_timer(slow_threshold_ms=slow_threshold_ms)
 
@@ -158,7 +159,7 @@ class Engine:
         self,
         db_path: Path,
         *,
-        profile: Optional[PragmaProfile] = None,
+        profile: PragmaProfile | None = None,
         register_functions: bool = True,
     ) -> sqlite3.Connection:
         """
@@ -275,7 +276,7 @@ class Engine:
         db_path: Path,
         *,
         mode: str = "PASSIVE",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run a WAL checkpoint.
 
@@ -300,10 +301,10 @@ class Engine:
         db_path: Path,
         target_version: int,
         create_schema: Callable[[sqlite3.Connection], None],
-        migrate: Optional[Callable[[sqlite3.Connection, int, int], None]] = None,
+        migrate: Callable[[sqlite3.Connection, int, int], None] | None = None,
         *,
         dry_run: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Schema versioning and forward-only migration runner.
 
@@ -337,7 +338,7 @@ class Engine:
             row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             current = row[0] if row else 0
 
-            result: Dict[str, Any] = {
+            result: dict[str, Any] = {
                 "from_version": current,
                 "to_version": target_version,
             }
@@ -387,7 +388,7 @@ class Engine:
 
     # ── Maintenance ───────────────────────────────────────────
 
-    def maintenance(self, db_path: Path) -> Dict[str, Any]:
+    def maintenance(self, db_path: Path) -> dict[str, Any]:
         """
         Run periodic maintenance on a single database.
 
@@ -398,7 +399,7 @@ class Engine:
         - Conditional incremental_vacuum (if auto_vacuum = INCREMENTAL)
         """
         conn = self.connect(db_path)
-        results: Dict[str, Any] = {"db": db_path.name}
+        results: dict[str, Any] = {"db": db_path.name}
         start = time.perf_counter()
 
         conn.execute("PRAGMA optimize")
@@ -456,7 +457,7 @@ class Engine:
 
     # ── Lifecycle ─────────────────────────────────────────────
 
-    def close(self, db_path: Optional[Path] = None) -> None:
+    def close(self, db_path: Path | None = None) -> None:
         """
         Close connection(s).
 
@@ -507,7 +508,7 @@ class Engine:
 
 # ── Module-level singleton ────────────────────────────────────
 
-_engine: Optional[Engine] = None
+_engine: Engine | None = None
 
 
 def get_engine(**kwargs) -> Engine:

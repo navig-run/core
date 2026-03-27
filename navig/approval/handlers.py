@@ -1,7 +1,7 @@
 """Channel-specific approval handlers."""
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -181,7 +181,7 @@ class GatewayApprovalHandler:
         session_key: str,
         channel: str,
         user_id: str,
-        description: Optional[str],
+        description: str | None,
     ) -> str:
         """Create an async approval request that doesn't block."""
         import uuid
@@ -230,7 +230,7 @@ class GatewayApprovalHandler:
         else:
             return {"error": "Request not found or expired"}
 
-    def handle_list_pending(self, channel: Optional[str] = None) -> dict:
+    def handle_list_pending(self, channel: str | None = None) -> dict:
         """List pending approval requests."""
         pending = self.manager.get_pending(channel=channel)
         return {"pending": pending, "count": len(pending)}

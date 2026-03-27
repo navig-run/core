@@ -8,7 +8,6 @@ navig.ui.formatters — KV diagnostic pairs and command row alignment.
 from __future__ import annotations
 
 import sys
-from typing import List, Optional, Tuple
 
 from navig.ui.theme import console
 
@@ -17,9 +16,9 @@ _CMD_WIDTH = 28
 
 
 def render_kv_diagnostics(
-    pairs: List[Tuple[str, str]],
+    pairs: list[tuple[str, str]],
     *,
-    title: Optional[str] = None,
+    title: str | None = None,
     label_width: int = _LABEL_WIDTH,
 ) -> None:
     """Render aligned key → value diagnostic pairs. Never raises."""
@@ -45,7 +44,7 @@ def render_command_row(
     label: str,
     command: str,
     *,
-    description: Optional[str] = None,
+    description: str | None = None,
     label_width: int = _LABEL_WIDTH,
 ) -> None:
     """Print one padded label + bold cyan command line. Never raises."""

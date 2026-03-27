@@ -6,13 +6,13 @@ This is intentionally minimal and leans on existing init + local discovery.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
 
 
-def quickstart(options: Dict[str, Any]) -> None:
+def quickstart(options: dict[str, Any]) -> None:
     """Run a minimal onboarding flow.
 
     Steps:

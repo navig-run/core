@@ -13,7 +13,7 @@ import os
 import socket
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import typer
 
@@ -40,7 +40,7 @@ def _check(
     ok: bool,
     detail: str = "",
     warn: bool = False,
-) -> Tuple[str, bool, str]:
+) -> tuple[str, bool, str]:
     """Return a formatted result tuple."""
     if ok:
         icon = _OK
@@ -60,7 +60,7 @@ def _gateway_reachable(host: str, port: int, timeout: float = 2.0) -> bool:
         return False
 
 
-def _count_yaml_files(directory: Path) -> Tuple[int, int]:
+def _count_yaml_files(directory: Path) -> tuple[int, int]:
     """Return (total, error_count) for YAML files in directory."""
     total = 0
     errors = 0
@@ -86,7 +86,7 @@ def _count_yaml_files(directory: Path) -> Tuple[int, int]:
     return total, errors
 
 
-def _find_browser_agent() -> Optional[Path]:
+def _find_browser_agent() -> Path | None:
     """Look for the navig-browser-agent binary."""
     candidates = [
         Path(sys.prefix) / "bin" / "navig-browser-agent",
@@ -110,7 +110,7 @@ def _find_browser_agent() -> Optional[Path]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def check_config() -> List[Tuple[str, bool, str]]:
+def check_config() -> list[tuple[str, bool, str]]:
     """Check global config.yaml."""
     results = []
     config_path = Path.home() / ".navig" / "config.yaml"
@@ -136,7 +136,7 @@ def check_config() -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_cache_dir() -> List[Tuple[str, bool, str]]:
+def check_cache_dir() -> list[tuple[str, bool, str]]:
     """Check cache directory is writable."""
     results = []
     cache_dir = Path.home() / ".navig" / "cache"
@@ -158,7 +158,7 @@ def check_cache_dir() -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_storage() -> List[Tuple[str, bool, str]]:
+def check_storage() -> list[tuple[str, bool, str]]:
     """Check if the system has enough free disk space for NAVIG databases and operations."""
     import shutil
 
@@ -197,7 +197,7 @@ def check_storage() -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_sockets(target_port: int = 8789) -> List[Tuple[str, bool, str]]:
+def check_sockets(target_port: int = 8789) -> list[tuple[str, bool, str]]:
     """Check if critical ports are available or correctly bound."""
     results = []
 
@@ -234,7 +234,7 @@ def check_sockets(target_port: int = 8789) -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_formations() -> List[Tuple[str, bool, str]]:
+def check_formations() -> list[tuple[str, bool, str]]:
     """Check formations dir: count + parse errors."""
     results = []
     formations_dir = Path.home() / ".navig" / "formations"
@@ -257,7 +257,7 @@ def check_formations() -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_skills() -> List[Tuple[str, bool, str]]:
+def check_skills() -> list[tuple[str, bool, str]]:
     """Check skills: count + parse errors."""
     results = []
 
@@ -287,7 +287,7 @@ def check_skills() -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_gateway(port: int = 8789) -> List[Tuple[str, bool, str]]:
+def check_gateway(port: int = 8789) -> list[tuple[str, bool, str]]:
     """Check if gateway is running on the configured port."""
     results = []
 
@@ -321,12 +321,12 @@ def check_gateway(port: int = 8789) -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_env_keys() -> List[Tuple[str, bool, str]]:
+def check_env_keys() -> list[tuple[str, bool, str]]:
     """Check important environment variables / config values."""
     results = []
 
     # Try to read from actual config for more accurate reporting
-    cfg: Dict[str, Any] = {}
+    cfg: dict[str, Any] = {}
     try:
         import yaml
 
@@ -367,7 +367,7 @@ def check_env_keys() -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_browser_agent() -> List[Tuple[str, bool, str]]:
+def check_browser_agent() -> list[tuple[str, bool, str]]:
     """Check for navig-browser-agent binary."""
     results = []
     found = _find_browser_agent()
@@ -385,7 +385,7 @@ def check_browser_agent() -> List[Tuple[str, bool, str]]:
     return results
 
 
-def check_python_deps() -> List[Tuple[str, bool, str]]:
+def check_python_deps() -> list[tuple[str, bool, str]]:
     """Quick check for key optional dependencies."""
     results = []
 
@@ -438,7 +438,7 @@ def doctor(
         _has_rich = False
         console = None  # type: ignore[assignment]
 
-    sections: List[Tuple[str, List[Tuple[str, bool, str]]]] = [
+    sections: list[tuple[str, list[tuple[str, bool, str]]]] = [
         ("Config", check_config()),
         ("Storage", check_storage()),
         ("Filesystem", check_cache_dir()),
@@ -454,7 +454,7 @@ def doctor(
         sections.append(("Python Deps", check_python_deps()))
 
     all_ok = True
-    printed_lines: List[str] = []
+    printed_lines: list[str] = []
 
     for section_name, results in sections:
         section_has_issues = any(not r[1] for r in results)

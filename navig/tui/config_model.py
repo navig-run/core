@@ -15,7 +15,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.workspace_ownership import USER_WORKSPACE_DIR
 
@@ -50,7 +50,7 @@ class NavigConfig:
     local_runtime_host: str = "http://localhost:11434"
 
     # Step 4 — Packs
-    capability_packs: List[str] = field(default_factory=list)
+    capability_packs: list[str] = field(default_factory=list)
 
     # Step 5 — Shell & hooks
     shell_integration: bool = True
@@ -59,7 +59,7 @@ class NavigConfig:
     telemetry: bool = False
 
 
-def build_config_dict(cfg: NavigConfig) -> Dict[str, Any]:
+def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
     """Convert NavigConfig → JSON-serialisable dict matching navig.json schema."""
     return {
         "meta": {
@@ -91,7 +91,7 @@ def build_config_dict(cfg: NavigConfig) -> Dict[str, Any]:
     }
 
 
-def load_navig_json() -> Optional[Dict[str, Any]]:
+def load_navig_json() -> dict[str, Any] | None:
     """Load ~/.navig/navig.json if it exists, else None."""
     try:
         if DEFAULT_CONFIG_FILE.is_file():
@@ -106,7 +106,7 @@ def load_navig_json() -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def detect_environment() -> Dict[str, str]:
+def detect_environment() -> dict[str, str]:
     """Return a snapshot of the local operator environment."""
     shell = os.environ.get("SHELL") or os.environ.get("COMSPEC") or "unknown"
     return {

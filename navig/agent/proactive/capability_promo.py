@@ -14,7 +14,6 @@ surfaces the right feature at the right time.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
 
 from navig.agent.proactive.user_state import UserStateTracker
 
@@ -28,7 +27,7 @@ class FeatureInfo:
     description: str  # What it does (1-2 sentences)
     example_command: str  # Example usage
     category: str  # Feature category
-    prerequisites: List[str] = field(default_factory=list)  # Required context
+    prerequisites: list[str] = field(default_factory=list)  # Required context
     when_to_suggest: str = ""  # Natural language trigger hint
     min_interactions: int = 5  # Min interactions before promoting this
     priority: int = 5  # Base priority (1-10)
@@ -39,7 +38,7 @@ class FeatureInfo:
 # to find features the operator hasn't tried and picks contextually
 # relevant ones to suggest.
 
-FEATURE_REGISTRY: List[FeatureInfo] = [
+FEATURE_REGISTRY: list[FeatureInfo] = [
     # Host Management
     FeatureInfo(
         key="host_monitor",
@@ -189,14 +188,12 @@ class CapabilityPromoter:
     4. Pick top candidate
     """
 
-    def __init__(self, features: Optional[List[FeatureInfo]] = None):
+    def __init__(self, features: list[FeatureInfo] | None = None):
         self.features = features or FEATURE_REGISTRY
-        self._promotion_history: List[str] = []  # Track recent promotions
+        self._promotion_history: list[str] = []  # Track recent promotions
         self._max_history = 20
 
-    def get_promotion(
-        self, state: UserStateTracker
-    ) -> Tuple[Optional[str], Optional[str]]:
+    def get_promotion(self, state: UserStateTracker) -> tuple[str | None, str | None]:
         """
         Get a feature promotion message and feature key.
 
@@ -225,12 +222,12 @@ class CapabilityPromoter:
 
     def _score_candidates(
         self, state: UserStateTracker
-    ) -> List[Tuple[FeatureInfo, float]]:
+    ) -> list[tuple[FeatureInfo, float]]:
         """Score all features and return sorted candidates."""
         used_features = set(state.stats.features_used.keys())
         total_interactions = state.stats.total_messages
 
-        scored: List[Tuple[FeatureInfo, float]] = []
+        scored: list[tuple[FeatureInfo, float]] = []
 
         for feature in self.features:
             # Skip if not enough interactions
@@ -279,6 +276,6 @@ class CapabilityPromoter:
             f"Try: `{feature.example_command}`"
         )
 
-    def get_all_feature_keys(self) -> List[str]:
+    def get_all_feature_keys(self) -> list[str]:
         """Get all registered feature keys (for underused feature detection)."""
         return [f.key for f in self.features]

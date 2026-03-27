@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.skills_renderer")
 
@@ -49,7 +49,7 @@ if PYDANTIC_OK:
         id: str = ""
         name: str = ""
         summary: str = ""
-        commands: List[SkillCommand] = Field(default_factory=list)
+        commands: list[SkillCommand] = Field(default_factory=list)
 
 else:
     SkillManifest = None
@@ -77,7 +77,7 @@ Commands:
 # ─────────────────────────────────────────────────────────────
 
 
-def _get_skills_dirs() -> List[Path]:
+def _get_skills_dirs() -> list[Path]:
     """Get all directories where skills may live.
 
     Delegates to ``navig.skills.loader.get_skill_dirs()`` so renderer and
@@ -106,7 +106,7 @@ def _get_skills_dirs() -> List[Path]:
     return dirs
 
 
-def _find_skill_json(skill_id: str) -> Optional[Path]:
+def _find_skill_json(skill_id: str) -> Path | None:
     """Find a skill's JSON manifest."""
     for d in _get_skills_dirs():
         # Direct: skills/<skill_id>.json
@@ -126,7 +126,7 @@ def _find_skill_json(skill_id: str) -> Optional[Path]:
     return None
 
 
-def _find_skill_md(skill_id: str) -> Optional[Path]:
+def _find_skill_md(skill_id: str) -> Path | None:
     """Find a skill's markdown file."""
     for d in _get_skills_dirs():
         # Direct: skills/<skill_id>.md
@@ -154,13 +154,13 @@ def _find_skill_md(skill_id: str) -> Optional[Path]:
 # ─────────────────────────────────────────────────────────────
 
 
-def _load_skill_json(skill_id: str) -> Optional[Dict[str, Any]]:
+def _load_skill_json(skill_id: str) -> dict[str, Any] | None:
     """Load a skill JSON manifest and return as dict."""
     path = _find_skill_json(skill_id)
     if path is None:
         return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         if PYDANTIC_OK:
             manifest = SkillManifest.model_validate(data)
@@ -171,13 +171,13 @@ def _load_skill_json(skill_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _load_skill_md(skill_id: str, max_lines: int = 50) -> Optional[str]:
+def _load_skill_md(skill_id: str, max_lines: int = 50) -> str | None:
     """Load first N lines of a skill's markdown file."""
     path = _find_skill_md(skill_id)
     if path is None:
         return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             lines = []
             for i, line in enumerate(f):
                 if i >= max_lines:
@@ -210,9 +210,9 @@ def _get_context_skills_mode() -> str:
 
 
 def render_skills_prompt(
-    skill_ids: List[str],
-    mode: Optional[str] = None,
-    template_str: Optional[str] = None,
+    skill_ids: list[str],
+    mode: str | None = None,
+    template_str: str | None = None,
 ) -> str:
     """
     Render a skills prompt for injection into the LLM system prompt.
@@ -296,7 +296,7 @@ def render_skills_prompt(
     return "\n\n".join(parts)
 
 
-def _load_template() -> Optional[str]:
+def _load_template() -> str | None:
     """Try to load the skills template from store/templates/skills_prompt.txt.
 
     Walks up from each skill root (e.g. store/skills/ → store/) and checks
@@ -316,7 +316,7 @@ def _load_template() -> Optional[str]:
     return None
 
 
-def _manual_render(skills: List[Dict[str, Any]]) -> str:
+def _manual_render(skills: list[dict[str, Any]]) -> str:
     """Render skills prompt without Jinja2."""
     lines = ["You have access to the following tools/skills:", ""]
     for s in skills:

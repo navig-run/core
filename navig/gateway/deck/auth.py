@@ -9,7 +9,7 @@ import hmac
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qs, unquote
 
 try:
@@ -19,7 +19,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-_deck_config: Dict[str, Any] = {
+_deck_config: dict[str, Any] = {
     "bot_token": "",
     "allowed_users": set(),
     "require_auth": True,
@@ -30,7 +30,7 @@ _deck_config: Dict[str, Any] = {
 
 def configure_deck_auth(
     bot_token: str,
-    allowed_users: List[int],
+    allowed_users: list[int],
     require_auth: bool = True,
     dev_mode: bool = False,
     auth_max_age: int = 3600,
@@ -51,7 +51,7 @@ def configure_deck_auth(
 
 def validate_init_data(
     init_data: str, bot_token: str, max_age: int = 3600
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     if not init_data or not bot_token:
         return None
 
@@ -96,7 +96,7 @@ def validate_init_data(
         return None
 
 
-def _get_user_id(request: "web.Request", bot_token: str = "") -> Optional[int]:
+def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
     token = bot_token or _deck_config["bot_token"]
     max_age = _deck_config["auth_max_age"]
 

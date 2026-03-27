@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import DebugLogger
 
@@ -54,11 +54,11 @@ class RemediationAction:
     status: RemediationStatus = RemediationStatus.PENDING
     attempts: int = 0
     max_attempts: int = 5
-    backoff_seconds: List[int] = field(default_factory=lambda: [1, 2, 4, 8, 16, 60])
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    backoff_seconds: list[int] = field(default_factory=lambda: [1, 2, 4, 8, 16, 60])
+    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "type": self.type.value,
@@ -73,7 +73,7 @@ class RemediationAction:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RemediationAction":
+    def from_dict(cls, data: dict[str, Any]) -> RemediationAction:
         """Create a RemediationAction from serialized data."""
         return cls(
             id=data["id"],
@@ -101,8 +101,8 @@ class RemediationEngine:
 
     def __init__(
         self,
-        config_dir: Optional[Path] = None,
-        log_dir: Optional[Path] = None,
+        config_dir: Path | None = None,
+        log_dir: Path | None = None,
     ):
         self.config_dir = config_dir or Path.home() / ".navig" / "workspace"
         self.log_dir = log_dir or Path.home() / ".navig" / "logs"
@@ -116,10 +116,10 @@ class RemediationEngine:
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger = DebugLogger()
-        self._actions: Dict[str, RemediationAction] = {}
+        self._actions: dict[str, RemediationAction] = {}
         self._load_actions()
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._heart = None  # Will be set by Heart after initialization
 
     async def start(self) -> None:
@@ -141,7 +141,7 @@ class RemediationEngine:
         self._log("Remediation engine stopped")
 
     def schedule_restart_sync(
-        self, component: str, reason: str, metadata: Optional[Dict[str, Any]] = None
+        self, component: str, reason: str, metadata: dict[str, Any] | None = None
     ) -> str:
         """Schedule a component restart (synchronous API)."""
         action_id = f"{component}_{datetime.now().timestamp()}"
@@ -158,7 +158,7 @@ class RemediationEngine:
         return action_id
 
     async def schedule_restart(
-        self, component: str, reason: str, metadata: Optional[Dict[str, Any]] = None
+        self, component: str, reason: str, metadata: dict[str, Any] | None = None
     ) -> str:
         """Schedule a component restart (async API)."""
         return self.schedule_restart_sync(
@@ -170,7 +170,7 @@ class RemediationEngine:
         component: str,
         service: str,
         reason: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Schedule connection retry (synchronous API)."""
         action_id = f"{component}_conn_{datetime.now().timestamp()}"
@@ -191,7 +191,7 @@ class RemediationEngine:
         component: str,
         service: str,
         reason: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Schedule connection retry (async API)."""
         return self.schedule_connection_retry_sync(
@@ -405,12 +405,12 @@ class RemediationEngine:
         self._log(f"Connection retry requested for {action.component}/{service}")
         return True
 
-    def get_action_status(self, action_id: str) -> Optional[Dict[str, Any]]:
+    def get_action_status(self, action_id: str) -> dict[str, Any] | None:
         """Get status of a remediation action."""
         action = self._actions.get(action_id)
         return action.to_dict() if action else None
 
-    def get_all_actions(self) -> List[Dict[str, Any]]:
+    def get_all_actions(self) -> list[dict[str, Any]]:
         """Get all remediation actions."""
         return [action.to_dict() for action in self._actions.values()]
 

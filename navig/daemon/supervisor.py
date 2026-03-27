@@ -28,7 +28,7 @@ import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -83,10 +83,10 @@ class ChildProcess:
     def __init__(
         self,
         name: str,
-        command: List[str],
+        command: list[str],
         *,
-        env_extra: Optional[Dict[str, str]] = None,
-        cwd: Optional[Path] = None,
+        env_extra: dict[str, str] | None = None,
+        cwd: Path | None = None,
         enabled: bool = True,
         critical: bool = False,
     ):
@@ -99,10 +99,10 @@ class ChildProcess:
             critical  # supervisor exits if a critical child fails permanently
         )
 
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
         self.restart_count = 0
-        self.last_start: Optional[float] = None
-        self.last_exit_code: Optional[int] = None
+        self.last_start: float | None = None
+        self.last_exit_code: int | None = None
         self._backoff = INITIAL_RESTART_DELAY
         self._stopped = False  # True when intentionally stopped
 
@@ -121,7 +121,7 @@ class ChildProcess:
             child_log = LOG_DIR / f"{self.name}.log"
             self._log_fh = open(child_log, "a", encoding="utf-8", errors="replace")
 
-            kwargs: Dict[str, Any] = dict(
+            kwargs: dict[str, Any] = dict(
                 env=env,
                 cwd=str(self.cwd) if self.cwd else None,
                 stdout=self._log_fh,
@@ -180,7 +180,7 @@ class ChildProcess:
     def is_alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
-    def poll(self) -> Optional[int]:
+    def poll(self) -> int | None:
         """Check if child exited. Returns exit code or None."""
         if self.process is None:
             return None
@@ -215,7 +215,7 @@ class ChildProcess:
     def reset_backoff(self) -> None:
         self._backoff = INITIAL_RESTART_DELAY
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "enabled": self.enabled,
@@ -247,7 +247,7 @@ class NavigDaemon:
         self.child_logger = _make_logger(
             "navig.daemon.children", LOG_DIR / "children.log"
         )
-        self.children: List[ChildProcess] = []
+        self.children: list[ChildProcess] = []
         self._running = False
         self._health_port = health_port
         self._health_server: Any = None
@@ -260,9 +260,9 @@ class NavigDaemon:
     def add_telegram_bot(
         self,
         *,
-        bot_script: Optional[Path] = None,
-        python_exe: Optional[str] = None,
-        env_extra: Optional[Dict[str, str]] = None,
+        bot_script: Path | None = None,
+        python_exe: str | None = None,
+        env_extra: dict[str, str] | None = None,
     ) -> None:
         """Register the Telegram bot as a supervised child."""
         python = python_exe or sys.executable
@@ -298,7 +298,7 @@ class NavigDaemon:
     def add_gateway(
         self,
         *,
-        python_exe: Optional[str] = None,
+        python_exe: str | None = None,
         port: int = 8789,
     ) -> None:
         """Register the gateway server as a supervised child."""
@@ -320,7 +320,7 @@ class NavigDaemon:
         )
         self.logger.info("Registered gateway (port %d)", port)
 
-    def add_scheduler(self, *, python_exe: Optional[str] = None) -> None:
+    def add_scheduler(self, *, python_exe: str | None = None) -> None:
         """Register the cron scheduler."""
         python = python_exe or sys.executable
         self.add_child(
@@ -341,7 +341,7 @@ class NavigDaemon:
             PID_FILE.unlink(missing_ok=True)
 
     @staticmethod
-    def read_pid() -> Optional[int]:
+    def read_pid() -> int | None:
         if PID_FILE.exists():
             try:
                 return int(PID_FILE.read_text().strip())
@@ -413,7 +413,7 @@ class NavigDaemon:
             pass  # best-effort; failure is non-critical
 
     @staticmethod
-    def read_state() -> Optional[Dict[str, Any]]:
+    def read_state() -> dict[str, Any] | None:
         if STATE_FILE.exists():
             try:
                 return json.loads(STATE_FILE.read_text())

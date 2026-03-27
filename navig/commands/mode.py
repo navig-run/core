@@ -9,8 +9,6 @@ CLI commands for 'navig mode' — LLM mode management.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 mode_app = typer.Typer(
@@ -118,15 +116,15 @@ def mode_set(
     mode: str = typer.Argument(
         ..., help="Mode name or alias (e.g. coding, chat, research)"
     ),
-    provider: Optional[str] = typer.Option(
+    provider: str | None = typer.Option(
         None, "--provider", "-p", help="Provider (ollama, openai, groq, etc.)"
     ),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model name/ID"),
-    temperature: Optional[float] = typer.Option(
+    model: str | None = typer.Option(None, "--model", "-m", help="Model name/ID"),
+    temperature: float | None = typer.Option(
         None, "--temperature", "--temp", "-t", help="Temperature (0.0–2.0)"
     ),
-    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", help="Max tokens"),
-    uncensored: Optional[bool] = typer.Option(
+    max_tokens: int | None = typer.Option(None, "--max-tokens", help="Max tokens"),
+    uncensored: bool | None = typer.Option(
         None, "--uncensored/--no-uncensored", help="Enable/disable uncensored routing"
     ),
 ):

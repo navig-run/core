@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 
 def register(server: Any) -> None:
@@ -74,7 +74,7 @@ def register(server: Any) -> None:
     )
 
 
-def _tool_list_hosts(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _tool_list_hosts(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     """List all configured hosts."""
     hosts = server._config.get_hosts()
     filter_pattern = args.get("filter", "").lower()
@@ -99,7 +99,7 @@ def _tool_list_hosts(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     return result
 
 
-def _tool_list_apps(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _tool_list_apps(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     """List all configured apps."""
     host_filter = args.get("host")
     apps = server._config.get_apps()
@@ -140,7 +140,7 @@ def _tool_list_apps(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     return result
 
 
-def _tool_host_info(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_host_info(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Get detailed host information."""
     name = args.get("name")
     hosts = server._config.get_hosts()
@@ -151,7 +151,7 @@ def _tool_host_info(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     return {"name": name, **hosts[name]}
 
 
-def _tool_app_info(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_app_info(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Get detailed app information."""
     name = args.get("name")
     apps = server._config.get_apps()

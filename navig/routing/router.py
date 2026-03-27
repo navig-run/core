@@ -22,7 +22,7 @@ import logging
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.routing.capabilities import (
     MODE_CAPABILITIES,
@@ -72,14 +72,14 @@ class RouteRequest:
 
     def __init__(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         text: str = "",
         temperature: float = 0.7,
         max_tokens: int = 4096,
         tier_override: str = "",
         model_override: str = "",
         entrypoint: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         self.messages = messages
         self.text = text or _extract_user_text(messages)
@@ -110,13 +110,13 @@ class RouteDecision:
         self,
         mode: str = "big_tasks",
         confidence: float = 0.5,
-        reasons: Optional[List[str]] = None,
+        reasons: list[str] | None = None,
         provider: str = "",
         model: str = "",
         purpose: str = "",
         max_tokens: int = 4096,
         temperature: float = 0.7,
-        capabilities: Optional[ModeProfile] = None,
+        capabilities: ModeProfile | None = None,
     ):
         self.mode = mode
         self.confidence = confidence
@@ -139,8 +139,8 @@ class ProviderInfo:
         self,
         name: str,
         available: bool = False,
-        models: Optional[List[str]] = None,
-        capabilities: Optional[Dict[str, List[str]]] = None,
+        models: list[str] | None = None,
+        capabilities: dict[str, list[str]] | None = None,
         error: str = "",
     ):
         self.name = name
@@ -149,7 +149,7 @@ class ProviderInfo:
         self.capabilities = capabilities or {}
         self.error = error
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "available": self.available,
@@ -164,7 +164,7 @@ class ProviderStatus:
 
     def __init__(
         self,
-        providers: Optional[List[ProviderInfo]] = None,
+        providers: list[ProviderInfo] | None = None,
         active_provider: str = "",
         router_mode: str = "unified",
     ):
@@ -173,7 +173,7 @@ class ProviderStatus:
         self.router_mode = router_mode
         self.timestamp = time.time()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "active_provider": self.active_provider,
             "router_mode": self.router_mode,
@@ -194,10 +194,10 @@ class UnifiedRouter:
         response_text = await router.run(request)
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self._config = config or {}
-        self._providers: Dict[str, Any] = {}  # name → LLMProvider instance
-        self._provider_available: Dict[str, bool] = {}
+        self._providers: dict[str, Any] = {}  # name → LLMProvider instance
+        self._provider_available: dict[str, bool] = {}
         self._last_health_check: float = 0.0
         self._health_cache_ttl = 30.0  # seconds
         self._active_provider: str = ""
@@ -260,7 +260,7 @@ class UnifiedRouter:
             capabilities=caps,
         )
 
-    async def run(self, request: RouteRequest) -> Tuple[str, RouteTrace]:
+    async def run(self, request: RouteRequest) -> tuple[str, RouteTrace]:
         """
         Route + execute + audit + retry.
 
@@ -367,7 +367,7 @@ class UnifiedRouter:
 
     async def status(self) -> ProviderStatus:
         """Check all provider availability and return status snapshot."""
-        providers: List[ProviderInfo] = []
+        providers: list[ProviderInfo] = []
 
         for name in self._get_provider_chain():
             provider = self._get_provider_instance(name)
@@ -392,7 +392,7 @@ class UnifiedRouter:
 
     # ── Provider Management ─────────────────────────────────────────
 
-    def _get_provider_chain(self) -> List[str]:
+    def _get_provider_chain(self) -> list[str]:
         """Ordered provider chain. VS Code first, then cloud, then local."""
         chain = self._config.get(
             "provider_chain",
@@ -493,7 +493,7 @@ class UnifiedRouter:
 
         # VS Code providers: pass purpose, let VS Code pick model
         if provider_name == "mcp_bridge":
-            kwargs: Dict[str, Any] = {"purpose": decision.purpose}
+            kwargs: dict[str, Any] = {"purpose": decision.purpose}
             resp = await provider.chat(
                 model=decision.model or "",
                 messages=request.messages,
@@ -565,9 +565,9 @@ class UnifiedRouter:
         request: RouteRequest,
         decision: RouteDecision,
         trace: RouteTrace,
-        provider_chain: List[str],
+        provider_chain: list[str],
         t0: float,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Try the next available stronger provider (max 1 escalation).
         """
@@ -618,10 +618,10 @@ class UnifiedRouter:
 
 # ── Singleton ───────────────────────────────────────────────────────
 
-_router: Optional[UnifiedRouter] = None
+_router: UnifiedRouter | None = None
 
 
-def get_router(config: Optional[Dict[str, Any]] = None) -> UnifiedRouter:
+def get_router(config: dict[str, Any] | None = None) -> UnifiedRouter:
     """Get or create the singleton unified router."""
     global _router
     if _router is None:
@@ -650,7 +650,7 @@ def reset_router() -> None:
     _router = None
 
 
-def _extract_user_text(messages: List[Dict[str, str]]) -> str:
+def _extract_user_text(messages: list[dict[str, str]]) -> str:
     """Extract the last user message text."""
     for msg in reversed(messages):
         if msg.get("role") == "user":

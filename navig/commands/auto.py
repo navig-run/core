@@ -3,7 +3,6 @@ Cross-platform automation CLI commands
 """
 
 import sys
-from typing import Optional
 
 import typer
 
@@ -178,7 +177,7 @@ def auto_snap(
 
 @auto_app.command("clipboard")
 def auto_clipboard(
-    text: Optional[str] = typer.Argument(
+    text: str | None = typer.Argument(
         None, help="Text to copy (if omitted, prints clipboard)"
     ),
 ):

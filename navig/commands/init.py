@@ -142,7 +142,10 @@ def init_app(options: Dict[str, Any]) -> None:
         else:
             # Unix-like systems - set rwx for user
             try:
-                os.chmod(
+                try:
+                    os.chmod(
+                except (OSError, PermissionError):
+                    pass
                     navig_dir,
                     stat.S_IRWXU
                     | stat.S_IRGRP

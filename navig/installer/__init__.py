@@ -44,9 +44,9 @@ def run_install(
     profile: str = DEFAULT_PROFILE,
     dry_run: bool = False,
     quiet: bool = False,
-    config_dir: Optional[Path] = None,
-    extra: Optional[dict] = None,
-) -> List[Result]:
+    config_dir: Path | None = None,
+    extra: dict | None = None,
+) -> list[Result]:
     """Run the installer for *profile* and return Results.
 
     Parameters
@@ -123,7 +123,7 @@ def _print_plan(actions, profile: str, dry_run: bool) -> None:
         pass
 
 
-def _print_results(results: List[Result], dry_run: bool) -> None:
+def _print_results(results: list[Result], dry_run: bool) -> None:
     try:
         from navig import console_helper as ch
 

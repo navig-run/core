@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from textual.reactive import reactive
 from textual.widgets import Static
 
@@ -15,7 +13,7 @@ class StepIndicator(Static):
     total_steps: reactive[int] = reactive(5)
 
     def render(self) -> str:  # type: ignore[override]
-        dots: List[str] = []
+        dots: list[str] = []
         for i in range(self.total_steps):
             if i < self.current_step:
                 dots.append("[bold #10b981]●[/bold #10b981]")

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -193,9 +193,9 @@ def _resolve_token(config: dict[str, Any]) -> str:
 def submit_pr(
     branch: str,
     findings: list[ScanFinding],
-    config: Optional[dict[str, Any]] = None,
+    config: dict[str, Any] | None = None,
     alias: str = "",
-    version: Optional[str] = None,
+    version: str | None = None,
 ) -> str:
     """Open a Pull Request on ``navig-run/core`` for the self-heal branch.
 

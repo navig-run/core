@@ -28,9 +28,10 @@ from __future__ import annotations
 import inspect
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +51,12 @@ class ExecutionEvent:
 
     tool_name: str
     phase: HookPhase
-    args: Dict[str, Any] = field(default_factory=dict)
+    args: dict[str, Any] = field(default_factory=dict)
 
     # Populated after the run completes (AFTER / ERROR phases)
-    success: Optional[bool] = None
+    success: bool | None = None
     output: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     elapsed_ms: float = 0.0
 
     # STATUS phase fields
@@ -64,23 +65,23 @@ class ExecutionEvent:
     status_progress: int = 0
 
     # Arbitrary metadata that callers may attach
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def before(cls, tool_name: str, args: Dict[str, Any]) -> "ExecutionEvent":
+    def before(cls, tool_name: str, args: dict[str, Any]) -> ExecutionEvent:
         return cls(tool_name=tool_name, phase=HookPhase.BEFORE, args=args)
 
     @classmethod
     def after(
         cls,
         tool_name: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         *,
         success: bool,
         output: Any,
-        error: Optional[str],
+        error: str | None,
         elapsed_ms: float,
-    ) -> "ExecutionEvent":
+    ) -> ExecutionEvent:
         return cls(
             tool_name=tool_name,
             phase=HookPhase.AFTER,
@@ -98,7 +99,7 @@ class ExecutionEvent:
         step: str,
         detail: str = "",
         progress: int = 0,
-    ) -> "ExecutionEvent":
+    ) -> ExecutionEvent:
         return cls(
             tool_name=tool_name,
             phase=HookPhase.STATUS,
@@ -125,7 +126,7 @@ class ExecutionHooks:
     """
 
     def __init__(self) -> None:
-        self._handlers: Dict[HookPhase, List[HookHandler]] = {
+        self._handlers: dict[HookPhase, list[HookHandler]] = {
             phase: [] for phase in HookPhase
         }
 
@@ -154,7 +155,7 @@ class ExecutionHooks:
         """Imperative alternative to the ``@hooks.on(phase)`` decorator."""
         self._handlers[phase].append(fn)
 
-    def clear(self, phase: Optional[HookPhase] = None) -> None:
+    def clear(self, phase: HookPhase | None = None) -> None:
         """Remove all handlers for *phase*, or all handlers if phase is None."""
         if phase is None:
             for p in HookPhase:
@@ -205,7 +206,7 @@ class ExecutionHooks:
     async def instrument(
         self,
         tool_name: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         coro: Awaitable[Any],
     ) -> Any:
         """Wrap an awaitable, firing BEFORE and AFTER hooks automatically.

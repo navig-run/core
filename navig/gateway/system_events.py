@@ -11,11 +11,12 @@ Handles:
 import asyncio
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -40,11 +41,11 @@ class SystemEvent:
 
     id: str
     event_type: str
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
     priority: EventPriority
     timestamp: datetime
     processed: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -93,20 +94,20 @@ class SystemEventQueue:
         self._queue: asyncio.Queue = asyncio.Queue()
 
         # Pending events (not yet processed)
-        self._pending: Dict[str, SystemEvent] = {}
+        self._pending: dict[str, SystemEvent] = {}
 
         # Event history
-        self._history: List[SystemEvent] = []
+        self._history: list[SystemEvent] = []
 
         # Subscribers by event type
-        self._subscribers: Dict[str, List[EventHandler]] = {}
+        self._subscribers: dict[str, list[EventHandler]] = {}
 
         # Wildcard subscribers (receive all events)
-        self._wildcard_subscribers: List[EventHandler] = []
+        self._wildcard_subscribers: list[EventHandler] = []
 
         # Running state
         self._running = False
-        self._processor_task: Optional[asyncio.Task] = None
+        self._processor_task: asyncio.Task | None = None
 
         # Event counter for ID generation
         self._event_counter = 0
@@ -193,7 +194,7 @@ class SystemEventQueue:
     async def emit(
         self,
         event_type: str,
-        payload: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
         priority: EventPriority = EventPriority.NORMAL,
     ) -> str:
         """
@@ -312,13 +313,13 @@ class SystemEventQueue:
 
         self._save_events()
 
-    def get_pending(self) -> List[SystemEvent]:
+    def get_pending(self) -> list[SystemEvent]:
         """Get all pending events."""
         return list(self._pending.values())
 
     def get_history(
-        self, event_type: Optional[str] = None, limit: int = 50
-    ) -> List[SystemEvent]:
+        self, event_type: str | None = None, limit: int = 50
+    ) -> list[SystemEvent]:
         """Get event history."""
         events = self._history
 
@@ -412,7 +413,7 @@ class SmartNotificationFilter:
         )
 
         # Track recent notifications for dedup
-        self._recent: Dict[str, datetime] = {}
+        self._recent: dict[str, datetime] = {}
 
         # Subscribe to notification events
         event_queue.subscribe(EventTypes.NOTIFICATION_SENT, self._on_notification)

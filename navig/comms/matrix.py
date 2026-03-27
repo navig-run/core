@@ -10,12 +10,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_bot: Optional["NavigMatrixBot"] = None
+_bot: NavigMatrixBot | None = None
 
 # E2EE capability detection
 HAS_OLM = False
@@ -27,7 +28,7 @@ except ImportError:
     pass  # optional dependency not installed; feature disabled
 
 
-def get_matrix_bot() -> Optional["NavigMatrixBot"]:
+def get_matrix_bot() -> NavigMatrixBot | None:
     """Return the singleton NavigMatrixBot or None."""
     return _bot
 
@@ -50,24 +51,24 @@ class MatrixConfig:
     store_path: str = ""
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "MatrixConfig":
+    def from_dict(cls, d: dict[str, Any]) -> MatrixConfig:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
 class NavigMatrixBot:
     """Thin wrapper around matrix-nio AsyncClient."""
 
-    def __init__(self, config: Dict[str, Any] | MatrixConfig):
+    def __init__(self, config: dict[str, Any] | MatrixConfig):
         if isinstance(config, dict):
             config = MatrixConfig.from_dict(config)
         self.cfg = config
         self._client = None
-        self._sync_task: Optional[asyncio.Task] = None
+        self._sync_task: asyncio.Task | None = None
         self._running = False
-        self._message_callbacks: List[Callable] = []
-        self._verification_callbacks: List[Callable] = []
+        self._message_callbacks: list[Callable] = []
+        self._verification_callbacks: list[Callable] = []
         self._e2ee_enabled = False
-        self._store: Optional["MatrixStore"] = None
+        self._store: MatrixStore | None = None
 
     async def start(self) -> None:
         """Login and begin background sync."""
@@ -206,11 +207,11 @@ class NavigMatrixBot:
         return self._running and self._client is not None
 
     @property
-    def store(self) -> Optional["MatrixStore"]:
+    def store(self) -> MatrixStore | None:
         """Expose the persistent store (or None if not initialised)."""
         return self._store
 
-    async def send_message(self, room_id: str, message: str) -> Optional[str]:
+    async def send_message(self, room_id: str, message: str) -> str | None:
         """Send a text message. Returns event_id or None."""
         if not self._client:
             logger.warning("Matrix client not initialised")
@@ -236,7 +237,7 @@ class NavigMatrixBot:
             logger.exception("Matrix send_message failed")
             return None
 
-    async def send_notice(self, room_id: str, message: str) -> Optional[str]:
+    async def send_notice(self, room_id: str, message: str) -> str | None:
         """Send a notice (non-highlighted). Returns event_id or None."""
         if not self._client:
             return None
@@ -261,8 +262,8 @@ class NavigMatrixBot:
         *,
         topic: str = "",
         is_public: bool = False,
-        invite_user_ids: Optional[List[str]] = None,
-    ) -> Optional[str]:
+        invite_user_ids: list[str] | None = None,
+    ) -> str | None:
         """Create a room. Returns room_id or None."""
         if not self._client:
             return None
@@ -322,9 +323,9 @@ class NavigMatrixBot:
         room_id: str,
         file_path: str,
         *,
-        body: Optional[str] = None,
-        mime_type: Optional[str] = None,
-    ) -> Optional[str]:
+        body: str | None = None,
+        mime_type: str | None = None,
+    ) -> str | None:
         """
         Upload a file to a Matrix room. Returns event_id or None.
 
@@ -437,7 +438,7 @@ class NavigMatrixBot:
 
     # ── Query helpers (used by CLI / channel adapter) ──
 
-    async def get_rooms(self) -> List[Dict[str, Any]]:
+    async def get_rooms(self) -> list[dict[str, Any]]:
         """List joined rooms with basic metadata."""
         if not self._client:
             return []
@@ -478,7 +479,7 @@ class NavigMatrixBot:
 
     async def get_room_messages(
         self, room_id: str, limit: int = 20
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch recent messages from a room via /messages endpoint."""
         if not self._client:
             return []
@@ -506,7 +507,7 @@ class NavigMatrixBot:
             logger.exception("get_room_messages failed")
         return messages
 
-    async def get_room_members(self, room_id: str) -> List[Dict[str, Any]]:
+    async def get_room_members(self, room_id: str) -> list[dict[str, Any]]:
         """List members of a room."""
         if not self._client:
             return []
@@ -622,7 +623,7 @@ class NavigMatrixBot:
             except Exception:
                 logger.exception("Matrix verification callback error")
 
-    async def start_verification(self, user_id: str, device_id: str) -> Optional[str]:
+    async def start_verification(self, user_id: str, device_id: str) -> str | None:
         """Start a SAS key verification with a specific device.
 
         Returns the transaction_id or None on failure.
@@ -681,7 +682,7 @@ class NavigMatrixBot:
             logger.exception("cancel_verification failed")
             return False
 
-    async def get_verification_emoji(self, transaction_id: str) -> Optional[List]:
+    async def get_verification_emoji(self, transaction_id: str) -> list | None:
         """Get the SAS emoji for the current verification.
 
         Returns list of (emoji, description) tuples, or None.
@@ -744,7 +745,7 @@ class NavigMatrixBot:
             logger.exception("unverify_device failed")
             return False
 
-    async def get_devices(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_devices(self, user_id: str | None = None) -> list[dict[str, Any]]:
         """List known devices + trust state.
 
         If user_id is None, lists OWN devices from the server.

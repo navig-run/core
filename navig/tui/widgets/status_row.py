@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Static
+from textual.widgets import Static
 
 if TYPE_CHECKING:
     from navig.tui.resolvers import StatusBadge
@@ -24,12 +22,12 @@ class StatusRow(Static):
     StatusRow { height: auto; padding: 0 1; }
     """
 
-    def __init__(self, badge: "StatusBadge", **kwargs: Any) -> None:
+    def __init__(self, badge: StatusBadge, **kwargs: Any) -> None:
         super().__init__("", **kwargs)
         self._badge = badge
         self.update_badge(badge)
 
-    def update_badge(self, badge: "StatusBadge") -> None:
+    def update_badge(self, badge: StatusBadge) -> None:
         """Re-render this row with an updated badge."""
         self._badge = badge
         color = badge.color
@@ -54,7 +52,7 @@ class StatusRow(Static):
         )
 
     @property
-    def badge(self) -> "StatusBadge":
+    def badge(self) -> StatusBadge:
         return self._badge
 
     @property

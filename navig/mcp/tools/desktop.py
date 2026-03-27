@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 def register(server: Any) -> None:
@@ -119,7 +119,7 @@ def _desktop_client():
     return _DesktopClient()
 
 
-def _desktop_permission_check(tool_name: str) -> Optional[Dict[str, Any]]:
+def _desktop_permission_check(tool_name: str) -> dict[str, Any] | None:
     """Return a structured error dict if no desktop_permission in active mission step, else None."""
     # Retrieve active mission step from runtime store if available.
     try:
@@ -144,7 +144,7 @@ def _desktop_permission_check(tool_name: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def _desktop_audit_initialized() -> Optional[Dict[str, Any]]:
+def _desktop_audit_initialized() -> dict[str, Any] | None:
     """Return a structured error dict if the audit log path is not configured, else None."""
     audit_path = os.environ.get("NAVIG_DESKTOP_AUDIT_LOG", "")
     if not audit_path:
@@ -163,7 +163,7 @@ def _desktop_audit_initialized() -> Optional[Dict[str, Any]]:
     return None
 
 
-def _tool_desktop_find(server: Any, args: Dict[str, Any]) -> Any:
+def _tool_desktop_find(server: Any, args: dict[str, Any]) -> Any:
     """Find Windows UI elements matching the given criteria."""
     audit_err = _desktop_audit_initialized()
     if audit_err:
@@ -183,7 +183,7 @@ def _tool_desktop_find(server: Any, args: Dict[str, Any]) -> Any:
         return {"error": str(exc)}
 
 
-def _tool_desktop_tree(server: Any, args: Dict[str, Any]) -> Any:
+def _tool_desktop_tree(server: Any, args: dict[str, Any]) -> Any:
     """Dump the Windows UI element tree."""
     audit_err = _desktop_audit_initialized()
     if audit_err:
@@ -198,7 +198,7 @@ def _tool_desktop_tree(server: Any, args: Dict[str, Any]) -> Any:
         return {"error": str(exc)}
 
 
-def _tool_desktop_click(server: Any, args: Dict[str, Any]) -> Any:
+def _tool_desktop_click(server: Any, args: dict[str, Any]) -> Any:
     """Click a Windows UI element. Requires desktop_permission."""
     audit_err = _desktop_audit_initialized()
     if audit_err:
@@ -219,7 +219,7 @@ def _tool_desktop_click(server: Any, args: Dict[str, Any]) -> Any:
         return {"error": str(exc)}
 
 
-def _tool_desktop_set_value(server: Any, args: Dict[str, Any]) -> Any:
+def _tool_desktop_set_value(server: Any, args: dict[str, Any]) -> Any:
     """Set the value of a Windows UI element by handle. Requires desktop_permission."""
     audit_err = _desktop_audit_initialized()
     if audit_err:
@@ -241,7 +241,7 @@ def _tool_desktop_set_value(server: Any, args: Dict[str, Any]) -> Any:
         return {"error": str(exc)}
 
 
-def _tool_desktop_ahk(server: Any, args: Dict[str, Any]) -> Any:
+def _tool_desktop_ahk(server: Any, args: dict[str, Any]) -> Any:
     """Execute an AHK script via AutoHotkey.exe. Requires desktop_permission."""
     audit_err = _desktop_audit_initialized()
     if audit_err:

@@ -30,7 +30,7 @@ _NAVIG_SPECTRUM = ["#0057FF", "#00A8E8", "#003DA5", "#00D4FF", "#1B5EAF", "#2271
 # ── Entry points ──────────────────────────────────────────────────────────────
 
 
-async def play_genesis_animation(entity: "NaviEntity") -> None:
+async def play_genesis_animation(entity: NaviEntity) -> None:
     """Async entry point — call from asyncio.run() or existing event loop."""
     from navig.identity.entity import PALETTES
 
@@ -45,7 +45,7 @@ async def play_genesis_animation(entity: "NaviEntity") -> None:
     render_sigil_card(entity)
 
 
-def play_genesis_animation_sync(entity: "NaviEntity") -> None:
+def play_genesis_animation_sync(entity: NaviEntity) -> None:
     """Sync wrapper — safe to call from non-async contexts."""
     try:
         asyncio.run(play_genesis_animation(entity))
@@ -99,7 +99,7 @@ async def _act_noise() -> None:
 # ── ACT II — Sigil assembly (entity colour materialises) ─────────────────────
 
 
-async def _act_sigil_assembly(entity: "NaviEntity", primary: str, accent: str) -> None:
+async def _act_sigil_assembly(entity: NaviEntity, primary: str, accent: str) -> None:
     try:
         from rich.align import Align
         from rich.console import Console

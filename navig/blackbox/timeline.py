@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -27,7 +26,7 @@ _TYPE_STYLES: dict[EventType, tuple[str, str]] = {
 def render_timeline(
     events: list[BlackboxEvent],
     limit: int = 50,
-    console: Optional[Console] = None,
+    console: Console | None = None,
 ) -> None:
     """Render events as a Rich table to *console* (default: stdout).
 

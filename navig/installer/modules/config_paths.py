@@ -8,7 +8,6 @@ can assume the layout exists.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -27,9 +26,9 @@ _SUBDIRS = [
 ]
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     """Emit one Action per missing directory."""
-    actions: List[Action] = []
+    actions: list[Action] = []
     for sub in _SUBDIRS:
         d: Path = ctx.config_dir / sub if sub else ctx.config_dir
         if not d.exists():

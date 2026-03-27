@@ -13,10 +13,10 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Runtime path helper (avoids circular imports)
-_DEFAULT_DB: Optional[Path] = None
+_DEFAULT_DB: Path | None = None
 
 
 def _inbox_db() -> Path:
@@ -37,7 +37,7 @@ def _inbox_db() -> Path:
 
 @dataclass
 class InboxEvent:
-    id: Optional[int] = None
+    id: int | None = None
     created_at: float = field(default_factory=time.time)
     source_path: str = ""  # original path or URL
     source_type: str = "file"  # "file" | "url" | "telegram"
@@ -45,13 +45,13 @@ class InboxEvent:
     size_bytes: int = 0
     content_hash: str = ""  # sha256 of content (empty if not computed)
     status: str = "pending"  # pending | routed | ignored | error
-    error: Optional[str] = None
+    error: str | None = None
     metadata: str = "{}"  # JSON blob
 
 
 @dataclass
 class RoutingDecision:
-    id: Optional[int] = None
+    id: int | None = None
     event_id: int = 0
     decided_at: float = field(default_factory=time.time)
     category: str = ""  # wiki/knowledge, technical, hub, external …
@@ -60,8 +60,8 @@ class RoutingDecision:
     destination: str = ""
     conflict_strategy: str = "rename"  # rename | skip | overwrite
     executed: bool = False
-    result_path: Optional[str] = None
-    error: Optional[str] = None
+    result_path: str | None = None
+    error: str | None = None
     classifier: str = "bm25"  # bm25 | llm | manual
 
 
@@ -115,10 +115,10 @@ class InboxStore:
     inbox is a lightweight side channel, not mission-critical state.
     """
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Path | None = None) -> None:
         self._path = db_path or _inbox_db()
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._ensure_schema()
 
     def _connect(self) -> sqlite3.Connection:
@@ -167,7 +167,7 @@ class InboxStore:
         return cur.lastrowid  # type: ignore[return-value]
 
     def update_event_status(
-        self, event_id: int, status: str, error: Optional[str] = None
+        self, event_id: int, status: str, error: str | None = None
     ) -> None:
         conn = self._connect()
         conn.execute(
@@ -176,7 +176,7 @@ class InboxStore:
         )
         conn.commit()
 
-    def get_event(self, event_id: int) -> Optional[InboxEvent]:
+    def get_event(self, event_id: int) -> InboxEvent | None:
         row = (
             self._connect()
             .execute("SELECT * FROM inbox_events WHERE id=?", (event_id,))
@@ -186,9 +186,9 @@ class InboxStore:
 
     def list_events(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 200,
-    ) -> List[InboxEvent]:
+    ) -> list[InboxEvent]:
         q = "SELECT * FROM inbox_events"
         params: tuple = ()
         if status:
@@ -230,7 +230,7 @@ class InboxStore:
         return cur.lastrowid  # type: ignore[return-value]
 
     def mark_decision_executed(
-        self, decision_id: int, result_path: Optional[str], error: Optional[str] = None
+        self, decision_id: int, result_path: str | None, error: str | None = None
     ) -> None:
         conn = self._connect()
         conn.execute(
@@ -239,7 +239,7 @@ class InboxStore:
         )
         conn.commit()
 
-    def decisions_for_event(self, event_id: int) -> List[RoutingDecision]:
+    def decisions_for_event(self, event_id: int) -> list[RoutingDecision]:
         rows = (
             self._connect()
             .execute(
@@ -252,7 +252,7 @@ class InboxStore:
 
     # ── Stats ────────────────────────────────────────
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         conn = self._connect()
         total = conn.execute("SELECT COUNT(*) FROM inbox_events").fetchone()[0]
         by_status = {

@@ -1,6 +1,6 @@
-from typing import Any, Dict
+from typing import Any
 
-HELP_REGISTRY: Dict[str, Dict[str, Any]] = {
+HELP_REGISTRY: dict[str, dict[str, Any]] = {
     # =========================================================================
     # INFRASTRUCTURE
     # =========================================================================

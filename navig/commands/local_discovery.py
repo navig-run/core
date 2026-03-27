@@ -10,13 +10,13 @@ import platform
 import shutil
 import socket
 import subprocess
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
 
 
-def run_local_command(command: str, timeout: int = 10) -> Tuple[bool, str, str]:
+def run_local_command(command: str, timeout: int = 10) -> tuple[bool, str, str]:
     """
     Execute a local command and return (success, stdout, stderr).
 
@@ -75,7 +75,7 @@ class LocalDiscovery:
             progress: Whether to show progress messages
         """
         self.progress = progress
-        self.discovered_data: Dict[str, Any] = {}
+        self.discovered_data: dict[str, Any] = {}
         self.is_windows = platform.system() == "Windows"
 
     def _log(self, message: str, style: str = "info"):
@@ -92,7 +92,7 @@ class LocalDiscovery:
             else:
                 ch.info(message)
 
-    def discover_os(self) -> Dict[str, Any]:
+    def discover_os(self) -> dict[str, Any]:
         """Discover operating system information."""
         self._log("Detecting operating system...")
 
@@ -131,7 +131,7 @@ class LocalDiscovery:
         self._log(f"  ✓ {os_info['display_name']}", "success")
         return os_info
 
-    def discover_network(self) -> Dict[str, Any]:
+    def discover_network(self) -> dict[str, Any]:
         """Discover network configuration."""
         self._log("Detecting network configuration...")
 
@@ -159,7 +159,7 @@ class LocalDiscovery:
         self._log(f"  ✓ IPs: {', '.join(network_info['ip_addresses'][:3])}", "dim")
         return network_info
 
-    def discover_databases(self) -> List[Dict[str, Any]]:
+    def discover_databases(self) -> list[dict[str, Any]]:
         """Discover installed database servers."""
         self._log("Detecting database servers...")
 
@@ -228,7 +228,7 @@ class LocalDiscovery:
         self.discovered_data["databases"] = databases
         return databases
 
-    def discover_web_servers(self) -> List[Dict[str, Any]]:
+    def discover_web_servers(self) -> list[dict[str, Any]]:
         """Discover installed web servers."""
         self._log("Detecting web servers...")
 
@@ -317,7 +317,7 @@ class LocalDiscovery:
         self.discovered_data["web_servers"] = web_servers
         return web_servers
 
-    def discover_php(self) -> Optional[Dict[str, Any]]:
+    def discover_php(self) -> dict[str, Any] | None:
         """Discover PHP installation."""
         self._log("Detecting PHP...")
 
@@ -354,7 +354,7 @@ class LocalDiscovery:
 
         return php_info
 
-    def discover_node(self) -> Optional[Dict[str, Any]]:
+    def discover_node(self) -> dict[str, Any] | None:
         """Discover Node.js installation."""
         self._log("Detecting Node.js...")
 
@@ -394,7 +394,7 @@ class LocalDiscovery:
 
         return node_info
 
-    def discover_python(self) -> Optional[Dict[str, Any]]:
+    def discover_python(self) -> dict[str, Any] | None:
         """Discover Python installation."""
         self._log("Detecting Python...")
 
@@ -428,7 +428,7 @@ class LocalDiscovery:
 
         return python_info
 
-    def discover_docker(self) -> Optional[Dict[str, Any]]:
+    def discover_docker(self) -> dict[str, Any] | None:
         """Discover Docker installation."""
         self._log("Detecting Docker...")
 
@@ -472,7 +472,7 @@ class LocalDiscovery:
 
         return docker_info
 
-    def discover_git(self) -> Optional[Dict[str, Any]]:
+    def discover_git(self) -> dict[str, Any] | None:
         """Discover Git installation."""
         if not check_command_exists("git"):
             return None
@@ -491,7 +491,7 @@ class LocalDiscovery:
         self.discovered_data["git"] = git_info
         return git_info
 
-    def discover_all(self) -> Dict[str, Any]:
+    def discover_all(self) -> dict[str, Any]:
         """Run full discovery and return all collected data."""
         self._log("\n🔍 Discovering local environment...\n", "info")
 
@@ -509,7 +509,7 @@ class LocalDiscovery:
 
         return self.discovered_data
 
-    def generate_host_config(self, name: str = "localhost") -> Dict[str, Any]:
+    def generate_host_config(self, name: str = "localhost") -> dict[str, Any]:
         """
         Generate a host configuration from discovered data.
 
@@ -582,7 +582,7 @@ def discover_local_host(
     set_active: bool = True,
     progress: bool = True,
     no_cache: bool = False,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Discover and configure local host.
 

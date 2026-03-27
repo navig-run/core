@@ -4,7 +4,7 @@ NAVIG Cron CLI Commands
 Commands for managing persistent job scheduling via the gateway.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 import typer
 
@@ -260,12 +260,12 @@ def cron_status():
 # Each wrapper calls the underlying Typer command with appropriate defaults.
 
 
-def list_cmd(ctx: Dict[str, Any]) -> None:
+def list_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for cron list command (interactive menu)."""
     cron_list()
 
 
-def add_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def add_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for cron add command (interactive menu).
 
     Note: This is a simplified wrapper - the interactive menu
@@ -282,26 +282,26 @@ def add_cmd(name: str, ctx: Dict[str, Any]) -> None:
         ch.warning("Cancelled - schedule and command are required")
 
 
-def run_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def run_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for cron run command (interactive menu)."""
     cron_run(name)
 
 
-def enable_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def enable_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for cron enable command (interactive menu)."""
     cron_enable(name)
 
 
-def disable_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def disable_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for cron disable command (interactive menu)."""
     cron_disable(name)
 
 
-def remove_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def remove_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for cron remove command (interactive menu)."""
     cron_remove(name)
 
 
-def status_cmd(ctx: Dict[str, Any]) -> None:
+def status_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for cron status command (interactive menu)."""
     cron_status()

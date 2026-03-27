@@ -7,7 +7,6 @@ All operations use the navig.blackbox module via lazy imports.
 
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import typer
 
@@ -109,12 +108,10 @@ def blackbox_record(
     event_type: str = typer.Argument(
         ..., help="Event type: crash, error, warning, command, session, system, output"
     ),
-    message: Optional[str] = typer.Option(
+    message: str | None = typer.Option(
         None, "--message", "-m", help="Event message / payload text"
     ),
-    tag: Optional[list[str]] = typer.Option(
-        None, "--tag", "-t", help="Tags (repeatable)"
-    ),
+    tag: list[str] | None = typer.Option(None, "--tag", "-t", help="Tags (repeatable)"),
     source: str = typer.Option("cli", "--source", help="Event source identifier"),
     stdin: bool = typer.Option(False, "--stdin", help="Read message from stdin"),
 ):
@@ -147,7 +144,7 @@ def blackbox_capture(
         "30m", "--last", help="Capture events from last: 30m, 1h, 24h"
     ),
     limit: int = typer.Option(200, "--limit", "-n", help="Maximum events to capture"),
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None, "-o", "--output", help="Output .navbox file path"
     ),
 ):
@@ -174,8 +171,8 @@ def blackbox_capture(
 @blackbox_app.command("timeline")
 def blackbox_timeline(
     limit: int = typer.Option(50, "--limit", "-n", help="Number of events to show"),
-    since: Optional[str] = typer.Option(None, "--since", help="Since: 30m, 1h, 24h"),
-    event_type: Optional[str] = typer.Option(
+    since: str | None = typer.Option(None, "--since", help="Since: 30m, 1h, 24h"),
+    event_type: str | None = typer.Option(
         None, "--type", "-t", help="Filter by event type"
     ),
 ):
@@ -192,7 +189,7 @@ def blackbox_timeline(
             _ch.error(f"Unknown event type '{event_type}'")
             raise typer.Exit(1) from _exc
 
-    since_dt: Optional[datetime] = None
+    since_dt: datetime | None = None
     if since:
         hours = _parse_hours(since)
         since_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
@@ -246,7 +243,7 @@ def blackbox_seal(
 @bundle_cmd.command("create")
 def bundle_create(
     since: str = typer.Option("24h", "--since", help="Events from last: 24h, 7d, …"),
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None, "-o", "--output", help="Output .navbox path"
     ),
     encrypted: bool = typer.Option(
@@ -328,7 +325,7 @@ def bundle_inspect(
 @bundle_cmd.command("export")
 def bundle_export(
     file: str = typer.Argument(..., help="Path to source .navbox bundle"),
-    output: Optional[str] = typer.Option(None, "-o", "--output", help="Output path"),
+    output: str | None = typer.Option(None, "-o", "--output", help="Output path"),
     encrypted: bool = typer.Option(False, "--encrypted", help="Encrypt the export"),
 ):
     """Re-export an existing .navbox bundle, optionally with encryption."""

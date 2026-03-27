@@ -6,7 +6,6 @@ List, search, and manage emails from configured providers.
 
 import asyncio
 import json
-from typing import Optional
 
 import typer
 
@@ -131,7 +130,7 @@ def setup_email(
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
 
-    with open(global_config_file, "r") as f:
+    with open(global_config_file) as f:
         config = yaml.safe_load(f) or {}
 
     if "proactive" not in config:
@@ -156,7 +155,7 @@ def setup_email(
         email_cfg["imap_host"] = imap_host
         email_cfg["smtp_host"] = smtp_host
 
-    with open(global_config_file, "w") as f:
+    with open(global_config_file, "w", encoding="utf-8") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     ch.success("✓ Email configured!")
@@ -180,7 +179,7 @@ def search_emails(
 def send_email(
     to: str = typer.Option(..., "--to", "-t", help="Recipient email"),
     subject: str = typer.Option(..., "--subject", "-s", help="Email subject"),
-    body: Optional[str] = typer.Option(None, "--body", "-b", help="Email body"),
+    body: str | None = typer.Option(None, "--body", "-b", help="Email body"),
 ):
     """
     Send an email.

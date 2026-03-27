@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -32,7 +32,7 @@ farmore_app = typer.Typer(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_github_token() -> Optional[str]:
+def _resolve_github_token() -> str | None:
     """
     Resolve a GitHub token with the full navig credential chain.
 
@@ -101,7 +101,7 @@ def _require_farmore() -> bool:
     return False
 
 
-def _run_farmore(args: list[str], token: Optional[str]) -> None:
+def _run_farmore(args: list[str], token: str | None) -> None:
     """Invoke the farmore CLI as a subprocess, injecting token if available."""
     env = os.environ.copy()
     if token:
@@ -162,16 +162,16 @@ def _fallback_git_clone(repo_url: str, dest: str) -> None:
 def farmore_search(
     query: Annotated[str, typer.Argument(help="Search keyword (e.g. 'agent soul')")],
     output_dir: Annotated[
-        Optional[Path], typer.Option("--output-dir", "-o", help="Destination directory")
+        Path | None, typer.Option("--output-dir", "-o", help="Destination directory")
     ] = None,
     limit: Annotated[
         int, typer.Option("--limit", "-l", min=1, max=100, help="Max repos to clone")
     ] = 20,
     language: Annotated[
-        Optional[str], typer.Option("--language", help="Filter by language")
+        str | None, typer.Option("--language", help="Filter by language")
     ] = None,
     min_stars: Annotated[
-        Optional[int], typer.Option("--min-stars", help="Minimum star count")
+        int | None, typer.Option("--min-stars", help="Minimum star count")
     ] = None,
     sort: Annotated[
         str, typer.Option("--sort", help="Sort: stars|forks|updated|best-match")
@@ -183,7 +183,7 @@ def farmore_search(
         int, typer.Option("--workers", "-w", help="Parallel clone workers")
     ] = 4,
     token: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--token", "-t", help="GitHub token (overrides auto-resolve)"),
     ] = None,
 ):
@@ -234,7 +234,7 @@ def farmore_search(
 def farmore_backup(
     target: Annotated[str, typer.Argument(help="GitHub username or org to backup")],
     dest: Annotated[
-        Optional[Path], typer.Option("--dest", "-d", help="Destination directory")
+        Path | None, typer.Option("--dest", "-d", help="Destination directory")
     ] = None,
     visibility: Annotated[
         str, typer.Option("--visibility", help="all|public|private")
@@ -244,7 +244,7 @@ def farmore_backup(
     ] = 4,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Auto-confirm")] = False,
     token: Annotated[
-        Optional[str], typer.Option("--token", "-t", help="GitHub token")
+        str | None, typer.Option("--token", "-t", help="GitHub token")
     ] = None,
 ):
     """
@@ -278,10 +278,10 @@ def farmore_backup(
 def farmore_clone(
     repo: Annotated[str, typer.Argument(help="owner/repo or full GitHub URL")],
     dest: Annotated[
-        Optional[Path], typer.Option("--dest", "-d", help="Destination directory")
+        Path | None, typer.Option("--dest", "-d", help="Destination directory")
     ] = None,
     token: Annotated[
-        Optional[str], typer.Option("--token", "-t", help="GitHub token")
+        str | None, typer.Option("--token", "-t", help="GitHub token")
     ] = None,
 ):
     """

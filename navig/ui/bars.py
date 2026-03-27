@@ -7,7 +7,6 @@ Characters: █ (fill) ░ (empty) — ASCII fallback: # .
 from __future__ import annotations
 
 import sys
-from typing import List
 
 from navig.ui.models import Metric
 from navig.ui.theme import COLOR_STYLE, SAFE_MODE, console
@@ -29,7 +28,7 @@ def _make_bar(fill: float, width: int = _BAR_WIDTH) -> tuple[str, str]:
 
 
 def render_metric_bars(
-    metrics: List[Metric],
+    metrics: list[Metric],
     *,
     title: str = "Metrics",
     label_width: int = 18,
@@ -61,7 +60,7 @@ def render_metric_bars(
 
 
 def render_sparklines(
-    metrics: List[Metric],
+    metrics: list[Metric],
     *,
     title: str = "Trend",
 ) -> None:

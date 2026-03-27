@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class SourceError(Exception):
@@ -92,7 +92,7 @@ class PyPISource(_BaseSource):
 class GitHubSource(_BaseSource):
     """Fetch latest release tag from GitHub."""
 
-    def __init__(self, repo: str = "navig-os/navig-core", token: Optional[str] = None):
+    def __init__(self, repo: str = "navig-os/navig-core", token: str | None = None):
         self._repo = repo
         self._token = token
 
@@ -134,7 +134,7 @@ class GitHubSource(_BaseSource):
 class GitRepoSource(_BaseSource):
     """Inspect git tags in a local or remote repo to find the latest version."""
 
-    def __init__(self, repo_path: str = ".", remote: Optional[str] = None):
+    def __init__(self, repo_path: str = ".", remote: str | None = None):
         self._path = repo_path
         self._remote = remote
 
@@ -240,7 +240,7 @@ class LocalFileSource(_BaseSource):
 # ---------------------------------------------------------------------------
 
 
-def build_source(cfg: Dict[str, Any], channel: str = "stable") -> _BaseSource:
+def build_source(cfg: dict[str, Any], channel: str = "stable") -> _BaseSource:
     """Construct a source from a config dict (from defaults.yaml ``update.source``)."""
     src_type = (cfg.get("type") or "pypi").lower()
 

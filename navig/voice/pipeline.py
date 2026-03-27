@@ -30,7 +30,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.voice.pipeline")
 
@@ -39,7 +39,7 @@ logger = logging.getLogger("navig.voice.pipeline")
 # Configuration
 # ---------------------------------------------------------------------------
 
-from dataclasses import dataclass, field
+from dataclasses import field
 
 from navig.config import ConfigManager
 
@@ -76,10 +76,10 @@ class PipelineConfig:
     language: str = field(default_factory=lambda: _get_voice_setting("language", "en"))
 
     # LLM
-    llm_model: Optional[str] = field(
+    llm_model: str | None = field(
         default_factory=lambda: _get_voice_setting("llm_model", None)
     )
-    llm_system_prompt: Optional[str] = (
+    llm_system_prompt: str | None = (
         "You are NAVIG, an intelligent voice assistant. "
         "Be concise — responses are spoken aloud. "
         "Limit replies to 2–3 sentences unless the user asks for detail."
@@ -89,7 +89,7 @@ class PipelineConfig:
     tts_provider: str = field(
         default_factory=lambda: _get_voice_setting("tts_provider", "edge")
     )
-    tts_voice: Optional[str] = field(default=None)
+    tts_voice: str | None = field(default=None)
 
     # Session settings
     silence_timeout: float = field(
@@ -100,7 +100,7 @@ class PipelineConfig:
     )
 
     # navig-echo bridge (optional)
-    echo_bridge_url: Optional[str] = None
+    echo_bridge_url: str | None = None
 
     # Graceful degradation
     fail_on_mic_unavailable: bool = False
@@ -115,11 +115,11 @@ class PipelineConfig:
 class PipelineResult:
     """Result from a single pipeline invocation."""
 
-    transcript: Optional[str]
-    response_text: Optional[str]
-    audio_path: Optional[str]
-    duration_ms: Optional[float] = None
-    error: Optional[str] = None
+    transcript: str | None
+    response_text: str | None
+    audio_path: str | None
+    duration_ms: float | None = None
+    error: str | None = None
 
     def __bool__(self) -> bool:
         return self.error is None
@@ -143,10 +143,10 @@ class VoicePipeline:
        (bypasses wake-word, goes straight to STT → LLM → TTS).
     """
 
-    def __init__(self, config: Optional[PipelineConfig] = None):
+    def __init__(self, config: PipelineConfig | None = None):
         self.config = config or PipelineConfig()
-        self._session_mgr: Optional[Any] = None
-        self._wake_engine: Optional[Any] = None
+        self._session_mgr: Any | None = None
+        self._wake_engine: Any | None = None
         self._running = False
 
     # ------------------------------------------------------------------ #
@@ -178,7 +178,7 @@ class VoicePipeline:
         )
         stt = StreamingSTT(config=stt_config)
 
-        async def _stt_fn(session) -> Optional[str]:
+        async def _stt_fn(session) -> str | None:
             """Transcribe buffered session audio."""
             from navig.voice.streaming_stt import transcribe_session_audio
 
@@ -189,7 +189,7 @@ class VoicePipeline:
             return await self._call_llm(transcript)
 
         # ── Build TTS callable ────────────────────────────────────────
-        async def _tts_fn(text: str) -> Optional[str]:
+        async def _tts_fn(text: str) -> str | None:
             return await self._call_tts(text)
 
         # ── Session manager ───────────────────────────────────────────
@@ -260,10 +260,10 @@ class VoicePipeline:
             PipelineResult with transcript, response_text, and audio_path.
         """
         t0 = time.monotonic()
-        error: Optional[str] = None
-        transcript: Optional[str] = None
-        response_text: Optional[str] = None
-        out_audio_path: Optional[str] = None
+        error: str | None = None
+        transcript: str | None = None
+        response_text: str | None = None
+        out_audio_path: str | None = None
 
         # ── STT ───────────────────────────────────────────────────────
         try:
@@ -369,7 +369,7 @@ class VoicePipeline:
     # TTS synthesis
     # ------------------------------------------------------------------ #
 
-    async def _call_tts(self, text: str) -> Optional[str]:
+    async def _call_tts(self, text: str) -> str | None:
         """Synthesise speech and return file path."""
         try:
             from navig.voice.tts import TTS, TTSConfig, TTSProvider
@@ -403,10 +403,10 @@ class VoicePipeline:
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
-_pipeline: Optional[VoicePipeline] = None
+_pipeline: VoicePipeline | None = None
 
 
-def get_pipeline(config: Optional[PipelineConfig] = None) -> VoicePipeline:
+def get_pipeline(config: PipelineConfig | None = None) -> VoicePipeline:
     """Return (or create) the global VoicePipeline singleton."""
     global _pipeline
     if _pipeline is None:

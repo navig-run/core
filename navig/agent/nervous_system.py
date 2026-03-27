@@ -12,10 +12,11 @@ Inspired by the human nervous system's role in coordinating body functions.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 
@@ -101,12 +102,12 @@ class Event:
 
     type: EventType
     source: str
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
     priority: EventPriority = EventPriority.NORMAL
     timestamp: datetime = field(default_factory=datetime.now)
     id: str = field(default_factory=lambda: str(uuid4())[:8])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "type": self.type.name,
@@ -136,14 +137,14 @@ class NervousSystem:
     """
 
     def __init__(self):
-        self._handlers: Dict[EventType, List[EventHandler]] = {}
-        self._global_handlers: List[EventHandler] = []
-        self._event_history: List[Event] = []
+        self._handlers: dict[EventType, list[EventHandler]] = {}
+        self._global_handlers: list[EventHandler] = []
+        self._event_history: list[Event] = []
         self._max_history = 1000
         self._paused = False
         self._pending_events: asyncio.Queue[Event] = asyncio.Queue()
         self._running = False
-        self._event_loop_task: Optional[asyncio.Task] = None
+        self._event_loop_task: asyncio.Task | None = None
 
     def subscribe(
         self,
@@ -182,7 +183,7 @@ class NervousSystem:
         self,
         event_type: EventType,
         source: str,
-        data: Optional[Dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
         priority: EventPriority = EventPriority.NORMAL,
     ) -> Event:
         """Emit an event to all subscribers."""
@@ -209,7 +210,7 @@ class NervousSystem:
 
     async def _dispatch(self, event: Event) -> None:
         """Dispatch event to all relevant handlers."""
-        handlers: List[EventHandler] = []
+        handlers: list[EventHandler] = []
 
         # Add global handlers
         handlers.extend(self._global_handlers)
@@ -255,10 +256,10 @@ class NervousSystem:
 
     def get_history(
         self,
-        event_type: Optional[EventType] = None,
-        source: Optional[str] = None,
+        event_type: EventType | None = None,
+        source: str | None = None,
         limit: int = 100,
-    ) -> List[Event]:
+    ) -> list[Event]:
         """Get event history with optional filtering."""
         events = self._event_history
 
@@ -274,10 +275,10 @@ class NervousSystem:
         """Clear event history."""
         self._event_history.clear()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get nervous system statistics."""
-        type_counts: Dict[str, int] = {}
-        source_counts: Dict[str, int] = {}
+        type_counts: dict[str, int] = {}
+        source_counts: dict[str, int] = {}
 
         for event in self._event_history:
             type_name = event.type.name
@@ -294,7 +295,7 @@ class NervousSystem:
             "events_by_source": source_counts,
         }
 
-    def list_subscriptions(self) -> Dict[str, int]:
+    def list_subscriptions(self) -> dict[str, int]:
         """List all event subscriptions."""
         return {
             event_type.name: len(handlers)
@@ -309,7 +310,7 @@ class EventEmitter:
     Provides convenient methods for emitting common event types.
     """
 
-    def __init__(self, name: str, nervous_system: Optional[NervousSystem] = None):
+    def __init__(self, name: str, nervous_system: NervousSystem | None = None):
         self._emitter_name = name
         self._nervous_system = nervous_system
 
@@ -319,9 +320,9 @@ class EventEmitter:
     async def emit(
         self,
         event_type: EventType,
-        data: Optional[Dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
         priority: EventPriority = EventPriority.NORMAL,
-    ) -> Optional[Event]:
+    ) -> Event | None:
         if self._nervous_system:
             return await self._nervous_system.emit(
                 event_type,
@@ -331,10 +332,10 @@ class EventEmitter:
             )
         return None
 
-    async def emit_info(self, message: str, **data: Any) -> Optional[Event]:
+    async def emit_info(self, message: str, **data: Any) -> Event | None:
         return await self.emit(EventType.SYSTEM_INFO, data={"message": message, **data})
 
-    async def emit_warning(self, message: str, **data: Any) -> Optional[Event]:
+    async def emit_warning(self, message: str, **data: Any) -> Event | None:
         return await self.emit(
             EventType.SYSTEM_WARNING,
             data={"message": message, **data},
@@ -342,8 +343,8 @@ class EventEmitter:
         )
 
     async def emit_error(
-        self, message: str, error: Optional[Exception] = None, **data: Any
-    ) -> Optional[Event]:
+        self, message: str, error: Exception | None = None, **data: Any
+    ) -> Event | None:
         return await self.emit(
             EventType.SYSTEM_ERROR,
             data={"message": message, "error": str(error) if error else None, **data},

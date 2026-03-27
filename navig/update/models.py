@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 
 def _version_lt(a: str, b: str) -> bool:
@@ -31,10 +30,10 @@ class VersionInfo:
 
     node_id: str
     current: str = "unknown"
-    latest: Optional[str] = None
+    latest: str | None = None
     install_type: str = "unknown"  # "git" | "pip" | "unknown"
     source_name: str = "unknown"
-    error: Optional[str] = None
+    error: str | None = None
 
     @property
     def needs_update(self) -> bool:
@@ -46,7 +45,7 @@ class VersionInfo:
     def reachable(self) -> bool:
         return self.error is None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "node_id": self.node_id,
             "current": self.current,
@@ -65,15 +64,15 @@ class NodeResult:
     node_id: str
     ok: bool = True
     old_version: str = "unknown"
-    new_version: Optional[str] = None
+    new_version: str | None = None
     rolled_back: bool = False
     skipped: bool = False
-    skip_reason: Optional[str] = None
-    error: Optional[str] = None
+    skip_reason: str | None = None
+    error: str | None = None
     elapsed_seconds: float = 0.0
-    steps: List[str] = field(default_factory=list)
+    steps: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "node_id": self.node_id,
             "ok": self.ok,
@@ -92,11 +91,11 @@ class NodeResult:
 class UpdatePlan:
     """The planned update work after a check phase."""
 
-    targets: List = field(default_factory=list)
-    version_infos: Dict[str, VersionInfo] = field(default_factory=dict)
-    to_update: List = field(default_factory=list)  # UpdateTarget list
-    up_to_date: List = field(default_factory=list)  # UpdateTarget list
-    unreachable: List = field(default_factory=list)  # UpdateTarget list
+    targets: list = field(default_factory=list)
+    version_infos: dict[str, VersionInfo] = field(default_factory=dict)
+    to_update: list = field(default_factory=list)  # UpdateTarget list
+    up_to_date: list = field(default_factory=list)  # UpdateTarget list
+    unreachable: list = field(default_factory=list)  # UpdateTarget list
     dry_run: bool = False
 
     def summary(self) -> str:
@@ -119,7 +118,7 @@ class UpdateResult:
     """Final result after executing an UpdatePlan."""
 
     plan: UpdatePlan = field(default_factory=UpdatePlan)
-    node_results: List[NodeResult] = field(default_factory=list)
+    node_results: list[NodeResult] = field(default_factory=list)
     dry_run: bool = False
     total_elapsed_seconds: float = 0.0
 
@@ -128,16 +127,16 @@ class UpdateResult:
         return all(r.ok or r.skipped for r in self.node_results)
 
     @property
-    def failed_nodes(self) -> List[NodeResult]:
+    def failed_nodes(self) -> list[NodeResult]:
         return [r for r in self.node_results if not r.ok and not r.skipped]
 
-    def node(self, node_id: str) -> Optional[NodeResult]:
+    def node(self, node_id: str) -> NodeResult | None:
         for r in self.node_results:
             if r.node_id == node_id:
                 return r
         return None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "dry_run": self.dry_run,
             "success": self.success,

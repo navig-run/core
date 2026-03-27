@@ -4,7 +4,6 @@ Factory functions for creating OS-specific adapters.
 """
 
 import platform
-from typing import Optional
 
 from navig.adapters.os.base import OSAdapter
 
@@ -29,7 +28,7 @@ def detect_os() -> str:
         return "linux"
 
 
-def detect_linux_distro() -> Optional[str]:
+def detect_linux_distro() -> str | None:
     """
     Detect the Linux distribution.
 
@@ -37,7 +36,7 @@ def detect_linux_distro() -> Optional[str]:
         Distribution name or None if not Linux/unknown
     """
     try:
-        with open("/etc/os-release", "r") as f:
+        with open("/etc/os-release") as f:
             for line in f:
                 if line.startswith("ID="):
                     return line.strip().split("=")[1].strip('"')
@@ -55,7 +54,7 @@ def detect_linux_distro() -> Optional[str]:
     return None
 
 
-def get_os_adapter(os_name: Optional[str] = None) -> OSAdapter:
+def get_os_adapter(os_name: str | None = None) -> OSAdapter:
     """
     Get the appropriate OS adapter for the current or specified OS.
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
@@ -201,7 +201,7 @@ def _parse_llm_output(raw: str, source_file: str) -> list[dict[str, Any]]:
 
 def scan_files(
     install_path: Path,
-    config: Optional[dict[str, Any]] = None,
+    config: dict[str, Any] | None = None,
 ) -> list[ScanFinding]:
     """Scan Python source files under *install_path* using the LLM.
 

@@ -24,7 +24,7 @@ import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ─────────────────────────── schema ──────────────────────────────────────────
 
@@ -76,24 +76,24 @@ END;
 class LinkRecord:
     """Represents a single bookmarked link."""
 
-    def __init__(self, row: Dict[str, Any]) -> None:
+    def __init__(self, row: dict[str, Any]) -> None:
         self.id: str = row["id"]
         self.url: str = row["url"]
-        self.title: Optional[str] = row.get("title")
-        self.notes: Optional[str] = row.get("notes")
-        self.tags: List[str] = json.loads(row.get("tags") or "[]")
-        self.vault_cred_id: Optional[str] = row.get("vault_cred_id")
-        self.last_visited: Optional[datetime] = (
+        self.title: str | None = row.get("title")
+        self.notes: str | None = row.get("notes")
+        self.tags: list[str] = json.loads(row.get("tags") or "[]")
+        self.vault_cred_id: str | None = row.get("vault_cred_id")
+        self.last_visited: datetime | None = (
             datetime.fromisoformat(row["last_visited"])
             if row.get("last_visited")
             else None
         )
         self.visit_count: int = int(row.get("visit_count") or 0)
-        self.screenshot_path: Optional[str] = row.get("screenshot_path")
-        self.favicon_path: Optional[str] = row.get("favicon_path")
+        self.screenshot_path: str | None = row.get("screenshot_path")
+        self.favicon_path: str | None = row.get("favicon_path")
         self.created_at: datetime = datetime.fromisoformat(row["created_at"])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "url": self.url,
@@ -131,12 +131,12 @@ class LinksDB:
         self,
         url: str,
         *,
-        title: Optional[str] = None,
-        notes: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        vault_cred_id: Optional[str] = None,
-        screenshot_path: Optional[str] = None,
-        favicon_path: Optional[str] = None,
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+        vault_cred_id: str | None = None,
+        screenshot_path: str | None = None,
+        favicon_path: str | None = None,
     ) -> str:
         """Add a new link. Returns the new link ID."""
         link_id = str(uuid.uuid4())[:8]
@@ -163,10 +163,10 @@ class LinksDB:
         self,
         link_id: str,
         *,
-        title: Optional[str] = None,
-        notes: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        vault_cred_id: Optional[str] = None,
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+        vault_cred_id: str | None = None,
     ) -> bool:
         """Update fields on an existing link. Returns True if found."""
         link = self.get(link_id)
@@ -201,17 +201,17 @@ class LinksDB:
 
     # ─────────────────────── read operations ───────────────────────────────
 
-    def get(self, link_id: str) -> Optional[LinkRecord]:
+    def get(self, link_id: str) -> LinkRecord | None:
         """Get a link by its ID."""
         row = self._con.execute("SELECT * FROM links WHERE id=?", (link_id,)).fetchone()
         return LinkRecord(dict(row)) if row else None
 
-    def get_by_url(self, url: str) -> Optional[LinkRecord]:
+    def get_by_url(self, url: str) -> LinkRecord | None:
         """Get a link by exact URL."""
         row = self._con.execute("SELECT * FROM links WHERE url=?", (url,)).fetchone()
         return LinkRecord(dict(row)) if row else None
 
-    def list_all(self, limit: int = 100, offset: int = 0) -> List[LinkRecord]:
+    def list_all(self, limit: int = 100, offset: int = 0) -> list[LinkRecord]:
         """List all links ordered by last_visited (most recent first)."""
         rows = self._con.execute(
             "SELECT * FROM links ORDER BY COALESCE(last_visited, created_at) DESC LIMIT ? OFFSET ?",
@@ -219,7 +219,7 @@ class LinksDB:
         ).fetchall()
         return [LinkRecord(dict(r)) for r in rows]
 
-    def list_by_tag(self, tag: str) -> List[LinkRecord]:
+    def list_by_tag(self, tag: str) -> list[LinkRecord]:
         """List links that have a specific tag."""
         rows = self._con.execute(
             "SELECT * FROM links WHERE tags LIKE ?",
@@ -227,14 +227,14 @@ class LinksDB:
         ).fetchall()
         return [LinkRecord(dict(r)) for r in rows]
 
-    def list_with_vault_cred(self, vault_cred_id: str) -> List[LinkRecord]:
+    def list_with_vault_cred(self, vault_cred_id: str) -> list[LinkRecord]:
         """List all links associated with a specific vault credential."""
         rows = self._con.execute(
             "SELECT * FROM links WHERE vault_cred_id=?", (vault_cred_id,)
         ).fetchall()
         return [LinkRecord(dict(r)) for r in rows]
 
-    def search(self, query: str, limit: int = 20) -> List[LinkRecord]:
+    def search(self, query: str, limit: int = 20) -> list[LinkRecord]:
         """Full-text search across url, title, notes, and tags.
 
         Uses SQLite FTS5 for fast fuzzy matching. Query supports boolean
@@ -267,7 +267,7 @@ class LinksDB:
 
 # ─────────────────────────── singleton ───────────────────────────────────────
 
-_db_instance: Optional[LinksDB] = None
+_db_instance: LinksDB | None = None
 
 
 def get_links_db() -> LinksDB:

@@ -3,12 +3,12 @@
 import json
 import shlex  # CRITICAL: Import shlex for secure shell escaping
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
 
-def delete_file_cmd(remote: str, options: Dict[str, Any]):
+def delete_file_cmd(remote: str, options: dict[str, Any]):
     """Delete remote file or directory.
 
     Args:
@@ -105,7 +105,7 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
         return False
 
 
-def mkdir_cmd(remote: str, options: Dict[str, Any]):
+def mkdir_cmd(remote: str, options: dict[str, Any]):
     """Create remote directory.
 
     Args:
@@ -172,7 +172,7 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
         return False
 
 
-def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
+def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
     """Change file/directory permissions.
 
     Args:
@@ -243,7 +243,7 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
         return False
 
 
-def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
+def chown_cmd(remote: str, owner: str, options: dict[str, Any]):
     """Change file/directory ownership.
 
     Args:
@@ -307,8 +307,8 @@ def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
 
 def cat_file_cmd(
     remote: str,
-    options: Dict[str, Any],
-    lines: Optional[str] = None,
+    options: dict[str, Any],
+    lines: str | None = None,
     head: bool = False,
     tail: bool = False,
 ):
@@ -442,13 +442,13 @@ def cat_file_cmd(
 
 def write_file_cmd(
     remote: str,
-    content: Optional[str],
-    options: Dict[str, Any],
+    content: str | None,
+    options: dict[str, Any],
     stdin: bool = False,
-    local_file: Optional[Path] = None,
+    local_file: Path | None = None,
     append: bool = False,
-    mode: Optional[str] = None,
-    owner: Optional[str] = None,
+    mode: str | None = None,
+    owner: str | None = None,
 ):
     """Write content to a remote file.
 
@@ -592,7 +592,7 @@ def write_file_cmd(
 
 def list_dir_cmd(
     remote: str,
-    options: Dict[str, Any],
+    options: dict[str, Any],
     all: bool = False,
     long: bool = True,
     human: bool = True,
@@ -708,7 +708,7 @@ def list_dir_cmd(
 
 
 def tree_cmd(
-    remote: str, options: Dict[str, Any], depth: int = 2, dirs_only: bool = False
+    remote: str, options: dict[str, Any], depth: int = 2, dirs_only: bool = False
 ):
     """Show directory tree structure.
 

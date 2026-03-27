@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # ─────────────────────────────────────────────────────────────
 # Sensitive-field patterns (for redaction)
@@ -45,7 +45,7 @@ _REDACTED = "***REDACTED***"
 def redact_sensitive(
     data: Any,
     *,
-    extra_keys: Optional[set[str]] = None,
+    extra_keys: set[str] | None = None,
 ) -> Any:
     """
     Recursively redact values whose keys match sensitive patterns.
@@ -60,9 +60,11 @@ def redact_sensitive(
     if isinstance(data, dict):
         out = {}
         for k, v in data.items():
-            if _SENSITIVE_KEYS_RE.search(str(k)):
-                out[k] = _REDACTED
-            elif extra_keys and str(k).lower() in extra_keys:
+            if (
+                _SENSITIVE_KEYS_RE.search(str(k))
+                or extra_keys
+                and str(k).lower() in extra_keys
+            ):
                 out[k] = _REDACTED
             else:
                 out[k] = redact_sensitive(v, extra_keys=extra_keys)
@@ -102,10 +104,10 @@ class ApiToolResult:
     """
 
     status: str = "ok"  # "ok" | "error"
-    raw_json: Dict[str, Any] = field(default_factory=dict)
-    normalized: Union[Dict[str, Any], List[Any]] = field(default_factory=dict)
+    raw_json: dict[str, Any] = field(default_factory=dict)
+    normalized: dict[str, Any] | list[Any] = field(default_factory=dict)
     source: ApiSource = field(default_factory=lambda: ApiSource(tool="unknown"))
-    error: Optional[str] = None
+    error: str | None = None
 
     # -- helpers --
 
@@ -113,7 +115,7 @@ class ApiToolResult:
     def ok(self) -> bool:
         return self.status == "ok" and self.error is None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Full serialization (including raw_json)."""
         return {
             "status": self.status,
@@ -127,7 +129,7 @@ class ApiToolResult:
             "error": self.error,
         }
 
-    def to_snapshot_dict(self) -> Dict[str, Any]:
+    def to_snapshot_dict(self) -> dict[str, Any]:
         """
         Serialization for memory snapshots — excludes raw_json, redacts sensitive fields.
         """
@@ -142,7 +144,7 @@ class ApiToolResult:
             "error": self.error,
         }
 
-    def to_llm_dict(self) -> Dict[str, Any]:
+    def to_llm_dict(self) -> dict[str, Any]:
         """
         Serialization for LLM context injection — normalized + source.timestamp only.
         Never includes raw_json.
@@ -155,7 +157,7 @@ class ApiToolResult:
         }
 
     @classmethod
-    def from_error(cls, tool: str, error: str, endpoint: str = "") -> "ApiToolResult":
+    def from_error(cls, tool: str, error: str, endpoint: str = "") -> ApiToolResult:
         """Convenience factory for error results."""
         return cls(
             status="error",
@@ -164,7 +166,7 @@ class ApiToolResult:
         )
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ApiToolResult":
+    def from_dict(cls, data: dict[str, Any]) -> ApiToolResult:
         """Reconstruct from serialized form (e.g. snapshot file)."""
         src = data.get("source", {})
         return cls(
@@ -185,7 +187,7 @@ class ApiToolResult:
 # ─────────────────────────────────────────────────────────────
 
 
-def validate_api_result(result: ApiToolResult) -> List[str]:
+def validate_api_result(result: ApiToolResult) -> list[str]:
     """
     Validate an ApiToolResult, returning a list of issues (empty = valid).
 

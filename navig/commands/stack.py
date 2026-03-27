@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -175,7 +174,7 @@ def stack_down(
 
 @stack_app.command("logs")
 def stack_logs(
-    service: Optional[str] = typer.Argument(
+    service: str | None = typer.Argument(
         None, help="Service name (postgres, redis, ollama)"
     ),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),

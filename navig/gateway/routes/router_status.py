@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _router_status(request: "web.Request") -> "web.Response":
+async def _router_status(request: web.Request) -> web.Response:
     """GET /router/status — provider availability, health, active provider."""
     from aiohttp import web as _web
 
@@ -36,7 +36,7 @@ async def _router_status(request: "web.Request") -> "web.Response":
         )
 
 
-async def _router_traces(request: "web.Request") -> "web.Response":
+async def _router_traces(request: web.Request) -> web.Response:
     """GET /router/traces — recent route traces (JSONL)."""
     from aiohttp import web as _web
 
@@ -51,7 +51,7 @@ async def _router_traces(request: "web.Request") -> "web.Response":
         return _web.json_response({"error": str(e), "traces": []}, status=500)
 
 
-async def _router_detect(request: "web.Request") -> "web.Response":
+async def _router_detect(request: web.Request) -> web.Response:
     """POST /router/detect — classify a message without executing."""
     from aiohttp import web as _web
 
@@ -86,7 +86,7 @@ async def _router_detect(request: "web.Request") -> "web.Response":
         return _web.json_response({"error": str(e)}, status=500)
 
 
-def register(app: "web.Application", gateway: "NavigGateway") -> None:
+def register(app: web.Application, gateway: NavigGateway) -> None:
     """Register router status routes."""
     app.router.add_get("/router/status", _router_status)
     app.router.add_get("/router/traces", _router_traces)

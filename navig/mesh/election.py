@@ -42,7 +42,7 @@ Failure coverage:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
 from navig.mesh.discovery import (
@@ -95,19 +95,19 @@ class ElectionManager:
 
         # Internal state — all mutations happen on the asyncio loop
         self._running = False
-        self._watchdog_task: Optional[asyncio.Task] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._watchdog_task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
         # Proposal tracking — resets each election cycle
         self._current_epoch: int = 0
         self._proposed_this_epoch: bool = (
             False  # dedupe: one proposal per node per epoch
         )
-        self._received_proposals: Dict[str, int] = {}  # node_id → tiebreaker_score
-        self._proposal_window_task: Optional[asyncio.Task] = None
+        self._received_proposals: dict[str, int] = {}  # node_id → tiebreaker_score
+        self._proposal_window_task: asyncio.Task | None = None
 
         # Yield tracking
-        self._yield_event: Optional[asyncio.Event] = (
+        self._yield_event: asyncio.Event | None = (
             None  # set when ELECT_PROMOTE arrives after our YIELD
         )
 
@@ -287,7 +287,7 @@ class ElectionManager:
             # Reset proposed flag so we can enter future elections
             self._proposed_this_epoch = False
 
-    async def _graceful_yield(self, target_node_id: Optional[str] = None) -> None:
+    async def _graceful_yield(self, target_node_id: str | None = None) -> None:
         """
         Drain in-flight tasks, broadcast ELECT_YIELD, wait for new leader.
 

@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, success
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 """
         return ask_ai_with_context(prompt, system_prompt=self._system_prompt)
 
-    def _validate(self, artifact: str, context: Any) -> Optional[str]:
+    def _validate(self, artifact: str, context: Any) -> str | None:
         """Validate Python syntax."""
         try:
             # Extract code

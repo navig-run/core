@@ -16,7 +16,6 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ class AIMessage:
     role: str  # 'system', 'user', 'assistant'
     content: str
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> dict[str, str]:
         return {"role": self.role, "content": self.content}
 
 
@@ -51,10 +50,10 @@ class AIClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        model: str | None = None,
         provider: str = "auto",  # 'auto', 'openrouter', 'openai', 'airllm', 'local'
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
     ):
         # Load from NAVIG config first
         self._load_navig_config()
@@ -360,10 +359,10 @@ class AIClient:
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> str:
         """
         Send chat completion request.
@@ -430,7 +429,7 @@ class AIClient:
 
     async def chat_routed(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         user_message: str = "",
         temperature: float = 0.7,
         max_tokens: int = 2048,
@@ -537,7 +536,7 @@ class AIClient:
 
     async def _execute_routed(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         decision,
         temperature: float,
     ) -> str:
@@ -597,16 +596,16 @@ class AIClient:
 
     async def _chat_local_with_model(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 200,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> str:
         """Convenience wrapper used by the LLM-based router."""
         return await self._chat_local(messages, temperature, max_tokens, model=model)
 
     @staticmethod
-    def _extract_user_message(messages: List[Dict[str, str]]) -> str:
+    def _extract_user_message(messages: list[dict[str, str]]) -> str:
         """Extract the last user message from the messages list."""
         for msg in reversed(messages):
             if msg.get("role") == "user":
@@ -616,7 +615,7 @@ class AIClient:
     async def _chat_with_providers(
         self,
         fallback_mgr,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
     ) -> str:
@@ -641,7 +640,7 @@ class AIClient:
 
     async def _chat_api(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
     ) -> str:
@@ -708,7 +707,7 @@ class AIClient:
 
     async def _chat_airllm(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
     ) -> str:
@@ -745,11 +744,11 @@ class AIClient:
 
     async def _chat_mcp_bridge(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
-        model: Optional[str] = None,
-        purpose: Optional[str] = None,
+        model: str | None = None,
+        purpose: str | None = None,
     ) -> str:
         """Route through the navig-bridge MCP (VS Code Copilot via MCP WebSocket).
 
@@ -777,10 +776,10 @@ class AIClient:
 
     async def _chat_github_models(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> str:
         """Route through GitHub Models (Azure AI Inference)."""
         from navig.agent.llm_providers import GitHubModelsProvider
@@ -800,10 +799,10 @@ class AIClient:
 
     async def _chat_local(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> str:
         """Use local Ollama or LM Studio."""
         session = await self._get_session()
@@ -837,7 +836,7 @@ class AIClient:
             raise RuntimeError(f"Local AI request failed: {e}") from e
 
     async def complete(
-        self, prompt: str, system_prompt: Optional[str] = None, **kwargs
+        self, prompt: str, system_prompt: str | None = None, **kwargs
     ) -> str:
         """Simple completion with optional system prompt."""
         messages = []
@@ -867,7 +866,7 @@ class AIClient:
 
 
 # Singleton instance
-_default_client: Optional[AIClient] = None
+_default_client: AIClient | None = None
 _default_client_lock = threading.Lock()
 
 
@@ -881,7 +880,7 @@ def get_ai_client() -> AIClient:
     return _default_client
 
 
-async def quick_chat(message: str, system: Optional[str] = None) -> str:
+async def quick_chat(message: str, system: str | None = None) -> str:
     """Quick one-shot chat."""
     client = get_ai_client()
     return await client.complete(message, system_prompt=system)

@@ -13,7 +13,7 @@ Based on patterns from standard security modules and redaction systems.
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # =============================================================================
 # Sensitive Data Redaction
@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Default patterns for detecting sensitive data
 # These are expanded from standard patterns to cover more cases
-DEFAULT_REDACT_PATTERNS: List[Tuple[re.Pattern, str]] = [
+DEFAULT_REDACT_PATTERNS: list[tuple[re.Pattern, str]] = [
     # ENV-style assignments (KEY=value, KEY: value)
     (
         re.compile(
@@ -141,7 +141,7 @@ def mask_token(token: str) -> str:
 
 def redact_sensitive_text(
     text: str,
-    patterns: Optional[List[Tuple[re.Pattern, str]]] = None,
+    patterns: list[tuple[re.Pattern, str]] | None = None,
     mode: str = "tools",
 ) -> str:
     """
@@ -175,8 +175,8 @@ def redact_sensitive_text(
 
 
 def redact_dict(
-    data: Dict[str, Any], sensitive_keys: Optional[List[str]] = None
-) -> Dict[str, Any]:
+    data: dict[str, Any], sensitive_keys: list[str] | None = None
+) -> dict[str, Any]:
     """
     Recursively redact sensitive values from a dictionary.
 
@@ -253,7 +253,7 @@ ENV_VAR_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 def substitute_env_vars(
     config: Any,
-    env: Optional[Dict[str, str]] = None,
+    env: dict[str, str] | None = None,
     path: str = "",
     strict: bool = True,
 ) -> Any:
@@ -298,7 +298,7 @@ def substitute_env_vars(
         return config
 
 
-def _substitute_string(value: str, env: Dict[str, str], path: str, strict: bool) -> str:
+def _substitute_string(value: str, env: dict[str, str], path: str, strict: bool) -> str:
     """Substitute env vars in a single string value."""
     if "$" not in value:
         return value
@@ -513,7 +513,7 @@ def is_safe_executable(executable: str) -> bool:
 
 def validate_command_safety(
     command: str, allow_unsafe: bool = False
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Validate a command for safety before execution.
 
@@ -564,7 +564,7 @@ class SecurityFinding:
         severity: str,  # "critical", "warn", "info"
         title: str,
         detail: str,
-        remediation: Optional[str] = None,
+        remediation: str | None = None,
     ):
         self.check_id = check_id
         self.severity = severity
@@ -572,7 +572,7 @@ class SecurityFinding:
         self.detail = detail
         self.remediation = remediation
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "check_id": self.check_id,
             "severity": self.severity,
@@ -582,7 +582,7 @@ class SecurityFinding:
         }
 
 
-def check_file_permissions(file_path: Path) -> List[SecurityFinding]:
+def check_file_permissions(file_path: Path) -> list[SecurityFinding]:
     """
     Check file permissions for security issues.
 
@@ -634,7 +634,7 @@ def check_file_permissions(file_path: Path) -> List[SecurityFinding]:
     return findings
 
 
-def check_config_security(config: Dict[str, Any]) -> List[SecurityFinding]:
+def check_config_security(config: dict[str, Any]) -> list[SecurityFinding]:
     """
     Check configuration for security issues.
 
@@ -689,8 +689,8 @@ def check_config_security(config: Dict[str, Any]) -> List[SecurityFinding]:
 
 
 def run_security_audit(
-    config: Dict[str, Any], config_dir: Optional[Path] = None
-) -> Dict[str, Any]:
+    config: dict[str, Any], config_dir: Path | None = None
+) -> dict[str, Any]:
     """
     Run a comprehensive security audit.
 

@@ -12,7 +12,6 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 try:
     import numpy as np
@@ -40,8 +39,8 @@ class EmbeddingConfig:
 
     provider: str = "local"  # local, openai
     model: str = "all-MiniLM-L6-v2"
-    cache_dir: Optional[Path] = None
-    api_key: Optional[str] = None
+    cache_dir: Path | None = None
+    api_key: str | None = None
     dimension: int = 384  # Default for MiniLM
     batch_size: int = 32
 
@@ -144,8 +143,8 @@ class LocalEmbeddingProvider(EmbeddingProvider):
     def __init__(
         self,
         model_name: str = "all-MiniLM-L6-v2",
-        cache_dir: Optional[Path] = None,
-        device: Optional[str] = None,
+        cache_dir: Path | None = None,
+        device: str | None = None,
     ):
         self.model_name = model_name
         self.cache_dir = cache_dir
@@ -222,9 +221,9 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         model: str = "text-embedding-3-small",
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
     ):
         import os
 
@@ -345,7 +344,7 @@ class CachedEmbeddingProvider(EmbeddingProvider):
     def _save_cache(self) -> None:
         """Save cache to disk."""
         try:
-            with open(self._cache_file(), "w") as f:
+            with open(self._cache_file(), "w", encoding="utf-8") as f:
                 json.dump(self._cache, f)
         except Exception as e:
             _debug_log(f"Failed to save embedding cache: {e}")

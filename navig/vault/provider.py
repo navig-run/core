@@ -12,8 +12,6 @@ Add an entry to PROVIDERS with at minimum: key_field, env.
 
 from __future__ import annotations
 
-from typing import Optional
-
 __all__ = ["PROVIDERS", "get_provider", "list_providers", "resolve_env"]
 
 # Registry of well-known providers.
@@ -147,7 +145,7 @@ PROVIDERS: dict[str, dict] = {
 }
 
 
-def get_provider(name: str) -> Optional[dict]:
+def get_provider(name: str) -> dict | None:
     """Return provider config for *name*, or None if unknown."""
     return PROVIDERS.get(name.lower())
 
@@ -157,7 +155,7 @@ def list_providers() -> list[str]:
     return sorted(PROVIDERS.keys())
 
 
-def resolve_env(provider_name: str) -> Optional[str]:
+def resolve_env(provider_name: str) -> str | None:
     """Return the value of the provider's env var, or None if unset/empty.
 
     Supports format strings in test_url (e.g. ``{token}``).

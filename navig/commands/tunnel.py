@@ -4,7 +4,7 @@ Tunnel Management Commands
 Encrypted channels. The Schema's preferred method.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -14,7 +14,7 @@ config_manager = get_config_manager()
 tunnel_manager = TunnelManager(config_manager)
 
 
-def start_tunnel(options: Dict[str, Any]):
+def start_tunnel(options: dict[str, Any]):
     """Start SSH tunnel for active server."""
     server_name = options.get("app") or config_manager.get_active_server()
 
@@ -50,7 +50,7 @@ def start_tunnel(options: Dict[str, Any]):
             ch.raw_print(traceback.format_exc())
 
 
-def stop_tunnel(options: Dict[str, Any]):
+def stop_tunnel(options: dict[str, Any]):
     """Stop SSH tunnel."""
     server_name = options.get("app") or config_manager.get_active_server()
 
@@ -71,7 +71,7 @@ def stop_tunnel(options: Dict[str, Any]):
         ch.error(f"Error: {e}")
 
 
-def restart_tunnel(options: Dict[str, Any]):
+def restart_tunnel(options: dict[str, Any]):
     """Restart tunnel."""
     server_name = options.get("app") or config_manager.get_active_server()
 
@@ -91,7 +91,7 @@ def restart_tunnel(options: Dict[str, Any]):
         ch.error(f"Error: {e}")
 
 
-def show_tunnel_status(options: Dict[str, Any]):
+def show_tunnel_status(options: dict[str, Any]):
     """Show tunnel status."""
     server_name = options.get("app") or config_manager.get_active_server()
 
@@ -139,7 +139,7 @@ def show_tunnel_status(options: Dict[str, Any]):
         ch.error("Port test failed")
 
 
-def auto_tunnel(options: Dict[str, Any]):
+def auto_tunnel(options: dict[str, Any]):
     """
     Check tunnel health and auto-recover if needed.
 

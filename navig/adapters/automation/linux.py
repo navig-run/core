@@ -5,7 +5,6 @@ Linux Automation Adapter using xdotool, wmctrl, and xclip
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -121,7 +120,7 @@ class LinuxAdapter:
         """Move mouse."""
         return self._run_command(["xdotool", "mousemove", str(x), str(y)])
 
-    def get_focused_window(self) -> Optional[WindowInfo]:
+    def get_focused_window(self) -> WindowInfo | None:
         """Get currently focused window."""
         result = self._run_command(["xdotool", "getactivewindow"])
         if not result.success:
@@ -130,7 +129,7 @@ class LinuxAdapter:
         win_id = result.stdout.strip()
         return self._get_window_info(win_id)
 
-    def _get_window_info(self, win_id: str) -> Optional[WindowInfo]:
+    def _get_window_info(self, win_id: str) -> WindowInfo | None:
         """Get window information."""
         # Get geometry
         geom_result = self._run_command(["xdotool", "getwindowgeometry", win_id])

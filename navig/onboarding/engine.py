@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Literal, Optional
+from typing import Literal
 
 PhaseLabel = Literal["bootstrap", "configuration"]
 
@@ -31,8 +32,8 @@ class StepResult:
     status: Literal["completed", "skipped", "failed"]
     output: dict
     duration_ms: int = 0
-    error: Optional[str] = None
-    fix_hint: Optional[str] = None
+    error: str | None = None
+    fix_hint: str | None = None
 
 
 @dataclass
@@ -45,7 +46,7 @@ class StepRecord:
     completed_at: str
     duration_ms: int
     output: dict
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def _verify_always_run() -> bool:
@@ -82,7 +83,7 @@ class EngineConfig:
     dry_run: bool = False
     no_genesis: bool = False
     reset: bool = False
-    jump_to_step: Optional[str] = None
+    jump_to_step: str | None = None
 
 
 @dataclass

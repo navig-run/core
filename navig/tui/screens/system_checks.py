@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, List, Optional
+from typing import Any
 
 from textual import on, work
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Label
@@ -52,7 +51,7 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
     }
     """
 
-    _CHECK_DEFS: List[tuple] = [
+    _CHECK_DEFS: list[tuple] = [
         (
             "Python runtime >= 3.10",
             check_python_version,
@@ -85,7 +84,7 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
         ),
     ]
 
-    def __init__(self, cfg: Optional[NavigConfig] = None, **kwargs: Any) -> None:
+    def __init__(self, cfg: NavigConfig | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._cfg = cfg or NavigConfig()
         self._critical_failed = False

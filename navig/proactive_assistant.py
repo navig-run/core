@@ -10,7 +10,7 @@ Coordinates all four modules of the intelligent AI assistant system:
 
 import json
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from navig import console_helper as ch
 from navig.assistant_utils import ensure_navig_directory
@@ -44,7 +44,7 @@ class ProactiveAssistant:
         self._error_resolution = None
         self._context_generator = None
 
-    def _load_assistant_config(self) -> Dict[str, Any]:
+    def _load_assistant_config(self) -> dict[str, Any]:
         """Load assistant configuration from config.yaml."""
         global_config = self.config.global_config
 
@@ -134,7 +134,7 @@ class ProactiveAssistant:
         """Check if high-risk operations require confirmation."""
         return self.assistant_config.get("confirmation_required", True)
 
-    def log_audit(self, action: str, details: Dict[str, Any]):
+    def log_audit(self, action: str, details: dict[str, Any]):
         """
         Log assistant action to audit log.
 
@@ -148,7 +148,7 @@ class ProactiveAssistant:
             timestamp = datetime.now().isoformat()
             log_entry = f"[{timestamp}] {action}: {json.dumps(details)}\n"
 
-            with open(audit_file, "a") as f:
+            with open(audit_file, "a", encoding="utf-8") as f:
                 f.write(log_entry)
 
         except Exception as e:

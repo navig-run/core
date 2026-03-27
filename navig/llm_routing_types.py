@@ -16,8 +16,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger("navig.llm_routing_types")
 
@@ -38,7 +39,7 @@ class ModelSelection:
     tier: str = ""
     strategy_name: str = ""
     is_uncensored: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return (
@@ -60,8 +61,8 @@ class LLMResult:
     finish_reason: str = ""
     is_fallback: bool = False
     attempts: int = 1
-    selection: Optional[ModelSelection] = None
-    raw: Dict[str, Any] = field(default_factory=dict)
+    selection: ModelSelection | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:
@@ -76,7 +77,7 @@ class LLMChunk:
     model: str = ""
     provider: str = ""
     finish_reason: str = ""
-    raw: Dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -84,17 +85,17 @@ class RoutingContext:
     """Context passed through the routing pipeline."""
 
     user_input: str = ""
-    messages: List[Dict[str, str]] = field(default_factory=list)
-    mode_hint: Optional[str] = None
-    tier_override: Optional[str] = None
-    model_override: Optional[str] = None
-    provider_override: Optional[str] = None
-    prefer_uncensored: Optional[bool] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    messages: list[dict[str, str]] = field(default_factory=list)
+    mode_hint: str | None = None
+    tier_override: str | None = None
+    model_override: str | None = None
+    provider_override: str | None = None
+    prefer_uncensored: bool | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
     stream: bool = False
     timeout: float = 120.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ---- Layer 1 Protocol: Mode Router ----
@@ -148,7 +149,7 @@ class LLMClientProtocol(Protocol):
 
     async def complete(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         model: str,
         temperature: float = 0.7,
         max_tokens: int = 4096,
@@ -159,7 +160,7 @@ class LLMClientProtocol(Protocol):
 
     async def stream(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         model: str,
         temperature: float = 0.7,
         max_tokens: int = 4096,
@@ -272,7 +273,7 @@ class UnifiedProviderFactory:
     """
 
     def __init__(self):
-        self._cache: Dict[str, Any] = {}
+        self._cache: dict[str, Any] = {}
 
     def get_client(self, provider_name: str, **kwargs: Any) -> Any:
         cache_key = f"{provider_name}:{kwargs.get('base_url', 'default')}"
@@ -328,7 +329,7 @@ class UnifiedProviderFactory:
 
 
 # Singleton
-_factory: Optional[UnifiedProviderFactory] = None
+_factory: UnifiedProviderFactory | None = None
 
 
 def get_provider_factory() -> UnifiedProviderFactory:

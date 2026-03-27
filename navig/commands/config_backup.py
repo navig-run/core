@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -27,7 +27,7 @@ def _get_backup_dir() -> Path:
     return backup_dir
 
 
-def _collect_configs(include_global: bool = True) -> Dict[str, Any]:
+def _collect_configs(include_global: bool = True) -> dict[str, Any]:
     """
     Collect all NAVIG configuration data.
 
@@ -138,7 +138,7 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> bool:
 
         # Write manifest
         manifest_path = tmpdir_path / "manifest.json"
-        with open(manifest_path, "w") as f:
+        with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
 
         # Create tarball
@@ -156,19 +156,19 @@ def _redact_secrets_in_dir(dir_path: Path):
 
     for yaml_file in dir_path.rglob("*.yaml"):
         try:
-            with open(yaml_file, "r") as f:
+            with open(yaml_file) as f:
                 data = yaml.safe_load(f)
 
             if data:
                 _redact_dict(data, sensitive_keys)
 
-                with open(yaml_file, "w") as f:
+                with open(yaml_file, "w", encoding="utf-8") as f:
                     yaml.dump(data, f, default_flow_style=False, sort_keys=False)
         except Exception:
             pass  # Skip files that can't be processed
 
 
-def _redact_dict(d: Dict, sensitive_keys: List[str]):
+def _redact_dict(d: dict, sensitive_keys: list[str]):
     """Recursively redact sensitive keys in a dictionary."""
     if not isinstance(d, dict):
         return
@@ -283,7 +283,7 @@ def _decrypt_file(file_path: Path, password: str) -> Path:
 # ============================================================================
 
 
-def export_config(options: Dict[str, Any]):
+def export_config(options: dict[str, Any]):
     """
     Export NAVIG configuration to a backup archive.
 
@@ -374,7 +374,7 @@ def export_config(options: Dict[str, Any]):
                         except Exception:  # noqa: BLE001
                             pass  # best-effort; failure is non-critical
 
-            with open(output, "w") as f:
+            with open(output, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         else:
             # Export as archive
@@ -424,7 +424,7 @@ def export_config(options: Dict[str, Any]):
 # ============================================================================
 
 
-def import_config(options: Dict[str, Any]):
+def import_config(options: dict[str, Any]):
     """
     Import NAVIG configuration from a backup archive.
 
@@ -466,7 +466,7 @@ def import_config(options: Dict[str, Any]):
         # Determine format
         if input_file.suffix == ".json":
             # JSON format
-            with open(input_file, "r") as f:
+            with open(input_file) as f:
                 data = json.load(f)
 
             hosts_data = data.get("hosts", {})
@@ -484,7 +484,7 @@ def import_config(options: Dict[str, Any]):
                 hosts_dir = extract_path / "hosts"
                 if hosts_dir.exists():
                     for yaml_file in hosts_dir.glob("*.yaml"):
-                        with open(yaml_file, "r") as f:
+                        with open(yaml_file) as f:
                             hosts_data[yaml_file.stem] = yaml.safe_load(f)
 
                 # Load apps
@@ -495,7 +495,7 @@ def import_config(options: Dict[str, Any]):
                         if host_dir.is_dir():
                             apps_data[host_dir.name] = {}
                             for yaml_file in host_dir.glob("*.yaml"):
-                                with open(yaml_file, "r") as f:
+                                with open(yaml_file) as f:
                                     apps_data[host_dir.name][yaml_file.stem] = (
                                         yaml.safe_load(f)
                                     )
@@ -565,7 +565,7 @@ def import_config(options: Dict[str, Any]):
 # ============================================================================
 
 
-def list_exports(options: Dict[str, Any]):
+def list_exports(options: dict[str, Any]):
     """List available configuration exports."""
     json_output = options.get("json", False)
     plain_output = options.get("plain", False)
@@ -629,7 +629,7 @@ def list_exports(options: Dict[str, Any]):
 # ============================================================================
 
 
-def inspect_export(options: Dict[str, Any]):
+def inspect_export(options: dict[str, Any]):
     """
     Inspect contents of a configuration export without importing.
 
@@ -661,7 +661,7 @@ def inspect_export(options: Dict[str, Any]):
 
         # Read contents
         if input_file.suffix == ".json" or str(input_file).endswith(".json"):
-            with open(input_file, "r") as f:
+            with open(input_file) as f:
                 data = json.load(f)
         else:
             # Archive format
@@ -675,7 +675,7 @@ def inspect_export(options: Dict[str, Any]):
                 manifest_path = extract_path / "manifest.json"
                 manifest = {}
                 if manifest_path.exists():
-                    with open(manifest_path, "r") as f:
+                    with open(manifest_path) as f:
                         manifest = json.load(f)
 
                 # Collect data from files
@@ -689,7 +689,7 @@ def inspect_export(options: Dict[str, Any]):
                 hosts_dir = extract_path / "hosts"
                 if hosts_dir.exists():
                     for yaml_file in hosts_dir.glob("*.yaml"):
-                        with open(yaml_file, "r") as f:
+                        with open(yaml_file) as f:
                             data["hosts"][yaml_file.stem] = yaml.safe_load(f)
 
                 apps_dir = extract_path / "apps"
@@ -698,7 +698,7 @@ def inspect_export(options: Dict[str, Any]):
                         if host_dir.is_dir():
                             data["apps"][host_dir.name] = {}
                             for yaml_file in host_dir.glob("*.yaml"):
-                                with open(yaml_file, "r") as f:
+                                with open(yaml_file) as f:
                                     data["apps"][host_dir.name][yaml_file.stem] = (
                                         yaml.safe_load(f)
                                     )
@@ -748,7 +748,7 @@ def inspect_export(options: Dict[str, Any]):
 # ============================================================================
 
 
-def delete_export(options: Dict[str, Any]):
+def delete_export(options: dict[str, Any]):
     """
     Delete a configuration export file.
 

@@ -57,7 +57,7 @@ def get_bundled_templates_dir() -> Path:
 # =============================================================================
 
 
-def parse_markdown_with_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
+def parse_markdown_with_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     """
     Parse markdown with YAML frontmatter.
 
@@ -84,7 +84,7 @@ def parse_markdown_with_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     return frontmatter, body.strip()
 
 
-def format_markdown_with_frontmatter(frontmatter: Dict[str, Any], body: str) -> str:
+def format_markdown_with_frontmatter(frontmatter: dict[str, Any], body: str) -> str:
     """Format markdown with YAML frontmatter."""
     if not frontmatter:
         return body
@@ -103,7 +103,7 @@ class ContextFile:
 
     def __init__(self, path: Path):
         self.path = path
-        self._frontmatter: Dict[str, Any] = {}
+        self._frontmatter: dict[str, Any] = {}
         self._body: str = ""
         self._loaded = False
 
@@ -134,7 +134,7 @@ class ContextFile:
         self.path.write_text(content, encoding="utf-8")
 
     @property
-    def frontmatter(self) -> Dict[str, Any]:
+    def frontmatter(self) -> dict[str, Any]:
         if not self._loaded:
             self.load()
         return self._frontmatter
@@ -152,7 +152,7 @@ class ContextFile:
             self.load()
         return format_markdown_with_frontmatter(self._frontmatter, self._body)
 
-    def get_summary(self) -> Optional[str]:
+    def get_summary(self) -> str | None:
         """Get summary from frontmatter."""
         return self.frontmatter.get("summary")
 
@@ -168,7 +168,7 @@ class ContextFile:
         if save:
             self.save()
 
-    def update_frontmatter(self, updates: Dict[str, Any], save: bool = True) -> None:
+    def update_frontmatter(self, updates: dict[str, Any], save: bool = True) -> None:
         """Update frontmatter fields."""
         if not self._loaded:
             self.load()
@@ -190,13 +190,13 @@ class ContextLayer:
     and future context sources.
     """
 
-    def __init__(self, context_dir: Optional[Path] = None):
+    def __init__(self, context_dir: Path | None = None):
         self.context_dir = context_dir or get_context_dir()
         self.templates_dir = get_bundled_templates_dir()
 
         # Context files
-        self._soul: Optional[ContextFile] = None
-        self._user: Optional[ContextFile] = None
+        self._soul: ContextFile | None = None
+        self._user: ContextFile | None = None
 
     def ensure_context_dir(self) -> None:
         """Create context directory if it doesn't exist."""
@@ -277,7 +277,7 @@ class ContextLayer:
             return self.user.body
         return ""
 
-    def get_user_preferences(self) -> Dict[str, Any]:
+    def get_user_preferences(self) -> dict[str, Any]:
         """
         Get parsed user preferences from USER.md.
 
@@ -297,7 +297,7 @@ class ContextLayer:
         except Exception:
             return {}
 
-    def update_user_profile(self, updates: Dict[str, str]) -> None:
+    def update_user_profile(self, updates: dict[str, str]) -> None:
         """
         Update user profile with new information.
 
@@ -342,7 +342,7 @@ class ContextLayer:
 
         return "\n\n".join(parts)
 
-    def get_context_summary(self) -> Dict[str, Any]:
+    def get_context_summary(self) -> dict[str, Any]:
         """Get summary of available context files."""
         return {
             "soul": {
@@ -368,7 +368,7 @@ class ContextLayer:
 # Module-level convenience functions
 # =============================================================================
 
-_default_context: Optional[ContextLayer] = None
+_default_context: ContextLayer | None = None
 
 
 def get_context_layer() -> ContextLayer:

@@ -100,7 +100,7 @@ def proactive_setup(
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
 
-    with open(global_config_file, "r") as f:
+    with open(global_config_file) as f:
         config = yaml.safe_load(f) or {}
 
     if "proactive" not in config:
@@ -170,7 +170,7 @@ def proactive_setup(
         ch.success(f"Email configured: {email_type}")
 
     # Save config
-    with open(global_config_file, "w") as f:
+    with open(global_config_file, "w", encoding="utf-8") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     ch.success("Configuration saved!")

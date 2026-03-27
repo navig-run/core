@@ -17,10 +17,11 @@ import math
 import re
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.tools.registry import BaseTool, ToolResult
 
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 class MemoryEntry:
     key: str
     value: Any
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     stored_at: float = field(default_factory=time.time)
     access_count: int = 0
 
@@ -47,9 +48,9 @@ class MemoryStore:
     Can optionally persist entries to a JSON file so they survive restarts.
     """
 
-    def __init__(self, persist_path: Optional[Path] = None) -> None:
+    def __init__(self, persist_path: Path | None = None) -> None:
         self._lock = RLock()
-        self._store: Dict[str, MemoryEntry] = {}
+        self._store: dict[str, MemoryEntry] = {}
         self._persist_path = persist_path
         if persist_path and persist_path.exists():
             self._load()
@@ -63,7 +64,7 @@ class MemoryStore:
         key: str,
         value: Any,
         *,
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
         overwrite: bool = True,
     ) -> bool:
         """Store *value* under *key*.  Returns True if a new entry was created."""
@@ -80,7 +81,7 @@ class MemoryStore:
                 self._save()
             return not exists
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Return the value stored under *key*, or None if not found."""
         with self._lock:
             entry = self._store.get(key)
@@ -99,11 +100,11 @@ class MemoryStore:
                 self._save()
             return True
 
-    def keys(self) -> List[str]:
+    def keys(self) -> list[str]:
         with self._lock:
             return list(self._store.keys())
 
-    def list_entries(self) -> List[Dict[str, Any]]:
+    def list_entries(self) -> list[dict[str, Any]]:
         with self._lock:
             return [
                 {
@@ -133,8 +134,8 @@ class MemoryStore:
         query: str,
         *,
         top_k: int = 5,
-        tags: Optional[List[str]] = None,
-    ) -> List[Tuple[str, Any, float]]:
+        tags: list[str] | None = None,
+    ) -> list[tuple[str, Any, float]]:
         """Return up to *top_k* entries most similar to *query*.
 
         Similarity is computed as cosine similarity of term-frequency vectors
@@ -147,7 +148,7 @@ class MemoryStore:
             return []
 
         with self._lock:
-            results: List[Tuple[str, Any, float]] = []
+            results: list[tuple[str, Any, float]] = []
             for entry in self._store.values():
                 if tags and not any(t in entry.tags for t in tags):
                     continue
@@ -207,14 +208,14 @@ _default_store = MemoryStore()
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 
 
-def _tokenise(text: str) -> Dict[str, int]:
-    tokens: Dict[str, int] = defaultdict(int)
+def _tokenise(text: str) -> dict[str, int]:
+    tokens: dict[str, int] = defaultdict(int)
     for t in _TOKEN_RE.findall(text.lower()):
         tokens[t] += 1
     return dict(tokens)
 
 
-def _cosine(a: Dict[str, int], b: Dict[str, int]) -> float:
+def _cosine(a: dict[str, int], b: dict[str, int]) -> float:
     if not a or not b:
         return 0.0
     dot = sum(a.get(k, 0) * b.get(k, 0) for k in a)
@@ -287,8 +288,8 @@ class MemoryStoreTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[Callable[[str], None]] = None,
+        args: dict[str, Any],
+        on_status: Callable[[str], None] | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
         key = args.get("key", "").strip()
@@ -302,7 +303,7 @@ class MemoryStoreTool(BaseTool):
                 status_events=[],
             )
         value = args.get("value")
-        tags: List[str] = args.get("tags") or []
+        tags: list[str] = args.get("tags") or []
         overwrite = bool(args.get("overwrite", True))
 
         store: MemoryStore = args.get("_store") or _default_store
@@ -376,8 +377,8 @@ class MemoryFetchTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[Callable[[str], None]] = None,
+        args: dict[str, Any],
+        on_status: Callable[[str], None] | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
         store: MemoryStore = args.get("_store") or _default_store
@@ -412,7 +413,7 @@ class MemoryFetchTool(BaseTool):
         query = args.get("query", "").strip()
         if query:
             top_k = int(args.get("top_k", 5))
-            tags: Optional[List[str]] = args.get("tags")  # type: ignore[assignment]
+            tags: list[str] | None = args.get("tags")  # type: ignore[assignment]
             hits = store.search(query, top_k=top_k, tags=tags)
             results = [{"key": k, "value": v, "score": round(s, 4)} for k, v, s in hits]
             return ToolResult(

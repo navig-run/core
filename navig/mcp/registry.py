@@ -1,7 +1,7 @@
 """MCP Client Manager and Tool Registry."""
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -48,20 +48,20 @@ class MCPClientManager:
 
     def __init__(self, config: dict = None):
         self.config = config or {}
-        self._clients: Dict[str, MCPClient] = {}
-        self._reconnect_tasks: Dict[str, asyncio.Task] = {}
+        self._clients: dict[str, MCPClient] = {}
+        self._reconnect_tasks: dict[str, asyncio.Task] = {}
         self._started = False
 
     @property
-    def clients(self) -> Dict[str, MCPClient]:
+    def clients(self) -> dict[str, MCPClient]:
         """Get all registered clients."""
         return self._clients
 
-    def get_connected_clients(self) -> List[MCPClient]:
+    def get_connected_clients(self) -> list[MCPClient]:
         """Get all connected clients."""
         return [c for c in self._clients.values() if c.is_connected]
 
-    def get_all_tools(self) -> List[MCPTool]:
+    def get_all_tools(self) -> list[MCPTool]:
         """Get tools from all connected clients."""
         tools = []
         for client in self._clients.values():
@@ -69,7 +69,7 @@ class MCPClientManager:
                 tools.extend(client.tools)
         return tools
 
-    def get_all_resources(self) -> List[MCPResource]:
+    def get_all_resources(self) -> list[MCPResource]:
         """Get resources from all connected clients."""
         resources = []
         for client in self._clients.values():
@@ -77,7 +77,7 @@ class MCPClientManager:
                 resources.extend(client.resources)
         return resources
 
-    def find_tool(self, name: str) -> Optional[Tuple[MCPClient, MCPTool]]:
+    def find_tool(self, name: str) -> tuple[MCPClient, MCPTool] | None:
         """
         Find tool by name across all clients.
 
@@ -90,7 +90,7 @@ class MCPClientManager:
                         return client, tool
         return None
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any] = None) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any] = None) -> Any:
         """
         Call a tool, routing to the correct client.
 
@@ -228,7 +228,7 @@ class MCPClientManager:
         await self._connect_with_retry(client, max_attempts=1)
         return client.is_connected
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """
         Get status of all clients.
 

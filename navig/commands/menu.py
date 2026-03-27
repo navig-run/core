@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Capability detection — single source of truth lives in onboard.py
@@ -28,7 +28,7 @@ from navig.commands.onboard import _auto_install_textual, _terminal_supports_tui
 # Menu catalogue — mirrors the three-pillar + DEV INTEL + SYSTEM structure
 # that already exists in interactive.py.  "id" keys are the _dispatch() routes.
 # ---------------------------------------------------------------------------
-MENU_ITEMS: List[Dict[str, str]] = [
+MENU_ITEMS: list[dict[str, str]] = [
     # ── SYSOPS ──────────────────────────────────────────────────────────────
     {
         "id": "host",
@@ -174,7 +174,7 @@ MENU_ITEMS: List[Dict[str, str]] = [
     },
 ]
 
-_GROUP_COLORS: Dict[str, str] = {
+_GROUP_COLORS: dict[str, str] = {
     "SYSOPS": "#0ea5e9",
     "DEVOPS": "#10b981",
     "LIFEOPS": "#a855f7",
@@ -396,7 +396,7 @@ def _run_tui_menu() -> None:  # noqa: C901
 
         # ── sidebar helpers ───────────────────────────────────────────────
 
-        def _build_list(self, items: List[Dict[str, str]]) -> list:
+        def _build_list(self, items: list[dict[str, str]]) -> list:
             widgets: list = []
             seen: set = set()
             for item in items:
@@ -410,7 +410,7 @@ def _run_tui_menu() -> None:  # noqa: C901
 
         # ── preview ───────────────────────────────────────────────────────
 
-        def _render_preview(self, item: Dict[str, str]) -> str:
+        def _render_preview(self, item: dict[str, str]) -> str:
             grp = item.get("group", "")
             col = _GROUP_COLORS.get(grp, "#22d3ee")
             desc = _load_skill_preview(item["id"])
@@ -521,7 +521,7 @@ def _run_tui_menu() -> None:  # noqa: C901
 
         # ── helpers ──────────────────────────────────────────────────────
 
-        def _rebuild_list(self, items: List[Dict[str, str]]) -> None:
+        def _rebuild_list(self, items: list[dict[str, str]]) -> None:
             try:
                 sc = self.query_one("#sidebar-inner", ScrollableContainer)
                 sc.remove_children()
@@ -613,7 +613,7 @@ def _dispatch(command: str) -> None:  # noqa: C901
         Console().print(f"[red]Failed to load menu state:[/red] {exc}")
         return
 
-    routes: Dict[str, Any] = {
+    routes: dict[str, Any] = {
         "host": show_host_management_menu,
         "files": show_file_operations_menu,
         "db": show_database_menu,

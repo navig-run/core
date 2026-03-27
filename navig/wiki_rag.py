@@ -17,7 +17,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional
 
 from navig import console_helper as ch
 
@@ -33,13 +33,13 @@ class WikiDocument:
     title: str
     content: str
     folder: str
-    chunks: List[str] = None
+    chunks: list[str] = None
 
     def __post_init__(self):
         if self.chunks is None:
             self.chunks = self._chunk_content()
 
-    def _chunk_content(self, chunk_size: int = 500, overlap: int = 100) -> List[str]:
+    def _chunk_content(self, chunk_size: int = 500, overlap: int = 100) -> list[str]:
         """Split content into overlapping chunks for better retrieval."""
         if len(self.content) <= chunk_size:
             return [self.content]
@@ -148,7 +148,7 @@ class TextTokenizer:
     }
 
     @staticmethod
-    def tokenize(text: str) -> List[str]:
+    def tokenize(text: str) -> list[str]:
         """Tokenize text into words."""
         # Convert to lowercase and split on non-alphanumeric
         words = re.findall(r"\b[a-z0-9]+\b", text.lower())
@@ -172,13 +172,13 @@ class BM25Index:
         """
         self.k1 = k1
         self.b = b
-        self.documents: List[Tuple[WikiDocument, int]] = []  # (doc, chunk_idx)
-        self.doc_freqs: Dict[str, int] = defaultdict(int)
-        self.doc_lens: List[int] = []
+        self.documents: list[tuple[WikiDocument, int]] = []  # (doc, chunk_idx)
+        self.doc_freqs: dict[str, int] = defaultdict(int)
+        self.doc_lens: list[int] = []
         self.avg_doc_len: float = 0
-        self.term_freqs: List[Counter] = []
+        self.term_freqs: list[Counter] = []
 
-    def index(self, documents: List[WikiDocument]):
+    def index(self, documents: list[WikiDocument]):
         """Index a list of documents."""
         self.documents = []
         self.term_freqs = []
@@ -211,7 +211,7 @@ class BM25Index:
             return 0
         return math.log((n - df + 0.5) / (df + 0.5) + 1)
 
-    def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
         """Search the index.
 
         Args:
@@ -321,7 +321,7 @@ class WikiRAG:
             return
 
         self.index = BM25Index()
-        self.documents: List[WikiDocument] = []
+        self.documents: list[WikiDocument] = []
         self.index_file = self.wiki_path / ".meta" / "rag_index.json"
 
         self._load_or_build_index()
@@ -339,7 +339,7 @@ class WikiRAG:
 
     def _load_index(self):
         """Load index from file."""
-        with open(self.index_file, "r", encoding="utf-8") as f:
+        with open(self.index_file, encoding="utf-8") as f:
             data = json.load(f)
 
         self.documents = [
@@ -422,7 +422,7 @@ class WikiRAG:
         self.index.index(self.documents)
         self._save_index()
 
-    def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
         """Search wiki for relevant content.
 
         Args:
@@ -502,7 +502,7 @@ class WikiRAG:
 
         return "\n\n---\n\n".join(context_parts)
 
-    def add_document(self, path: str, content: str, title: Optional[str] = None):
+    def add_document(self, path: str, content: str, title: str | None = None):
         """Add a new document to the index.
 
         Args:
@@ -540,7 +540,7 @@ class WikiRAG:
         self.index.index(self.documents)
         self._save_index()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get index statistics."""
         if self._project_indexer is not None:
             s = self._project_indexer.stats()
@@ -572,7 +572,7 @@ class WikiRAG:
 
 def get_wiki_rag(
     wiki_path: Path,
-    project_root: Optional[Path] = None,
+    project_root: Path | None = None,
     use_unified: bool = False,
 ) -> WikiRAG:
     """Get or create WikiRAG instance.

@@ -21,7 +21,6 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from .crypto import CryptoEngine, CryptoError
 from .session import SessionStore, VaultSession
@@ -51,7 +50,7 @@ class VaultV2:
 
     def unlock(
         self,
-        passphrase: Optional[bytes] = None,
+        passphrase: bytes | None = None,
         ttl_seconds: int = _DEFAULT_TTL,
     ) -> VaultSession:
         """Derive master key and store an active session.
@@ -90,8 +89,8 @@ class VaultV2:
         payload: bytes,
         *,
         kind: VaultItemKind = VaultItemKind.SECRET,
-        provider: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        provider: str | None = None,
+        metadata: dict | None = None,
     ) -> str:
         """Encrypt and store *payload* under *label*.
 
@@ -203,7 +202,7 @@ class VaultV2:
 
     def rotate(
         self,
-        new_passphrase: Optional[bytes] = None,
+        new_passphrase: bytes | None = None,
     ) -> int:
         """Re-encrypt all DEKs with a new master key.
 
@@ -228,7 +227,10 @@ class VaultV2:
         self._engine._salt = None  # clear cache
         salt_path.write_bytes(new_salt)
         try:
-            salt_path.chmod(0o600)
+            try:
+                salt_path.chmod(0o600)
+            except (OSError, PermissionError):
+                pass
         except OSError:
             pass  # best-effort cleanup
 
@@ -276,10 +278,10 @@ class VaultV2:
     def put_json_file(
         self,
         label: str,
-        source: "str | Path",
+        source: str | Path,
         *,
-        provider: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        provider: str | None = None,
+        metadata: dict | None = None,
     ) -> str:
         """Encrypt and store a JSON key file (e.g. Google service account).
 
@@ -337,8 +339,8 @@ class VaultV2:
 
     def list(
         self,
-        kind: Optional[VaultItemKind] = None,
-        provider: Optional[str] = None,
+        kind: VaultItemKind | None = None,
+        provider: str | None = None,
     ) -> list[VaultItem]:
         return self._store.list(kind=kind, provider=provider)
 
@@ -359,10 +361,10 @@ class VaultV2:
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 
-_vault_v2: Optional["VaultV2"] = None
+_vault_v2: VaultV2 | None = None
 
 
-def get_vault_v2(vault_dir: Optional[Path] = None) -> VaultV2:
+def get_vault_v2(vault_dir: Path | None = None) -> VaultV2:
     """Return (or create) the global VaultV2 singleton.
 
     Parameters

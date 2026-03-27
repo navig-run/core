@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     from pydantic import BaseModel, ConfigDict, Field
@@ -102,9 +102,9 @@ if PYDANTIC_AVAILABLE:
 
         provider: str = ""
         model: str = ""
-        base_url: Optional[str] = None
-        api_key: Optional[str] = None
-        defaults: Dict[str, Any] = Field(default_factory=dict)
+        base_url: str | None = None
+        api_key: str | None = None
+        defaults: dict[str, Any] = Field(default_factory=dict)
 
         model_config = ConfigDict(extra="allow")
 
@@ -131,7 +131,7 @@ if PYDANTIC_AVAILABLE:
         prefer_local: bool = True
         fallback_enabled: bool = True
         # New: nested model slots
-        models: Optional[AIModelsConfig] = None
+        models: AIModelsConfig | None = None
         # Legacy flat keys (backward compat)
         small_model: str = ""
         big_model: str = ""
@@ -143,7 +143,7 @@ if PYDANTIC_AVAILABLE:
         big_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
         small_ctx: int = Field(default=2048, ge=256, le=131072)
         big_ctx: int = Field(default=4096, ge=256, le=131072)
-        router_model: Optional[str] = None
+        router_model: str | None = None
         router_max_tokens: int = Field(default=80, ge=1, le=1000)
 
         model_config = ConfigDict(extra="allow")
@@ -151,8 +151,8 @@ if PYDANTIC_AVAILABLE:
     class AIConfig(BaseModel):
         """AI/LLM configuration."""
 
-        default_provider: Optional[str] = None
-        model_preference: List[str] = Field(
+        default_provider: str | None = None
+        model_preference: list[str] = Field(
             default_factory=lambda: [
                 "deepseek/deepseek-coder-33b-instruct",
                 "google/gemini-flash-1.5",
@@ -161,12 +161,12 @@ if PYDANTIC_AVAILABLE:
         )
         temperature: float = Field(default=0.7, ge=0.0, le=2.0)
         max_tokens: int = Field(default=4096, ge=1, le=128000)
-        api_key: Optional[str] = None  # Should use ${ENV_VAR} syntax
+        api_key: str | None = None  # Should use ${ENV_VAR} syntax
         routing: AIRoutingConfig = Field(default_factory=AIRoutingConfig)
 
         @field_validator("api_key")
         @classmethod
-        def check_api_key_security(cls, v: Optional[str]) -> Optional[str]:
+        def check_api_key_security(cls, v: str | None) -> str | None:
             """Warn if API key appears to be hardcoded."""
             if v and not v.startswith("${") and len(v) > 20:
                 import warnings
@@ -216,7 +216,7 @@ if PYDANTIC_AVAILABLE:
         embedding_model: str = "text-embedding-3-small"
         batch_size: int = Field(default=100, ge=1, le=1000)
         max_chunks_per_file: int = Field(default=500, ge=10, le=5000)
-        api_snapshot_policies: Dict[str, Any] = Field(
+        api_snapshot_policies: dict[str, Any] = Field(
             default_factory=dict,
             description=(
                 "Per-tool snapshot storage policies. "
@@ -232,7 +232,7 @@ if PYDANTIC_AVAILABLE:
         port: int = Field(default=8765, ge=1024, le=65535)
         host: str = "127.0.0.1"
         require_auth: bool = True
-        allowed_origins: List[str] = Field(default_factory=list)
+        allowed_origins: list[str] = Field(default_factory=list)
 
     class DeckConfig(BaseModel):
         """Deck Mini App configuration (tightly coupled to Telegram bot)."""
@@ -240,7 +240,7 @@ if PYDANTIC_AVAILABLE:
         enabled: bool = True
         port: int = Field(default=3080, ge=1024, le=65535)
         bind: str = "127.0.0.1"
-        static_dir: Optional[str] = Field(
+        static_dir: str | None = Field(
             default=None,
             description="Override path to Deck SPA build (auto-detected if None)",
         )
@@ -260,28 +260,28 @@ if PYDANTIC_AVAILABLE:
 
         model_config = ConfigDict(extra="allow")
 
-        bot_token: Optional[str] = None
-        allowed_users: List[int] = Field(default_factory=list)
-        allowed_groups: List[int] = Field(default_factory=list)
+        bot_token: str | None = None
+        allowed_users: list[int] = Field(default_factory=list)
+        allowed_groups: list[int] = Field(default_factory=list)
         require_auth: bool = True
         session_isolation: bool = True
         group_activation_mode: str = "mention"
-        deck_url: Optional[str] = None
+        deck_url: str | None = None
 
     class ToolsConfig(BaseModel):
         """Tool Router & Registry configuration."""
 
         enabled: bool = True
         max_calls_per_turn: int = Field(default=10, ge=1, le=50)
-        blocked_tools: List[str] = Field(
+        blocked_tools: list[str] = Field(
             default_factory=list,
             description="Tool names to block entirely (e.g. ['code_sandbox'])",
         )
-        require_confirmation: List[str] = Field(
+        require_confirmation: list[str] = Field(
             default_factory=list,
             description="Tool names requiring human confirmation before execution",
         )
-        enabled_domains: List[str] = Field(
+        enabled_domains: list[str] = Field(
             default_factory=lambda: ["web", "image", "code", "system", "data"],
             description="Enabled tool domains",
         )
@@ -308,12 +308,12 @@ if PYDANTIC_AVAILABLE:
         version: str = "1.0"
 
         # API Keys (should use env vars)
-        openrouter_api_key: Optional[str] = Field(
+        openrouter_api_key: str | None = Field(
             default=None, description="OpenRouter API key (use ${OPENROUTER_API_KEY})"
         )
 
         # Default server
-        default_server: Optional[str] = Field(
+        default_server: str | None = Field(
             default=None, description="Default server to use when none specified"
         )
 
@@ -326,7 +326,7 @@ if PYDANTIC_AVAILABLE:
 
         # AI Configuration
         ai: AIConfig = Field(default_factory=AIConfig)
-        ai_model_preference: Optional[List[str]] = None  # Legacy field
+        ai_model_preference: list[str] | None = None  # Legacy field
 
         # Tunnel
         tunnel_auto_cleanup: bool = True
@@ -385,17 +385,15 @@ if PYDANTIC_AVAILABLE:
 
         # Authentication
         auth_method: AuthMethod = AuthMethod.KEY
-        ssh_key: Optional[str] = Field(
-            default=None, description="Path to SSH private key"
-        )
-        password: Optional[str] = Field(
+        ssh_key: str | None = Field(default=None, description="Path to SSH private key")
+        password: str | None = Field(
             default=None, description="SSH password (use ${ENV_VAR} or key auth)"
         )
 
         # Display
-        display_name: Optional[str] = None
-        description: Optional[str] = None
-        tags: List[str] = Field(default_factory=list)
+        display_name: str | None = None
+        description: str | None = None
+        tags: list[str] = Field(default_factory=list)
 
         # Connection settings
         connect_timeout: int = Field(default=30, ge=5, le=300)
@@ -403,7 +401,7 @@ if PYDANTIC_AVAILABLE:
 
         # Features
         allow_agent_forwarding: bool = False
-        default_working_dir: Optional[str] = None
+        default_working_dir: str | None = None
 
         # OS/Platform
         os_type: str = "linux"
@@ -458,7 +456,7 @@ if PYDANTIC_AVAILABLE:
 class ConfigValidationError(Exception):
     """Configuration validation error with detailed context."""
 
-    def __init__(self, errors: List[Dict[str, Any]], config_type: str = "config"):
+    def __init__(self, errors: list[dict[str, Any]], config_type: str = "config"):
         self.errors = errors
         self.config_type = config_type
 
@@ -473,8 +471,8 @@ class ConfigValidationError(Exception):
 
 
 def validate_global_config(
-    raw: Dict[str, Any], strict: bool = False
-) -> Optional[GlobalConfig]:
+    raw: dict[str, Any], strict: bool = False
+) -> GlobalConfig | None:
     """
     Validate global configuration.
 
@@ -507,8 +505,8 @@ def validate_global_config(
 
 
 def validate_host_config(
-    raw: Dict[str, Any], host_name: str = "host", strict: bool = False
-) -> Optional[HostConfig]:
+    raw: dict[str, Any], host_name: str = "host", strict: bool = False
+) -> HostConfig | None:
     """
     Validate host configuration.
 
@@ -534,7 +532,7 @@ def validate_host_config(
         return None
 
 
-def get_config_schema(config_type: str = "global") -> Optional[Dict[str, Any]]:
+def get_config_schema(config_type: str = "global") -> dict[str, Any] | None:
     """
     Get JSON schema for configuration.
 
@@ -558,8 +556,8 @@ def get_config_schema(config_type: str = "global") -> Optional[Dict[str, Any]]:
 
 
 def validate_config_dict(
-    config: Dict[str, Any], show_warnings: bool = True
-) -> tuple[bool, List[str]]:
+    config: dict[str, Any], show_warnings: bool = True
+) -> tuple[bool, list[str]]:
     """
     Quick validation check that returns issues as strings.
 

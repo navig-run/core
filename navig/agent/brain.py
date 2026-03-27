@@ -19,7 +19,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.agent.component import Component
 from navig.agent.config import AgentConfig, BrainConfig
@@ -48,11 +48,11 @@ class Thought:
 
     type: ThoughtType
     content: str
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.8
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.type.name,
             "content": self.content,
@@ -67,15 +67,15 @@ class Plan:
     """A plan of action."""
 
     goal: str
-    steps: List[str]
+    steps: list[str]
     reasoning: str
-    estimated_duration: Optional[str] = None
+    estimated_duration: str | None = None
     priority: int = 5  # 1-10
     status: str = "pending"  # pending, in_progress, completed, failed
     current_step: int = 0
     created_at: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "goal": self.goal,
             "steps": self.steps,
@@ -94,12 +94,12 @@ class Decision:
 
     question: str
     choice: str
-    alternatives: List[str]
+    alternatives: list[str]
     reasoning: str
     confidence: float
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "question": self.question,
             "choice": self.choice,
@@ -191,9 +191,9 @@ Guidelines:
     def __init__(
         self,
         config: BrainConfig,
-        nervous_system: Optional[NervousSystem] = None,
-        agent_config: Optional[AgentConfig] = None,
-        soul: Optional["Soul"] = None,
+        nervous_system: NervousSystem | None = None,
+        agent_config: AgentConfig | None = None,
+        soul: Soul | None = None,
     ):
         super().__init__("brain", nervous_system)
         self.config = config
@@ -201,19 +201,19 @@ Guidelines:
         self._soul = soul  # Soul component for personality injection
 
         # State
-        self._thoughts: List[Thought] = []
-        self._plans: List[Plan] = []
-        self._decisions: List[Decision] = []
-        self._context: Dict[str, Any] = {}
+        self._thoughts: list[Thought] = []
+        self._plans: list[Plan] = []
+        self._decisions: list[Decision] = []
+        self._context: dict[str, Any] = {}
 
         # Processing
         self._thinking = False
-        self._current_plan: Optional[Plan] = None
+        self._current_plan: Plan | None = None
 
         # AI client
         self._ai_client = None
 
-    def set_soul(self, soul: "Soul") -> None:
+    def set_soul(self, soul: Soul) -> None:
         """Set the Soul component for personality injection."""
         self._soul = soul
 
@@ -244,7 +244,7 @@ Guidelines:
                 EventType.METRIC_COLLECTED, self._on_metrics
             )
 
-    async def _on_health_check(self) -> Dict[str, Any]:
+    async def _on_health_check(self) -> dict[str, Any]:
         """Health check for brain."""
         return {
             "thoughts_count": len(self._thoughts),
@@ -305,8 +305,8 @@ Guidelines:
     async def think(
         self,
         prompt: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
+        context: dict[str, Any] | None = None,
+    ) -> str | None:
         """
         Process a prompt and generate a response.
 
@@ -355,7 +355,7 @@ Guidelines:
         finally:
             self._thinking = False
 
-    async def _query_ai(self, prompt: str, context: str) -> Optional[str]:
+    async def _query_ai(self, prompt: str, context: str) -> str | None:
         """Query the AI model."""
         if not self._ai_client:
             return None
@@ -385,7 +385,7 @@ Guidelines:
         except Exception:
             return None
 
-    def _build_context(self, prompt: str, context: Dict[str, Any]) -> str:
+    def _build_context(self, prompt: str, context: dict[str, Any]) -> str:
         """Build context string for AI."""
         parts = []
 
@@ -413,7 +413,7 @@ Guidelines:
     async def create_plan(
         self,
         goal: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> Plan:
         """
         Create a plan to achieve a goal.
@@ -481,8 +481,8 @@ Respond with a JSON object containing:
     async def make_decision(
         self,
         question: str,
-        options: List[str],
-        context: Optional[Dict[str, Any]] = None,
+        options: list[str],
+        context: dict[str, Any] | None = None,
     ) -> Decision:
         """
         Make a decision between options.
@@ -542,8 +542,8 @@ Respond with JSON:
     async def analyze_and_respond(
         self,
         situation: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
+        context: dict[str, Any] | None = None,
+    ) -> str | None:
         """
         Analyze a situation and formulate a response.
 
@@ -562,18 +562,18 @@ Respond with JSON:
 
         return response
 
-    def get_thoughts(self, limit: int = 10) -> List[Thought]:
+    def get_thoughts(self, limit: int = 10) -> list[Thought]:
         """Get recent thoughts."""
         return self._thoughts[-limit:]
 
-    def get_plans(self) -> List[Plan]:
+    def get_plans(self) -> list[Plan]:
         """Get all plans."""
         return self._plans
 
-    def get_decisions(self, limit: int = 10) -> List[Decision]:
+    def get_decisions(self, limit: int = 10) -> list[Decision]:
         """Get recent decisions."""
         return self._decisions[-limit:]
 
-    def get_current_plan(self) -> Optional[Plan]:
+    def get_current_plan(self) -> Plan | None:
         """Get the current active plan."""
         return self._current_plan

@@ -26,7 +26,7 @@ Usage:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import typer
 
@@ -81,7 +81,7 @@ class PluginBase(ABC):
         pass
 
     @abstractmethod
-    def check_dependencies(self) -> Tuple[bool, List[str]]:
+    def check_dependencies(self) -> tuple[bool, list[str]]:
         """
         Check if all required dependencies are available.
 
@@ -130,7 +130,7 @@ class PluginBase(ABC):
         return ""
 
     @property
-    def permissions(self) -> List[str]:
+    def permissions(self) -> list[str]:
         """
         Required permissions for this plugin.
 
@@ -224,17 +224,17 @@ class PluginAPI:
         self.config = Config()
         self.console = ch
 
-    def get_active_host(self) -> Optional[str]:
+    def get_active_host(self) -> str | None:
         """Get the currently active host name."""
         host, _ = self.config.get_active_host()
         return host
 
-    def get_active_app(self) -> Optional[str]:
+    def get_active_app(self) -> str | None:
         """Get the currently active app name."""
         app, _ = self.config.get_active_app()
         return app
 
-    def get_host_config(self, host_name: str = None) -> Optional[Dict[str, Any]]:
+    def get_host_config(self, host_name: str = None) -> dict[str, Any] | None:
         """
         Get configuration for a host.
 
@@ -260,7 +260,7 @@ class PluginAPI:
         host_name: str = None,
         timeout: int = 30,
         capture_output: bool = True,
-    ) -> Tuple[bool, str, str]:
+    ) -> tuple[bool, str, str]:
         """
         Execute a command on a remote host.
 
@@ -292,7 +292,7 @@ class PluginAPI:
 
     def upload_file(
         self, local_path: str, remote_path: str, host_name: str = None
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Upload a file to a remote host.
 
@@ -325,7 +325,7 @@ class PluginAPI:
 
     def download_file(
         self, remote_path: str, local_path: str, host_name: str = None
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Download a file from a remote host.
 

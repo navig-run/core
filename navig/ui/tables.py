@@ -7,7 +7,6 @@ Uses box.SIMPLE / box.MINIMAL — never heavy borders.
 from __future__ import annotations
 
 import sys
-from typing import List, Optional
 
 from rich import box
 from rich.table import Table
@@ -17,7 +16,7 @@ from navig.ui.theme import SEVERITY_STYLE, console
 
 
 def render_findings_table(
-    findings: List[CauseScore],
+    findings: list[CauseScore],
     *,
     title: str = "Findings",
     show_header: bool = True,
@@ -58,10 +57,10 @@ def render_findings_table(
 
 
 def render_fleet_table(
-    nodes: List[dict],
+    nodes: list[dict],
     *,
     title: str = "Fleet",
-    columns: Optional[List[str]] = None,
+    columns: list[str] | None = None,
 ) -> None:
     """Render a fleet/peer node table. Each node is a dict of col→value.
     Never raises."""

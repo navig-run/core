@@ -6,7 +6,7 @@ Uses Homebrew for package management.
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from navig.adapters.os.base import OSAdapter, PackageInfo
 
@@ -35,7 +35,7 @@ class MacOSAdapter(OSAdapter):
         """List installed packages using Homebrew."""
         return "brew list --versions"
 
-    def parse_package_list(self, output: str) -> List[PackageInfo]:
+    def parse_package_list(self, output: str) -> list[PackageInfo]:
         """Parse brew list output."""
         packages = []
         for line in output.strip().split("\n"):
@@ -80,7 +80,7 @@ class MacOSAdapter(OSAdapter):
     def get_system_info_command(self) -> str:
         return "sw_vers && uname -a"
 
-    def parse_system_info(self, output: str) -> Dict[str, Any]:
+    def parse_system_info(self, output: str) -> dict[str, Any]:
         """Parse macOS system info output."""
         info = {}
         for line in output.strip().split("\n"):

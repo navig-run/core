@@ -16,7 +16,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -67,11 +67,11 @@ class Node:
     os: NodeOS = NodeOS.UNKNOWN
     formation: str = ""
     version: str = "0.0.0"
-    capabilities: List[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
     status: NodeStatus = NodeStatus.PROVISIONING
     trust_score: float = 1.0
     gateway_url: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: _now_iso())
     last_seen: str = field(default_factory=lambda: _now_iso())
 
@@ -121,7 +121,7 @@ class Node:
 
     # ── Serialization ─────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["os"] = self.os.value
         d["status"] = self.status.value
@@ -131,14 +131,14 @@ class Node:
         return json.dumps(self.to_dict(), indent=2)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Node":
+    def from_dict(cls, data: dict[str, Any]) -> Node:
         data = dict(data)
         data["os"] = NodeOS(data.get("os", "unknown"))
         data["status"] = NodeStatus(data.get("status", "provisioning"))
         return cls(**data)
 
     @classmethod
-    def from_json(cls, raw: str) -> "Node":
+    def from_json(cls, raw: str) -> Node:
         return cls.from_dict(json.loads(raw))
 
     def __repr__(self) -> str:

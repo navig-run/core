@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 
 @dataclass
@@ -35,7 +34,7 @@ class TailscaleStatus:
     backend_state: str = ""
     self_hostname: str = ""
     self_ip: str = ""
-    peers: List[TailscalePeer] = field(default_factory=list)
+    peers: list[TailscalePeer] = field(default_factory=list)
     error: str = ""
 
     def to_dict(self) -> dict:
@@ -114,7 +113,7 @@ class Tailscale:
         )
 
         peers: list[TailscalePeer] = []
-        for _id, peer in (data.get("Peer", None) or {}).items():
+        for _id, peer in (data.get("Peer") or {}).items():
             peer_ips: list = peer.get("TailscaleIPs", [])
             peer_ip = next(
                 (ip for ip in peer_ips if ":" not in ip),
@@ -147,7 +146,7 @@ class Tailscale:
         # tailscale ping exits 0 on success and prints "pong from ..."
         return rc == 0 and "pong" in stdout.lower()
 
-    async def ip(self, peer: Optional[str] = None) -> Optional[str]:
+    async def ip(self, peer: str | None = None) -> str | None:
         """
         Return the Tailscale IP of the given peer, or self if peer is None.
         """

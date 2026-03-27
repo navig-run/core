@@ -5,7 +5,7 @@ Helper functions for managing deprecated commands with migration hints.
 """
 
 import functools
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from navig.lazy_loader import lazy_import
 
@@ -221,7 +221,7 @@ DEPRECATION_MAP = {
 }
 
 
-def get_canonical_command(deprecated_cmd: str) -> Optional[str]:
+def get_canonical_command(deprecated_cmd: str) -> str | None:
     """
     Get the canonical replacement for a deprecated command.
 

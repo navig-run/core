@@ -6,8 +6,6 @@ preserving deprecated aliases and command behavior.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 import typer
 
 from navig.deprecation import deprecation_warning
@@ -67,10 +65,8 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     def addon_run_with_args(
         ctx: typer.Context,
         name: str = typer.Argument(..., help="Template name to run"),
-        command: Optional[str] = typer.Argument(
-            None, help="Template command to execute"
-        ),
-        args: Optional[List[str]] = typer.Argument(
+        command: str | None = typer.Argument(None, help="Template command to execute"),
+        args: list[str] | None = typer.Argument(
             None, help="Arguments for the template command"
         ),
         dry_run: bool = typer.Option(
@@ -108,7 +104,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     @server_template_app.command("list")
     def server_template_list(
         ctx: typer.Context,
-        server: Optional[str] = typer.Option(
+        server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
         enabled_only: bool = typer.Option(
@@ -132,7 +128,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     def server_template_show(
         ctx: typer.Context,
         template_name: str = typer.Argument(..., help="Template name to show"),
-        server: Optional[str] = typer.Option(
+        server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
     ):
@@ -146,7 +142,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     def server_template_enable(
         ctx: typer.Context,
         template_name: str = typer.Argument(..., help="Template name to enable"),
-        server: Optional[str] = typer.Option(
+        server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
     ):
@@ -160,7 +156,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     def server_template_disable(
         ctx: typer.Context,
         template_name: str = typer.Argument(..., help="Template name to disable"),
-        server: Optional[str] = typer.Option(
+        server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
     ):
@@ -178,7 +174,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
             ..., help="Dot-separated config path (e.g., 'paths.web_root')"
         ),
         value: str = typer.Argument(..., help="Value to set (JSON-parseable)"),
-        server: Optional[str] = typer.Option(
+        server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
     ):
@@ -192,7 +188,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     def server_template_sync(
         ctx: typer.Context,
         template_name: str = typer.Argument(..., help="Template name to sync"),
-        server: Optional[str] = typer.Option(
+        server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
         force: bool = typer.Option(
@@ -210,7 +206,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     def server_template_init(
         ctx: typer.Context,
         template_name: str = typer.Argument(..., help="Template name to initialize"),
-        server: Optional[str] = typer.Option(
+        server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
         enable: bool = typer.Option(

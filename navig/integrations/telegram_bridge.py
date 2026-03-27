@@ -30,7 +30,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -86,16 +85,16 @@ class TelegramBridge:
         self._token = bot_token
         self._chat_id = int(chat_id)
         self._timeout = timeout_seconds
-        self._pending: Dict[str, asyncio.Future] = {}  # correlation_id → Future
+        self._pending: dict[str, asyncio.Future] = {}  # correlation_id → Future
         self._app = None  # telegram Application (started lazily)
-        self._stop_event: Optional[asyncio.Event] = None
+        self._stop_event: asyncio.Event | None = None
 
     # ─────────────────────── public API ────────────────────────────────────
 
     async def send_notification(
         self,
         message: str,
-        screenshot_path: Optional[str] = None,
+        screenshot_path: str | None = None,
     ) -> None:
         """Send a one-way notification message, with optional screenshot."""
         Bot, *_ = _import_bot()
@@ -117,8 +116,8 @@ class TelegramBridge:
     async def pause_and_ask(
         self,
         question: str,
-        options: List[str],
-        screenshot_path: Optional[str] = None,
+        options: list[str],
+        screenshot_path: str | None = None,
     ) -> str:
         """
         Send a question with inline keyboard options and wait for user selection.
@@ -177,7 +176,7 @@ class TelegramBridge:
     async def send_2fa_request(
         self,
         service: str,
-        screenshot_path: Optional[str] = None,
+        screenshot_path: str | None = None,
     ) -> str:
         """
         Ask the user for a 2FA / verification code.
@@ -230,7 +229,7 @@ class TelegramBridge:
         self,
         task_description: str,
         success: bool,
-        screenshot_path: Optional[str] = None,
+        screenshot_path: str | None = None,
     ) -> None:
         """Notify the user that a task completed (or failed)."""
         icon = "✅" if success else "❌"
@@ -241,7 +240,7 @@ class TelegramBridge:
     # ─────────────────────── callback handler ──────────────────────────────
 
     def resolve_callback(
-        self, callback_data: str, text_reply: Optional[str] = None
+        self, callback_data: str, text_reply: str | None = None
     ) -> None:
         """
         Called by the Telegram listener loop when a user presses a button or replies.
@@ -339,7 +338,7 @@ class TelegramBridge:
 
 # ─────────────────────────── singleton ───────────────────────────────────────
 
-_bridge_instance: Optional[TelegramBridge] = None
+_bridge_instance: TelegramBridge | None = None
 
 
 def get_telegram_bridge() -> TelegramBridge:

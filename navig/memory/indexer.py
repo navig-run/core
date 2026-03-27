@@ -11,10 +11,11 @@ Implements semantic structure-aware chunking:
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.memory.embeddings import EmbeddingProvider
@@ -54,7 +55,7 @@ class IndexResult:
     chunks_embedded: int = 0
     total_tokens: int = 0
     duration_seconds: float = 0.0
-    errors: List[str] = None
+    errors: list[str] = None
 
     def __post_init__(self):
         if self.errors is None:
@@ -91,9 +92,9 @@ class MemoryIndexer:
 
     def __init__(
         self,
-        storage: "MemoryStorage",
-        embedding_provider: Optional["EmbeddingProvider"] = None,
-        config: Optional[ChunkConfig] = None,
+        storage: MemoryStorage,
+        embedding_provider: EmbeddingProvider | None = None,
+        config: ChunkConfig | None = None,
     ):
         self.storage = storage
         self.embedding_provider = embedding_provider
@@ -104,7 +105,7 @@ class MemoryIndexer:
         directory: Path,
         force_reindex: bool = False,
         embed: bool = True,
-        progress_callback: Optional[callable] = None,
+        progress_callback: callable | None = None,
     ) -> IndexResult:
         """
         Index all supported files in a directory.
@@ -131,7 +132,7 @@ class MemoryIndexer:
         # Find all supported files
         files = self._find_files(directory)
 
-        chunks_to_embed: List["MemoryChunk"] = []
+        chunks_to_embed: list[MemoryChunk] = []
         batch_size = (
             getattr(self.embedding_provider, "batch_size", 32)
             if self.embedding_provider
@@ -208,7 +209,7 @@ class MemoryIndexer:
 
         return result
 
-    def _process_embedding_batch(self, chunks: List["MemoryChunk"]) -> int:
+    def _process_embedding_batch(self, chunks: list[MemoryChunk]) -> int:
         """Process a batch of chunks for embedding."""
         if not chunks or not self.embedding_provider:
             return 0
@@ -266,7 +267,7 @@ class MemoryIndexer:
     def index_file(
         self,
         file_path: Path,
-        base_directory: Optional[Path] = None,
+        base_directory: Path | None = None,
         embed: bool = True,
     ) -> IndexResult:
         """
@@ -356,7 +357,7 @@ class MemoryIndexer:
         self,
         text: str,
         file_path: str,
-    ) -> Generator["MemoryChunk", None, None]:
+    ) -> Generator[MemoryChunk, None, None]:
         """
         Chunk text with overlap while respecting structure.
 
@@ -427,8 +428,8 @@ class MemoryIndexer:
 
     def _extract_blocks(
         self,
-        lines: List[str],
-    ) -> List[Tuple[int, int, str]]:
+        lines: list[str],
+    ) -> list[tuple[int, int, str]]:
         """
         Extract logical blocks from lines.
 
@@ -495,7 +496,7 @@ class MemoryIndexer:
         file_path: str,
         line_start: int,
         line_end: int,
-    ) -> "MemoryChunk":
+    ) -> MemoryChunk:
         """Create a MemoryChunk instance."""
         from navig.memory.storage import MemoryChunk, MemoryStorage
 
@@ -511,7 +512,7 @@ class MemoryIndexer:
             token_count=token_count,
         )
 
-    def _embed_chunks(self, chunks: List["MemoryChunk"]) -> int:
+    def _embed_chunks(self, chunks: list[MemoryChunk]) -> int:
         """Generate embeddings for chunks using cache."""
         if not self.embedding_provider:
             return 0
@@ -558,7 +559,7 @@ class MemoryIndexer:
                 hasher.update(chunk)
         return hasher.hexdigest()[:16]
 
-    def _find_files(self, directory: Path) -> List[Path]:
+    def _find_files(self, directory: Path) -> list[Path]:
         """Find all indexable files in directory."""
         files = []
 

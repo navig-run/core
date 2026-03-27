@@ -13,7 +13,7 @@ Usage::
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.installer.contracts import Action, InstallerContext
@@ -26,7 +26,7 @@ def _load_module(name: str):
     return importlib.import_module(f"navig.installer.modules.{name}")
 
 
-def plan(ctx: "InstallerContext") -> "List[Action]":
+def plan(ctx: InstallerContext) -> list[Action]:
     """Return actions for *ctx.profile* in the correct apply order.
 
     Raises
@@ -40,7 +40,7 @@ def plan(ctx: "InstallerContext") -> "List[Action]":
             f"Valid profiles: {', '.join(VALID_PROFILES)}"
         )
 
-    actions: List[Action] = []
+    actions: list[Action] = []
     for mod_name in PROFILE_MODULES[ctx.profile]:
         try:
             mod = _load_module(mod_name)

@@ -10,7 +10,6 @@ import os
 import platform
 import socket
 from pathlib import Path
-from typing import Optional
 
 # Try to import cryptography, provide helpful error if missing
 try:
@@ -61,7 +60,7 @@ class VaultEncryption:
             )
 
         self.vault_dir = vault_dir
-        self._fernet: Optional[Fernet] = None
+        self._fernet: Fernet | None = None
 
     def _get_machine_id(self) -> str:
         """
@@ -109,13 +108,16 @@ class VaultEncryption:
 
         # Set restrictive permissions (Unix only)
         try:
-            os.chmod(salt_path, 0o600)
+            try:
+                os.chmod(salt_path, 0o600)
+            except (OSError, PermissionError):
+                pass
         except OSError:
             pass  # best-effort cleanup
 
         return salt
 
-    def _try_keyring(self) -> Optional[bytes]:
+    def _try_keyring(self) -> bytes | None:
         """
         Try to get/set master key from OS keyring.
 
@@ -235,7 +237,7 @@ class VaultEncryption:
         except Exception as e:
             raise VaultEncryptionError(f"Decryption failed: {e}") from e
 
-    def rotate_key(self, new_key: Optional[bytes] = None) -> None:
+    def rotate_key(self, new_key: bytes | None = None) -> None:
         """
         Rotate the encryption key.
 

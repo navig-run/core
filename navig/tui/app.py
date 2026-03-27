@@ -11,8 +11,6 @@ deep_link is forwarded to DashboardScreen for startup routing
 
 from __future__ import annotations
 
-from typing import Optional
-
 from textual.app import App
 from textual.binding import Binding
 
@@ -121,14 +119,14 @@ class NavigOnboardingApp(App):  # type: ignore[type-arg]
     def __init__(
         self,
         mode: str = "wizard",
-        deep_link: Optional[str] = None,
-        config: Optional[NavigConfig] = None,
+        deep_link: str | None = None,
+        config: NavigConfig | None = None,
     ) -> None:
         super().__init__()
         self._mode = mode
         self._deep_link = deep_link
         # Store config on app so screens can access via self.app.config
-        self.config: Optional[NavigConfig] = config
+        self.config: NavigConfig | None = config
 
     def on_mount(self) -> None:
         if self._mode == "dashboard":

@@ -10,7 +10,6 @@ check point before any real processing.
 """
 
 import logging
-from typing import Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +28,11 @@ class AuthGuard:
 
     def __init__(
         self,
-        allowed_users: Optional[Set[int]] = None,
-        allowed_groups: Optional[Set[int]] = None,
+        allowed_users: set[int] | None = None,
+        allowed_groups: set[int] | None = None,
     ):
-        self.allowed_users: Set[int] = allowed_users or set()
-        self.allowed_groups: Set[int] = allowed_groups or set()
+        self.allowed_users: set[int] = allowed_users or set()
+        self.allowed_groups: set[int] = allowed_groups or set()
 
     def is_authorized(
         self,

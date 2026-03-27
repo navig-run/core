@@ -12,7 +12,7 @@ import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 import psutil  # We'll add this to requirements if needed
 
@@ -41,7 +41,7 @@ class TunnelManager:
         lock_file = self.tunnels_file.parent / f"{self.tunnels_file.name}.lock"
         lock_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(lock_file, "w") as lock:
+        with open(lock_file, "w", encoding="utf-8") as lock:
             try:
                 if sys.platform == "win32":
                     # Windows file locking
@@ -63,25 +63,26 @@ class TunnelManager:
                     except OSError:
                         pass  # Cleanup - unlock may fail
 
-    def _load_tunnels(self) -> Dict[str, Any]:
+    def _load_tunnels(self) -> dict[str, Any]:
         """Load active tunnel state from cache (atomic with file locking)."""
         if not self.tunnels_file.exists():
             return {}
 
         try:
-            with self._lock_tunnels_file():
-                with open(self.tunnels_file, "r") as f:
-                    return json.load(f)
+            with self._lock_tunnels_file(), open(self.tunnels_file) as f:
+                return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return {}
 
-    def _save_tunnels(self, tunnels: Dict[str, Any]):
+    def _save_tunnels(self, tunnels: dict[str, Any]):
         """Save tunnel state to cache (atomic with file locking)."""
         self.tunnels_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with self._lock_tunnels_file():
-            with open(self.tunnels_file, "w") as f:
-                json.dump(tunnels, f, indent=2)
+        with (
+            self._lock_tunnels_file(),
+            open(self.tunnels_file, "w", encoding="utf-8") as f,
+        ):
+            json.dump(tunnels, f, indent=2)
 
     def _find_available_port(self, start_port: int = 3307, end_port: int = 3399) -> int:
         """
@@ -105,7 +106,7 @@ class TunnelManager:
                 s.settimeout(timeout)
                 s.connect(("127.0.0.1", port))
                 return True
-        except (socket.timeout, ConnectionRefusedError, OSError):
+        except (TimeoutError, ConnectionRefusedError, OSError):
             return False
 
     def _is_process_running(self, pid: int) -> bool:
@@ -117,8 +118,8 @@ class TunnelManager:
             return False
 
     def get_tunnel_status(
-        self, server_name: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+        self, server_name: str | None = None
+    ) -> dict[str, Any] | None:
         """
         Get tunnel status for a server.
 
@@ -154,8 +155,8 @@ class TunnelManager:
             return None
 
     def start_tunnel(
-        self, server_name: Optional[str] = None, force_port: Optional[int] = None
-    ) -> Dict[str, Any]:
+        self, server_name: str | None = None, force_port: int | None = None
+    ) -> dict[str, Any]:
         """
         Start SSH tunnel for a server.
 
@@ -272,7 +273,7 @@ class TunnelManager:
 
     def _find_tunnel_process(
         self, local_port: int, remote_host: str, max_retries: int = 3
-    ) -> Optional[int]:
+    ) -> int | None:
         """Find the SSH tunnel process by port and host (with retry logic)."""
         for attempt in range(max_retries):
             try:
@@ -287,10 +288,7 @@ class TunnelManager:
                                 if (
                                     f"-L {local_port}:localhost:" in cmdline_str
                                     and remote_host in cmdline_str
-                                ):
-                                    return proc.info["pid"]
-                                # Also check alternative format
-                                elif (
+                                ) or (
                                     f"-L{local_port}:localhost:" in cmdline_str
                                     and remote_host in cmdline_str
                                 ):
@@ -311,7 +309,7 @@ class TunnelManager:
 
         return None
 
-    def stop_tunnel(self, server_name: Optional[str] = None) -> bool:
+    def stop_tunnel(self, server_name: str | None = None) -> bool:
         """
         Stop SSH tunnel for a server.
 
@@ -358,7 +356,7 @@ class TunnelManager:
                 self._save_tunnels(tunnels)
             return False
 
-    def restart_tunnel(self, server_name: Optional[str] = None) -> Dict[str, Any]:
+    def restart_tunnel(self, server_name: str | None = None) -> dict[str, Any]:
         """Restart tunnel."""
         if server_name is None:
             server_name = self.config.get_active_server()
@@ -388,7 +386,7 @@ class TunnelManager:
             )
 
     @contextmanager
-    def auto_tunnel(self, server_name: Optional[str] = None, cleanup: bool = False):
+    def auto_tunnel(self, server_name: str | None = None, cleanup: bool = False):
         """
         Context manager for automatic tunnel lifecycle.
 
@@ -429,7 +427,7 @@ class TunnelManager:
                         f"[WARNING] Failed to cleanup tunnel in context manager: {e}"
                     )
 
-    def check_tunnel_health(self, server_name: Optional[str] = None) -> Dict[str, Any]:
+    def check_tunnel_health(self, server_name: str | None = None) -> dict[str, Any]:
         """
         Comprehensive health check for tunnel.
 
@@ -480,7 +478,7 @@ class TunnelManager:
 
         return health
 
-    def recover_tunnel(self, server_name: Optional[str] = None) -> Dict[str, Any]:
+    def recover_tunnel(self, server_name: str | None = None) -> dict[str, Any]:
         """
         Attempt to recover unhealthy tunnel.
 
@@ -528,7 +526,7 @@ class TunnelManager:
         log_entry = f"[{timestamp}] {message}\n"
 
         try:
-            with open(self.log_file, "a") as f:
+            with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(log_entry)
         except OSError:
             pass  # Logging failure should not crash tunnel operations

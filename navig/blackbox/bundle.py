@@ -14,7 +14,6 @@ import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 
 from .types import BlackboxEvent, Bundle
 
@@ -26,8 +25,8 @@ _BUNDLE_EXT = ".navbox"
 
 def create_bundle(
     since_hours: float = 24.0,
-    blackbox_dir: Optional[Path] = None,
-    log_files: Optional[list[Path]] = None,
+    blackbox_dir: Path | None = None,
+    log_files: list[Path] | None = None,
 ) -> Bundle:
     """Create a Bundle from recent events + log tails.
 

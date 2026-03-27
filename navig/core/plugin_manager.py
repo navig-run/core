@@ -3,7 +3,7 @@ import logging
 import os
 import subprocess
 import threading
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class PluginInstance:
@@ -11,8 +11,8 @@ class PluginInstance:
         self.name = name
         self.entrypoint = entrypoint
         self.cwd = cwd
-        self.process: Optional[subprocess.Popen] = None
-        self.requests: Dict[str, Any] = {}
+        self.process: subprocess.Popen | None = None
+        self.requests: dict[str, Any] = {}
         self.lock = threading.Lock()
         self.logger = logging.getLogger(f"navig.plugins.{name}")
 
@@ -50,7 +50,7 @@ class PluginInstance:
             if line:
                 self.logger.error(f"STDERR: {line.strip()}")
 
-    def _handle_message(self, message: Dict[str, Any]):
+    def _handle_message(self, message: dict[str, Any]):
         msg_id = message.get("id")
         if msg_id in self.requests:
             # It's a response to our request
@@ -63,7 +63,7 @@ class PluginInstance:
             # It's a notification or request from the plugin (not implemented yet)
             pass
 
-    def send_request(self, method: str, params: Dict[str, Any] = None) -> Any:
+    def send_request(self, method: str, params: dict[str, Any] = None) -> Any:
         import concurrent.futures
         import uuid
 
@@ -98,7 +98,7 @@ class PluginInstance:
 class PluginManager:
     def __init__(self, plugin_dir: str):
         self.plugin_dir = plugin_dir
-        self.plugins: Dict[str, PluginInstance] = {}
+        self.plugins: dict[str, PluginInstance] = {}
 
     def discover_and_load(self):
         if not os.path.exists(self.plugin_dir):
@@ -112,7 +112,7 @@ class PluginManager:
 
     def _load_plugin(self, path: str, manifest_path: str):
         try:
-            with open(manifest_path, "r") as f:
+            with open(manifest_path) as f:
                 manifest = json.load(f)
 
             name = manifest["name"]
@@ -126,7 +126,7 @@ class PluginManager:
         except Exception as e:
             print(f"❌ Failed to load plugin at {path}: {e}")
 
-    def execute_skill(self, plugin_name: str, method: str, params: Dict[str, Any]):
+    def execute_skill(self, plugin_name: str, method: str, params: dict[str, Any]):
         if plugin_name in self.plugins:
             return self.plugins[plugin_name].send_request(method, params)
         raise ValueError(f"Plugin {plugin_name} not found")

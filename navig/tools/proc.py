@@ -28,8 +28,9 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Dict, List, Literal, Optional, Sequence
+from typing import Literal
 
 logger = logging.getLogger("navig.tools.proc")
 
@@ -52,22 +53,22 @@ class ProcessOptions:
     timeout_s: float = 60.0
     """Wall-clock kill timeout in seconds."""
 
-    no_output_timeout_s: Optional[float] = None
+    no_output_timeout_s: float | None = None
     """Kill if no stdout/stderr activity for this many seconds.  ``None`` disables."""
 
-    cwd: Optional[str] = None
+    cwd: str | None = None
     """Working directory.  None → inherit from current process."""
 
-    env_extra: Optional[Dict[str, str]] = None
+    env_extra: dict[str, str] | None = None
     """Variables merged on top of ``os.environ`` (None values stripped)."""
 
-    input_data: Optional[bytes] = None
+    input_data: bytes | None = None
     """Bytes written to stdin.  None → stdin not opened."""
 
     output_cap: int = 50_000
     """Hard cap on combined stdout + stderr (characters).  0 = unlimited."""
 
-    on_event: Optional[AnyEventCallback] = None
+    on_event: AnyEventCallback | None = None
     """Optional callback fired at: spawn / stdout / stderr / timeout / exit."""
 
 
@@ -77,8 +78,8 @@ class ProcessResult:
 
     stdout: str
     stderr: str
-    returncode: Optional[int]
-    pid: Optional[int]
+    returncode: int | None
+    pid: int | None
     elapsed_ms: float
     termination: Termination
     truncated: bool = False
@@ -86,7 +87,7 @@ class ProcessResult:
     def success(self) -> bool:
         return self.returncode == 0 and self.termination == "exit"
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "stdout": self.stdout,
             "stderr": self.stderr,
@@ -112,7 +113,7 @@ def _needs_cmd_wrapper(exe: str) -> bool:
     return Path(exe).suffix.lower() in _WINDOWS_BATCH_EXTS
 
 
-def _cmd_wrap_argv(exe: str, args: Sequence[str]) -> List[str]:
+def _cmd_wrap_argv(exe: str, args: Sequence[str]) -> list[str]:
     """Wrap a .cmd/.bat binary + args under ``cmd.exe /d /s /c``."""
     comspec = os.environ.get("ComSpec", "cmd.exe")
     # Build a single quoted token list ala buildCmdExeCommandLine
@@ -123,7 +124,7 @@ def _cmd_wrap_argv(exe: str, args: Sequence[str]) -> List[str]:
 # ── Shell helpers ─────────────────────────────────────────────────────────────
 
 
-def shell_argv(command: str) -> List[str]:
+def shell_argv(command: str) -> list[str]:
     """
     Return the argv list for running *command* through the system shell.
 
@@ -170,7 +171,7 @@ def _apply_cap(stdout: str, stderr: str, cap: int) -> tuple[str, str, bool]:
 # ── Event dispatch ────────────────────────────────────────────────────────────
 
 
-async def _emit(cb: Optional[AnyEventCallback], event: str, detail: str) -> None:
+async def _emit(cb: AnyEventCallback | None, event: str, detail: str) -> None:
     if cb is None:
         return
     try:
@@ -185,8 +186,8 @@ async def _emit(cb: Optional[AnyEventCallback], event: str, detail: str) -> None
 
 
 async def run_process(
-    argv: List[str],
-    opts: Optional[ProcessOptions] = None,
+    argv: list[str],
+    opts: ProcessOptions | None = None,
 ) -> ProcessResult:
     """
     Run *argv* as a subprocess and return a ``ProcessResult``.
@@ -218,7 +219,7 @@ async def run_process(
         exe, *args = _cmd_wrap_argv(exe, args)
 
     # Build environment
-    env: Optional[Dict[str, str]] = None
+    env: dict[str, str] | None = None
     if opts.env_extra:
         env = {
             k: str(v)
@@ -287,7 +288,7 @@ async def run_process(
     timed_out = False
     no_output_timed_out = False
 
-    no_output_deadline: Optional[float] = None
+    no_output_deadline: float | None = None
     if opts.no_output_timeout_s and opts.no_output_timeout_s > 0:
         no_output_deadline = time.monotonic() + opts.no_output_timeout_s
 
@@ -392,8 +393,8 @@ async def run_process(
 
 
 def run_process_sync(
-    argv: List[str],
-    opts: Optional[ProcessOptions] = None,
+    argv: list[str],
+    opts: ProcessOptions | None = None,
     *,
     extra_timeout_s: float = 5.0,
 ) -> ProcessResult:

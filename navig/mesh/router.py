@@ -38,7 +38,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
 from navig.mesh.registry import NodeRecord, get_registry
@@ -88,7 +88,7 @@ class _RoutingMetrics:
         }
 
 
-_metrics: Dict[str, _RoutingMetrics] = {}
+_metrics: dict[str, _RoutingMetrics] = {}
 
 
 def _get_metrics(node_id: str) -> _RoutingMetrics:
@@ -107,9 +107,9 @@ def get_routing_metrics() -> dict:
 
 async def route_to_best_peer(
     request_body: dict,
-    capability: Optional[str] = None,
-    target_node_id: Optional[str] = None,
-) -> Optional[dict]:
+    capability: str | None = None,
+    target_node_id: str | None = None,
+) -> dict | None:
     """
     Forward a /llm/chat request body to the best available peer.
 
@@ -139,9 +139,9 @@ async def route_to_best_peer(
 
 async def route_with_fallback(
     request_body: dict,
-    capability: Optional[str] = None,
+    capability: str | None = None,
     max_peers: int = MAX_FALLBACK_PEERS,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Try up to *max_peers* peers in composite-score order (best first).
 
@@ -169,9 +169,9 @@ async def route_with_fallback(
 
 async def route_parallel_best(
     request_body: dict,
-    capability: Optional[str] = None,
+    capability: str | None = None,
     n: int = 2,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Race the top-*n* peers: fire all requests simultaneously and return the
     first successful response, cancelling the rest.
@@ -188,7 +188,7 @@ async def route_parallel_best(
         return await _forward(peers[0], request_body)
 
     tasks = [asyncio.create_task(_forward(p, request_body)) for p in peers]
-    result: Optional[dict] = None
+    result: dict | None = None
 
     try:
         done, pending = await asyncio.wait(
@@ -271,7 +271,7 @@ def get_topology_report() -> dict:
 # ──────────────────────────── Internal ────────────────────────────────────────
 
 
-async def _forward(peer: NodeRecord, body: dict) -> Optional[dict]:
+async def _forward(peer: NodeRecord, body: dict) -> dict | None:
     """HTTP POST body to peer's /llm/chat with mesh_token auth."""
     try:
         import aiohttp
@@ -288,34 +288,36 @@ async def _forward(peer: NodeRecord, body: dict) -> Optional[dict]:
     t0 = time.monotonic()
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(
                 url,
                 json=body,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=PROXY_TIMEOUT_S),
-            ) as resp:
-                rtt_ms = (time.monotonic() - t0) * 1000
-                if resp.status != 200:
-                    logger.warning(
-                        f"[mesh.router] Peer {peer.node_id} returned HTTP {resp.status}"
-                    )
-                    _get_metrics(peer.node_id).record_failure()
-                    get_registry().record_probe_failure(peer.node_id)
-                    return None
+            ) as resp,
+        ):
+            rtt_ms = (time.monotonic() - t0) * 1000
+            if resp.status != 200:
+                logger.warning(
+                    f"[mesh.router] Peer {peer.node_id} returned HTTP {resp.status}"
+                )
+                _get_metrics(peer.node_id).record_failure()
+                get_registry().record_probe_failure(peer.node_id)
+                return None
 
-                data = await resp.json()
-                _get_metrics(peer.node_id).record_success(rtt_ms)
-                # Reset circuit-breaker on routing success
-                get_registry().record_probe_success(peer.node_id, rtt_ms)
+            data = await resp.json()
+            _get_metrics(peer.node_id).record_success(rtt_ms)
+            # Reset circuit-breaker on routing success
+            get_registry().record_probe_success(peer.node_id, rtt_ms)
 
-                # Inject routing metadata for observability
-                if isinstance(data, dict):
-                    meta = data.get("data", {}).get("metadata", {})
-                    if isinstance(meta, dict):
-                        meta["routed_via"] = peer.node_id
-                        meta["routed_rtt_ms"] = round(rtt_ms, 1)
-                return data
+            # Inject routing metadata for observability
+            if isinstance(data, dict):
+                meta = data.get("data", {}).get("metadata", {})
+                if isinstance(meta, dict):
+                    meta["routed_via"] = peer.node_id
+                    meta["routed_rtt_ms"] = round(rtt_ms, 1)
+            return data
 
     except Exception as e:
         logger.warning(f"[mesh.router] Forward to {peer.node_id} failed: {e}")
@@ -324,7 +326,7 @@ async def _forward(peer: NodeRecord, body: dict) -> Optional[dict]:
         return None
 
 
-def _get_mesh_token() -> Optional[str]:
+def _get_mesh_token() -> str | None:
     try:
         from navig.config import get_config_manager
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class DeviceTrust(str, Enum):
     unknown = "unknown"
 
     @classmethod
-    def from_nio(cls, trust_state) -> "DeviceTrust":
+    def from_nio(cls, trust_state) -> DeviceTrust:
         """Map matrix-nio TrustState to our enum."""
         name = getattr(trust_state, "name", str(trust_state)).lower()
         mapping = {
@@ -69,7 +69,7 @@ class DeviceInfo:
             return ""
         return self.ed25519_key[:length] + "..."
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "device_id": self.device_id,
             "user_id": self.user_id,
@@ -88,12 +88,12 @@ class VerificationSession:
     user_id: str
     device_id: str
     state: str = "initiated"  # initiated, accepted, key_received, confirmed, cancelled
-    emoji: List[Tuple[str, str]] = field(default_factory=list)
-    decimals: Tuple[int, ...] = ()
+    emoji: list[tuple[str, str]] = field(default_factory=list)
+    decimals: tuple[int, ...] = ()
     canceled_by: str = ""
     cancel_reason: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "transaction_id": self.transaction_id,
             "user_id": self.user_id,
@@ -125,7 +125,7 @@ class MatrixE2EEManager:
         if not isinstance(bot, NavigMatrixBot):
             raise TypeError("Expected NavigMatrixBot instance")
         self._bot = bot
-        self._sessions: Dict[str, VerificationSession] = {}
+        self._sessions: dict[str, VerificationSession] = {}
 
         # Register our verification callback
         bot.on_verification(self._on_verification_event)
@@ -140,7 +140,7 @@ class MatrixE2EEManager:
 
     # ── Device Listing ──
 
-    async def list_own_devices(self) -> List[DeviceInfo]:
+    async def list_own_devices(self) -> list[DeviceInfo]:
         """List bot's own devices from the server."""
         raw = await self._bot.get_devices(user_id=None)
         return [
@@ -156,7 +156,7 @@ class MatrixE2EEManager:
             for d in raw
         ]
 
-    async def list_devices(self, user_id: str) -> List[DeviceInfo]:
+    async def list_devices(self, user_id: str) -> list[DeviceInfo]:
         """List known devices for a user from the local device store."""
         raw = await self._bot.get_devices(user_id=user_id)
         return [
@@ -174,7 +174,7 @@ class MatrixE2EEManager:
             for d in raw
         ]
 
-    async def get_all_tracked_users(self) -> List[str]:
+    async def get_all_tracked_users(self) -> list[str]:
         """Get all user IDs the client tracks devices for."""
         if not self.e2ee_ok:
             return []
@@ -214,7 +214,7 @@ class MatrixE2EEManager:
 
     async def start_verification(
         self, user_id: str, device_id: str
-    ) -> Optional[VerificationSession]:
+    ) -> VerificationSession | None:
         """Initiate SAS verification with a specific device."""
         txn_id = await self._bot.start_verification(user_id, device_id)
         if not txn_id:
@@ -235,7 +235,7 @@ class MatrixE2EEManager:
             self._sessions[transaction_id].state = "accepted"
         return ok
 
-    async def get_emoji(self, transaction_id: str) -> List[Tuple[str, str]]:
+    async def get_emoji(self, transaction_id: str) -> list[tuple[str, str]]:
         """Get the SAS emoji for confirming the match."""
         result = await self._bot.get_verification_emoji(transaction_id)
         if result and transaction_id in self._sessions:
@@ -256,11 +256,11 @@ class MatrixE2EEManager:
             self._sessions[transaction_id].state = "cancelled"
         return ok
 
-    def get_session(self, transaction_id: str) -> Optional[VerificationSession]:
+    def get_session(self, transaction_id: str) -> VerificationSession | None:
         """Get a tracked verification session."""
         return self._sessions.get(transaction_id)
 
-    def get_active_sessions(self) -> List[VerificationSession]:
+    def get_active_sessions(self) -> list[VerificationSession]:
         """Get all non-terminal sessions."""
         return [
             s
@@ -306,11 +306,11 @@ class MatrixE2EEManager:
 
     # ── Diagnostics ──
 
-    async def e2ee_status(self) -> Dict[str, Any]:
+    async def e2ee_status(self) -> dict[str, Any]:
         """Return E2EE diagnostic information."""
         from navig.comms.matrix import HAS_OLM
 
-        status: Dict[str, Any] = {
+        status: dict[str, Any] = {
             "olm_installed": HAS_OLM,
             "e2ee_enabled": self._bot._e2ee_enabled,
             "e2ee_config": self._bot.cfg.e2ee,

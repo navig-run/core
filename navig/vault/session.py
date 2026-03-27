@@ -13,7 +13,6 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
 
 __all__ = ["VaultSession", "SessionStore"]
 
@@ -68,7 +67,7 @@ class SessionStore:
     """
 
     _lock: threading.Lock = threading.Lock()
-    _session: Optional[VaultSession] = None
+    _session: VaultSession | None = None
 
     @classmethod
     def set(cls, session: VaultSession) -> None:
@@ -77,7 +76,7 @@ class SessionStore:
             cls._session = session
 
     @classmethod
-    def get(cls) -> Optional[VaultSession]:
+    def get(cls) -> VaultSession | None:
         """Return the active session, or ``None`` if locked or expired."""
         with cls._lock:
             if cls._session is None:

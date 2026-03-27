@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional
 
 from loguru import logger
 
@@ -133,10 +132,10 @@ def _cli_approve_group(sev: str, group: list[ScanFinding]) -> bool:
 def cli_review_and_approve(
     findings: list[ScanFinding],
     branch: str,
-    config: Optional[dict] = None,
+    config: dict | None = None,
     alias: str = "",
-    version: Optional[str] = None,
-) -> Optional[str]:
+    version: str | None = None,
+) -> str | None:
     """Full CLI-based approval flow (fallback when Telegram is not configured).
 
     Groups findings by severity, prompts for per-group approval, shows a
@@ -246,9 +245,9 @@ class ContributeFlow:
         self,
         findings: list[ScanFinding],
         branch: str,
-        config: Optional[dict] = None,
+        config: dict | None = None,
         alias: str = "",
-        version: Optional[str] = None,
+        version: str | None = None,
     ) -> None:
         self._all_findings = findings
         self._branch = branch
@@ -442,10 +441,10 @@ class ContributeFlow:
 def run_approval_flow(
     findings: list[ScanFinding],
     branch: str,
-    config: Optional[dict] = None,
+    config: dict | None = None,
     alias: str = "",
-    version: Optional[str] = None,
-) -> Optional[str]:
+    version: str | None = None,
+) -> str | None:
     """Route to Telegram or CLI approval flow based on bot configuration.
 
     Checks ``TELEGRAM_BOT_TOKEN`` environment variable.  If set, logs a

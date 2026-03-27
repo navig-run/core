@@ -10,7 +10,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from rich import box
 
@@ -96,7 +96,7 @@ class CommandHistory:
 
     def __init__(self, max_size: int = 10):
         self.max_size = max_size
-        self.commands: List[Dict[str, Any]] = []
+        self.commands: list[dict[str, Any]] = []
 
     def add(self, command: str, description: str, success: bool = True):
         """Add a command to history."""
@@ -110,7 +110,7 @@ class CommandHistory:
         if len(self.commands) > self.max_size:
             self.commands.pop()  # Remove oldest
 
-    def get_recent(self, count: int = 5) -> List[Dict[str, Any]]:
+    def get_recent(self, count: int = 5) -> list[dict[str, Any]]:
         """Get most recent commands."""
         return self.commands[:count]
 
@@ -124,11 +124,11 @@ class MenuState:
 
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.menu_stack: List[str] = []
-        self.active_host: Optional[str] = config_manager.get_active_host()
-        self.active_app: Optional[str] = config_manager.get_active_app()
+        self.menu_stack: list[str] = []
+        self.active_host: str | None = config_manager.get_active_host()
+        self.active_app: str | None = config_manager.get_active_app()
         self.history = CommandHistory()
-        self.last_selections: Dict[str, Any] = {}  # Remember user choices
+        self.last_selections: dict[str, Any] = {}  # Remember user choices
 
         # Terminal info
         self.terminal_width = console.width
@@ -138,13 +138,13 @@ class MenuState:
         """Navigate to a submenu."""
         self.menu_stack.append(menu_name)
 
-    def pop_menu(self) -> Optional[str]:
+    def pop_menu(self) -> str | None:
         """Return to previous menu."""
         if self.menu_stack:
             return self.menu_stack.pop()
         return None
 
-    def current_menu(self) -> Optional[str]:
+    def current_menu(self) -> str | None:
         """Get current menu name."""
         return self.menu_stack[-1] if self.menu_stack else None
 
@@ -240,7 +240,7 @@ def show_status(message: str, status: str = "info"):
 
 
 def create_menu_table(
-    title: str, items: List[Tuple[str, str]], show_keys: bool = True
+    title: str, items: list[tuple[str, str]], show_keys: bool = True
 ) -> Table:
     """Create a formatted menu table."""
     table = Table(
@@ -262,8 +262,8 @@ def create_menu_table(
 
 
 def prompt_selection(
-    options: List[str], message: str = "Select option", allow_back: bool = True
-) -> Optional[str]:
+    options: list[str], message: str = "Select option", allow_back: bool = True
+) -> str | None:
     """Prompt user to select from options using questionary or fallback."""
     # Try to initialize questionary (lazy load)
     _init_questionary()
@@ -326,7 +326,7 @@ def prompt_selection(
             show_status("Invalid input. Try again.", "error")
 
 
-def prompt_menu_choice(options: List[Tuple[str, str]], title: str) -> Optional[str]:
+def prompt_menu_choice(options: list[tuple[str, str]], title: str) -> str | None:
     """Prompt for menu selection with arrow keys or number input.
 
     Args:
@@ -448,7 +448,7 @@ def show_status_dashboard(state: MenuState):
     console.print()
 
 
-def show_main_menu(state: MenuState) -> Optional[str]:
+def show_main_menu(state: MenuState) -> str | None:
     """Display main menu with three-pillar organization."""
     clear_screen()
     show_header(state)
@@ -3497,7 +3497,7 @@ def show_quick_help(state: MenuState):
 # ============================================================================
 
 
-def launch_menu(options: Dict[str, Any]):
+def launch_menu(options: dict[str, Any]):
     """
     Main entry point for interactive menu system.
 

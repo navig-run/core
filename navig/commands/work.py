@@ -27,7 +27,6 @@ import re
 import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 
@@ -157,7 +156,7 @@ def _record_event(conn, work_item_id: int, event_type: str, payload: dict) -> No
 # ── Wiki integration ─────────────────────────────────────────────────────────
 
 
-def _create_wiki_note(slug: str, title: str, kind: str, stage: str) -> Optional[str]:
+def _create_wiki_note(slug: str, title: str, kind: str, stage: str) -> str | None:
     """Create a wiki hub note for the work item.
 
     Returns the relative wiki path on success, or None if wiki is not
@@ -220,10 +219,10 @@ def cmd_add(
     stage: str = typer.Option(
         "inbox", "--stage", "-s", help=f"Initial stage: {', '.join(VALID_STAGES)}."
     ),
-    owner: Optional[str] = typer.Option(
+    owner: str | None = typer.Option(
         None, "--owner", "-o", help="Owner name or identifier."
     ),
-    tag: List[str] = typer.Option([], "--tag", "-t", help="Tag (repeatable)."),
+    tag: list[str] = typer.Option([], "--tag", "-t", help="Tag (repeatable)."),
     no_wiki: bool = typer.Option(
         False, "--no-wiki", help="Do not create a linked wiki note."
     ),
@@ -245,7 +244,7 @@ def cmd_add(
     slug = _unique_slug(conn, base_slug)
     now = _now_iso()
 
-    notes_path: Optional[str] = None
+    notes_path: str | None = None
     if not no_wiki:
         notes_path = _create_wiki_note(slug, title, kind, stage)
 
@@ -288,10 +287,10 @@ def cmd_add(
 
 @work_app.command("list")
 def cmd_list(
-    kind: Optional[str] = typer.Option(None, "--kind", "-k", help="Filter by kind."),
-    stage: Optional[str] = typer.Option(None, "--stage", "-s", help="Filter by stage."),
-    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Filter by owner."),
-    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag."),
+    kind: str | None = typer.Option(None, "--kind", "-k", help="Filter by kind."),
+    stage: str | None = typer.Option(None, "--stage", "-s", help="Filter by stage."),
+    owner: str | None = typer.Option(None, "--owner", "-o", help="Filter by owner."),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag."),
     limit: int = typer.Option(50, "--limit", "-n", help="Max results."),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON."),
 ):
@@ -483,17 +482,15 @@ def _update_wiki_stage(notes_path: str, new_stage: str) -> None:
 @work_app.command("update")
 def cmd_update(
     slug_or_id: str = typer.Argument(..., help="Slug or numeric ID."),
-    title: Optional[str] = typer.Option(None, "--title", help="New title."),
-    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="New owner."),
-    tag: List[str] = typer.Option(
+    title: str | None = typer.Option(None, "--title", help="New title."),
+    owner: str | None = typer.Option(None, "--owner", "-o", help="New owner."),
+    tag: list[str] = typer.Option(
         [], "--tag", "-t", help="Replace all tags (repeatable)."
     ),
-    ref_type: Optional[str] = typer.Option(
+    ref_type: str | None = typer.Option(
         None, "--ref-type", help="External reference type (e.g. github, jira)."
     ),
-    ref_id: Optional[str] = typer.Option(
-        None, "--ref-id", help="External reference ID."
-    ),
+    ref_id: str | None = typer.Option(None, "--ref-id", help="External reference ID."),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON."),
 ):
     """Update fields on a work item."""

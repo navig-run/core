@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 
 class MCPMethod(str, Enum):
@@ -27,8 +27,8 @@ class JSONRPCRequest:
     """JSON-RPC 2.0 request."""
 
     method: str
-    params: Dict[str, Any] = field(default_factory=dict)
-    id: Optional[Union[str, int]] = None
+    params: dict[str, Any] = field(default_factory=dict)
+    id: str | int | None = None
     jsonrpc: str = "2.0"
 
     def to_json(self) -> str:
@@ -60,9 +60,9 @@ class JSONRPCRequest:
 class JSONRPCResponse:
     """JSON-RPC 2.0 response."""
 
-    id: Optional[Union[str, int]]
-    result: Optional[Any] = None
-    error: Optional[Dict[str, Any]] = None
+    id: str | int | None
+    result: Any | None = None
+    error: dict[str, Any] | None = None
     jsonrpc: str = "2.0"
 
     @classmethod
@@ -104,10 +104,10 @@ class MCPTool:
 
     name: str
     description: str
-    input_schema: Dict[str, Any]
+    input_schema: dict[str, Any]
     server_id: str  # Which server provides this tool
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,
@@ -133,11 +133,11 @@ class MCPResource:
 
     uri: str
     name: str
-    description: Optional[str] = None
-    mime_type: Optional[str] = None
+    description: str | None = None
+    mime_type: str | None = None
     server_id: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "uri": self.uri,
@@ -164,11 +164,11 @@ class MCPPrompt:
     """Prompt definition from MCP server."""
 
     name: str
-    description: Optional[str] = None
-    arguments: List[Dict[str, Any]] = field(default_factory=list)
+    description: str | None = None
+    arguments: list[dict[str, Any]] = field(default_factory=list)
     server_id: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,

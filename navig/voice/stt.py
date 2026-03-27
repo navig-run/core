@@ -30,7 +30,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL  # noqa: F401
 
@@ -52,7 +51,7 @@ class STTConfig:
     """STT configuration."""
 
     provider: STTProvider = STTProvider.WHISPER_API
-    fallback_providers: List[STTProvider] = field(
+    fallback_providers: list[STTProvider] = field(
         default_factory=lambda: [STTProvider.WHISPER_LOCAL]
     )
 
@@ -82,20 +81,20 @@ class STTResult:
     """Result from STT transcription."""
 
     success: bool
-    text: Optional[str] = None
+    text: str | None = None
 
     # Metadata
-    provider: Optional[STTProvider] = None
-    language: Optional[str] = None
-    confidence: Optional[float] = None
-    duration_ms: Optional[int] = None
-    latency_ms: Optional[int] = None
+    provider: STTProvider | None = None
+    language: str | None = None
+    confidence: float | None = None
+    duration_ms: int | None = None
+    latency_ms: int | None = None
 
     # Segments (if available)
-    segments: Optional[List[Dict]] = None
+    segments: list[dict] | None = None
 
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
     def __bool__(self) -> bool:
         return self.success
@@ -114,11 +113,11 @@ class STT:
     with automatic fallback.
     """
 
-    def __init__(self, config: Optional[STTConfig] = None):
+    def __init__(self, config: STTConfig | None = None):
         self.config = config or STTConfig()
 
     @staticmethod
-    def _resolve_api_key(vault_label: str, env_var: str) -> Optional[str]:
+    def _resolve_api_key(vault_label: str, env_var: str) -> str | None:
         """Try VaultV2 first, fall back to os.environ.
 
         This aligns stt.py with the vault-first pattern used in streaming_stt.py.
@@ -138,8 +137,8 @@ class STT:
     async def transcribe(
         self,
         audio_path: str | Path,
-        provider: Optional[STTProvider] = None,
-        language: Optional[str] = None,
+        provider: STTProvider | None = None,
+        language: str | None = None,
         **kwargs,
     ) -> STTResult:
         """
@@ -255,39 +254,41 @@ class STT:
 
         try:
             audio_data = audio_path.read_bytes()
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     url,
                     params=params,
                     headers=headers,
                     data=audio_data,
                     timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return STTResult(
-                            success=False,
-                            error=f"Deepgram API error {response.status}: {error_text}",
-                        )
-
-                    data = await response.json()
-                    channel = data.get("results", {}).get("channels", [{}])[0]
-                    alt = channel.get("alternatives", [{}])[0]
-                    text = alt.get("transcript", "")
-                    confidence = alt.get("confidence", 0.0)
-                    detected_lang = (
-                        data.get("results", {})
-                        .get("channels", [{}])[0]
-                        .get("detected_language", language)
-                    )
-
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
                     return STTResult(
-                        success=bool(text),
-                        text=text or None,
-                        provider=STTProvider.DEEPGRAM,
-                        language=detected_lang,
-                        confidence=confidence,
+                        success=False,
+                        error=f"Deepgram API error {response.status}: {error_text}",
                     )
+
+                data = await response.json()
+                channel = data.get("results", {}).get("channels", [{}])[0]
+                alt = channel.get("alternatives", [{}])[0]
+                text = alt.get("transcript", "")
+                confidence = alt.get("confidence", 0.0)
+                detected_lang = (
+                    data.get("results", {})
+                    .get("channels", [{}])[0]
+                    .get("detected_language", language)
+                )
+
+                return STTResult(
+                    success=bool(text),
+                    text=text or None,
+                    provider=STTProvider.DEEPGRAM,
+                    language=detected_lang,
+                    confidence=confidence,
+                )
         except asyncio.TimeoutError:
             return STTResult(success=False, error="Deepgram transcription timeout")
         except Exception as e:
@@ -322,34 +323,36 @@ class STT:
                 data.add_field("language", language)
             data.add_field("response_format", "verbose_json")
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     url,
                     headers=headers,
                     data=data,
                     timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return STTResult(
-                            success=False,
-                            error=f"Whisper API error {response.status}: {error_text}",
-                        )
-
-                    result_data = await response.json()
-                    text = result_data.get("text", "")
-                    detected_lang = result_data.get("language", language)
-                    duration = result_data.get("duration")
-                    segments = result_data.get("segments")
-
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
                     return STTResult(
-                        success=bool(text),
-                        text=text or None,
-                        provider=STTProvider.WHISPER_API,
-                        language=detected_lang,
-                        duration_ms=int(duration * 1000) if duration else None,
-                        segments=segments,
+                        success=False,
+                        error=f"Whisper API error {response.status}: {error_text}",
                     )
+
+                result_data = await response.json()
+                text = result_data.get("text", "")
+                detected_lang = result_data.get("language", language)
+                duration = result_data.get("duration")
+                segments = result_data.get("segments")
+
+                return STTResult(
+                    success=bool(text),
+                    text=text or None,
+                    provider=STTProvider.WHISPER_API,
+                    language=detected_lang,
+                    duration_ms=int(duration * 1000) if duration else None,
+                    segments=segments,
+                )
         except asyncio.TimeoutError:
             return STTResult(success=False, error="Whisper API timeout")
         except Exception as e:
@@ -412,7 +415,7 @@ class STT:
             ".webm": "audio/webm",
         }.get(ext, "application/octet-stream")
 
-    async def list_models(self, provider: Optional[STTProvider] = None) -> List[Dict]:
+    async def list_models(self, provider: STTProvider | None = None) -> list[dict]:
         """List available models for a provider."""
         prov = provider or self.config.provider
 
@@ -454,7 +457,7 @@ class STT:
 # Module-level convenience
 # =============================================================================
 
-_default_stt: Optional[STT] = None
+_default_stt: STT | None = None
 
 
 def _resolve_audio_file_params(
@@ -486,7 +489,7 @@ def get_stt() -> STT:
     return _default_stt
 
 
-async def transcribe(audio_path: str | Path, **kwargs) -> Optional[str]:
+async def transcribe(audio_path: str | Path, **kwargs) -> str | None:
     """Transcribe audio file to text. Returns None on failure."""
     result = await get_stt().transcribe(audio_path, **kwargs)
     return result.text if result.success else None
@@ -497,6 +500,6 @@ async def transcribe_full(audio_path: str | Path, **kwargs) -> STTResult:
     return await get_stt().transcribe(audio_path, **kwargs)
 
 
-def transcribe_sync(audio_path: str | Path, **kwargs) -> Optional[str]:
+def transcribe_sync(audio_path: str | Path, **kwargs) -> str | None:
     """Synchronous wrapper for transcribe()."""
     return asyncio.run(transcribe(audio_path, **kwargs))

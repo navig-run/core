@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -17,7 +16,7 @@ evolution_app = typer.Typer(
 @evolution_app.command("skill")
 def evolve_skill(
     goal: str = typer.Argument(..., help="Description of the skill to create"),
-    skills_root: Optional[Path] = typer.Option(
+    skills_root: Path | None = typer.Option(
         None, "--root", "-r", help="Root directory for skills"
     ),
     retries: int = typer.Option(3, "--retries", "-n", help="Max evolution attempts"),
@@ -109,7 +108,7 @@ def evolve_fix(
     instruction: str = typer.Argument(
         ..., help="Description of the bug or improvement"
     ),
-    check: Optional[str] = typer.Option(
+    check: str | None = typer.Option(
         None,
         "--check",
         "-c",
@@ -197,7 +196,7 @@ def evolve_status(
             if r.get("fn"):
                 ch.dim(f"    Top culprit: {r['fn']}")
     else:
-        ch.success("\n✓ No regressions detected in the last {} days".format(days))
+        ch.success(f"\n✓ No regressions detected in the last {days} days")
 
     suggestions = suggest_optimizations(samples)
     if suggestions:

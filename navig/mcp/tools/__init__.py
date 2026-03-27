@@ -1,4 +1,5 @@
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any, Dict
 
 from navig.mcp.tools import agent, desktop, inventory, memory, runtime, system, wiki
 

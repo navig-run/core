@@ -8,14 +8,13 @@ Each event is rendered on one line:
 from __future__ import annotations
 
 import sys
-from typing import List
 
 from navig.ui.models import Event
 from navig.ui.theme import COLOR_STYLE, SAFE_MODE, console
 
 
 def render_event_timeline(
-    events: List[Event],
+    events: list[Event],
     *,
     title: str = "Timeline",
     show_title: bool = True,

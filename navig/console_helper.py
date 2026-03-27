@@ -10,7 +10,7 @@ to improve CLI startup time (~120 ms saved).
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Lazy Rich class accessors  (loaded on first use, then cached)
@@ -189,7 +189,7 @@ class Colors:
 # ============================================================================
 
 
-def success(message: str, details: Optional[str] = None):
+def success(message: str, details: str | None = None):
     """Print success message in green with checkmark."""
     mark = _safe_symbol("✓", "+")
     console.print(f"[{Colors.SUCCESS}]{mark}[/{Colors.SUCCESS}] {message}")
@@ -197,7 +197,7 @@ def success(message: str, details: Optional[str] = None):
         console.print(f"  [{Colors.DIM}]{details}[/{Colors.DIM}]")
 
 
-def error(message: str, details: Optional[str] = None):
+def error(message: str, details: str | None = None):
     """Print error message in red with X mark."""
     mark = _safe_symbol("✗", "x")
     console.print(f"[{Colors.ERROR}]{mark}[/{Colors.ERROR}] {message}")
@@ -205,7 +205,7 @@ def error(message: str, details: Optional[str] = None):
         console.print(f"  [{Colors.DIM}]{details}[/{Colors.DIM}]")
 
 
-def warning(message: str, details: Optional[str] = None):
+def warning(message: str, details: str | None = None):
     """Print warning message in yellow with warning symbol."""
     mark = _safe_symbol("⚠", "!")
     console.print(f"[{Colors.WARNING}]{mark}[/{Colors.WARNING}] {message}")
@@ -213,7 +213,7 @@ def warning(message: str, details: Optional[str] = None):
         console.print(f"  [{Colors.DIM}]{details}[/{Colors.DIM}]")
 
 
-def info(message: str, details: Optional[str] = None, no_wrap: bool = False):
+def info(message: str, details: str | None = None, no_wrap: bool = False):
     """Print info message in blue with info symbol.
 
     Args:
@@ -240,7 +240,7 @@ def step(message: str):
     console.print(f"[{Colors.PROMPT}]{mark}[/{Colors.PROMPT}] {message}")
 
 
-def header(title: str, subtitle: Optional[str] = None):
+def header(title: str, subtitle: str | None = None):
     """Print section header with optional subtitle."""
     console.print(f"\n[{Colors.HIGHLIGHT}]=== {title} ===[/{Colors.HIGHLIGHT}]")
     if subtitle:
@@ -248,7 +248,7 @@ def header(title: str, subtitle: Optional[str] = None):
     console.print()
 
 
-def heading(title: str, subtitle: Optional[str] = None):
+def heading(title: str, subtitle: str | None = None):
     """Backward-compatible alias for :func:`header`."""
     header(title, subtitle)
 
@@ -275,7 +275,7 @@ def raw_print(message: str):
 
 def panel(
     content: str,
-    title: Optional[str] = None,
+    title: str | None = None,
     style: str = "cyan",
     border_style: str = "cyan",
 ):
@@ -305,8 +305,8 @@ def warning_panel(message: str, title: str = "Warning"):
 
 
 def create_table(
-    title: Optional[str] = None,
-    columns: Optional[List[Dict[str, str]]] = None,
+    title: str | None = None,
+    columns: list[dict[str, str]] | None = None,
     show_header: bool = True,
     show_lines: bool = False,
 ):
@@ -354,7 +354,7 @@ def print_table(table):
     console.print(table)
 
 
-def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
+def format_db_output(stdout: str, query_type: str | None = None) -> None:
     """
     Format database query output with minimal colors for token efficiency.
 
@@ -508,7 +508,7 @@ def print_code(
     console.print(syntax)
 
 
-def print_json(data: Union[dict, list], indent: int = 2):
+def print_json(data: dict | list, indent: int = 2):
     """Print JSON with syntax highlighting."""
     import json
 
@@ -526,7 +526,7 @@ def print_sql(sql: str):
     print_code(sql, language="sql")
 
 
-def print_path(path: Union[str, Path]):
+def print_path(path: str | Path):
     """Print file path with highlighting."""
     console.print(f"[{Colors.PATH}]{path}[/{Colors.PATH}]")
 
@@ -580,7 +580,7 @@ def status_text(text: str, is_good: bool) -> str:
 # ============================================================================
 
 
-def print_server_info(name: str, config: Dict[str, Any]):
+def print_server_info(name: str, config: dict[str, Any]):
     """Print formatted server information."""
     table = create_table(
         title=f"Server: {name}",
@@ -608,7 +608,7 @@ def print_server_info(name: str, config: Dict[str, Any]):
     print_table(table)
 
 
-def print_tunnel_status(tunnel_info: Dict[str, Any], server_name: str):
+def print_tunnel_status(tunnel_info: dict[str, Any], server_name: str):
     """Print formatted tunnel status."""
     table = create_table(
         title=f"Tunnel Status: {server_name}",
@@ -688,9 +688,9 @@ def requires_confirmation(
 def confirm_operation(
     operation_name: str,
     operation_type: str = "standard",
-    details: Optional[str] = None,
-    host: Optional[str] = None,
-    app: Optional[str] = None,
+    details: str | None = None,
+    host: str | None = None,
+    app: str | None = None,
     auto_confirm: bool = False,
     force_confirm: bool = False,
 ) -> bool:
@@ -911,7 +911,7 @@ def confirm_action(message: str, default: bool = True) -> bool:
 
 
 def prompt_input(
-    message: str, default: Optional[str] = None, password: bool = False
+    message: str, default: str | None = None, password: bool = False
 ) -> str:
     """
     Prompt user for input with rich formatting.
@@ -933,9 +933,7 @@ def prompt_input(
     )
 
 
-def prompt_choice(
-    message: str, choices: List[str], default: Optional[str] = None
-) -> str:
+def prompt_choice(message: str, choices: list[str], default: str | None = None) -> str:
     """
     Prompt user to choose from list of options.
 
@@ -966,7 +964,7 @@ def clear():
     console.clear()
 
 
-def rule(title: Optional[str] = None, style: str = "cyan"):
+def rule(title: str | None = None, style: str = "cyan"):
     """Print a horizontal rule with optional title."""
     console.rule(title, style=style)
 

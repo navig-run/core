@@ -35,7 +35,7 @@ from navig.mesh.registry import get_registry
 logger = get_debug_logger()
 
 
-def register(app: "web.Application", gateway: "NavigGateway") -> None:
+def register(app: web.Application, gateway: NavigGateway) -> None:
     app.router.add_get("/mesh/peers", _peers(gateway))
     app.router.add_post("/mesh/ping", _ping(gateway))
     app.router.add_post("/mesh/route", _route(gateway))
@@ -47,8 +47,8 @@ def register(app: "web.Application", gateway: "NavigGateway") -> None:
 # ─────────────────────────── GET /mesh/peers ─────────────────────────
 
 
-def _peers(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _peers(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         # Light auth: optional — mesh data is low-sensitivity on LAN
         registry = get_registry(gw.storage_dir)
         return json_ok(registry.to_api_dict())
@@ -59,7 +59,7 @@ def _peers(gw: "NavigGateway"):
 # ─────────────────────────── POST /mesh/ping ─────────────────────────
 
 
-def _ping(gw: "NavigGateway"):
+def _ping(gw: NavigGateway):
     """
     Manually register a peer by its gateway URL.
     Body: { "gateway_url": "http://10.0.0.x:8789" }
@@ -68,7 +68,7 @@ def _ping(gw: "NavigGateway"):
     The server fetches /health + /mesh/peers from the given URL to bootstrap.
     """
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -90,7 +90,7 @@ def _ping(gw: "NavigGateway"):
     return h
 
 
-async def _bootstrap_peer(url: str, gw: "NavigGateway") -> dict | None:
+async def _bootstrap_peer(url: str, gw: NavigGateway) -> dict | None:
     """Fetch /health then /mesh/peers from a manually-specified peer URL."""
     try:
         import time
@@ -133,7 +133,7 @@ async def _bootstrap_peer(url: str, gw: "NavigGateway") -> dict | None:
 # ─────────────────────────── POST /mesh/route ────────────────────────
 
 
-def _route(gw: "NavigGateway"):
+def _route(gw: NavigGateway):
     """
     Proxy a ChatRequest to the best available mesh peer.
     Body: ChatRequest JSON + optional "target_node_id" and "capability" fields.
@@ -142,7 +142,7 @@ def _route(gw: "NavigGateway"):
     Falls back to local processing if no peer is available.
     """
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -190,14 +190,14 @@ def _route(gw: "NavigGateway"):
 # ─────────────────────────── POST /mesh/target ───────────────────────
 
 
-def _set_target(gw: "NavigGateway"):
+def _set_target(gw: NavigGateway):
     """
     Set the active routing target for this session.
     Body: { "node_id": "<node_id>" }
     The target is stored in-memory on the gateway (not persisted).
     """
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         try:
             body = await r.json()
         except Exception:
@@ -227,10 +227,10 @@ def _set_target(gw: "NavigGateway"):
 # ─────────────────────────── DELETE /mesh/target ─────────────────────
 
 
-def _clear_target(gw: "NavigGateway"):
+def _clear_target(gw: NavigGateway):
     """Clear the active routing target — commands run locally."""
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         registry = get_registry(gw.storage_dir)
         registry.clear_target()  # type: ignore[attr-defined]
         logger.info("[mesh.routes] Routing target cleared")
@@ -242,13 +242,13 @@ def _clear_target(gw: "NavigGateway"):
 # ─────────────────────────── POST /mesh/discovery/scan ───────────────
 
 
-def _scan(gw: "NavigGateway"):
+def _scan(gw: NavigGateway):
     """
     Trigger an immediate LAN discovery scan (UDP multicast + active probing).
     Non-blocking — returns immediately; listen on /mesh/peers for results.
     """
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         import asyncio
 
         try:

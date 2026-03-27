@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.memory.snapshot")
 
@@ -51,7 +51,7 @@ class SnapshotPolicy:
 
 
 # Default policies (fallback: store=False)
-_DEFAULT_POLICIES: Dict[str, SnapshotPolicy] = {}
+_DEFAULT_POLICIES: dict[str, SnapshotPolicy] = {}
 
 
 def _parse_retention(s: str) -> timedelta:
@@ -75,8 +75,8 @@ def _parse_retention(s: str) -> timedelta:
 
 
 def load_snapshot_policies(
-    config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, SnapshotPolicy]:
+    config: dict[str, Any] | None = None,
+) -> dict[str, SnapshotPolicy]:
     """
     Load per-tool snapshot policies from config.
 
@@ -91,7 +91,7 @@ def load_snapshot_policies(
     """
     if config is None:
         config = _load_policies_from_yaml()
-    policies: Dict[str, SnapshotPolicy] = {}
+    policies: dict[str, SnapshotPolicy] = {}
     for tool_name, spec in config.items():
         if isinstance(spec, dict):
             policies[tool_name] = SnapshotPolicy(
@@ -101,7 +101,7 @@ def load_snapshot_policies(
     return policies
 
 
-def _load_policies_from_yaml() -> Dict[str, Any]:
+def _load_policies_from_yaml() -> dict[str, Any]:
     """Read memory.api_snapshot_policies from the NAVIG global config."""
     try:
         from navig.config import get_config_manager
@@ -121,8 +121,8 @@ def _load_policies_from_yaml() -> Dict[str, Any]:
 
 def should_store(
     tool_name: str,
-    policies: Optional[Dict[str, SnapshotPolicy]] = None,
-) -> tuple[bool, Optional[timedelta]]:
+    policies: dict[str, SnapshotPolicy] | None = None,
+) -> tuple[bool, timedelta | None]:
     """
     Decision helper: should we persist a snapshot for this tool?
 
@@ -184,7 +184,7 @@ class SnapshotEntry:
         )
 
     @classmethod
-    def from_line(cls, line: str) -> "SnapshotEntry":
+    def from_line(cls, line: str) -> SnapshotEntry:
         """Deserialize from a JSON line."""
         d = json.loads(line)
         return cls(
@@ -211,15 +211,15 @@ class SnapshotWriter:
 
     def __init__(
         self,
-        snapshot_dir: Optional[Path] = None,
-        policies: Optional[Dict[str, SnapshotPolicy]] = None,
+        snapshot_dir: Path | None = None,
+        policies: dict[str, SnapshotPolicy] | None = None,
     ):
         self._dir = snapshot_dir or _get_snapshot_dir()
         self._policies = policies or load_snapshot_policies()
 
     def write(
         self,
-        tool_result: Dict[str, Any],
+        tool_result: dict[str, Any],
         workspace: str = "default",
         lane: str = "",
         host: str = "",
@@ -277,7 +277,7 @@ class SnapshotWriter:
 
     def write_from_api_result(
         self,
-        api_result: "ApiToolResult",
+        api_result: ApiToolResult,
         workspace: str = "default",
         lane: str = "",
         host: str = "",
@@ -300,11 +300,11 @@ class SnapshotWriter:
 
 def load_snapshots(
     workspace: str = "default",
-    tool: Optional[str] = None,
-    max_age_minutes: Optional[int] = None,
+    tool: str | None = None,
+    max_age_minutes: int | None = None,
     limit: int = 50,
-    snapshot_dir: Optional[Path] = None,
-) -> List[SnapshotEntry]:
+    snapshot_dir: Path | None = None,
+) -> list[SnapshotEntry]:
     """
     Load snapshots from the JSONL file, optionally filtered.
 
@@ -323,7 +323,7 @@ def load_snapshots(
     if not file_path.is_file():
         return []
 
-    entries: List[SnapshotEntry] = []
+    entries: list[SnapshotEntry] = []
     cutoff = None
     if max_age_minutes is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
@@ -362,7 +362,7 @@ def is_stale(
     workspace: str = "default",
     tool: str = "",
     max_age_minutes: int = 60,
-    snapshot_dir: Optional[Path] = None,
+    snapshot_dir: Path | None = None,
 ) -> bool:
     """
     Check if the most recent snapshot for a tool is older than max_age_minutes.
@@ -386,8 +386,8 @@ def is_stale(
 
 def prune_snapshots(
     workspace: str = "default",
-    policies: Optional[Dict[str, SnapshotPolicy]] = None,
-    snapshot_dir: Optional[Path] = None,
+    policies: dict[str, SnapshotPolicy] | None = None,
+    snapshot_dir: Path | None = None,
 ) -> int:
     """
     Remove snapshot entries that exceed their retention period.
@@ -403,7 +403,7 @@ def prune_snapshots(
         policies = load_snapshot_policies()
 
     now = datetime.now(timezone.utc)
-    kept: List[str] = []
+    kept: list[str] = []
     pruned = 0
 
     for line in file_path.read_text(encoding="utf-8").splitlines():
@@ -440,9 +440,9 @@ def prune_snapshots(
 
 def clear_snapshots(
     workspace: str = "default",
-    tool: Optional[str] = None,
-    older_than: Optional[str] = None,
-    snapshot_dir: Optional[Path] = None,
+    tool: str | None = None,
+    older_than: str | None = None,
+    snapshot_dir: Path | None = None,
 ) -> int:
     """
     Clear snapshots matching filters.
@@ -510,7 +510,7 @@ def clear_snapshots(
 # Module-level singleton
 # ─────────────────────────────────────────────────────────────
 
-_writer: Optional[SnapshotWriter] = None
+_writer: SnapshotWriter | None = None
 
 
 def get_snapshot_writer() -> SnapshotWriter:

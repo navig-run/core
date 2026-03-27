@@ -31,8 +31,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +73,10 @@ class PipelineStep:
     """
 
     tool_name: str
-    args: Dict[str, Any] = field(default_factory=dict)
-    input_key: Optional[str] = None
-    output_key: Optional[str] = None
-    transform: Optional[Transform] = None
+    args: dict[str, Any] = field(default_factory=dict)
+    input_key: str | None = None
+    output_key: str | None = None
+    transform: Transform | None = None
     required: bool = True
 
 
@@ -92,7 +93,7 @@ class StepResult:
     tool_name: str
     success: bool
     output: Any
-    error: Optional[str]
+    error: str | None
     elapsed_ms: float
     skipped: bool = False
 
@@ -101,10 +102,10 @@ class StepResult:
 class PipelineResult:
     """Aggregate result of a complete pipeline run."""
 
-    steps: List[StepResult]
-    context: Dict[str, Any]  # accumulated key/value store after all steps
+    steps: list[StepResult]
+    context: dict[str, Any]  # accumulated key/value store after all steps
     total_elapsed_ms: float
-    aborted_at: Optional[int] = None  # step index where the pipeline aborted
+    aborted_at: int | None = None  # step index where the pipeline aborted
 
     @property
     def succeeded(self) -> bool:
@@ -144,15 +145,15 @@ class ToolPipeline:
         self,
         registry: Any,
         *,
-        initial_context: Optional[Dict[str, Any]] = None,
+        initial_context: dict[str, Any] | None = None,
     ) -> None:
         self._registry = registry
-        self._steps: List[PipelineStep] = []
-        self._initial_context: Dict[str, Any] = initial_context or {}
+        self._steps: list[PipelineStep] = []
+        self._initial_context: dict[str, Any] = initial_context or {}
 
     # ------------------------------------------------------------------
 
-    def add(self, step: PipelineStep) -> "ToolPipeline":
+    def add(self, step: PipelineStep) -> ToolPipeline:
         """Append a step and return *self* for fluent chaining."""
         self._steps.append(step)
         return self
@@ -166,7 +167,7 @@ class ToolPipeline:
         self,
         *,
         initial_input: Any = None,
-        on_step: Optional[Callable[[StepResult], None]] = None,
+        on_step: Callable[[StepResult], None] | None = None,
     ) -> PipelineResult:
         """Execute all steps sequentially.
 
@@ -180,8 +181,8 @@ class ToolPipeline:
             for streaming progress updates).
         """
         t_pipeline_start = time.monotonic()
-        context: Dict[str, Any] = dict(self._initial_context)
-        step_results: List[StepResult] = []
+        context: dict[str, Any] = dict(self._initial_context)
+        step_results: list[StepResult] = []
         prior_output: Any = initial_input
 
         for idx, step in enumerate(self._steps):
@@ -194,7 +195,7 @@ class ToolPipeline:
                 args[step.input_key] = value
 
             t_step = time.monotonic()
-            status_log: List[str] = []
+            status_log: list[str] = []
 
             def _on_status(msg: str) -> None:  # noqa: B023
                 status_log.append(msg)

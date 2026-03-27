@@ -24,7 +24,7 @@ Migration::
 import asyncio
 import concurrent.futures as _cf
 import json
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar
 
 import requests
 
@@ -50,7 +50,7 @@ class AIAssistant:
         self._fallback_manager = None
 
     # Class-level singleton for ConversationStore — opened once, reused across calls
-    _conv_store: ClassVar[Optional[Any]] = None
+    _conv_store: ClassVar[Any | None] = None
 
     def _get_conv_store(self):
         """Return a cached ConversationStore singleton (opens DB once per process)."""
@@ -81,8 +81,8 @@ class AIAssistant:
     def ask(
         self,
         question: str,
-        context: Dict[str, Any],
-        model_override: Optional[str] = None,
+        context: dict[str, Any],
+        model_override: str | None = None,
         use_fallback: bool = True,
     ) -> str:
         """
@@ -222,7 +222,7 @@ class AIAssistant:
         system_prompt: str,
         context_str: str,
         question: str,
-        model_override: Optional[str] = None,
+        model_override: str | None = None,
     ) -> str:
         """Ask using the multi-provider fallback system."""
         from navig.providers import CompletionRequest, Message
@@ -275,7 +275,7 @@ class AIAssistant:
         system_prompt: str,
         context_str: str,
         question: str,
-        model_override: Optional[str] = None,
+        model_override: str | None = None,
     ) -> str:
         """Ask using legacy OpenRouter-only mode."""
         api_key = self.config.global_config.get("openrouter_api_key")
@@ -316,7 +316,7 @@ class AIAssistant:
 
         raise RuntimeError("All AI models failed to respond")
 
-    def _build_context_string(self, context: Dict[str, Any]) -> str:
+    def _build_context_string(self, context: dict[str, Any]) -> str:
         """Build context string for AI from gathered information."""
         lines = ["CONTEXT:"]
 
@@ -410,7 +410,7 @@ class AIAssistant:
         return data["choices"][0]["message"]["content"]
 
     def analyze_error(
-        self, command: str, error_message: str, context: Dict[str, Any]
+        self, command: str, error_message: str, context: dict[str, Any]
     ) -> str:
         """
         Analyze error and suggest solutions using AI.
@@ -443,7 +443,7 @@ class AIAssistant:
             return f"AI analysis unavailable: {e}"
 
     def suggest_optimization(
-        self, workflow_pattern: Dict[str, Any], context: Dict[str, Any]
+        self, workflow_pattern: dict[str, Any], context: dict[str, Any]
     ) -> str:
         """
         Suggest workflow optimizations based on detected patterns.
@@ -467,7 +467,7 @@ class AIAssistant:
         except Exception as e:
             return f"AI suggestions unavailable: {e}"
 
-    def generate_context_summary(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_context_summary(self, full_context: dict[str, Any]) -> dict[str, Any]:
         """
         Generate enhanced context summary for AI copilot.
 
@@ -485,8 +485,8 @@ class AIAssistant:
 def ask_ai_with_context(
     prompt: str,
     system_prompt: str = "",
-    history: List[Dict[str, str]] = None,
-    model: Optional[str] = None,
+    history: list[dict[str, str]] = None,
+    model: str | None = None,
 ) -> str:
     """
     Simple function to ask AI with context - used by gateway server.

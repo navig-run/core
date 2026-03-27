@@ -14,7 +14,7 @@ import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Type
+from typing import Any
 
 __all__ = ["CrashReport", "record_crash", "install_crash_handler", "list_crashes"]
 
@@ -38,15 +38,15 @@ class CrashReport:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CrashReport":
+    def from_dict(cls, data: dict) -> CrashReport:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 def record_crash(
-    exc: Optional[BaseException] = None,
+    exc: BaseException | None = None,
     signal_name: str = "exception",
-    context: Optional[dict] = None,
-    blackbox_dir: Optional[Path] = None,
+    context: dict | None = None,
+    blackbox_dir: Path | None = None,
 ) -> CrashReport:
     """Record a crash report to disk.
 
@@ -131,14 +131,14 @@ def record_crash(
     return report
 
 
-def install_crash_handler(blackbox_dir: Optional[Path] = None) -> None:
+def install_crash_handler(blackbox_dir: Path | None = None) -> None:
     """Install a global exception hook that records crashes to blackbox.
 
     Call this once at daemon/CLI startup.
     """
 
     def _hook(
-        exc_type: Type[BaseException],
+        exc_type: type[BaseException],
         exc_val: BaseException,
         exc_tb,
     ) -> None:
@@ -164,7 +164,7 @@ def install_crash_handler(blackbox_dir: Optional[Path] = None) -> None:
         pass  # best-effort; failure is non-critical
 
 
-def list_crashes(blackbox_dir: Optional[Path] = None) -> list[CrashReport]:
+def list_crashes(blackbox_dir: Path | None = None) -> list[CrashReport]:
     """Return all crash reports sorted newest first."""
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from navig.gateway.server import NavigGateway
 
 
-def register_all_routes(app: "web.Application", gateway: "NavigGateway") -> None:
+def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
     """Register every route group on *app*."""
     from navig.gateway.routes import (
         approval,

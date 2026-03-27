@@ -9,7 +9,7 @@ Pre-execution hooks that provide contextual warnings and suggestions:
 
 import json
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -31,8 +31,8 @@ class ProactiveDisplay:
         self.config = assistant.assistant_config
 
     def check_pre_execution_warnings(
-        self, command: str, args: Dict[str, Any], context: Dict[str, Any]
-    ) -> Tuple[bool, List[str]]:
+        self, command: str, args: dict[str, Any], context: dict[str, Any]
+    ) -> tuple[bool, list[str]]:
         """
         Check for pre-execution warnings.
 
@@ -69,7 +69,7 @@ class ProactiveDisplay:
 
         return should_proceed, warnings
 
-    def _is_destructive_operation(self, command: str, args: Dict[str, Any]) -> bool:
+    def _is_destructive_operation(self, command: str, args: dict[str, Any]) -> bool:
         """Check if operation is destructive."""
         # void: destructive operations. the point of no return. measure twice, cut once.
         destructive_commands = [
@@ -93,7 +93,7 @@ class ProactiveDisplay:
 
         return False
 
-    def _is_production_server(self, context: Dict[str, Any]) -> bool:
+    def _is_production_server(self, context: dict[str, Any]) -> bool:
         """Check if current server is marked as production."""
         # void: production. where mistakes cost money. or worse, reputation.
         server = context.get("server", {})
@@ -103,8 +103,8 @@ class ProactiveDisplay:
         )
 
     def _get_destructive_warnings(
-        self, command: str, args: Dict[str, Any], context: Dict[str, Any]
-    ) -> List[str]:
+        self, command: str, args: dict[str, Any], context: dict[str, Any]
+    ) -> list[str]:
         """Get warnings for destructive operations."""
         warnings = []
 
@@ -143,7 +143,7 @@ class ProactiveDisplay:
 
         return warnings
 
-    def _get_production_warnings(self, context: Dict[str, Any]) -> List[str]:
+    def _get_production_warnings(self, context: dict[str, Any]) -> list[str]:
         """Get warnings for production server operations."""
         warnings = []
         server = context.get("server", {})
@@ -155,17 +155,17 @@ class ProactiveDisplay:
 
         return warnings
 
-    def _check_backup_status(self, context: Dict[str, Any]) -> Optional[str]:
+    def _check_backup_status(self, context: dict[str, Any]) -> str | None:
         """Check when last backup was made."""
         # This would integrate with backup system
         # For now, return a generic warning
         return "   Last backup: Unknown - Consider running 'navig backup' first"
 
-    def _display_warnings(self, warnings: List[str]):
+    def _display_warnings(self, warnings: list[str]):
         """Display warnings to user."""
         ch.warning("\n" + "\n".join(warnings) + "\n")
 
-    def detect_workflow_patterns(self, command: str, context: Dict[str, Any]):
+    def detect_workflow_patterns(self, command: str, context: dict[str, Any]):
         """
         Detect inefficient workflow patterns and suggest improvements.
 
@@ -206,7 +206,7 @@ class ProactiveDisplay:
             for suggestion in suggestions:
                 ch.info(suggestion)
 
-    def _load_recent_history(self, minutes: int = 10) -> List[Dict[str, Any]]:
+    def _load_recent_history(self, minutes: int = 10) -> list[dict[str, Any]]:
         """Load recent command history."""
         history_file = self.ai_context_dir / "command_history.json"
 
@@ -214,7 +214,7 @@ class ProactiveDisplay:
             if not history_file.exists():
                 return []
 
-            with open(history_file, "r") as f:
+            with open(history_file) as f:
                 all_history = json.load(f)
 
             # Filter for recent entries

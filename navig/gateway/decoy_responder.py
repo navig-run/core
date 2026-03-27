@@ -26,7 +26,6 @@ import hashlib
 import logging
 import re
 from datetime import date
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +200,7 @@ def _sanitize_decoy_text(text: str) -> str:
     return sanitized
 
 
-def generate(user_id: int, user_message: Optional[str] = None) -> str:
+def generate(user_id: int, user_message: str | None = None) -> str:
     """
     Generate a decoy response for an unauthorized user.
 

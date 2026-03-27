@@ -41,10 +41,11 @@ import logging
 import tempfile
 import time
 import wave
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, AsyncIterator, List, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.voice.streaming_stt")
 
@@ -123,12 +124,12 @@ class StreamingSTTResult:
     transcript: str
     is_final: bool
     confidence: float = 0.0
-    language: Optional[str] = None
+    language: str | None = None
     provider: StreamingProvider = StreamingProvider.DEEPGRAM
-    latency_ms: Optional[float] = None
+    latency_ms: float | None = None
 
     # Word-level timestamps (if available from Deepgram)
-    words: List[dict] = field(default_factory=list)
+    words: list[dict] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return bool(self.transcript)
@@ -153,13 +154,13 @@ class StreamingSTT:
     Sending None into the queue signals end-of-audio.
     """
 
-    def __init__(self, config: Optional[StreamingSTTConfig] = None):
+    def __init__(self, config: StreamingSTTConfig | None = None):
         self.config = config or StreamingSTTConfig()
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
 
     async def stream(
         self,
-        audio_queue: "asyncio.Queue[Optional[bytes]]",
+        audio_queue: asyncio.Queue[bytes | None],
         *,
         is_voice: bool = True,
     ) -> AsyncIterator[StreamingSTTResult]:
@@ -176,7 +177,7 @@ class StreamingSTT:
         self._start_time = time.monotonic()
 
         # Collect all audio so fallback can use it
-        buffered: List[bytes] = []
+        buffered: list[bytes] = []
 
         if self.config.primary == StreamingProvider.DEEPGRAM:
             api_key = self._get_deepgram_key()
@@ -217,9 +218,9 @@ class StreamingSTT:
 
     async def _stream_deepgram(
         self,
-        audio_queue: "asyncio.Queue[Optional[bytes]]",
+        audio_queue: asyncio.Queue[bytes | None],
         api_key: str,
-        buffer_sink: List[bytes],
+        buffer_sink: list[bytes],
     ) -> AsyncIterator[StreamingSTTResult]:
         """
         Open a Deepgram WebSocket, stream audio, and yield results.
@@ -257,7 +258,7 @@ class StreamingSTT:
         ws_url = f"{self.config.deepgram_ws_url}?{urlencode(params)}"
 
         headers = {"Authorization": f"Token {api_key}"}
-        results_queue: asyncio.Queue[Optional[StreamingSTTResult]] = asyncio.Queue()
+        results_queue: asyncio.Queue[StreamingSTTResult | None] = asyncio.Queue()
 
         import json
 
@@ -288,7 +289,7 @@ class StreamingSTT:
                     is_final = data.get("is_final", False)
                     lang = channel.get("detected_language", self.config.language)
 
-                    latency_ms: Optional[float] = None
+                    latency_ms: float | None = None
                     if self._start_time is not None:
                         latency_ms = (time.monotonic() - self._start_time) * 1000
 
@@ -352,8 +353,8 @@ class StreamingSTT:
     # ------------------------------------------------------------------ #
 
     async def _fallback(
-        self, chunks: List[bytes], *, is_voice: bool = True
-    ) -> Optional[StreamingSTTResult]:
+        self, chunks: list[bytes], *, is_voice: bool = True
+    ) -> StreamingSTTResult | None:
         """
         Convert buffered PCM chunks into a WAV file and transcribe with STT.
 
@@ -412,7 +413,7 @@ class StreamingSTT:
             except OSError:
                 pass  # best-effort cleanup
 
-    def _chunks_to_wav(self, chunks: List[bytes]) -> bytes:
+    def _chunks_to_wav(self, chunks: list[bytes]) -> bytes:
         """Pack raw PCM int16 chunks into an in-memory WAV file."""
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:
@@ -427,7 +428,7 @@ class StreamingSTT:
     # Vault key resolution
     # ------------------------------------------------------------------ #
 
-    def _get_deepgram_key(self) -> Optional[str]:
+    def _get_deepgram_key(self) -> str | None:
         """Resolve Deepgram API key exclusively from VaultV2."""
         try:
             from navig.vault import get_vault_v2
@@ -446,7 +447,7 @@ class StreamingSTT:
             logger.warning("Vault key resolution error: %s", exc)
         return None
 
-    def _get_openai_key(self) -> Optional[str]:
+    def _get_openai_key(self) -> str | None:
         """Resolve OpenAI API key exclusively from VaultV2."""
         try:
             from navig.vault import get_vault_v2
@@ -463,8 +464,8 @@ class StreamingSTT:
 
 async def transcribe_session_audio(
     session: Any,  # VoiceSession
-    config: Optional[StreamingSTTConfig] = None,
-) -> Optional[str]:
+    config: StreamingSTTConfig | None = None,
+) -> str | None:
     """
     Transcribe audio chunks stored in a VoiceSession.
 

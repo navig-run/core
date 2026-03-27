@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
 from navig.formations.schema import (
@@ -32,10 +31,10 @@ from navig.formations.types import AgentSpec, Formation, ProfileConfig
 logger = get_debug_logger()
 
 # Default locations — can be overridden for testing
-_FORMATIONS_ROOTS: List[Path] = []
+_FORMATIONS_ROOTS: list[Path] = []
 
 
-def _get_formations_roots() -> List[Path]:
+def _get_formations_roots() -> list[Path]:
     """Get all directories to scan for formations.
 
     Searches (in order):
@@ -46,7 +45,7 @@ def _get_formations_roots() -> List[Path]:
     if _FORMATIONS_ROOTS:
         return _FORMATIONS_ROOTS
 
-    roots: List[Path] = []
+    roots: list[Path] = []
 
     project_root = Path(__file__).resolve().parent.parent.parent
 
@@ -68,7 +67,7 @@ def _get_formations_roots() -> List[Path]:
     return roots
 
 
-def set_formations_roots(roots: List[Path]) -> None:
+def set_formations_roots(roots: list[Path]) -> None:
     """Override formation roots (for testing)."""
     global _FORMATIONS_ROOTS
     _FORMATIONS_ROOTS = list(roots)
@@ -80,7 +79,7 @@ def clear_formations_roots() -> None:
     _FORMATIONS_ROOTS = []
 
 
-def discover_formations() -> Dict[str, Path]:
+def discover_formations() -> dict[str, Path]:
     """Scan all formation roots and build a map of profile_name → formation_dir.
 
     Discovers formations dynamically:
@@ -90,7 +89,7 @@ def discover_formations() -> Dict[str, Path]:
 
     Returns dict mapping profile names (ids + aliases) to formation directories.
     """
-    formation_map: Dict[str, Path] = {}
+    formation_map: dict[str, Path] = {}
 
     for root in _get_formations_roots():
         if not root.is_dir():
@@ -131,7 +130,7 @@ def discover_formations() -> Dict[str, Path]:
     return formation_map
 
 
-def read_profile(workspace_dir: Optional[Path] = None) -> Optional[ProfileConfig]:
+def read_profile(workspace_dir: Path | None = None) -> ProfileConfig | None:
     """Read .navig/profile.json from workspace directory.
 
     Args:
@@ -162,8 +161,8 @@ def read_profile(workspace_dir: Optional[Path] = None) -> Optional[ProfileConfig
 
 def resolve_formation(
     profile: str,
-    formation_map: Optional[Dict[str, Path]] = None,
-) -> Optional[Path]:
+    formation_map: dict[str, Path] | None = None,
+) -> Path | None:
     """Resolve a profile name to a formation directory.
 
     Args:
@@ -252,7 +251,7 @@ def _compose_system_prompt(
     return "\n\n---\n\n".join(parts)
 
 
-def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
+def _load_agent_from_directory(agent_dir: Path) -> AgentSpec | None:
     """Load an agent from a directory-based hybrid profile.
 
     Expected structure:
@@ -291,7 +290,7 @@ def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
 
     # Read linked markdown docs
     docs_config = data.get("docs", {})
-    docs_content: Dict[str, str] = {}
+    docs_content: dict[str, str] = {}
     for doc_key in ("soul", "personality", "memory", "playbook"):
         doc_path = docs_config.get(doc_key)
         if doc_path:
@@ -354,7 +353,7 @@ def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
     )
 
 
-def load_formation(formation_dir: Path) -> Optional[Formation]:
+def load_formation(formation_dir: Path) -> Formation | None:
     """Load and validate a formation from its directory.
 
     Args:
@@ -424,7 +423,7 @@ def load_formation(formation_dir: Path) -> Optional[Formation]:
 DEFAULT_PROFILE = "app_project"
 
 
-def get_active_formation(workspace_dir: Optional[Path] = None) -> Optional[Formation]:
+def get_active_formation(workspace_dir: Path | None = None) -> Formation | None:
     """Full resolution chain: workspace → profile → formation → agents.
 
     This is the main entry point. Call this to get the currently active
@@ -458,13 +457,13 @@ def get_active_formation(workspace_dir: Optional[Path] = None) -> Optional[Forma
     return load_formation(formation_dir)
 
 
-def list_available_formations() -> List[Formation]:
+def list_available_formations() -> list[Formation]:
     """List all discovered formations with basic metadata.
 
     Loads formation.json from each discovered formation directory
     but does NOT load agents (lightweight).
     """
-    formations: List[Formation] = []
+    formations: list[Formation] = []
     seen_ids: set = set()
 
     for root in _get_formations_roots():

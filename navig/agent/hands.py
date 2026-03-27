@@ -21,7 +21,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.agent.component import Component
 from navig.agent.config import HandsConfig
@@ -46,7 +46,7 @@ class CommandResult:
 
     command: str
     status: CommandStatus
-    exit_code: Optional[int] = None
+    exit_code: int | None = None
     stdout: str = ""
     stderr: str = ""
     duration_seconds: float = 0.0
@@ -56,7 +56,7 @@ class CommandResult:
     def success(self) -> bool:
         return self.status == CommandStatus.COMPLETED and self.exit_code == 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "command": self.command,
             "status": self.status.name,
@@ -78,11 +78,11 @@ class PendingAction:
     reason: str
     requested_by: str
     requested_at: datetime = field(default_factory=datetime.now)
-    approved: Optional[bool] = None
-    approved_by: Optional[str] = None
-    approved_at: Optional[datetime] = None
+    approved: bool | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "command": self.command,
@@ -135,21 +135,21 @@ class Hands(Component):
     def __init__(
         self,
         config: HandsConfig,
-        nervous_system: Optional[NervousSystem] = None,
+        nervous_system: NervousSystem | None = None,
     ):
         super().__init__("hands", nervous_system)
         self.config = config
 
         # Running commands
-        self._running_commands: Dict[str, asyncio.subprocess.Process] = {}
+        self._running_commands: dict[str, asyncio.subprocess.Process] = {}
         self._command_semaphore = asyncio.Semaphore(config.max_concurrent_commands)
 
         # Pending approvals
-        self._pending_actions: Dict[str, PendingAction] = {}
-        self._approval_callbacks: Dict[str, asyncio.Event] = {}
+        self._pending_actions: dict[str, PendingAction] = {}
+        self._approval_callbacks: dict[str, asyncio.Event] = {}
 
         # History
-        self._command_history: List[CommandResult] = []
+        self._command_history: list[CommandResult] = []
         self._max_history = 100
 
     async def _on_start(self) -> None:
@@ -169,7 +169,7 @@ class Hands(Component):
 
         self._running_commands.clear()
 
-    async def _on_health_check(self) -> Dict[str, Any]:
+    async def _on_health_check(self) -> dict[str, Any]:
         """Health check for hands."""
         return {
             "running_commands": len(self._running_commands),
@@ -201,9 +201,9 @@ class Hands(Component):
     async def execute(
         self,
         command: str,
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        timeout: float | None = None,
         requester: str = "agent",
         force: bool = False,
     ) -> CommandResult:
@@ -251,8 +251,8 @@ class Hands(Component):
     async def _execute_command(
         self,
         command: str,
-        cwd: Optional[str],
-        env: Optional[Dict[str, str]],
+        cwd: str | None,
+        env: dict[str, str] | None,
         timeout: float,
     ) -> CommandResult:
         """Internal command execution."""
@@ -419,15 +419,15 @@ class Hands(Component):
 
         return True
 
-    def get_pending_actions(self) -> List[PendingAction]:
+    def get_pending_actions(self) -> list[PendingAction]:
         """Get all pending actions."""
         return list(self._pending_actions.values())
 
-    def get_history(self, limit: int = 10) -> List[CommandResult]:
+    def get_history(self, limit: int = 10) -> list[CommandResult]:
         """Get command history."""
         return self._command_history[-limit:]
 
-    async def execute_navig(self, args: List[str]) -> CommandResult:
+    async def execute_navig(self, args: list[str]) -> CommandResult:
         """Execute a NAVIG CLI command."""
         command = f"navig {' '.join(args)}"
         return await self.execute(command, requester="agent")
@@ -448,7 +448,7 @@ class Hands(Component):
         return True
 
     async def run_workflow(
-        self, name: str, variables: Dict[str, str] = None
+        self, name: str, variables: dict[str, str] = None
     ) -> CommandResult:
         """Run an automation workflow directly."""
         from navig.core.automation_engine import WorkflowEngine
