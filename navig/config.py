@@ -455,7 +455,7 @@ Context provided with each query:
         self.hosts_dir.mkdir(parents=True, exist_ok=True)
 
         # Write configuration
-        with open(local_host_file, "w") as f:
+        with open(local_host_file, "w", encoding="utf-8") as f:
             yaml.dump(local_config, f, default_flow_style=False, sort_keys=False)
 
         return local_host_file
@@ -2175,6 +2175,7 @@ Context provided with each query:
 
 _config_manager_instance: Optional[ConfigManager] = None
 _config_manager_config_dir: Optional[Path] = None
+_config_manager_force_new: bool = False
 
 
 def get_config_manager(
@@ -2201,6 +2202,8 @@ def get_config_manager(
     """
     global _config_manager_instance, _config_manager_config_dir
 
+    force_new = force_new or _config_manager_force_new
+
     # Check if we need a new instance
     needs_new = (
         force_new
@@ -2213,6 +2216,12 @@ def get_config_manager(
         _config_manager_config_dir = config_dir
 
     return _config_manager_instance
+
+
+def set_config_cache_bypass(enabled: bool) -> None:
+    """Enable or disable process-wide config-manager cache bypass."""
+    global _config_manager_force_new
+    _config_manager_force_new = enabled
 
 
 def reset_config_manager() -> None:

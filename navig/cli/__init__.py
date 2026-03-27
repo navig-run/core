@@ -372,6 +372,14 @@ def main(
 
     global _NO_CACHE, _config_manager
     _NO_CACHE = bool(no_cache)
+    try:
+        from navig.config import reset_config_manager, set_config_cache_bypass
+
+        set_config_cache_bypass(_NO_CACHE)
+        if _NO_CACHE:
+            reset_config_manager()
+    except Exception:
+        pass
     if _NO_CACHE:
         # Ensure subsequent calls create a fresh ConfigManager.
         _config_manager = None
@@ -598,7 +606,11 @@ def main(
 
             import threading
 
-            threading.Thread(target=_do_record, daemon=True).start()
+            # daemon=False so the write completes before process exits.
+            # join(1.0) caps CLI exit delay to ≤1 second even on slow DB.
+            t = threading.Thread(target=_do_record, daemon=False)
+            t.start()
+            t.join(timeout=1.0)
 
         atexit.register(record_operation_on_exit)
 
@@ -737,22 +749,21 @@ def main(
 
 def _run_ai_chat(initial_query: str = None, single_query: bool = False):
     """Run interactive AI chat or process single query."""
-    import sys
-
     from rich.console import Console
 
     console = Console()
 
     try:
-        # Add parent dir to path for navig_ai import
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from navig_ai import NavigAI, safe_print
+        from navig.ai import AIAssistant  # noqa: PLC0415
 
-        ai = NavigAI()
+        _cfg = _get_config_manager()
+        ai = AIAssistant(_cfg)
 
         if single_query and initial_query:
             # Single query mode - run and exit
-            response = ai.chat(initial_query, [])
+            import asyncio
+
+            response = asyncio.run(ai.chat(initial_query, []))
             console.print(response)
             return
 
@@ -766,13 +777,17 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
 
         # Process initial query if provided
         if initial_query:
+            import asyncio
+
             console.print(f"[dim]You:[/dim] {initial_query}")
-            response = ai.chat(initial_query, conversation)
+            response = asyncio.run(ai.chat(initial_query, conversation))
             console.print(f"\n{response}\n")
             conversation.append({"role": "user", "content": initial_query})
             conversation.append({"role": "assistant", "content": response})
 
         # Interactive loop
+        import asyncio
+
         while True:
             try:
                 user_input = input("You: ").strip()
@@ -784,7 +799,7 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
                     console.print("\n👋 Goodbye!")
                     break
 
-                response = ai.chat(user_input, conversation)
+                response = asyncio.run(ai.chat(user_input, conversation))
                 console.print(f"\n{response}\n")
 
                 conversation.append({"role": "user", "content": user_input})
@@ -802,7 +817,7 @@ def _run_ai_chat(initial_query: str = None, single_query: bool = False):
 
     except ImportError as e:
         ch.error(f"AI module not available: {e}")
-        ch.info("Run 'pip install -e .' to install dependencies")
+        ch.info("Ensure NAVIG is installed correctly: pip install -e .")
     except Exception as e:
         ch.error(f"AI chat error: {e}")
 
@@ -6839,7 +6854,7 @@ def addon_run(
     )
 
 
-@addon_app.command("run")
+@addon_app.command("deploy", hidden=True)
 def addon_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to run/deploy"),
@@ -6847,7 +6862,7 @@ def addon_run(
         False, "--dry-run", "-n", help="Preview without changes"
     ),
 ):
-    """Run/deploy a template (deprecated)."""
+    """Legacy deploy alias (deprecated)."""
     from navig.commands.template import addon_run_deprecated
 
     addon_run_deprecated(name, ctx.obj, dry_run=dry_run)
@@ -7262,8 +7277,8 @@ def config_callback(ctx: typer.Context):
         raise typer.Exit()
 
 
-@config_app.command("migrate")
-def config_migrate(
+@config_app.command("migrate-legacy", hidden=True)
+def config_migrate_legacy(
     ctx: typer.Context,
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be migrated without making changes"
@@ -7386,8 +7401,8 @@ def config_schema_install(
     )
 
 
-@config_app.command("show")
-def config_show(
+@config_app.command("show-global", hidden=True)
+def config_show_legacy(
     ctx: typer.Context,
     target: str = typer.Argument(..., help="Host name or host:app to display"),
 ):
@@ -7456,8 +7471,8 @@ def config_set(
     set_config(key, value)
 
 
-@config_app.command("get")
-def config_get(
+@config_app.command("get-raw", hidden=True)
+def config_get_legacy(
     ctx: typer.Context,
     key: str = typer.Argument(..., help="Configuration key to retrieve"),
 ):
@@ -8646,17 +8661,36 @@ gateway_app = typer.Typer(
 )
 
 
+_DEFAULT_GATEWAY_PORT = 8789
+_DEFAULT_GATEWAY_HOST = "127.0.0.1"
+
+
+def _load_gateway_cli_defaults() -> tuple[int, str]:
+    """Return gateway port/host from config with stable CLI fallbacks."""
+    from navig.gateway.client import gateway_cli_defaults
+
+    return gateway_cli_defaults()
+
+
+def _gateway_request_headers() -> Dict[str, str]:
+    """Return auth headers for gateway API calls when configured."""
+    from navig.gateway.client import gateway_request_headers
+
+    return gateway_request_headers()
+
+
+def _gw_request(method: str, path: str, **kwargs):
+    """Send an authenticated request to the local gateway."""
+    from navig.gateway.client import gateway_request
+
+    return gateway_request(method, path, **kwargs)
+
+
 def _gw_base_url() -> str:
     """Return local gateway base URL from config (gateway.port / host)."""
-    try:
-        from navig.config import get_config_manager
+    from navig.gateway.client import gateway_base_url
 
-        raw = get_config_manager()._load_global_config()
-    except Exception:
-        raw = {}
-    gw = raw.get("gateway") or {}
-    port = int(gw.get("port") or 8765)
-    return f"http://localhost:{port}"
+    return gateway_base_url()
 
 
 @gateway_app.callback()
@@ -8673,7 +8707,7 @@ def gateway_start(
         None,
         "--port",
         "-p",
-        help="Port (default: gateway.port from config, fallback 8765)",
+        help="Port (default: gateway.port from config, fallback 8789)",
     ),
     host: Optional[str] = typer.Option(
         None,
@@ -8702,17 +8736,11 @@ def gateway_start(
     import asyncio
 
     # Fill port/host from config if not explicitly passed
-    try:
-        from navig.config import get_config_manager
-
-        _raw = get_config_manager()._load_global_config()
-    except Exception:
-        _raw = {}
-    _gw_cfg = _raw.get("gateway") or {}
     if port is None:
-        port = int(_gw_cfg.get("port") or 8765)
+        port, _configured_host = _load_gateway_cli_defaults()
     if host is None:
-        host = str(_gw_cfg.get("host") or "0.0.0.0")
+        _port, configured_host = _load_gateway_cli_defaults()
+        host = configured_host
 
     ch.info(f"Starting NAVIG Gateway on {host}:{port}...")
 
@@ -8791,7 +8819,7 @@ def gateway_stop():
     try:
         # First check if gateway is running
         try:
-            health_response = requests.get(f"{_gw_base_url()}/health", timeout=2)
+            health_response = _gw_request("GET", "/health", timeout=2)
             if health_response.status_code != 200:
                 ch.warning("Gateway does not appear to be running")
                 return
@@ -8801,7 +8829,7 @@ def gateway_stop():
 
         # Try to stop via API
         try:
-            response = requests.post(f"{_gw_base_url()}/shutdown", timeout=5)
+            response = _gw_request("POST", "/shutdown", timeout=5)
             if response.status_code == 200:
                 ch.success("Gateway shutdown signal sent")
             else:
@@ -8826,7 +8854,7 @@ def gateway_status():
 
     try:
         # Get detailed status from /status endpoint
-        response = requests.get(f"{_gw_base_url()}/status", timeout=2)
+        response = _gw_request("GET", "/status", timeout=2)
         if response.status_code == 200:
             data = response.json()
             ch.success("Gateway is running")
@@ -8885,7 +8913,7 @@ def gateway_session(
 
     try:
         if action == "list":
-            response = requests.get("{ _gw_base_url()}/sessions", timeout=5)
+            response = _gw_request("GET", "/sessions", timeout=5)
             if response.status_code == 200:
                 sessions = response.json().get("sessions", [])
                 if sessions:
@@ -8898,9 +8926,7 @@ def gateway_session(
                 ch.error(f"Failed to list sessions: {response.status_code}")
 
         elif action == "show" and session_key:
-            response = requests.get(
-                f"{ _gw_base_url()}/sessions/{session_key}", timeout=5
-            )
+            response = _gw_request("GET", f"/sessions/{session_key}", timeout=5)
             if response.status_code == 200:
                 session = response.json()
                 ch.info(f"Session: {session_key}")
@@ -8911,9 +8937,7 @@ def gateway_session(
                 ch.error(f"Session not found: {session_key}")
 
         elif action == "clear" and session_key:
-            response = requests.delete(
-                f"{ _gw_base_url()}/sessions/{session_key}", timeout=5
-            )
+            response = _gw_request("DELETE", f"/sessions/{session_key}", timeout=5)
             if response.status_code == 200:
                 ch.success(f"Cleared session: {session_key}")
             else:
@@ -8970,7 +8994,7 @@ def bot_start(
         None,
         "--port",
         "-p",
-        help="Gateway port (default: gateway.port from config, fallback 8765)",
+        help="Gateway port (default: gateway.port from config, fallback 8789)",
     ),
     background: bool = typer.Option(
         False, "--background", "-b", help="Run in background"
@@ -8999,6 +9023,8 @@ def bot_start(
         raise typer.Exit(1)
 
     if gateway:
+        if port is None:
+            port, _host = _load_gateway_cli_defaults()
         ch.info("Starting NAVIG with Gateway + Telegram Bot...")
         ch.info(f"  Gateway: http://localhost:{port}")
         ch.info("  Bot: Telegram")
@@ -9167,7 +9193,7 @@ def quick_start(
         None,
         "--port",
         "-p",
-        help="Gateway port (default: gateway.port from config, fallback 8765)",
+        help="Gateway port (default: gateway.port from config, fallback 8789)",
     ),
     background: bool = typer.Option(
         True, "--background/--foreground", "-d/-f", help="Run in background"
@@ -9194,6 +9220,9 @@ def quick_start(
             ch.info("  Get token from @BotFather on Telegram")
             ch.info("  Add to .env file: TELEGRAM_BOT_TOKEN=your-token")
             raise typer.Exit(1)
+
+    if gateway and port is None:
+        port, _host = _load_gateway_cli_defaults()
 
     if gateway and bot:
         ch.info("Starting NAVIG (Gateway + Telegram Bot)...")
@@ -9253,8 +9282,6 @@ def quick_start(
 
     elif gateway:
         ch.info(f"Starting NAVIG Gateway on port {port}...")
-        from navig.commands.gateway import gateway_start
-
         gateway_start(port=port, host="0.0.0.0", background=background)
 
 
@@ -9285,7 +9312,7 @@ def heartbeat_status():
     import requests
 
     try:
-        response = requests.get("{ _gw_base_url()}/status", timeout=5)
+        response = _gw_request("GET", "/status", timeout=5)
         if response.status_code == 200:
             data = response.json()
             hb = data.get("heartbeat", {})
@@ -9347,10 +9374,7 @@ def heartbeat_trigger():
     ch.info("Triggering heartbeat check...")
 
     try:
-        response = requests.post(
-            "{ _gw_base_url()}/heartbeat/trigger",
-            timeout=300,  # Heartbeat can take a while
-        )
+        response = _gw_request("POST", "/heartbeat/trigger", timeout=300)
         if response.status_code == 200:
             result = response.json()
             if result.get("suppressed"):
@@ -9378,9 +9402,7 @@ def heartbeat_history(
     import requests
 
     try:
-        response = requests.get(
-            f"{ _gw_base_url()}/heartbeat/history?limit={limit}", timeout=5
-        )
+        response = _gw_request("GET", f"/heartbeat/history?limit={limit}", timeout=5)
         if response.status_code == 200:
             history = response.json().get("history", [])
             if history:
@@ -9463,7 +9485,7 @@ def cron_list():
     import requests
 
     try:
-        response = requests.get("{ _gw_base_url()}/cron/jobs", timeout=5)
+        response = _gw_request("GET", "/cron/jobs", timeout=5)
         if response.status_code == 200:
             jobs = response.json().get("jobs", [])
             if jobs:
@@ -9514,8 +9536,9 @@ def cron_add(
     import requests
 
     try:
-        response = requests.post(
-            "{ _gw_base_url()}/cron/jobs",
+        response = _gw_request(
+            "POST",
+            "/cron/jobs",
             json={
                 "name": name,
                 "schedule": schedule,
@@ -9547,7 +9570,7 @@ def cron_remove(
     import requests
 
     try:
-        response = requests.delete(f"{ _gw_base_url()}/cron/jobs/{job_id}", timeout=5)
+        response = _gw_request("DELETE", f"/cron/jobs/{job_id}", timeout=5)
         if response.status_code == 200:
             ch.success(f"Removed job: {job_id}")
         else:
@@ -9568,9 +9591,7 @@ def cron_run(
     ch.info(f"Running job {job_id}...")
 
     try:
-        response = requests.post(
-            f"{ _gw_base_url()}/cron/jobs/{job_id}/run", timeout=300
-        )
+        response = _gw_request("POST", f"/cron/jobs/{job_id}/run", timeout=300)
         if response.status_code == 200:
             result = response.json()
             if result.get("success"):
@@ -9595,9 +9616,7 @@ def cron_enable(
     import requests
 
     try:
-        response = requests.post(
-            f"{ _gw_base_url()}/cron/jobs/{job_id}/enable", timeout=5
-        )
+        response = _gw_request("POST", f"/cron/jobs/{job_id}/enable", timeout=5)
         if response.status_code == 200:
             ch.success(f"Enabled job: {job_id}")
         else:
@@ -9616,9 +9635,7 @@ def cron_disable(
     import requests
 
     try:
-        response = requests.post(
-            f"{ _gw_base_url()}/cron/jobs/{job_id}/disable", timeout=5
-        )
+        response = _gw_request("POST", f"/cron/jobs/{job_id}/disable", timeout=5)
         if response.status_code == 200:
             ch.success(f"Disabled job: {job_id}")
         else:
@@ -9635,7 +9652,7 @@ def cron_status():
     import requests
 
     try:
-        response = requests.get("{ _gw_base_url()}/status", timeout=5)
+        response = _gw_request("GET", "/status", timeout=5)
         if response.status_code == 200:
             data = response.json()
             cron = data.get("cron", {})
@@ -9691,7 +9708,7 @@ def approve_list():
     import requests
 
     try:
-        response = requests.get("{ _gw_base_url()}/approval/pending", timeout=5)
+        response = _gw_request("GET", "/approval/pending", timeout=5)
         if response.status_code == 200:
             data = response.json()
             pending = data.get("pending", [])
@@ -9729,8 +9746,9 @@ def approve_yes(
     import requests
 
     try:
-        response = requests.post(
-            f"{ _gw_base_url()}/approval/{request_id}/respond",
+        response = _gw_request(
+            "POST",
+            f"/approval/{request_id}/respond",
             json={"approved": True, "reason": reason},
             timeout=5,
         )
@@ -9755,8 +9773,9 @@ def approve_no(
     import requests
 
     try:
-        response = requests.post(
-            f"{ _gw_base_url()}/approval/{request_id}/respond",
+        response = _gw_request(
+            "POST",
+            f"/approval/{request_id}/respond",
             json={"approved": False, "reason": reason},
             timeout=5,
         )
@@ -9829,7 +9848,7 @@ def browser_status():
     import requests
 
     try:
-        response = requests.get("{ _gw_base_url()}/browser/status", timeout=5)
+        response = _gw_request("GET", "/browser/status", timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("started"):
@@ -9858,8 +9877,9 @@ def browser_open(
     import requests
 
     try:
-        response = requests.post(
-            "{ _gw_base_url()}/browser/navigate",
+        response = _gw_request(
+            "POST",
+            "/browser/navigate",
             json={"url": url},
             timeout=30,
         )
@@ -9884,8 +9904,9 @@ def browser_screenshot(
     import requests
 
     try:
-        response = requests.post(
-            "{ _gw_base_url()}/browser/screenshot",
+        response = _gw_request(
+            "POST",
+            "/browser/screenshot",
             json={"path": path, "full_page": full_page},
             timeout=30,
         )
@@ -9910,8 +9931,9 @@ def browser_click(
     import requests
 
     try:
-        response = requests.post(
-            "{ _gw_base_url()}/browser/click",
+        response = _gw_request(
+            "POST",
+            "/browser/click",
             json={"selector": selector},
             timeout=30,
         )
@@ -9936,8 +9958,9 @@ def browser_fill(
     import requests
 
     try:
-        response = requests.post(
-            "{ _gw_base_url()}/browser/fill",
+        response = _gw_request(
+            "POST",
+            "/browser/fill",
             json={"selector": selector, "value": value},
             timeout=30,
         )
@@ -9959,10 +9982,7 @@ def browser_stop():
     import requests
 
     try:
-        response = requests.post(
-            "{ _gw_base_url()}/browser/stop",
-            timeout=10,
-        )
+        response = _gw_request("POST", "/browser/stop", timeout=10)
         if response.status_code == 200:
             ch.success("Browser stopped")
         elif response.status_code == 503:
@@ -10012,11 +10032,7 @@ def queue_list(
         if status:
             params["status"] = status
 
-        response = requests.get(
-            "{ _gw_base_url()}/tasks",
-            params=params,
-            timeout=5,
-        )
+        response = _gw_request("GET", "/tasks", params=params, timeout=5)
         if response.status_code == 200:
             data = response.json()
             tasks = data.get("tasks", [])
@@ -10067,8 +10083,9 @@ def queue_add(
         if params:
             task_params = json_mod.loads(params)
 
-        response = requests.post(
-            "{ _gw_base_url()}/tasks",
+        response = _gw_request(
+            "POST",
+            "/tasks",
             json={
                 "name": name,
                 "handler": handler,
@@ -10100,10 +10117,7 @@ def queue_show(
     import requests
 
     try:
-        response = requests.get(
-            f"{ _gw_base_url()}/tasks/{task_id}",
-            timeout=5,
-        )
+        response = _gw_request("GET", f"/tasks/{task_id}", timeout=5)
         if response.status_code == 200:
             data = response.json()
             ch.info(f"Task: {data.get('name', 'unknown')}")
@@ -10135,10 +10149,7 @@ def queue_cancel(
     import requests
 
     try:
-        response = requests.post(
-            f"{ _gw_base_url()}/tasks/{task_id}/cancel",
-            timeout=5,
-        )
+        response = _gw_request("POST", f"/tasks/{task_id}/cancel", timeout=5)
         if response.status_code == 200:
             ch.success(f"Task {task_id} cancelled")
         elif response.status_code == 404:
@@ -10159,10 +10170,7 @@ def queue_stats():
     import requests
 
     try:
-        response = requests.get(
-            "{ _gw_base_url()}/tasks/stats",
-            timeout=5,
-        )
+        response = _gw_request("GET", "/tasks/stats", timeout=5)
         if response.status_code == 200:
             data = response.json()
 
@@ -11192,12 +11200,8 @@ def interactive_command(ctx: typer.Context):
 # ============================================================================
 # CONFIG MANAGEMENT
 # ============================================================================
-
-config_app = typer.Typer(
-    help="Manage NAVIG settings and configuration",
-    callback=make_subcommand_callback("config"),
-)
-app.add_typer(config_app, name="config")
+# Extend the existing top-level `config_app` instead of registering a second
+# Typer group with the same public command name.
 
 
 @config_app.command("migrate")
@@ -11311,8 +11315,8 @@ def config_get(
         ch.error(f"Error retrieving key: {e}")
 
 
-@config_app.command("set")
-def config_set(
+@config_app.command("set-raw", hidden=True)
+def config_set_legacy(
     key: str = typer.Argument(..., help="Configuration key (e.g. ai.model_preference)"),
     value: str = typer.Argument(
         ..., help="Value to set (JSON/YAML format for complex types)"
@@ -11813,7 +11817,7 @@ _EXTERNAL_CMD_MAP = {
     # ── QUANTUM VELOCITY K4: bridge/farmore/copilot moved here from module-level ──
     "bridge": ("navig.commands.bridge", "bridge_app"),
     "farmore": ("navig.commands.farmore", "farmore_app"),
-    "copilot": ("navig.commands.copilot", "copilot_app"),
+    "copilot": ("navig.commands.ask", "copilot_app"),
     "inbox": ("navig.commands.inbox", "inbox_app"),
     "sync": ("navig.commands.sync", "sync_app"),
     "agent": ("navig.commands.agent", "agent_app"),
