@@ -816,7 +816,8 @@ class TriggerManager:
 
         if trigger_id is None:
             # Clear all
-            count = sum(1 for _ in open(self.history_file))
+            with open(self.history_file, encoding="utf-8") as f:
+                count = sum(1 for _ in f)
             self.history_file.unlink()
             return count
 

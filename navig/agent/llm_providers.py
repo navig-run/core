@@ -1062,6 +1062,7 @@ class AirLLMProvider(LLMProvider):
     name = "airllm"
 
     def __init__(self, model: str = "", **kwargs):
+        super().__init__(model=model, **kwargs)
         self.model = model or os.getenv("AIRLLM_MODEL", "")
         self.base_url = ""  # in-process, no base URL
         self.api_key = ""  # no key needed

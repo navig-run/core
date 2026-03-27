@@ -59,9 +59,10 @@ class VersionChecker:
     def check_ssh(self, node_id: str, server_config: dict) -> VersionInfo:
         """Check version on a remote SSH node."""
         if self._remote_ops is None:
+            from navig.config import ConfigManager
             from navig.remote import RemoteOperations
 
-            self._remote_ops = RemoteOperations()
+            self._remote_ops = RemoteOperations(ConfigManager())
 
         current = "unknown"
         install_type = "unknown"

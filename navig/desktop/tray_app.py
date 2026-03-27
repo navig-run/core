@@ -113,6 +113,7 @@ class ProcessState:
 
     name: str
     process: subprocess.Popen | None = None
+    log_fh: typing.Any = None
     status: Status = Status.STOPPED
     started_at: datetime | None = None
     restart_count: int = 0
@@ -135,6 +136,12 @@ class ProcessState:
             except Exception as e:
                 log.error(f"Error stopping {self.name}: {e}")
         self.process = None
+        if getattr(self, "log_fh", None) is not None:
+            try:
+                self.log_fh.close()
+            except Exception:
+                pass
+            self.log_fh = None
         self.status = Status.STOPPED
         self.started_at = None
 
@@ -225,6 +232,7 @@ class NavigTray:
         try:
             log_file = LOG_DIR / f"{state.name.lower()}.log"
             fh = open(log_file, "a", encoding="utf-8")
+            state.log_fh = fh
             state.process = subprocess.Popen(
                 cmd,
                 stdout=fh,
@@ -317,6 +325,7 @@ class NavigTray:
         try:
             log_file = LOG_DIR / "daemon-tray.log"
             fh = open(log_file, "a", encoding="utf-8")
+            self.daemon.log_fh = fh
             self.daemon.process = subprocess.Popen(
                 cmd,
                 stdout=fh,

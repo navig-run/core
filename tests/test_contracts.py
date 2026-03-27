@@ -191,10 +191,10 @@ class TestMission:
 
     def test_terminal_states_set(self):
         for s in TERMINAL_STATES:
-            assert s in MissionStatus
+            assert s in list(MissionStatus)
 
     def test_allowed_transitions_complete(self):
-        for status in MissionStatus:
+        for status in list(MissionStatus):
             assert status in ALLOWED_TRANSITIONS
 
     def test_duration_secs(self):

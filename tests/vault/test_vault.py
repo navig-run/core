@@ -267,7 +267,8 @@ class TestStorage:
         storage.save(cred)
 
         assert storage.get("todel") is not None
-        assert storage.delete("todel")
+        deleted = storage.delete("todel")
+        assert deleted is True
         assert storage.get("todel") is None
 
     def test_enable_disable(self, storage):
@@ -473,7 +474,8 @@ class TestCredentialsVault:
             data={"api_key": "delete-me"},
         )
 
-        assert vault.delete(cred_id)
+        deleted = vault.delete(cred_id)
+        assert deleted is True
         assert vault.get("test") is None
 
     def test_count(self, vault):
@@ -1195,12 +1197,14 @@ class TestStorageEdgeCases:
     @patch("navig.vault.encryption.VaultEncryption._try_keyring", return_value=None)
     def test_delete_nonexistent(self, mock_kr, storage):
         """Deleting nonexistent credential returns False."""
-        assert storage.delete("nosuchid") is False
+        deleted = storage.delete("nosuchid")
+        assert deleted is False
 
     @patch("navig.vault.encryption.VaultEncryption._try_keyring", return_value=None)
     def test_set_enabled_nonexistent(self, mock_kr, storage):
         """Enabling nonexistent credential returns False."""
-        assert storage.set_enabled("nosuchid", True) is False
+        enabled = storage.set_enabled("nosuchid", True)
+        assert enabled is False
 
     @patch("navig.vault.encryption.VaultEncryption._try_keyring", return_value=None)
     def test_get_by_provider_profile(self, mock_kr, storage):
