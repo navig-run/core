@@ -191,7 +191,7 @@ print_done() {
     [ -n "$version" ] && label="NAVIG $version"
     printf "\n"
     printf "  %b%s%s%s%b\n"  "$_GRN" "$tl" "$line" "$tr" "$_RST"
-    printf "  %b%s%b  %-${_LW}s  %b%s%b\n" "$_GRN" "$vt" "$_RST" "$label" "$_GRN" "$vt" "$_RST"
+    printf "  %b%s%b %-$((_LW + 1))s%b%s%b\n" "$_GRN" "$vt" "$_RST" "$label" "$_GRN" "$vt" "$_RST"
     printf "  %b%s%s%s%b\n"  "$_GRN" "$bl" "$line" "$br" "$_RST"
     printf "\n"
     printf "     %bnavig --version%b   confirm install\n"  "$_YLW" "$_RST"
@@ -398,7 +398,10 @@ setup_config() {
 # ── Uninstall ─────────────────────────────────────────────────
 uninstall_navig() {
     local preserve_data="${1:-0}"
-    row_step "Uninstalling" "NAVIG..."
+    local version="${2:-}"
+    local _nav_str="NAVIG"
+    [ -n "$version" ] && _nav_str="NAVIG $version"
+    row_step "Removing" "$_nav_str"
     for pip_cmd in pip3 pip; do
         if command -v "$pip_cmd" > /dev/null 2>&1; then
             $pip_cmd uninstall navig -y > /dev/null 2>&1 || true
@@ -477,7 +480,8 @@ main() {
 
     # ── Uninstall path ────────────────────────────────────────
     if [ "$_ACTION" = "uninstall" ]; then
-        uninstall_navig
+        _inst_ver=$(navig --version 2>&1 | grep -oE '[0-9]+[.][0-9.]+' | head -1 || true)
+        uninstall_navig 0 "${_inst_ver:-}"
         return
     fi
 
