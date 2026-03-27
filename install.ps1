@@ -5,6 +5,7 @@
 #
 # Usage:
 #   & ([scriptblock]::Create((irm https://navig.run/install.ps1)))
+#   & ([scriptblock]::Create((irm https://navig.run/install.ps1))) -Action Uninstall
 #   .\install.ps1 -Version <release>
 #   .\install.ps1 -Dev
 #
@@ -13,13 +14,20 @@
 #   NAVIG_INSTALL_METHOD      "pip" (default) or "git"
 #   NAVIG_EXTRAS              Comma-separated extras (e.g. "voice,keyring")
 #   NAVIG_INSTALL_PROFILE     Install profile: node, operator, architect (default: operator)
+#   NAVIG_ACTION              install (default), uninstall, or reinstall
 # ─────────────────────────────────────────────────────────────
 # ── Parameter Parsing (friendly for `irm | iex`) ─────────────
 $Version = $env:NAVIG_VERSION
 $InstallMethod = if ([string]::IsNullOrEmpty($env:NAVIG_INSTALL_METHOD)) { "pip" } else { $env:NAVIG_INSTALL_METHOD }
 $Extras = $env:NAVIG_EXTRAS
 $InstallProfile = if ([string]::IsNullOrEmpty($env:NAVIG_INSTALL_PROFILE)) { "operator" } else { $env:NAVIG_INSTALL_PROFILE }
+$Action = $env:NAVIG_ACTION
 $GitDir = "$HOME\navig-core"
+$VersionProvided = -not [string]::IsNullOrEmpty($env:NAVIG_VERSION)
+$InstallMethodProvided = -not [string]::IsNullOrEmpty($env:NAVIG_INSTALL_METHOD)
+$ExtrasProvided = -not [string]::IsNullOrEmpty($env:NAVIG_EXTRAS)
+$InstallProfileProvided = -not [string]::IsNullOrEmpty($env:NAVIG_INSTALL_PROFILE)
+$GitDirProvided = $false
 $Dev = $args -contains "-Dev" -or $args -contains "/Dev"
 $Production = $args -contains "-Production" -or $args -contains "/Production"
 $DryRun = $args -contains "-DryRun" -or $args -contains "/DryRun"
@@ -29,12 +37,17 @@ $Help = $args -contains "-Help" -or $args -contains "/Help"
 # Parse values with associated arguments (e.g. -Version 2.4.14)
 for ($i = 0; $i -lt $args.Length - 1; $i++) {
     switch ($args[$i]) {
-        "-Version" { $Version = $args[$i+1] }
-        "-InstallMethod" { $InstallMethod = $args[$i+1] }
-        "-Extras" { $Extras = $args[$i+1] }
-        "-InstallProfile" { $InstallProfile = $args[$i+1] }
-        "-GitDir" { $GitDir = $args[$i+1] }
+        "-Version" { $Version = $args[$i+1]; $VersionProvided = $true }
+        "-InstallMethod" { $InstallMethod = $args[$i+1]; $InstallMethodProvided = $true }
+        "-Extras" { $Extras = $args[$i+1]; $ExtrasProvided = $true }
+        "-InstallProfile" { $InstallProfile = $args[$i+1]; $InstallProfileProvided = $true }
+        "-Action" { $Action = $args[$i+1] }
+        "-GitDir" { $GitDir = $args[$i+1]; $GitDirProvided = $true }
     }
+}
+
+if ($Dev) {
+    $InstallMethodProvided = $true
 }
 
 
@@ -54,6 +67,11 @@ $ErrorActionPreference = "Stop"
 $REPO_URL         = "https://github.com/navig-run/core.git"
 $MIN_PYTHON_MAJOR = 3
 $MIN_PYTHON_MINOR = 10
+$INSTALL_REGISTRY_KEY = "Registry::HKEY_CURRENT_USER\Software\NAVIG\Installer"
+$INSTALL_MARKER_PATH  = Join-Path $env:USERPROFILE ".navig\install.marker"
+$UNINSTALL_LOG        = Join-Path $env:TEMP "navig-uninstall.log"
+$WINDOWS_SERVICE_NAME = "NavigDaemon"
+$WINDOWS_TASK_NAME    = "NAVIG Daemon"
 
 # ── Output helpers ─────────────────────────────────────────────────────────
 #   [->]  in-progress   [OK]  success   [!!]  failure   [i]  info
@@ -62,6 +80,320 @@ function Write-NavOk    { param([string]$msg) Write-Host "  " -NoNewline; Write-
 function Write-NavErr   { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[!!]" -NoNewline -ForegroundColor Red;     Write-Host "  $msg" }
 function Write-NavInfo  { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[i]"  -NoNewline -ForegroundColor DarkGray; Write-Host "  $msg" }
 function Write-NavHint  { param([string]$msg) Write-Host "      $msg" -ForegroundColor Yellow }
+
+function Normalize-NavigAction {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
+
+    switch ($Value.Trim().ToLowerInvariant()) {
+        "install"   { return "install" }
+        "uninstall" { return "uninstall" }
+        "reinstall" { return "reinstall" }
+        "repair"    { return "reinstall" }
+        default {
+            throw "Unsupported action '$Value'. Use install, uninstall, or reinstall."
+        }
+    }
+}
+
+function Get-NavigShimCandidates {
+    $candidates = @(
+        $INSTALL_MARKER_PATH,
+        (Join-Path $HOME ".local\bin\navig.cmd"),
+        (Join-Path $HOME ".local\bin\navig.exe"),
+        (Join-Path $env:LOCALAPPDATA "navig\navig.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python314-32\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python314\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python313-32\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python313\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python312\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Local\Programs\Python\Python311\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Roaming\Python\Python313\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Roaming\Python\Python312\Scripts\navig.exe"),
+        (Join-Path $HOME "AppData\Roaming\Python\Python311\Scripts\navig.exe"),
+        "C:\Python313\Scripts\navig.exe"
+    )
+
+    return $candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+}
+
+function Get-NavigCommand {
+    try {
+        return Get-Command navig -ErrorAction SilentlyContinue | Select-Object -First 1
+    } catch {
+        return $null
+    }
+}
+
+function Get-NavigInstallMetadata {
+    if (-not (Test-Path $INSTALL_REGISTRY_KEY)) { return @{} }
+
+    try {
+        $props = Get-ItemProperty -Path $INSTALL_REGISTRY_KEY
+        return @{
+            InstallMethod    = [string]$props.InstallMethod
+            GitDir           = [string]$props.GitDir
+            InstallProfile   = [string]$props.InstallProfile
+            MarkerPath       = [string]$props.MarkerPath
+            InstalledVersion = [string]$props.InstalledVersion
+            UpdatedAt        = [string]$props.UpdatedAt
+        }
+    } catch {
+        return @{}
+    }
+}
+
+function Test-NavigWindowsService {
+    try {
+        return $null -ne (Get-Service -Name $WINDOWS_SERVICE_NAME -ErrorAction SilentlyContinue)
+    } catch {
+        return $false
+    }
+}
+
+function Test-NavigScheduledTask {
+    try {
+        schtasks /query /tn $WINDOWS_TASK_NAME 2>$null | Out-Null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    }
+}
+
+function Get-NavigInstallState {
+    $metadata = Get-NavigInstallMetadata
+    $command  = Get-NavigCommand
+
+    $candidatePaths = @(Get-NavigShimCandidates)
+    if ($metadata.ContainsKey("MarkerPath") -and -not [string]::IsNullOrWhiteSpace($metadata["MarkerPath"])) {
+        $candidatePaths = @($metadata["MarkerPath"]) + $candidatePaths
+    }
+
+    $markerPath = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $registryPresent = Test-Path $INSTALL_REGISTRY_KEY
+    $servicePresent  = Test-NavigWindowsService
+    $taskPresent     = Test-NavigScheduledTask
+
+    return [pscustomobject]@{
+        IsInstalled    = $registryPresent -or ($null -ne $command) -or ($null -ne $markerPath) -or $servicePresent -or $taskPresent
+        RegistryPresent = $registryPresent
+        MarkerPath      = $markerPath
+        CommandPath     = if ($command) { [string]$command.Source } else { "" }
+        ServicePresent  = $servicePresent
+        TaskPresent     = $taskPresent
+        Metadata        = $metadata
+    }
+}
+
+function Apply-NavigInstallDefaults {
+    param([hashtable]$Metadata)
+
+    if (-not $Metadata -or $Metadata.Count -eq 0) { return }
+
+    if (
+        -not $InstallMethodProvided -and
+        $Metadata.ContainsKey("InstallMethod") -and
+        -not [string]::IsNullOrWhiteSpace($Metadata["InstallMethod"])
+    ) {
+        $InstallMethod = $Metadata["InstallMethod"]
+    }
+
+    if (
+        -not $GitDirProvided -and
+        $Metadata.ContainsKey("GitDir") -and
+        -not [string]::IsNullOrWhiteSpace($Metadata["GitDir"])
+    ) {
+        $GitDir = $Metadata["GitDir"]
+    }
+
+    if (
+        -not $InstallProfileProvided -and
+        $Metadata.ContainsKey("InstallProfile") -and
+        -not [string]::IsNullOrWhiteSpace($Metadata["InstallProfile"])
+    ) {
+        $InstallProfile = $Metadata["InstallProfile"]
+    }
+}
+
+function Write-NavigInstallState {
+    param([string]$InstalledVersion)
+
+    $markerDir = Split-Path -Path $INSTALL_MARKER_PATH -Parent
+    if (-not (Test-Path $markerDir)) {
+        New-Item -ItemType Directory -Path $markerDir -Force | Out-Null
+    }
+
+    $markerPayload = @{
+        version    = $InstalledVersion
+        method     = $InstallMethod
+        git_dir    = $GitDir
+        profile    = $InstallProfile
+        updated_at = (Get-Date).ToString("o")
+    } | ConvertTo-Json -Compress
+
+    Set-Content -Path $INSTALL_MARKER_PATH -Value $markerPayload -Encoding UTF8
+
+    if (-not (Test-Path $INSTALL_REGISTRY_KEY)) {
+        New-Item -Path $INSTALL_REGISTRY_KEY -Force | Out-Null
+    }
+
+    foreach ($entry in @{
+        Installed        = "1"
+        InstallMethod    = $InstallMethod
+        GitDir           = $GitDir
+        InstallProfile   = $InstallProfile
+        MarkerPath       = $INSTALL_MARKER_PATH
+        InstalledVersion = $InstalledVersion
+        UpdatedAt        = (Get-Date).ToString("o")
+    }.GetEnumerator()) {
+        New-ItemProperty -Path $INSTALL_REGISTRY_KEY -Name $entry.Key -Value $entry.Value -PropertyType String -Force | Out-Null
+    }
+}
+
+function Remove-NavigInstallState {
+    $metadata = Get-NavigInstallMetadata
+    $markerPaths = @($INSTALL_MARKER_PATH)
+    if ($metadata.ContainsKey("MarkerPath") -and -not [string]::IsNullOrWhiteSpace($metadata["MarkerPath"])) {
+        $markerPaths += $metadata["MarkerPath"]
+    }
+
+    foreach ($path in ($markerPaths | Select-Object -Unique)) {
+        if (Test-Path $path) {
+            Remove-Item -Path $path -Force -ErrorAction Stop
+        }
+    }
+
+    if (Test-Path $INSTALL_REGISTRY_KEY) {
+        Remove-Item -Path $INSTALL_REGISTRY_KEY -Recurse -Force -ErrorAction Stop
+    }
+}
+
+function Test-InteractiveSession {
+    if (-not [Environment]::UserInteractive) { return $false }
+
+    try {
+        if ([Console]::IsInputRedirected) { return $false }
+    } catch {}
+
+    return $true
+}
+
+function Read-KeyWithTimeout {
+    param([int]$TimeoutSeconds = 30)
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            if ([Console]::KeyAvailable) {
+                return [Console]::ReadKey($true)
+            }
+        } catch {
+            return $null
+        }
+
+        Start-Sleep -Milliseconds 100
+    }
+
+    return $null
+}
+
+function Show-InstalledActionMenu {
+    $deadline = (Get-Date).AddSeconds(30)
+    $invalidSelections = 0
+
+    Write-Host ""
+    Write-Host "  Navig is already installed."
+    Write-Host ""
+    Write-Host "  [1] Uninstall"
+    Write-Host "  [2] Reinstall / Repair"
+    Write-Host "  [3] Cancel"
+    Write-Host ""
+
+    while ($true) {
+        $secondsRemaining = [int][Math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+        if ($secondsRemaining -le 0) {
+            Write-Host ""
+            Write-NavInfo "No selection received within 30 seconds — canceling"
+            return "cancel"
+        }
+
+        Write-Host "  Select an option: " -NoNewline
+        $keyInfo = Read-KeyWithTimeout -TimeoutSeconds $secondsRemaining
+        if ($null -eq $keyInfo) {
+            Write-Host ""
+            Write-NavInfo "No selection received within 30 seconds — canceling"
+            return "cancel"
+        }
+
+        $selection = if ($keyInfo.KeyChar) { [string]$keyInfo.KeyChar } else { "" }
+        if ([string]::IsNullOrWhiteSpace($selection)) { Write-Host "" } else { Write-Host $selection }
+
+        switch ($selection) {
+            "1" { return "uninstall" }
+            "2" { return "reinstall" }
+            "3" { return "cancel" }
+            default {
+                $invalidSelections++
+                if ($invalidSelections -gt 1) {
+                    Write-NavInfo "Invalid input entered twice — canceling"
+                    return "cancel"
+                }
+                Write-NavErr "Invalid selection. Enter 1, 2, or 3."
+            }
+        }
+    }
+}
+
+function Resolve-NavigExecutionAction {
+    param(
+        [bool]$IsInstalled,
+        [string]$RequestedAction
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedAction)) {
+        return $RequestedAction
+    }
+
+    if ($IsInstalled -and -not $NoConfirm -and (Test-InteractiveSession)) {
+        return Show-InstalledActionMenu
+    }
+
+    return "install"
+}
+
+function Split-PathEntries {
+    param([string]$RawPath)
+
+    if ([string]::IsNullOrWhiteSpace($RawPath)) { return @() }
+    return $RawPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+}
+
+function Get-PipCommandSpec {
+    $candidates = @(
+        @{ Exe = "py";      Args = @("-3", "-m", "pip") },
+        @{ Exe = "python";  Args = @("-m", "pip") },
+        @{ Exe = "python3"; Args = @("-m", "pip") },
+        @{ Exe = "pip";     Args = @() },
+        @{ Exe = "pip3";    Args = @() }
+    )
+
+    foreach ($candidate in $candidates) {
+        if (-not (Get-Command $candidate.Exe -ErrorAction SilentlyContinue)) { continue }
+
+        try {
+            & $candidate.Exe @($candidate.Args + @("--version")) 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                return [pscustomobject]@{
+                    Exe  = $candidate.Exe
+                    Args = $candidate.Args
+                }
+            }
+        } catch {}
+    }
+
+    return $null
+}
 
 # ── Live spinner ───────────────────────────────────────────────────────────
 # Starts $Exe $ArgList as a child process, animates a spinner on the current
@@ -211,10 +543,12 @@ NAVIG Installer for Windows
 
 Usage:
     & ([scriptblock]::Create((irm https://navig.run/install.ps1)))
+    & ([scriptblock]::Create((irm https://navig.run/install.ps1))) -Action uninstall
     .\install.ps1 [OPTIONS]
 
 Options:
   -Version <ver>    Install specific version (e.g. 2.4.14)
+  -Action <mode>    install, uninstall, or reinstall
   -Dev              Install from git source (dev mode)
   -GitDir <path>    Git checkout directory (default: $HOME\navig-core)
   -Extras <list>    Comma-separated extras: voice,keyring,dev
@@ -229,6 +563,7 @@ Environment variables:
   NAVIG_INSTALL_METHOD      pip (default) or git
   NAVIG_EXTRAS              Comma-separated extras
   NAVIG_INSTALL_PROFILE     Install profile (default: operator)
+  NAVIG_ACTION              install (default), uninstall, reinstall
 "@
 }
 
@@ -438,17 +773,13 @@ function Initialize-NavigConfig {
 }
 
 # ── Existing installation check ───────────────────────────────────────────
-function Test-ExistingNavig {
-    if (Get-Command navig -ErrorAction SilentlyContinue) {
-        try {
-            $ver = navig --version 2>&1 | Select-Object -First 1
-            Write-NavInfo "Existing NAVIG detected: $ver — upgrading"
-        } catch {
-            Write-NavInfo "Existing NAVIG detected — upgrading"
-        }
-        return $true
+function Write-ExistingNavigMessage {
+    $ver = Get-NavigVersion
+    if ($ver) {
+        Write-NavInfo "Existing NAVIG detected: $ver — upgrading"
+    } else {
+        Write-NavInfo "Existing NAVIG detected — upgrading"
     }
-    return $false
 }
 
 # ── Verify installation ───────────────────────────────────────────────────
@@ -501,17 +832,388 @@ function Get-NavigVersion {
     return ""
 }
 
+$script:UninstallFailures = @()
+
+function Reset-NavigUninstallState {
+    $script:UninstallFailures = @()
+    Remove-Item -Path $UNINSTALL_LOG -Force -ErrorAction SilentlyContinue
+}
+
+function Add-UninstallFailure {
+    param(
+        [string]$Step,
+        [string]$Message
+    )
+
+    $entry = "$Step — $Message"
+    $script:UninstallFailures += $entry
+    Add-Content -Path $UNINSTALL_LOG -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $entry)
+    Write-NavErr $entry
+}
+
+function Stop-NavigBackgroundArtifacts {
+    try {
+        $service = Get-Service -Name $WINDOWS_SERVICE_NAME -ErrorAction SilentlyContinue
+        if ($service) {
+            if ($service.Status -ne "Stopped") {
+                Stop-Service -Name $WINDOWS_SERVICE_NAME -Force -ErrorAction Stop
+                Write-NavOk "Stopped service: $WINDOWS_SERVICE_NAME"
+            } else {
+                Write-NavInfo "Service already stopped: $WINDOWS_SERVICE_NAME"
+            }
+        } else {
+            Write-NavInfo "Service not present: $WINDOWS_SERVICE_NAME"
+        }
+    } catch {
+        Add-UninstallFailure -Step "Stop service $WINDOWS_SERVICE_NAME" -Message $_.Exception.Message
+    }
+
+    try {
+        if (Test-NavigScheduledTask) {
+            schtasks /end /tn $WINDOWS_TASK_NAME 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-NavOk "Stopped scheduled task: $WINDOWS_TASK_NAME"
+            } else {
+                Write-NavInfo "Scheduled task was not running: $WINDOWS_TASK_NAME"
+            }
+        } else {
+            Write-NavInfo "Scheduled task not present: $WINDOWS_TASK_NAME"
+        }
+    } catch {
+        Add-UninstallFailure -Step "Stop scheduled task $WINDOWS_TASK_NAME" -Message $_.Exception.Message
+    }
+
+    try {
+        $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -match '^(navig(\.exe)?|python(w)?\.exe)$' -and (
+                $_.ExecutablePath -match '(?i)\\navig(\.exe)?$' -or
+                $_.CommandLine -match '(?i)\bnavig(\.daemon\.entry|\.main)?\b'
+            )
+        }
+
+        if ($processes) {
+            foreach ($proc in ($processes | Sort-Object ProcessId -Unique)) {
+                try {
+                    Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+                    Write-NavOk "Stopped process: $($proc.Name) (PID $($proc.ProcessId))"
+                } catch {
+                    Add-UninstallFailure -Step "Stop process $($proc.ProcessId)" -Message $_.Exception.Message
+                }
+            }
+        } else {
+            Write-NavInfo "No running NAVIG processes found"
+        }
+    } catch {
+        Add-UninstallFailure -Step "Stop NAVIG processes" -Message $_.Exception.Message
+    }
+}
+
+function Remove-NavigFiles {
+    param([switch]$PreserveUserData)
+
+    $installState = Get-NavigInstallState
+    $metadata = $installState.Metadata
+    $pipSpec = Get-PipCommandSpec
+
+    if ($pipSpec) {
+        try {
+            & $pipSpec.Exe @($pipSpec.Args + @("show", "navig")) 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                & $pipSpec.Exe @($pipSpec.Args + @("uninstall", "-y", "navig")) 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-NavOk "Removed pip package: navig"
+                } else {
+                    Add-UninstallFailure -Step "pip uninstall navig" -Message "pip exited with code $LASTEXITCODE"
+                }
+            } else {
+                Write-NavInfo "pip package not present: navig"
+            }
+        } catch {
+            Add-UninstallFailure -Step "pip uninstall navig" -Message $_.Exception.Message
+        }
+    } else {
+        Write-NavInfo "pip not available — removing remaining NAVIG files directly"
+    }
+
+    $fileTargets = @(
+        $INSTALL_MARKER_PATH,
+        (Join-Path $HOME ".local\bin\navig.cmd"),
+        (Join-Path $HOME ".local\bin\navig.exe"),
+        (Join-Path $HOME ".local\bin\navig-script.py"),
+        (Join-Path $HOME ".local\bin\navig.exe.manifest"),
+        (Join-Path $env:LOCALAPPDATA "navig\navig.exe")
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($installState.CommandPath)) {
+        $fileTargets += $installState.CommandPath
+        $commandDir = Split-Path -Path $installState.CommandPath -Parent
+        if (-not [string]::IsNullOrWhiteSpace($commandDir)) {
+            $fileTargets += @(
+                (Join-Path $commandDir "navig.exe"),
+                (Join-Path $commandDir "navig-script.py"),
+                (Join-Path $commandDir "navig.exe.manifest")
+            )
+        }
+    }
+
+    foreach ($path in ($fileTargets | Where-Object { $_ } | Select-Object -Unique)) {
+        if (-not (Test-Path $path)) { continue }
+
+        try {
+            Remove-Item -Path $path -Force -ErrorAction Stop
+            Write-NavOk "Removed file: $path"
+        } catch {
+            Add-UninstallFailure -Step "Remove file $path" -Message $_.Exception.Message
+        }
+    }
+
+    $dirTargets = @(
+        (Join-Path $env:LOCALAPPDATA "navig"),
+        (Join-Path $env:USERPROFILE ".navig\venv"),
+        (Join-Path $env:USERPROFILE ".navig\daemon")
+    )
+
+    if (
+        $metadata.ContainsKey("InstallMethod") -and
+        $metadata["InstallMethod"] -eq "git" -and
+        $metadata.ContainsKey("GitDir") -and
+        -not [string]::IsNullOrWhiteSpace($metadata["GitDir"])
+    ) {
+        $dirTargets += $metadata["GitDir"]
+    }
+
+    foreach ($path in ($dirTargets | Where-Object { $_ } | Select-Object -Unique)) {
+        if (-not (Test-Path $path)) { continue }
+
+        try {
+            Remove-Item -Path $path -Recurse -Force -ErrorAction Stop
+            Write-NavOk "Removed directory: $path"
+        } catch {
+            Add-UninstallFailure -Step "Remove directory $path" -Message $_.Exception.Message
+        }
+    }
+
+    $navigHome = Join-Path $env:USERPROFILE ".navig"
+    if ($PreserveUserData) {
+        Write-NavInfo "Preserving user data at $navigHome"
+    } elseif (Test-Path $navigHome) {
+        try {
+            Remove-Item -Path $navigHome -Recurse -Force -ErrorAction Stop
+            Write-NavOk "Removed directory: $navigHome"
+        } catch {
+            Add-UninstallFailure -Step "Remove directory $navigHome" -Message $_.Exception.Message
+        }
+    }
+
+    $binDir = Join-Path $HOME ".local\bin"
+    if (Test-Path $binDir) {
+        try {
+            if (@(Get-ChildItem -Path $binDir -Force).Count -eq 0) {
+                Remove-Item -Path $binDir -Force -ErrorAction Stop
+                Write-NavOk "Removed empty directory: $binDir"
+            }
+        } catch {
+            Add-UninstallFailure -Step "Remove directory $binDir" -Message $_.Exception.Message
+        }
+    }
+}
+
+function Remove-NavigRegistryArtifacts {
+    if (-not (Test-Path $INSTALL_REGISTRY_KEY) -and -not (Test-Path $INSTALL_MARKER_PATH)) {
+        Write-NavInfo "Installer registry state not present"
+        return
+    }
+
+    try {
+        Remove-NavigInstallState
+        Write-NavOk "Removed installer registry state"
+    } catch {
+        Add-UninstallFailure -Step "Remove installer registry state" -Message $_.Exception.Message
+    }
+}
+
+function Remove-NavigServiceArtifacts {
+    $service = $null
+    try {
+        $service = Get-Service -Name $WINDOWS_SERVICE_NAME -ErrorAction SilentlyContinue
+    } catch {}
+
+    if ($service) {
+        $removed = $false
+
+        if (Get-Command nssm -ErrorAction SilentlyContinue) {
+            try {
+                & nssm stop $WINDOWS_SERVICE_NAME 2>$null | Out-Null
+                & nssm remove $WINDOWS_SERVICE_NAME confirm 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-NavOk "Removed service: $WINDOWS_SERVICE_NAME"
+                    $removed = $true
+                }
+            } catch {}
+        }
+
+        if (-not $removed) {
+            try {
+                & sc.exe stop $WINDOWS_SERVICE_NAME 2>$null | Out-Null
+                & sc.exe delete $WINDOWS_SERVICE_NAME 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-NavOk "Removed service: $WINDOWS_SERVICE_NAME"
+                } else {
+                    Add-UninstallFailure -Step "Remove service $WINDOWS_SERVICE_NAME" -Message "sc.exe exited with code $LASTEXITCODE"
+                }
+            } catch {
+                Add-UninstallFailure -Step "Remove service $WINDOWS_SERVICE_NAME" -Message $_.Exception.Message
+            }
+        }
+    } else {
+        Write-NavInfo "Service not present: $WINDOWS_SERVICE_NAME"
+    }
+
+    try {
+        if (Test-NavigScheduledTask) {
+            schtasks /delete /tn $WINDOWS_TASK_NAME /f 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-NavOk "Removed scheduled task: $WINDOWS_TASK_NAME"
+            } else {
+                Add-UninstallFailure -Step "Remove scheduled task $WINDOWS_TASK_NAME" -Message "schtasks exited with code $LASTEXITCODE"
+            }
+        } else {
+            Write-NavInfo "Scheduled task not present: $WINDOWS_TASK_NAME"
+        }
+    } catch {
+        Add-UninstallFailure -Step "Remove scheduled task $WINDOWS_TASK_NAME" -Message $_.Exception.Message
+    }
+}
+
+function Remove-NavigPathArtifacts {
+    try {
+        $targets = @(
+            (Join-Path $env:USERPROFILE ".local\bin"),
+            (Join-Path $env:LOCALAPPDATA "navig")
+        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+        $rawPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $parts = @(Split-PathEntries $rawPath)
+        $removed = @()
+        $kept = @()
+
+        foreach ($part in $parts) {
+            $normalizedPart = $part.Trim().TrimEnd('\')
+            $isNavigPath = $false
+
+            foreach ($target in $targets) {
+                if ($normalizedPart -ieq $target.Trim().TrimEnd('\')) {
+                    $isNavigPath = $true
+                    break
+                }
+            }
+
+            if ($isNavigPath) {
+                $removed += $part
+            } else {
+                $kept += $part
+            }
+        }
+
+        if ($removed.Count -gt 0) {
+            [Environment]::SetEnvironmentVariable("Path", ($kept -join ';'), "User")
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                        [System.Environment]::GetEnvironmentVariable("PATH","User")
+            foreach ($entry in $removed) {
+                Write-NavOk "Removed PATH entry: $entry"
+            }
+        } else {
+            Write-NavInfo "No NAVIG PATH entries found"
+        }
+    } catch {
+        Add-UninstallFailure -Step "Remove NAVIG PATH entries" -Message $_.Exception.Message
+    }
+}
+
+function Invoke-NavigUninstall {
+    param(
+        [switch]$PreserveUserData,
+        [switch]$ForReinstall
+    )
+
+    Reset-NavigUninstallState
+
+    Write-Host ""
+    if ($ForReinstall) {
+        Write-NavInfo "Preparing reinstall / repair cleanup..."
+    } else {
+        Write-NavInfo "Starting NAVIG uninstall..."
+    }
+
+    Write-NavStep "Stopping NAVIG processes..."
+    Stop-NavigBackgroundArtifacts
+
+    Write-NavStep "Removing NAVIG files..."
+    Remove-NavigFiles -PreserveUserData:$PreserveUserData
+
+    Write-NavStep "Removing NAVIG registry entries..."
+    Remove-NavigRegistryArtifacts
+
+    Write-NavStep "Removing NAVIG services and tasks..."
+    Remove-NavigServiceArtifacts
+
+    Write-NavStep "Removing NAVIG PATH entries..."
+    Remove-NavigPathArtifacts
+
+    Write-Host ""
+    if ($script:UninstallFailures.Count -gt 0) {
+        $summaryMessage = if ($ForReinstall) {
+            "Cleanup completed with warnings. Continuing reinstall / repair."
+        } else {
+            "Navig uninstall completed with warnings."
+        }
+        Write-NavErr $summaryMessage
+        Write-NavHint "Failure log: $UNINSTALL_LOG"
+        foreach ($failure in $script:UninstallFailures) {
+            Write-NavHint $failure
+        }
+    } elseif ($ForReinstall) {
+        Write-NavOk "Cleanup completed. Continuing reinstall / repair."
+    } else {
+        Write-NavOk "Navig has been successfully uninstalled."
+    }
+
+    return [pscustomobject]@{
+        Success  = ($script:UninstallFailures.Count -eq 0)
+        Failures = @($script:UninstallFailures)
+    }
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────
 function Main {
     if ($Help) { Show-Usage; return }
     if ($Dev)  { $InstallMethod = "git" }
 
+    try {
+        $requestedAction = Normalize-NavigAction $Action
+    } catch {
+        Write-NavErr $_.Exception.Message
+        exit 1
+    }
+
     Show-Banner
+
+    $installState = Get-NavigInstallState
+    Apply-NavigInstallDefaults -Metadata $installState.Metadata
+    $plannedAction = if (-not [string]::IsNullOrWhiteSpace($requestedAction)) {
+        $requestedAction
+    } elseif ($installState.IsInstalled -and -not $NoConfirm -and (Test-InteractiveSession)) {
+        "prompt"
+    } else {
+        "install"
+    }
 
     if ($DryRun) {
         Write-NavInfo "Dry run — no changes will be made"
         Write-Host ""
         Write-Host "  OS:              Windows $([System.Environment]::OSVersion.Version)" -ForegroundColor DarkGray
+        Write-Host "  Installed:       $(if ($installState.IsInstalled) { 'yes' } else { 'no' })" -ForegroundColor DarkGray
+        Write-Host "  Planned action:  $plannedAction" -ForegroundColor DarkGray
         Write-Host "  Install method:  $InstallMethod"                                     -ForegroundColor DarkGray
         Write-Host "  Version:         $(if ($Version) { $Version } else { 'latest' })"   -ForegroundColor DarkGray
         Write-Host "  Extras:          $(if ($Extras)  { $Extras  } else { 'none'   })"   -ForegroundColor DarkGray
@@ -527,8 +1229,36 @@ function Main {
     $osVer = [System.Environment]::OSVersion.Version
     Write-NavOk "Windows $osVer ($env:PROCESSOR_ARCHITECTURE)"
 
-    # Step 2: Existing install?
-    $isUpgrade = Test-ExistingNavig
+    # Step 2: Resolve install/uninstall action
+    $resolvedAction = Resolve-NavigExecutionAction -IsInstalled $installState.IsInstalled -RequestedAction $requestedAction
+    switch ($resolvedAction) {
+        "cancel" {
+            Write-NavInfo "Canceled — no changes were made"
+            return
+        }
+        "uninstall" {
+            if (-not $installState.IsInstalled) {
+                Write-NavInfo "NAVIG is not currently installed — removing leftover artifacts if any"
+            }
+            $uninstallResult = Invoke-NavigUninstall
+            if (-not $uninstallResult.Success) { exit 1 }
+            return
+        }
+        "reinstall" {
+            if ($installState.IsInstalled) {
+                Write-NavInfo "Existing NAVIG detected — performing reinstall / repair"
+                Invoke-NavigUninstall -PreserveUserData -ForReinstall | Out-Null
+                $installState = Get-NavigInstallState
+            } else {
+                Write-NavInfo "No existing NAVIG installation found — continuing with install"
+            }
+        }
+    }
+
+    $isUpgrade = $installState.IsInstalled
+    if ($isUpgrade) {
+        Write-ExistingNavigMessage
+    }
 
     # Step 3: Python
     Write-NavStep "Checking Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+..."
@@ -581,6 +1311,12 @@ function Main {
 
     # Step 9: Success
     $installedVer = Get-NavigVersion
+    try {
+        Write-NavigInstallState -InstalledVersion $installedVer
+    } catch {
+        Write-NavErr "NAVIG installed, but failed to persist install state: $($_.Exception.Message)"
+        Write-NavHint "Install / uninstall auto-detection may be incomplete until this is fixed"
+    }
     Show-SuccessBanner -InstalledVersion $installedVer
 
     $gitSource = if ($InstallMethod -eq "git") { $GitDir } else { $null }
@@ -604,7 +1340,7 @@ if ($env:NAVIG_DEV_SYNC -eq "1") {
         Write-NavHint "Copy manually:  Copy-Item install.ps1 ..\navig-www\public\install.ps1"
         exit 1
     }
-    foreach ($f in @("install.ps1", "install.sh", "uninstall.ps1", "uninstall.sh")) {
+    foreach ($f in @("install.ps1", "install.sh", "uninstall.sh")) {
         $src = Join-Path $PSScriptRoot $f
         $dst = Join-Path $wwwDir $f
         if (Test-Path $src) {
