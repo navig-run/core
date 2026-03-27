@@ -83,7 +83,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         parents: bool = typer.Option(
             True, "--parents", "-p", help="Create parent directories as needed"
         ),
-        mode: str = typer.Option("755", "--mode", "-m", help="Permission mode (e.g., 755)"),
+        mode: str = typer.Option(
+            "755", "--mode", "-m", help="Permission mode (e.g., 755)"
+        ),
     ):
         """[DEPRECATED: Use 'navig file add --dir'] Create remote directory."""
         deprecation_warning("navig mkdir", "navig file add --dir")
@@ -98,7 +100,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file/directory path"),
         mode: str = typer.Argument(..., help="Permission mode (e.g., 755, 644)"),
-        recursive: bool = typer.Option(False, "--recursive", "-r", help="Apply recursively"),
+        recursive: bool = typer.Option(
+            False, "--recursive", "-r", help="Apply recursively"
+        ),
     ):
         """[DEPRECATED: Use 'navig file edit --mode'] Change permissions."""
         deprecation_warning("navig chmod", "navig file edit --mode")
@@ -112,7 +116,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file/directory path"),
         owner: str = typer.Argument(..., help="New owner (user or user:group)"),
-        recursive: bool = typer.Option(False, "--recursive", "-r", help="Apply recursively"),
+        recursive: bool = typer.Option(
+            False, "--recursive", "-r", help="Apply recursively"
+        ),
     ):
         """[DEPRECATED: Use 'navig file edit --owner'] Change ownership."""
         deprecation_warning("navig chown", "navig file edit --owner")
@@ -125,8 +131,12 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def cat_file(
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file path to read"),
-        lines: int | None = typer.Option(None, "--lines", "-n", help="Number of lines to show"),
-        head: bool = typer.Option(False, "--head", help="Show first N lines (use with --lines)"),
+        lines: int | None = typer.Option(
+            None, "--lines", "-n", help="Number of lines to show"
+        ),
+        head: bool = typer.Option(
+            False, "--head", help="Show first N lines (use with --lines)"
+        ),
         tail: bool = typer.Option(
             False, "--tail", "-t", help="Show last N lines (use with --lines)"
         ),
@@ -141,8 +151,12 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def write_file(
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file path to write"),
-        content: str | None = typer.Option(None, "--content", "-c", help="Content to write"),
-        stdin: bool = typer.Option(False, "--stdin", "-s", help="Read content from stdin (pipe)"),
+        content: str | None = typer.Option(
+            None, "--content", "-c", help="Content to write"
+        ),
+        stdin: bool = typer.Option(
+            False, "--stdin", "-s", help="Read content from stdin (pipe)"
+        ),
         from_file: Path | None = typer.Option(
             None, "--from-file", "-f", help="Read content from local file"
         ),
@@ -176,7 +190,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote directory path"),
         all: bool = typer.Option(False, "--all", "-a", help="Show hidden files"),
-        long: bool = typer.Option(True, "--long", "-l", help="Long format with details"),
+        long: bool = typer.Option(
+            True, "--long", "-l", help="Long format with details"
+        ),
         human: bool = typer.Option(True, "--human", "-h", help="Human-readable sizes"),
     ):
         """[DEPRECATED: Use 'navig file list'] List remote directory."""
@@ -190,7 +206,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote directory path"),
         depth: int = typer.Option(2, "--depth", "-d", help="Maximum depth to display"),
-        dirs_only: bool = typer.Option(False, "--dirs-only", "-D", help="Show only directories"),
+        dirs_only: bool = typer.Option(
+            False, "--dirs-only", "-D", help="Show only directories"
+        ),
     ):
         """[DEPRECATED: Use 'navig file list --tree'] Show directory tree."""
         deprecation_warning("navig tree", "navig file list --tree")
@@ -263,8 +281,12 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
-        database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
+        password: str | None = typer.Option(
+            None, "--password", "-p", help="Database password"
+        ),
+        database: str | None = typer.Option(
+            None, "--database", "-d", help="Database name"
+        ),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -282,7 +304,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
+        password: str | None = typer.Option(
+            None, "--password", "-p", help="Database password"
+        ),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -307,7 +331,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
+        password: str | None = typer.Option(
+            None, "--password", "-p", help="Database password"
+        ),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -328,12 +354,16 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def db_dump(
         ctx: typer.Context,
         database: str = typer.Argument(..., help="Database name to dump"),
-        output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
+        output: Path | None = typer.Option(
+            None, "--output", "-o", help="Output file path"
+        ),
         container: str | None = typer.Option(
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
+        password: str | None = typer.Option(
+            None, "--password", "-p", help="Database password"
+        ),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -351,8 +381,12 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
-        database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
+        password: str | None = typer.Option(
+            None, "--password", "-p", help="Database password"
+        ),
+        database: str | None = typer.Option(
+            None, "--database", "-d", help="Database name"
+        ),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -366,9 +400,15 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("logs", hidden=True)
     def view_logs(
         ctx: typer.Context,
-        service: str = typer.Argument(..., help="Service name (nginx, php-fpm, mysql, app, etc.)"),
-        tail: bool = typer.Option(False, "--tail", "-f", help="Follow logs in real-time"),
-        lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to display"),
+        service: str = typer.Argument(
+            ..., help="Service name (nginx, php-fpm, mysql, app, etc.)"
+        ),
+        tail: bool = typer.Option(
+            False, "--tail", "-f", help="Follow logs in real-time"
+        ),
+        lines: int = typer.Option(
+            50, "--lines", "-n", help="Number of lines to display"
+        ),
     ):
         """[DEPRECATED] View logs. Use: navig log show <service>"""
         deprecation_warning("navig logs", "navig log show")
@@ -396,3 +436,131 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         from navig.commands.monitoring import restart_remote_service
 
         restart_remote_service(service, ctx.obj)
+
+    @app.command("sql", hidden=True)
+    def sql_query(
+        ctx: typer.Context,
+        query: str = typer.Argument(..., help="SQL query to execute"),
+    ):
+        """[DEPRECATED: Use 'navig db query'] Execute SQL query through tunnel."""
+        deprecation_warning("navig sql", "navig db query")
+        from navig.commands.db import db_query_cmd
+
+        db_query_cmd(query, None, "root", None, None, None, ctx.obj)
+
+    @app.command("sqlfile", hidden=True)
+    def sql_file(
+        ctx: typer.Context,
+        file: Path = typer.Argument(..., help="SQL file to execute"),
+    ):
+        """[DEPRECATED: Use 'navig db file'] Execute SQL file through tunnel."""
+        deprecation_warning("navig sqlfile", "navig db file")
+        from navig.commands.database import execute_sql_file
+
+        execute_sql_file(file, ctx.obj)
+
+    @app.command("restore", hidden=True)
+    def restore_db(
+        ctx: typer.Context,
+        file: Path = typer.Argument(..., help="Backup file to restore from"),
+    ):
+        """[DEPRECATED: Use 'navig db restore'] Restore database from backup file."""
+        deprecation_warning("navig restore", "navig db restore")
+        from navig.commands.database import restore_database
+
+        restore_database(file, ctx.obj)
+
+    @app.command("backup-config", hidden=True)
+    def backup_system_config_cmd(
+        ctx: typer.Context,
+        name: str | None = typer.Option(
+            None, "--name", "-n", help="Custom backup name"
+        ),
+    ):
+        """[DEPRECATED] Backup system configuration files. Use: navig backup run --config"""
+        deprecation_warning("navig backup-config", "navig backup run --config")
+        from navig.commands.backup import backup_system_config
+
+        backup_system_config(name, ctx.obj)
+
+    @app.command("backup-db-all", hidden=True)
+    def backup_all_databases_cmd(
+        ctx: typer.Context,
+        name: str | None = typer.Option(
+            None, "--name", "-n", help="Custom backup name"
+        ),
+        compress: str = typer.Option(
+            "gzip", "--compress", "-c", help="Compression: none|gzip|zstd"
+        ),
+    ):
+        """[DEPRECATED] Backup all databases with compression. Use: navig backup run --db-all"""
+        deprecation_warning("navig backup-db-all", "navig backup run --db-all")
+        from navig.commands.backup import backup_all_databases
+
+        backup_all_databases(name, compress, ctx.obj)
+
+    @app.command("backup-hestia", hidden=True)
+    def backup_hestia_cmd(
+        ctx: typer.Context,
+        name: str | None = typer.Option(
+            None, "--name", "-n", help="Custom backup name"
+        ),
+    ):
+        """[DEPRECATED] Backup HestiaCP configuration. Use: navig backup run --hestia"""
+        deprecation_warning("navig backup-hestia", "navig backup run --hestia")
+        from navig.commands.backup import backup_hestia
+
+        backup_hestia(name, ctx.obj)
+
+    @app.command("backup-web", hidden=True)
+    def backup_web_config_cmd(
+        ctx: typer.Context,
+        name: str | None = typer.Option(
+            None, "--name", "-n", help="Custom backup name"
+        ),
+    ):
+        """[DEPRECATED] Backup web server configurations. Use: navig backup run --web"""
+        deprecation_warning("navig backup-web", "navig backup run --web")
+        from navig.commands.backup import backup_web_config
+
+        backup_web_config(name, ctx.obj)
+
+    @app.command("backup-all", hidden=True)
+    def backup_all_cmd(
+        ctx: typer.Context,
+        name: str | None = typer.Option(
+            None, "--name", "-n", help="Custom backup name"
+        ),
+        compress: str = typer.Option(
+            "gzip", "--compress", "-c", help="Compression for databases: none|gzip|zstd"
+        ),
+    ):
+        """[DEPRECATED] Comprehensive backup. Use: navig backup run --all"""
+        deprecation_warning("navig backup-all", "navig backup run --all")
+        from navig.commands.backup import backup_all
+
+        backup_all(name, compress, ctx.obj)
+
+    @app.command("list-backups", hidden=True)
+    def list_backups_admin_cmd(ctx: typer.Context):
+        """[DEPRECATED] List all available backups. Use: navig backup list"""
+        deprecation_warning("navig list-backups", "navig backup list")
+        from navig.commands.backup import list_backups_cmd as list_backups
+
+        list_backups(ctx.obj)
+
+    @app.command("restore-backup", hidden=True)
+    def restore_backup_admin_cmd(
+        ctx: typer.Context,
+        backup_name: str = typer.Argument(..., help="Backup name to restore from"),
+        component: str | None = typer.Option(
+            None, "--component", "-c", help="Specific component to restore"
+        ),
+        force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+    ):
+        """[DEPRECATED] Restore from comprehensive backup. Use: navig backup restore"""
+        deprecation_warning("navig restore-backup", "navig backup restore")
+        ctx.obj["force"] = force
+        from navig.commands.backup import restore_backup_cmd as restore_backup
+
+        restore_backup(backup_name, component, ctx.obj)
