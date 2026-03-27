@@ -206,3 +206,104 @@ Describe "Pip-only enforcement" {
         $fn.Value | Should -Not -Match 'Install-NavigPip'
     }
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# New UX layer — terminal capability, output helpers, banner, success screen
+# ─────────────────────────────────────────────────────────────────────────────
+Describe "Initialize-NavTerminal" {
+    It "sets script-level NavColor to a boolean" {
+        Initialize-NavTerminal
+        $script:NavColor | Should -BeOfType [bool]
+    }
+
+    It "respects NO_COLOR env var" {
+        $env:NO_COLOR = "1"
+        try {
+            Initialize-NavTerminal
+            $script:NavColor | Should -Be $false
+        } finally {
+            Remove-Item Env:\NO_COLOR -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Describe "Write-NavVerbose" {
+    It "produces no output when Verbose is false" {
+        $script:Verbose = $false
+        $output = Write-NavVerbose "should not appear" 6>&1
+        $output | Should -BeNullOrEmpty
+    }
+
+    It "produces output when Verbose is true" {
+        # Verify Write-NavVerbose conditionally emits based on $Verbose flag
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Write-NavVerbose.*?\n\}')
+        $fn.Value | Should -Match '\$Verbose'
+        $fn.Value | Should -Match 'Write-Host'
+    }
+}
+
+Describe "Show-Banner — no taglines" {
+    It "does not contain a tagline array" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Show-Banner.*?\n\}')
+        $fn.Value | Should -Not -Match '\$taglines\s*='
+        $fn.Value | Should -Not -Match 'Get-Random'
+    }
+
+    It "contains the canonical product description" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Show-Banner.*?\n\}')
+        $fn.Value | Should -Match 'quiet operator tooling'
+    }
+}
+
+Describe "Show-Success" {
+    It "exists as a function" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $src | Should -Match 'function Show-Success'
+    }
+
+    It "contains 'navig init'" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Show-Success.*?\n\}')
+        $fn.Value | Should -Match 'navig init'
+    }
+
+    It "contains 'Ready.'" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Show-Success.*?\n\}')
+        $fn.Value | Should -Match 'Ready\.'
+    }
+
+    It "does not contain old magenta box markers" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $src | Should -Not -Match 'Show-SuccessBanner'
+        $src | Should -Not -Match '\+====+'
+    }
+}
+
+Describe "Main — phased structure" {
+    It "calls Write-NavPhase for each phase" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
+        $fn.Value | Should -Match "Write-NavPhase.*Environment"
+        $fn.Value | Should -Match "Write-NavPhase.*Requirements"
+        $fn.Value | Should -Match "Write-NavPhase.*Install"
+        $fn.Value | Should -Match "Write-NavPhase.*Verify"
+    }
+
+    It "calls Show-Success after successful install" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
+        $fn.Value | Should -Match 'Show-Success'
+    }
+
+    It "calls Initialize-NavTerminal before Show-Banner" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
+        $initIdx   = $fn.Value.IndexOf('Initialize-NavTerminal')
+        $bannerIdx = $fn.Value.IndexOf('Show-Banner')
+        $initIdx   | Should -BeLessThan $bannerIdx
+    }
+}

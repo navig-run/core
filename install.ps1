@@ -22,6 +22,7 @@ $Action         = $env:NAVIG_ACTION
 $DryRun         = $args -contains "-DryRun"    -or $args -contains "/DryRun"
 $NoConfirm      = $args -contains "-NoConfirm" -or $args -contains "/NoConfirm"
 $Help           = $args -contains "-Help"      -or $args -contains "/Help"
+$Verbose        = $args -contains "-Verbose"   -or $args -contains "/Verbose"
 
 for ($i = 0; $i -lt $args.Length - 1; $i++) {
     switch ($args[$i]) {
@@ -54,71 +55,129 @@ $UNINSTALL_LOG        = Join-Path $env:TEMP "navig-uninstall.log"
 $WINDOWS_SERVICE_NAME = "NavigDaemon"
 $WINDOWS_TASK_NAME    = "NAVIG Daemon"
 
+# ── Script-level terminal capability flags (set by Initialize-NavTerminal) ─
+$script:NavColor   = $true
+$script:NavUnicode = $true
+
+# ── Terminal capability detection ──────────────────────────────────────────
+function Initialize-NavTerminal {
+    $noColor = ($null -ne $env:NO_COLOR) -or ($env:TERM -eq "dumb") -or (-not [Environment]::UserInteractive)
+    $script:NavColor   = -not $noColor
+    $script:NavUnicode = $true
+    try {
+        if ($PSVersionTable.PSVersion.Major -lt 6 -and
+            [Console]::OutputEncoding.CodePage -notin @(65001, 1200)) {
+            $script:NavUnicode = $false
+        }
+    } catch {}
+}
+
+function Get-NavSym {
+    param([string]$Name)
+    if ($script:NavUnicode) {
+        switch ($Name) {
+            "ok"   { return "\u2713" }  # ✓
+            "step" { return "\u203a" }  # ›
+            "err"  { return "\u00d7" }  # ×
+            "warn" { return "!" }
+        }
+    } else {
+        switch ($Name) {
+            "ok"   { return "OK" }
+            "step" { return " >" }
+            "err"  { return "!!" }
+            "warn" { return " !" }
+        }
+    }
+    return "?"
+}
+
 # ── Output helpers ─────────────────────────────────────────────────────────
-#   [->] in-progress   [OK] success   [!!] failure   [i] info
-function Write-NavStep { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[->]" -NoNewline -ForegroundColor Cyan;     Write-Host "  $msg" }
-function Write-NavOk   { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[OK]" -NoNewline -ForegroundColor Green;    Write-Host "  $msg" }
-function Write-NavErr  { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[!!]" -NoNewline -ForegroundColor Red;      Write-Host "  $msg" }
-function Write-NavInfo { param([string]$msg) Write-Host "  " -NoNewline; Write-Host "[i]"  -NoNewline -ForegroundColor DarkGray; Write-Host "  $msg" }
-function Write-NavHint { param([string]$msg) Write-Host "      $msg" -ForegroundColor Yellow }
+function Write-NavPhase {
+    param([string]$msg)
+    Write-Host ""
+    if ($script:NavColor) { Write-Host "  $msg" -ForegroundColor Cyan } else { Write-Host "  $msg" }
+}
+
+function Write-NavOk {
+    param([string]$msg)
+    $sym = Get-NavSym "ok"
+    if ($script:NavColor) { Write-Host "  " -NoNewline; Write-Host $sym -NoNewline -ForegroundColor Green;  Write-Host "  $msg" }
+    else                  { Write-Host "  $sym  $msg" }
+}
+
+function Write-NavStep {
+    param([string]$msg)
+    $sym = Get-NavSym "step"
+    if ($script:NavColor) { Write-Host "  " -NoNewline; Write-Host $sym -NoNewline -ForegroundColor Cyan;   Write-Host "  $msg" }
+    else                  { Write-Host "  $sym  $msg" }
+}
+
+function Write-NavErr {
+    param([string]$msg)
+    $sym = Get-NavSym "err"
+    if ($script:NavColor) { Write-Host "  " -NoNewline; Write-Host $sym -NoNewline -ForegroundColor Red;    Write-Host "  $msg" }
+    else                  { Write-Host "  $sym  $msg" }
+}
+
+function Write-NavWarn {
+    param([string]$msg)
+    $sym = Get-NavSym "warn"
+    if ($script:NavColor) { Write-Host "  " -NoNewline; Write-Host $sym -NoNewline -ForegroundColor Yellow; Write-Host "  $msg" }
+    else                  { Write-Host "  $sym  $msg" }
+}
+
+function Write-NavHint {
+    param([string]$msg)
+    Write-Host "      $msg"
+}
+
+function Write-NavVerbose {
+    param([string]$msg)
+    if ($Verbose) {
+        if ($script:NavColor) { Write-Host "      $msg" -ForegroundColor DarkGray }
+        else                  { Write-Host "      $msg" }
+    }
+}
 
 # ── Banner ─────────────────────────────────────────────────────────────────
 function Show-Banner {
-    $taglines = @(
-        "Your servers are in good hands now.",
-        "No admin visible in graveyard? Perfect.",
-        "SSH tunnels, remote ops - all in one CLI.",
-        "Because server management shouldn't feel like surgery.",
-        "ctrl+c to exit. But why would you?",
-        "Keeping uptime personal since 2024.",
-        "One CLI to rule them all.",
-        "Servers don't sleep, and neither does NAVIG.",
-        "Remote ops, local comfort.",
-        "Born in the terminal. Lives in the cloud.",
-        "Your devops sidekick. No cape required.",
-        "Deploy, manage, survive. Repeat.",
-        "Less SSH, more SHH - it just works.",
-        "The quiet guardian of your infrastructure.",
-        "Admin by day, daemon by night."
-    )
-    $tagline = $taglines[(Get-Random -Maximum $taglines.Length)]
     Write-Host ""
-    $vStr = if ($Version) { "v$Version " } else { "" }
-    Write-Host "  NAVIG $vStr" -NoNewline -ForegroundColor Cyan
-    Write-Host "- $tagline" -ForegroundColor DarkGray
-    Write-Host ""
-}
-
-# ── Success banner ─────────────────────────────────────────────────────────
-function Show-SuccessBanner {
-    param([string]$InstalledVersion)
-    $verLabel = if ($InstalledVersion) { "  NAVIG v$InstalledVersion installed  " } else { "  NAVIG installed  " }
-    $inner    = 44
-    Write-Host ""
-    Write-Host "  +$("=" * $inner)+" -ForegroundColor Magenta
-    Write-Host "  |" -NoNewline -ForegroundColor Magenta; Write-Host $verLabel.PadRight($inner) -NoNewline -ForegroundColor White; Write-Host "|" -ForegroundColor Magenta
-    Write-Host "  |" -NoNewline -ForegroundColor Magenta; Write-Host "  Welcome aboard. Keep those servers alive.".PadRight($inner) -NoNewline -ForegroundColor White; Write-Host "|" -ForegroundColor Magenta
-    Write-Host "  +$("=" * $inner)+" -ForegroundColor Magenta
-    Write-Host ""
-}
-
-# ── Get-started block ──────────────────────────────────────────────────────
-function Show-GetStarted {
-    param([string]$PythonCmd)
-    $configPath = Join-Path $env:USERPROFILE ".navig\"
-    Write-Host "  Get started:" -ForegroundColor White
-    Write-Host "    " -NoNewline; Write-Host "navig"         -NoNewline -ForegroundColor Yellow; Write-Host "                  Open interactive menu"
-    Write-Host "    " -NoNewline; Write-Host "navig host add" -NoNewline -ForegroundColor Yellow; Write-Host "         Add your first server"
-    Write-Host "    " -NoNewline; Write-Host "navig help"    -NoNewline -ForegroundColor Yellow; Write-Host "             Show all commands"
-    Write-Host ""
-    Write-Host "  " -NoNewline; Write-Host "Update: " -NoNewline -ForegroundColor White
-    if ($PythonCmd) {
-        Write-Host "$PythonCmd -m pip install --upgrade navig" -ForegroundColor Yellow
+    if ($script:NavColor) {
+        Write-Host "  NAVIG" -NoNewline -ForegroundColor Cyan
+        Write-Host " — install"
+        Write-Host "  quiet operator tooling for real systems" -ForegroundColor DarkGray
     } else {
-        Write-Host "python.exe -m pip install --upgrade navig" -ForegroundColor Yellow
+        Write-Host "  NAVIG — install"
+        Write-Host "  quiet operator tooling for real systems"
     }
-    Write-Host "  " -NoNewline; Write-Host "Config: " -NoNewline -ForegroundColor White; Write-Host $configPath -ForegroundColor Yellow
-    Write-Host "  " -NoNewline; Write-Host "Docs:   " -NoNewline -ForegroundColor White; Write-Host "https://github.com/navig-run/core" -ForegroundColor Yellow
+    Write-Host ""
+}
+
+# ── Success screen ─────────────────────────────────────────────────────────
+function Show-Success {
+    param([string]$InstalledVersion)
+    $verLabel = if ($InstalledVersion) { "NAVIG $InstalledVersion" } else { "NAVIG" }
+    Write-Host ""
+    if ($script:NavColor) { Write-Host "  $verLabel" -ForegroundColor Cyan } else { Write-Host "  $verLabel" }
+    Write-Host ""
+    Write-Host "  Ready."
+    Write-Host ""
+    Write-Host "  Run " -NoNewline
+    if ($script:NavColor) { Write-Host "navig init" -NoNewline -ForegroundColor Yellow } else { Write-Host "navig init" -NoNewline }
+    Write-Host " to complete first-time setup."
+    Write-Host ""
+    Write-Host "  Common commands:"
+    $pad = "    "
+    if ($script:NavColor) {
+        Write-Host "${pad}navig            " -NoNewline; Write-Host "Interactive menu"   -ForegroundColor DarkGray
+        Write-Host "${pad}navig host add   " -NoNewline; Write-Host "Add your first server" -ForegroundColor DarkGray
+        Write-Host "${pad}navig help       " -NoNewline; Write-Host "All commands"        -ForegroundColor DarkGray
+    } else {
+        Write-Host "${pad}navig              Interactive menu"
+        Write-Host "${pad}navig host add     Add your first server"
+        Write-Host "${pad}navig help         All commands"
+    }
     Write-Host ""
 }
 
@@ -247,7 +306,7 @@ function Add-NavigBinToPath {
             [System.Environment]::SetEnvironmentVariable("PATH", "$BinDir;$userPath", "User")
         }
     } catch {
-        Write-NavInfo "Could not write to User PATH registry: $($_.Exception.Message)"
+        Write-NavVerbose "Could not write to User PATH registry: $($_.Exception.Message)"
     }
 }
 
@@ -308,7 +367,7 @@ function Test-NavigCommand {
     if ($navigGcm) {
         try {
             $verOut = & navig --version 2>&1 | Select-Object -First 1
-            Write-NavOk "navig $($verOut.ToString().Trim()) is ready"
+            Write-NavOk "navig $($verOut.ToString().Trim())"
             return $true
         } catch {
             Write-NavErr "navig found but failed to execute: $($_.Exception.Message)"
@@ -317,8 +376,8 @@ function Test-NavigCommand {
 
     Write-NavErr "navig is not callable after installation"
     if ($ScriptsDir) {
-        Write-NavHint "Scripts directory: $ScriptsDir"
-        Write-NavHint "Run in a new terminal:  navig --version"
+        Write-NavVerbose "Scripts directory: $ScriptsDir"
+        Write-NavHint "Open a new terminal and run:  navig --version"
         Write-NavHint "Or add manually:  `$env:PATH = '$ScriptsDir;' + `$env:PATH"
     }
     return $false
@@ -333,7 +392,7 @@ function Initialize-NavigConfig {
         $path = if ($sub) { Join-Path $configDir $sub } else { $configDir }
         if (-not (Test-Path $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
     }
-    Write-NavOk "Config directory ready at $configDir\"
+    Write-NavVerbose "Config directory: $configDir\"
 }
 
 function Get-NavigVersion {
@@ -395,7 +454,7 @@ function Reset-NavigUninstallState { $script:UninstallFailures = @() }
 function Add-UninstallFailure {
     param([string]$Step, [string]$Message)
     $script:UninstallFailures += @{ Step = $Step; Message = $Message }
-    Write-NavInfo "Warning in '$Step': $Message"
+    Write-NavVerbose "Warning in '$Step': $Message"
 }
 
 function Split-PathEntries {
@@ -417,24 +476,24 @@ function Remove-NavigFiles {
     # pip uninstall
     foreach ($pip in @("pip3", "pip")) {
         if (-not (Get-Command $pip -ErrorAction SilentlyContinue)) { continue }
-        try { & $pip uninstall navig -y 2>&1 | Out-Null; Write-NavOk "Removed pip package: navig"; break } catch {}
+        try { & $pip uninstall navig -y 2>&1 | Out-Null; Write-NavVerbose "Removed pip package: navig"; break } catch {}
     }
     # .navig home dir
     $navigHome = Join-Path $env:USERPROFILE ".navig"
     if ($PreserveUserData) {
-        Write-NavInfo "Preserving user data at $navigHome"
+        Write-NavVerbose "Preserving user data at $navigHome"
     } elseif (Test-Path $navigHome) {
-        try { Remove-Item -Path $navigHome -Recurse -Force -ErrorAction Stop; Write-NavOk "Removed: $navigHome" }
+        try { Remove-Item -Path $navigHome -Recurse -Force -ErrorAction Stop; Write-NavVerbose "Removed: $navigHome" }
         catch { Add-UninstallFailure -Step "Remove $navigHome" -Message $_.Exception.Message }
     }
 }
 
 function Remove-NavigRegistryArtifacts {
     if (-not (Test-Path $INSTALL_REGISTRY_KEY) -and -not (Test-Path $INSTALL_MARKER_PATH)) {
-        Write-NavInfo "No installer registry state present"
+        Write-NavVerbose "No installer registry state present"
         return
     }
-    try { Remove-NavigInstallState; Write-NavOk "Removed installer registry state" }
+    try { Remove-NavigInstallState; Write-NavVerbose "Removed installer registry state" }
     catch { Add-UninstallFailure -Step "Remove registry state" -Message $_.Exception.Message }
 }
 
@@ -447,13 +506,13 @@ function Remove-NavigServiceArtifacts {
     $service = Get-Service -Name $WINDOWS_SERVICE_NAME -ErrorAction SilentlyContinue
     if ($service) {
         try { & sc.exe stop $WINDOWS_SERVICE_NAME 2>$null | Out-Null } catch {}
-        try { & sc.exe delete $WINDOWS_SERVICE_NAME 2>$null | Out-Null; Write-NavOk "Removed service: $WINDOWS_SERVICE_NAME" }
+        try { & sc.exe delete $WINDOWS_SERVICE_NAME 2>$null | Out-Null; Write-NavVerbose "Removed service: $WINDOWS_SERVICE_NAME" }
         catch { Add-UninstallFailure -Step "Remove service" -Message $_.Exception.Message }
-    } else { Write-NavInfo "Service not present: $WINDOWS_SERVICE_NAME" }
+    } else { Write-NavVerbose "Service not present: $WINDOWS_SERVICE_NAME" }
     if (Test-NavigScheduledTask) {
-        try { schtasks /delete /tn $WINDOWS_TASK_NAME /f 2>$null | Out-Null; Write-NavOk "Removed task: $WINDOWS_TASK_NAME" }
+        try { schtasks /delete /tn $WINDOWS_TASK_NAME /f 2>$null | Out-Null; Write-NavVerbose "Removed task: $WINDOWS_TASK_NAME" }
         catch { Add-UninstallFailure -Step "Remove scheduled task" -Message $_.Exception.Message }
-    } else { Write-NavInfo "Scheduled task not present: $WINDOWS_TASK_NAME" }
+    } else { Write-NavVerbose "Scheduled task not present: $WINDOWS_TASK_NAME" }
 }
 
 function Remove-NavigPathArtifacts {
@@ -463,25 +522,32 @@ function Remove-NavigPathArtifacts {
         $kept    = $entries | Where-Object { $_ -notmatch '(?i)navig' -and $_ -notmatch '(?i)\.local\\bin' }
         if ($kept.Count -lt $entries.Count) {
             [Environment]::SetEnvironmentVariable("PATH", ($kept -join ';'), "User")
-            Write-NavOk "Removed NAVIG PATH entries from User PATH"
-        } else { Write-NavInfo "No NAVIG-specific PATH entries found" }
+            Write-NavVerbose "Removed NAVIG PATH entries from User PATH"
+        } else { Write-NavVerbose "No NAVIG-specific PATH entries found" }
     } catch { Add-UninstallFailure -Step "Remove PATH entries" -Message $_.Exception.Message }
 }
 
 function Invoke-NavigUninstall {
     param([switch]$PreserveUserData, [switch]$ForReinstall)
     Reset-NavigUninstallState
-    Write-Host ""
-    Write-NavInfo (if ($ForReinstall) { "Preparing reinstall cleanup..." } else { "Starting NAVIG uninstall..." })
-    Write-NavStep "Stopping NAVIG processes...";    Stop-NavigBackgroundArtifacts
-    Write-NavStep "Removing NAVIG files...";        Remove-NavigFiles -PreserveUserData:$PreserveUserData
-    Write-NavStep "Removing registry entries...";   Remove-NavigRegistryArtifacts
-    Write-NavStep "Removing services and tasks..."; Remove-NavigServiceArtifacts
-    Write-NavStep "Removing PATH entries...";       Remove-NavigPathArtifacts
+    if (-not $ForReinstall) {
+        Write-Host ""
+        Write-NavStep "Uninstalling NAVIG"
+    }
+    Write-NavVerbose "Stopping background processes"
+    Stop-NavigBackgroundArtifacts
+    Write-NavStep "Removing files..."
+    Remove-NavigFiles -PreserveUserData:$PreserveUserData
+    Write-NavVerbose "Removing registry state"
+    Remove-NavigRegistryArtifacts
+    Write-NavVerbose "Removing services and tasks"
+    Remove-NavigServiceArtifacts
+    Write-NavStep "Cleaning PATH..."
+    Remove-NavigPathArtifacts
     $ok = $script:UninstallFailures.Count -eq 0
     if (-not $ForReinstall) {
-        if ($ok) { Write-NavOk "NAVIG uninstalled successfully" }
-        else { Write-NavErr "Uninstall completed with $($script:UninstallFailures.Count) warning(s)" }
+        if ($ok) { Write-NavOk "Done." }
+        else { Write-NavWarn "Completed with $($script:UninstallFailures.Count) warning(s)" }
     }
     return @{ Success = $ok; Failures = $script:UninstallFailures }
 }
@@ -492,9 +558,8 @@ function Invoke-NavigUninstall {
 function Main {
     if ($Help) { Show-Usage; return }
 
-    $osVer = [System.Environment]::OSVersion.Version
+    Initialize-NavTerminal
     Show-Banner
-    Write-NavOk "Windows $($osVer.Major).$($osVer.Minor) detected"
 
     # Normalise action
     $normalizedAction = ""
@@ -503,77 +568,89 @@ function Main {
 
     $installState = Get-NavigInstallState
 
-    # ── Uninstall
+    # ── Explicit uninstall
     if ($normalizedAction -eq "uninstall") {
-        if (-not $installState.IsInstalled) {
-            Write-NavInfo "NAVIG is not installed — removing any leftover artifacts"
+        Write-NavVerbose "NAVIG $(if (-not $installState.IsInstalled) { "not installed — " })removing artifacts"
+        $result = Invoke-NavigUninstall
+        exit $(if ($result.Success) { 0 } else { 1 })
+    }
+
+    # ── Already-installed interactive menu
+    if ($installState.IsInstalled -and $normalizedAction -eq "") {
+        $existingVer = $installState.Metadata.Version
+        $verStr = if ($existingVer) { " $existingVer" } else { "" }
+        Write-Host ""
+        if ($script:NavColor) { Write-Host "  NAVIG$verStr is installed." -ForegroundColor Cyan }
+        else                  { Write-Host "  NAVIG$verStr is installed." }
+        Write-Host ""
+        Write-Host "    1  Repair / Reinstall"
+        Write-Host "    2  Uninstall"
+        Write-Host "    3  Cancel"
+        Write-Host ""
+        $opt = Read-Host "  Select [1-3]"
+        switch ($opt.Trim()) {
+            "1" { $normalizedAction = "reinstall" }
+            "2" { $normalizedAction = "uninstall" }
+            default { Write-Host "  Cancelled."; return }
         }
+    }
+
+    # ── Post-menu uninstall
+    if ($normalizedAction -eq "uninstall") {
         $result = Invoke-NavigUninstall
         exit $(if ($result.Success) { 0 } else { 1 })
     }
 
     # ── Reinstall: clean first
     if ($normalizedAction -eq "reinstall" -and $installState.IsInstalled) {
-        Write-NavInfo "Existing NAVIG detected — performing reinstall"
+        Write-NavVerbose "Reinstall: cleaning existing installation"
         $cleanup = Invoke-NavigUninstall -PreserveUserData -ForReinstall
-        if (-not $cleanup.Success) { Write-NavInfo "Pre-reinstall cleanup had warnings (continuing)" }
+        if (-not $cleanup.Success) { Write-NavVerbose "Pre-reinstall cleanup had warnings (continuing)" }
         $installState = Get-NavigInstallState
     }
 
-    if ($installState.IsInstalled) {
-        $existingVer = $installState.Metadata.Version
-        Write-NavInfo "Existing NAVIG detected$(if ($existingVer) { ": v$existingVer" }) — upgrading"
-    }
+    # ── Environment
+    Write-NavPhase "Environment"
+    $osVer   = [System.Environment]::OSVersion.Version
+    $archStr = if ([System.Environment]::Is64BitOperatingSystem) { "AMD64" } else { "x86" }
+    Write-NavOk "Windows $($osVer.Major).$($osVer.Minor) · $archStr"
 
-    # ── Step 1: Find Python 3.10+
+    # ── Requirements
+    Write-NavPhase "Requirements"
     Write-NavStep "Checking Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+..."
     $pythonExe = Find-Python
     if (-not $pythonExe) {
         Write-NavErr "Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR or higher is required"
-        Write-NavHint "Download:        https://www.python.org/downloads"
+        Write-NavHint "Download:  https://www.python.org/downloads"
         Write-NavHint "Enable 'Add Python to PATH' in the installer."
         exit 1
     }
     $pyVer = (& $pythonExe --version 2>&1).ToString().Trim()
-    Write-NavOk "$pyVer at $pythonExe"
+    Write-NavOk $pyVer
 
-    # ── Step 2: pip install navig
+    # ── Install
+    Write-NavPhase "Install"
     Install-Navig -PythonExe $pythonExe -PinVersion $Version
-
-    # ── Step 3: Resolve Scripts\ and fix PATH
-    Write-NavStep "Updating PATH..."
     $scriptsDir = Get-PythonScriptsDir -PythonExe $pythonExe
     if ($scriptsDir) {
         Add-NavigBinToPath -BinDir $scriptsDir
-        Write-NavOk "Scripts directory on PATH: $scriptsDir"
-    } else {
-        Write-NavInfo "Could not resolve Scripts directory automatically"
+        Write-NavVerbose "Scripts directory: $scriptsDir"
     }
-
-    # ── Step 4: Config directory
     Initialize-NavigConfig
 
-    # ── Step 5: Verify navig is callable
-    Write-NavStep "Verifying navig command..."
+    # ── Verify
+    Write-NavPhase "Verify"
     $verified = Test-NavigCommand -ScriptsDir $scriptsDir
     if (-not $verified) {
-        Write-NavErr "Installation completed but navig is not callable in this terminal"
+        Write-NavErr "navig is not callable in this terminal"
         Write-NavHint "Open a new terminal and run:  navig --version"
         exit 1
     }
 
-    # ── Step 6: Persist install state + success output
+    # ── Done
     $installedVer = Get-NavigVersion
     try { Write-NavigInstallState -InstalledVersion $installedVer } catch {}
-
-    Show-SuccessBanner -InstalledVersion $installedVer
-    Show-GetStarted    -PythonCmd $pythonExe
-
-    Write-Host "  Run " -NoNewline -ForegroundColor White
-    Write-Host "navig init" -NoNewline -ForegroundColor Yellow
-    Write-Host " to complete first-time setup.  Profile: " -NoNewline -ForegroundColor White
-    Write-Host $InstallProfile -ForegroundColor Cyan
-    Write-Host ""
+    Show-Success -InstalledVersion $installedVer
 }
 
 # ── Entry point ───────────────────────────────────────────────────────────

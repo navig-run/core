@@ -17,19 +17,93 @@
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
-# ── Colors (suppressed when stdout is not a terminal) ───────────
-if [ -t 1 ]; then
+# ── Terminal capability detection ────────────────────────────────────
+NAV_COLOR=0
+NAV_UNICODE=0
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+    NAV_COLOR=1
+    case "${LANG:-}${LC_ALL:-}${LC_CTYPE:-}" in
+        *[Uu][Tt][Ff]8*|*[Uu][Tt][Ff]-8*) NAV_UNICODE=1 ;;
+    esac
+fi
+
+# Color variables (always defined; only applied when NAV_COLOR=1)
+if [ "$NAV_COLOR" = "1" ]; then
     BOLD='\033[1m'
     DIM='\033[2m'
-    ACCENT='\033[1;36m'    # Cyan
-    SUCCESS='\033[1;32m'   # Green
-    WARN='\033[1;33m'      # Yellow
-    ERROR='\033[1;31m'     # Red
-    INFO='\033[0;36m'      # Light cyan
-    NC='\033[0m'           # No Color
+    ACCENT='\033[1;36m'
+    SUCCESS='\033[1;32m'
+    WARN='\033[1;33m'
+    ERROR='\033[1;31m'
+    INFO='\033[0;36m'
+    NC='\033[0m'
 else
     BOLD='' DIM='' ACCENT='' SUCCESS='' WARN='' ERROR='' INFO='' NC=''
 fi
+
+# ── Output helpers ──────────────────────────────────────────────────
+nav_sym() {
+    local name="$1"
+    if [ "$NAV_UNICODE" = "1" ]; then
+        case "$name" in
+            ok)   printf '✓' ;;
+            step) printf '›' ;;
+            err)  printf '×' ;;
+            warn) printf '!' ;;
+            *)    printf '?' ;;
+        esac
+    else
+        case "$name" in
+            ok)   printf 'OK' ;;
+            step) printf ' >' ;;
+            err)  printf '!!' ;;
+            warn) printf ' !' ;;
+            *)    printf '?' ;;
+        esac
+    fi
+}
+
+nav_phase() {
+    echo ""
+    if [ "$NAV_COLOR" = "1" ]; then
+        echo -e "${ACCENT}  ${1}${NC}"
+    else
+        echo "  ${1}"
+    fi
+}
+
+nav_ok() {
+    local sym; sym="$(nav_sym ok)"
+    if [ "$NAV_COLOR" = "1" ]; then echo -e "${SUCCESS}  ${sym}${NC}  ${1}"
+    else echo "  ${sym}  ${1}"; fi
+}
+
+nav_step() {
+    local sym; sym="$(nav_sym step)"
+    if [ "$NAV_COLOR" = "1" ]; then echo -e "${ACCENT}  ${sym}${NC}  ${1}"
+    else echo "  ${sym}  ${1}"; fi
+}
+
+nav_err() {
+    local sym; sym="$(nav_sym err)"
+    if [ "$NAV_COLOR" = "1" ]; then echo -e "${ERROR}  ${sym}${NC}  ${1}"
+    else echo "  ${sym}  ${1}"; fi
+}
+
+nav_warn() {
+    local sym; sym="$(nav_sym warn)"
+    if [ "$NAV_COLOR" = "1" ]; then echo -e "${WARN}  ${sym}${NC}  ${1}"
+    else echo "  ${sym}  ${1}"; fi
+}
+
+nav_hint() { echo "      ${1}"; }
+
+nav_verbose() {
+    if [ "${VERBOSE:-0}" = "1" ]; then
+        if [ "$NAV_COLOR" = "1" ]; then echo -e "${DIM}      ${1}${NC}"
+        else echo "      ${1}"; fi
+    fi
+}
 
 # ── Temp cleanup ──────────────────────────────────────────────
 TMPFILES=()
@@ -200,6 +274,7 @@ detect_os() {
     esac
     ARCH="$(uname -m)"
     echo -e "${SUCCESS}✓${NC} OS: ${INFO}${OS}${NC} (${ARCH})"
+    nav_ok "${OS} (${ARCH})"
 }
 
 # ── Privilege helpers ─────────────────────────────────────────
@@ -546,6 +621,7 @@ setup_navig_config() {
     mkdir -p "$config_dir/cache"
 
     echo -e "${SUCCESS}✓${NC} Config directory: ${INFO}${config_dir}${NC}"
+    nav_verbose "Config directory: ${config_dir}"
 }
 
 # ── Check existing installation ───────────────────────────────
@@ -718,26 +794,20 @@ main() {
     fi
 
     # Step 0: Detect OS
+    nav_phase "Environment"
     detect_os
 
     # Handle state marker and prompt
     local marker="${HOME}/.navig/.install_state"
     if [[ -f "$marker" && "$ACTION" == "install" && "$NO_CONFIRM" == "0" ]]; then
-        echo -e "${INFO}NAVIG is already installed.${NC}"
-        echo "1) Repair / Reinstall (preserve data)"
-        echo "2) Uninstall"
-        echo "3) Cancel"
-        # Only prompt when stdin is an interactive terminal
-        if [[ -t 0 ]]; then
-            read -rp "Select an option [1-3]: " opt
-        else
-            echo -e "  ${INFO}Non-interactive session - skipping prompt, continuing install.${NC}"
-            opt=""
-        fi
+        local current_ver=""
+        command -v navig &>/dev/null && current_ver="$(navig --version 2>/dev/null | head -1 || true)"
+        local opt
+        opt="$(show_already_installed "$current_ver")"
         case "$opt" in
             1) ACTION="reinstall" ;;
             2) ACTION="uninstall" ;;
-            *) echo "Cancelled."; exit 0 ;;
+            *) echo "  Cancelled."; exit 0 ;;
         esac
     fi
 
@@ -752,6 +822,7 @@ main() {
     fi
 
     # Step 1: Check existing installation
+    nav_phase "Requirements"
     local is_upgrade=false
     if check_existing_navig; then
         is_upgrade=true
@@ -789,6 +860,7 @@ main() {
     check_autossh
 
     # Step 6: Install NAVIG
+    nav_phase "Install"
     if [[ "$INSTALL_METHOD" == "git" ]]; then
         if ! check_git; then
             install_git
@@ -808,6 +880,7 @@ main() {
     setup_navig_config
 
     # Step 8: Verify installation
+    nav_phase "Verify"
     local installed_version
     verify_install || true
     installed_version="$(resolve_navig_version)"
@@ -816,54 +889,7 @@ main() {
     # Write install state marker
     echo "installed" > "${HOME}/.navig/.install_state"
 
-    # ── Success ───────────────────────────────────────────────
-    echo ""
-    if [[ -n "$installed_version" ]]; then
-        echo -e "${SUCCESS}${BOLD}⚡ NAVIG installed successfully (v${installed_version})!${NC}"
-    else
-        echo -e "${SUCCESS}${BOLD}⚡ NAVIG installed successfully!${NC}"
-    fi
-
-    if [[ "$is_upgrade" == "true" ]]; then
-        local upgrade_msgs=(
-            "Upgraded and operational. Your servers barely noticed."
-            "New version, same mission. Keeping things alive."
-            "Back online with fresh powers."
-            "Updated. The uptime counter continues."
-            "Patched and ready. Your infrastructure thanks you."
-        )
-        echo -e "${DIM}${upgrade_msgs[RANDOM % ${#upgrade_msgs[@]}]}${NC}"
-    else
-        local fresh_msgs=(
-            "Welcome aboard. Let's keep those servers alive."
-            "Installed. Time to manage some infrastructure."
-            "Ready to go. Run 'navig' to get started."
-            "The terminal just got more powerful."
-            "Your devops workflow just leveled up."
-        )
-        echo -e "${DIM}${fresh_msgs[RANDOM % ${#fresh_msgs[@]}]}${NC}"
-    fi
-
-    echo ""
-    echo -e "Get started:"
-    echo -e "  ${INFO}navig${NC}                           Open interactive menu"
-    echo -e "  ${INFO}navig host add${NC}                  Add your first server"
-    echo -e "  ${INFO}navig help${NC}                      Show available commands"
-    echo ""
-    echo -e "Run ${INFO}navig init${NC} to complete first-time setup and configuration."
-    echo -e "  Run with a profile: ${INFO}navig init --profile ${INSTALL_PROFILE}${NC}"
-    echo ""
-
-    if [[ "$INSTALL_METHOD" == "git" ]]; then
-        echo -e "Source: ${INFO}${GIT_DIR}${NC}"
-        echo -e "Update: ${INFO}cd ${GIT_DIR} && git pull && pip install -e .${NC}"
-    else
-        echo -e "Update: ${INFO}pip install --upgrade navig${NC}"
-    fi
-
-    echo -e "Config: ${INFO}~/.navig/${NC}"
-    echo -e "Docs:   ${INFO}https://github.com/navig-run/core${NC}"
-    echo ""
+    show_success "$installed_version"
 }
 
 # ── Entry point ───────────────────────────────────────────────
