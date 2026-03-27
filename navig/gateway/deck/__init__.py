@@ -111,9 +111,14 @@ def register_deck_routes(
             # Serve assets (JS, CSS, etc.)
             app.router.add_static("/deck/assets", static_dir / "assets", show_index=False)
             # Serve other static files
+            _static_resolved = static_dir.resolve()
             for f in static_dir.iterdir():
                 if f.is_file() and f.name != "index.html":
-                    app.router.add_get(f"/deck/{f.name}", lambda req, fp=f: web.FileResponse(fp))
+                    # Guard against symlink traversal outside the declared static directory
+                    if f.resolve().is_relative_to(_static_resolved):
+                        app.router.add_get(
+                            f"/deck/{f.name}", lambda req, fp=f: web.FileResponse(fp)
+                        )
             # SPA catch-all — serve index.html for all /deck/* routes
             app.router.add_get("/deck/{path:.*}", handle_deck_index)
             app.router.add_get("/deck", handle_deck_index)

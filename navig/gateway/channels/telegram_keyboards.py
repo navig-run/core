@@ -163,7 +163,8 @@ def choose_profile(
 
 
 def _short_hash(text: str, length: int = 6) -> str:
-    return hashlib.md5(text.encode()).hexdigest()[:length]
+    # sha256 used here for non-security short-key generation (callback data deduplication)
+    return hashlib.sha256(text.encode()).hexdigest()[:length]
 
 
 @dataclass

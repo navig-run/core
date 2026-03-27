@@ -414,8 +414,8 @@ class ResolvedLLMConfig:
 _CODE_PATTERNS = re.compile(
     r"```|def\s+\w+|class\s+\w+|function\s+\w+|import\s+\w+|"
     r"const\s+\w+|let\s+\w+|var\s+\w+|console\.|print\(|"
-    r"write\s+a?\s*(script|function|class|code|program|module)|"
-    r"fix\s+(this|the|my)\s*(code|bug|error|script|function)|"
+    r"write\s+(?:a\s+)?(script|function|class|code|program|module)|"
+    r"fix\s+(this|the|my)\s+(code|bug|error|script|function)|"
     r"debug|refactor|implement|unittest|pytest|"
     r"(python|javascript|typescript|rust|go|java|c\+\+|ruby|php|bash|shell)\s+(code|script|function)|"
     r"code\s+review|pull\s+request|merge\s+conflict|git\s+diff",
@@ -452,7 +452,7 @@ def detect_mode(user_input: str) -> str:
 
     Returns one of: 'coding', 'small_talk', 'summarize', 'research', 'big_tasks'.
     """
-    text = user_input.strip()
+    text = user_input.strip()[:2000]  # Cap length to prevent ReDoS on pathological input
     if not text:
         return "small_talk"
 

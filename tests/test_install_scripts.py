@@ -58,9 +58,9 @@ def test_install_sh_dry_run(bash_cmd):
 
     # Set NAVIG_INSTALL_SH_NO_RUN in case we just want to source it, but here we run it with --dry-run
     result = run_cmd([bash_cmd, "install.sh", "--dry-run"])
-    assert (
-        result.returncode == 0
-    ), f"install.sh --dry-run failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
+    assert result.returncode == 0, (
+        f"install.sh --dry-run failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
+    )
     assert "Dry run mode" in result.stdout or "Dry run complete" in result.stdout
 
 
@@ -71,12 +71,10 @@ def test_install_ps1_dry_run(pwsh_cmd):
     assert INSTALL_PS1.exists(), "install.ps1 not found"
 
     # Execute with -DryRun
-    result = run_cmd(
-        [pwsh_cmd, "-NoProfile", "-NonInteractive", "-File", "install.ps1", "-DryRun"]
+    result = run_cmd([pwsh_cmd, "-NoProfile", "-NonInteractive", "-File", "install.ps1", "-DryRun"])
+    assert result.returncode == 0, (
+        f"install.ps1 -DryRun failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
     )
-    assert (
-        result.returncode == 0
-    ), f"install.ps1 -DryRun failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
     combined = result.stdout + result.stderr
     assert "Dry run" in combined, f"Expected 'Dry run' in output, got:\n{combined}"
 
@@ -101,12 +99,8 @@ def test_install_ps1_parse(pwsh_cmd):
         exit 1
     }}
     """
-    result = run_cmd(
-        [pwsh_cmd, "-NoProfile", "-NonInteractive", "-Command", inline_cmd]
-    )
-    assert (
-        result.returncode == 0
-    ), f"install.ps1 failed parsing:\n{result.stderr}\n{result.stdout}"
+    result = run_cmd([pwsh_cmd, "-NoProfile", "-NonInteractive", "-Command", inline_cmd])
+    assert result.returncode == 0, f"install.ps1 failed parsing:\n{result.stderr}\n{result.stdout}"
 
 
 # ---------------------------------------------------------------------------
@@ -127,8 +121,7 @@ def test_install_sh_invalid_action_exits_nonzero(bash_cmd):
     )
     combined = result.stdout + result.stderr
     assert any(
-        keyword in combined.lower()
-        for keyword in ("unsupported", "unknown", "invalid", "bogus")
+        keyword in combined.lower() for keyword in ("unsupported", "unknown", "invalid", "bogus")
     ), f"Expected error context in output, got:\n{combined}"
 
 
@@ -155,6 +148,5 @@ def test_install_ps1_invalid_action_exits_nonzero(pwsh_cmd):
     )
     combined = result.stdout + result.stderr
     assert any(
-        keyword in combined.lower()
-        for keyword in ("unsupported", "unknown", "invalid", "bogus")
+        keyword in combined.lower() for keyword in ("unsupported", "unknown", "invalid", "bogus")
     ), f"Expected error context in output, got:\n{combined}"

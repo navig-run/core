@@ -20,10 +20,31 @@ def _run(cmd: list[str], cwd: str | None = None, timeout: int = 120):
     }
 
 
-def _copy_repo(repo_path: str) -> Path:
-    src = Path(repo_path)
-    if not src.exists():
+def _validate_repo_path(repo_path: str) -> Path:
+    """Resolve and validate repo_path to prevent path traversal (CWE-22).
+
+    Only allows paths within the user home directory, system temp directory,
+    or well-known Docker workspace mounts (/repo, /workspace).
+    """
+    resolved = Path(repo_path).resolve()
+    allowed_roots: tuple[Path, ...] = (
+        Path.home().resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+        Path("/repo").resolve(),
+        Path("/workspace").resolve(),
+    )
+    if not any(
+        resolved == root or str(resolved).startswith(str(root) + "/")
+        for root in allowed_roots
+    ):
+        raise HTTPException(status_code=400, detail="repo_path is outside allowed directories")
+    if not resolved.exists():
         raise HTTPException(status_code=400, detail=f"repo_path not found: {repo_path}")
+    return resolved
+
+
+def _copy_repo(repo_path: str) -> Path:
+    src = _validate_repo_path(repo_path)
 
     tmp = Path(tempfile.mkdtemp(prefix="navig-sandbox-"))
     dst = tmp / "repo"
@@ -49,9 +70,10 @@ def repo_scan(payload: dict):
     if not repo_path:
         raise HTTPException(status_code=400, detail="repo_path required")
 
-    if Path(repo_path, ".git").exists():
-        status = _run(["git", "status", "--short"], cwd=repo_path)
-        branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path)
+    repo = _validate_repo_path(repo_path)
+    if (repo / ".git").exists():
+        status = _run(["git", "status", "--short"], cwd=str(repo))
+        branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(repo))
         return {
             "mode": "git",
             "branch": branch.get("stdout", "").strip(),
@@ -59,7 +81,7 @@ def repo_scan(payload: dict):
         }
 
     files = []
-    for p in Path(repo_path).glob("*"):
+    for p in repo.glob("*"):
         files.append(p.name)
     return {"mode": "filesystem", "top_level": files[:200], "note": "No .git found"}
 

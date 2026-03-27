@@ -279,8 +279,7 @@ class TestExtractUrl:
     def test_bare_domain_gets_https_prefix(self):
         result = self._extract("is google.com up")
         assert result is not None
-        assert result.startswith("https://")
-        assert "google.com" in result
+        assert result.startswith("https://google.com")
 
     def test_no_url_returns_none(self):
         assert self._extract("what is the meaning of life") is None
