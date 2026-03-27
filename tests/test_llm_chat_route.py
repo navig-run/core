@@ -115,9 +115,7 @@ async def test_llm_chat_missing_text(app):
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
-        resp = await client.post(
-            "/llm/chat", json={"conversation": [], "scope": "personal"}
-        )
+        resp = await client.post("/llm/chat", json={"conversation": [], "scope": "personal"})
         assert resp.status == 400
         body = await resp.json()
         assert "text" in body["error"].lower()

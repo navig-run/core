@@ -181,6 +181,4 @@ def extract_event_type(source: str, headers: dict, payload: dict) -> str:
         return payload.get("event", {}).get("type", payload.get("type", "unknown"))
 
     # Generic extraction
-    return payload.get(
-        "event_type", payload.get("event", payload.get("type", "unknown"))
-    )
+    return payload.get("event_type", payload.get("event", payload.get("type", "unknown")))

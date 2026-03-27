@@ -68,9 +68,7 @@ class TestFirstRunSkipConditions:
             _nm._check_first_run()
         engine_cls.assert_not_called()
 
-    @pytest.mark.parametrize(
-        "var", ["_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE"]
-    )
+    @pytest.mark.parametrize("var", ["_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE"])
     def test_skips_for_completion_probe(self, monkeypatch, var):
         """Shell-completion env vars → no engine instantiation."""
         monkeypatch.setenv(var, "1")
@@ -79,9 +77,7 @@ class TestFirstRunSkipConditions:
             _nm._check_first_run()
         engine_cls.assert_not_called()
 
-    @pytest.mark.parametrize(
-        "cmd", ["onboard", "quickstart", "service", "update", "version"]
-    )
+    @pytest.mark.parametrize("cmd", ["onboard", "quickstart", "service", "update", "version"])
     def test_skips_for_guarded_subcommands(self, tmp_path, cmd):
         """Commands listed in _SKIP_CMDS must not trigger onboarding."""
         (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)  # no artifact

@@ -35,7 +35,6 @@ import hashlib
 import os
 import platform
 import subprocess
-import sys
 from pathlib import Path
 
 # Public endpoint — can be overridden for self-hosted deployments
@@ -43,7 +42,8 @@ TELEMETRY_URL: str = os.environ.get(
     "NAVIG_TELEMETRY_URL",
     "https://telemetry.navig.run",
 )
-_PINGED_MARKER = Path.home() / ".navig" / ".pinged"
+_NAVIG_DIR: Path = Path.home() / ".navig"
+_PINGED_MARKER: Path = _NAVIG_DIR / ".pinged"
 _OPT_OUT_VAR = "NAVIG_NO_TELEMETRY"
 
 
@@ -80,9 +80,7 @@ def _machine_id() -> str | None:
                 timeout=5,
             )
             # Output has a header line "UUID" then the value on line [1]
-            lines = [
-                ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()
-            ]
+            lines = [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
             if len(lines) >= 2:
                 return lines[1]  # lines[0] == "UUID" (header), lines[1] == actual value
             return None
@@ -155,8 +153,7 @@ def ping_install_if_first_time() -> None:
         return
 
     # Print consent block before firing the ping
-    sys.stdout.write(_CONSENT_LINES)
-    sys.stdout.flush()
+    print(_CONSENT_LINES, end="")
 
     payload = {
         "event": "install",

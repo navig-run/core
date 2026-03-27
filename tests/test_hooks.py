@@ -275,12 +275,8 @@ async def test_hooks_fire_on_async_execute():
     reset_hook_registry()
     reg = get_hook_registry()
     events: list[ToolEvent] = []
-    reg.register(
-        ToolEvent.BEFORE_EXECUTE, lambda ev: events.append(ToolEvent.BEFORE_EXECUTE)
-    )
-    reg.register(
-        ToolEvent.AFTER_EXECUTE, lambda ev: events.append(ToolEvent.AFTER_EXECUTE)
-    )
+    reg.register(ToolEvent.BEFORE_EXECUTE, lambda ev: events.append(ToolEvent.BEFORE_EXECUTE))
+    reg.register(ToolEvent.AFTER_EXECUTE, lambda ev: events.append(ToolEvent.AFTER_EXECUTE))
 
     router = get_tool_router()
     await router.async_execute(ToolCallAction(tool="system_info"))

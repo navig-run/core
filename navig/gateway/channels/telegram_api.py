@@ -44,9 +44,7 @@ class TelegramApiMixin:
                 result = await resp.json()
                 if result.get("ok"):
                     return result.get("result")
-                logger.error(
-                    "Telegram API error in %s: %s", method, result.get("description")
-                )
+                logger.error("Telegram API error in %s: %s", method, result.get("description"))
                 return None
         except Exception as exc:
             logger.error("Telegram API call %s failed: %s", method, exc)
@@ -72,9 +70,7 @@ class TelegramApiMixin:
             for key, value in data.items():
                 form.add_field(key, str(value))
             for field_name, (filename, content, content_type) in files.items():
-                form.add_field(
-                    field_name, content, filename=filename, content_type=content_type
-                )
+                form.add_field(field_name, content, filename=filename, content_type=content_type)
             async with self._session.post(
                 url, data=form, timeout=aiohttp.ClientTimeout(total=60)
             ) as resp:

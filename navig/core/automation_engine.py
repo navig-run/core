@@ -176,9 +176,7 @@ class WorkflowEngine:
                         info(f"Skipping step {i + 1} (condition false): {cond}")
                         continue
                 except Exception as e:
-                    warning(
-                        f"Condition evaluation failed '{cond}': {e}. Skipping step."
-                    )
+                    warning(f"Condition evaluation failed '{cond}': {e}. Skipping step.")
                     continue
 
             # Platform overrides
@@ -240,17 +238,13 @@ class WorkflowEngine:
         if action == "open_app":
             return adapter.open_app(args.get("target", ""))
         elif action == "click":
-            return adapter.click(
-                args.get("x"), args.get("y"), args.get("button", "left")
-            )
+            return adapter.click(args.get("x"), args.get("y"), args.get("button", "left"))
         elif action == "type":
             return adapter.type_text(args.get("text"), args.get("delay", 50))
         elif action == "send":
             return adapter.send_keys(args.get("keys"))
         elif action == "mouse_move":
-            return adapter.mouse_move(
-                args.get("x"), args.get("y"), args.get("speed", 2)
-            )
+            return adapter.mouse_move(args.get("x"), args.get("y"), args.get("speed", 2))
         elif action == "get_focused_window":
             info_obj = adapter.get_focused_window()
             return info_obj.to_dict() if info_obj else None
@@ -307,9 +301,7 @@ class WorkflowEngine:
         elif action == "read_text":
             # This is AHK-specific, not all platforms support it
             if hasattr(adapter, "read_text"):
-                text = adapter.read_text(
-                    args.get("selector"), control_id=args.get("control", "")
-                )
+                text = adapter.read_text(args.get("selector"), control_id=args.get("control", ""))
                 if text:
                     info(f"Read text: {text}")
                 return text

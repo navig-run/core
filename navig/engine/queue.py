@@ -114,9 +114,7 @@ class TaskHandle:
         return False
 
     def __repr__(self) -> str:  # pragma: no cover
-        return (
-            f"TaskHandle(id={self.task_id[:8]}… lane={self.lane!r} state={self._state})"
-        )
+        return f"TaskHandle(id={self.task_id[:8]}… lane={self.lane!r} state={self._state})"
 
 
 # ---------------------------------------------------------------------------
@@ -307,9 +305,7 @@ class CommandQueue:
         Raises asyncio.TimeoutError if not drained within *timeout* seconds.
         """
         targets = (
-            [self._lanes[lane]]
-            if lane and lane in self._lanes
-            else list(self._lanes.values())
+            [self._lanes[lane]] if lane and lane in self._lanes else list(self._lanes.values())
         )
         waits = [ls.queue.join() for ls in targets]
         if not waits:

@@ -118,14 +118,10 @@ def list_mcp_cmd(options: dict[str, Any]):
             else ch.status_text("Disabled", "dim")
         )
         running = (
-            ch.status_text("Yes", "success")
-            if server.is_running()
-            else ch.status_text("No", "dim")
+            ch.status_text("Yes", "success") if server.is_running() else ch.status_text("No", "dim")
         )
 
-        table.add_row(
-            server.name, server.config.get("type", "unknown").upper(), status, running
-        )
+        table.add_row(server.name, server.config.get("type", "unknown").upper(), status, running)
 
     ch.print_table(table)
 

@@ -94,11 +94,7 @@ class NodeRecord:
         resort if all others are worse).
         """
         rtt_norm = min(self.last_rtt_ms, 500.0) / 500.0
-        health_pen = (
-            0.0
-            if self.health == "online"
-            else (0.5 if self.health == "degraded" else 1.0)
-        )
+        health_pen = 0.0 if self.health == "online" else (0.5 if self.health == "degraded" else 1.0)
         score = self.load * 0.5 + rtt_norm * 0.3 + health_pen * 0.2
         return score + (10.0 if self.circuit_open else 0.0)
 
@@ -377,9 +373,7 @@ class NodeRegistry:
                 circuit_open += 1
 
         # Nodes with < 2 healthy alternatives are single-path-dependent
-        healthy_peers = [
-            p for p in peers if p.health == "online" and not p.circuit_open
-        ]
+        healthy_peers = [p for p in peers if p.health == "online" and not p.circuit_open]
         spof_nodes = [p.node_id for p in peers if len(healthy_peers) < 2]
 
         return {

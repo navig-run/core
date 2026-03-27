@@ -195,9 +195,7 @@ class TestMeshDiscoveryIntegration(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("navig.mesh.discovery._create_sender_socket", return_value=mock_sock),
-            patch(
-                "navig.mesh.discovery._create_receiver_socket", return_value=mock_sock
-            ),
+            patch("navig.mesh.discovery._create_receiver_socket", return_value=mock_sock),
         ):
             await new_disc.start()
             # Give tasks time to call sendto

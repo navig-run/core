@@ -91,14 +91,10 @@ class UserProfile:
             language=d.get("language", "en"),
             timezone=d.get("timezone"),
             created_at=(
-                datetime.fromisoformat(d["created_at"])
-                if "created_at" in d
-                else datetime.utcnow()
+                datetime.fromisoformat(d["created_at"]) if "created_at" in d else datetime.utcnow()
             ),
             updated_at=(
-                datetime.fromisoformat(d["updated_at"])
-                if "updated_at" in d
-                else datetime.utcnow()
+                datetime.fromisoformat(d["updated_at"]) if "updated_at" in d else datetime.utcnow()
             ),
             metadata=d.get("metadata", {}),
         )

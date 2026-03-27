@@ -69,12 +69,8 @@ def validate_init_data(
         items.sort()
         data_check_string = "\n".join(items)
 
-        secret_key = hmac.new(
-            b"WebAppData", bot_token.encode(), hashlib.sha256
-        ).digest()
-        computed_hash = hmac.new(
-            secret_key, data_check_string.encode(), hashlib.sha256
-        ).hexdigest()
+        secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+        computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
         if not hmac.compare_digest(computed_hash, received_hash):
             return None
@@ -129,9 +125,7 @@ if web:
         user_id = _get_user_id(request)
 
         if user_id is None:
-            logger.warning(
-                "Deck API unauthorized: no valid user from %s %s", request.method, path
-            )
+            logger.warning("Deck API unauthorized: no valid user from %s %s", request.method, path)
             return web.json_response(
                 {
                     "error": "unauthorized",

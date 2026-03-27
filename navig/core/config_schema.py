@@ -34,9 +34,8 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from pydantic import BaseModel, ConfigDict, Field
+    from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
     from pydantic import ValidationError as PydanticValidationError
-    from pydantic import field_validator, model_validator
 
     PYDANTIC_AVAILABLE = True
 except ImportError:
@@ -191,9 +190,7 @@ if PYDANTIC_AVAILABLE:
             if isinstance(v, (list, tuple)) and len(v) == 2:
                 start, end = v
                 if not (1024 <= start < end <= 65535):
-                    raise ValueError(
-                        f"Port range must be between 1024-65535, got {start}-{end}"
-                    )
+                    raise ValueError(f"Port range must be between 1024-65535, got {start}-{end}")
                 return (start, end)
             raise ValueError("Port range must be a tuple of (start, end)")
 
@@ -415,9 +412,7 @@ if PYDANTIC_AVAILABLE:
                 if not expanded.exists():
                     import logging
 
-                    logging.getLogger("navig.config").debug(
-                        f"SSH key not found: {expanded}"
-                    )
+                    logging.getLogger("navig.config").debug(f"SSH key not found: {expanded}")
             return v
 
         @field_validator("password")
@@ -470,9 +465,7 @@ class ConfigValidationError(Exception):
         super().__init__(f"Invalid {config_type}:\n" + "\n".join(messages))
 
 
-def validate_global_config(
-    raw: dict[str, Any], strict: bool = False
-) -> GlobalConfig | None:
+def validate_global_config(raw: dict[str, Any], strict: bool = False) -> GlobalConfig | None:
     """
     Validate global configuration.
 

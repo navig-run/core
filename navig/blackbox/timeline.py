@@ -68,11 +68,7 @@ def render_timeline(
             event.source,
             Text(
                 summary,
-                style=(
-                    style
-                    if event.event_type in (EventType.ERROR, EventType.CRASH)
-                    else ""
-                ),
+                style=(style if event.event_type in (EventType.ERROR, EventType.CRASH) else ""),
             ),
         )
 

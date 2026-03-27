@@ -251,9 +251,7 @@ class TestBackup:
 class TestMigrateAll:
     """Test batch migration."""
 
-    def test_migrate_all_configs(
-        self, temp_dir, old_format_nginx_config, old_format_apache_config
-    ):
+    def test_migrate_all_configs(self, temp_dir, old_format_nginx_config, old_format_apache_config):
         """Test migrating all configurations."""
         old_dir = temp_dir / "apps"
         new_dir = temp_dir / "hosts"

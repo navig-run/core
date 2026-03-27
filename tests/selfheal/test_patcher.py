@@ -93,12 +93,8 @@ class TestPatchIncludesNavigHealComment:
     def test_multiple_findings_each_annotated(self, tmp_repo: Path) -> None:
         """Every changed hunk must carry at least one NAVIG-HEAL annotation."""
         findings = [
-            _make_finding(
-                severity="critical", line=1, suggested_fix="x = 1  # NAVIG-HEAL: fixed"
-            ),
-            _make_finding(
-                severity="high", line=2, suggested_fix="y = 2  # NAVIG-HEAL: fixed"
-            ),
+            _make_finding(severity="critical", line=1, suggested_fix="x = 1  # NAVIG-HEAL: fixed"),
+            _make_finding(severity="high", line=2, suggested_fix="y = 2  # NAVIG-HEAL: fixed"),
         ]
         source_path = tmp_repo / "navig" / "commands" / "example.py"
         source_path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,9 +132,9 @@ class TestPatchIsValidUnifiedDiff:
 
         patch_str = build_patch([finding], tmp_repo)
         if patch_str.strip():
-            assert patch_str.lstrip().startswith(
-                "---"
-            ), "Unified diff must begin with '--- <filename>' header"
+            assert patch_str.lstrip().startswith("---"), (
+                "Unified diff must begin with '--- <filename>' header"
+            )
 
     def test_patch_contains_plus_plus_header(self, tmp_repo: Path) -> None:
         """A non-empty patch must contain a '+++ ' header line."""
@@ -151,9 +147,7 @@ class TestPatchIsValidUnifiedDiff:
         if patch_str.strip():
             assert "+++" in patch_str
 
-    def test_no_critical_high_findings_returns_empty_string(
-        self, tmp_repo: Path
-    ) -> None:
+    def test_no_critical_high_findings_returns_empty_string(self, tmp_repo: Path) -> None:
         """With no actionable findings the return value must be an empty string."""
         harmless = [
             _make_finding(severity="medium"),

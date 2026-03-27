@@ -102,9 +102,7 @@ def require_feature(feature: str):
                     )
                 except ImportError:
                     print(f"✗ Matrix feature '{feature}' is disabled.")
-                    print(
-                        f"  Enable: navig config set comms.matrix.features.{feature} true"
-                    )
+                    print(f"  Enable: navig config set comms.matrix.features.{feature} true")
                 import typer
 
                 raise typer.Exit(1)
@@ -136,9 +134,7 @@ def require_matrix():
 
                     console = Console(stderr=True)
                     console.print("[red]✗[/] Matrix is not enabled.")
-                    console.print(
-                        "  Enable: [cyan]navig config set comms.matrix.enabled true[/]"
-                    )
+                    console.print("  Enable: [cyan]navig config set comms.matrix.enabled true[/]")
                 except ImportError:
                     print("✗ Matrix is not enabled.")
                     print("  Enable: navig config set comms.matrix.enabled true")

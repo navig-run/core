@@ -209,9 +209,7 @@ class ConfigWatcher:
 
         # Emit system event
         if self.gateway.event_queue:
-            await self.gateway.event_queue.emit(
-                "config_reloaded", {"source": "config_watcher"}
-            )
+            await self.gateway.event_queue.emit("config_reloaded", {"source": "config_watcher"})
 
     async def _handle_workspace_change(self, filename: str) -> None:
         """Handle workspace file change."""

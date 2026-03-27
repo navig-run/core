@@ -208,9 +208,7 @@ def test_ai_config():
 
         api_key = config.global_config.get("openrouter_api_key")
         if api_key:
-            masked_key = (
-                f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
-            )
+            masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
             print(f"[+] OpenRouter API key configured: {masked_key}")
 
             models = config.global_config.get("ai_model_preference", [])
@@ -256,9 +254,7 @@ def test_workspace_files():
     if not all_exist:
         import pytest
 
-        pytest.skip(
-            "Workspace files are missing (not fully initialized E2E environment)"
-        )
+        pytest.skip("Workspace files are missing (not fully initialized E2E environment)")
 
 
 if __name__ == "__main__":

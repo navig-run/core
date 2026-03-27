@@ -59,9 +59,7 @@ class TestProfileCooldown:
 
 
 def _pool(*names):
-    profiles = [
-        AuthProfile(name=n, api_key=f"sk-{n}", provider="openai") for n in names
-    ]
+    profiles = [AuthProfile(name=n, api_key=f"sk-{n}", provider="openai") for n in names]
     return AuthProfilePool(profiles)
 
 

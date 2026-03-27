@@ -16,9 +16,7 @@ def _get_web():
 
         return _web
     except ImportError as exc:
-        raise RuntimeError(
-            "aiohttp is required for gateway routes (pip install aiohttp)"
-        ) from exc
+        raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from exc
 
 
 def envelope_ok(data: Any | None = None) -> dict[str, Any]:
@@ -77,14 +75,10 @@ def require_bearer_auth(
     if not header.startswith("Bearer "):
         if allow_anonymous:
             return None  # Allow through without token if endpoint permits it
-        return json_error_response(
-            "Missing bearer token", status=401, code="unauthorized"
-        )
+        return json_error_response("Missing bearer token", status=401, code="unauthorized")
 
     provided = header[len("Bearer ") :].strip()
     if not provided or not hmac.compare_digest(provided, str(token)):
-        return json_error_response(
-            "Invalid bearer token", status=401, code="unauthorized"
-        )
+        return json_error_response("Invalid bearer token", status=401, code="unauthorized")
 
     return None

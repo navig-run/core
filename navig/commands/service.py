@@ -49,9 +49,7 @@ def service_install(
         help="Install but don't start the daemon yet",
     ),
     bot: bool = typer.Option(True, "--bot/--no-bot", help="Include Telegram bot"),
-    gateway: bool = typer.Option(
-        False, "--gateway/--no-gateway", help="Include gateway server"
-    ),
+    gateway: bool = typer.Option(False, "--gateway/--no-gateway", help="Include gateway server"),
     scheduler: bool = typer.Option(
         False, "--scheduler/--no-scheduler", help="Include cron scheduler"
     ),
@@ -158,8 +156,7 @@ def service_start(
         if sys.platform == "win32":
             subprocess.Popen(
                 cmd,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.CREATE_NO_WINDOW,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -237,8 +234,7 @@ def service_restart():
     if sys.platform == "win32":
         subprocess.Popen(
             cmd,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.CREATE_NO_WINDOW,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -303,9 +299,7 @@ def service_status(
 # =========================================================================
 @service_app.command("uninstall")
 def service_uninstall(
-    method: str | None = typer.Option(
-        None, "--method", "-m", help="nssm, task, or systemd"
-    ),
+    method: str | None = typer.Option(None, "--method", "-m", help="nssm, task, or systemd"),
 ):
     """
     Remove NAVIG daemon service.
@@ -383,9 +377,7 @@ def service_logs(
     else:
         # Read last N lines
         try:
-            all_lines = log_file.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines()
+            all_lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
             for line in all_lines[-lines:]:
                 print(line)
         except Exception as e:
@@ -425,9 +417,7 @@ def service_config(
         # Open in editor
         import subprocess
 
-        editor = (
-            "code" if sys.platform == "win32" else (os.environ.get("EDITOR", "nano"))
-        )
+        editor = "code" if sys.platform == "win32" else (os.environ.get("EDITOR", "nano"))
         try:
             subprocess.run([editor, str(config_path)])
         except Exception:

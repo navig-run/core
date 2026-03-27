@@ -191,9 +191,7 @@ class SetupWizard:
                 provider = "openrouter"
 
         if provider == "skip":
-            print(
-                "  Skipping AI setup. You can configure later in ~/.navig/config.yaml"
-            )
+            print("  Skipping AI setup. You can configure later in ~/.navig/config.yaml")
             return
 
         self.config["ai"] = {"default_provider": provider}
@@ -280,9 +278,7 @@ class SetupWizard:
             from navig.vault.resolver import ENV_VAULT_LABELS
 
             vault_labels = ENV_VAULT_LABELS.get(env_var, [])
-            vault_path = (
-                vault_labels[0] if vault_labels else env_var.lower().replace("_", "/")
-            )
+            vault_path = vault_labels[0] if vault_labels else env_var.lower().replace("_", "/")
             vlt = get_vault_v2()
             vlt.put(vault_path, value.encode())
             print(f"  ✅ Saved to vault (encrypted)")
@@ -382,9 +378,7 @@ class SetupWizard:
         print()
 
         if HAS_QUESTIONARY:
-            bot_token = questionary.password(
-                "Enter bot token:", style=WIZARD_STYLE
-            ).ask()
+            bot_token = questionary.password("Enter bot token:", style=WIZARD_STYLE).ask()
         else:
             bot_token = input("Enter bot token: ").strip()
 
@@ -404,9 +398,7 @@ class SetupWizard:
 
             # Get user IDs
             print()
-            user_ids_str = input(
-                "  Your Telegram user ID (comma-separated for multiple): "
-            ).strip()
+            user_ids_str = input("  Your Telegram user ID (comma-separated for multiple): ").strip()
 
             user_ids = []
             if user_ids_str:
@@ -466,9 +458,7 @@ class SetupWizard:
             port = input("  SSH port [22]: ").strip()
             port = int(port) if port else 22
 
-            hosts.append(
-                {"name": name, "hostname": hostname, "user": user, "port": port}
-            )
+            hosts.append({"name": name, "hostname": hostname, "user": user, "port": port})
 
             print(f"  ✅ Added {name} ({user}@{hostname}:{port})")
 
@@ -558,9 +548,7 @@ class SetupWizard:
     def _confirm(self, message: str, default: bool = True) -> bool:
         """Ask for confirmation."""
         if HAS_QUESTIONARY:
-            return questionary.confirm(
-                message, default=default, style=WIZARD_STYLE
-            ).ask()
+            return questionary.confirm(message, default=default, style=WIZARD_STYLE).ask()
         else:
             suffix = " [Y/n]" if default else " [y/N]"
             response = input(f"{message}{suffix}: ").strip().lower()

@@ -106,18 +106,14 @@ class TestOSDetection:
         """Test Ubuntu detection."""
         with patch.object(server_discovery, "_execute_ssh") as mock_exec:
             mock_exec.return_value = (True, "Ubuntu 24.04.2 LTS", "")
-            result = server_discovery._execute_ssh(
-                "cat /etc/os-release | grep PRETTY_NAME"
-            )
+            result = server_discovery._execute_ssh("cat /etc/os-release | grep PRETTY_NAME")
             assert "Ubuntu" in result[1]
 
     def test_detect_debian(self, server_discovery):
         """Test Debian detection."""
         with patch.object(server_discovery, "_execute_ssh") as mock_exec:
             mock_exec.return_value = (True, "Debian GNU/Linux 12", "")
-            result = server_discovery._execute_ssh(
-                "cat /etc/os-release | grep PRETTY_NAME"
-            )
+            result = server_discovery._execute_ssh("cat /etc/os-release | grep PRETTY_NAME")
             assert "Debian" in result[1]
 
 

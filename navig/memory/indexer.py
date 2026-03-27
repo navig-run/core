@@ -134,9 +134,7 @@ class MemoryIndexer:
 
         chunks_to_embed: list[MemoryChunk] = []
         batch_size = (
-            getattr(self.embedding_provider, "batch_size", 32)
-            if self.embedding_provider
-            else 32
+            getattr(self.embedding_provider, "batch_size", 32) if self.embedding_provider else 32
         )
 
         # Phase 1: Pure parsing and chunking. Decoupled from embedding mathematically heavy steps.
@@ -146,18 +144,14 @@ class MemoryIndexer:
 
                 # Check if file needs reindexing
                 file_hash = self._compute_file_hash(file_path)
-                if not force_reindex and not self.storage.file_needs_reindex(
-                    rel_path, file_hash
-                ):
+                if not force_reindex and not self.storage.file_needs_reindex(rel_path, file_hash):
                     result.files_skipped += 1
                     if progress_callback:
                         progress_callback(rel_path, "skipped")
                     continue
 
                 # Index the file (parsing, sqlite storing chunks)
-                file_result = self._index_file(
-                    file_path, directory, file_hash, embed=False
-                )
+                file_result = self._index_file(file_path, directory, file_hash, embed=False)
 
                 result.files_processed += 1
                 result.chunks_created += file_result["chunks"]
@@ -186,12 +180,9 @@ class MemoryIndexer:
             ]
 
             # Bound threads to 4 to prevent out-of-memory or system starvation
-            with ThreadPoolExecutor(
-                max_workers=min(4, max(1, len(batches)))
-            ) as executor:
+            with ThreadPoolExecutor(max_workers=min(4, max(1, len(batches)))) as executor:
                 futures = [
-                    executor.submit(self._process_embedding_batch, batch)
-                    for batch in batches
+                    executor.submit(self._process_embedding_batch, batch) for batch in batches
                 ]
 
                 for future in as_completed(futures):
@@ -453,9 +444,7 @@ class MemoryIndexer:
                 else:
                     # Start of code block - flush current
                     if current_block_lines:
-                        blocks.append(
-                            (current_start, i - 1, "\n".join(current_block_lines))
-                        )
+                        blocks.append((current_start, i - 1, "\n".join(current_block_lines)))
                     current_block_lines = [line]
                     current_start = i
                     in_code_block = True
@@ -468,9 +457,7 @@ class MemoryIndexer:
             # Headers start new blocks
             if line.startswith("#"):
                 if current_block_lines:
-                    blocks.append(
-                        (current_start, i - 1, "\n".join(current_block_lines))
-                    )
+                    blocks.append((current_start, i - 1, "\n".join(current_block_lines)))
                 current_block_lines = [line]
                 current_start = i
                 continue

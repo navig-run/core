@@ -741,9 +741,7 @@ class AutoHealMixin:
         text = f"❌ *Command failed — {badge}*\n\n{explanation}\n\nChoose an action:"
 
         keyboard = self._build_heal_keyboard(ctx)
-        await self.send_message(
-            ctx.chat_id, text, keyboard=keyboard, parse_mode="Markdown"
-        )
+        await self.send_message(ctx.chat_id, text, keyboard=keyboard, parse_mode="Markdown")
 
     def _build_heal_keyboard(self, ctx: FailureContext) -> list[list[dict[str, str]]]:
         """Build the 3-button heal keyboard using the CallbackStore pattern."""
@@ -857,9 +855,7 @@ class AutoHealMixin:
             if result.should_retry:
                 # Retry the original command automatically
                 await asyncio.sleep(0.5)  # brief pause so user sees the success message
-                await self.send_message(
-                    ctx.chat_id, "🔁 Retrying your command…", parse_mode=None
-                )
+                await self.send_message(ctx.chat_id, "🔁 Retrying your command…", parse_mode=None)
                 if hasattr(self, "on_message") and self.on_message:
                     try:
                         response = await self.on_message(
@@ -869,9 +865,7 @@ class AutoHealMixin:
                             metadata=None,
                         )
                         if response:
-                            await self.send_message(
-                                ctx.chat_id, response, parse_mode=None
-                            )
+                            await self.send_message(ctx.chat_id, response, parse_mode=None)
                     except Exception:
                         logger.exception("autoheal: retry failed")
                         await self.send_message(
@@ -918,9 +912,7 @@ class AutoHealMixin:
             logger.exception("autoheal: _send_progress_message failed")
         return None
 
-    async def _edit_or_send(
-        self, chat_id: int, message_id: int | None, text: str
-    ) -> None:
+    async def _edit_or_send(self, chat_id: int, message_id: int | None, text: str) -> None:
         """Edit an existing message or send a new one as fallback."""
         if message_id:
             try:
@@ -939,9 +931,7 @@ class AutoHealMixin:
     async def _answer_callback(self, cb_id: str, text: str) -> None:
         """Answer a callback_query (shows toast notification)."""
         try:
-            await self._api_call(
-                "answerCallbackQuery", callback_query_id=cb_id, text=text[:200]
-            )
+            await self._api_call("answerCallbackQuery", callback_query_id=cb_id, text=text[:200])
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 

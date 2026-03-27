@@ -187,12 +187,8 @@ class RuntimeStore:
         try:
             self._dir.mkdir(parents=True, exist_ok=True)
             self._write_file("nodes.json", [n.to_dict() for n in self._nodes.values()])
-            self._write_file(
-                "missions.json", [m.to_dict() for m in self._missions.values()]
-            )
-            self._write_file(
-                "receipts.json", [r.to_dict() for r in self._receipts.values()]
-            )
+            self._write_file("missions.json", [m.to_dict() for m in self._missions.values()])
+            self._write_file("receipts.json", [r.to_dict() for r in self._receipts.values()])
         except Exception as e:
             logger.warning(f"[RuntimeStore] Flush failed: {e}")
 
@@ -243,7 +239,9 @@ class RuntimeStore:
 
     def __repr__(self) -> str:
         s = self.stats()
-        return f"<RuntimeStore nodes={s['nodes']} missions={s['missions']} receipts={s['receipts']}>"
+        return (
+            f"<RuntimeStore nodes={s['nodes']} missions={s['missions']} receipts={s['receipts']}>"
+        )
 
 
 # ── Singleton ──────────────────────────────────────────────────────────────────

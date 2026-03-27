@@ -114,9 +114,7 @@ def run_remote_command(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = (
-        options.get("host") or options.get("app") or config_manager.get_active_host()
-    )
+    host_name = options.get("host") or options.get("app") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -150,21 +148,15 @@ def run_remote_command(
 
     if options.get("dry_run"):
         # For multi-line commands, show preview
-        preview = (
-            final_command if len(final_command) < 200 else final_command[:200] + "..."
-        )
+        preview = final_command if len(final_command) < 200 else final_command[:200] + "..."
         ch.dim(f"Would execute: {preview}")
         if "\n" in final_command:
-            ch.dim(
-                f"(Multi-line command with {final_command.count(chr(10)) + 1} lines)"
-            )
+            ch.dim(f"(Multi-line command with {final_command.count(chr(10)) + 1} lines)")
         return
 
     # Check if command requires confirmation based on configured level
     command_type = ch.classify_command(display_command)
-    preview = (
-        display_command if len(display_command) < 80 else display_command[:80] + "..."
-    )
+    preview = display_command if len(display_command) < 80 else display_command[:80] + "..."
 
     if not ch.confirm_operation(
         operation_name=f"Run: {preview}",
@@ -209,9 +201,7 @@ def run_remote_command(
     if options.get("json"):
         # JSON mode: capture output and emit a single JSON object.
         try:
-            result = remote_ops.execute_command(
-                final_command, host_config, capture_output=True
-            )
+            result = remote_ops.execute_command(final_command, host_config, capture_output=True)
         except RuntimeError as e:
             import json as _json
 
@@ -249,9 +239,7 @@ def run_remote_command(
             result = _execute_with_progress(remote_ops, final_command, host_config)
         else:
             # Direct execution for piped/raw output
-            result = remote_ops.execute_command(
-                final_command, host_config, capture_output=False
-            )
+            result = remote_ops.execute_command(final_command, host_config, capture_output=False)
     except RuntimeError as e:
         ch.error(str(e))
         raise typer.Exit(1) from e
@@ -381,9 +369,7 @@ def _resolve_command(
     if interactive:
         return _read_from_editor()
 
-    sources_count = sum(
-        [stdin, file is not None, command is not None and command.strip() != ""]
-    )
+    sources_count = sum([stdin, file is not None, command is not None and command.strip() != ""])
 
     if sources_count == 0:
         ch.error("No command specified.")
@@ -557,8 +543,7 @@ def _try_decode_b64(text: str) -> str | None:
 
     # Quick check: base64 strings are alphanumeric + /+= only
     if not all(
-        c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r"
-        for c in text
+        c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r" for c in text
     ):
         return None
 
@@ -582,9 +567,7 @@ def install_remote_package(package: str, options: dict[str, Any]):
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
-    host_name = (
-        options.get("host") or options.get("app") or config_manager.get_active_host()
-    )
+    host_name = options.get("host") or options.get("app") or config_manager.get_active_host()
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")

@@ -74,11 +74,7 @@ class DeployHistory:
         if not self._path.exists():
             return
         try:
-            lines = [
-                l
-                for l in self._path.read_text(encoding="utf-8").splitlines()
-                if l.strip()
-            ]
+            lines = [l for l in self._path.read_text(encoding="utf-8").splitlines() if l.strip()]
             if len(lines) > self._keep:
                 self._path.write_text(
                     "\n".join(lines[-self._keep :]) + "\n",

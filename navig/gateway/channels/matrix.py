@@ -94,9 +94,7 @@ class MatrixChannelAdapter:
             return []
         return await self._bot.get_rooms()
 
-    async def get_room_messages(
-        self, room_id: str, limit: int = 20
-    ) -> list[dict[str, Any]]:
+    async def get_room_messages(self, room_id: str, limit: int = 20) -> list[dict[str, Any]]:
         """Get recent messages from a room."""
         self._ensure_bot()
         if not self._bot:

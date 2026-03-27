@@ -241,9 +241,7 @@ class MCPClientManager:
                     "id": client_id,
                     "connected": client.is_connected,
                     "tools_count": len(client.tools) if client.is_connected else 0,
-                    "resources_count": (
-                        len(client.resources) if client.is_connected else 0
-                    ),
+                    "resources_count": (len(client.resources) if client.is_connected else 0),
                     "server_info": client._server_info if client.is_connected else None,
                 }
             )
@@ -273,9 +271,7 @@ class MCPClientManager:
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay * (attempt + 1))
 
-        logger.error(
-            f"MCP client {client.id} failed to connect after {max_attempts} attempts"
-        )
+        logger.error(f"MCP client {client.id} failed to connect after {max_attempts} attempts")
 
     async def _schedule_reconnect(self, client: MCPClient, delay: float = 30.0):
         """Schedule reconnection attempt for a client."""

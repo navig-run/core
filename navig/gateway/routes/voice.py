@@ -109,9 +109,7 @@ def _transcribe(gw):
                     "text": result.text or "",
                     "confidence": result.confidence or 1.0,
                     "provider": (
-                        result.provider.value
-                        if result.provider
-                        else stt.config.provider.value
+                        result.provider.value if result.provider else stt.config.provider.value
                     ),
                 }
             )
@@ -159,18 +157,14 @@ def _synthesize(gw):
                 {
                     "audio_b64": b64,
                     "provider": (
-                        result.provider.value
-                        if result.provider
-                        else tts.config.provider.value
+                        result.provider.value if result.provider else tts.config.provider.value
                     ),
                 }
             )
         except Exception as e:
             logger.exception("Synthesize failed")
             _, json_error_response, _ = _route_helpers()
-            return json_error_response(
-                "Synthesis failed", details={"error": str(e)}, status=500
-            )
+            return json_error_response("Synthesis failed", details={"error": str(e)}, status=500)
 
     return h
 
@@ -205,9 +199,7 @@ def _command(gw):
         except Exception as e:
             logger.exception("Command failed")
             _, json_error_response, _ = _route_helpers()
-            return json_error_response(
-                "Command failed", details={"error": str(e)}, status=500
-            )
+            return json_error_response("Command failed", details={"error": str(e)}, status=500)
 
     return h
 

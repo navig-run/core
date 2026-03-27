@@ -150,9 +150,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
                 for section_key, _resolver in SECTIONS:
                     row_id = f"row-{section_key.lower().replace(' ', '-')}"
                     self._row_ids[section_key] = row_id
-                    badge = StatusBadge(
-                        label=section_key, status="missing", detail="Loading…"
-                    )
+                    badge = StatusBadge(label=section_key, status="missing", detail="Loading…")
                     yield StatusRow(badge, id=row_id, key=section_key)
 
             with Horizontal(id="dash-actions"):
@@ -208,9 +206,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
         )
 
         # Re-order DOM rows
-        container: ScrollableContainer = self.query_one(
-            "#status-scroll", ScrollableContainer
-        )
+        container: ScrollableContainer = self.query_one("#status-scroll", ScrollableContainer)
         # Update each row in sorted order by moving DOM nodes
         for badge in sorted_badges:
             row_id = self._row_ids.get(badge.label)
@@ -218,17 +214,13 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
                 try:
                     row_widget: StatusRow = self.query_one(f"#{row_id}", StatusRow)
                     row_widget.update_badge(badge)
-                    container.move_child(
-                        row_widget, after=-1
-                    )  # move to end (sorted pass)
+                    container.move_child(row_widget, after=-1)  # move to end (sorted pass)
                 except Exception:  # noqa: BLE001
                     pass
 
         # Final pass: put errors truly first
         sorted_order = [
-            self._row_ids.get(b.label)
-            for b in sorted_badges
-            if self._row_ids.get(b.label)
+            self._row_ids.get(b.label) for b in sorted_badges if self._row_ids.get(b.label)
         ]
         for idx, row_id in enumerate(sorted_order):
             try:

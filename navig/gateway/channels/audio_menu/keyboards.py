@@ -95,9 +95,7 @@ def screen_c_keyboard(
     pdata = PROVIDERS.get(provider_id, {})
     mdata = pdata.get("models", {}).get(model_id, {})
     has_voices: bool = bool(mdata.get("voices"))
-    is_active: bool = (
-        cfg.provider == provider_id and cfg.model == model_id and cfg.active
-    )
+    is_active: bool = cfg.provider == provider_id and cfg.model == model_id and cfg.active
 
     rows: list[list[dict[str, Any]]] = []
 
@@ -129,9 +127,7 @@ def screen_c_keyboard(
     )
 
     auto_lbl = "🤖 Auto: ON ✅" if cfg.auto else "🤖 Auto: OFF"
-    rows.append(
-        [{"text": auto_lbl, "callback_data": f"audio:auto:{provider_id}:{model_id}"}]
-    )
+    rows.append([{"text": auto_lbl, "callback_data": f"audio:auto:{provider_id}:{model_id}"}])
 
     activate_lbl = "☑️ Active" if is_active else "✅ Set as Active"
     rows.append(
@@ -225,9 +221,7 @@ def screen_d_text(provider_id: str, model_id: str, page: int, cfg: AudioConfig) 
     mdata = PROVIDERS.get(provider_id, {}).get("models", {}).get(model_id, {})
     total = len(mdata.get("voices", []))
     total_pages = max(1, (total + VOICES_PER_PAGE - 1) // VOICES_PER_PAGE)
-    return (
-        f"🎙 *Select Voice*  _(page {page + 1}/{total_pages})_\nCurrent: `{cfg.voice}`"
-    )
+    return f"🎙 *Select Voice*  _(page {page + 1}/{total_pages})_\nCurrent: `{cfg.voice}`"
 
 
 # ── Screen E — Speed Picker ─────────────────────────────────────────

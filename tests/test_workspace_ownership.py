@@ -43,15 +43,11 @@ def test_resolve_personal_workspace_path_uses_user_workspace_for_all_noncanonica
 
     monkeypatch.setattr(own, "USER_WORKSPACE_DIR", user_ws)
 
-    canonical, legacy = own.resolve_personal_workspace_path(
-        project_ws, project_root=project_root
-    )
+    canonical, legacy = own.resolve_personal_workspace_path(project_ws, project_root=project_root)
     assert canonical == user_ws
     assert legacy == project_ws
 
-    canonical, legacy = own.resolve_personal_workspace_path(
-        custom_ws, project_root=project_root
-    )
+    canonical, legacy = own.resolve_personal_workspace_path(custom_ws, project_root=project_root)
     assert canonical == user_ws
     assert legacy == custom_ws
 
@@ -69,17 +65,13 @@ def test_workspace_manager_prefers_user_workspace_and_uses_legacy_fallback(
     # Redirect module defaults to temp locations.
     monkeypatch.setattr(workspace_module, "DEFAULT_NAVIG_DIR", user_ws.parent)
     monkeypatch.setattr(workspace_module, "DEFAULT_WORKSPACE_DIR", user_ws)
-    monkeypatch.setattr(
-        workspace_module, "DEFAULT_CONFIG_FILE", user_ws.parent / "navig.json"
-    )
+    monkeypatch.setattr(workspace_module, "DEFAULT_CONFIG_FILE", user_ws.parent / "navig.json")
     monkeypatch.setattr(own, "USER_WORKSPACE_DIR", user_ws)
 
     (user_ws / "USER.md").write_text("user copy", encoding="utf-8")
     (project_ws / "USER.md").write_text("project copy", encoding="utf-8")
 
-    wm = WorkspaceManager(
-        workspace_path=project_ws, config_path=tmp_path / "missing.json"
-    )
+    wm = WorkspaceManager(workspace_path=project_ws, config_path=tmp_path / "missing.json")
     assert wm.workspace_path == user_ws
     assert wm.legacy_workspace_path == project_ws
     assert wm.get_file_content("USER.md") == "user copy"

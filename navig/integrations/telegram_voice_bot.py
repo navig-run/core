@@ -135,12 +135,12 @@ class TelegramVoiceBot:
     def _build_application(self, token: str):
         """Build the python-telegram-bot Application with all handlers registered."""
         try:
-            from telegram.ext import filters  # noqa: F401
             from telegram.ext import (
                 Application,
                 CallbackQueryHandler,
                 CommandHandler,
                 MessageHandler,
+                filters,  # noqa: F401
             )
         except ImportError as exc:
             raise RuntimeError(
@@ -184,9 +184,7 @@ class TelegramVoiceBot:
                 allowed_updates=["message", "callback_query"],
                 drop_pending_updates=True,
             )
-            logger.info(
-                "🤖 NAVIG Telegram bot is running (polling). Press Ctrl+C to stop."
-            )
+            logger.info("🤖 NAVIG Telegram bot is running (polling). Press Ctrl+C to stop.")
             # Run until cancelled
             await asyncio.Event().wait()
             await self._app.updater.stop()
@@ -282,9 +280,7 @@ class TelegramVoiceBot:
             from navig.voice.pipeline import get_pipeline
 
             p = get_pipeline()
-            lines.append(
-                f"• Voice pipeline: {'🟢 running' if p._running else '🔴 stopped'}"
-            )
+            lines.append(f"• Voice pipeline: {'🟢 running' if p._running else '🔴 stopped'}")
         except Exception:
             lines.append("• Voice pipeline: ⚪ unavailable")
 
@@ -356,9 +352,7 @@ class TelegramVoiceBot:
             )
         except Exception as exc:
             logger.error("Failed to download voice note: %s", exc)
-            await msg.reply_text(
-                "⚠️ Failed to download your voice message. Please try again."
-            )
+            await msg.reply_text("⚠️ Failed to download your voice message. Please try again.")
             return
 
         try:
@@ -409,17 +403,13 @@ class TelegramVoiceBot:
                                 # Skip general LLM since action was handled
                                 goto_tts = True
             except Exception as intent_exc:
-                logger.debug(
-                    "Voice intent parser error (falling back to LLM): %s", intent_exc
-                )
+                logger.debug("Voice intent parser error (falling back to LLM): %s", intent_exc)
 
             # ── 4. Generative LLM fallback ────────────────────────────
             if "goto_tts" not in locals():
                 response_text = await self._call_llm(transcript)
                 if not response_text:
-                    await msg.reply_text(
-                        "⚠️ I couldn't generate a response. Please try again."
-                    )
+                    await msg.reply_text("⚠️ I couldn't generate a response. Please try again.")
                     return
 
             # ── 5. TTS Output ─────────────────────────────────────────
@@ -432,9 +422,7 @@ class TelegramVoiceBot:
                     await context.bot.send_voice(
                         chat_id=msg.chat_id,
                         voice=audio_fh,
-                        caption=(
-                            response_text[:1024] if len(response_text) <= 1024 else None
-                        ),
+                        caption=(response_text[:1024] if len(response_text) <= 1024 else None),
                     )
                 # If response is longer than caption limit, send full text separately
                 if len(response_text) > 1024:
@@ -495,9 +483,7 @@ class TelegramVoiceBot:
         if response:
             await update.message.reply_text(response)
         else:
-            await update.message.reply_text(
-                "⚠️ I couldn't process that request right now."
-            )
+            await update.message.reply_text("⚠️ I couldn't process that request right now.")
 
     # ------------------------------------------------------------------ #
     # Callback query handler (inline keyboards)
@@ -524,9 +510,7 @@ class TelegramVoiceBot:
 
             info = get_action_info(data)
             if info:
-                await query.edit_message_text(
-                    info["description"], parse_mode="Markdown"
-                )
+                await query.edit_message_text(info["description"], parse_mode="Markdown")
                 return
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -537,9 +521,7 @@ class TelegramVoiceBot:
     # STT, LLM, TTS helpers (delegate to pipeline components)
     # ------------------------------------------------------------------ #
 
-    async def _transcribe(
-        self, audio_path: Path, *, is_voice: bool = True
-    ) -> str | None:
+    async def _transcribe(self, audio_path: Path, *, is_voice: bool = True) -> str | None:
         """Transcribe an audio file using vault-keyed STT providers."""
         from navig.voice.stt import STT, STTConfig, STTProvider
 
@@ -550,9 +532,7 @@ class TelegramVoiceBot:
         }
         config = STTConfig(
             provider=_map.get(self.config.stt_provider, STTProvider.DEEPGRAM),
-            fallback_providers=[
-                _map.get(self.config.stt_fallback, STTProvider.WHISPER_API)
-            ],
+            fallback_providers=[_map.get(self.config.stt_fallback, STTProvider.WHISPER_API)],
             language=self.config.language,
         )
         stt = STT(config=config)

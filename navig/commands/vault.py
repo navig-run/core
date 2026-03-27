@@ -67,15 +67,9 @@ def _Table(*args, **kwargs):
 
 @cred_app.command("list")
 def list_credentials(
-    provider: str | None = typer.Option(
-        None, "--provider", "-p", help="Filter by provider"
-    ),
-    profile: str | None = typer.Option(
-        None, "--profile", "-P", help="Filter by profile ID"
-    ),
-    show_disabled: bool = typer.Option(
-        False, "--disabled", "-d", help="Show disabled credentials"
-    ),
+    provider: str | None = typer.Option(None, "--provider", "-p", help="Filter by provider"),
+    profile: str | None = typer.Option(None, "--profile", "-P", help="Filter by profile ID"),
+    show_disabled: bool = typer.Option(False, "--disabled", "-d", help="Show disabled credentials"),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
     """List credentials in the vault."""
@@ -242,11 +236,7 @@ def add_credential(
         _ch.success(f"Credential added successfully! ID: {cred_id}")
 
         # Ask to test immediately (skip in non-interactive / stdin mode)
-        if (
-            interactive
-            and not from_stdin
-            and _ch.confirm_action("Test this credential now?")
-        ):
+        if interactive and not from_stdin and _ch.confirm_action("Test this credential now?"):
             test_credential(cred_id)
 
     except Exception as e:
@@ -257,9 +247,7 @@ def add_credential(
 @cred_app.command("show")
 def show_credential(
     credential_id: str = typer.Argument(..., help="Credential ID"),
-    reveal: bool = typer.Option(
-        False, "--reveal", help="Reveal secret values (DANGER!)"
-    ),
+    reveal: bool = typer.Option(False, "--reveal", help="Reveal secret values (DANGER!)"),
 ):
     """Show details of a credential."""
     vault = _vault_mod.get_vault()
@@ -449,7 +437,9 @@ def show_audit_log(
             else (
                 "red"
                 if log["action"] in ("deleted", "disabled")
-                else "yellow" if log["action"] == "updated" else "white"
+                else "yellow"
+                if log["action"] == "updated"
+                else "white"
             )
         )
 

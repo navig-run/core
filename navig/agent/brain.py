@@ -236,13 +236,9 @@ Guidelines:
     async def _on_stop(self) -> None:
         """Cleanup brain resources."""
         if self.nervous_system:
-            self.nervous_system.unsubscribe(
-                EventType.MESSAGE_RECEIVED, self._on_message
-            )
+            self.nervous_system.unsubscribe(EventType.MESSAGE_RECEIVED, self._on_message)
             self.nervous_system.unsubscribe(EventType.ALERT_TRIGGERED, self._on_alert)
-            self.nervous_system.unsubscribe(
-                EventType.METRIC_COLLECTED, self._on_metrics
-            )
+            self.nervous_system.unsubscribe(EventType.METRIC_COLLECTED, self._on_metrics)
 
     async def _on_health_check(self) -> dict[str, Any]:
         """Health check for brain."""
@@ -285,9 +281,7 @@ Guidelines:
 
         # Analyze the alert
         if alert.get("level") == "critical":
-            await self.analyze_and_respond(
-                f"Critical alert: {alert.get('message')}", context=alert
-            )
+            await self.analyze_and_respond(f"Critical alert: {alert.get('message')}", context=alert)
 
     async def _on_metrics(self, event: Event) -> None:
         """Handle collected metrics."""

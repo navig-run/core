@@ -69,9 +69,7 @@ class TestMatrixFeatures:
             get_all_features,
         )
 
-        with patch(
-            "navig.comms.matrix_features._get_matrix_features_config", return_value={}
-        ):
+        with patch("navig.comms.matrix_features._get_matrix_features_config", return_value={}):
             features = get_all_features()
             assert set(features.keys()) == set(MATRIX_FEATURE_DEFAULTS.keys())
 
@@ -125,9 +123,7 @@ class TestMatrixFeatures:
         def dummy_func():
             return "ok"
 
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             with pytest.raises(Exit):
                 dummy_func()
 
@@ -284,9 +280,7 @@ class TestMatrixChannelAdapter:
     def test_adapter_with_config(self):
         from navig.gateway.channels.matrix import MatrixChannelAdapter
 
-        adapter = MatrixChannelAdapter(
-            config={"homeserver_url": "http://localhost:6167"}
-        )
+        adapter = MatrixChannelAdapter(config={"homeserver_url": "http://localhost:6167"})
         assert adapter._config["homeserver_url"] == "http://localhost:6167"
         assert adapter.is_connected is False
 
@@ -696,9 +690,7 @@ class TestMatrixNotifier:
         mock_bot.send_message = AsyncMock(return_value="$evt1")
         mock_bot.send_notice = AsyncMock(return_value="$evt2")
 
-        notifier = MatrixNotifier(
-            mock_bot, "!default:local", priority_room_id="!priority:local"
-        )
+        notifier = MatrixNotifier(mock_bot, "!default:local", priority_room_id="!priority:local")
 
         n = Notification(
             type="alert",
@@ -883,9 +875,7 @@ class TestMatrixInboxCLI:
 
         runner = CliRunner()
 
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["inbox", "list"])
             assert result.exit_code != 0
 
@@ -896,9 +886,7 @@ class TestMatrixInboxCLI:
 
         runner = CliRunner()
 
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["inbox", "unread"])
             assert result.exit_code != 0
 
@@ -909,9 +897,7 @@ class TestMatrixInboxCLI:
 
         runner = CliRunner()
 
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["file", "upload", "test.txt"])
             assert result.exit_code != 0
 
@@ -922,9 +908,7 @@ class TestMatrixInboxCLI:
 
         runner = CliRunner()
 
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["file", "download", "mxc://x/y"])
             assert result.exit_code != 0
 
@@ -1079,9 +1063,7 @@ class TestE2EEManager:
         bot.accept_verification = AsyncMock(return_value=True)
         bot.confirm_verification = AsyncMock(return_value=True)
         bot.cancel_verification = AsyncMock(return_value=True)
-        bot.get_verification_emoji = AsyncMock(
-            return_value=[("🐶", "Dog"), ("🔑", "Key")]
-        )
+        bot.get_verification_emoji = AsyncMock(return_value=[("🐶", "Dog"), ("🔑", "Key")])
         return bot
 
     def test_manager_creation(self):
@@ -1405,9 +1387,7 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["e2ee", "status"])
             assert result.exit_code != 0
 
@@ -1417,9 +1397,7 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["e2ee", "devices"])
             assert result.exit_code != 0
 
@@ -1429,9 +1407,7 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["e2ee", "trust", "@user:test", "DEVID"])
             assert result.exit_code != 0
 
@@ -1441,12 +1417,8 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
-            result = runner.invoke(
-                matrix_app, ["e2ee", "verify", "@user:test", "DEVID"]
-            )
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "verify", "@user:test", "DEVID"])
             assert result.exit_code != 0
 
     def test_e2ee_keys_requires_feature(self):
@@ -1455,9 +1427,7 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(matrix_app, ["e2ee", "keys"])
             assert result.exit_code != 0
 
@@ -1467,12 +1437,8 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
-            result = runner.invoke(
-                matrix_app, ["e2ee", "blacklist", "@user:test", "DEVID"]
-            )
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+            result = runner.invoke(matrix_app, ["e2ee", "blacklist", "@user:test", "DEVID"])
             assert result.exit_code != 0
 
     def test_e2ee_export_requires_feature(self):
@@ -1481,9 +1447,7 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(
                 matrix_app, ["e2ee", "export-keys", "keys.txt", "--passphrase", "test"]
             )
@@ -1495,9 +1459,7 @@ class TestE2EECLI:
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch(
-            "navig.comms.matrix_features.is_feature_enabled", return_value=False
-        ):
+        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
             result = runner.invoke(
                 matrix_app, ["e2ee", "import-keys", "keys.txt", "--passphrase", "test"]
             )
@@ -1901,13 +1863,9 @@ class TestMatrixStoreBridges:
             store.upsert_room(MatrixRoom(room_id="!r1:t"))
             store.upsert_room(MatrixRoom(room_id="!r2:t"))
             store.add_bridge(
-                MatrixBridge(
-                    room_id="!r1:t", bridge_type="telegram", config={"ch": "1"}
-                )
+                MatrixBridge(room_id="!r1:t", bridge_type="telegram", config={"ch": "1"})
             )
-            store.add_bridge(
-                MatrixBridge(room_id="!r2:t", bridge_type="slack", config={"ch": "2"})
-            )
+            store.add_bridge(MatrixBridge(room_id="!r2:t", bridge_type="slack", config={"ch": "2"}))
             all_b = store.get_bridges()
             assert len(all_b) == 2
             store.close()

@@ -64,11 +64,7 @@ class SessionKey:
     thread_id: str = ""  # chat/thread id within the channel; empty = default
 
     def __str__(self) -> str:
-        return (
-            f"{self.channel_type}:{self.thread_id}"
-            if self.thread_id
-            else self.channel_type
-        )
+        return f"{self.channel_type}:{self.thread_id}" if self.thread_id else self.channel_type
 
 
 # =============================================================================
@@ -266,9 +262,7 @@ def get_session_store() -> SessionStore:
             from navig.config import get_config_manager
 
             raw_path = (
-                get_config_manager()
-                .global_config.get("gateway", {})
-                .get("session_store_path", "")
+                get_config_manager().global_config.get("gateway", {}).get("session_store_path", "")
             )
             if raw_path:
                 persist_path = Path(raw_path).expanduser()

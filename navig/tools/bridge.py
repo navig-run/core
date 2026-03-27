@@ -80,8 +80,9 @@ def adapt_base_tool(base_tool: BaseTool) -> tuple:
     from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 
     name = base_tool.name
-    description = getattr(base_tool, "description", None) or (
-        (base_tool.__class__.__doc__ or "").strip().splitlines()[0]
+    description = (
+        getattr(base_tool, "description", None)
+        or ((base_tool.__class__.__doc__ or "").strip().splitlines()[0])
     )
     domain_raw = getattr(base_tool, "domain", ToolDomain.GENERAL)
     if isinstance(domain_raw, str):
@@ -165,9 +166,7 @@ def bridge_all(
         if register_base_tool(router_registry, tool, overwrite=overwrite):
             count += 1
     if count:
-        logger.info(
-            "bridge_all: bridged %d tools from BaseRegistry → RouterRegistry", count
-        )
+        logger.info("bridge_all: bridged %d tools from BaseRegistry → RouterRegistry", count)
     return count
 
 
@@ -196,9 +195,7 @@ def try_get_handler(
     try:
         handler = router_registry.get_handler(name)
         if handler is None:
-            logger.warning(
-                "bridge: tool '%s' not found in registry — degrading gracefully", name
-            )
+            logger.warning("bridge: tool '%s' not found in registry — degrading gracefully", name)
         return handler
     except Exception:
         logger.warning(

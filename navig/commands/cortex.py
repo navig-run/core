@@ -47,9 +47,7 @@ def run_cortex(
     force_vision: bool = typer.Option(
         False, "--vision", help="Force vision (screenshot) mode every step"
     ),
-    no_vision: bool = typer.Option(
-        False, "--no-vision", help="Never use vision; a11y only"
-    ),
+    no_vision: bool = typer.Option(False, "--no-vision", help="Never use vision; a11y only"),
     template_name: str | None = typer.Option(
         None, "--template", help="Force a specific template (e.g. 'example-app')"
     ),
@@ -91,16 +89,12 @@ def run_cortex(
             if template_name:
                 tmpl = runner.get_template_by_name(template_name)
                 if not tmpl:
-                    ch.warning(
-                        f"Template '{template_name}' not found. Falling back to AI loop."
-                    )
+                    ch.warning(f"Template '{template_name}' not found. Falling back to AI loop.")
             else:
                 tmpl = runner.find_template(start_url)
 
             if tmpl:
-                ch.success(
-                    f"📋 Template match: {tmpl.get('site')} ({tmpl.get('_file')})"
-                )
+                ch.success(f"📋 Template match: {tmpl.get('site')} ({tmpl.get('_file')})")
                 ch.info(f"Navigating to {start_url} ...")
                 await driver.navigate(start_url)
                 await driver.wait_for_stable(timeout_ms=3000)
@@ -272,9 +266,7 @@ async def _execute_action(
         kind = candidate.get("kind", "")
         val = candidate.get("value", "")
 
-        ok, err = await _dispatch(
-            driver, orchestrator, action_type, kind, val, input_val
-        )
+        ok, err = await _dispatch(driver, orchestrator, action_type, kind, val, input_val)
         if ok:
             return True, None
         last_err = err

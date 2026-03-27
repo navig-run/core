@@ -81,9 +81,7 @@ class CryptoEngine:
         if salt_path.exists():
             data = salt_path.read_bytes()
             if len(data) < 16:
-                raise CryptoError(
-                    f"Salt file corrupt (only {len(data)} bytes): {salt_path}"
-                )
+                raise CryptoError(f"Salt file corrupt (only {len(data)} bytes): {salt_path}")
             self._salt = data
         else:
             self._salt = os.urandom(_SALT_LEN)
@@ -167,7 +165,9 @@ class CryptoEngine:
     def kdf_info() -> str:
         """Human-readable description of the active KDF (for navig vault doctor)."""
         if _HAS_ARGON2:
-            return f"Argon2id  m={_A2_MEMORY_COST // 1024}MiB  t={_A2_TIME_COST}  p={_A2_PARALLELISM}"
+            return (
+                f"Argon2id  m={_A2_MEMORY_COST // 1024}MiB  t={_A2_TIME_COST}  p={_A2_PARALLELISM}"
+            )
         return f"PBKDF2-HMAC-SHA256  iter={_PBKDF2_ITERS:,}  (install argon2-cffi for Argon2id)"
 
     # ── AES-256-GCM primitives ────────────────────────────────────────────────
@@ -224,7 +224,5 @@ class CryptoEngine:
         """
         min_len = _NONCE_LEN + 16  # nonce + tag minimum
         if len(blob) < min_len:
-            raise CryptoError(
-                f"Blob too short ({len(blob)} bytes) — minimum is {min_len}"
-            )
+            raise CryptoError(f"Blob too short ({len(blob)} bytes) — minimum is {min_len}")
         return cls.decrypt(key, blob[:_NONCE_LEN], blob[_NONCE_LEN:], aad)

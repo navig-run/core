@@ -67,9 +67,7 @@ class HitLChannel(ABC):
         """Ask a free-text question. Returns user reply or '' on timeout."""
 
     @abstractmethod
-    async def choose(
-        self, question: str, options: list[str], timeout: int = 300
-    ) -> str:
+    async def choose(self, question: str, options: list[str], timeout: int = 300) -> str:
         """Show options and wait for a selection. Returns selected option or ''."""
 
     @abstractmethod
@@ -130,9 +128,7 @@ class MatrixHitLChannel(HitLChannel):
                 return False
             # Upload screenshot if given
             if screenshot_path and Path(screenshot_path).exists():
-                await bot.upload_file(
-                    self._room_id, screenshot_path, body="📸 Task Screenshot"
-                )
+                await bot.upload_file(self._room_id, screenshot_path, body="📸 Task Screenshot")
             await bot.send_message(self._room_id, f"🤖 NAVIG\n\n{message}")
             self.record_success()
             return True
@@ -184,9 +180,7 @@ class MatrixHitLChannel(HitLChannel):
         finally:
             self._pending.pop(corr, None)
 
-    async def choose(
-        self, question: str, options: list[str], timeout: int = 300
-    ) -> str:
+    async def choose(self, question: str, options: list[str], timeout: int = 300) -> str:
         """Present numbered choices. User replies with the number."""
         numbered = "\n".join(f"{i + 1}. {opt}" for i, opt in enumerate(options))
         full_q = f"{question}\n\n{numbered}\n\n_Reply with the number of your choice._"
@@ -231,9 +225,7 @@ class TelegramHitLChannel(HitLChannel):
 
     async def notify(self, message: str, screenshot_path: str | None = None) -> bool:
         try:
-            await self._bridge().send_notification(
-                message, screenshot_path=screenshot_path
-            )
+            await self._bridge().send_notification(message, screenshot_path=screenshot_path)
             self.record_success()
             return True
         except Exception as exc:
@@ -251,9 +243,7 @@ class TelegramHitLChannel(HitLChannel):
             self.record_failure()
             return ""
 
-    async def choose(
-        self, question: str, options: list[str], timeout: int = 300
-    ) -> str:
+    async def choose(self, question: str, options: list[str], timeout: int = 300) -> str:
         try:
             result = await self._bridge().pause_and_ask(question, options)
             self.record_success()
@@ -279,9 +269,7 @@ class SMSHitLChannel(HitLChannel):
 
     name = "sms"
 
-    def __init__(
-        self, account_sid: str, auth_token: str, from_number: str, to_number: str
-    ) -> None:
+    def __init__(self, account_sid: str, auth_token: str, from_number: str, to_number: str) -> None:
         self._sid = account_sid
         self._tok = auth_token
         self._from = from_number
@@ -294,9 +282,7 @@ class SMSHitLChannel(HitLChannel):
         try:
             import httpx
 
-            url = (
-                f"https://api.twilio.com/2010-04-01/Accounts/{self._sid}/Messages.json"
-            )
+            url = f"https://api.twilio.com/2010-04-01/Accounts/{self._sid}/Messages.json"
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     url,
@@ -306,9 +292,7 @@ class SMSHitLChannel(HitLChannel):
                 )
                 ok = resp.status_code in (200, 201)
                 if not ok:
-                    logger.warning(
-                        "Twilio SMS failed: %s %s", resp.status_code, resp.text[:200]
-                    )
+                    logger.warning("Twilio SMS failed: %s %s", resp.status_code, resp.text[:200])
                 return ok
         except Exception as exc:
             logger.warning("SMS send failed: %s", exc)
@@ -333,9 +317,7 @@ class SMSHitLChannel(HitLChannel):
         )
         return ""  # Can't wait for SMS reply without inbound webhook
 
-    async def choose(
-        self, question: str, options: list[str], timeout: int = 300
-    ) -> str:
+    async def choose(self, question: str, options: list[str], timeout: int = 300) -> str:
         numbered = " | ".join(f"{i + 1}:{opt}" for i, opt in enumerate(options))
         await self._send_sms(f"NAVIG: {question} [{numbered}] Reply via dashboard.")
         return ""
@@ -383,14 +365,10 @@ class CommsRouter:
             if reply:
                 self._promote(ch)
                 return reply
-        logger.warning(
-            "CommsRouter: no reply from any channel for ask: %s", question[:60]
-        )
+        logger.warning("CommsRouter: no reply from any channel for ask: %s", question[:60])
         return ""
 
-    async def choose(
-        self, question: str, options: list[str], timeout: int = 300
-    ) -> str:
+    async def choose(self, question: str, options: list[str], timeout: int = 300) -> str:
         """Present choices. Returns selected option or '' if all channels fail."""
         for ch in self._priority_order():
             if not await ch.ping():
@@ -458,10 +436,7 @@ class CommsRouter:
 
     def _priority_order(self) -> list[HitLChannel]:
         """Return channels starting from preferred, skipping disabled ones."""
-        all_ch = (
-            self._channels[self._preferred_idx :]
-            + self._channels[: self._preferred_idx]
-        )
+        all_ch = self._channels[self._preferred_idx :] + self._channels[: self._preferred_idx]
         return [c for c in all_ch if c.available]
 
     def _promote(self, channel: HitLChannel) -> None:
@@ -519,9 +494,7 @@ def get_comms_router() -> CommsRouter:
             try:
                 from navig.memory.knowledge_graph import get_knowledge_graph
 
-                facts = get_knowledge_graph().recall(
-                    "user", predicate="matrix_hitl_room"
-                )
+                facts = get_knowledge_graph().recall("user", predicate="matrix_hitl_room")
                 matrix_room = facts[0].object if facts else ""
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -565,9 +538,7 @@ def get_comms_router() -> CommsRouter:
                     to_number=to_number,
                 )
                 channels.append(ch_sms)
-                logger.info(
-                    "CommsRouter: SMS channel configured (to=%s)", to_number[-4:]
-                )
+                logger.info("CommsRouter: SMS channel configured (to=%s)", to_number[-4:])
     except Exception as exc:
         logger.info("CommsRouter: SMS channel unavailable: %s", exc)
 
@@ -580,9 +551,7 @@ def get_comms_router() -> CommsRouter:
     try:
         from navig.memory.knowledge_graph import get_knowledge_graph
 
-        facts = get_knowledge_graph().recall(
-            "user", predicate="comms_preferred_channel"
-        )
+        facts = get_knowledge_graph().recall("user", predicate="comms_preferred_channel")
         if facts:
             preferred_name = facts[0].object
             for i, ch in enumerate(channels):

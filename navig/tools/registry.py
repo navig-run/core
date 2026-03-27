@@ -37,9 +37,7 @@ class ToolResult:
         """One-line human-readable summary of the result."""
         if self.success:
             if isinstance(self.output, dict):
-                return " · ".join(
-                    f"{k}: {v}" for k, v in self.output.items() if v is not None
-                )
+                return " · ".join(f"{k}: {v}" for k, v in self.output.items() if v is not None)
             return str(self.output)[:200]
         return f"⚠️ {self.error or 'unknown error'}"
 

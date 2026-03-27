@@ -84,9 +84,7 @@ class LinkRecord:
         self.tags: list[str] = json.loads(row.get("tags") or "[]")
         self.vault_cred_id: str | None = row.get("vault_cred_id")
         self.last_visited: datetime | None = (
-            datetime.fromisoformat(row["last_visited"])
-            if row.get("last_visited")
-            else None
+            datetime.fromisoformat(row["last_visited"]) if row.get("last_visited") else None
         )
         self.visit_count: int = int(row.get("visit_count") or 0)
         self.screenshot_path: str | None = row.get("screenshot_path")
@@ -101,9 +99,7 @@ class LinkRecord:
             "notes": self.notes,
             "tags": self.tags,
             "vault_cred_id": self.vault_cred_id,
-            "last_visited": (
-                self.last_visited.isoformat() if self.last_visited else None
-            ),
+            "last_visited": (self.last_visited.isoformat() if self.last_visited else None),
             "visit_count": self.visit_count,
             "created_at": self.created_at.isoformat(),
         }

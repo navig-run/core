@@ -341,9 +341,7 @@ class HybridSearch:
         results = []
         for chunk in chunks:
             if chunk.embedding:
-                similarity = self.embedding_provider.similarity(
-                    query_embedding, chunk.embedding
-                )
+                similarity = self.embedding_provider.similarity(query_embedding, chunk.embedding)
 
                 if similarity >= self.config.min_vector_similarity:
                     results.append((chunk, similarity))

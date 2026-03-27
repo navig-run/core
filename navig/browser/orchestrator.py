@@ -68,9 +68,7 @@ class CortexOrchestrator:
         self._ref_map = ref_map
 
         # Count annotated node lines added by get_a11y_snapshot_with_refs
-        a11y_node_count = sum(
-            1 for ln in a11y_text.splitlines() if ln.lstrip().startswith("- [")
-        )
+        a11y_node_count = sum(1 for ln in a11y_text.splitlines() if ln.lstrip().startswith("- ["))
         use_vision = force_vision or (a11y_node_count < A11Y_MIN_NODES)
         mode = "vision" if use_vision else "a11y"
 
@@ -196,9 +194,7 @@ class CortexOrchestrator:
             {"role": "user", "content": user_text},
         ]
 
-    def _build_vision_messages(
-        self, ctx: dict, a11y_text: str, screenshot_b64: str | None
-    ) -> list:
+    def _build_vision_messages(self, ctx: dict, a11y_text: str, screenshot_b64: str | None) -> list:
         text_part = {
             "type": "text",
             "text": (

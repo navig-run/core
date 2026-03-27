@@ -85,11 +85,7 @@ def tools_list(
         return
 
     if output_format == "markdown":
-        typer.echo(
-            registry.to_markdown_summary(
-                available_only=available_only, domain=domain_enum
-            )
-        )
+        typer.echo(registry.to_markdown_summary(available_only=available_only, domain=domain_enum))
         return
 
     # Default: Rich table
@@ -103,9 +99,7 @@ def tools_list(
         if domain:
             title += f" — domain: {domain}"
 
-        table = Table(
-            title=title, box=rich_box.SIMPLE, show_header=True, header_style="bold cyan"
-        )
+        table = Table(title=title, box=rich_box.SIMPLE, show_header=True, header_style="bold cyan")
         table.add_column("Name", style="cyan", no_wrap=True)
         table.add_column("Domain", style="dim")
         table.add_column("Safety", style="dim")
@@ -133,9 +127,7 @@ def tools_list(
     except ImportError:
         # Rich not available — plain text fallback
         for t in tools:
-            typer.echo(
-                f"{t.name:30} {t.domain.value:10} {t.safety.value:10} {t.description[:60]}"
-            )
+            typer.echo(f"{t.name:30} {t.domain.value:10} {t.safety.value:10} {t.description[:60]}")
 
 
 @tools_app.command("schema")

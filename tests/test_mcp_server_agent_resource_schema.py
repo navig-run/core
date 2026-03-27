@@ -80,9 +80,7 @@ def _mock_agent_resource_payloads(
                         "examples": ["[2026-02-14 00:00:00] failed to start"],
                     }
                 },
-                "recommendations": [
-                    "Investigate recurring component lifecycle failures."
-                ],
+                "recommendations": ["Investigate recurring component lifecycle failures."],
             }
         if tool_name == "navig_agent_service_status":
             return {
@@ -103,9 +101,7 @@ def _read_json_resource(handler: MCPProtocolHandler, uri: str) -> dict:
     return json.loads(handler._read_resource(uri))
 
 
-def test_agent_status_resource_schema_and_alias(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_agent_status_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """status resources should keep a stable payload schema and aliases."""
     monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
@@ -127,9 +123,7 @@ def test_agent_status_resource_schema_and_alias(
     }.issubset(primary.keys())
 
 
-def test_agent_goals_resource_schema_and_alias(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_agent_goals_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """goals resources should keep a stable payload schema and aliases."""
     monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
@@ -180,14 +174,10 @@ def test_agent_remediation_resource_schema_and_alias(
         "error",
         "metadata",
     }.issubset(primary["actions"][0].keys())
-    assert {"timestamp", "level", "message"}.issubset(
-        primary["recent_log_entries"][0].keys()
-    )
+    assert {"timestamp", "level", "message"}.issubset(primary["recent_log_entries"][0].keys())
 
 
-def test_agent_learning_resource_schema_and_alias(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_agent_learning_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """learning resources should keep a stable payload schema and aliases."""
     monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
@@ -208,9 +198,7 @@ def test_agent_learning_resource_schema_and_alias(
     assert isinstance(primary["recommendations"], list)
 
 
-def test_agent_service_resource_schema_and_alias(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_agent_service_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """service resources should keep a stable payload schema and aliases."""
     monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()

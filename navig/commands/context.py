@@ -136,9 +136,7 @@ def show_context(opts: dict[str, Any]) -> None:
         print()
 
     # Show resolution priority
-    ch.dim(
-        "Resolution priority: --host flag > env var > project > user cache > default"
-    )
+    ch.dim("Resolution priority: --host flag > env var > project > user cache > default")
 
 
 def set_context(
@@ -166,9 +164,7 @@ def set_context(
     if app:
         target_host = host or config.get_active_host()
         if not target_host:
-            ch.error(
-                "Cannot set app without a host. Specify --host or set an active host first."
-            )
+            ch.error("Cannot set app without a host. Specify --host or set an active host first.")
             return
         if not config.app_exists(target_host, app):
             ch.error(f"App '{app}' not found on host '{target_host}'")

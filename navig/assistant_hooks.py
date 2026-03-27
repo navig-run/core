@@ -10,9 +10,7 @@ from typing import Any
 from navig import console_helper as ch
 
 
-def pre_execution_check(
-    ctx_obj: dict[str, Any], command: str, args: dict[str, Any]
-) -> bool:
+def pre_execution_check(ctx_obj: dict[str, Any], command: str, args: dict[str, Any]) -> bool:
     """
     Check for pre-execution warnings before running a command.
 
@@ -38,10 +36,8 @@ def pre_execution_check(
 
     # Check for pre-execution warnings
     try:
-        should_proceed, warnings = (
-            assistant.proactive_display.check_pre_execution_warnings(
-                command=command, args=args, context=ctx_obj
-            )
+        should_proceed, warnings = assistant.proactive_display.check_pre_execution_warnings(
+            command=command, args=args, context=ctx_obj
         )
 
         if warnings:

@@ -5,9 +5,7 @@ from __future__ import annotations
 try:
     from aiohttp import web  # noqa: F401
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     json_error_response,
@@ -134,9 +132,7 @@ def _delete_session(gw):
             if store.delete_session(session_key):
                 return json_ok({"session_key": session_key, "deleted": True})
             else:
-                return json_error_response(
-                    "Session not found", status=404, code="not_found"
-                )
+                return json_error_response("Session not found", status=404, code="not_found")
         except Exception as e:
             return json_error_response(
                 "Failed to delete session",
@@ -256,9 +252,7 @@ def _knowledge_add(gw):
             if data.get("ttl_hours"):
                 from datetime import datetime, timedelta
 
-                entry.expires_at = datetime.utcnow() + timedelta(
-                    hours=data["ttl_hours"]
-                )
+                entry.expires_at = datetime.utcnow() + timedelta(hours=data["ttl_hours"])
             stored = kb.upsert(entry, compute_embedding=False)
             return json_ok({"entry": {"id": stored.id, "key": stored.key}})
         except KeyError as e:

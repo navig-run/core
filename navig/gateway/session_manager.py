@@ -303,9 +303,7 @@ class SessionManager:
 
         # Keep recent messages
         keep_count = self.compaction_keep_messages
-        recent = (
-            session.messages[-keep_count:] if len(session.messages) > keep_count else []
-        )
+        recent = session.messages[-keep_count:] if len(session.messages) > keep_count else []
         old = (
             session.messages[:-keep_count]
             if len(session.messages) > keep_count

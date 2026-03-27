@@ -89,9 +89,7 @@ def update_packages(options: dict) -> None:
 
             if upgradable_count > 0:
                 if not json_output:
-                    console.print(
-                        f"[yellow]Found {upgradable_count} upgradable packages[/yellow]"
-                    )
+                    console.print(f"[yellow]Found {upgradable_count} upgradable packages[/yellow]")
 
                 # Get list of upgradable packages
                 list_cmd = "apt list --upgradable 2>/dev/null | grep -v 'Listing'"
@@ -119,9 +117,7 @@ def update_packages(options: dict) -> None:
                     console=console,
                 ) as progress:
                     task = progress.add_task("Upgrading packages...", total=None)
-                    upgrade_result = remote_ops.execute_command(
-                        upgrade_cmd, server_config
-                    )
+                    upgrade_result = remote_ops.execute_command(upgrade_cmd, server_config)
                     progress.update(task, completed=True)
 
                 success = upgrade_result.returncode == 0
@@ -233,9 +229,7 @@ def clean_packages(options: dict) -> None:
         autoremove_cmd = "sudo apt-get autoremove -y"
         if dry_run:
             if not json_output:
-                console.print(
-                    f"[yellow][DRY RUN] Would execute: {autoremove_cmd}[/yellow]"
-                )
+                console.print(f"[yellow][DRY RUN] Would execute: {autoremove_cmd}[/yellow]")
             result_data["tasks"].append({"task": "apt-autoremove", "dry_run": True})
         else:
             result = remote_ops.execute_command(autoremove_cmd, server_config)
@@ -490,7 +484,9 @@ def check_filesystem(options: dict) -> None:
         if not json_output:
             console.print("🔍 Finding large files (>100MB) in /var/log and /tmp...")
 
-        large_files_cmd = "find /var/log /tmp -type f -size +100M -exec ls -lh {} \\; 2>/dev/null || true"
+        large_files_cmd = (
+            "find /var/log /tmp -type f -size +100M -exec ls -lh {} \\; 2>/dev/null || true"
+        )
         result = remote_ops.execute_command(large_files_cmd, server_config)
 
         large_files_output = result.stdout.strip()
@@ -500,9 +496,7 @@ def check_filesystem(options: dict) -> None:
             result_data["large_files"] = lines
 
             if not json_output:
-                console.print(
-                    f"\n[yellow]⚠️  Found {len(lines)} large files:[/yellow]\n"
-                )
+                console.print(f"\n[yellow]⚠️  Found {len(lines)} large files:[/yellow]\n")
                 for line in lines[:10]:  # Show first 10
                     if line.strip():
                         console.print(f"  {line}")
@@ -541,9 +535,7 @@ def system_maintenance(options: dict) -> None:
     json_output = options.get("json", False)
 
     if not json_output:
-        console.print(
-            "\n[bold cyan]═══ Comprehensive System Maintenance ═══[/bold cyan]\n"
-        )
+        console.print("\n[bold cyan]═══ Comprehensive System Maintenance ═══[/bold cyan]\n")
         console.print("[yellow]This will perform all maintenance tasks:[/yellow]")
         console.print("  1. Update and upgrade packages")
         console.print("  2. Clean package cache")
@@ -583,9 +575,7 @@ def system_maintenance(options: dict) -> None:
         elapsed_time = time.time() - start_time
 
         if not json_output:
-            console.print(
-                "\n[bold green]═══ System Maintenance Complete ═══[/bold green]"
-            )
+            console.print("\n[bold green]═══ System Maintenance Complete ═══[/bold green]")
             console.print(f"Time elapsed: {elapsed_time:.1f} seconds")
 
     except Exception as e:
@@ -619,9 +609,7 @@ def system_info(options: dict) -> None:
     json_output = options.get("json", False)
 
     if not json_output:
-        console.print(
-            f"\n[bold cyan]═══ System Information: {active_server} ═══[/bold cyan]\n"
-        )
+        console.print(f"\n[bold cyan]═══ System Information: {active_server} ═══[/bold cyan]\n")
 
     try:
         # Gather system info via SSH
@@ -669,9 +657,7 @@ def system_info(options: dict) -> None:
             table.add_row("", "")
             table.add_row("Disk (root)", info_data.get("disk_root", "N/A"))
 
-            console.print(
-                Panel(table, title=f"[bold]{active_server}[/bold]", border_style="cyan")
-            )
+            console.print(Panel(table, title=f"[bold]{active_server}[/bold]", border_style="cyan"))
 
     except Exception as e:
         if not json_output:

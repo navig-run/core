@@ -26,9 +26,7 @@ try:
     _YAML_OK = True
 except ImportError:
     _YAML_OK = False
-    logger.warning(
-        "PyYAML not installed; template runner disabled. Run: pip install pyyaml"
-    )
+    logger.warning("PyYAML not installed; template runner disabled. Run: pip install pyyaml")
 
 
 class TemplateRunner:
@@ -84,10 +82,7 @@ class TemplateRunner:
     def get_template_by_name(self, name: str) -> dict | None:
         """Retrieve a template by site name or file name."""
         for tmpl in self._templates:
-            if (
-                tmpl.get("site") == name
-                or tmpl.get("_file", "").replace(".yaml", "") == name
-            ):
+            if tmpl.get("site") == name or tmpl.get("_file", "").replace(".yaml", "") == name:
                 return tmpl
         return None
 
@@ -175,9 +170,7 @@ class TemplateRunner:
 
         return {"ok": False, "action": action, "error": last_err}
 
-    async def _dispatch(
-        self, action: str, kind: str, val: str, input_val: str
-    ) -> tuple:
+    async def _dispatch(self, action: str, kind: str, val: str, input_val: str) -> tuple:
         """Send a single action to the driver. Returns (ok, error_str)."""
         try:
             page = self.driver._page
@@ -193,9 +186,7 @@ class TemplateRunner:
             if kind == "role":
                 m = re.match(r"(\w+)\[name\*?=['\"]?([^'\"]+)['\"]?\]", val)
                 if m:
-                    locator = page.get_by_role(
-                        m.group(1), name=re.compile(m.group(2), re.I)
-                    )
+                    locator = page.get_by_role(m.group(1), name=re.compile(m.group(2), re.I))
                 else:
                     locator = page.get_by_role(val)
 

@@ -172,11 +172,7 @@ class VaultStorage:
                     1 if credential.enabled else 0,
                     credential.created_at.isoformat(),
                     credential.updated_at.isoformat(),
-                    (
-                        credential.last_used_at.isoformat()
-                        if credential.last_used_at
-                        else None
-                    ),
+                    (credential.last_used_at.isoformat() if credential.last_used_at else None),
                 ),
             )
             conn.commit()
@@ -278,9 +274,7 @@ class VaultStorage:
             True if deleted, False if not found
         """
         with self._connection() as conn:
-            cursor = conn.execute(
-                "DELETE FROM credentials WHERE id = ?", (credential_id,)
-            )
+            cursor = conn.execute("DELETE FROM credentials WHERE id = ?", (credential_id,))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -321,9 +315,7 @@ class VaultStorage:
             )
             conn.commit()
 
-    def log_access(
-        self, credential_id: str, action: str, accessed_by: str = "unknown"
-    ) -> None:
+    def log_access(self, credential_id: str, action: str, accessed_by: str = "unknown") -> None:
         """
         Log credential access for auditing.
 
@@ -350,9 +342,7 @@ class VaultStorage:
             )
             conn.commit()
 
-    def get_audit_log(
-        self, credential_id: str | None = None, limit: int = 100
-    ) -> list[dict]:
+    def get_audit_log(self, credential_id: str | None = None, limit: int = 100) -> list[dict]:
         """
         Get audit log entries.
 
@@ -428,9 +418,7 @@ class VaultStorage:
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
             last_used_at=(
-                datetime.fromisoformat(row["last_used_at"])
-                if row["last_used_at"]
-                else None
+                datetime.fromisoformat(row["last_used_at"]) if row["last_used_at"] else None
             ),
         )
 
@@ -449,9 +437,7 @@ class VaultStorage:
             enabled=bool(row["enabled"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             last_used_at=(
-                datetime.fromisoformat(row["last_used_at"])
-                if row["last_used_at"]
-                else None
+                datetime.fromisoformat(row["last_used_at"]) if row["last_used_at"] else None
             ),
             metadata=json.loads(row["metadata_json"]),
         )

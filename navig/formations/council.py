@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
-from concurrent.futures import as_completed
 from typing import Any
 
 from navig.debug_logger import get_debug_logger
@@ -54,7 +53,9 @@ def _call_agent(
     scope = _agent_scope_hint(agent)
     differentiate = ""
     if other_roles:
-        differentiate = f" Other teammates will cover {other_roles} — so focus on YOUR angle, don't overlap."
+        differentiate = (
+            f" Other teammates will cover {other_roles} — so focus on YOUR angle, don't overlap."
+        )
 
     if round_num == 1 and not context:
         # Round 1 parallel: every agent answers independently from their own perspective
@@ -214,9 +215,7 @@ def run_council(
                         results_by_id[agent_id] = result
                     except (FuturesTimeout, TimeoutError):
                         agent = formation.loaded_agents.get(agent_id)
-                        logger.warning(
-                            f"[COUNCIL] Agent '{agent_id}' timed out ({timeout}s)"
-                        )
+                        logger.warning(f"[COUNCIL] Agent '{agent_id}' timed out ({timeout}s)")
                         results_by_id[agent_id] = {
                             "agent": agent_id,
                             "name": agent.name if agent else agent_id,
@@ -261,14 +260,9 @@ def run_council(
 
     # Calculate overall confidence
     all_confidences = [
-        r["confidence"]
-        for rnd in all_rounds
-        for r in rnd["responses"]
-        if r["confidence"] > 0
+        r["confidence"] for rnd in all_rounds for r in rnd["responses"] if r["confidence"] > 0
     ]
-    overall_confidence = (
-        sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
-    )
+    overall_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
 
     total_duration_ms = int((time.time() - start_total) * 1000)
 

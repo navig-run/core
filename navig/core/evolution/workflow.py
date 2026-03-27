@@ -67,9 +67,7 @@ Constraints:
 """
         self._workflows_dir = Path(__file__).parent.parent.parent.parent / "workflows"
 
-    def _generate(
-        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
-    ) -> Any:
+    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
 
         prompt = f"Goal: {goal}\n\n"
 
@@ -161,12 +159,11 @@ steps:
                             return f"Step {i + 1}: Unknown platform '{plat}'"
 
                         if not isinstance(override, dict):
-                            return f"Step {i + 1}: Platform override for '{plat}' must be a dictionary"
+                            return (
+                                f"Step {i + 1}: Platform override for '{plat}' must be a dictionary"
+                            )
 
-                        if (
-                            "action" in override
-                            and override["action"] not in known_actions
-                        ):
+                        if "action" in override and override["action"] not in known_actions:
                             return f"Step {i + 1} ({plat}): Unknown action '{override['action']}'"
 
             return None  # Valid

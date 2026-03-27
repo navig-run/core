@@ -103,15 +103,11 @@ class TestExtractJson:
         assert out["input"] == "hello"
 
     def test_json_with_preamble(self):
-        out = self._parse(
-            'Sure! Here is my action:\n{"action":"done","reason":"complete"}'
-        )
+        out = self._parse('Sure! Here is my action:\n{"action":"done","reason":"complete"}')
         assert out["action"] == "done"
 
     def test_first_item_from_array(self):
-        out = self._parse(
-            '[{"action":"click","selector":{"kind":"css","value":"button"}}]'
-        )
+        out = self._parse('[{"action":"click","selector":{"kind":"css","value":"button"}}]')
         assert out["action"] == "click"
 
     def test_empty_string_returns_none(self):
@@ -217,9 +213,7 @@ class TestA11yRefParsing:
         from navig.browser.controller import BrowserConfig, BrowserController
 
         ctrl = BrowserController(BrowserConfig())
-        ctrl.get_a11y_tree = AsyncMock(
-            return_value='- button "Submit"\n- textbox "Email"\n'
-        )
+        ctrl.get_a11y_tree = AsyncMock(return_value='- button "Submit"\n- textbox "Email"\n')
 
         text, _ = await ctrl.get_a11y_snapshot_with_refs()
         assert "[0]" in text
@@ -231,9 +225,7 @@ class TestA11yRefParsing:
 
         ctrl = BrowserController(BrowserConfig())
         ctrl.get_a11y_tree = AsyncMock(
-            return_value=(
-                '- link "home"\n  - /url: https://example.com/\n- button "Go"\n'
-            )
+            return_value=('- link "home"\n  - /url: https://example.com/\n- button "Go"\n')
         )
 
         text, ref_map = await ctrl.get_a11y_snapshot_with_refs()
@@ -248,15 +240,9 @@ class TestA11yRefParsing:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 EXAMPLE_APP_YAML = (
-    Path(__file__).parent.parent
-    / "navig"
-    / "browser"
-    / "templates"
-    / "example-app.yaml"
+    Path(__file__).parent.parent / "navig" / "browser" / "templates" / "example-app.yaml"
 )
-GENERIC_YAML = (
-    Path(__file__).parent.parent / "navig" / "browser" / "templates" / "generic.yaml"
-)
+GENERIC_YAML = Path(__file__).parent.parent / "navig" / "browser" / "templates" / "generic.yaml"
 
 
 class TestTemplateRunner:
@@ -266,9 +252,7 @@ class TestTemplateRunner:
         mock_driver = MagicMock()
         mock_driver._page = MagicMock()
         mock_driver.wait_for_stable = AsyncMock()
-        mock_driver.navigate = AsyncMock(
-            return_value={"url": "https://example.org/account/login"}
-        )
+        mock_driver.navigate = AsyncMock(return_value={"url": "https://example.org/account/login"})
         mock_driver.safe_click = AsyncMock(return_value={"ok": True})
         mock_driver.fill_fast = AsyncMock(return_value={"ok": True})
         mock_driver.press = AsyncMock(return_value=True)

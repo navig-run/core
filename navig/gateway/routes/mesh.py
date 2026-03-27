@@ -20,9 +20,7 @@ if TYPE_CHECKING:
 try:
     from aiohttp import web
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
@@ -101,9 +99,7 @@ async def _bootstrap_peer(url: str, gw: NavigGateway) -> dict | None:
 
         async with aiohttp.ClientSession() as session:
             # Quick health check
-            async with session.get(
-                f"{url}/health", timeout=aiohttp.ClientTimeout(total=5)
-            ) as resp:
+            async with session.get(f"{url}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
                 if resp.status != 200:
                     return None
 

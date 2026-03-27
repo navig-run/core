@@ -57,9 +57,7 @@ def tmp_formations(tmp_path):
             "council_weight": 1.0,
             "tools": ["ai"],
         }
-        (agents_dir / f"{agent_id}.agent.json").write_text(
-            json.dumps(agent), encoding="utf-8"
-        )
+        (agents_dir / f"{agent_id}.agent.json").write_text(json.dumps(agent), encoding="utf-8")
 
     return tmp_path
 
@@ -399,9 +397,9 @@ class TestBuiltinFormations:
         assert fm is not None, f"Failed to load {formation_id}"
         assert fm.id == formation_id
         assert len(fm.agents) == expected_agents
-        assert (
-            len(fm.loaded_agents) == expected_agents
-        ), f"Only loaded {len(fm.loaded_agents)}/{expected_agents} agents"
+        assert len(fm.loaded_agents) == expected_agents, (
+            f"Only loaded {len(fm.loaded_agents)}/{expected_agents} agents"
+        )
 
     @pytest.mark.parametrize(
         "formation_id",
@@ -418,9 +416,9 @@ class TestBuiltinFormations:
         assert fm is not None
 
         for agent_id, agent in fm.loaded_agents.items():
-            assert (
-                len(agent.system_prompt) >= 100
-            ), f"Agent {agent_id} system_prompt too short ({len(agent.system_prompt)} chars)"
+            assert len(agent.system_prompt) >= 100, (
+                f"Agent {agent_id} system_prompt too short ({len(agent.system_prompt)} chars)"
+            )
 
     def test_builtin_discovery(self):
         from navig.formations.loader import (
@@ -484,9 +482,7 @@ class TestCouncil:
         mock_response = "This is a test response.\nCONFIDENCE: 0.85"
 
         # Patch at the import location inside _call_agent
-        with patch(
-            "navig.ai.ask_ai_with_context", return_value=mock_response, create=True
-        ):
+        with patch("navig.ai.ask_ai_with_context", return_value=mock_response, create=True):
             result = run_council(fm, "test question", rounds=1, timeout_per_agent=30)
 
         assert "question" in result

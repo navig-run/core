@@ -192,9 +192,7 @@ def run_llm(
         selection = ModelSelection(
             provider_name=resolved.provider,
             model_name=resolved.model,
-            temperature=(
-                temperature if temperature is not None else resolved.temperature
-            ),
+            temperature=(temperature if temperature is not None else resolved.temperature),
             max_tokens=max_tokens if max_tokens is not None else resolved.max_tokens,
             base_url=resolved.base_url,
             api_key_env=resolved.api_key_env,
@@ -336,9 +334,7 @@ def _call_with_fallback(
             )
         except Exception as e:
             last_error = e
-            logger.warning(
-                "Fallback candidate %d (%s:%s) failed: %s", i, provider, model, e
-            )
+            logger.warning("Fallback candidate %d (%s:%s) failed: %s", i, provider, model, e)
 
     return LLMResult(
         content="",
@@ -429,9 +425,7 @@ def _load_tools_safety_policy() -> dict[str, Any]:
             return {}
         return {
             "blocked_tools": list(getattr(tools_cfg, "blocked_tools", [])),
-            "require_confirmation": list(
-                getattr(tools_cfg, "require_confirmation", [])
-            ),
+            "require_confirmation": list(getattr(tools_cfg, "require_confirmation", [])),
             "max_calls_per_turn": getattr(tools_cfg, "max_calls_per_turn", 10),
             "safety_mode": getattr(tools_cfg, "safety_mode", "standard"),
         }
@@ -612,9 +606,7 @@ def _call_provider(
             base_url,
         )
     except Exception as e:
-        logger.warning(
-            "Provider system call failed (%s), trying httpx direct: %s", provider, e
-        )
+        logger.warning("Provider system call failed (%s), trying httpx direct: %s", provider, e)
         return _call_direct_openai_compat(
             provider,
             model,
@@ -651,9 +643,7 @@ def _call_via_providers_system(
         from navig.llm_router import PROVIDER_BASE_URLS
         from navig.providers.types import ModelApi, ProviderConfig
 
-        url = base_url or PROVIDER_BASE_URLS.get(
-            provider, "https://openrouter.ai/api/v1"
-        )
+        url = base_url or PROVIDER_BASE_URLS.get(provider, "https://openrouter.ai/api/v1")
         provider_cfg = ProviderConfig(
             name=provider,
             base_url=url,

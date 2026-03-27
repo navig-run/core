@@ -34,9 +34,7 @@ class SkillSecurityError(ValueError):
     """Raised when a SKILL.md install spec fails security validation."""
 
     def __init__(self, field_name: str, value: str, reason: str) -> None:
-        super().__init__(
-            f"Skill security violation in '{field_name}': {reason} (value={value!r})"
-        )
+        super().__init__(f"Skill security violation in '{field_name}': {reason} (value={value!r})")
         self.field_name = field_name
         self.value = value
         self.reason = reason
@@ -174,9 +172,7 @@ def _load_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 def _extract_examples(body: str) -> list[str]:
     """Pull fenced ```bash ... ``` blocks (or bare ``` ... ```) from an Examples section."""
     # Find the Examples section
-    section_match = re.search(
-        r"^#+ Examples?\s*\n(.*?)(?=^#+ |\Z)", body, re.MULTILINE | re.DOTALL
-    )
+    section_match = re.search(r"^#+ Examples?\s*\n(.*?)(?=^#+ |\Z)", body, re.MULTILINE | re.DOTALL)
     if not section_match:
         return []
 
@@ -447,9 +443,7 @@ def load_all_skills(dirs: list[Path] | None = None) -> list[Skill]:
             seen_ids.add(skill.id)
             skills.append(skill)
 
-    logger.debug(
-        "skills.loader: loaded {} skills from {} dir(s)", len(skills), len(dirs)
-    )
+    logger.debug("skills.loader: loaded {} skills from {} dir(s)", len(skills), len(dirs))
     return skills
 
 

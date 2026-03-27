@@ -449,9 +449,7 @@ class UnifiedRouter:
                     from navig.vault import get_vault
 
                     vault = get_vault()
-                    secret = vault.get_secret(
-                        "openrouter", "api_key", caller="unified_router"
-                    )
+                    secret = vault.get_secret("openrouter", "api_key", caller="unified_router")
                     if secret:
                         api_key = secret.reveal().strip()
                 except Exception:  # noqa: BLE001
@@ -513,9 +511,7 @@ class UnifiedRouter:
             model = prefs.get(provider_name, "")
 
         if not model:
-            raise RuntimeError(
-                f"No model configured for {provider_name}/{decision.mode}"
-            )
+            raise RuntimeError(f"No model configured for {provider_name}/{decision.mode}")
 
         # Guard: log a warning if Opus is about to be used — it must never auto-route.
         if "claude-opus" in model.lower():

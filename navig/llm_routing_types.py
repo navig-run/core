@@ -191,9 +191,7 @@ class LLMProviderAdapter:
     def __init__(self, provider):
         self._provider = provider
 
-    async def complete(
-        self, messages, model, temperature=0.7, max_tokens=4096, **kwargs
-    ):
+    async def complete(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
         resp = await self._provider.chat(
             model=model,
             messages=messages,
@@ -231,9 +229,7 @@ class ProviderClientAdapter:
     def __init__(self, client):
         self._client = client
 
-    async def complete(
-        self, messages, model, temperature=0.7, max_tokens=4096, **kwargs
-    ):
+    async def complete(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
         from navig.providers.clients import CompletionRequest, Message
 
         msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
@@ -310,14 +306,10 @@ class UnifiedProviderFactory:
             api_key = kwargs.get("api_key", "")
             if not api_key:
                 api_key, _ = resolve_auth(provider_name)
-            client = create_client(
-                config, api_key=api_key, timeout=kwargs.get("timeout", 120.0)
-            )
+            client = create_client(config, api_key=api_key, timeout=kwargs.get("timeout", 120.0))
             return ProviderClientAdapter(client)
         except (ImportError, ValueError) as e:
-            raise ValueError(
-                f"Cannot create client for provider {provider_name!r}: {e}"
-            ) from e
+            raise ValueError(f"Cannot create client for provider {provider_name!r}: {e}") from e
 
     async def close_all(self):
         for client in self._cache.values():

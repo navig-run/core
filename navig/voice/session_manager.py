@@ -312,9 +312,7 @@ class VoiceSessionManager:
             self._interrupt_events[session_id] = asyncio.Event()
             self._audio_queues[session_id] = asyncio.Queue(maxsize=1024)
 
-        logger.info(
-            "Session %s activated — keyword=%r score=%.2f", session_id, keyword, score
-        )
+        logger.info("Session %s activated — keyword=%r score=%.2f", session_id, keyword, score)
         await self._emit_state_change(session)
         await self._notify_echo_bridge(session_id, keyword, score)
 
@@ -407,9 +405,7 @@ class VoiceSessionManager:
             transcript = None
             if self._stt_fn and audio_data:
                 try:
-                    transcript = await asyncio.wait_for(
-                        self._stt_fn(session), timeout=30.0
-                    )
+                    transcript = await asyncio.wait_for(self._stt_fn(session), timeout=30.0)
                     session.transcript = transcript
                 except asyncio.TimeoutError:
                     logger.error("Session %s: STT timeout", session_id)
@@ -419,9 +415,7 @@ class VoiceSessionManager:
             response_text: str | None = None
             if transcript and self._llm_fn:
                 try:
-                    response_text = await asyncio.wait_for(
-                        self._llm_fn(transcript), timeout=60.0
-                    )
+                    response_text = await asyncio.wait_for(self._llm_fn(transcript), timeout=60.0)
                     session.response_text = response_text
                 except asyncio.TimeoutError:
                     logger.error("Session %s: LLM timeout", session_id)
@@ -437,9 +431,7 @@ class VoiceSessionManager:
 
             if response_text and self._tts_fn:
                 try:
-                    audio_path = await asyncio.wait_for(
-                        self._tts_fn(response_text), timeout=30.0
-                    )
+                    audio_path = await asyncio.wait_for(self._tts_fn(response_text), timeout=30.0)
                     session.audio_path = audio_path
                 except asyncio.TimeoutError:
                     logger.error("Session %s: TTS timeout", session_id)
@@ -514,9 +506,7 @@ class VoiceSessionManager:
 
             except asyncio.TimeoutError:
                 # Silence timeout — enough audio collected
-                total_ms = (
-                    (len(b"".join(chunks))) / 16000 * 1000
-                )  # rough estimate at 16kHz
+                total_ms = (len(b"".join(chunks))) / 16000 * 1000  # rough estimate at 16kHz
                 if total_ms < self.config.min_audio_ms:
                     logger.debug(
                         "Session %s: silence timeout but audio too short (%.0fms), waiting",
@@ -566,9 +556,7 @@ class VoiceSessionManager:
     # Echo bridge notification (HTTP → navig-echo Tauri)
     # ------------------------------------------------------------------ #
 
-    async def _notify_echo_bridge(
-        self, session_id: str, keyword: str, score: float
-    ) -> None:
+    async def _notify_echo_bridge(self, session_id: str, keyword: str, score: float) -> None:
         """Notify navig-echo of wake-word detection via HTTP."""
         url = self.config.echo_bridge_url
         if not url:
@@ -621,9 +609,7 @@ class VoiceSessionManager:
 _manager: VoiceSessionManager | None = None
 
 
-def get_session_manager(
-    config: SessionConfig | None = None, **kwargs
-) -> VoiceSessionManager:
+def get_session_manager(config: SessionConfig | None = None, **kwargs) -> VoiceSessionManager:
     """Return (or create) the global VoiceSessionManager singleton."""
     global _manager
     if _manager is None:

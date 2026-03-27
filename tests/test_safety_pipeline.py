@@ -106,23 +106,15 @@ class TestShouldConfirm:
 
         # auto_confirm_safe=True skips confirmation for safe actions even in verbose
         assert (
-            should_confirm(
-                "ls -la", confirmation_level="verbose", auto_confirm_safe=True
-            )
-            is False
+            should_confirm("ls -la", confirmation_level="verbose", auto_confirm_safe=True) is False
         )
         # But risky/destructive still confirmed
         assert (
-            should_confirm(
-                "sudo apt update", confirmation_level="verbose", auto_confirm_safe=True
-            )
+            should_confirm("sudo apt update", confirmation_level="verbose", auto_confirm_safe=True)
             is True
         )
         assert (
-            should_confirm(
-                "rm -rf /", confirmation_level="verbose", auto_confirm_safe=True
-            )
-            is True
+            should_confirm("rm -rf /", confirmation_level="verbose", auto_confirm_safe=True) is True
         )
 
 
@@ -139,9 +131,7 @@ class TestToolRouterSafetyMode:
 
         registry = ToolRegistry()
         registry.register(
-            ToolMeta(
-                name="safe.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE
-            ),
+            ToolMeta(name="safe.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE),
             handler=lambda **kw: {"ok": True},
         )
         registry.register(
@@ -167,9 +157,7 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(
-            registry=registry, safety_policy={"safety_mode": "permissive"}
-        )
+        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "permissive"})
         result = router.execute(
             ToolCallAction(tool="moderate.tool", parameters={"cmd": "sudo apt update"})
         )
@@ -180,9 +168,7 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(
-            registry=registry, safety_policy={"safety_mode": "permissive"}
-        )
+        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "permissive"})
         result = router.execute(
             ToolCallAction(tool="dangerous.tool", parameters={"cmd": "rm -rf /"})
         )
@@ -194,9 +180,7 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(
-            registry=registry, safety_policy={"safety_mode": "standard"}
-        )
+        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "standard"})
         result = router.execute(
             ToolCallAction(tool="moderate.tool", parameters={"cmd": "rm -rf /var"})
         )
@@ -207,9 +191,7 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(
-            registry=registry, safety_policy={"safety_mode": "standard"}
-        )
+        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "standard"})
         result = router.execute(
             ToolCallAction(tool="moderate.tool", parameters={"cmd": "echo hello"})
         )
@@ -234,9 +216,7 @@ class TestToolRouterSafetyMode:
         registry = self._make_registry_with_tools()
         router = ToolRouter(registry=registry, safety_policy={"safety_mode": "strict"})
         result = router.execute(
-            ToolCallAction(
-                tool="moderate.tool", parameters={"cmd": "sudo apt remove nginx"}
-            )
+            ToolCallAction(tool="moderate.tool", parameters={"cmd": "sudo apt remove nginx"})
         )
         assert result.status == ToolResultStatus.DENIED
 
@@ -246,9 +226,7 @@ class TestToolRouterSafetyMode:
 
         registry = self._make_registry_with_tools()
         router = ToolRouter(registry=registry, safety_policy={"safety_mode": "strict"})
-        result = router.execute(
-            ToolCallAction(tool="moderate.tool", parameters={"cmd": "echo hi"})
-        )
+        result = router.execute(ToolCallAction(tool="moderate.tool", parameters={"cmd": "echo hi"}))
         assert result.status == ToolResultStatus.SUCCESS
 
     def test_safe_tool_always_allowed(self):
@@ -282,18 +260,14 @@ class TestToolRouterNeedsConfirmation:
 
         registry = ToolRegistry()
         registry.register(
-            ToolMeta(
-                name="confirm.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE
-            ),
+            ToolMeta(name="confirm.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE),
             handler=lambda **kw: {"ok": True},
         )
         router = ToolRouter(
             registry=registry,
             safety_policy={"require_confirmation": ["confirm.tool"]},
         )
-        result = router.execute(
-            ToolCallAction(tool="confirm.tool", parameters={"x": 1})
-        )
+        result = router.execute(ToolCallAction(tool="confirm.tool", parameters={"x": 1}))
         assert result.status == ToolResultStatus.NEEDS_CONFIRMATION
         assert "requires human confirmation" in result.error
 
@@ -351,9 +325,7 @@ class TestApprovalPolicy:
 
         policy = ApprovalPolicy.default()
         assert policy.classify_command("run rm -rf /") == ApprovalLevel.NEVER
-        assert (
-            policy.classify_command("DROP DATABASE production") == ApprovalLevel.NEVER
-        )
+        assert policy.classify_command("DROP DATABASE production") == ApprovalLevel.NEVER
 
     def test_unlisted_defaults_to_confirm(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
@@ -713,16 +685,12 @@ class TestSafetyIntegration:
         registry = ToolRegistry()
         # Safe tool
         registry.register(
-            ToolMeta(
-                name="info.get", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE
-            ),
+            ToolMeta(name="info.get", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE),
             handler=lambda **kw: {"info": "safe data"},
         )
         # Moderate tool
         registry.register(
-            ToolMeta(
-                name="file.write", domain=ToolDomain.SYSTEM, safety=SafetyLevel.MODERATE
-            ),
+            ToolMeta(name="file.write", domain=ToolDomain.SYSTEM, safety=SafetyLevel.MODERATE),
             handler=lambda **kw: {"written": True},
         )
         # Dangerous tool
@@ -752,15 +720,11 @@ class TestSafetyIntegration:
         assert r.status == ToolResultStatus.SUCCESS
 
         # Dangerous tool blocked even with safe params
-        r = router.execute(
-            ToolCallAction(tool="system.exec", parameters={"cmd": "echo hi"})
-        )
+        r = router.execute(ToolCallAction(tool="system.exec", parameters={"cmd": "echo hi"}))
         assert r.status == ToolResultStatus.DENIED
 
         # Moderate tool with safe params passes
-        r = router.execute(
-            ToolCallAction(tool="file.write", parameters={"path": "/tmp/test"})
-        )
+        r = router.execute(ToolCallAction(tool="file.write", parameters={"path": "/tmp/test"}))
         assert r.status == ToolResultStatus.SUCCESS
 
     def test_confirmation_and_blocked_priority(self):
@@ -786,21 +750,13 @@ class TestSafetyIntegration:
         from navig.safety_guard import should_confirm
 
         # Simulated config values
+        assert should_confirm("ls", confirmation_level="critical", auto_confirm_safe=False) is False
         assert (
-            should_confirm("ls", confirmation_level="critical", auto_confirm_safe=False)
-            is False
-        )
-        assert (
-            should_confirm(
-                "rm -rf /", confirmation_level="critical", auto_confirm_safe=True
-            )
+            should_confirm("rm -rf /", confirmation_level="critical", auto_confirm_safe=True)
             is True
         )
         assert should_confirm("sudo apt", confirmation_level="standard") is True
         assert should_confirm("echo hi", confirmation_level="verbose") is True
         assert (
-            should_confirm(
-                "echo hi", confirmation_level="verbose", auto_confirm_safe=True
-            )
-            is False
+            should_confirm("echo hi", confirmation_level="verbose", auto_confirm_safe=True) is False
         )

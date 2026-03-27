@@ -14,15 +14,9 @@ def bot():
 @pytest.mark.asyncio
 async def test_handle_voice_message(bot):
     with (
-        patch(
-            "navig.integrations.telegram_voice_bot.TelegramVoiceBot._transcribe"
-        ) as mock_stt,
-        patch(
-            "navig.integrations.telegram_voice_bot.TelegramVoiceBot._call_llm"
-        ) as mock_llm,
-        patch(
-            "navig.integrations.telegram_voice_bot.TelegramVoiceBot._call_tts"
-        ) as mock_tts,
+        patch("navig.integrations.telegram_voice_bot.TelegramVoiceBot._transcribe") as mock_stt,
+        patch("navig.integrations.telegram_voice_bot.TelegramVoiceBot._call_llm") as mock_llm,
+        patch("navig.integrations.telegram_voice_bot.TelegramVoiceBot._call_tts") as mock_tts,
     ):
         import tempfile
         from pathlib import Path

@@ -74,9 +74,7 @@ def _daemon_stop(gw):
             return block
 
         logger.info("Daemon stop requested via /api/daemon/stop by actor=%s", actor)
-        resp = json_ok(
-            {"status": "shutting_down", "message": "Daemon shutdown initiated"}
-        )
+        resp = json_ok({"status": "shutting_down", "message": "Daemon shutdown initiated"})
         resp.headers["Access-Control-Allow-Origin"] = "*"
 
         async def _d():
@@ -101,9 +99,7 @@ def _formation_start(gw):
         if block is not None:
             return block
 
-        logger.info(
-            "Formation start requested via /api/formation/start by actor=%s", actor
-        )
+        logger.info("Formation start requested via /api/formation/start by actor=%s", actor)
         try:
             data = await request.json()
         except Exception:

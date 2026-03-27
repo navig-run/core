@@ -82,9 +82,7 @@ class VectorIndex:
             sqlite_vec.load(self._conn)
             self.available = True
             self._ensure_table()
-            logger.debug(
-                "sqlite-vec loaded — vector search enabled (dim=%d)", dimensions
-            )
+            logger.debug("sqlite-vec loaded — vector search enabled (dim=%d)", dimensions)
         except Exception as exc:
             logger.warning("Failed to load sqlite-vec: %s", exc)
 
@@ -186,9 +184,7 @@ class VectorIndex:
 
         for row in rows:
             try:
-                floats = json.loads(
-                    row[1] if isinstance(row, tuple) else row["embedding"]
-                )
+                floats = json.loads(row[1] if isinstance(row, tuple) else row["embedding"])
                 chunk_id = row[0] if isinstance(row, tuple) else row["id"]
                 blob = floats_to_blob(floats)
                 batch.append((chunk_id, blob))

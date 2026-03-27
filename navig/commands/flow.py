@@ -38,15 +38,14 @@ def flow_show(name: str = typer.Argument(..., help="Flow name")):
 @flow_app.command("run")
 def flow_run(
     name: str = typer.Argument(..., help="Flow name"),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="Preview without executing"
-    ),
-    yes: bool = typer.Option(
-        False, "--yes", "-y", help="Skip all confirmation prompts"
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without executing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip all confirmation prompts"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
     var: list[str] | None = typer.Option(
-        None, "--var", "-V", help="Variable override (name=value)"
+        None,
+        "--var",
+        "-V",
+        help="Variable override(s) as name=value; can be used multiple times, e.g. --var VAR1=foo --var VAR2=bar",
     ),
 ):
     """Execute a flow."""
@@ -66,9 +65,7 @@ def flow_test(name: str = typer.Argument(..., help="Flow name")):
 @flow_app.command("add")
 def flow_add(
     name: str = typer.Argument(..., help="New flow name"),
-    global_scope: bool = typer.Option(
-        False, "--global", "-g", help="Create in global directory"
-    ),
+    global_scope: bool = typer.Option(False, "--global", "-g", help="Create in global directory"),
 ):
     """Create a new flow."""
     from navig.commands.workflow import create_workflow
@@ -134,4 +131,5 @@ def edit_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
 
 def remove_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for flow remove command (interactive menu)."""
-    flow_remove(name, force=True)  # Force=True since menu already confirms
+    force = ctx.get("confirmed", True)
+    flow_remove(name, force=force)

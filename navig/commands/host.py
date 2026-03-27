@@ -266,9 +266,7 @@ def use_host(name: str, options: dict[str, Any]):
     Note: Project-local .navig/config.yaml takes precedence over this global setting.
     """
     if not config_manager.host_exists(name):
-        ch.error(
-            f"Host '{name}' not found", "Use 'navig host list' to see available hosts."
-        )
+        ch.error(f"Host '{name}' not found", "Use 'navig host list' to see available hosts.")
         return
 
     config_manager.set_active_host(name)
@@ -282,9 +280,7 @@ def use_host(name: str, options: dict[str, Any]):
             local_config = config_manager.get_local_config()
             local_host = local_config.get("active_host")
             if local_host and local_host != name:
-                ch.dim(
-                    "💡 Note: This directory has a local override (.navig/config.yaml)"
-                )
+                ch.dim("💡 Note: This directory has a local override (.navig/config.yaml)")
                 ch.dim(f"   Local active_host: {local_host} (takes precedence here)")
 
 
@@ -345,9 +341,7 @@ def add_host(name: str, options: dict[str, Any]):
     port = int(ch.prompt_input("SSH Port", default="22"))
     user = ch.prompt_input("SSH User", default="root")
 
-    auth_method = ch.prompt_choice(
-        "Authentication method", ["key", "password"], default="key"
-    )
+    auth_method = ch.prompt_choice("Authentication method", ["key", "password"], default="key")
 
     ssh_key = None
     ssh_password = None
@@ -409,9 +403,7 @@ def add_host(name: str, options: dict[str, Any]):
         ch.success("✓ Connection successful\n")
 
         # Run auto-discovery (skip web root - that's app-specific)
-        if ch.confirm_action(
-            "Run auto-discovery to detect host configuration?", default=True
-        ):
+        if ch.confirm_action("Run auto-discovery to detect host configuration?", default=True):
             discovered = discovery.discover_all(progress=True, skip_web_root=True)
         else:
             discovered = {}
@@ -438,9 +430,7 @@ def add_host(name: str, options: dict[str, Any]):
             ch.dim("Root credentials will be stored for server management tasks.")
 
             # Ask if user wants to use auto-detected credentials
-            use_auto_creds = ch.confirm_action(
-                "Use auto-detected root credentials?", default=True
-            )
+            use_auto_creds = ch.confirm_action("Use auto-detected root credentials?", default=True)
             if not use_auto_creds:
                 root_user = ch.prompt_input("Database Root User", default=root_user)
                 root_password = ch.prompt_input("Database Root Password", password=True)
@@ -569,9 +559,7 @@ def add_host(name: str, options: dict[str, Any]):
     if metadata["php_version"]:
         ch.console.print(f"[green]PHP: {metadata['php_version']}[/green]")
     if metadata["mysql_version"]:
-        ch.console.print(
-            f"[green]Database: {db_type} {metadata['mysql_version']}[/green]"
-        )
+        ch.console.print(f"[green]Database: {db_type} {metadata['mysql_version']}[/green]")
     if paths.get("web_root"):
         ch.console.print(f"[green]Web Root: {paths['web_root']}[/green]")
 
@@ -948,9 +936,7 @@ def test_host(options: dict[str, Any]) -> None:
             pathlib.Path(os.environ.get("ProgramFiles", "C:/Program Files"))
             / "OpenSSH"
             / "ssh.exe",
-            pathlib.Path(os.environ.get("ProgramFiles(x86)", ""))
-            / "OpenSSH"
-            / "ssh.exe",
+            pathlib.Path(os.environ.get("ProgramFiles(x86)", "")) / "OpenSSH" / "ssh.exe",
         ]:
             if _candidate.exists():
                 ssh_binary = str(_candidate)
@@ -1017,16 +1003,10 @@ def test_host(options: dict[str, Any]) -> None:
                     if ssh_key:
                         ch.dim("  • Verify the SSH key is authorized on the server")
                         ch.dim("  • Check ~/.ssh/authorized_keys on the server")
-                        ch.dim(
-                            f"  • Ensure key file has correct permissions: {ssh_key_path}"
-                        )
+                        ch.dim(f"  • Ensure key file has correct permissions: {ssh_key_path}")
                     else:
-                        ch.dim(
-                            "  • No SSH key configured - add one with 'navig host edit'"
-                        )
-                        ch.dim(
-                            "  • Or ensure password authentication is enabled on server"
-                        )
+                        ch.dim("  • No SSH key configured - add one with 'navig host edit'")
+                        ch.dim("  • Or ensure password authentication is enabled on server")
                 elif "Connection refused" in error_msg:
                     ch.dim("\n💡 SSH service may not be running on the server")
                 elif "No route to host" in error_msg:
@@ -1035,9 +1015,7 @@ def test_host(options: dict[str, Any]) -> None:
             raise RuntimeError(f"SSH connection failed: {error_msg}")
 
     except subprocess.TimeoutExpired as _exc:
-        ch.error(
-            "Connection timeout", "Host may be unreachable or SSH service not running."
-        )
+        ch.error("Connection timeout", "Host may be unreachable or SSH service not running.")
         raise RuntimeError("Connection timeout") from _exc
     except FileNotFoundError as _exc:
         ch.error("SSH client not found", "Please install OpenSSH client.")
@@ -1210,9 +1188,7 @@ def host_callback(ctx: typer.Context):
 def host_list(
     ctx: typer.Context,
     all: bool = typer.Option(False, "--all", "-a", help="Show detailed information"),
-    format: str = typer.Option(
-        "table", "--format", "-f", help="Output format: table, json, yaml"
-    ),
+    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, yaml"),
     plain: bool = typer.Option(
         False, "--plain", help="Output plain text (one host per line) for scripting"
     ),
@@ -1233,9 +1209,7 @@ def host_list(
 def host_use(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Host name to activate"),
-    default: bool = typer.Option(
-        False, "--default", "-d", help="Also set as default host"
-    ),
+    default: bool = typer.Option(False, "--default", "-d", help="Also set as default host"),
 ):
     """Switch active host context (global)."""
     from navig.commands.host import set_default_host, use_host
@@ -1270,9 +1244,7 @@ def host_default(
 def host_add(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Host name"),
-    from_host: str | None = typer.Option(
-        None, "--from", help="Clone from existing host"
-    ),
+    from_host: str | None = typer.Option(None, "--from", help="Clone from existing host"),
 ):
     """Add new host configuration (interactive wizard or clone)."""
     if from_host:
@@ -1308,12 +1280,8 @@ def host_discover_local(
     name: str = typer.Option(
         "localhost", "--name", "-n", help="Name for the local host configuration"
     ),
-    auto_confirm: bool = typer.Option(
-        False, "--yes", "-y", help="Skip confirmation prompts"
-    ),
-    no_active: bool = typer.Option(
-        False, "--no-active", help="Don't set as active host"
-    ),
+    auto_confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
+    no_active: bool = typer.Option(False, "--no-active", help="Don't set as active host"),
 ):
     """
     Discover and configure local development environment.
@@ -1433,17 +1401,11 @@ def host_monitor_callback(ctx: typer.Context):
 @host_monitor_app.command("show")
 def host_monitor_show(
     ctx: typer.Context,
-    resources: bool = typer.Option(
-        False, "--resources", "-r", help="Show resource usage"
-    ),
+    resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
     disk: bool = typer.Option(False, "--disk", "-d", help="Show disk space"),
-    services: bool = typer.Option(
-        False, "--services", "-s", help="Show service status"
-    ),
+    services: bool = typer.Option(False, "--services", "-s", help="Show service status"),
     network: bool = typer.Option(False, "--network", "-n", help="Show network stats"),
-    threshold: int = typer.Option(
-        80, "--threshold", "-t", help="Alert threshold percentage"
-    ),
+    threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
 ):
     """Show monitoring information."""
     if resources:
@@ -1498,19 +1460,11 @@ def host_security_callback(ctx: typer.Context):
 @host_security_app.command("show")
 def host_security_show(
     ctx: typer.Context,
-    firewall: bool = typer.Option(
-        False, "--firewall", "-f", help="Show firewall status"
-    ),
-    fail2ban: bool = typer.Option(
-        False, "--fail2ban", "-b", help="Show fail2ban status"
-    ),
+    firewall: bool = typer.Option(False, "--firewall", "-f", help="Show firewall status"),
+    fail2ban: bool = typer.Option(False, "--fail2ban", "-b", help="Show fail2ban status"),
     ssh: bool = typer.Option(False, "--ssh", "-s", help="Show SSH audit"),
-    updates: bool = typer.Option(
-        False, "--updates", "-u", help="Show security updates"
-    ),
-    connections: bool = typer.Option(
-        False, "--connections", "-c", help="Show network connections"
-    ),
+    updates: bool = typer.Option(False, "--updates", "-u", help="Show security updates"),
+    connections: bool = typer.Option(False, "--connections", "-c", help="Show network connections"),
 ):
     """Show security information."""
     if firewall:
@@ -1542,9 +1496,7 @@ def host_security_show(
 @host_security_app.command("edit")
 def host_security_edit(
     ctx: typer.Context,
-    firewall: bool = typer.Option(
-        False, "--firewall", "-f", help="Edit firewall rules"
-    ),
+    firewall: bool = typer.Option(False, "--firewall", "-f", help="Edit firewall rules"),
     port: int | None = typer.Option(None, "--port", "-p", help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", help="Protocol (tcp/udp)"),
     allow_from: str = typer.Option("any", "--from", help="IP address or subnet"),
@@ -1552,12 +1504,8 @@ def host_security_edit(
     remove: bool = typer.Option(False, "--remove", "-r", help="Remove a rule"),
     enable: bool = typer.Option(False, "--enable", help="Enable firewall"),
     disable: bool = typer.Option(False, "--disable", help="Disable firewall"),
-    unban: str | None = typer.Option(
-        None, "--unban", help="Unban IP address from fail2ban"
-    ),
-    jail: str | None = typer.Option(
-        None, "--jail", "-j", help="Jail name for fail2ban"
-    ),
+    unban: str | None = typer.Option(None, "--unban", help="Unban IP address from fail2ban"),
+    jail: str | None = typer.Option(None, "--jail", "-j", help="Jail name for fail2ban"),
 ):
     """Edit security settings."""
     if firewall:
@@ -1631,12 +1579,8 @@ def host_maintenance_run(
     ctx: typer.Context,
     update: bool = typer.Option(False, "--update", "-u", help="Update system packages"),
     clean: bool = typer.Option(False, "--clean", "-c", help="Clean package cache"),
-    rotate_logs: bool = typer.Option(
-        False, "--rotate-logs", "-r", help="Rotate log files"
-    ),
-    cleanup_temp: bool = typer.Option(
-        False, "--cleanup-temp", "-t", help="Clean temp files"
-    ),
+    rotate_logs: bool = typer.Option(False, "--rotate-logs", "-r", help="Rotate log files"),
+    cleanup_temp: bool = typer.Option(False, "--cleanup-temp", "-t", help="Clean temp files"),
     all: bool = typer.Option(False, "--all", "-a", help="Full maintenance"),
     reboot: bool = typer.Option(False, "--reboot", help="Reboot server"),
 ):
@@ -1664,9 +1608,7 @@ def host_maintenance_run(
     elif reboot:
         from navig.commands.remote import run_remote_command
 
-        if ctx.obj.get("yes") or typer.confirm(
-            "Are you sure you want to reboot the server?"
-        ):
+        if ctx.obj.get("yes") or typer.confirm("Are you sure you want to reboot the server?"):
             run_remote_command("sudo reboot", ctx.obj)
     else:
         ch.error(

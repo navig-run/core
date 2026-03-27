@@ -128,11 +128,7 @@ def _desktop_permission_check(tool_name: str) -> dict[str, Any] | None:
         store = get_runtime_store()
         missions = store.list_missions(status=None, limit=1)
         if missions:
-            step_meta = (
-                missions[0].payload.get("step_metadata", {})
-                if missions[0].payload
-                else {}
-            )
+            step_meta = missions[0].payload.get("step_metadata", {}) if missions[0].payload else {}
             if step_meta.get("desktop_permission") is True:
                 return None  # permission granted
     except Exception:  # noqa: BLE001

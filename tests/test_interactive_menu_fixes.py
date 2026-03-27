@@ -39,9 +39,7 @@ class TestHostEditFix:
 
     @patch("navig.commands.interactive.prompt_selection")
     @patch("navig.commands.interactive.host.edit_host")
-    def test_edit_host_passes_host_name_parameter(
-        self, mock_edit, mock_prompt, mock_state
-    ):
+    def test_edit_host_passes_host_name_parameter(self, mock_edit, mock_prompt, mock_state):
         """Test that execute_host_edit passes 'host_name' not 'name'."""
         mock_prompt.return_value = "pigkiss"
 
@@ -137,9 +135,7 @@ class TestHostInfoFix:
 
     @patch("navig.commands.interactive.prompt_selection")
     @patch("navig.commands.interactive.host.info_host")
-    def test_info_host_passes_host_name_parameter(
-        self, mock_info, mock_prompt, mock_state
-    ):
+    def test_info_host_passes_host_name_parameter(self, mock_info, mock_prompt, mock_state):
         """Test that execute_host_info passes 'host_name' not 'name'."""
         mock_prompt.return_value = "pigkiss"
 
@@ -158,9 +154,7 @@ class TestAppEditFix:
 
     @patch("navig.commands.interactive.prompt_selection")
     @patch("navig.commands.interactive.app.edit_app")
-    def test_edit_app_passes_correct_parameters(
-        self, mock_edit, mock_prompt, mock_state
-    ):
+    def test_edit_app_passes_correct_parameters(self, mock_edit, mock_prompt, mock_state):
         """Test that execute_app_edit passes 'app_name' and 'host'."""
         mock_prompt.return_value = "host1/app1"
 

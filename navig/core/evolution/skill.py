@@ -31,14 +31,14 @@ Detailed markdown instructions on how to perform the skill.
 Identify any prerequisite tools or setups needed.
 """
 
-    def _generate(
-        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
-    ) -> Any:
+    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
 
         prompt = f"Goal: Create a skill for {goal}\n\n"
 
         if previous_artifact:
-            prompt += f"Previous attempt failed:\nError: {error_msg}\n\nRefine this SKILL.md content."
+            prompt += (
+                f"Previous attempt failed:\nError: {error_msg}\n\nRefine this SKILL.md content."
+            )
 
         if os.environ.get("NAVIG_MOCK_AI"):
             return """---
@@ -84,9 +84,7 @@ Do nothing
             frontmatter = yaml.safe_load(parts[1])
             name = frontmatter.get("name", "unnamed_skill")
             # Sanitize name
-            name = "".join(
-                [c if c.isalnum() or c in "-_" else "_" for c in name]
-            ).lower()
+            name = "".join([c if c.isalnum() or c in "-_" else "_" for c in name]).lower()
 
             skill_dir = self._skills_root / name
             skill_dir.mkdir(parents=True, exist_ok=True)

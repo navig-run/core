@@ -178,11 +178,7 @@ def _format_detail(step_id: str, output: dict, error: str | None = None) -> str:
         return f"{p}  {_DIM}({kt}){_RESET}" if kt else p
 
     if step_id == "verify-network":
-        return (
-            "online"
-            if output.get("networkReachable") == "true"
-            else f"{_DIM}offline{_RESET}"
-        )
+        return "online" if output.get("networkReachable") == "true" else f"{_DIM}offline{_RESET}"
 
     if step_id == "ai-provider":
         provider = output.get("provider", "")
@@ -255,13 +251,9 @@ def render_step_success(record: StepRecord) -> str:
     """✓  workspace          ~/.navig/workspace/"""
     label = _label(record.id, record.title)
     detail = _format_detail(record.id, record.output)
-    dur = (
-        f"  {_DIM}({record.duration_ms}ms){_RESET}" if record.duration_ms > 500 else ""
-    )
+    dur = f"  {_DIM}({record.duration_ms}ms){_RESET}" if record.duration_ms > 500 else ""
     detail_s = f"  {detail}" if detail else ""
-    return (
-        f"{_CLEAR}  {_GREEN_TC}{_ICON_OK}{_RESET}  {label:<{_LABEL_W}}{detail_s}{dur}"
-    )
+    return f"{_CLEAR}  {_GREEN_TC}{_ICON_OK}{_RESET}  {label:<{_LABEL_W}}{detail_s}{dur}"
 
 
 def render_step_skipped(record: StepRecord) -> str:
@@ -313,9 +305,7 @@ def render_dry_run_plan(steps: list, node_id: str) -> str:
         o_fail = getattr(step, "on_failure", "abort")
         pc = _AMBER_TC if o_fail == "skip" else _DIM
         policy = f"{pc}[{o_fail}]{_RESET}"
-        lines.append(
-            f"  {_DIM}{i:>2}.{_RESET}  {lbl:<{_LABEL_W}}  {_DIM}{s_id}{_RESET}  {policy}"
-        )
+        lines.append(f"  {_DIM}{i:>2}.{_RESET}  {lbl:<{_LABEL_W}}  {_DIM}{s_id}{_RESET}  {policy}")
     lines += ["", f"  {_ACCENT}{_SEP * w}{_RESET}", ""]
     return "\n".join(lines)
 
@@ -433,9 +423,7 @@ def render_completion_summary(
         if gaps:
             # Count Phase 2 steps already completed
             p2_done = sum(
-                1
-                for s in state.steps
-                if s.id in _PHASE2_STEP_IDS and s.status == "completed"
+                1 for s in state.steps if s.id in _PHASE2_STEP_IDS and s.status == "completed"
             )
             lines.append("")
             lines.append(f"  {_DIM}Continue Setup:{_RESET}")
@@ -445,9 +433,7 @@ def render_completion_summary(
                 )
             for gap_id in gaps:
                 cmd, desc = _GAP_COMMANDS[gap_id]
-                lines.append(
-                    f"  {_ACCENT}{cmd}{_RESET}    {_ICON_ARROW}  {_DIM}{desc}{_RESET}"
-                )
+                lines.append(f"  {_ACCENT}{cmd}{_RESET}    {_ICON_ARROW}  {_DIM}{desc}{_RESET}")
 
     lines += ["", sep, ""]
     return "\n".join(lines)

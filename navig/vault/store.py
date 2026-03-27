@@ -134,17 +134,13 @@ class VaultStore:
     def get(self, label: str) -> VaultItem | None:
         """Retrieve an item by label (exact match)."""
         conn = self._connect()
-        row = conn.execute(
-            "SELECT * FROM vault_items WHERE label = ?", (label,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM vault_items WHERE label = ?", (label,)).fetchone()
         return self._row_to_item(row) if row else None
 
     def get_by_id(self, item_id: str) -> VaultItem | None:
         """Retrieve an item by its UUID."""
         conn = self._connect()
-        row = conn.execute(
-            "SELECT * FROM vault_items WHERE id = ?", (item_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM vault_items WHERE id = ?", (item_id,)).fetchone()
         return self._row_to_item(row) if row else None
 
     def list(
@@ -163,9 +159,7 @@ class VaultStore:
             clauses.append("provider = ?")
             params.append(provider)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        rows = conn.execute(
-            f"SELECT * FROM vault_items {where} ORDER BY label", params
-        ).fetchall()
+        rows = conn.execute(f"SELECT * FROM vault_items {where} ORDER BY label", params).fetchall()
         return [self._row_to_item(r) for r in rows]
 
     def search(self, query: str) -> list[VaultItem]:

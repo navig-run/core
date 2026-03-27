@@ -34,9 +34,7 @@ class MatrixAdminClient:
         self.homeserver_url = homeserver_url.rstrip("/")
         self.admin_token = admin_token
         self.container_name = container_name
-        self._server_type: str | None = (
-            None  # "conduit" | "synapse" | "dendrite" | None
-        )
+        self._server_type: str | None = None  # "conduit" | "synapse" | "dendrite" | None
 
     async def _detect_server(self) -> str:
         """Detect which homeserver software is running."""
@@ -48,9 +46,7 @@ class MatrixAdminClient:
         # Try Conduit
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(
-                    f"{self.homeserver_url}/_conduit/server_version"
-                )
+                resp = await client.get(f"{self.homeserver_url}/_conduit/server_version")
                 if resp.status_code == 200:
                     self._server_type = "conduit"
                     return "conduit"

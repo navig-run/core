@@ -76,9 +76,7 @@ class TestClassifyFailure(unittest.TestCase):
     """classify_failure returns the correct FailureClass for each scenario."""
 
     def test_ssh_auth_fail_publickey(self) -> None:
-        fc = classify_failure(
-            "Permission denied (publickey, gssapi-keyex)", 1, "run ls"
-        )
+        fc = classify_failure("Permission denied (publickey, gssapi-keyex)", 1, "run ls")
         assert fc == FailureClass.SSH_AUTH_FAIL
 
     def test_ssh_auth_fail_password(self) -> None:
@@ -157,9 +155,7 @@ class TestSSHHealerKeyscanAndTrust(unittest.IsolatedAsyncioTestCase):
         healer = SSHHealer()
         result = await healer.keyscan_and_trust("localhost")
         assert result.status == "partial"
-        assert (
-            "localhost" in result.message.lower() or "local" in result.message.lower()
-        )
+        assert "localhost" in result.message.lower() or "local" in result.message.lower()
 
     async def test_keyscan_success_writes_known_hosts(self) -> None:
         healer = SSHHealer()
@@ -312,9 +308,7 @@ class TestSSHHealerProbe(unittest.IsolatedAsyncioTestCase):
 class TestRunAutofix(unittest.IsolatedAsyncioTestCase):
     async def test_ssh_hostkey_dispatches_to_keyscan(self) -> None:
         mixin = _make_mixin()
-        fake_result = HealResult(
-            status="resolved", message="Trusted.", should_retry=True
-        )
+        fake_result = HealResult(status="resolved", message="Trusted.", should_retry=True)
         with patch(
             "navig.selfheal.ssh_healer.SSHHealer.keyscan_and_trust",
             new=AsyncMock(return_value=fake_result),
@@ -342,9 +336,7 @@ class TestRunAutofix(unittest.IsolatedAsyncioTestCase):
         ctx = _ctx(attempt_count=2)  # already at max
         result = await mixin._run_autofix(ctx)
         assert result.status == "failed"
-        assert (
-            "maximum" in result.message.lower() or "attempts" in result.message.lower()
-        )
+        assert "maximum" in result.message.lower() or "attempts" in result.message.lower()
 
     async def test_timeout_class_returns_partial(self) -> None:
         mixin = _make_mixin()
@@ -401,9 +393,7 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
 
         await mixin._handle_autoheal(chat_id=100, user_id=200, args="hive off")
 
-        sm.update_settings.assert_called_once_with(
-            100, 200, autoheal_hive_enabled=False
-        )
+        sm.update_settings.assert_called_once_with(100, 200, autoheal_hive_enabled=False)
 
     async def test_status_calls_send_autoheal_status(self) -> None:
         mixin = _make_mixin()

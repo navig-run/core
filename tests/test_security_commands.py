@@ -15,9 +15,7 @@ def _mock_config_manager():
 
 @patch("navig.commands.security.get_config_manager")
 @patch("navig.commands.security.RemoteOperations")
-def test_firewall_add_rule_rejects_invalid_port(
-    mock_remote_ops, mock_get_config_manager
-):
+def test_firewall_add_rule_rejects_invalid_port(mock_remote_ops, mock_get_config_manager):
     mock_get_config_manager.return_value = _mock_config_manager()
 
     security.firewall_add_rule("22; whoami", "tcp", "any", {})
@@ -27,9 +25,7 @@ def test_firewall_add_rule_rejects_invalid_port(
 
 @patch("navig.commands.security.get_config_manager")
 @patch("navig.commands.security.RemoteOperations")
-def test_firewall_add_rule_rejects_invalid_allow_from(
-    mock_remote_ops, mock_get_config_manager
-):
+def test_firewall_add_rule_rejects_invalid_allow_from(mock_remote_ops, mock_get_config_manager):
     mock_get_config_manager.return_value = _mock_config_manager()
 
     security.firewall_add_rule(22, "tcp", "0.0.0.0/0; whoami", {})
@@ -39,9 +35,7 @@ def test_firewall_add_rule_rejects_invalid_allow_from(
 
 @patch("navig.commands.security.get_config_manager")
 @patch("navig.commands.security.RemoteOperations")
-def test_firewall_remove_rule_rejects_invalid_protocol(
-    mock_remote_ops, mock_get_config_manager
-):
+def test_firewall_remove_rule_rejects_invalid_protocol(mock_remote_ops, mock_get_config_manager):
     mock_get_config_manager.return_value = _mock_config_manager()
 
     security.firewall_remove_rule(22, "tcp; whoami", {})
@@ -51,9 +45,7 @@ def test_firewall_remove_rule_rejects_invalid_protocol(
 
 @patch("navig.commands.security.get_config_manager")
 @patch("navig.commands.security.RemoteOperations")
-def test_fail2ban_unban_rejects_invalid_jail_name(
-    mock_remote_ops, mock_get_config_manager
-):
+def test_fail2ban_unban_rejects_invalid_jail_name(mock_remote_ops, mock_get_config_manager):
     mock_get_config_manager.return_value = _mock_config_manager()
 
     security.fail2ban_unban("127.0.0.1", "sshd; whoami", {})
@@ -76,9 +68,7 @@ def test_fail2ban_unban_rejects_invalid_ip(mock_remote_ops, mock_get_config_mana
 def test_fail2ban_unban_all_jails(mock_remote_ops, mock_get_config_manager):
     mock_get_config_manager.return_value = _mock_config_manager()
     remote_ops = mock_remote_ops.return_value
-    remote_ops.execute_command.side_effect = [
-        {"exit_code": 0, "stdout": "", "stderr": ""}
-    ]
+    remote_ops.execute_command.side_effect = [{"exit_code": 0, "stdout": "", "stderr": ""}]
 
     security.fail2ban_unban("127.0.0.1", None, {})
 

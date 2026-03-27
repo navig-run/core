@@ -72,9 +72,7 @@ def _collect_configs(include_global: bool = True) -> dict[str, Any]:
                 app_config = config_manager.load_app_config(host_name, app_name)
                 # Redact sensitive data
                 safe_config = app_config.copy()
-                if "database" in safe_config and "password" in safe_config.get(
-                    "database", {}
-                ):
+                if "database" in safe_config and "password" in safe_config.get("database", {}):
                     safe_config["database"] = safe_config["database"].copy()
                     safe_config["database"]["password"] = "[REDACTED]"
                 data["apps"][host_name][app_name] = safe_config
@@ -105,9 +103,7 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> bool:
         # Create manifest
         manifest = {
             "version": "1.0",
-            "exported_at": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "exported_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "include_secrets": include_secrets,
             "contents": [],
         }
@@ -357,9 +353,7 @@ def export_config(options: dict[str, Any]):
                 # Override with unredacted data
                 for host_name in config_manager.list_hosts():
                     try:
-                        data["hosts"][host_name] = config_manager.load_host_config(
-                            host_name
-                        )
+                        data["hosts"][host_name] = config_manager.load_host_config(host_name)
                     except Exception:  # noqa: BLE001
                         pass  # best-effort; failure is non-critical
 
@@ -368,8 +362,8 @@ def export_config(options: dict[str, Any]):
                         try:
                             if host_name not in data["apps"]:
                                 data["apps"][host_name] = {}
-                            data["apps"][host_name][app_name] = (
-                                config_manager.load_app_config(host_name, app_name)
+                            data["apps"][host_name][app_name] = config_manager.load_app_config(
+                                host_name, app_name
                             )
                         except Exception:  # noqa: BLE001
                             pass  # best-effort; failure is non-critical
@@ -496,9 +490,7 @@ def import_config(options: dict[str, Any]):
                             apps_data[host_dir.name] = {}
                             for yaml_file in host_dir.glob("*.yaml"):
                                 with open(yaml_file) as f:
-                                    apps_data[host_dir.name][yaml_file.stem] = (
-                                        yaml.safe_load(f)
-                                    )
+                                    apps_data[host_dir.name][yaml_file.stem] = yaml.safe_load(f)
 
         # Confirm import
         if not ch.confirm_operation(
@@ -699,9 +691,7 @@ def inspect_export(options: dict[str, Any]):
                             data["apps"][host_dir.name] = {}
                             for yaml_file in host_dir.glob("*.yaml"):
                                 with open(yaml_file) as f:
-                                    data["apps"][host_dir.name][yaml_file.stem] = (
-                                        yaml.safe_load(f)
-                                    )
+                                    data["apps"][host_dir.name][yaml_file.stem] = yaml.safe_load(f)
 
         if json_output:
             ch.raw_print(json.dumps(data, indent=2, default=str))

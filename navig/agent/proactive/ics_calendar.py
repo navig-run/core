@@ -61,9 +61,7 @@ class ICSCalendarProvider(CalendarProvider):
 
         # Check cache
         if self._cache and self._cache_time:
-            if datetime.now() - self._cache_time < timedelta(
-                minutes=self.cache_minutes
-            ):
+            if datetime.now() - self._cache_time < timedelta(minutes=self.cache_minutes):
                 return self._filter_events(self._cache, start, end)
 
         ics_data = await self._fetch_ics()
@@ -189,9 +187,7 @@ class CalDAVProvider(CalendarProvider):
         except ImportError as _exc:
             raise ImportError("CalDAV support requires: pip install caldav") from _exc
 
-        client = caldav.DAVClient(
-            url=self.url, username=self.username, password=self.password
-        )
+        client = caldav.DAVClient(url=self.url, username=self.username, password=self.password)
 
         principal = client.principal()
         calendars = principal.calendars()
@@ -226,13 +222,9 @@ class CalDAVProvider(CalendarProvider):
             from icalendar import Calendar as ICalendar
             from icalendar import Event as IEvent
         except ImportError as _exc:
-            raise ImportError(
-                "CalDAV support requires: pip install caldav icalendar"
-            ) from _exc
+            raise ImportError("CalDAV support requires: pip install caldav icalendar") from _exc
 
-        client = caldav.DAVClient(
-            url=self.url, username=self.username, password=self.password
-        )
+        client = caldav.DAVClient(url=self.url, username=self.username, password=self.password)
 
         principal = client.principal()
         calendars = principal.calendars()

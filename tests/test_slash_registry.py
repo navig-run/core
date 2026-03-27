@@ -53,9 +53,9 @@ def test_slash_entry_has_required_fields():
 def test_old_slash_cli_map_is_gone():
     """_SLASH_CLI_MAP must NOT exist on TelegramCommandsMixin after refactor."""
     mixin = _import_mixin()
-    assert not hasattr(
-        mixin, "_SLASH_CLI_MAP"
-    ), "_SLASH_CLI_MAP still present — registry refactor incomplete"
+    assert not hasattr(mixin, "_SLASH_CLI_MAP"), (
+        "_SLASH_CLI_MAP still present — registry refactor incomplete"
+    )
 
 
 def test_no_duplicate_slash_commands():
@@ -74,9 +74,9 @@ def test_cli_template_entries_have_non_empty_template():
     registry, _ = _import_registry()
     for entry in registry:
         if entry.cli_template is not None:
-            assert (
-                entry.cli_template.strip()
-            ), f"/{entry.command} has empty cli_template; set to None or a real string"
+            assert entry.cli_template.strip(), (
+                f"/{entry.command} has empty cli_template; set to None or a real string"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +115,6 @@ def test_register_commands_count_matches_registry():
         # (acceptable if the method builds the list dynamically)
         pytest.skip("_build_command_list_for_registration helper not found")
     result = build_fn()
-    assert (
-        len(result) == expected_visible
-    ), f"Registered command count {len(result)} != visible registry count {expected_visible}"
+    assert len(result) == expected_visible, (
+        f"Registered command count {len(result)} != visible registry count {expected_visible}"
+    )

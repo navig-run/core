@@ -100,9 +100,7 @@ class SSHHealer:
         try:
             # Write scanned keys to a temp file first so we can inspect
             # before appending — avoids corrupting known_hosts on error.
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".keyscan", delete=False
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".keyscan", delete=False) as tmp:
                 tmp_path = tmp.name
 
             proc = await asyncio.create_subprocess_exec(
@@ -246,9 +244,7 @@ class SSHHealer:
         except FileNotFoundError:
             return HealResult(
                 status="failed",
-                message=(
-                    "❌ `ssh-keygen` not found. Please install OpenSSH client tools."
-                ),
+                message=("❌ `ssh-keygen` not found. Please install OpenSSH client tools."),
                 detail="ssh-keygen binary missing",
             )
         except OSError as exc:
@@ -379,9 +375,7 @@ class SSHHealer:
     async def _tcp_probe(self, host: str, port: int, timeout: float = 3.0) -> bool:
         """Attempt a TCP connection and return True if successful."""
         try:
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), timeout=timeout
-            )
+            _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=timeout)
             writer.close()
             return True
         except (OSError, asyncio.TimeoutError, ConnectionRefusedError):

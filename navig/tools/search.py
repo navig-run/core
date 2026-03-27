@@ -27,9 +27,7 @@ _HEADERS = {
 
 class SearchTool(BaseTool):
     name = "search"
-    description = (
-        "Search the web via DuckDuckGo. Returns top-5 results with title, URL, snippet."
-    )
+    description = "Search the web via DuckDuckGo. Returns top-5 results with title, URL, snippet."
     parameters = [
         {
             "name": "query",
@@ -53,9 +51,7 @@ class SearchTool(BaseTool):
         try:
             import httpx
         except ImportError:
-            return ToolResult(
-                name=self.name, success=False, error="httpx not installed"
-            )
+            return ToolResult(name=self.name, success=False, error="httpx not installed")
 
         try:
             async with httpx.AsyncClient(
@@ -66,9 +62,7 @@ class SearchTool(BaseTool):
                 resp = await client.post(_DDG_URL, data={"q": query, "b": "", "kl": ""})
                 html = resp.text
 
-            await self._emit(
-                on_status, "Parsing results…", f"HTTP {resp.status_code}", 65
-            )
+            await self._emit(on_status, "Parsing results…", f"HTTP {resp.status_code}", 65)
 
             results = _parse_ddg_html(html)[:5]
 
@@ -86,9 +80,7 @@ class SearchTool(BaseTool):
             )
 
         except httpx.TimeoutException:
-            return ToolResult(
-                name=self.name, success=False, error="search timed out (15s)"
-            )
+            return ToolResult(name=self.name, success=False, error="search timed out (15s)")
         except Exception as exc:
             return ToolResult(name=self.name, success=False, error=str(exc))
 
@@ -124,15 +116,11 @@ def _parse_ddg_html(html: str) -> list[dict[str, str]]:
                 url = unquote(target_m.group(1))
 
         # Snippet
-        snippet_m = re.search(
-            r'class="result__snippet"[^>]*>(.*?)</span>', block, re.DOTALL
-        )
+        snippet_m = re.search(r'class="result__snippet"[^>]*>(.*?)</span>', block, re.DOTALL)
         snippet = _strip_tags(snippet_m.group(1)) if snippet_m else ""
 
         if title or url:
-            results.append(
-                {"title": title.strip(), "url": url, "snippet": snippet.strip()}
-            )
+            results.append({"title": title.strip(), "url": url, "snippet": snippet.strip()})
 
     return results
 

@@ -206,9 +206,7 @@ class OnboardingEngine:
                 output={},
             )
             self._record(record)
-            result = StepResult(
-                status="skipped", output={}, duration_ms=record.duration_ms
-            )
+            result = StepResult(status="skipped", output={}, duration_ms=record.duration_ms)
             return True, result
 
         result = self._execute(step)
@@ -285,9 +283,7 @@ class OnboardingEngine:
         return self._state
 
     def _already_completed(self, step_id: str) -> bool:
-        return any(
-            r.id == step_id and r.status == "completed" for r in self._state.steps
-        )
+        return any(r.id == step_id and r.status == "completed" for r in self._state.steps)
 
     def _record(self, record: StepRecord) -> None:
         """Replace any existing record for this step ID, then flush immediately."""

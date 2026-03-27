@@ -234,9 +234,7 @@ def sync_fork(repo_path: Path) -> None:
     # ignore_errors=True is intentional here: the remote may already exist
     # from a previous scan run.  All other git calls in this function must
     # NOT use ignore_errors so failures surface immediately.
-    _run_git(
-        "remote", "add", "upstream", UPSTREAM_URL, cwd=repo_path, ignore_errors=True
-    )
+    _run_git("remote", "add", "upstream", UPSTREAM_URL, cwd=repo_path, ignore_errors=True)
     _run_git("fetch", "upstream", cwd=repo_path)
     _run_git("checkout", "main", cwd=repo_path)
     _run_git("rebase", "upstream/main", cwd=repo_path)

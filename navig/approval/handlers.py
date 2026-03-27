@@ -39,19 +39,13 @@ class TelegramApprovalHandler:
             keyboard = InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton(
-                            "✅ Approve", callback_data=f"approve:{request.id}"
-                        ),
-                        InlineKeyboardButton(
-                            "❌ Deny", callback_data=f"deny:{request.id}"
-                        ),
+                        InlineKeyboardButton("✅ Approve", callback_data=f"approve:{request.id}"),
+                        InlineKeyboardButton("❌ Deny", callback_data=f"deny:{request.id}"),
                     ]
                 ]
             )
 
-            level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(
-                request.level.value, "❓"
-            )
+            level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(request.level.value, "❓")
 
             message = (
                 f"{level_emoji} **Approval Required**\n\n"
@@ -72,9 +66,7 @@ class TelegramApprovalHandler:
         except Exception as e:
             logger.error(f"Failed to send Telegram approval request: {e}")
 
-    async def handle_callback(
-        self, callback_data: str, user_id: str
-    ) -> tuple[bool, str]:
+    async def handle_callback(self, callback_data: str, user_id: str) -> tuple[bool, str]:
         """
         Handle Telegram callback button press.
 
@@ -188,9 +180,7 @@ class GatewayApprovalHandler:
         from datetime import datetime, timedelta
 
         request_id = str(uuid.uuid4())[:8]
-        expires_at = datetime.now() + timedelta(
-            seconds=self.manager.policy.timeout_seconds
-        )
+        expires_at = datetime.now() + timedelta(seconds=self.manager.policy.timeout_seconds)
 
         from .manager import ApprovalRequest
 

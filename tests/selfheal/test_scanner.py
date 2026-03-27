@@ -29,9 +29,9 @@ class TestScanFiltersbelowConfidence:
                 tmp_repo / "navig",
                 config={"min_confidence": 0.95},
             )
-        assert all(
-            f.confidence >= 0.95 for f in results
-        ), "All returned findings must meet the confidence threshold"
+        assert all(f.confidence >= 0.95 for f in results), (
+            "All returned findings must meet the confidence threshold"
+        )
 
     def test_findings_at_threshold_are_kept(self, tmp_repo: Path) -> None:
         """Findings exactly at min_confidence must be included."""
@@ -48,9 +48,7 @@ class TestScanFiltersbelowConfidence:
                 }
             ]
         )
-        with patch(
-            "navig.llm_generate.llm_generate", return_value=findings_at_threshold
-        ):
+        with patch("navig.llm_generate.llm_generate", return_value=findings_at_threshold):
             results = scan_files(
                 tmp_repo / "navig",
                 config={"min_confidence": 0.80},
@@ -76,16 +74,14 @@ class TestScanSkipsVaultFiles:
 
         collected = _collect_py_files(tmp_path)
         vault_prefix = str(vault_dir)
-        assert not any(
-            str(p).startswith(vault_prefix) for p in collected
-        ), "vault/ files must never be included in the scan batch"
+        assert not any(str(p).startswith(vault_prefix) for p in collected), (
+            "vault/ files must never be included in the scan batch"
+        )
         assert any(p.name == "safe.py" for p in collected)
 
     def test_is_sensitive_path_detects_vault(self) -> None:
         """_is_sensitive_path must return True for vault/ paths."""
-        assert _is_sensitive_path(
-            Path("/home/user/.navig/core-repo/navig/vault/core.py")
-        )
+        assert _is_sensitive_path(Path("/home/user/.navig/core-repo/navig/vault/core.py"))
 
     def test_is_sensitive_path_detects_secret_in_name(self) -> None:
         """Files with 'secret' in their path are flagged as sensitive."""
@@ -141,9 +137,7 @@ class TestScanReturnsPydanticModels:
                 },
             ]
         )
-        with patch(
-            "navig.llm_generate.llm_generate", return_value=multi_severity_response
-        ):
+        with patch("navig.llm_generate.llm_generate", return_value=multi_severity_response):
             results = scan_files(tmp_repo / "navig", config={"min_confidence": 0.80})
 
         if len(results) >= 2:

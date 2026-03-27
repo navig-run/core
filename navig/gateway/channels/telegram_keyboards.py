@@ -256,9 +256,7 @@ class ResponseKeyboardBuilder:
             try:
                 profile = KeyboardProfile(profile_override)
             except ValueError:
-                profile = choose_profile(
-                    ai_response, category, has_approval=has_approval
-                )
+                profile = choose_profile(ai_response, category, has_approval=has_approval)
         else:
             profile = choose_profile(ai_response, category, has_approval=has_approval)
 
@@ -273,9 +271,7 @@ class ResponseKeyboardBuilder:
                 msg_hash, user_message, ai_response, category, approval_actions
             )
         elif profile == KeyboardProfile.EXPAND:
-            rows = self._build_expand_rows(
-                msg_hash, user_message, ai_response, category
-            )
+            rows = self._build_expand_rows(msg_hash, user_message, ai_response, category)
         elif profile == KeyboardProfile.FEEDBACK:
             rows = self._build_feedback_rows(msg_hash, user_message, ai_response)
 
@@ -492,12 +488,8 @@ _ACTION_PROMPTS: dict[str, str] = {
         "Elaborate with more detail, examples, and depth."
     ),
     "explain": ("Explain the following code clearly and concisely:\n\n{ai_response}"),
-    "show_steps": (
-        "Rewrite the following as a clear numbered step-by-step:\n\n{ai_response}"
-    ),
-    "table_fmt": (
-        "Reformat the following comparison into a clear table:\n\n{ai_response}"
-    ),
+    "show_steps": ("Rewrite the following as a clear numbered step-by-step:\n\n{ai_response}"),
+    "table_fmt": ("Reformat the following comparison into a clear table:\n\n{ai_response}"),
     "recommend": (
         "From the following comparison, give a clear recommendation "
         "with brief justification:\n\n{ai_response}"
@@ -676,63 +668,45 @@ class CallbackHandler:
 
         # ── Model switcher callbacks (ms_*) — no store needed ──
         if cb_data.startswith("task:"):
-            await self._handle_task_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         if cb_data.startswith("task:"):
-            await self._handle_task_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         if cb_data.startswith("ms_"):
-            await self._handle_model_switch(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         # ── Provider model picker callbacks (pm_*) — no store needed ──
         if cb_data.startswith("pm_"):
-            await self._handle_provider_model_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_provider_model_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         # ── Provider hub callbacks (prov_*) — no store needed ──
         if cb_data.startswith("prov_"):
-            await self._handle_provider_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         # ── Settings callbacks (st_*) — no store needed ──
         if cb_data.startswith("st_"):
-            await self._handle_settings_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_settings_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         # ── Debug callbacks (dbg_*) — no store needed ──
         if cb_data.startswith("dbg_"):
-            await self._handle_debug_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_debug_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         # ── Trace action buttons (trace_*) — no store needed ──
         if cb_data.startswith("trace_"):
-            await self._handle_trace_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_trace_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         # ── Heard action cards (heard_*) — no store needed ──
         if cb_data.startswith("heard_"):
-            await self._handle_heard_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_heard_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         # ── Audio deep menu (audio:*) — no store needed ──
@@ -750,9 +724,7 @@ class CallbackHandler:
 
         # ── Audio file action buttons (audmsg:*) — no store needed ──
         if cb_data.startswith("audmsg:"):
-            await self._handle_audio_file_callback(
-                cb_id, cb_data, chat_id, message_id, user_id
-            )
+            await self._handle_audio_file_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
         if not chat_id or not cb_data:
@@ -806,13 +778,9 @@ class CallbackHandler:
         if action == "copy_code":
             code_blocks = _CODE_BLOCK.findall(entry.ai_response)
             if code_blocks:
-                code_text = "\n\n".join(
-                    block.strip("`").strip() for block in code_blocks
-                )
+                code_text = "\n\n".join(block.strip("`").strip() for block in code_blocks)
                 await self._answer(cb_id, "📋 Code extracted")
-                await self.channel.send_message(
-                    chat_id, f"```\n{code_text[:3900]}\n```"
-                )
+                await self.channel.send_message(chat_id, f"```\n{code_text[:3900]}\n```")
             else:
                 await self._answer(cb_id, "No code blocks found")
             return
@@ -836,13 +804,9 @@ class CallbackHandler:
                         user_message=entry.user_message,
                         message_id=message_id,
                     )
-                    await self.channel.send_message(
-                        chat_id, response, keyboard=keyboard
-                    )
+                    await self.channel.send_message(chat_id, response, keyboard=keyboard)
                 else:
-                    await self.channel.send_message(
-                        chat_id, "❌ Couldn't generate a response."
-                    )
+                    await self.channel.send_message(chat_id, "❌ Couldn't generate a response.")
             finally:
                 typing_task.cancel()
                 try:
@@ -868,9 +832,7 @@ class CallbackHandler:
 
         await self._answer(cb_id, "⚠️ Unknown action")
 
-    async def _answer(
-        self, callback_id: str, text: str, show_alert: bool = False
-    ) -> None:
+    async def _answer(self, callback_id: str, text: str, show_alert: bool = False) -> None:
         await self.channel._api_call(
             "answerCallbackQuery",
             {
@@ -1041,9 +1003,7 @@ class CallbackHandler:
 
         if cb_data == "prov_noai":
             self.channel._user_model_prefs[user_id] = "noai"
-            await self._answer(
-                cb_id, "🚫 Raw mode — no AI on next message", show_alert=True
-            )
+            await self._answer(cb_id, "🚫 Raw mode — no AI on next message", show_alert=True)
             return
 
         if cb_data == "prov_bridge":
@@ -1100,9 +1060,7 @@ class CallbackHandler:
                 if result.key_detected or not manifest.requires_key:
                     key_status = "✅ configured"
                 else:
-                    env_hint = (
-                        " or ".join(manifest.env_vars[:2]) if manifest.env_vars else "—"
-                    )
+                    env_hint = " or ".join(manifest.env_vars[:2]) if manifest.env_vars else "—"
                     vault_hint = manifest.vault_keys[0] if manifest.vault_keys else "—"
                     key_status = f"⬜ not found — set {env_hint}" + (
                         f" or vault '{vault_hint}'" if vault_hint != "—" else ""
@@ -1164,13 +1122,9 @@ class CallbackHandler:
             try:
                 import urllib.request
 
-                with urllib.request.urlopen(
-                    "http://127.0.0.1:11434/api/tags", timeout=2
-                ) as r:
+                with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
                     data = _json.loads(r.read())
-                    models = [
-                        m["name"] for m in data.get("models", []) if m.get("name")
-                    ]
+                    models = [m["name"] for m in data.get("models", []) if m.get("name")]
             except Exception:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
         else:
@@ -1230,9 +1184,7 @@ class CallbackHandler:
                 await self.channel._handle_trace(chat_id, user_id)
             except Exception as exc:
                 logger.debug("Debug trace callback failed: %s", exc)
-                await self.channel.send_message(
-                    chat_id, "⚠️ Trace unavailable.", parse_mode=None
-                )
+                await self.channel.send_message(chat_id, "⚠️ Trace unavailable.", parse_mode=None)
         else:
             await self.channel.send_message(
                 chat_id, f"⚠️ Unknown debug action: `{cb_data}`", parse_mode=None
@@ -1399,9 +1351,7 @@ class CallbackHandler:
                 await self.channel.send_message(chat_id, reply or "Nothing found.")
             except Exception as exc:
                 logger.warning("audmsg:identify error: %s", exc)
-                await self.channel.send_message(
-                    chat_id, "⚠️ Couldn't look that up right now."
-                )
+                await self.channel.send_message(chat_id, "⚠️ Couldn't look that up right now.")
             return
 
         if action == "info":
@@ -1450,9 +1400,7 @@ class CallbackHandler:
                             parse_mode="Markdown",
                         )
                     except Exception:
-                        await self.channel.send_message(
-                            chat_id, "⚠️ Language detection failed."
-                        )
+                        await self.channel.send_message(chat_id, "⚠️ Language detection failed.")
                 else:
                     await self.channel.send_message(
                         chat_id, "⚠️ Could not transcribe audio for language detection."
@@ -1479,9 +1427,7 @@ class CallbackHandler:
         elif cb_data == "heard_retry":
             await self._answer(cb_id, "🔁 Send a new voice message to re-transcribe.")
         elif cb_data == "heard_edit":
-            await self._answer(
-                cb_id, "📝 Reply to the Heard: message with your edited text."
-            )
+            await self._answer(cb_id, "📝 Reply to the Heard: message with your edited text.")
         else:
             await self._answer(cb_id, "")
 

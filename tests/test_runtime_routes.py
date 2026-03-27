@@ -227,15 +227,9 @@ async def test_list_missions_filter_by_node():
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="nA"))
         await client.post("/runtime/nodes", json=_node_payload(node_id="nB"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("nA", mission_id="mA1")
-        )
-        await client.post(
-            "/runtime/missions", json=_mission_payload("nA", mission_id="mA2")
-        )
-        await client.post(
-            "/runtime/missions", json=_mission_payload("nB", mission_id="mB1")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("nA", mission_id="mA1"))
+        await client.post("/runtime/missions", json=_mission_payload("nA", mission_id="mA2"))
+        await client.post("/runtime/missions", json=_mission_payload("nB", mission_id="mB1"))
 
         r = await client.get("/runtime/missions?node_id=nA")
         body = await r.json()
@@ -256,9 +250,7 @@ async def test_get_mission_found_and_not_found():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n2"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("n2", mission_id="m2")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("n2", mission_id="m2"))
 
         r = await client.get("/runtime/missions/m2")
         assert r.status == 200
@@ -278,9 +270,7 @@ async def test_advance_mission_start():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n3"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("n3", mission_id="m3")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("n3", mission_id="m3"))
 
         r = await client.post("/runtime/missions/m3/advance", json={"action": "start"})
         assert r.status == 200
@@ -299,13 +289,9 @@ async def test_advance_mission_invalid_action():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n4"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("n4", mission_id="m4")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("n4", mission_id="m4"))
 
-        r = await client.post(
-            "/runtime/missions/m4/advance", json={"action": "explode"}
-        )
+        r = await client.post("/runtime/missions/m4/advance", json={"action": "explode"})
         assert r.status == 422
         b = await r.json()
         assert b["error_code"] == "invalid_transition"
@@ -321,9 +307,7 @@ async def test_advance_mission_missing_action():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n5"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("n5", mission_id="m5")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("n5", mission_id="m5"))
 
         r = await client.post("/runtime/missions/m5/advance", json={})
         assert r.status == 422
@@ -340,9 +324,7 @@ async def test_advance_mission_not_found():
     app = _build_app(gw)
 
     async with TestClient(TestServer(app)) as client:
-        r = await client.post(
-            "/runtime/missions/ghost/advance", json={"action": "start"}
-        )
+        r = await client.post("/runtime/missions/ghost/advance", json={"action": "start"})
         assert r.status == 404
 
 
@@ -356,9 +338,7 @@ async def test_complete_mission_success():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n6"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("n6", mission_id="m6")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("n6", mission_id="m6"))
         # advance to running first
         await client.post("/runtime/missions/m6/advance", json={"action": "start"})
 
@@ -384,9 +364,7 @@ async def test_complete_mission_failure():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n7"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("n7", mission_id="m7")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("n7", mission_id="m7"))
         await client.post("/runtime/missions/m7/advance", json={"action": "start"})
 
         r = await client.post(
@@ -426,13 +404,9 @@ async def test_receipt_created_after_complete():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n8"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("n8", mission_id="m8")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("n8", mission_id="m8"))
         await client.post("/runtime/missions/m8/advance", json={"action": "start"})
-        comp = await client.post(
-            "/runtime/missions/m8/complete", json={"outcome": "success"}
-        )
+        comp = await client.post("/runtime/missions/m8/complete", json={"outcome": "success"})
         receipt_id = (await comp.json())["data"]["receipt_id"]
 
         # list
@@ -474,15 +448,9 @@ async def test_list_receipts_filter_by_mission():
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n9"))
         for mid in ("mX", "mY"):
-            await client.post(
-                "/runtime/missions", json=_mission_payload("n9", mission_id=mid)
-            )
-            await client.post(
-                f"/runtime/missions/{mid}/advance", json={"action": "start"}
-            )
-            await client.post(
-                f"/runtime/missions/{mid}/complete", json={"outcome": "success"}
-            )
+            await client.post("/runtime/missions", json=_mission_payload("n9", mission_id=mid))
+            await client.post(f"/runtime/missions/{mid}/advance", json={"action": "start"})
+            await client.post(f"/runtime/missions/{mid}/complete", json={"outcome": "success"})
 
         r = await client.get("/runtime/receipts?mission_id=mX")
         body = await r.json()
@@ -503,9 +471,7 @@ async def test_store_stats():
 
     async with TestClient(TestServer(app)) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="s1"))
-        await client.post(
-            "/runtime/missions", json=_mission_payload("s1", mission_id="sm1")
-        )
+        await client.post("/runtime/missions", json=_mission_payload("s1", mission_id="sm1"))
 
         r = await client.get("/runtime/store/stats")
         assert r.status == 200
@@ -533,13 +499,9 @@ async def test_auth_required_when_token_set():
         assert r.status == 401
 
         # Wrong token → 401
-        r2 = await client.get(
-            "/runtime/nodes", headers={"Authorization": "Bearer wrong"}
-        )
+        r2 = await client.get("/runtime/nodes", headers={"Authorization": "Bearer wrong"})
         assert r2.status == 401
 
         # Correct token → 200
-        r3 = await client.get(
-            "/runtime/nodes", headers={"Authorization": "Bearer secret-token"}
-        )
+        r3 = await client.get("/runtime/nodes", headers={"Authorization": "Bearer secret-token"})
         assert r3.status == 200

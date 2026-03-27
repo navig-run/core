@@ -110,9 +110,7 @@ async def _act_sigil_assembly(entity: NaviEntity, primary: str, accent: str) -> 
     except ImportError:
         return
 
-    matrix = (
-        entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
-    )
+    matrix = entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
     console = Console()
 
     with Live(console=console, refresh_per_second=14, transient=True) as live:

@@ -80,18 +80,10 @@ class ApprovalPolicy:
     timeout_seconds: int = 120
     default_action: str = "deny"
 
-    safe_patterns: list[str] = field(
-        default_factory=lambda: DEFAULT_SAFE_PATTERNS.copy()
-    )
-    confirm_patterns: list[str] = field(
-        default_factory=lambda: DEFAULT_CONFIRM_PATTERNS.copy()
-    )
-    dangerous_patterns: list[str] = field(
-        default_factory=lambda: DEFAULT_DANGEROUS_PATTERNS.copy()
-    )
-    never_patterns: list[str] = field(
-        default_factory=lambda: DEFAULT_NEVER_PATTERNS.copy()
-    )
+    safe_patterns: list[str] = field(default_factory=lambda: DEFAULT_SAFE_PATTERNS.copy())
+    confirm_patterns: list[str] = field(default_factory=lambda: DEFAULT_CONFIRM_PATTERNS.copy())
+    dangerous_patterns: list[str] = field(default_factory=lambda: DEFAULT_DANGEROUS_PATTERNS.copy())
+    never_patterns: list[str] = field(default_factory=lambda: DEFAULT_NEVER_PATTERNS.copy())
 
     # Per-channel settings
     auto_approve_users: list[str] = field(default_factory=list)
@@ -138,9 +130,7 @@ class ApprovalPolicy:
             default_action=approval_cfg.get("default_action", "deny"),
             safe_patterns=levels.get("safe", DEFAULT_SAFE_PATTERNS.copy()),
             confirm_patterns=levels.get("confirm", DEFAULT_CONFIRM_PATTERNS.copy()),
-            dangerous_patterns=levels.get(
-                "dangerous", DEFAULT_DANGEROUS_PATTERNS.copy()
-            ),
+            dangerous_patterns=levels.get("dangerous", DEFAULT_DANGEROUS_PATTERNS.copy()),
             never_patterns=levels.get("never", DEFAULT_NEVER_PATTERNS.copy()),
             auto_approve_users=channels.get("auto_approve_users", []),
             auto_evolve_enabled=auto_evolve_cfg.get("enabled", False),
@@ -167,10 +157,7 @@ class ApprovalPolicy:
         if level in (ApprovalLevel.DANGEROUS, ApprovalLevel.NEVER):
             return False
         cmd_lower = command.lower().strip()
-        return any(
-            fnmatch.fnmatch(cmd_lower, pat.lower())
-            for pat in self.auto_evolve_whitelist
-        )
+        return any(fnmatch.fnmatch(cmd_lower, pat.lower()) for pat in self.auto_evolve_whitelist)
 
     def classify_command(self, command: str) -> ApprovalLevel:
         """Classify a command into an approval level."""

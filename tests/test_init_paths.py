@@ -17,9 +17,7 @@ def test_legacy_documents_migration_moves_files_and_removes_source(
     log_dir = tmp_path / "logs"
 
     (source_dir / "ai_context").mkdir(parents=True)
-    (source_dir / "ai_context" / "state.json").write_text(
-        '{"ok": true}', encoding="utf-8"
-    )
+    (source_dir / "ai_context" / "state.json").write_text('{"ok": true}', encoding="utf-8")
 
     monkeypatch.setattr(init_mod, "_legacy_documents_config_dir", lambda: source_dir)
     monkeypatch.setattr(init_mod, "_local_log_dir", lambda: log_dir)
@@ -27,9 +25,7 @@ def test_legacy_documents_migration_moves_files_and_removes_source(
     target_dir.mkdir(parents=True, exist_ok=True)
     init_mod._migrate_legacy_documents_dir(target_dir)
 
-    assert (target_dir / "ai_context" / "state.json").read_text(
-        encoding="utf-8"
-    ) == '{"ok": true}'
+    assert (target_dir / "ai_context" / "state.json").read_text(encoding="utf-8") == '{"ok": true}'
     assert not source_dir.exists()
     assert (log_dir / "init.log").exists()
 
@@ -44,12 +40,8 @@ def test_legacy_documents_migration_conflict_keeps_source(
 
     (source_dir / "ai_context").mkdir(parents=True)
     (target_dir / "ai_context").mkdir(parents=True)
-    (source_dir / "ai_context" / "state.json").write_text(
-        '{"value": 1}', encoding="utf-8"
-    )
-    (target_dir / "ai_context" / "state.json").write_text(
-        '{"value": 2}', encoding="utf-8"
-    )
+    (source_dir / "ai_context" / "state.json").write_text('{"value": 1}', encoding="utf-8")
+    (target_dir / "ai_context" / "state.json").write_text('{"value": 2}', encoding="utf-8")
 
     monkeypatch.setattr(init_mod, "_legacy_documents_config_dir", lambda: source_dir)
     monkeypatch.setattr(init_mod, "_local_log_dir", lambda: log_dir)
@@ -59,9 +51,7 @@ def test_legacy_documents_migration_conflict_keeps_source(
 
     assert source_dir.exists()
     assert (source_dir / "ai_context" / "state.json").exists()
-    assert "legacy migration failed" in (log_dir / "init.log").read_text(
-        encoding="utf-8"
-    )
+    assert "legacy migration failed" in (log_dir / "init.log").read_text(encoding="utf-8")
 
 
 def test_run_init_aborts_cleanly_on_directory_permission_error(
@@ -97,9 +87,7 @@ def test_windows_runtime_layout_migration_flattens_nested_platformdirs_tree(
     (legacy_root / "memory" / "key_facts.db").write_text("facts", encoding="utf-8")
     (legacy_root / "Cache" / "tmp.json").write_text("cache", encoding="utf-8")
 
-    monkeypatch.setattr(
-        init_mod, "_legacy_windows_platformdirs_root", lambda: legacy_root
-    )
+    monkeypatch.setattr(init_mod, "_legacy_windows_platformdirs_root", lambda: legacy_root)
     monkeypatch.setattr(init_mod, "_local_log_dir", lambda: canonical_logs)
     monkeypatch.setattr(init_mod, "_local_state_dir", lambda: canonical_state)
     monkeypatch.setattr(init_mod, "_cache_dir", lambda: canonical_cache)
@@ -108,9 +96,7 @@ def test_windows_runtime_layout_migration_flattens_nested_platformdirs_tree(
     init_mod._migrate_legacy_windows_runtime_layout()
 
     assert (canonical_logs / "debug.log").read_text(encoding="utf-8") == "debug"
-    assert (canonical_state / "memory" / "key_facts.db").read_text(
-        encoding="utf-8"
-    ) == "facts"
+    assert (canonical_state / "memory" / "key_facts.db").read_text(encoding="utf-8") == "facts"
     assert (canonical_cache / "tmp.json").read_text(encoding="utf-8") == "cache"
     assert not legacy_root.exists()
 
@@ -129,9 +115,7 @@ def test_windows_runtime_layout_migration_appends_conflicting_logs(
     (legacy_root / "Logs" / "debug.log").write_text("new log", encoding="utf-8")
     (canonical_logs / "debug.log").write_text("old log", encoding="utf-8")
 
-    monkeypatch.setattr(
-        init_mod, "_legacy_windows_platformdirs_root", lambda: legacy_root
-    )
+    monkeypatch.setattr(init_mod, "_legacy_windows_platformdirs_root", lambda: legacy_root)
     monkeypatch.setattr(init_mod, "_local_log_dir", lambda: canonical_logs)
     monkeypatch.setattr(init_mod, "_local_state_dir", lambda: canonical_state)
     monkeypatch.setattr(init_mod, "_cache_dir", lambda: canonical_cache)

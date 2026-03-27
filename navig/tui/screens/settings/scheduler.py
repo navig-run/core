@@ -103,9 +103,7 @@ class SchedulerSettingsScreen(Screen):  # type: ignore[type-arg]
             yield Input(value=d["retry_limit"], placeholder="3", id="sched-retry-limit")
 
             yield Label("Retry Delay (seconds)", classes="field-label", markup=False)
-            yield Input(
-                value=d["retry_delay"], placeholder="60", id="sched-retry-delay"
-            )
+            yield Input(value=d["retry_delay"], placeholder="60", id="sched-retry-delay")
 
             with Horizontal(id="sched-btns"):
                 yield Button("Save  [ctrl+s]", variant="primary", id="btn-save")

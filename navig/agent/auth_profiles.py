@@ -101,9 +101,7 @@ class ProfileCooldown:
         """Seconds until this profile becomes available again (0 if ready)."""
         if not self.is_on_cooldown():
             return 0.0
-        return max(
-            0.0, self.cooldown_seconds - (time.monotonic() - self.last_failure_ts)
-        )
+        return max(0.0, self.cooldown_seconds - (time.monotonic() - self.last_failure_ts))
 
 
 # =============================================================================
@@ -122,9 +120,7 @@ class AuthProfilePool:
     def __init__(self, profiles: list[AuthProfile]) -> None:
         self._lock = threading.Lock()
         self._profiles: dict[str, AuthProfile] = {p.name: p for p in profiles}
-        self._cooldowns: dict[str, ProfileCooldown] = {
-            p.name: ProfileCooldown() for p in profiles
-        }
+        self._cooldowns: dict[str, ProfileCooldown] = {p.name: ProfileCooldown() for p in profiles}
 
         # Build weighted rotation list (name → popped in order)
         self._rotation: list[str] = []
@@ -253,18 +249,14 @@ def get_profile_pool() -> AuthProfilePool:
         try:
             from navig.config import get_config_manager
 
-            raw_profiles = (
-                get_config_manager().global_config.get("auth", {}).get("profiles", [])
-            )
+            raw_profiles = get_config_manager().global_config.get("auth", {}).get("profiles", [])
             for entry in raw_profiles:
                 if not isinstance(entry, dict):
                     continue
                 key = entry.get("api_key", "")
                 name = entry.get("name", "")
                 if not key or not name:
-                    logger.warning(
-                        "auth_profiles: skipping profile with missing name/api_key"
-                    )
+                    logger.warning("auth_profiles: skipping profile with missing name/api_key")
                     continue
                 profiles.append(
                     AuthProfile(
@@ -280,14 +272,10 @@ def get_profile_pool() -> AuthProfilePool:
                     )
                 )
         except Exception as exc:
-            logger.warning(
-                "auth_profiles: failed to load profiles from config: %s", exc
-            )
+            logger.warning("auth_profiles: failed to load profiles from config: %s", exc)
 
         _pool_instance = AuthProfilePool(profiles)
-        logger.debug(
-            "auth_profiles: pool initialized with %d profile(s)", len(profiles)
-        )
+        logger.debug("auth_profiles: pool initialized with %d profile(s)", len(profiles))
         return _pool_instance
 
 

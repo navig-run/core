@@ -63,11 +63,7 @@ def classify_workspace_file(file_name: str) -> str:
     Returns:
         "generated_default" or "personal_customized"
     """
-    return (
-        "generated_default"
-        if file_name in GENERATED_DEFAULT_FILES
-        else "personal_customized"
-    )
+    return "generated_default" if file_name in GENERATED_DEFAULT_FILES else "personal_customized"
 
 
 def is_project_workspace_path(path: Path, project_root: Path | None = None) -> bool:

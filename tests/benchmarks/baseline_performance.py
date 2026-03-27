@@ -124,9 +124,7 @@ print(f"{import_time:.2f},{init_time:.2f},{list_time:.2f},{len(hosts)}")
     return {
         "import_ms": statistics.mean(times["import"]) if times["import"] else 0,
         "init_ms": statistics.mean(times["init"]) if times["init"] else 0,
-        "list_hosts_ms": (
-            statistics.mean(times["list_hosts"]) if times["list_hosts"] else 0
-        ),
+        "list_hosts_ms": (statistics.mean(times["list_hosts"]) if times["list_hosts"] else 0),
         "host_count": host_count,
     }
 

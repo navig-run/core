@@ -31,9 +31,7 @@ def bridge_connect(
     generate_token: bool = typer.Option(
         True, "--token/--no-token", help="Generate a new auth token"
     ),
-    json_output: bool = typer.Option(
-        False, "--json", help="Output JSON for programmatic use"
-    ),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON for programmatic use"),
 ):
     """
     Set up Bridge ↔ Daemon connection in one step.
@@ -169,9 +167,7 @@ def bridge_status(
 
         ch.info(f"  {status_icon} Gateway: {'enabled' if enabled else 'disabled'}")
         ch.info(f"  {secure_icon} Bind:    {host}:{port}")
-        ch.info(
-            f"  {auth_icon} Auth:    {'configured' if token else 'NONE (open access!)'}"
-        )
+        ch.info(f"  {auth_icon} Auth:    {'configured' if token else 'NONE (open access!)'}")
 
         if host != "127.0.0.1":
             ch.warning("  Gateway is bound to a non-localhost address!")

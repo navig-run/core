@@ -46,14 +46,10 @@ def test_daemon_command_uses_python_on_non_windowless(
 
 
 def test_detection_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        sm.shutil, "which", lambda name: "x" if name == "nssm" else None
-    )
+    monkeypatch.setattr(sm.shutil, "which", lambda name: "x" if name == "nssm" else None)
     assert sm.has_nssm() is True
 
-    monkeypatch.setattr(
-        sm.shutil, "which", lambda name: "x" if name == "systemctl" else None
-    )
+    monkeypatch.setattr(sm.shutil, "which", lambda name: "x" if name == "systemctl" else None)
     assert sm.has_systemd() is True
 
 
@@ -111,9 +107,7 @@ def test_nssm_uninstall_and_status(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sm.subprocess,
         "run",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            stdout="SERVICE_RUNNING", returncode=0
-        ),
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="SERVICE_RUNNING", returncode=0),
     )
     ok, msg = sm.nssm_uninstall()
     assert ok is True
@@ -151,18 +145,14 @@ def test_task_scheduler_status(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sm.subprocess,
         "run",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            stdout="Status: Running", returncode=0
-        ),
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="Status: Running", returncode=0),
     )
     running, detail = sm.task_scheduler_status()
     assert running is True
     assert "Running" in detail
 
 
-def test_systemd_unit_path_and_content(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_systemd_unit_path_and_content(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(sm.Path, "home", staticmethod(lambda: home))
@@ -177,9 +167,7 @@ def test_systemd_unit_path_and_content(
     assert "ExecStart=python -m navig.daemon.entry" in content
 
 
-def test_systemd_install_user_mode(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_systemd_install_user_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _set_paths(monkeypatch, tmp_path)
     unit_path = tmp_path / "user.service"
     calls: list[list[str]] = []
@@ -190,8 +178,7 @@ def test_systemd_install_user_mode(
     monkeypatch.setattr(
         sm.subprocess,
         "run",
-        lambda cmd, **kwargs: calls.append(cmd)
-        or SimpleNamespace(returncode=0, stderr=b""),
+        lambda cmd, **kwargs: calls.append(cmd) or SimpleNamespace(returncode=0, stderr=b""),
     )
 
     ok, msg = sm.systemd_install(start_now=True)
@@ -219,9 +206,7 @@ def test_systemd_install_system_mode_failure(
     assert "systemd install failed" in msg
 
 
-def test_systemd_uninstall_and_status(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_systemd_uninstall_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _set_paths(monkeypatch, tmp_path)
     system_unit = tmp_path / "system.service"
     user_unit = tmp_path / "user.service"
@@ -234,9 +219,7 @@ def test_systemd_uninstall_and_status(
     monkeypatch.setattr(
         sm.subprocess,
         "run",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            returncode=0, stdout="active", stderr=b""
-        ),
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="active", stderr=b""),
     )
 
     ok, msg = sm.systemd_uninstall()
@@ -307,9 +290,7 @@ def test_uninstall_dispatch_and_status_report(monkeypatch: pytest.MonkeyPatch) -
         @staticmethod
         def read_state() -> dict:
             return {
-                "children": [
-                    {"name": "telegram", "alive": True, "pid": 99, "restart_count": 1}
-                ]
+                "children": [{"name": "telegram", "alive": True, "pid": 99, "restart_count": 1}]
             }
 
     monkeypatch.setattr(supervisor, "NavigDaemon", FakeDaemon)

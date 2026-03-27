@@ -165,8 +165,7 @@ class DiscordChannel:
             else:
                 # Server message - check for mention or prefix
                 if (
-                    self.config.respond_to_mentions
-                    and self.bot.user in message.mentions
+                    self.config.respond_to_mentions and self.bot.user in message.mentions
                 ) or message.content.startswith(self.config.command_prefix):
                     should_respond = True
 
@@ -241,9 +240,7 @@ class DiscordChannel:
             try:
                 # Build metadata
                 metadata = {
-                    "guild_id": (
-                        str(interaction.guild_id) if interaction.guild_id else None
-                    ),
+                    "guild_id": (str(interaction.guild_id) if interaction.guild_id else None),
                     "channel_id": str(interaction.channel_id),
                     "interaction": True,
                 }

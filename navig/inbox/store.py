@@ -166,9 +166,7 @@ class InboxStore:
         event.id = cur.lastrowid
         return cur.lastrowid  # type: ignore[return-value]
 
-    def update_event_status(
-        self, event_id: int, status: str, error: str | None = None
-    ) -> None:
+    def update_event_status(self, event_id: int, status: str, error: str | None = None) -> None:
         conn = self._connect()
         conn.execute(
             "UPDATE inbox_events SET status=?, error=? WHERE id=?",
@@ -178,9 +176,7 @@ class InboxStore:
 
     def get_event(self, event_id: int) -> InboxEvent | None:
         row = (
-            self._connect()
-            .execute("SELECT * FROM inbox_events WHERE id=?", (event_id,))
-            .fetchone()
+            self._connect().execute("SELECT * FROM inbox_events WHERE id=?", (event_id,)).fetchone()
         )
         return _row_to_event(row) if row else None
 

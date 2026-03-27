@@ -49,8 +49,7 @@ class _FakeSession:
 def test_trim_messages_preserves_system_and_recent_history() -> None:
     client = AIClient(api_key="test", model="test", provider="openrouter")
     messages = [{"role": "system", "content": "rules"}] + [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"}
-        for i in range(14)
+        {"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"} for i in range(14)
     ]
 
     trimmed = client._trim_messages_for_retry(messages, keep_recent=4)

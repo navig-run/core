@@ -33,9 +33,7 @@ if TYPE_CHECKING:
 try:
     from aiohttp import web
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
@@ -122,9 +120,7 @@ def _chat(gw: NavigGateway):
         try:
             body = await request.json()
         except Exception:
-            return json_error_response(
-                "Invalid JSON body", status=400, code="invalid_json"
-            )
+            return json_error_response("Invalid JSON body", status=400, code="invalid_json")
 
         text = (body.get("text") or "").strip()
         if not text:
@@ -140,9 +136,7 @@ def _chat(gw: NavigGateway):
         workspace_context = body.get("workspaceContext")
 
         # Synapse: extract correlation ID (body takes precedence over header)
-        msg_id = (
-            body.get("msgId") or request.headers.get("X-Msg-Id") or str(_uuid.uuid4())
-        )
+        msg_id = body.get("msgId") or request.headers.get("X-Msg-Id") or str(_uuid.uuid4())
 
         # ── Build metadata for the channel router ───────────────
         metadata = {
@@ -297,9 +291,7 @@ def _unregister_provider():
             body = await request.json()
             name = body.get("name", "")
             if not name:
-                return json_error_response(
-                    "name is required", status=400, code="invalid_request"
-                )
+                return json_error_response("name is required", status=400, code="invalid_request")
             removed = get_bridge_registry().unregister(name)
             logger.info("[Bridge] Unregistered provider '%s' (found=%s)", name, removed)
             return json_ok({"removed": removed})
@@ -320,8 +312,7 @@ def _list_providers():
         return json_ok(
             {
                 "providers": [
-                    {"name": p.name, "url": p.url, "priority": p.priority}
-                    for p in providers
+                    {"name": p.name, "url": p.url, "priority": p.priority} for p in providers
                 ]
             }
         )

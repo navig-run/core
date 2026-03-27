@@ -89,8 +89,7 @@ def _confidence_table(findings: list[ScanFinding]) -> str:
         Markdown table string.
     """
     rows = [
-        f"| `{f.file}:{f.line}` | {f.description[:60]} | {f.confidence:.2f} |"
-        for f in findings
+        f"| `{f.file}:{f.line}` | {f.description[:60]} | {f.confidence:.2f} |" for f in findings
     ]
     return "\n".join(rows) or "| — | — | — |"
 

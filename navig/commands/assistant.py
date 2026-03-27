@@ -124,9 +124,7 @@ def analyze_cmd(ctx_obj: dict[str, Any]):
                 if active_issues:
                     ch.warning(f"\n⚠️  Found {len(active_issues)} active issue(s):")
                     for issue in active_issues[:5]:
-                        ch.warning(
-                            f"  - [{issue.get('severity')}] {issue.get('description')}"
-                        )
+                        ch.warning(f"  - [{issue.get('severity')}] {issue.get('description')}")
                 else:
                     ch.success("\n✓ No active issues detected")
         except Exception as e:
@@ -138,9 +136,7 @@ def analyze_cmd(ctx_obj: dict[str, Any]):
         ch.error(f"Analysis failed: {e}")
 
 
-def context_cmd(
-    ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str | None = None
-):
+def context_cmd(ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str | None = None):
     """Generate AI copilot context summary."""
     config = get_config_manager()
     assistant = ProactiveAssistant(config)
@@ -160,9 +156,7 @@ def context_cmd(
 
         # Generate context (works even without server connection)
         try:
-            context = assistant.context_generator.generate_context_summary(
-                config, remote_ops
-            )
+            context = assistant.context_generator.generate_context_summary(config, remote_ops)
         except Exception as e:
             ch.error(f"Failed to generate context: {e}")
             return

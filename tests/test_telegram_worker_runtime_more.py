@@ -167,9 +167,7 @@ async def test_run_fully_mocked(mock_config_manager, monkeypatch):
 
     import sys
 
-    monkeypatch.setitem(
-        sys.modules, "navig.mcp", SimpleNamespace(MCPClientManager=DummyMCPManager)
-    )
+    monkeypatch.setitem(sys.modules, "navig.mcp", SimpleNamespace(MCPClientManager=DummyMCPManager))
 
     monkeypatch.setattr(tw, "_start_gateway_http", AsyncMock())
     monkeypatch.setattr(tw, "_stop_gateway_http", AsyncMock())
@@ -184,9 +182,7 @@ async def test_run_fully_mocked(mock_config_manager, monkeypatch):
 
     monkeypatch.setattr(tw.asyncio, "Event", ImmediateEvent)
 
-    fake_loop = SimpleNamespace(
-        add_signal_handler=MagicMock(side_effect=NotImplementedError)
-    )
+    fake_loop = SimpleNamespace(add_signal_handler=MagicMock(side_effect=NotImplementedError))
     monkeypatch.setattr(tw.asyncio, "get_running_loop", lambda: fake_loop)
 
     # Test full run execution

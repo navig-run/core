@@ -324,9 +324,7 @@ class ToolRegistry:
             self.initialize()
         return sorted({t.domain.value for t in self._tools.values()})
 
-    def get_tools_for_llm_prompt(
-        self, available_only: bool = True
-    ) -> list[dict[str, Any]]:
+    def get_tools_for_llm_prompt(self, available_only: bool = True) -> list[dict[str, Any]]:
         """
         Return a JSON-serializable list of tool descriptors
         suitable for injection into the LLM system prompt.
@@ -403,9 +401,7 @@ class ToolRouter:
         self._policy = safety_policy or {}
         # Set of tool names blocked by policy
         self._blocked: set[str] = set(self._policy.get("blocked_tools", []))
-        self._require_confirmation: set[str] = set(
-            self._policy.get("require_confirmation", [])
-        )
+        self._require_confirmation: set[str] = set(self._policy.get("require_confirmation", []))
         self._max_calls_per_turn: int = self._policy.get("max_calls_per_turn", 10)
         # Safety mode: permissive | standard | strict
         self._safety_mode: str = self._policy.get("safety_mode", "standard")

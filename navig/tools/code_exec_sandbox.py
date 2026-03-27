@@ -24,7 +24,9 @@ _MAX_OUTPUT = 3_000
 
 class CodeExecSandboxTool(BaseTool):
     name = "code_exec_sandbox"
-    description = "Execute a Python code snippet safely. Returns stdout, stderr, exit code. 10s timeout."
+    description = (
+        "Execute a Python code snippet safely. Returns stdout, stderr, exit code. 10s timeout."
+    )
     parameters = [
         {
             "name": "code",
@@ -111,9 +113,7 @@ class CodeExecSandboxTool(BaseTool):
                     "stderr": stderr,
                     "exit_code": exit_code,
                 },
-                error=(
-                    f"process exited with code {exit_code}" if exit_code != 0 else None
-                ),
+                error=(f"process exited with code {exit_code}" if exit_code != 0 else None),
             )
 
         except Exception as exc:

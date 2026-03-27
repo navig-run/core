@@ -43,13 +43,9 @@ class MacOSAdapter(OSAdapter):
                 continue
             parts = line.split()
             if len(parts) >= 2:
-                packages.append(
-                    PackageInfo(name=parts[0], version=parts[1], source="brew")
-                )
+                packages.append(PackageInfo(name=parts[0], version=parts[1], source="brew"))
             elif len(parts) == 1:
-                packages.append(
-                    PackageInfo(name=parts[0], version="unknown", source="brew")
-                )
+                packages.append(PackageInfo(name=parts[0], version="unknown", source="brew"))
         return packages
 
     def get_package_install_command(self, package: str) -> str:

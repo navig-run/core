@@ -14,9 +14,7 @@ class GenerationContext:
     screen_height: int
 
     def to_prompt_str(self) -> str:
-        win_list = "\n".join(
-            [f"- {w['title']} (PID: {w.get('pid', '?')})" for w in self.windows]
-        )
+        win_list = "\n".join([f"- {w['title']} (PID: {w.get('pid', '?')})" for w in self.windows])
         return f"""
 Current System State:
 Screen Resolution: {self.screen_width}x{self.screen_height}
@@ -88,9 +86,7 @@ Generate the AHK v2 script.
             from navig.ai import ask_ai_with_context
 
             # Use the standalone function that supports custom system prompts
-            response = ask_ai_with_context(
-                prompt=user_prompt, system_prompt=system_prompt
-            )
+            response = ask_ai_with_context(prompt=user_prompt, system_prompt=system_prompt)
 
             # Check for API error
             if response.startswith("Error:"):
@@ -117,9 +113,7 @@ Generate the AHK v2 script.
             # If no code block, maybe the whole response is code?
             if "#Requires" in response or "WinActivate" in response:
                 # Clean up any potential markdown that wasn't caught
-                clean_response = (
-                    response.replace("```ahk", "").replace("```", "").strip()
-                )
+                clean_response = response.replace("```ahk", "").replace("```", "").strip()
                 return GenerationResult(True, script=clean_response)
 
             return GenerationResult(

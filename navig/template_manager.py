@@ -175,9 +175,7 @@ class Template:
         """Get environment variables defined by this template."""
         return self.metadata.get("env_vars", {})
 
-    def check_dependencies(
-        self, available_templates: list[str]
-    ) -> tuple[bool, list[str]]:
+    def check_dependencies(self, available_templates: list[str]) -> tuple[bool, list[str]]:
         """Check if all dependencies are met."""
         dependencies = self.metadata.get("dependencies", [])
         missing = [dep for dep in dependencies if dep not in available_templates]
@@ -210,9 +208,7 @@ class TemplateManager:
                 templates_dir = builtin_store_dir() / "templates"
             except Exception:
                 # Fallback: resolve relative to this file (navig/ → repo root → store/)
-                templates_dir = (
-                    Path(__file__).resolve().parent.parent / "store" / "templates"
-                )
+                templates_dir = Path(__file__).resolve().parent.parent / "store" / "templates"
 
         self.templates_dir = templates_dir
         self.templates: dict[str, Template] = {}
@@ -276,9 +272,7 @@ class TemplateManager:
         deps_met, missing_deps = template.check_dependencies(available_templates)
 
         if not deps_met:
-            ch.error(
-                f"Cannot enable '{name}': missing dependencies: {', '.join(missing_deps)}"
-            )
+            ch.error(f"Cannot enable '{name}': missing dependencies: {', '.join(missing_deps)}")
             return False
 
         # Enable template

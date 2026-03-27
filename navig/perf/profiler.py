@@ -192,9 +192,7 @@ def load_recent_samples(days: int = 7) -> list[dict[str, Any]]:
     return samples
 
 
-def detect_regressions(
-    samples: list[dict[str, Any]] | None = None
-) -> list[dict[str, Any]]:
+def detect_regressions(samples: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """
     Detect performance regressions in the last 7 days of profile data.
 
@@ -253,9 +251,7 @@ def suggest_optimizations(samples: list[dict[str, Any]] | None = None) -> list[s
         samples = load_recent_samples()
 
     if not samples:
-        return [
-            "No profile data available yet. Run some NAVIG commands to collect data."
-        ]
+        return ["No profile data available yet. Run some NAVIG commands to collect data."]
 
     # Aggregate cumtime by function across all samples
     fn_cumtime: dict[str, float] = {}

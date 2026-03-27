@@ -50,6 +50,4 @@ def gateway_request(method: str, path: str, **kwargs):
     headers = dict(gateway_request_headers())
     extra_headers = kwargs.pop("headers", None) or {}
     headers.update(extra_headers)
-    return requests.request(
-        method, f"{gateway_base_url()}{path}", headers=headers, **kwargs
-    )
+    return requests.request(method, f"{gateway_base_url()}{path}", headers=headers, **kwargs)

@@ -57,9 +57,7 @@ def _get_adapter():
 
 @ahk_app.command("install")
 def ahk_install(
-    portable: bool = typer.Option(
-        False, "--portable", "-p", help="Install portable version"
-    ),
+    portable: bool = typer.Option(False, "--portable", "-p", help="Install portable version"),
     force: bool = typer.Option(False, "--force", "-f", help="Force reinstall/redetect"),
 ):
     """
@@ -229,12 +227,8 @@ def ahk_doctor():
         # Check 3: Detection
         status = adapter.get_status()
         if status.detected:
-            checks.append(
-                ("AHKv2 Detection", status.detection_method, "✓ Pass", "green")
-            )
-            checks.append(
-                ("AHKv2 Version", status.version or "Unknown", "✓ Pass", "green")
-            )
+            checks.append(("AHKv2 Detection", status.detection_method, "✓ Pass", "green"))
+            checks.append(("AHKv2 Version", status.version or "Unknown", "✓ Pass", "green"))
             checks.append(
                 (
                     "Executable Path",
@@ -252,9 +246,7 @@ def ahk_doctor():
             if test_result.success:
                 checks.append(("Test Execution", "Success", "✓ Pass", "green"))
             else:
-                checks.append(
-                    ("Test Execution", test_result.stderr[:30], "✗ Fail", "red")
-                )
+                checks.append(("Test Execution", test_result.stderr[:30], "✗ Fail", "red"))
 
         # Check 5: Directories
         script_dir = adapter._script_dir
@@ -282,9 +274,7 @@ def ahk_doctor():
 @ahk_app.command("run")
 def ahk_run(
     script_path: str = typer.Argument(..., help="Path to .ahk script file"),
-    args: str | None = typer.Option(
-        None, "--args", "-a", help="Comma-separated arguments"
-    ),
+    args: str | None = typer.Option(None, "--args", "-a", help="Comma-separated arguments"),
     timeout: float | None = typer.Option(
         None, "--timeout", "-t", help="Execution timeout in seconds"
     ),
@@ -330,9 +320,7 @@ def ahk_run(
 @ahk_app.command("exec")
 def ahk_exec(
     code: str = typer.Argument(..., help="AHK code to execute"),
-    timeout: float | None = typer.Option(
-        None, "--timeout", "-t", help="Execution timeout"
-    ),
+    timeout: float | None = typer.Option(None, "--timeout", "-t", help="Execution timeout"),
 ):
     """
     Execute inline AHK code.
@@ -370,9 +358,7 @@ def ahk_exec(
 def ahk_click(
     x: int = typer.Argument(..., help="X coordinate"),
     y: int = typer.Argument(..., help="Y coordinate"),
-    button: str = typer.Option(
-        "left", "--button", "-b", help="Mouse button (left/right/middle)"
-    ),
+    button: str = typer.Option("left", "--button", "-b", help="Mouse button (left/right/middle)"),
     clicks: int = typer.Option(1, "--clicks", "-c", help="Number of clicks"),
 ):
     """
@@ -542,9 +528,7 @@ def ahk_open(
 
 @ahk_app.command("close")
 def ahk_close(
-    selector: str = typer.Argument(
-        ..., help="Window title, ahk_exe, ahk_class, or ahk_id"
-    ),
+    selector: str = typer.Argument(..., help="Window title, ahk_exe, ahk_class, or ahk_id"),
 ):
     """
     Close window by selector.
@@ -699,9 +683,7 @@ def ahk_activate(
 @ahk_app.command("windows")
 def ahk_windows(
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
-    filter_text: str | None = typer.Option(
-        None, "--filter", "-f", help="Filter by title"
-    ),
+    filter_text: str | None = typer.Option(None, "--filter", "-f", help="Filter by title"),
 ):
     """
     List all visible windows.
@@ -778,9 +760,7 @@ def ahk_windows(
 @ahk_app.command("clipboard")
 def ahk_clipboard(
     get: bool = typer.Option(False, "--get", "-g", help="Get clipboard content"),
-    set_value: str | None = typer.Option(
-        None, "--set", "-s", help="Set clipboard content"
-    ),
+    set_value: str | None = typer.Option(None, "--set", "-s", help="Set clipboard content"),
 ):
     """
     Clipboard operations.
@@ -827,9 +807,7 @@ def ahk_clipboard(
 @ahk_app.command("automate")
 def ahk_automate(
     goal: str = typer.Argument(..., help="Natural language goal description"),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="Show script without executing"
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show script without executing"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip safety confirmation"),
 ):
     """
@@ -925,9 +903,7 @@ def ahk_automate(
 @ahk_app.command("evolve")
 def ahk_evolve(
     goal: str = typer.Argument(..., help="Goal to evolve a script for"),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="Show evolution without executing"
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show evolution without executing"),
     retries: int = typer.Option(3, "--retries", "-r", help="Max evolution attempts"),
 ):
     """
@@ -1065,9 +1041,7 @@ def library_list(
 
     for s in scripts:
         goal_display = s.goal[:50] + "..." if len(s.goal) > 50 else s.goal
-        last_used_display = (
-            s.last_used[:16].replace("T", " ") if s.last_used else "Never"
-        )
+        last_used_display = s.last_used[:16].replace("T", " ") if s.last_used else "Never"
 
         table.add_row(s.id, goal_display, str(s.success_count), last_used_display)
 
@@ -1094,9 +1068,7 @@ def library_show(
 
     if not entry:
         # Try finding by goal substring
-        matches = [
-            s for s in library.list_scripts() if script_id.lower() in s.goal.lower()
-        ]
+        matches = [s for s in library.list_scripts() if script_id.lower() in s.goal.lower()]
         if matches:
             entry = matches[0]
             if len(matches) > 1:
@@ -1118,9 +1090,7 @@ def library_show(
 
 @ahk_app.command("dashboard")
 def ahk_dashboard(
-    refresh: float = typer.Option(
-        1.0, "--refresh", "-r", help="Refresh rate in seconds"
-    ),
+    refresh: float = typer.Option(1.0, "--refresh", "-r", help="Refresh rate in seconds"),
 ):
     """
     Live window manager dashboard.
@@ -1177,9 +1147,7 @@ def ahk_dashboard(
 
                 geom = f"{w.x},{w.y} {w.width}x{w.height}"
 
-                table.add_row(
-                    str(w.pid), w.title[:50], w.process_name[:20], geom, ",".join(state)
-                )
+                table.add_row(str(w.pid), w.title[:50], w.process_name[:20], geom, ",".join(state))
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -1198,9 +1166,7 @@ def ahk_dashboard(
 
 @ahk_app.command("clipboard")
 def ahk_clipboard(  # noqa: F811
-    text: str | None = typer.Argument(
-        None, help="Text to copy (if omitted, prints clipboard)"
-    ),
+    text: str | None = typer.Argument(None, help="Text to copy (if omitted, prints clipboard)"),
 ):
     """Get or set clipboard content."""
     adapter = _get_adapter()
@@ -1249,9 +1215,7 @@ def ahk_screenshot(
 
 @ahk_app.command("ocr")
 def ahk_ocr(
-    image: Path | None = typer.Option(
-        None, "--image", help="Image file (default: screenshot)"
-    ),
+    image: Path | None = typer.Option(None, "--image", help="Image file (default: screenshot)"),
     region: str | None = typer.Option(None, "--region", help="Region x,y,w,h"),
 ):
     """Extract text from screen or image (requires pytesseract)."""
@@ -1309,9 +1273,7 @@ def ahk_ocr(
 def ahk_listen(
     hotkey: str = typer.Argument(..., help="AHK Hotkey (e.g. ^!t)"),
     command: str = typer.Argument(..., help="Command to run"),
-    start: bool = typer.Option(
-        False, "--start", "-s", help="Start/Restart listener immediately"
-    ),
+    start: bool = typer.Option(False, "--start", "-s", help="Start/Restart listener immediately"),
 ):
     """
     Register a global hotkey to run a command.
@@ -1397,9 +1359,7 @@ def ahk_generate(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show generated script without executing"
     ),
-    save: bool = typer.Option(
-        False, "--save", "-s", help="Save to library if successful"
-    ),
+    save: bool = typer.Option(False, "--save", "-s", help="Save to library if successful"),
 ):
     """
     Generate AHK script from natural language using AI.
@@ -1476,9 +1436,7 @@ def ahk_evolve(  # noqa: F811
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show generated script without executing"
     ),
-    max_retries: int = typer.Option(
-        3, "--retries", "-r", help="Max evolution attempts"
-    ),
+    max_retries: int = typer.Option(3, "--retries", "-r", help="Max evolution attempts"),
 ):
     """
     Auto-generate, test, and evolve AHK scripts until they work.
@@ -1520,9 +1478,7 @@ def ahk_evolve(  # noqa: F811
         if dry_run:
             from rich.syntax import Syntax
 
-            syntax = Syntax(
-                result.final_script, "autohotkey", theme="monokai", line_numbers=True
-            )
+            syntax = Syntax(result.final_script, "autohotkey", theme="monokai", line_numbers=True)
             console.print(Panel(syntax, title="🎯 Final Script", border_style="green"))
     else:
         ch.error(f"✗ Evolution failed after {result.attempts} attempts")
@@ -1531,9 +1487,7 @@ def ahk_evolve(  # noqa: F811
             ch.warning("Last attempted script:")
             from rich.syntax import Syntax
 
-            syntax = Syntax(
-                result.final_script, "autohotkey", theme="monokai", line_numbers=True
-            )
+            syntax = Syntax(result.final_script, "autohotkey", theme="monokai", line_numbers=True)
             console.print(Panel(syntax, title="⚠️ Failed Script", border_style="red"))
 
         raise typer.Exit(1)
@@ -1544,9 +1498,7 @@ def ahk_evolve(  # noqa: F811
 
 @ahk_app.command("processes")
 def ahk_processes(
-    filter_name: str | None = typer.Option(
-        None, "--filter", help="Filter by process name"
-    ),
+    filter_name: str | None = typer.Option(None, "--filter", help="Filter by process name"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all running processes."""
@@ -1562,9 +1514,7 @@ def ahk_processes(
     processes = adapter.get_processes()
 
     if filter_name:
-        processes = [
-            p for p in processes if filter_name.lower() in p.get("name", "").lower()
-        ]
+        processes = [p for p in processes if filter_name.lower() in p.get("name", "").lower()]
 
     if json_output:
         print(json.dumps(processes, indent=2))
@@ -1810,9 +1760,7 @@ def ahk_find(
     table.add_column("Size", style="blue")
 
     for win in windows:
-        table.add_row(
-            win.title[:50], win.class_name, str(win.pid), f"{win.width}x{win.height}"
-        )
+        table.add_row(win.title[:50], win.class_name, str(win.pid), f"{win.width}x{win.height}")
 
     console.print(table)
 
@@ -1843,9 +1791,7 @@ def ahk_notify(
 
 @ahk_app.command("volume")
 def ahk_volume(
-    level: int | None = typer.Argument(
-        None, help="Volume level 0-100 (omit to show current)"
-    ),
+    level: int | None = typer.Argument(None, help="Volume level 0-100 (omit to show current)"),
 ):
     """Get or set system volume."""
     adapter = _get_adapter()
@@ -1910,9 +1856,7 @@ ahk_app.add_typer(workflow_app, name="workflow")
 @workflow_app.command("run")
 def workflow_run(
     name: str = typer.Argument(..., help="Name of workflow to run"),
-    vars: list[str] = typer.Option(
-        None, "--var", "-v", help="Variables in key=value format"
-    ),
+    vars: list[str] = typer.Option(None, "--var", "-v", help="Variables in key=value format"),
 ):
     """Run a cross-platform workflow."""
     from navig.core.automation_engine import WorkflowEngine

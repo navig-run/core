@@ -130,9 +130,7 @@ def _create_sender_socket() -> socket.socket:
     """UDP socket for sending multicast packets."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-    sock.setsockopt(
-        socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1
-    )  # receive own packets in dev
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)  # receive own packets in dev
     return sock
 
 
@@ -245,17 +243,13 @@ class MeshDiscovery:
             return
         try:
             self._seq += 1
-            data = _build_packet(
-                self._registry, ptype, seq=self._seq, secret=self._secret
-            )
+            data = _build_packet(self._registry, ptype, seq=self._seq, secret=self._secret)
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
                 lambda: self._sender.sendto(data, (MCAST_GROUP, MCAST_PORT)),  # type: ignore[union-attr]
             )
-            logger.debug(
-                f"[mesh.discovery] Sent {ptype} seq={self._seq} ({len(data)} bytes)"
-            )
+            logger.debug(f"[mesh.discovery] Sent {ptype} seq={self._seq} ({len(data)} bytes)")
         except Exception as e:
             logger.warning(f"[mesh.discovery] Send error: {e}")
 

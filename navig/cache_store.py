@@ -73,13 +73,9 @@ def read_json_cache(
         if cached_at_dt is None:
             return CacheReadResult(hit=False, expired=False, data=None, cached_at=None)
 
-        age_seconds = int(
-            (_utc_now() - cached_at_dt.astimezone(timezone.utc)).total_seconds()
-        )
+        age_seconds = int((_utc_now() - cached_at_dt.astimezone(timezone.utc)).total_seconds())
         if ttl_seconds >= 0 and age_seconds > ttl_seconds:
-            return CacheReadResult(
-                hit=True, expired=True, data=None, cached_at=cached_at_raw
-            )
+            return CacheReadResult(hit=True, expired=True, data=None, cached_at=cached_at_raw)
 
         return CacheReadResult(
             hit=True, expired=False, data=payload.get("data"), cached_at=cached_at_raw

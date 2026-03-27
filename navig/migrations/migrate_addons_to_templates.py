@@ -100,9 +100,7 @@ class AddonToTemplateMigration:
             elif yaml_file.exists():
                 source_file = yaml_file
             else:
-                self.skipped.append(
-                    (str(addon_dir), "No addon.json or addon.yaml found")
-                )
+                self.skipped.append((str(addon_dir), "No addon.json or addon.yaml found"))
                 continue
 
             # Target location
@@ -111,9 +109,7 @@ class AddonToTemplateMigration:
 
             # Check if target already exists
             if target_file.exists() and not self.force:
-                self.skipped.append(
-                    (str(target_file), "Already exists (use --force to overwrite)")
-                )
+                self.skipped.append((str(target_file), "Already exists (use --force to overwrite)"))
                 continue
 
             # Load source
@@ -211,9 +207,7 @@ class AddonToTemplateMigration:
                     try:
                         templates_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(addon_file, target_file)
-                        ch.success(
-                            f"    addons/{addon_name}.yaml -> templates/{addon_name}.yaml"
-                        )
+                        ch.success(f"    addons/{addon_name}.yaml -> templates/{addon_name}.yaml")
                     except Exception as e:
                         self.errors.append((str(target_file), str(e)))
                         continue
@@ -278,9 +272,7 @@ class AddonToTemplateMigration:
         if total > 0 and not self.errors:
             ch.newline()
             if self.dry_run:
-                ch.info(
-                    f"Would migrate {total} item(s). Run without --dry-run to apply changes."
-                )
+                ch.info(f"Would migrate {total} item(s). Run without --dry-run to apply changes.")
             else:
                 ch.success(f"Migration complete! {total} item(s) migrated.")
         elif total == 0:

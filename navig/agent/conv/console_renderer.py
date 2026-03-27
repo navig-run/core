@@ -129,9 +129,7 @@ class ConsoleStatusRenderer:
         is_final: bool = event.metadata.get("is_final", True)
         if is_final:
             # Terminal failure — bold red, clearly visible.
-            self._active_console().print(
-                f"[bold red]\u274c {event.message}: {error}[/bold red]"
-            )
+            self._active_console().print(f"[bold red]\u274c {event.message}: {error}[/bold red]")
         else:
             # Intermediate retry — dim, doesn't alarm the user.
             attempt = event.metadata.get("attempt", 0)

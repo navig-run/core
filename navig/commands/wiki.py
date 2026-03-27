@@ -139,9 +139,7 @@ def ensure_wiki_initialized(wiki_path: Path) -> bool:
     return (wiki_path / ".meta" / "config.yaml").exists()
 
 
-def create_folder_structure(
-    base_path: Path, structure: dict, indent: int = 0
-) -> list[str]:
+def create_folder_structure(base_path: Path, structure: dict, indent: int = 0) -> list[str]:
     """
     Recursively create folder structure.
 
@@ -168,9 +166,7 @@ def create_folder_structure(
                 file_path = folder_path / filename
                 if not file_path.exists():
                     file_path.touch()
-                    created.append(
-                        ("file", str(file_path.relative_to(base_path.parent)))
-                    )
+                    created.append(("file", str(file_path.relative_to(base_path.parent))))
 
     # Handle _files at current level
     if "_files" in structure:
@@ -300,9 +296,7 @@ def list_wiki_pages(
     return sorted(pages, key=lambda x: x["path"])
 
 
-def search_wiki(
-    wiki_path: Path, query: str, case_sensitive: bool = False
-) -> list[dict[str, Any]]:
+def search_wiki(wiki_path: Path, query: str, case_sensitive: bool = False) -> list[dict[str, Any]]:
     """
     Full-text search across wiki pages.
 
@@ -335,9 +329,7 @@ def search_wiki(
                 # Normalize path to forward slashes
                 rel_path_str = str(rel_path).replace("\\", "/")
 
-                results.append(
-                    {"path": rel_path_str, "matches": len(matches), "context": context}
-                )
+                results.append({"path": rel_path_str, "matches": len(matches), "context": context})
         except Exception:
             continue
 
@@ -477,15 +469,11 @@ def categorize_content(content: str, filename: str) -> str:
     ]
 
     # Count matches
-    tech_score = sum(
-        1 for kw in tech_keywords if kw in content_lower or kw in filename_lower
-    )
+    tech_score = sum(1 for kw in tech_keywords if kw in content_lower or kw in filename_lower)
     business_score = sum(
         1 for kw in business_keywords if kw in content_lower or kw in filename_lower
     )
-    hub_score = sum(
-        1 for kw in hub_keywords if kw in content_lower or kw in filename_lower
-    )
+    hub_score = sum(1 for kw in hub_keywords if kw in content_lower or kw in filename_lower)
     knowledge_score = sum(
         1 for kw in knowledge_keywords if kw in content_lower or kw in filename_lower
     )
@@ -537,11 +525,7 @@ def categorize_content(content: str, filename: str) -> str:
             return "external/business"
 
     else:  # knowledge
-        if (
-            "guide" in content_lower
-            or "tutorial" in content_lower
-            or "how to" in content_lower
-        ):
+        if "guide" in content_lower or "tutorial" in content_lower or "how to" in content_lower:
             return "knowledge/guides"
         elif "concept" in content_lower or "definition" in content_lower:
             return "knowledge/concepts"
@@ -551,9 +535,7 @@ def categorize_content(content: str, filename: str) -> str:
             return "knowledge/domain"
 
 
-def process_inbox_item(
-    wiki_path: Path, filename: str, auto_move: bool = False
-) -> dict[str, Any]:
+def process_inbox_item(wiki_path: Path, filename: str, auto_move: bool = False) -> dict[str, Any]:
     """
     Process a single inbox item.
 
@@ -645,9 +627,7 @@ def update_index(wiki_path: Path):
 
             lines.append("")
 
-    lines.extend(
-        ["---", f"*Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*"]
-    )
+    lines.extend(["---", f"*Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*"])
 
     # Write index
     index_path = wiki_path / ".meta" / "index.md"
@@ -665,9 +645,7 @@ wiki_app = typer.Typer(
 
 @wiki_app.command("init")
 def cmd_init(
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Reinitialize even if wiki exists"
-    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Reinitialize even if wiki exists"),
     global_wiki: bool = typer.Option(
         False, "--global", "-g", help="Initialize global wiki (~/.navig/wiki)"
     ),
@@ -726,9 +704,7 @@ def cmd_list(
         ch.error("Wiki not initialized. Run: navig wiki init")
         raise typer.Exit(1)
 
-    pages = list_wiki_pages(
-        wiki_path, folder, recursive=all_pages or folder is not None
-    )
+    pages = list_wiki_pages(wiki_path, folder, recursive=all_pages or folder is not None)
 
     if not pages:
         if folder:
@@ -767,9 +743,7 @@ def cmd_show(
     page: str = typer.Argument(
         ..., help="Page name or path (e.g., 'concepts/overview' or 'overview')"
     ),
-    raw: bool = typer.Option(
-        False, "--raw", "-r", help="Show raw markdown without rendering"
-    ),
+    raw: bool = typer.Option(False, "--raw", "-r", help="Show raw markdown without rendering"),
 ):
     """View a wiki page."""
     config = ConfigManager()
@@ -796,9 +770,7 @@ def cmd_show(
         from rich.panel import Panel
 
         rel_path = page_path.relative_to(wiki_path)
-        ch.console.print(
-            Panel(Markdown(content), title=f"📄 {rel_path}", border_style="blue")
-        )
+        ch.console.print(Panel(Markdown(content), title=f"📄 {rel_path}", border_style="blue"))
 
 
 @wiki_app.command("add")
@@ -807,9 +779,7 @@ def cmd_add(
     folder: str | None = typer.Option(
         None, "--folder", "-f", help="Destination folder (e.g., 'knowledge/concepts')"
     ),
-    inbox: bool = typer.Option(
-        False, "--inbox", "-i", help="Add to inbox for AI processing"
-    ),
+    inbox: bool = typer.Option(False, "--inbox", "-i", help="Add to inbox for AI processing"),
 ):
     """Add a file to the wiki."""
     config = ConfigManager()
@@ -1135,12 +1105,8 @@ def links_broken():
 
 @wiki_app.command("publish")
 def cmd_publish(
-    preview: bool = typer.Option(
-        False, "--preview", "-p", help="Preview what would be published"
-    ),
-    include_private: bool = typer.Option(
-        False, "--all", "-a", help="Include private content"
-    ),
+    preview: bool = typer.Option(False, "--preview", "-p", help="Preview what would be published"),
+    include_private: bool = typer.Option(False, "--all", "-a", help="Include private content"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output directory"),
 ):
     """Publish public wiki content."""
@@ -1269,9 +1235,7 @@ def rag_status(ctx: typer.Context):
 def rag_query(
     query: str = typer.Argument(..., help="Natural language query"),
     limit: int = typer.Option(5, "--limit", "-l", help="Max results"),
-    context: bool = typer.Option(
-        False, "--context", "-c", help="Show full context for AI"
-    ),
+    context: bool = typer.Option(False, "--context", "-c", help="Show full context for AI"),
 ):
     """Query the wiki knowledge base.
 
@@ -1334,18 +1298,14 @@ def rag_rebuild():
     rag.rebuild_index()
 
     stats = rag.get_stats()
-    ch.success(
-        f"✓ Indexed {stats['total_documents']} documents ({stats['total_chunks']} chunks)"
-    )
+    ch.success(f"✓ Indexed {stats['total_documents']} documents ({stats['total_chunks']} chunks)")
 
 
 @rag_app.command("add")
 def rag_add(
     content: str = typer.Argument(..., help="Content to add (text or file path)"),
     title: str | None = typer.Option(None, "--title", "-t", help="Document title"),
-    path: str | None = typer.Option(
-        None, "--path", "-p", help="Wiki path for the document"
-    ),
+    path: str | None = typer.Option(None, "--path", "-p", help="Wiki path for the document"),
 ):
     """Add content directly to the RAG knowledge base.
 

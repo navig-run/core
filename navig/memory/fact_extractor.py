@@ -87,9 +87,7 @@ _DECISION_PATTERNS = [
         "decision",
     ),
     (
-        re.compile(
-            r"(?:decided|decision)\s+(?:to\s+|is\s+)?(.+?)(?:\.|$)", re.IGNORECASE
-        ),
+        re.compile(r"(?:decided|decision)\s+(?:to\s+|is\s+)?(.+?)(?:\.|$)", re.IGNORECASE),
         "decision",
     ),
     (
@@ -103,15 +101,11 @@ _DECISION_PATTERNS = [
 
 _IDENTITY_PATTERNS = [
     (
-        re.compile(
-            r"(?:my name is|i'?m called|call me)\s+(\w+(?:\s+\w+)?)", re.IGNORECASE
-        ),
+        re.compile(r"(?:my name is|i'?m called|call me)\s+(\w+(?:\s+\w+)?)", re.IGNORECASE),
         "identity",
     ),
     (
-        re.compile(
-            r"(?:i work (?:at|for)|i'?m (?:a|an|the))\s+(.+?)(?:\.|$)", re.IGNORECASE
-        ),
+        re.compile(r"(?:i work (?:at|for)|i'?m (?:a|an|the))\s+(.+?)(?:\.|$)", re.IGNORECASE),
         "identity",
     ),
     (
@@ -119,9 +113,7 @@ _IDENTITY_PATTERNS = [
         "identity",
     ),
     (
-        re.compile(
-            r"(?:i'?m based in|i live in|my timezone is)\s+(.+?)(?:\.|$)", re.IGNORECASE
-        ),
+        re.compile(r"(?:i'?m based in|i live in|my timezone is)\s+(.+?)(?:\.|$)", re.IGNORECASE),
         "identity",
     ),
 ]
@@ -149,9 +141,7 @@ _TECHNICAL_PATTERNS = [
         "technical",
     ),
     (
-        re.compile(
-            r"(?:(?:we|i) use)\s+(\w+(?:\s+\w+){0,3})\s+(?:for|as|to)\s+", re.IGNORECASE
-        ),
+        re.compile(r"(?:(?:we|i) use)\s+(\w+(?:\s+\w+){0,3})\s+(?:for|as|to)\s+", re.IGNORECASE),
         "technical",
     ),
 ]
@@ -168,9 +158,7 @@ _PROBLEM_SOLUTION_PATTERNS = [
     ),
 ]
 
-ALL_PATTERNS = (
-    _PREFERENCE_PATTERNS + _DECISION_PATTERNS + _IDENTITY_PATTERNS + _TECHNICAL_PATTERNS
-)
+ALL_PATTERNS = _PREFERENCE_PATTERNS + _DECISION_PATTERNS + _IDENTITY_PATTERNS + _TECHNICAL_PATTERNS
 
 
 def extract_rules(
@@ -247,9 +235,7 @@ def _normalize_fact_text(raw: str, category: str, context: str) -> str:
     if text and text[0].islower():
         text = text[0].upper() + text[1:]
     # Add "User" prefix for identity/preference facts
-    if category in ("preference", "identity") and not text.lower().startswith(
-        ("user", "the user")
-    ):
+    if category in ("preference", "identity") and not text.lower().startswith(("user", "the user")):
         text = f"User: {text}"
     return text
 
@@ -494,9 +480,7 @@ class FactExtractor:
         # Phase 2: LLM extraction (if enabled and rules didn't find much)
         if self.mode in ("llm", "hybrid") and self.llm_call:
             should_llm = self.mode == "llm" or (
-                self.mode == "hybrid"
-                and len(result.facts) == 0
-                and _is_high_signal(user_text)
+                self.mode == "hybrid" and len(result.facts) == 0 and _is_high_signal(user_text)
             )
             if should_llm:
                 try:

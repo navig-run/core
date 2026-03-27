@@ -74,15 +74,11 @@ class UserIdentity:
 class WorkPatterns:
     """Work habits and preferences."""
 
-    active_hours: list[str] = field(
-        default_factory=list
-    )  # e.g., ["9-17 EST", "weekdays"]
+    active_hours: list[str] = field(default_factory=list)  # e.g., ["9-17 EST", "weekdays"]
     deploy_preferences: dict[str, Any] = field(
         default_factory=dict
     )  # e.g., {"preferred_day": "friday", "window": "evening"}
-    common_tasks: list[str] = field(
-        default_factory=list
-    )  # e.g., ["docker restart", "db backup"]
+    common_tasks: list[str] = field(default_factory=list)  # e.g., ["docker restart", "db backup"]
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -100,18 +96,10 @@ class WorkPatterns:
 class TechnicalContext:
     """Technical environment and stack."""
 
-    stack: list[str] = field(
-        default_factory=list
-    )  # e.g., ["Laravel", "Docker", "PostgreSQL"]
-    managed_hosts: list[str] = field(
-        default_factory=list
-    )  # e.g., ["myserver", "production"]
-    primary_projects: list[str] = field(
-        default_factory=list
-    )  # e.g., ["my-saas", "api-backend"]
-    preferences: list[str] = field(
-        default_factory=list
-    )  # e.g., ["Python", "CLI tools", "Docker"]
+    stack: list[str] = field(default_factory=list)  # e.g., ["Laravel", "Docker", "PostgreSQL"]
+    managed_hosts: list[str] = field(default_factory=list)  # e.g., ["myserver", "production"]
+    primary_projects: list[str] = field(default_factory=list)  # e.g., ["my-saas", "api-backend"]
+    preferences: list[str] = field(default_factory=list)  # e.g., ["Python", "CLI tools", "Docker"]
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -139,9 +127,7 @@ class UserPreferences:
     )  # e.g., ["delete", "restart_production"]
 
     def to_dict(self) -> dict:
-        return {
-            k: v for k, v in asdict(self).items() if v or isinstance(v, (list, dict))
-        }
+        return {k: v for k, v in asdict(self).items() if v or isinstance(v, (list, dict))}
 
     @classmethod
     def from_dict(cls, data: dict) -> UserPreferences:
@@ -205,12 +191,8 @@ class UserProfile:
     notes: list[MemoryNote] = field(default_factory=list)
 
     # File paths
-    _profile_path: Path = field(
-        default_factory=lambda: _get_memory_dir() / "user_profile.json"
-    )
-    _notes_path: Path = field(
-        default_factory=lambda: _get_memory_dir() / "user_notes.md"
-    )
+    _profile_path: Path = field(default_factory=lambda: _get_memory_dir() / "user_profile.json")
+    _notes_path: Path = field(default_factory=lambda: _get_memory_dir() / "user_notes.md")
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def to_dict(self) -> dict:
@@ -223,9 +205,7 @@ class UserProfile:
             "preferences": self.preferences.to_dict(),
             "stats": self.stats.to_dict(),
             "goals": self.goals,
-            "notes": [
-                n.to_dict() for n in self.notes[-50:]
-            ],  # Keep last 50 notes in JSON
+            "notes": [n.to_dict() for n in self.notes[-50:]],  # Keep last 50 notes in JSON
         }
 
     @classmethod
@@ -234,9 +214,7 @@ class UserProfile:
         return cls(
             identity=UserIdentity.from_dict(data.get("identity", {})),
             work_patterns=WorkPatterns.from_dict(data.get("work_patterns", {})),
-            technical_context=TechnicalContext.from_dict(
-                data.get("technical_context", {})
-            ),
+            technical_context=TechnicalContext.from_dict(data.get("technical_context", {})),
             preferences=UserPreferences.from_dict(data.get("preferences", {})),
             stats=InteractionStats.from_dict(data.get("stats", {})),
             goals=data.get("goals", []),
@@ -300,11 +278,7 @@ class UserProfile:
         with self._lock:
             _ensure_dir(self._notes_path.parent)
             with open(self._notes_path, "a", encoding="utf-8") as f:
-                if (
-                    self._notes_path.stat().st_size == 0
-                    if self._notes_path.exists()
-                    else True
-                ):
+                if self._notes_path.stat().st_size == 0 if self._notes_path.exists() else True:
                     f.write("# NAVIG User Memory Notes\n\n")
                 f.write(note.to_markdown())
 
@@ -386,13 +360,8 @@ class UserProfile:
 
         # Search notes
         for note in reversed(self.notes):  # Most recent first
-            if (
-                query_lower in note.content.lower()
-                or query_lower in note.category.lower()
-            ):
-                results.append(
-                    f"[{note.timestamp[:10]}] {note.category}: {note.content}"
-                )
+            if query_lower in note.content.lower() or query_lower in note.category.lower():
+                results.append(f"[{note.timestamp[:10]}] {note.category}: {note.content}")
                 if len(results) >= limit:
                     break
 
@@ -432,13 +401,9 @@ class UserProfile:
         if self.technical_context.stack:
             parts.append(f"Stack: {', '.join(self.technical_context.stack[:5])}")
         if self.technical_context.managed_hosts:
-            parts.append(
-                f"Hosts: {', '.join(self.technical_context.managed_hosts[:5])}"
-            )
+            parts.append(f"Hosts: {', '.join(self.technical_context.managed_hosts[:5])}")
         if self.technical_context.primary_projects:
-            parts.append(
-                f"Projects: {', '.join(self.technical_context.primary_projects[:3])}"
-            )
+            parts.append(f"Projects: {', '.join(self.technical_context.primary_projects[:3])}")
 
         # Work patterns
         if self.work_patterns.active_hours:
@@ -550,31 +515,19 @@ class UserProfile:
         if self.technical_context.managed_hosts:
             lines.append(f"   Hosts: {', '.join(self.technical_context.managed_hosts)}")
         if self.technical_context.primary_projects:
-            lines.append(
-                f"   Projects: {', '.join(self.technical_context.primary_projects)}"
-            )
-        if not any(
-            [self.technical_context.stack, self.technical_context.managed_hosts]
-        ):
+            lines.append(f"   Projects: {', '.join(self.technical_context.primary_projects)}")
+        if not any([self.technical_context.stack, self.technical_context.managed_hosts]):
             lines.append("   (no technical data)")
 
         # Work patterns
         lines.append("\nWORK PATTERNS")
         if self.work_patterns.active_hours:
-            lines.append(
-                f"   Active hours: {', '.join(self.work_patterns.active_hours)}"
-            )
+            lines.append(f"   Active hours: {', '.join(self.work_patterns.active_hours)}")
         if self.work_patterns.deploy_preferences:
-            lines.append(
-                f"   Deploy prefs: {json.dumps(self.work_patterns.deploy_preferences)}"
-            )
+            lines.append(f"   Deploy prefs: {json.dumps(self.work_patterns.deploy_preferences)}")
         if self.work_patterns.common_tasks:
-            lines.append(
-                f"   Common tasks: {', '.join(self.work_patterns.common_tasks)}"
-            )
-        if not any(
-            [self.work_patterns.active_hours, self.work_patterns.deploy_preferences]
-        ):
+            lines.append(f"   Common tasks: {', '.join(self.work_patterns.common_tasks)}")
+        if not any([self.work_patterns.active_hours, self.work_patterns.deploy_preferences]):
             lines.append("   (no work pattern data)")
 
         # Preferences
@@ -582,13 +535,9 @@ class UserProfile:
         if self.preferences.communication_style:
             lines.append(f"   Communication: {self.preferences.communication_style}")
         if self.preferences.alert_thresholds:
-            lines.append(
-                f"   Alert thresholds: {json.dumps(self.preferences.alert_thresholds)}"
-            )
+            lines.append(f"   Alert thresholds: {json.dumps(self.preferences.alert_thresholds)}")
         if self.preferences.confirmation_required_for:
-            lines.append(
-                f"   Confirm for: {', '.join(self.preferences.confirmation_required_for)}"
-            )
+            lines.append(f"   Confirm for: {', '.join(self.preferences.confirmation_required_for)}")
         if not self.preferences.communication_style:
             lines.append("   (no preference data)")
 
@@ -612,17 +561,13 @@ class UserProfile:
             top_cmds = sorted(
                 self.stats.most_used_commands.items(), key=lambda x: x[1], reverse=True
             )[:5]
-            lines.append(
-                f"   Top commands: {', '.join(f'{c[0]}({c[1]})' for c in top_cmds)}"
-            )
+            lines.append(f"   Top commands: {', '.join(f'{c[0]}({c[1]})' for c in top_cmds)}")
 
         # Recent notes
         lines.append("\nRECENT NOTES")
         if self.notes:
             for note in self.notes[-5:]:
-                lines.append(
-                    f"   [{note.timestamp[:10]}] {note.category}: {note.content[:60]}..."
-                )
+                lines.append(f"   [{note.timestamp[:10]}] {note.category}: {note.content[:60]}...")
         else:
             lines.append("   (no notes)")
 

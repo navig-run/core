@@ -42,9 +42,7 @@ def test_telegram_and_deck_config(monkeypatch: pytest.MonkeyPatch):
             "auth_max_age": 120,
         },
     }
-    monkeypatch.setattr(
-        tw, "get_config_manager", lambda: SimpleNamespace(global_config=cfg)
-    )
+    monkeypatch.setattr(tw, "get_config_manager", lambda: SimpleNamespace(global_config=cfg))
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env-token")
 
     tg = tw._telegram_config()
@@ -70,9 +68,7 @@ def test_main_parses_args_and_runs(monkeypatch: pytest.MonkeyPatch):
         coro.close()
 
     monkeypatch.setattr(tw.asyncio, "run", _run)
-    monkeypatch.setattr(
-        sys, "argv", ["telegram_worker.py", "--port", "9999", "--no-gateway"]
-    )
+    monkeypatch.setattr(sys, "argv", ["telegram_worker.py", "--port", "9999", "--no-gateway"])
 
     tw.main()
     assert captured["coro"] is not None

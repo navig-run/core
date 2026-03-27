@@ -37,9 +37,7 @@ def _make_builder(
     }
     if config:
         defaults.update(config)
-    return ContextBuilder(
-        config=defaults, project_root=project_root or Path("/tmp/fake")
-    )
+    return ContextBuilder(config=defaults, project_root=project_root or Path("/tmp/fake"))
 
 
 # Synthetic data factories
@@ -139,9 +137,7 @@ class TestBasicAssembly:
     def test_disabled_builder(self, mock_meta, mock_msgs, mock_kb):
         """When enabled=False, should return empty context."""
         builder = _make_builder({"enabled": False})
-        ctx = builder.build_context(
-            "How do I deploy?", {"enable_kb": True}, "session-1"
-        )
+        ctx = builder.build_context("How do I deploy?", {"enable_kb": True}, "session-1")
 
         assert ctx["conversation_history"] == []
         assert ctx["kb_snippets"] == []
@@ -185,9 +181,7 @@ class TestKBSkipped:
         mock_meta.return_value = {}
 
         builder = _make_builder({"kb_min_input_length": 5})
-        ctx = builder.build_context(
-            "How do I configure SSH tunnels?", {"enable_kb": True}, None
-        )
+        ctx = builder.build_context("How do I configure SSH tunnels?", {"enable_kb": True}, None)
 
         assert len(ctx["kb_snippets"]) == 2
         mock_kb.assert_called_once()
@@ -305,9 +299,9 @@ class TestFullPipeline:
         # The enriched messages should contain a system context message
         # with conversation history
         all_content = " ".join(m.get("content", "") for m in call_messages)
-        assert (
-            "Message 0" in all_content or "Recent Conversation" in all_content
-        ), "Expected conversation history in prompt"
+        assert "Message 0" in all_content or "Recent Conversation" in all_content, (
+            "Expected conversation history in prompt"
+        )
 
         # (c) result is valid LLMResult
         assert result.content == "Mocked LLM response"
@@ -478,9 +472,7 @@ class TestEnrichMessages:
             {"role": "user", "content": "hello"},
         ]
         ctx = {
-            "conversation_history": [
-                {"role": "user", "content": "old msg", "timestamp": "t"}
-            ],
+            "conversation_history": [{"role": "user", "content": "old msg", "timestamp": "t"}],
             "workspace_notes": [],
             "kb_snippets": [],
             "metadata": {},

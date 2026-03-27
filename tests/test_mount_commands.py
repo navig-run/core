@@ -155,9 +155,7 @@ class TestMountCLI:
         target = self.tmp / "link2"
 
         self.runner.invoke(self._app(), ["add", "dup", str(source), str(target)])
-        result = self.runner.invoke(
-            self._app(), ["add", "dup", str(source), str(target)]
-        )
+        result = self.runner.invoke(self._app(), ["add", "dup", str(source), str(target)])
         assert result.exit_code != 0
         assert "already registered" in result.output
 
@@ -185,9 +183,7 @@ class TestMountCLI:
         source.mkdir()
         target = self.tmp / "dead_link"
 
-        self.runner.invoke(
-            self._app(), ["add", "dd", str(source), str(target), "--no-create"]
-        )
+        self.runner.invoke(self._app(), ["add", "dd", str(source), str(target), "--no-create"])
         result = self.runner.invoke(self._app(), ["verify"])
         assert result.exit_code == 0
         assert "dead" in result.output.lower() or "✗" in result.output
@@ -257,9 +253,7 @@ class TestMountCLI:
         monkeypatch.setattr(m, "_create_junction", lambda s, t: None)
         source = self.tmp / "j"
         source.mkdir()
-        self.runner.invoke(
-            self._app(), ["add", "json_test", str(source), "--no-create"]
-        )
+        self.runner.invoke(self._app(), ["add", "json_test", str(source), "--no-create"])
         result = self.runner.invoke(self._app(), ["list", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)

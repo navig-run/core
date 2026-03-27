@@ -53,9 +53,7 @@ def gateway_start(
         "--host",
         help="Host to bind to (default: gateway.host from config, fallback 0.0.0.0)",
     ),
-    background: bool = typer.Option(
-        False, "--background", "-b", help="Run in background"
-    ),
+    background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
 ):
     """
     Start the autonomous agent gateway server.
@@ -195,9 +193,7 @@ def gateway_status(
         pass
 
     # ── Gateway daemon check (local HTTP) ─────────────────────────────────────
-    def _http_alive(
-        url: str, timeout: float = 2.0, headers: dict[str, str] | None = None
-    ) -> bool:
+    def _http_alive(url: str, timeout: float = 2.0, headers: dict[str, str] | None = None) -> bool:
         try:
             import urllib.request
 
@@ -226,9 +222,7 @@ def gateway_status(
             import urllib.request
 
             tok = tg_cfg["bot_token"]
-            with urllib.request.urlopen(
-                f"https://api.telegram.org/bot{tok}/getMe", timeout=5
-            ) as r:
+            with urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getMe", timeout=5) as r:
                 tg_online = _j.load(r).get("ok", False)
         except Exception:  # noqa: BLE001
             pass
@@ -254,9 +248,7 @@ def gateway_status(
 
     # ── Email / SMTP ──────────────────────────────────────────────────────────
     em_cfg = raw_cfg.get("email") or raw_cfg.get("smtp") or {}
-    em_configured = bool(
-        em_cfg.get("smtp_host") or em_cfg.get("SMTP_HOST") or em_cfg.get("host")
-    )
+    em_configured = bool(em_cfg.get("smtp_host") or em_cfg.get("SMTP_HOST") or em_cfg.get("host"))
     em_port = int(em_cfg.get("smtp_port") or em_cfg.get("port") or 587)
     em_host = str(em_cfg.get("smtp_host") or em_cfg.get("host") or "")
     em_online = _port_alive(em_host, em_port) if em_host else False
@@ -273,9 +265,7 @@ def gateway_status(
             "channel": "Telegram",
             "configured": tg_token,
             "detail": (
-                f"users={tg_users}  groups={tg_groups}"
-                if tg_token
-                else "bot_token missing"
+                f"users={tg_users}  groups={tg_groups}" if tg_token else "bot_token missing"
             ),
             "reachable": tg_online,
         },
@@ -372,9 +362,7 @@ def gateway_test(
         if ch_name == "telegram":
             if not target:
                 ch.warning("  --target required for Telegram (e.g. --target @username)")
-                results.append(
-                    {"channel": "telegram", "ok": False, "reason": "no target"}
-                )
+                results.append({"channel": "telegram", "ok": False, "reason": "no target"})
                 continue
             from navig.commands.telegram import telegram_send as _tg_send
 
@@ -388,9 +376,7 @@ def gateway_test(
                 )
                 results.append({"channel": "telegram", "ok": True})
             except SystemExit:
-                results.append(
-                    {"channel": "telegram", "ok": False, "reason": "send failed"}
-                )
+                results.append({"channel": "telegram", "ok": False, "reason": "send failed"})
 
         elif ch_name == "matrix":
             from navig.commands.bridge import matrix_bridge_test_alert as _mx_test
@@ -403,18 +389,12 @@ def gateway_test(
                 results.append({"channel": "matrix", "ok": False, "reason": str(exc)})
 
         elif ch_name == "discord":
-            ch.dim(
-                "  Discord test not yet implemented — verify via Discord Dev Portal."
-            )
-            results.append(
-                {"channel": "discord", "ok": None, "reason": "not implemented"}
-            )
+            ch.dim("  Discord test not yet implemented — verify via Discord Dev Portal.")
+            results.append({"channel": "discord", "ok": None, "reason": "not implemented"})
 
         elif ch_name == "email":
             ch.dim("  Email test: run navig email send --to example@domain.com")
-            results.append(
-                {"channel": "email", "ok": None, "reason": "not implemented"}
-            )
+            results.append({"channel": "email", "ok": None, "reason": "not implemented"})
 
         else:
             ch.warning(

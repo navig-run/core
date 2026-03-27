@@ -136,9 +136,7 @@ def tray_stop():
 
     try:
         if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=True
-            )
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=True)
         else:
             os.kill(pid, 15)  # SIGTERM
 

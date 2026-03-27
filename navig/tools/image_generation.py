@@ -102,9 +102,7 @@ class ImageGenerationConfig:
             provider=ImageProvider(os.environ.get("IMAGE_PROVIDER", "openai")),
             openai_api_key=os.environ.get("OPENAI_API_KEY"),
             stability_api_key=os.environ.get("STABILITY_API_KEY"),
-            local_api_url=os.environ.get(
-                "LOCAL_IMAGE_API_URL", "http://localhost:7860"
-            ),
+            local_api_url=os.environ.get("LOCAL_IMAGE_API_URL", "http://localhost:7860"),
         )
 
     @classmethod
@@ -206,9 +204,7 @@ class ImageGenerator:
             config: Generation configuration
         """
         if not HTTPX_AVAILABLE:
-            raise ImportError(
-                "httpx is required for image generation. Install: pip install httpx"
-            )
+            raise ImportError("httpx is required for image generation. Install: pip install httpx")
 
         self.config = config or ImageGenerationConfig.from_env()
         self._client: httpx.AsyncClient | None = None
@@ -541,9 +537,7 @@ async def generate_image(
         images = await generator.generate(
             prompt,
             size=(
-                ImageSize(size)
-                if size in [s.value for s in ImageSize]
-                else ImageSize.SQUARE_LARGE
+                ImageSize(size) if size in [s.value for s in ImageSize] else ImageSize.SQUARE_LARGE
             ),
             n=1,
             **kwargs,

@@ -106,9 +106,7 @@ class ActionRegistry:
     # Dispatch API
     # ------------------------------------------------------------------
 
-    async def dispatch(
-        self, action_id: str, params: dict[str, Any]
-    ) -> tuple[bool, Any]:
+    async def dispatch(self, action_id: str, params: dict[str, Any]) -> tuple[bool, Any]:
         """Dispatch *action_id* with *params*.
 
         Returns
@@ -234,23 +232,17 @@ def _register_core_actions(reg: ActionRegistry) -> None:
     @reg.register("auto.click", requires_params=True)
     async def _auto_click(params: dict[str, Any]) -> Any:
         return _chk(
-            _get_adapter().click(
-                params.get("x"), params.get("y"), params.get("button", "left")
-            )
+            _get_adapter().click(params.get("x"), params.get("y"), params.get("button", "left"))
         )
 
     @reg.register("auto.type", requires_params=True)
     async def _auto_type(params: dict[str, Any]) -> Any:
-        return _chk(
-            _get_adapter().type_text(params.get("text", ""), params.get("delay", 50))
-        )
+        return _chk(_get_adapter().type_text(params.get("text", ""), params.get("delay", 50)))
 
     @reg.register("auto.snap_window")
     async def _auto_snap_window(params: dict[str, Any]) -> Any:
         return _chk(
-            _get_adapter().snap_window(
-                params.get("selector", ""), params.get("position", "left")
-            )
+            _get_adapter().snap_window(params.get("selector", ""), params.get("position", "left"))
         )
 
     @reg.register("auto.get_focused_window")
@@ -260,10 +252,7 @@ def _register_core_actions(reg: ActionRegistry) -> None:
     @reg.register("auto.windows")
     async def _auto_windows(params: dict[str, Any]) -> list:
         adapter = _get_adapter()
-        return [
-            w.to_dict() if hasattr(w, "to_dict") else str(w)
-            for w in adapter.get_all_windows()
-        ]
+        return [w.to_dict() if hasattr(w, "to_dict") else str(w) for w in adapter.get_all_windows()]
 
     @reg.register("auto.get_clipboard")
     async def _auto_get_clipboard(params: dict[str, Any]) -> Any:

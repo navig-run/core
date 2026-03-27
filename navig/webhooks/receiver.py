@@ -229,9 +229,7 @@ class WebhookReceiver:
 
         # Check if event is allowed
         if source_cfg.events and event_type not in source_cfg.events:
-            logger.debug(
-                f"Ignoring event {event_type} from {source} (not in allowed list)"
-            )
+            logger.debug(f"Ignoring event {event_type} from {source} (not in allowed list)")
             return web.json_response({"ok": True, "ignored": True})
 
         # Create event
@@ -371,9 +369,7 @@ class WebhookReceiver:
         """Remove a webhook source configuration."""
         self._sources.pop(name, None)
 
-    def get_recent_events(
-        self, limit: int = 20, source: str = None
-    ) -> list[WebhookEvent]:
+    def get_recent_events(self, limit: int = 20, source: str = None) -> list[WebhookEvent]:
         """Get recent events, optionally filtered by source."""
         events = self._recent_events[-limit:]
         if source:

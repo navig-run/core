@@ -31,9 +31,7 @@ Constraints:
 - Output valid code in markdown block.
 """
 
-    def _generate(
-        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
-    ) -> Any:
+    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
         # specific context for fix
         try:
             current_code = self.target_file.read_text(encoding="utf-8")

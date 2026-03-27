@@ -58,12 +58,8 @@ def _make_config(
         push=PushConfig(source="./dist/", target="/var/www/myapp/"),
         apply=ApplyConfig(commands=apply_cmds or []),
         restart=RestartConfig(adapter=adapter, service=service),
-        health=HealthConfig(
-            url=health_url, retries=1, interval_seconds=0, timeout_seconds=5
-        ),
-        backup=BackupConfig(
-            enabled=backup_enabled, remote_path="/var/backups", keep_last=3
-        ),
+        health=HealthConfig(url=health_url, retries=1, interval_seconds=0, timeout_seconds=5),
+        backup=BackupConfig(enabled=backup_enabled, remote_path="/var/backups", keep_last=3),
         host="prod",
         app="myapp",
     )
@@ -127,9 +123,7 @@ class TestDeployEngineDryRun:
             for c in mock_run.call_args_list
             if c.args and isinstance(c.args[0], list) and "rsync" in c.args[0][0]
         ]
-        assert (
-            rsync_calls == []
-        ), f"rsync was called during dry-run: {mock_run.call_args_list}"
+        assert rsync_calls == [], f"rsync was called during dry-run: {mock_run.call_args_list}"
 
 
 # ============================================================================
@@ -330,9 +324,7 @@ class TestHealthChecker:
 
 class TestRollbackManager:
     def _mgr(self, tmp_path, remote, *, backup_enabled=True, dry_run=False):
-        cfg = BackupConfig(
-            enabled=backup_enabled, remote_path="/var/backups", keep_last=3
-        )
+        cfg = BackupConfig(enabled=backup_enabled, remote_path="/var/backups", keep_last=3)
         return RollbackManager(
             backup_cfg=cfg,
             deploy_target="/var/www/myapp",
@@ -417,9 +409,7 @@ class TestRollbackManager:
 class TestDeployHistory:
     def test_append_and_read(self, tmp_path):
         h = DeployHistory(cache_dir=tmp_path, keep=10)
-        h.append(
-            {"app": "myapp", "host": "prod", "success": True, "elapsed_seconds": 5.0}
-        )
+        h.append({"app": "myapp", "host": "prod", "success": True, "elapsed_seconds": 5.0})
         entries = h.read()
         assert len(entries) == 1
         assert entries[0]["app"] == "myapp"

@@ -369,9 +369,7 @@ class SSHConnection(ConnectionAdapter):
             scp_args.extend(["-i", self.host_config["ssh_key"]])
 
         scp_args.append(str(local_path))
-        scp_args.append(
-            f"{self.host_config['user']}@{self.host_config['host']}:{remote_path}"
-        )
+        scp_args.append(f"{self.host_config['user']}@{self.host_config['host']}:{remote_path}")
 
         result = subprocess.run(scp_args, capture_output=True)
         return result.returncode == 0
@@ -395,9 +393,7 @@ class SSHConnection(ConnectionAdapter):
         if self.host_config.get("ssh_key"):
             scp_args.extend(["-i", self.host_config["ssh_key"]])
 
-        scp_args.append(
-            f"{self.host_config['user']}@{self.host_config['host']}:{remote_path}"
-        )
+        scp_args.append(f"{self.host_config['user']}@{self.host_config['host']}:{remote_path}")
         scp_args.append(str(local_path))
 
         result = subprocess.run(scp_args, capture_output=True)

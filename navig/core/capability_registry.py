@@ -48,9 +48,7 @@ class CapabilityEntry:
     module: str | None = None  # Python import path (None = external/scripts)
     config_key: str | None = None  # e.g. "mesh.enabled" — None = no gate needed
     optional_dep: str | None = None  # pyproject.toml optional group name, if any
-    cli_commands: list[str] = field(
-        default_factory=list
-    )  # navig subcommands for this cap
+    cli_commands: list[str] = field(default_factory=list)  # navig subcommands for this cap
     notes: str = ""  # Human notes for diagnostics / docs
 
 

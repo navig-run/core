@@ -20,9 +20,7 @@ def mock_register_all_tools(handler):
 
 @pytest.fixture
 def mcp_handler():
-    with patch(
-        "navig.mcp.tools.register_all_tools", side_effect=mock_register_all_tools
-    ):
+    with patch("navig.mcp.tools.register_all_tools", side_effect=mock_register_all_tools):
         handler = MCPProtocolHandler()
         return handler
 
@@ -83,9 +81,7 @@ def test_handle_resources_read_success(mcp_handler):
     res2 = mcp_handler._handle_resources_read({"uri": "navig://config/apps"})
     assert "app1" in res2["contents"][0]["text"]
 
-    mcp_handler._tool_handlers["navig_wiki_list"] = lambda *a: [
-        {"title": "t", "path": "p"}
-    ]
+    mcp_handler._tool_handlers["navig_wiki_list"] = lambda *a: [{"title": "t", "path": "p"}]
     res3 = mcp_handler._handle_resources_read({"uri": "navig://wiki"})
     assert "# Wiki" in res3["contents"][0]["text"]
 

@@ -80,9 +80,7 @@ class TTSConfig:
 
     # Provider
     provider: TTSProvider = TTSProvider.EDGE
-    fallback_providers: list[TTSProvider] = field(
-        default_factory=lambda: [TTSProvider.EDGE]
-    )
+    fallback_providers: list[TTSProvider] = field(default_factory=lambda: [TTSProvider.EDGE])
 
     # Voice settings
     voice: str = "en-US-JennyNeural"
@@ -223,9 +221,7 @@ class TTS:
 
         # Try providers in order
         providers = (
-            [provider]
-            if provider
-            else [self.config.provider] + self.config.fallback_providers
+            [provider] if provider else [self.config.provider] + self.config.fallback_providers
         )
 
         last_error = None
@@ -239,9 +235,7 @@ class TTS:
                 )
                 if result.success:
                     # Calculate latency
-                    result.latency_ms = int(
-                        (datetime.utcnow() - start_time).total_seconds() * 1000
-                    )
+                    result.latency_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
                     # Cache on success
                     if self.config.cache_enabled and result.audio_path:
@@ -254,9 +248,7 @@ class TTS:
                 last_error = str(e)
                 continue
 
-        return TTSResult(
-            success=False, error=f"All providers failed. Last error: {last_error}"
-        )
+        return TTSResult(success=False, error=f"All providers failed. Last error: {last_error}")
 
     async def speak(self, text: str, **kwargs) -> Path | None:
         """
@@ -287,9 +279,7 @@ class TTS:
         elif provider == TTSProvider.EDGE:
             return await self._synthesize_edge(text, voice, output_path, **kwargs)
         elif provider == TTSProvider.GOOGLE_CLOUD:
-            return await self._synthesize_google_cloud(
-                text, voice, output_path, **kwargs
-            )
+            return await self._synthesize_google_cloud(text, voice, output_path, **kwargs)
         elif provider == TTSProvider.DEEPGRAM:
             return await self._synthesize_deepgram(text, voice, output_path, **kwargs)
         else:
@@ -484,9 +474,7 @@ class TTS:
         except ImportError:
             return TTSResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("GOOGLE_CLOUD_API_KEY") or os.environ.get(
-            "GOOGLE_TTS_API_KEY"
-        )
+        api_key = os.environ.get("GOOGLE_CLOUD_API_KEY") or os.environ.get("GOOGLE_TTS_API_KEY")
         if not api_key:
             return TTSResult(success=False, error="GOOGLE_CLOUD_API_KEY not set")
 
@@ -624,9 +612,7 @@ class TTS:
 
         return text
 
-    def _get_cache_key(
-        self, text: str, provider: TTSProvider | None, voice: str | None
-    ) -> str:
+    def _get_cache_key(self, text: str, provider: TTSProvider | None, voice: str | None) -> str:
         """Generate cache key for text+provider+voice combo."""
         prov = provider or self.config.provider
         v = voice or self.config.voice
@@ -655,10 +641,7 @@ class TTS:
         """Get a temp file path for audio output."""
         if self.config.cache_enabled:
             cache_dir = self.config.get_cache_dir()
-            return (
-                cache_dir
-                / f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{suffix}"
-            )
+            return cache_dir / f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{suffix}"
         else:
             fd, path = tempfile.mkstemp(suffix=suffix, prefix=f"navig_tts_{prefix}_")
             os.close(fd)
@@ -668,9 +651,7 @@ class TTS:
     # Voice Listing
     # =========================================================================
 
-    async def list_voices(
-        self, provider: TTSProvider | None = None
-    ) -> list[dict[str, str]]:
+    async def list_voices(self, provider: TTSProvider | None = None) -> list[dict[str, str]]:
         """
         List available voices for a provider.
 

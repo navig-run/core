@@ -8,9 +8,7 @@ import asyncio
 try:
     from aiohttp import web  # noqa: F401
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     json_error_response,
@@ -116,9 +114,7 @@ def _respond(gw):
             if success:
                 return json_ok({"success": True})
             else:
-                return json_error_response(
-                    "Request not found", status=404, code="not_found"
-                )
+                return json_error_response("Request not found", status=404, code="not_found")
         except Exception as e:
             return json_error_response(
                 "Approval response failed",

@@ -26,9 +26,7 @@ def _tail(gw):
         if event_type:
             raw = [e for e in raw if e.get("event_type", "").startswith(event_type)]
 
-        events = (
-            list(reversed(raw[-limit:])) if len(raw) > limit else list(reversed(raw))
-        )
+        events = list(reversed(raw[-limit:])) if len(raw) > limit else list(reversed(raw))
         return json_ok({"events": events, "count": len(events)})
 
     return h

@@ -229,6 +229,6 @@ class TestWatchLoop:
         # Wait for watcher to pick it up
         watcher_thread.join(timeout=2.0)
 
-        assert any(
-            p.name == "new-plan.md" for p in fired
-        ), "Watch loop did not fire on_change for new file"
+        assert any(p.name == "new-plan.md" for p in fired), (
+            "Watch loop did not fire on_change for new file"
+        )

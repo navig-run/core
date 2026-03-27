@@ -16,9 +16,7 @@ try:
     import aiohttp
     from aiohttp import web
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     envelope_error,
@@ -61,9 +59,7 @@ def _shutdown(gw):
 
         logger.info("Shutdown requested via API")
 
-        resp = json_ok(
-            {"status": "shutting_down", "message": "Gateway shutdown initiated"}
-        )
+        resp = json_ok({"status": "shutting_down", "message": "Gateway shutdown initiated"})
 
         async def _d():
             await asyncio.sleep(0.5)
@@ -83,11 +79,7 @@ def _status(gw):
             return auth
 
         try:
-            uptime = (
-                (datetime.now() - gw.start_time).total_seconds()
-                if gw.start_time
-                else None
-            )
+            uptime = (datetime.now() - gw.start_time).total_seconds() if gw.start_time else None
             hb = None
             if gw.heartbeat_runner:
                 hb = {
@@ -107,9 +99,7 @@ def _status(gw):
             if gw.cron_service:
                 cr = {
                     "jobs": len(gw.cron_service.jobs),
-                    "enabled_jobs": sum(
-                        1 for j in gw.cron_service.jobs.values() if j.enabled
-                    ),
+                    "enabled_jobs": sum(1 for j in gw.cron_service.jobs.values() if j.enabled),
                 }
             return json_ok(
                 {
@@ -196,9 +186,7 @@ def _event(gw):
                 code="validation_error",
             )
 
-        await gw.system_events.enqueue(
-            text=text, agent_id=data.get("agent_id", "default")
-        )
+        await gw.system_events.enqueue(text=text, agent_id=data.get("agent_id", "default"))
         if data.get("wake_now") and gw.heartbeat_runner:
             await gw.heartbeat_runner.request_run_now()
 
@@ -217,12 +205,8 @@ def _sessions(gw):
             {
                 "key": key,
                 "message_count": len(session.messages),
-                "created_at": (
-                    session.created_at.isoformat() if session.created_at else None
-                ),
-                "updated_at": (
-                    session.updated_at.isoformat() if session.updated_at else None
-                ),
+                "created_at": (session.created_at.isoformat() if session.created_at else None),
+                "updated_at": (session.updated_at.isoformat() if session.updated_at else None),
             }
             for key, session in gw.sessions.sessions.items()
         ]
@@ -252,9 +236,7 @@ def _websocket(gw):
                         data = json.loads(msg.data)
                         await _ws_dispatch(ws, data, gw)
                     except json.JSONDecodeError:
-                        await ws.send_json(
-                            envelope_error("Invalid JSON", code="invalid_json")
-                        )
+                        await ws.send_json(envelope_error("Invalid JSON", code="invalid_json"))
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     logger.error("WS error: %s", ws.exception())
         finally:
@@ -296,9 +278,7 @@ async def _ws_dispatch(ws, data, gw):
         message = data.get("message")
         if message is None:
             await ws.send_json(
-                envelope_error(
-                    "Missing required field: message", code="validation_error"
-                )
+                envelope_error("Missing required field: message", code="validation_error")
             )
             return
 

@@ -59,9 +59,7 @@ _STAGE_ORDER = {s: i for i, s in enumerate(VALID_STAGES)}
 
 # Root of NAVIG data directory. Overridable in tests via monkeypatch.
 # Respects NAVIG_CONFIG_DIR env var for non-default install paths.
-_NAVIG_ROOT: Path = Path(
-    _os.environ.get("NAVIG_CONFIG_DIR") or str(Path.home() / ".navig")
-)
+_NAVIG_ROOT: Path = Path(_os.environ.get("NAVIG_CONFIG_DIR") or str(Path.home() / ".navig"))
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
@@ -213,19 +211,13 @@ def _create_wiki_note(slug: str, title: str, kind: str, stage: str) -> str | Non
 @work_app.command("add")
 def cmd_add(
     title: str = typer.Argument(..., help="Title of the work item."),
-    kind: str = typer.Option(
-        "task", "--kind", "-k", help=f"Item kind: {', '.join(VALID_KINDS)}."
-    ),
+    kind: str = typer.Option("task", "--kind", "-k", help=f"Item kind: {', '.join(VALID_KINDS)}."),
     stage: str = typer.Option(
         "inbox", "--stage", "-s", help=f"Initial stage: {', '.join(VALID_STAGES)}."
     ),
-    owner: str | None = typer.Option(
-        None, "--owner", "-o", help="Owner name or identifier."
-    ),
+    owner: str | None = typer.Option(None, "--owner", "-o", help="Owner name or identifier."),
     tag: list[str] = typer.Option([], "--tag", "-t", help="Tag (repeatable)."),
-    no_wiki: bool = typer.Option(
-        False, "--no-wiki", help="Do not create a linked wiki note."
-    ),
+    no_wiki: bool = typer.Option(False, "--no-wiki", help="Do not create a linked wiki note."),
     json_out: bool = typer.Option(False, "--json", help="Output result as JSON."),
 ):
     """Add a new work item."""
@@ -359,13 +351,9 @@ def cmd_show(
     conn = _get_conn()
 
     if slug_or_id.isdigit():
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)).fetchone()
     else:
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)).fetchone()
 
     if not row:
         ch.error(f"Work item not found: {slug_or_id!r}")
@@ -401,9 +389,7 @@ def cmd_show(
         ch.info("History")
         for ev in events:
             payload = json.loads(ev["payload_json"] or "{}")
-            detail = (
-                ", ".join(f"{k}={v}" for k, v in payload.items()) if payload else ""
-            )
+            detail = ", ".join(f"{k}={v}" for k, v in payload.items()) if payload else ""
             ch.raw_print(
                 f"  {ev['created_at'][:19]}  {ev['event_type']}"
                 + (f"  ({detail})" if detail else "")
@@ -413,9 +399,7 @@ def cmd_show(
 @work_app.command("move")
 def cmd_move(
     slug_or_id: str = typer.Argument(..., help="Slug or numeric ID."),
-    to: str = typer.Option(
-        ..., "--to", help=f"Target stage: {', '.join(VALID_STAGES)}."
-    ),
+    to: str = typer.Option(..., "--to", help=f"Target stage: {', '.join(VALID_STAGES)}."),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON."),
 ):
     """Move a work item to a new stage."""
@@ -427,13 +411,9 @@ def cmd_move(
     conn = _get_conn()
 
     if slug_or_id.isdigit():
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)).fetchone()
     else:
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)).fetchone()
 
     if not row:
         ch.error(f"Work item not found: {slug_or_id!r}")
@@ -484,9 +464,7 @@ def cmd_update(
     slug_or_id: str = typer.Argument(..., help="Slug or numeric ID."),
     title: str | None = typer.Option(None, "--title", help="New title."),
     owner: str | None = typer.Option(None, "--owner", "-o", help="New owner."),
-    tag: list[str] = typer.Option(
-        [], "--tag", "-t", help="Replace all tags (repeatable)."
-    ),
+    tag: list[str] = typer.Option([], "--tag", "-t", help="Replace all tags (repeatable)."),
     ref_type: str | None = typer.Option(
         None, "--ref-type", help="External reference type (e.g. github, jira)."
     ),
@@ -497,13 +475,9 @@ def cmd_update(
     conn = _get_conn()
 
     if slug_or_id.isdigit():
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)).fetchone()
     else:
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)).fetchone()
 
     if not row:
         ch.error(f"Work item not found: {slug_or_id!r}")
@@ -538,9 +512,7 @@ def cmd_update(
     conn.commit()
 
     if json_out:
-        updated_row = conn.execute(
-            "SELECT * FROM work_items WHERE id = ?", (row["id"],)
-        ).fetchone()
+        updated_row = conn.execute("SELECT * FROM work_items WHERE id = ?", (row["id"],)).fetchone()
         _print_json(dict(updated_row))
     else:
         ch.success(f"Updated {row['slug']!r}")
@@ -555,13 +527,9 @@ def cmd_archive(
     conn = _get_conn()
 
     if slug_or_id.isdigit():
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE id = ?", (int(slug_or_id),)).fetchone()
     else:
-        row = conn.execute(
-            "SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM work_items WHERE slug = ?", (slug_or_id,)).fetchone()
 
     if not row:
         ch.error(f"Work item not found: {slug_or_id!r}")

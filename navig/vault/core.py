@@ -242,9 +242,7 @@ class CredentialsVault:
 
         return cred
 
-    def get_by_id(
-        self, credential_id: str, caller: str = "unknown"
-    ) -> Credential | None:
+    def get_by_id(self, credential_id: str, caller: str = "unknown") -> Credential | None:
         """
         Get credential by its ID.
 

@@ -116,13 +116,9 @@ class ErrorResolution:
 
         if any(kw in error_lower for kw in ["permission denied", "access denied"]):
             return "permission"
-        elif any(
-            kw in error_lower for kw in ["connection refused", "timeout", "network"]
-        ):
+        elif any(kw in error_lower for kw in ["connection refused", "timeout", "network"]):
             return "network"
-        elif any(
-            kw in error_lower for kw in ["disk full", "no space", "out of memory"]
-        ):
+        elif any(kw in error_lower for kw in ["disk full", "no space", "out of memory"]):
             return "resource_exhaustion"
         elif any(kw in error_lower for kw in ["not found", "no such file"]):
             return "dependency_missing"
@@ -196,10 +192,7 @@ class ErrorResolution:
                 pattern = entry.get("pattern", "")
                 if re.search(pattern, error_message, re.IGNORECASE):
                     # Check category match
-                    if (
-                        entry.get("category") == category
-                        or entry.get("category") == "any"
-                    ):
+                    if entry.get("category") == category or entry.get("category") == "any":
                         for sol_data in entry.get("solutions", []):
                             matched_solutions.append(Solution.from_dict(sol_data))
 
@@ -258,9 +251,7 @@ class ErrorResolution:
 
                             solution["total_attempts"] = total_attempts
                             solution["successful_attempts"] = successful_attempts
-                            solution["success_rate"] = (
-                                successful_attempts / total_attempts
-                            )
+                            solution["success_rate"] = successful_attempts / total_attempts
                             solution["last_used"] = datetime.now().isoformat()
 
                             found = True
@@ -316,9 +307,7 @@ class ErrorResolution:
         """
         if not solutions:
             ch.warning("No automatic solutions found.")
-            ch.info(
-                "Run 'navig ai \"Analyze error: <error_message>\"' for AI assistance"
-            )
+            ch.info("Run 'navig ai \"Analyze error: <error_message>\"' for AI assistance")
             return
 
         ch.info("\nSuggested Solutions:\n")
@@ -342,9 +331,7 @@ class ErrorResolution:
             ch.info("")
 
         ch.info("To apply a solution, copy the command above")
-        ch.info(
-            "After applying, run 'navig assistant feedback' to help improve suggestions"
-        )
+        ch.info("After applying, run 'navig assistant feedback' to help improve suggestions")
 
     def get_error_statistics(self, hours: int = 24) -> dict[str, Any]:
         """

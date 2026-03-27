@@ -99,9 +99,7 @@ class BillingEmitter:
         if not self._path.exists():
             return []
         with self._lock:
-            lines = self._path.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines()
+            lines = self._path.read_text(encoding="utf-8", errors="replace").splitlines()
         records = []
         for line in lines:
             line = line.strip()

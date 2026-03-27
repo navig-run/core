@@ -406,13 +406,9 @@ def load_formation(formation_dir: Path) -> Formation | None:
     loaded = len(formation.loaded_agents)
     expected = len(formation.agents)
     if loaded < expected:
-        logger.warning(
-            f"[FORMATION] Loaded {loaded}/{expected} agents for '{formation.id}'"
-        )
+        logger.warning(f"[FORMATION] Loaded {loaded}/{expected} agents for '{formation.id}'")
     else:
-        logger.info(
-            f"[FORMATION] Formation '{formation.name}' loaded with {loaded} agents"
-        )
+        logger.info(f"[FORMATION] Formation '{formation.name}' loaded with {loaded} agents")
 
     return formation
 

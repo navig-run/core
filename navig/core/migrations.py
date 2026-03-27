@@ -105,9 +105,7 @@ class MigrationManager:
         migrated_config = config.copy()
 
         # Log to stderr to allow clean stdout for JSON output
-        stderr_console.print(
-            f"[blue]ℹ[/blue] Applying {len(pending)} configuration migrations..."
-        )
+        stderr_console.print(f"[blue]ℹ[/blue] Applying {len(pending)} configuration migrations...")
 
         for migration in pending:
             try:

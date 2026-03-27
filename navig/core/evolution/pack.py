@@ -38,16 +38,12 @@ Constraints:
 - Include dependencies relevant to the goal.
 """
 
-    def _generate(
-        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
-    ) -> Any:
+    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
 
         prompt = f"Goal: Create a pack for {goal}\n\n"
 
         if previous_artifact:
-            prompt += (
-                f"Previous attempt failed:\nError: {error_msg}\n\nRefine this YAML."
-            )
+            prompt += f"Previous attempt failed:\nError: {error_msg}\n\nRefine this YAML."
 
         if os.environ.get("NAVIG_MOCK_AI"):
             return """

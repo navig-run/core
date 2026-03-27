@@ -64,9 +64,7 @@ class ChannelRouter:
 
         return self._bindings_cache
 
-    def _resolve_agent(
-        self, channel: str, user_id: str, metadata: dict[str, Any]
-    ) -> str:
+    def _resolve_agent(self, channel: str, user_id: str, metadata: dict[str, Any]) -> str:
         """
         Resolve which agent should handle this message.
 
@@ -161,9 +159,7 @@ class ChannelRouter:
         msg_lower = message.lower().strip()
 
         # Check for direct NAVIG commands
-        if message.strip().startswith("navig ") or message.strip().startswith(
-            "/navig "
-        ):
+        if message.strip().startswith("navig ") or message.strip().startswith("/navig "):
             return await self._execute_navig_command(message, metadata)
 
         # Check for quick commands
@@ -304,9 +300,7 @@ class ChannelRouter:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-    async def _execute_navig_command(
-        self, message: str, metadata: dict[str, Any]
-    ) -> str:
+    async def _execute_navig_command(self, message: str, metadata: dict[str, Any]) -> str:
         """Execute a direct NAVIG CLI command."""
 
         # Extract command
@@ -329,9 +323,7 @@ class ChannelRouter:
                 stderr=_asyncio.subprocess.PIPE,
             )
             try:
-                stdout_bytes, stderr_bytes = await _asyncio.wait_for(
-                    proc.communicate(), timeout=60
-                )
+                stdout_bytes, stderr_bytes = await _asyncio.wait_for(proc.communicate(), timeout=60)
             except _asyncio.TimeoutError:
                 proc.kill()
                 return "❌ Command timed out (60s limit)"
@@ -341,18 +333,14 @@ class ChannelRouter:
                 output += f"\n{stderr_bytes.decode()}"
 
             if proc.returncode != 0:
-                return (
-                    f"❌ Command failed (exit {proc.returncode}):\n```\n{output}\n```"
-                )
+                return f"❌ Command failed (exit {proc.returncode}):\n```\n{output}\n```"
 
             return f"✅ Output:\n```\n{output}\n```"
 
         except Exception as e:
             return f"❌ Error: {e}"
 
-    async def _check_quick_commands(
-        self, message: str, metadata: dict[str, Any]
-    ) -> str | None:
+    async def _check_quick_commands(self, message: str, metadata: dict[str, Any]) -> str | None:
         """Check for quick commands that don't need full AI."""
         msg_lower = message.lower().strip()
 
@@ -401,7 +389,9 @@ class ChannelRouter:
         heartbeat_status = "disabled"
         if gateway.heartbeat_runner:
             if gateway.heartbeat_runner.running:
-                heartbeat_status = f"running (next in ~{gateway.heartbeat_runner.get_time_until_next()})"
+                heartbeat_status = (
+                    f"running (next in ~{gateway.heartbeat_runner.get_time_until_next()})"
+                )
             else:
                 heartbeat_status = "stopped"
 

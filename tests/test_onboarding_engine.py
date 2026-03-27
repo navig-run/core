@@ -23,9 +23,7 @@ def _make_config(tmp_path: Path, **kwargs) -> EngineConfig:
     )
 
 
-def _success_step(
-    step_id: str, title: str = "A Step", independent: bool = False
-) -> OnboardingStep:
+def _success_step(step_id: str, title: str = "A Step", independent: bool = False) -> OnboardingStep:
     return OnboardingStep(
         id=step_id,
         title=title,
@@ -179,9 +177,7 @@ def test_dry_run_no_execution(tmp_path: Path) -> None:
         return StepResult(status="completed", output={})
 
     config = _make_config(tmp_path, dry_run=True)
-    step = OnboardingStep(
-        id="tracked", title="Track", run=tracking_run, on_failure="skip"
-    )
+    step = OnboardingStep(id="tracked", title="Track", run=tracking_run, on_failure="skip")
     engine = OnboardingEngine(config, [step])
     state = engine.run()
 

@@ -107,9 +107,7 @@ def list_emails(
             ch.console.print(f"    [dim]From: {msg.sender}[/dim]")
             ch.console.print(f"    [dim]{date_str}[/dim]")
             if msg.preview:
-                preview = (
-                    msg.preview[:80] + "..." if len(msg.preview) > 80 else msg.preview
-                )
+                preview = msg.preview[:80] + "..." if len(msg.preview) > 80 else msg.preview
                 ch.console.print(f"    [dim]{preview}[/dim]")
             ch.console.print()
 

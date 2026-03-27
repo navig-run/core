@@ -327,14 +327,10 @@ class RefinementEngine:
         if session.all_answered or session.current_q >= len(session.questions):
             # Move to confirmation
             session.state = ClarifyState.CONFIRMING.value
-            store.put(
-                session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
-            )
+            store.put(session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
             await self._send_confirmation(session)
         else:
-            store.put(
-                session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
-            )
+            store.put(session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
             await self._ask_question(session)
 
         return True
@@ -343,9 +339,7 @@ class RefinementEngine:
         """Run the LLM refinement call and send the result."""
         session.state = ClarifyState.REFINING.value
         store = self._get_store()
-        store.put(
-            session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
-        )
+        store.put(session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
 
         thinking = await self.channel.send_message(
             session.chat_id,
@@ -361,16 +355,12 @@ class RefinementEngine:
             refined = await self._call_llm(llm, prompt)
         except Exception as exc:
             logger.error("RefinementEngine.refine LLM error: %s", exc)
-            await self.channel.send_message(
-                session.chat_id, "❌ LLM error during refinement."
-            )
+            await self.channel.send_message(session.chat_id, "❌ LLM error during refinement.")
             return
 
         session.refined_text = refined
         session.state = ClarifyState.DONE.value
-        store.put(
-            session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
-        )
+        store.put(session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
         # Clear pending text listener
         store.remove(f"rfn_pending:{session.user_id}:{session.chat_id}")
 
@@ -537,9 +527,7 @@ async def handle_rfn_callback(
             key_str = str(session.current_q)
             session.answers.pop(key_str, None)
             session.state = ClarifyState.ASKING.value
-            cb_store.put(
-                session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL
-            )
+            cb_store.put(session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL)
             # Re-register pending text listener
             cb_store.put(
                 f"rfn_pending:{session.user_id}:{session.chat_id}",
@@ -555,14 +543,10 @@ async def handle_rfn_callback(
         session.current_q += 1
         if session.all_answered or session.current_q >= len(session.questions):
             session.state = ClarifyState.CONFIRMING.value
-            cb_store.put(
-                session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL
-            )
+            cb_store.put(session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL)
             await engine._send_confirmation(session)
         else:
-            cb_store.put(
-                session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL
-            )
+            cb_store.put(session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL)
             await engine._ask_question(session)
         await channel.answer_callback_query(cb_id, "⏭ Skipped")
 

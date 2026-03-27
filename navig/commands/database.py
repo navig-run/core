@@ -55,9 +55,7 @@ def execute_sql(query: str, options: dict[str, Any]):
 
     if dry_run:
         if json_enabled:
-            ch.raw_print(
-                json.dumps({"dry_run": True, "action": "execute_sql", "query": query})
-            )
+            ch.raw_print(json.dumps({"dry_run": True, "action": "execute_sql", "query": query}))
         else:
             ch.info(f"[DRY RUN] Would execute SQL: {query}")
         return
@@ -122,9 +120,7 @@ def execute_sql(query: str, options: dict[str, Any]):
                     ch.error(f"SQL Error: {result.stderr}")
         except FileNotFoundError:
             if json_enabled:
-                ch.raw_print(
-                    json.dumps({"success": False, "error": "mysql client not found"})
-                )
+                ch.raw_print(json.dumps({"success": False, "error": "mysql client not found"}))
             else:
                 ch.error("mysql client not found. Please install MySQL client tools.")
     finally:
@@ -210,9 +206,7 @@ def backup_database(path: Path | None, options: dict[str, Any]):
 
         try:
             with open(path, "w", encoding="utf-8") as f:
-                result = subprocess.run(
-                    mysqldump_cmd, stdout=f, stderr=subprocess.PIPE, text=True
-                )
+                result = subprocess.run(mysqldump_cmd, stdout=f, stderr=subprocess.PIPE, text=True)
 
             if result.returncode == 0:
                 size = path.stat().st_size
@@ -236,9 +230,7 @@ def backup_database(path: Path | None, options: dict[str, Any]):
                     ch.error(f"Backup failed: {result.stderr}")
         except FileNotFoundError:
             if json_enabled:
-                ch.raw_print(
-                    json.dumps({"success": False, "error": "mysqldump not found"})
-                )
+                ch.raw_print(json.dumps({"success": False, "error": "mysqldump not found"}))
             else:
                 ch.error("mysqldump not found. Please install MySQL client tools.")
             ch.info("")
@@ -347,9 +339,7 @@ def restore_database(file: Path, options: dict[str, Any]):
     if not options.get("no_backup"):
         ch.info("Creating safety backup of current database...")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safety_backup = (
-            config_manager.backups_dir / f"{server_name}_pre_restore_{timestamp}.sql"
-        )
+        safety_backup = config_manager.backups_dir / f"{server_name}_pre_restore_{timestamp}.sql"
         backup_database(safety_backup, options)
         ch.success(f"✓ Safety backup created: {safety_backup.name}")
 
@@ -372,9 +362,7 @@ def restore_database(file: Path, options: dict[str, Any]):
 
         try:
             with open(file) as f:
-                result = subprocess.run(
-                    mysql_cmd, stdin=f, capture_output=True, text=True
-                )
+                result = subprocess.run(mysql_cmd, stdin=f, capture_output=True, text=True)
 
             if result.returncode == 0:
                 if json_enabled:
@@ -398,15 +386,11 @@ def restore_database(file: Path, options: dict[str, Any]):
                     ch.error("❌ Restore failed")
                     ch.error(f"Error: {result.stderr}")
                     if not options.get("no_backup"):
-                        ch.warning(
-                            f"You can rollback using: navig restore {safety_backup}"
-                        )
+                        ch.warning(f"You can rollback using: navig restore {safety_backup}")
 
         except FileNotFoundError:
             if json_enabled:
-                ch.raw_print(
-                    json.dumps({"success": False, "error": "mysql client not found"})
-                )
+                ch.raw_print(json.dumps({"success": False, "error": "mysql client not found"}))
             else:
                 ch.error("mysql client not found. Please install MySQL client tools.")
     finally:

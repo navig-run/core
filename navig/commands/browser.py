@@ -36,11 +36,7 @@ def browser_status() -> None:
             data = response.json()
             if data.get("started"):
                 ch.success("Browser is running")
-                ch.info(
-                    "  Active page loaded"
-                    if data.get("has_page")
-                    else "  No page loaded"
-                )
+                ch.info("  Active page loaded" if data.get("has_page") else "  No page loaded")
             else:
                 ch.info("Browser is not running")
         elif response.status_code == 503:

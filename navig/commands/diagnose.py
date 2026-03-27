@@ -62,9 +62,7 @@ def run(service: str, host: str = "production-01") -> None:
 
     for name, value, total, unit in metrics:
         t = resolve(name)
-        renderMetric(
-            name, value, total, unit=unit, warn_pct=t.warn_pct, crit_pct=t.crit_pct
-        )
+        renderMetric(name, value, total, unit=unit, warn_pct=t.warn_pct, crit_pct=t.crit_pct)
         pct = value / total * 100 if total > 0 else 0
         if pct >= t.crit_pct:
             critical += 1

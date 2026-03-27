@@ -249,9 +249,7 @@ class ConversationStore(BaseStore):
         """Get session info."""
         conn = self._get_conn()
 
-        cursor = conn.execute(
-            "SELECT * FROM sessions WHERE session_key = ?", (session_key,)
-        )
+        cursor = conn.execute("SELECT * FROM sessions WHERE session_key = ?", (session_key,))
         row = cursor.fetchone()
 
         if not row:
@@ -321,9 +319,7 @@ class ConversationStore(BaseStore):
 
         with self._lock:
             conn.execute("DELETE FROM messages WHERE session_key = ?", (session_key,))
-            cursor = conn.execute(
-                "DELETE FROM sessions WHERE session_key = ?", (session_key,)
-            )
+            cursor = conn.execute("DELETE FROM sessions WHERE session_key = ?", (session_key,))
             conn.commit()
 
         deleted = cursor.rowcount > 0

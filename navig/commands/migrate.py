@@ -39,9 +39,7 @@ def _done_file():
 
 def _mark_done(name: str) -> None:
     path = _done_file()
-    done = (
-        set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
-    )
+    done = set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
     done.add(name)
     path.write_text("\n".join(sorted(done)) + "\n", encoding="utf-8")
 
@@ -58,12 +56,8 @@ def _is_done(name: str) -> bool:
 
 @migrate_app.command("config")
 def migrate_config_cmd(
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Preview changes without saving."
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Re-run even if already marked complete."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without saving."),
+    force: bool = typer.Option(False, "--force", help="Re-run even if already marked complete."),
 ) -> None:
     """
     Migrate Documents\\.navig → ~/.navig config layout.
@@ -133,12 +127,8 @@ def _builtin_config_migration(dry_run: bool) -> None:
 
 @migrate_app.command("addons")
 def migrate_addons_cmd(
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Preview changes without saving."
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Re-run even if already marked complete."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without saving."),
+    force: bool = typer.Option(False, "--force", help="Re-run even if already marked complete."),
 ) -> None:
     """
     Migrate legacy addons/ → templates/ architecture.
@@ -174,12 +164,8 @@ def migrate_addons_cmd(
 
 @migrate_app.command("all")
 def migrate_all_cmd(
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Preview all steps without saving."
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Re-run all steps even if already done."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview all steps without saving."),
+    force: bool = typer.Option(False, "--force", help="Re-run all steps even if already done."),
 ) -> None:
     """
     Run all migration steps in dependency order.
@@ -219,9 +205,7 @@ def migrate_all_cmd(
 def migrate_status_cmd() -> None:
     """Show which migration steps have been completed."""
     path = _done_file()
-    done = (
-        set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
-    )
+    done = set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
 
     ch.heading("Migration Status")
     for name, description in MIGRATION_STEPS:

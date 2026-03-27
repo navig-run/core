@@ -83,9 +83,7 @@ def _load_registry() -> dict[str, ModeProfile]:
     with open(_BUILTIN_YAML, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
-    _registry = {
-        name: ModeProfile(name, data) for name, data in raw.get("modes", {}).items()
-    }
+    _registry = {name: ModeProfile(name, data) for name, data in raw.get("modes", {}).items()}
     return _registry
 
 
@@ -193,9 +191,7 @@ def _verify_pin_hash(pin: str, stored: str) -> bool:
         try:
             _, salt_b64, hash_b64 = stored.split(":", 2)
             salt = base64.b64decode(salt_b64)
-            dk = hashlib.pbkdf2_hmac(
-                _HASH_ALGO, pin.strip().encode(), salt, _HASH_ITERS
-            )
+            dk = hashlib.pbkdf2_hmac(_HASH_ALGO, pin.strip().encode(), salt, _HASH_ITERS)
             return hmac.compare_digest(base64.b64decode(hash_b64), dk)
         except Exception:
             return False

@@ -207,9 +207,7 @@ class IMAPEmailProvider(EmailProvider):
                 content_type = part.get_content_type()
                 if content_type == "text/plain":
                     try:
-                        body = part.get_payload(decode=True).decode(
-                            "utf-8", errors="replace"
-                        )
+                        body = part.get_payload(decode=True).decode("utf-8", errors="replace")
                         break
                     except Exception:
                         continue

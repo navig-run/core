@@ -117,9 +117,7 @@ def test_gitignore_is_text_and_covers_rust_targets():
 def test_deploy_template_cmd_accepts_named_template_commands(monkeypatch):
     import navig.commands.template as template_mod
 
-    template = SimpleNamespace(
-        get_commands=lambda: [{"name": "status", "command": "echo USER"}]
-    )
+    template = SimpleNamespace(get_commands=lambda: [{"name": "status", "command": "echo USER"}])
     manager = SimpleNamespace(
         discover_templates=lambda: None,
         get_template=lambda name: template,

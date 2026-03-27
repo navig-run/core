@@ -145,11 +145,7 @@ def init_app(options: dict[str, Any]) -> None:
                 try:
                     os.chmod(
                         navig_dir,
-                        stat.S_IRWXU
-                        | stat.S_IRGRP
-                        | stat.S_IXGRP
-                        | stat.S_IROTH
-                        | stat.S_IXOTH,
+                        stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
                     )
                 except (OSError, PermissionError):
                     pass
@@ -226,15 +222,15 @@ def init_app(options: dict[str, Any]) -> None:
                 # Build informative prompt message
                 config_summary = []
                 if host_count > 0:
-                    config_summary.append(
-                        f"{host_count} host{'s' if host_count != 1 else ''}"
-                    )
+                    config_summary.append(f"{host_count} host{'s' if host_count != 1 else ''}")
                 if app_count > 0:
                     config_summary.append(
                         f"{app_count} legacy config{'s' if app_count != 1 else ''}"
                     )
 
-                prompt_msg = f"Found {' and '.join(config_summary)} in global config. Copy to this app?"
+                prompt_msg = (
+                    f"Found {' and '.join(config_summary)} in global config. Copy to this app?"
+                )
 
                 if ch.confirm_action(prompt_msg, default=False):
                     _copy_global_configs(navig_dir, quiet)
@@ -293,11 +289,7 @@ def _count_global_configs() -> tuple[int, int]:
             try:
                 # Exclude backup files
                 app_count = len(
-                    [
-                        f
-                        for f in global_apps_dir.glob("*.yaml")
-                        if ".backup." not in f.name
-                    ]
+                    [f for f in global_apps_dir.glob("*.yaml") if ".backup." not in f.name]
                 )
             except (PermissionError, OSError):
                 pass  # best-effort cleanup; ignore access/IO errors
@@ -387,9 +379,7 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
             if copied_hosts > 0:
                 parts.append(f"{copied_hosts} host{'s' if copied_hosts != 1 else ''}")
             if copied_apps > 0:
-                parts.append(
-                    f"{copied_apps} legacy config{'s' if copied_apps != 1 else ''}"
-                )
+                parts.append(f"{copied_apps} legacy config{'s' if copied_apps != 1 else ''}")
 
             ch.success(f"✓ Copied {' and '.join(parts)} to .navig/")
             ch.dim("  (Originals remain in ~/.navig/)")
@@ -397,9 +387,7 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
             ch.dim("No configurations found to copy")
 
         if total_failed > 0:
-            ch.warning(
-                f"Failed to copy {total_failed} file(s) due to permission errors"
-            )
+            ch.warning(f"Failed to copy {total_failed} file(s) due to permission errors")
 
 
 def _prompt_local_discovery(navig_dir: Path) -> None:
@@ -421,24 +409,18 @@ def _prompt_local_discovery(navig_dir: Path) -> None:
         # No hosts at all - definitely offer local discovery
         ch.newline()
         ch.header("Local Development Setup")
-        ch.info(
-            "No hosts configured. Would you like to auto-discover your local environment?"
-        )
+        ch.info("No hosts configured. Would you like to auto-discover your local environment?")
         ch.dim("This will detect installed databases, web servers, PHP, Node.js, etc.")
         ch.newline()
 
         if ch.confirm_action("Discover local environment?", default=True):
             from navig.commands.local_discovery import discover_local_host
 
-            discover_local_host(
-                name="localhost", auto_confirm=True, set_active=True, progress=True
-            )
+            discover_local_host(name="localhost", auto_confirm=True, set_active=True, progress=True)
     elif len(non_local_hosts) == 0 and "localhost" not in hosts:
         # Only has generic hosts, offer local discovery
         ch.newline()
-        if ch.confirm_action(
-            "Would you like to add your local machine as a host?", default=False
-        ):
+        if ch.confirm_action("Would you like to add your local machine as a host?", default=False):
             from navig.commands.local_discovery import discover_local_host
 
             discover_local_host(
@@ -529,13 +511,9 @@ def _migrate_legacy_documents_dir(target_dir: Path) -> None:
         return
 
     # Detect conflicts: any item that already exists in the target
-    conflicts = [
-        item.name for item in source_dir.iterdir() if (target_dir / item.name).exists()
-    ]
+    conflicts = [item.name for item in source_dir.iterdir() if (target_dir / item.name).exists()]
     if conflicts:
-        _write_init_log(
-            f"legacy migration failed: conflict detected in {', '.join(conflicts)}"
-        )
+        _write_init_log(f"legacy migration failed: conflict detected in {', '.join(conflicts)}")
         raise click.exceptions.Exit(1)
 
     # Move each top-level item from source to target

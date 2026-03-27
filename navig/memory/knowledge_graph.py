@@ -304,9 +304,7 @@ class KnowledgeGraph:
         return [Routine(dict(r)) for r in rows]
 
     def get_routine(self, routine_id: str) -> Routine | None:
-        row = self._con.execute(
-            "SELECT * FROM routines WHERE id=?", (routine_id,)
-        ).fetchone()
+        row = self._con.execute("SELECT * FROM routines WHERE id=?", (routine_id,)).fetchone()
         return Routine(dict(row)) if row else None
 
     def update_routine_last_run(self, routine_id: str) -> None:
@@ -317,9 +315,7 @@ class KnowledgeGraph:
         self._con.commit()
 
     def disable_routine(self, routine_id: str) -> bool:
-        cur = self._con.execute(
-            "UPDATE routines SET enabled=0 WHERE id=?", (routine_id,)
-        )
+        cur = self._con.execute("UPDATE routines SET enabled=0 WHERE id=?", (routine_id,))
         self._con.commit()
         return cur.rowcount > 0
 
@@ -377,9 +373,7 @@ class KnowledgeGraph:
             obj = triple.get("object")
             conf = float(triple.get("confidence", 0.8))
             if pred and obj and conf >= 0.6:
-                fid = self.remember_fact(
-                    subj, pred, obj, confidence=conf, source="habit_inference"
-                )
+                fid = self.remember_fact(subj, pred, obj, confidence=conf, source="habit_inference")
                 stored.append(fid)
 
         return stored

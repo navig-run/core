@@ -104,9 +104,7 @@ async def _get_bot(config: dict | None = None):
     cfg = config or _get_config()
     if not cfg.get("user_id"):
         console.print("[red]✗[/] No Matrix user_id configured.")
-        console.print(
-            "  Set: [cyan]navig config set comms.matrix.user_id @bot:server[/]"
-        )
+        console.print("  Set: [cyan]navig config set comms.matrix.user_id @bot:server[/]")
         raise typer.Exit(1)
 
     bot = NavigMatrixBot(cfg)
@@ -122,9 +120,7 @@ async def _get_bot(config: dict | None = None):
 @matrix_app.command("login")
 @require_matrix()
 def login(
-    profile: Annotated[
-        str, typer.Option("--profile", "-p", help="Credential profile")
-    ] = "default",
+    profile: Annotated[str, typer.Option("--profile", "-p", help="Credential profile")] = "default",
     token: Annotated[
         str, typer.Option("--token", "-t", help="Use access token instead of password")
     ] = "",
@@ -231,9 +227,7 @@ def accounts():
         vault = CredentialsVault()
         creds = vault.list_by_provider("matrix")
     except Exception:
-        console.print(
-            "[yellow]![/] Vault not available or no Matrix credentials stored"
-        )
+        console.print("[yellow]![/] Vault not available or no Matrix credentials stored")
         return
 
     if not creds:
@@ -297,16 +291,10 @@ def use_profile(
 @require_matrix()
 @require_feature("messaging")
 def send(
-    room: Annotated[
-        str, typer.Argument(help="Room ID or alias (omit for default)")
-    ] = "",
+    room: Annotated[str, typer.Argument(help="Room ID or alias (omit for default)")] = "",
     message: Annotated[str, typer.Argument(help="Message text")] = "",
-    stdin: Annotated[
-        bool, typer.Option("--stdin", "-s", help="Read message from stdin")
-    ] = False,
-    format: Annotated[
-        str, typer.Option("--format", "-f", help="text | markdown | html")
-    ] = "text",
+    stdin: Annotated[bool, typer.Option("--stdin", "-s", help="Read message from stdin")] = False,
+    format: Annotated[str, typer.Option("--format", "-f", help="text | markdown | html")] = "text",
 ):
     """Send a text message to a Matrix room."""
     if stdin:
@@ -375,9 +363,7 @@ def notice(
 @require_feature("messaging")
 def read_messages(
     room: Annotated[str, typer.Argument(help="Room ID or alias")],
-    limit: Annotated[
-        int, typer.Option("--limit", "-n", help="Number of messages")
-    ] = 20,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Number of messages")] = 20,
     json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
 ):
     """Read recent messages from a room."""
@@ -402,9 +388,7 @@ def read_messages(
         for msg in messages:
             ts = msg.get("timestamp", "")
             if isinstance(ts, (int, float)):
-                ts = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime(
-                    "%H:%M %b %d"
-                )
+                ts = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%H:%M %b %d")
             table.add_row(str(ts), msg.get("sender", "?"), msg.get("body", ""))
 
         console.print(table)
@@ -454,9 +438,7 @@ def tail(
 # Room management commands
 # ============================================================================
 
-room_app = typer.Typer(
-    name="room", help="Room management (create, join, leave, invite)"
-)
+room_app = typer.Typer(name="room", help="Room management (create, join, leave, invite)")
 matrix_app.add_typer(room_app)
 
 
@@ -505,9 +487,7 @@ def list_rooms(
 def room_create(
     name: Annotated[str, typer.Argument(help="Room name")],
     topic: Annotated[str, typer.Option("--topic", "-t", help="Room topic")] = "",
-    public: Annotated[
-        bool, typer.Option("--public", help="Create as public room")
-    ] = False,
+    public: Annotated[bool, typer.Option("--public", help="Create as public room")] = False,
 ):
     """Create a new Matrix room."""
 
@@ -671,12 +651,8 @@ registration_app.add_typer(token_app)
 @require_feature("registration_control")
 def registration_callback(
     ctx: typer.Context,
-    enable: Annotated[
-        bool, typer.Option("--enable", help="Enable open registration")
-    ] = False,
-    disable: Annotated[
-        bool, typer.Option("--disable", help="Disable open registration")
-    ] = False,
+    enable: Annotated[bool, typer.Option("--enable", help="Enable open registration")] = False,
+    disable: Annotated[bool, typer.Option("--disable", help="Disable open registration")] = False,
 ):
     """Check or toggle homeserver registration state."""
     if ctx.invoked_subcommand is not None:
@@ -689,9 +665,7 @@ def registration_callback(
 
             admin = get_admin_client()
             reg_status = await admin.get_registration_status()
-            state = (
-                "[green]OPEN[/]" if reg_status else "[yellow]CLOSED (invite-only)[/]"
-            )
+            state = "[green]OPEN[/]" if reg_status else "[yellow]CLOSED (invite-only)[/]"
             console.print(f"Registration: {state}")
 
         _run_async(_check())
@@ -708,9 +682,7 @@ def registration_callback(
         if enable:
             ok = await admin.set_registration(True)
             if ok:
-                console.print(
-                    "[green]✓[/] Registration enabled — anyone can create accounts"
-                )
+                console.print("[green]✓[/] Registration enabled — anyone can create accounts")
             else:
                 console.print("[red]✗[/] Failed to enable registration")
         else:
@@ -727,9 +699,7 @@ def registration_callback(
 @require_matrix()
 @require_feature("registration_control")
 def token_create(
-    uses: Annotated[
-        int, typer.Option("--uses", "-n", help="Max uses (0 = unlimited)")
-    ] = 1,
+    uses: Annotated[int, typer.Option("--uses", "-n", help="Max uses (0 = unlimited)")] = 1,
     expiry: Annotated[
         str, typer.Option("--expiry", "-e", help="Expiry duration (e.g. 7d, 30d)")
     ] = "7d",
@@ -853,9 +823,7 @@ def admin_users():
 @require_feature("admin_ops")
 def admin_user(
     mxid: Annotated[str, typer.Argument(help="Matrix user ID (e.g. @alice:server)")],
-    deactivate: Annotated[
-        bool, typer.Option("--deactivate", help="Deactivate user")
-    ] = False,
+    deactivate: Annotated[bool, typer.Option("--deactivate", help="Deactivate user")] = False,
     reset_password: Annotated[
         bool, typer.Option("--reset-password", help="Reset password")
     ] = False,
@@ -935,9 +903,7 @@ def features():
         table.add_row(name, status, desc)
 
     console.print(table)
-    console.print(
-        "\n[dim]Toggle: navig config set comms.matrix.features.<name> true|false[/]"
-    )
+    console.print("\n[dim]Toggle: navig config set comms.matrix.features.<name> true|false[/]")
 
 
 # ============================================================================
@@ -986,9 +952,7 @@ def inbox_list(
 
     for i, m in enumerate(msgs, 1):
         st = "[green]●[/]" if m["status"] == "unread" else "[dim]○[/]"
-        table.add_row(
-            str(i), st, m["sender"], m["room_name"], m["preview"], m["created"]
-        )
+        table.add_row(str(i), st, m["sender"], m["room_name"], m["preview"], m["created"])
 
     console.print(table)
 
@@ -1010,9 +974,7 @@ def inbox_unread():
 @inbox_bridge_app.command("mark-read")
 @require_feature("notifications")
 def inbox_mark_read(
-    filename: Annotated[
-        str | None, typer.Argument(help="Specific file, or omit for all")
-    ] = None,
+    filename: Annotated[str | None, typer.Argument(help="Specific file, or omit for all")] = None,
 ):
     """Mark messages as read (one or all)."""
     from navig.comms.matrix_inbox import get_inbox_bridge
@@ -1104,9 +1066,7 @@ matrix_app.add_typer(file_app, name="file")
 @require_feature("file_sharing")
 def file_upload(
     path: Annotated[str, typer.Argument(help="Local file to upload")],
-    room: Annotated[
-        str | None, typer.Option("--room", "-r", help="Target room ID")
-    ] = None,
+    room: Annotated[str | None, typer.Option("--room", "-r", help="Target room ID")] = None,
     name: Annotated[str | None, typer.Option("--name", help="Display name")] = None,
 ):
     """Upload a file to a Matrix room."""
@@ -1119,9 +1079,7 @@ def file_upload(
 
     room_id = room or _get_config().get("default_room_id", "")
     if not room_id:
-        console.print(
-            "[red]✗[/] No room specified (pass --room or set default_room_id)"
-        )
+        console.print("[red]✗[/] No room specified (pass --room or set default_room_id)")
         raise typer.Exit(1)
 
     async def _upload():
@@ -1226,9 +1184,7 @@ def e2ee_status():
 @e2ee_app.command("devices")
 @require_feature("e2ee")
 def e2ee_devices(
-    user_id: Annotated[
-        str | None, typer.Argument(help="User ID (omit for own devices)")
-    ] = None,
+    user_id: Annotated[str | None, typer.Argument(help="User ID (omit for own devices)")] = None,
 ):
     """List devices and their trust state."""
 
@@ -1394,9 +1350,7 @@ def e2ee_verify(
             for _ in range(30):  # 30s timeout
                 emoji = await mgr.get_emoji(session.transaction_id)
                 if emoji:
-                    console.print(
-                        "\n[bold]Verify these emoji match on both devices:[/]\n"
-                    )
+                    console.print("\n[bold]Verify these emoji match on both devices:[/]\n")
                     emoji_line = "  ".join(f"{e} ({d})" for e, d in emoji)
                     console.print(f"  {emoji_line}\n")
 
@@ -1451,9 +1405,7 @@ def e2ee_keys():
 @require_feature("e2ee")
 def e2ee_export_keys(
     path: Annotated[str, typer.Argument(help="Output file path")],
-    passphrase: Annotated[
-        str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)
-    ],
+    passphrase: Annotated[str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)],
 ):
     """Export E2EE room keys to a file (encrypted)."""
 
@@ -1480,9 +1432,7 @@ def e2ee_export_keys(
 @require_feature("e2ee")
 def e2ee_import_keys(
     path: Annotated[str, typer.Argument(help="Key file path")],
-    passphrase: Annotated[
-        str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)
-    ],
+    passphrase: Annotated[str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)],
 ):
     """Import E2EE room keys from a file."""
     from pathlib import Path as _P
@@ -1633,9 +1583,7 @@ def store_events(
 
 @store_app.command("prune")
 def store_prune(
-    max_rows: Annotated[
-        int, typer.Option("--max", "-m", help="Max events to keep")
-    ] = 10000,
+    max_rows: Annotated[int, typer.Option("--max", "-m", help="Max events to keep")] = 10000,
 ):
     """Prune old events from the store."""
     import os

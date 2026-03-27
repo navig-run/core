@@ -110,9 +110,7 @@ def formation_show(
 
     if json_output:
         data = formation.to_dict()
-        data["loaded_agents"] = {
-            aid: a.to_dict() for aid, a in formation.loaded_agents.items()
-        }
+        data["loaded_agents"] = {aid: a.to_dict() for aid, a in formation.loaded_agents.items()}
         print(json_module.dumps(data, indent=2))
         return
 
@@ -134,9 +132,7 @@ def formation_show(
     ch.console.print(f"[dim]{formation.description}[/dim]")
     ch.console.print()
     ch.console.print(f"  Default agent: [yellow]{formation.default_agent}[/yellow]")
-    ch.console.print(
-        f"  Aliases: {', '.join(formation.aliases) if formation.aliases else '-'}"
-    )
+    ch.console.print(f"  Aliases: {', '.join(formation.aliases) if formation.aliases else '-'}")
     ch.console.print()
 
     from rich.table import Table

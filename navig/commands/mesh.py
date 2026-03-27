@@ -24,9 +24,7 @@ def status() -> None:
 
     if not peers:
         con.print("[dim]Mesh: no peers discovered yet.[/dim]")
-        con.print(
-            "[dim]Start the NAVIG daemon to begin mesh discovery:[/dim] navig service start"
-        )
+        con.print("[dim]Start the NAVIG daemon to begin mesh discovery:[/dim] navig service start")
         return
 
     con.print(f"[bold]Mesh peers:[/bold] {len(peers)} node(s) online\n")

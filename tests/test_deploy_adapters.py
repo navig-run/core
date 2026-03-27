@@ -53,21 +53,15 @@ class TestSystemdAdapter:
     def test_restart_success(self):
         remote = MagicMock()
         remote.execute_command.return_value = _ok_result()
-        adapter = SystemdAdapter(
-            service="myapp", server_config=SERVER, remote_ops=remote
-        )
+        adapter = SystemdAdapter(service="myapp", server_config=SERVER, remote_ops=remote)
         ok, _ = adapter.restart()
         assert ok is True
-        remote.execute_command.assert_called_once_with(
-            "systemctl restart myapp", SERVER
-        )
+        remote.execute_command.assert_called_once_with("systemctl restart myapp", SERVER)
 
     def test_restart_failure_returns_stderr(self):
         remote = MagicMock()
         remote.execute_command.return_value = _fail_result("Unit not found")
-        adapter = SystemdAdapter(
-            service="myapp", server_config=SERVER, remote_ops=remote
-        )
+        adapter = SystemdAdapter(service="myapp", server_config=SERVER, remote_ops=remote)
         ok, msg = adapter.restart()
         assert ok is False
         assert "Unit not found" in msg
@@ -100,17 +94,13 @@ class TestDockerComposeAdapter:
 
 class TestPm2Adapter:
     def test_restart_commands(self):
-        adapter = Pm2Adapter(
-            service="myapp", server_config=SERVER, remote_ops=MagicMock()
-        )
+        adapter = Pm2Adapter(service="myapp", server_config=SERVER, remote_ops=MagicMock())
         cmds = adapter.restart_commands()
         assert cmds == ["pm2 restart myapp --update-env"]
 
     def test_restart_dry_run_no_remote_call(self):
         remote = MagicMock()
-        adapter = Pm2Adapter(
-            service="myapp", server_config=SERVER, remote_ops=remote, dry_run=True
-        )
+        adapter = Pm2Adapter(service="myapp", server_config=SERVER, remote_ops=remote, dry_run=True)
         ok, _ = adapter.restart()
         assert ok is True
         remote.execute_command.assert_not_called()

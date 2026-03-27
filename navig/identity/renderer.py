@@ -95,9 +95,7 @@ def _measure_ping() -> tuple[int, str, str]:
         import platform
 
         h = int(
-            hashlib.md5(platform.node().encode(), usedforsecurity=False).hexdigest()[
-                :4
-            ],
+            hashlib.md5(platform.node().encode(), usedforsecurity=False).hexdigest()[:4],
             16,
         )
         ms = float(15 + (h % 60))
@@ -157,9 +155,7 @@ def render_sigil_card(entity: NaviEntity) -> None:
     primary = palette[1]  # entity's signature color (changes per entity)
     accent = palette[2]  # entity's secondary color
 
-    matrix = (
-        entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
-    )
+    matrix = entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
 
     # ── Depth-shaded sigil ────────────────────────────────────────────────
     sigil = Text(justify="center")
@@ -173,9 +169,7 @@ def render_sigil_card(entity: NaviEntity) -> None:
 
     # ── Node ID — spaced for visual weight ────────────────────────────────
     node_id = "NODE-" + entity.seed[:4].upper()
-    name_line = Text(
-        "  ".join(node_id) + "\n", justify="center", style=f"bold {primary}"
-    )
+    name_line = Text("  ".join(node_id) + "\n", justify="center", style=f"bold {primary}")
 
     # ── Stats block — left-align rows, then center the block as a unit ────
     INDENT = "  "

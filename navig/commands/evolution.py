@@ -16,9 +16,7 @@ evolution_app = typer.Typer(
 @evolution_app.command("skill")
 def evolve_skill(
     goal: str = typer.Argument(..., help="Description of the skill to create"),
-    skills_root: Path | None = typer.Option(
-        None, "--root", "-r", help="Root directory for skills"
-    ),
+    skills_root: Path | None = typer.Option(None, "--root", "-r", help="Root directory for skills"),
     retries: int = typer.Option(3, "--retries", "-n", help="Max evolution attempts"),
 ):
     """Generate and refine a new skill definition (SKILL.md)."""
@@ -105,9 +103,7 @@ def evolve_script(
 @evolution_app.command("fix")
 def evolve_fix(
     file_path: Path = typer.Argument(..., help="Path to the file to fix"),
-    instruction: str = typer.Argument(
-        ..., help="Description of the bug or improvement"
-    ),
+    instruction: str = typer.Argument(..., help="Description of the bug or improvement"),
     check: str | None = typer.Option(
         None,
         "--check",
@@ -140,9 +136,7 @@ def evolve_fix(
 
 @evolution_app.command("status")
 def evolve_status(
-    days: int = typer.Option(
-        7, "--days", "-d", help="Number of days of history to analyze"
-    ),
+    days: int = typer.Option(7, "--days", "-d", help="Number of days of history to analyze"),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show performance trends and regression alerts from the auto-profiler."""
@@ -179,9 +173,7 @@ def evolve_status(
     ch.dim("")
 
     if not samples:
-        ch.warning(
-            "No profile data yet. NAVIG samples 1-in-100 CLI calls automatically."
-        )
+        ch.warning("No profile data yet. NAVIG samples 1-in-100 CLI calls automatically.")
         ch.dim("Run a few commands and come back. The system is watching.")
         return
 
@@ -209,9 +201,7 @@ def evolve_status(
 
 @evolution_app.command("optimize")
 def evolve_optimize(
-    days: int = typer.Option(
-        7, "--days", "-d", help="Number of days of history to analyze"
-    ),
+    days: int = typer.Option(7, "--days", "-d", help="Number of days of history to analyze"),
 ):
     """Analyze profile data and propose the next optimization target."""
     from navig.ipc_pipe import get_pipe_status

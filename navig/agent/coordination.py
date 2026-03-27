@@ -313,10 +313,7 @@ class MessageBus:
                         response = await handler(message)
 
                         # Check if this is a response to a pending request
-                        if (
-                            message.reply_to
-                            and message.reply_to in self._pending_responses
-                        ):
+                        if message.reply_to and message.reply_to in self._pending_responses:
                             future = self._pending_responses.pop(message.reply_to)
                             if not future.done():
                                 future.set_result(response)
@@ -524,9 +521,7 @@ class AgentCoordinator:
                 loop = asyncio.get_running_loop()
                 return await loop.run_in_executor(
                     None,
-                    lambda: manager.get_context(
-                        query, max_tokens=max_tokens, limit=limit
-                    ),
+                    lambda: manager.get_context(query, max_tokens=max_tokens, limit=limit),
                 )
             except Exception as e:
                 logger.error(f"Speculative context gather failed: {e}")

@@ -145,9 +145,7 @@ class AuditLog:
         }
 
         if raw_input is not None:
-            digest = hashlib.sha256(
-                raw_input.encode("utf-8", errors="replace")
-            ).hexdigest()[:16]
+            digest = hashlib.sha256(raw_input.encode("utf-8", errors="replace")).hexdigest()[:16]
             record["input_hash"] = f"sha256:{digest}"
 
         if raw_output is not None:

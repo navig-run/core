@@ -308,9 +308,7 @@ class EventBridge:
         import sys
 
         self.ipc_socket_path = ipc_socket_path or (
-            r"\\.\pipe\navig-sysd.sock"
-            if sys.platform == "win32"
-            else "/tmp/navig-sysd.sock"
+            r"\\.\pipe\navig-sysd.sock" if sys.platform == "win32" else "/tmp/navig-sysd.sock"
         )
 
         # Client registry: ws → filter
@@ -421,9 +419,7 @@ class EventBridge:
         self._clients.pop(id(ws), None)
         logger.debug(f"Client unregistered: {id(ws)}")
 
-    def update_client_filter(
-        self, ws: WebSocketLike, subscription: SubscriptionFilter
-    ) -> bool:
+    def update_client_filter(self, ws: WebSocketLike, subscription: SubscriptionFilter) -> bool:
         """Update the subscription filter for an existing client."""
         key = id(ws)
         if key in self._clients:
@@ -504,9 +500,7 @@ class EventBridge:
                 self._stats["events_filtered"] += 1
                 continue
             try:
-                await asyncio.wait_for(
-                    ws.send(payload_str), timeout=self.broadcast_timeout
-                )
+                await asyncio.wait_for(ws.send(payload_str), timeout=self.broadcast_timeout)
                 sent += 1
             except Exception:
                 dead.append(key)
@@ -554,9 +548,7 @@ class EventBridge:
                 reader, writer = await asyncio.open_connection(self.ipc_socket_path)
             else:
                 # Unix domain socket connection
-                reader, writer = await asyncio.open_unix_connection(
-                    self.ipc_socket_path
-                )
+                reader, writer = await asyncio.open_unix_connection(self.ipc_socket_path)
 
             writer.write(payload.encode("utf-8") + b"\n")
             await writer.drain()
@@ -576,9 +568,7 @@ class EventBridge:
         type_name = event.type.name if hasattr(event.type, "name") else str(event.type)
         topic = _EVENT_TYPE_TOPIC_MAP.get(type_name, f"agent.{type_name.lower()}")
 
-        priority_name = (
-            event.priority.name if hasattr(event.priority, "name") else "NORMAL"
-        )
+        priority_name = event.priority.name if hasattr(event.priority, "name") else "NORMAL"
         severity = _EVENT_TYPE_SEVERITY_HINTS.get(
             type_name, _PRIORITY_TO_SEVERITY.get(priority_name, Severity.INFO)
         )

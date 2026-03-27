@@ -40,9 +40,7 @@ class PluginInstance:
                     message = json.loads(line)
                     self._handle_message(message)
                 except json.JSONDecodeError:
-                    self.logger.warning(
-                        f"Received non-JSON from plugin: {line.strip()}"
-                    )
+                    self.logger.warning(f"Received non-JSON from plugin: {line.strip()}")
 
     def _read_stderr(self):
         while self.process and self.process.poll() is None:

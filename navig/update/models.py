@@ -14,9 +14,7 @@ def _version_lt(a: str, b: str) -> bool:
     except Exception:
         # Fallback: lexicographic tuple comparison on numeric parts
         def _parts(v: str):
-            return tuple(
-                int(x) for x in str(v).lstrip("v").split(".")[:3] if x.isdigit()
-            )
+            return tuple(int(x) for x in str(v).lstrip("v").split(".")[:3] if x.isdigit())
 
         try:
             return _parts(a) < _parts(b)
@@ -107,9 +105,7 @@ class UpdatePlan:
         for t in self.to_update:
             vi = self.version_infos.get(t.node_id)
             if vi:
-                lines.append(
-                    f"  {t.node_id}: {vi.current} → {vi.latest} ({vi.install_type})"
-                )
+                lines.append(f"  {t.node_id}: {vi.current} → {vi.latest} ({vi.install_type})")
         return "\n".join(lines)
 
 

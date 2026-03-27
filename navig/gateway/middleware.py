@@ -47,9 +47,7 @@ def make_rate_limit_middleware(
         now = time.monotonic()
 
         # Prune entries outside the rolling window
-        auth_state[peer] = [
-            (ts, failed) for ts, failed in auth_state[peer] if now - ts < window
-        ]
+        auth_state[peer] = [(ts, failed) for ts, failed in auth_state[peer] if now - ts < window]
 
         recent_failures = sum(1 for _, failed in auth_state[peer] if failed)
         if recent_failures >= max_failures:

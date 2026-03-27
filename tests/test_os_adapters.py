@@ -84,9 +84,7 @@ class TestSecurityCheck:
 
     def test_security_check_creation(self):
         """Test creating a SecurityCheck."""
-        check = SecurityCheck(
-            category="firewall", status="ok", message="Firewall is active"
-        )
+        check = SecurityCheck(category="firewall", status="ok", message="Firewall is active")
         assert check.category == "firewall"
         assert check.status == "ok"
         assert check.message == "Firewall is active"
@@ -103,9 +101,7 @@ class TestSecurityCheck:
 
     def test_security_check_to_dict(self):
         """Test SecurityCheck to_dict method."""
-        check = SecurityCheck(
-            category="users", status="critical", message="Root login enabled"
-        )
+        check = SecurityCheck(category="users", status="critical", message="Root login enabled")
         d = check.to_dict()
 
         assert d["category"] == "users"

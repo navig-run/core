@@ -40,9 +40,7 @@ class _MockRegistry:
         on_status: Optional[Callable] = None,
     ) -> _MockResult:
         if name not in self._mapping:
-            return _MockResult(
-                name=name, success=False, output=None, error="tool not found"
-            )
+            return _MockResult(name=name, success=False, output=None, error="tool not found")
         v = self._mapping[name]
         if callable(v):
             result = v(args)
@@ -130,9 +128,7 @@ async def test_required_failure_aborts_pipeline():
 async def test_optional_failure_continues_pipeline():
     reg = _MockRegistry(
         {
-            "fail": _MockResult(
-                name="fail", success=False, output=None, error="skip me"
-            ),
+            "fail": _MockResult(name="fail", success=False, output=None, error="skip me"),
             "after": "continued",
         }
     )

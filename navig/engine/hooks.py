@@ -126,9 +126,7 @@ class ExecutionHooks:
     """
 
     def __init__(self) -> None:
-        self._handlers: dict[HookPhase, list[HookHandler]] = {
-            phase: [] for phase in HookPhase
-        }
+        self._handlers: dict[HookPhase, list[HookHandler]] = {phase: [] for phase in HookPhase}
 
     # ------------------------------------------------------------------
     # Registration API

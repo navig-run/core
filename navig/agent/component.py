@@ -162,9 +162,7 @@ class Component(ABC):
                 healthy=self._state == ComponentState.RUNNING,
                 state=self._state,
                 message=(
-                    "OK"
-                    if self._state == ComponentState.RUNNING
-                    else f"State: {self._state.name}"
+                    "OK" if self._state == ComponentState.RUNNING else f"State: {self._state.name}"
                 ),
                 details=details,
             )
@@ -209,9 +207,7 @@ class Component(ABC):
             "uptime_seconds": self.uptime_seconds,
             "restart_count": self._restart_count,
             "error": str(self._error) if self._error else None,
-            "last_health": (
-                self._last_health_check.to_dict() if self._last_health_check else None
-            ),
+            "last_health": (self._last_health_check.to_dict() if self._last_health_check else None),
         }
 
     @abstractmethod

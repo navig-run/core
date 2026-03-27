@@ -40,18 +40,14 @@ _USER_AGENT = (
 
 _JS_GATE_PATTERNS = [
     # noscript "enable JavaScript"
-    re.compile(
-        r"<noscript[^>]*>.*?(enable|javascript|required)", re.DOTALL | re.IGNORECASE
-    ),
+    re.compile(r"<noscript[^>]*>.*?(enable|javascript|required)", re.DOTALL | re.IGNORECASE),
     # empty SPA root divs  (id = root | app | __nuxt | __next | main-content)
     re.compile(
         r'<div\s+id=["\'](?:root|app|__nuxt|__next|main[-_]content)["\'][^>]*>\s*</div>',
         re.IGNORECASE,
     ),
     # typical CRA/Vite JS bundle reference
-    re.compile(
-        r'<script[^>]+src=["\'][^"\']+(?:main|bundle|app)\.[a-z0-9]{8,}\.js["\']'
-    ),
+    re.compile(r'<script[^>]+src=["\'][^"\']+(?:main|bundle|app)\.[a-z0-9]{8,}\.js["\']'),
     # Next.js data script tag
     re.compile(r'id=["\']__NEXT_DATA__["\']'),
     # Angular / Ember attributes
@@ -91,9 +87,7 @@ def _extract_text(html: str) -> str:
         pass  # best-effort; failure is non-critical
 
     text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(
-        r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE
-    )
+    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"&nbsp;|&#160;", " ", text)
     text = re.sub(r"&amp;", "&", text)
@@ -117,9 +111,7 @@ async def _browser_fetch(url: str, on_status: StatusCallback | None) -> tuple[st
     try:
         from navig.browser.controller import BrowserConfig, BrowserController  # lazy
     except ImportError as _exc:
-        raise RuntimeError(
-            "navig.browser not available (playwright not installed?)"
-        ) from _exc
+        raise RuntimeError("navig.browser not available (playwright not installed?)") from _exc
 
     config = BrowserConfig(
         headless=True,
@@ -168,9 +160,7 @@ class BrowserFetchTool(BaseTool):
         try:
             import httpx
         except ImportError:
-            return ToolResult(
-                name=self.name, success=False, error="httpx not installed"
-            )
+            return ToolResult(name=self.name, success=False, error="httpx not installed")
 
         method_used = "httpx"
         html = ""
@@ -191,13 +181,9 @@ class BrowserFetchTool(BaseTool):
                 final_url = str(resp.url)
 
         except httpx.TimeoutException:
-            return ToolResult(
-                name=self.name, success=False, error="request timed out (15s)"
-            )
+            return ToolResult(name=self.name, success=False, error="request timed out (15s)")
         except httpx.ConnectError as exc:
-            return ToolResult(
-                name=self.name, success=False, error=f"connection failed: {exc}"
-            )
+            return ToolResult(name=self.name, success=False, error=f"connection failed: {exc}")
         except Exception as exc:  # noqa: BLE001
             return ToolResult(name=self.name, success=False, error=str(exc))
 
@@ -218,14 +204,10 @@ class BrowserFetchTool(BaseTool):
                 final_url = url
                 logger.debug("browser_fetch: upgraded to Playwright for %s", url)
             except RuntimeError as exc:
-                logger.warning(
-                    "browser_fetch: Playwright fallback failed for %s: %s", url, exc
-                )
+                logger.warning("browser_fetch: Playwright fallback failed for %s: %s", url, exc)
                 # Continue with whatever httpx returned — partial content is better than nothing
 
-        await self._emit(
-            on_status, "Extracting text…", f"{len(html):,} bytes · {method_used}", 80
-        )
+        await self._emit(on_status, "Extracting text…", f"{len(html):,} bytes · {method_used}", 80)
 
         text = _extract_text(html)[:_MAX_CHARS]
 

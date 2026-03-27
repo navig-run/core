@@ -233,9 +233,7 @@ def validate_linkedin(access_token: str) -> ValidationResult:
     Returns ValidationResult.success(name=...) on success.
     """
     if not access_token:
-        return ValidationResult.failure(
-            "access_token", "LinkedIn access token is required."
-        )
+        return ValidationResult.failure("access_token", "LinkedIn access token is required.")
 
     try:
         with _http_client() as client:
@@ -246,9 +244,7 @@ def validate_linkedin(access_token: str) -> ValidationResult:
         if resp.status_code == 200:
             data = resp.json()
             name = (
-                data.get("localizedFirstName", "")
-                + " "
-                + data.get("localizedLastName", "")
+                data.get("localizedFirstName", "") + " " + data.get("localizedLastName", "")
             ).strip()
             return ValidationResult.success(name=name or "(unknown)")
         try:

@@ -35,7 +35,8 @@ def _detect_db_type(discovery, container: str | None = None) -> str | None:
     """
     if container:
         # Check inside Docker container
-        cmd = f"docker exec {container} sh -c 'which mysql || which mariadb || which psql' 2>/dev/null"
+        c_safe = _escape_for_shell(container)
+        cmd = f"docker exec {c_safe} sh -c 'which mysql || which mariadb || which psql' 2>/dev/null"
     else:
         cmd = "which mysql || which mariadb || which psql 2>/dev/null"
 
@@ -47,7 +48,8 @@ def _detect_db_type(discovery, container: str | None = None) -> str | None:
         elif "mariadb" in stdout or "mysql" in stdout:
             # Check if it's MariaDB specifically
             if container:
-                version_cmd = f"docker exec {container} mysql --version 2>/dev/null"
+                c_safe = _escape_for_shell(container)
+                version_cmd = f"docker exec {c_safe} mysql --version 2>/dev/null"
             else:
                 version_cmd = "mysql --version 2>/dev/null"
             _, version_out, _ = discovery._execute_ssh(version_cmd)
@@ -157,9 +159,7 @@ def _get_db_credentials_from_config(
             host_db_config = host_config.get("database", {})
 
             # Use host root credentials if user is 'root' and no password provided
-            if (not resolved_user or resolved_user == "root") and host_db_config.get(
-                "root_user"
-            ):
+            if (not resolved_user or resolved_user == "root") and host_db_config.get("root_user"):
                 resolved_user = host_db_config.get("root_user")
                 resolved_password = host_db_config.get("root_password")
 
@@ -418,11 +418,7 @@ def db_query_cmd(
             ch.info("Use --type to specify: mysql, mariadb, or postgresql")
             return
         # Keep JSON/plain/quiet output strictly machine-readable.
-        if (
-            not options.get("json")
-            and not options.get("plain")
-            and not options.get("quiet")
-        ):
+        if not options.get("json") and not options.get("plain") and not options.get("quiet"):
             ch.dim(f"Detected: {db_type}")
 
     # Dry run
@@ -432,9 +428,7 @@ def db_query_cmd(
 
     # Execute query
     spinner_ctx = (
-        ch.create_spinner("Executing query...")
-        if not options.get("json")
-        else nullcontext()
+        ch.create_spinner("Executing query...") if not options.get("json") else nullcontext()
     )
     with spinner_ctx:
         success, stdout, stderr = _execute_db_query(
@@ -481,9 +475,7 @@ def db_query_cmd(
             else:
                 # Detect query type for smart formatting
                 query_upper = query.strip().upper()
-                if query_upper.startswith("DESCRIBE") or query_upper.startswith(
-                    "DESC "
-                ):
+                if query_upper.startswith("DESCRIBE") or query_upper.startswith("DESC "):
                     query_type = "describe"
                 elif query_upper.startswith("SHOW"):
                     query_type = "show"
@@ -523,9 +515,7 @@ def db_query_cmd(
                 ch.dim("     # Add database.root_user and database.root_password")
                 ch.console.print()
                 ch.dim("  4. Use app-specific database user (recommended):")
-                ch.dim(
-                    "     Instead of root, use a dedicated user with limited permissions"
-                )
+                ch.dim("     Instead of root, use a dedicated user with limited permissions")
 
 
 def db_list_cmd(
@@ -562,10 +552,8 @@ def db_list_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = (
-        _get_db_credentials_from_config(
-            config_manager, host_name, user, password, db_type
-        )
+    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
+        config_manager, host_name, user, password, db_type
     )
 
     # Show credential source info if verbose
@@ -605,9 +593,7 @@ def db_list_cmd(
         query = "SELECT datname FROM pg_database WHERE datistemplate = false"
 
     spinner_ctx = (
-        ch.create_spinner("Fetching databases...")
-        if not options.get("json")
-        else nullcontext()
+        ch.create_spinner("Fetching databases...") if not options.get("json") else nullcontext()
     )
     with spinner_ctx:
         success, stdout, stderr = _execute_db_query(
@@ -712,10 +698,8 @@ def db_tables_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = (
-        _get_db_credentials_from_config(
-            config_manager, host_name, user, password, db_type
-        )
+    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
+        config_manager, host_name, user, password, db_type
     )
 
     debug_logger = options.get("debug_logger")
@@ -853,10 +837,8 @@ def db_dump_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = (
-        _get_db_credentials_from_config(
-            config_manager, host_name, user, password, db_type
-        )
+    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
+        config_manager, host_name, user, password, db_type
     )
 
     debug_logger = options.get("debug_logger")
@@ -879,16 +861,12 @@ def db_dump_cmd(
 
     # Build dump command with proper shell escaping
     escaped_user = _escape_for_shell(resolved_user)
-    escaped_password = (
-        _escape_for_shell(resolved_password) if resolved_password else None
-    )
+    escaped_password = _escape_for_shell(resolved_password) if resolved_password else None
     escaped_database = _escape_for_shell(database)
 
     if resolved_db_type in ("mysql", "mariadb"):
         if resolved_password:
-            dump_cmd = (
-                f"mysqldump -u{escaped_user} -p{escaped_password} {escaped_database}"
-            )
+            dump_cmd = f"mysqldump -u{escaped_user} -p{escaped_password} {escaped_database}"
         else:
             dump_cmd = f"mysqldump -u{escaped_user} {escaped_database}"
     else:
@@ -963,10 +941,8 @@ def db_shell_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = (
-        _get_db_credentials_from_config(
-            config_manager, host_name, user, password, db_type
-        )
+    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
+        config_manager, host_name, user, password, db_type
     )
 
     # Default to mysql if still not detected
@@ -980,9 +956,7 @@ def db_shell_cmd(
 
     # Build the database client command with proper shell escaping
     escaped_user = _escape_for_shell(resolved_user)
-    escaped_password = (
-        _escape_for_shell(resolved_password) if resolved_password else None
-    )
+    escaped_password = _escape_for_shell(resolved_password) if resolved_password else None
     escaped_database = _escape_for_shell(database) if database else None
 
     if resolved_db_type in ("mysql", "mariadb"):
@@ -1059,20 +1033,14 @@ def db_callback(ctx: typer.Context):
 def db_show(
     ctx: typer.Context,
     database: str | None = typer.Argument(None, help="Database name"),
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: str | None = typer.Option(
-        None, "--password", "-p", help="Database password"
-    ),
+    password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
     tables: bool = typer.Option(False, "--tables", help="Show tables in database"),
-    containers: bool = typer.Option(
-        False, "--containers", help="Show database containers"
-    ),
+    containers: bool = typer.Option(False, "--containers", help="Show database containers"),
     users: bool = typer.Option(False, "--users", help="Show database users"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
 ):
@@ -1100,13 +1068,9 @@ def db_show(
 def db_run(
     ctx: typer.Context,
     query: str | None = typer.Argument(None, help="SQL query to execute"),
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: str | None = typer.Option(
-        None, "--password", "-p", help="Database password"
-    ),
+    password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
     database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
@@ -1171,13 +1135,9 @@ def _is_base64_encoded(s: str) -> bool:
 def db_query_new(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="SQL query to execute (auto-detects base64)"),
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: str | None = typer.Option(
-        None, "--password", "-p", help="Database password"
-    ),
+    password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
     database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
@@ -1210,9 +1170,7 @@ def db_query_new(
         try:
             decoded = base64.b64decode(query).decode("utf-8").strip()
             if not b64:
-                ch.info(
-                    f"Auto-detected base64 query ({len(query)} chars → {len(decoded)} chars)"
-                )
+                ch.info(f"Auto-detected base64 query ({len(query)} chars → {len(decoded)} chars)")
             query = decoded
         except Exception as e:
             if b64:
@@ -1241,13 +1199,9 @@ def db_file_new(
 @db_app.command("list")
 def db_list_new(
     ctx: typer.Context,
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: str | None = typer.Option(
-        None, "--password", "-p", help="Database password"
-    ),
+    password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
@@ -1269,13 +1223,9 @@ def db_list_new(
 def db_tables_new(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name"),
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: str | None = typer.Option(
-        None, "--password", "-p", help="Database password"
-    ),
+    password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
@@ -1295,13 +1245,9 @@ def db_dump_new(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name to dump"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: str | None = typer.Option(
-        None, "--password", "-p", help="Database password"
-    ),
+    password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
@@ -1326,13 +1272,9 @@ def db_restore_new(
 @db_app.command("shell", hidden=True)
 def db_shell_new(
     ctx: typer.Context,
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: str | None = typer.Option(
-        None, "--password", "-p", help="Database password"
-    ),
+    password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
     database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"

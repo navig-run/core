@@ -163,8 +163,7 @@ class AuthProfileManager:
         data = {
             "version": self._store.version,
             "profiles": {
-                pid: self._serialize_credential(cred)
-                for pid, cred in self._store.profiles.items()
+                pid: self._serialize_credential(cred) for pid, cred in self._store.profiles.items()
             },
             "order": self._store.order,
             "lastGood": self._store.last_good,
@@ -268,11 +267,7 @@ class AuthProfileManager:
         if provider is None:
             return list(self.store.profiles.keys())
 
-        return [
-            pid
-            for pid, cred in self.store.profiles.items()
-            if cred.provider == provider
-        ]
+        return [pid for pid, cred in self.store.profiles.items() if cred.provider == provider]
 
     def get_api_key(self, provider: str, profile_id: str | None = None) -> str | None:
         """

@@ -242,9 +242,7 @@ class BM25Index:
 
                 # BM25 formula
                 numerator = tf * (self.k1 + 1)
-                denominator = tf + self.k1 * (
-                    1 - self.b + self.b * doc_len / self.avg_doc_len
-                )
+                denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avg_doc_len)
                 score += idf * numerator / denominator
 
             if score > 0:
@@ -433,18 +431,14 @@ class WikiRAG:
             List of relevant documents with scores and snippets
         """
         if self._project_indexer is not None:
-            results = self._project_indexer.search(
-                query, top_k=top_k, content_type_filter="wiki"
-            )
+            results = self._project_indexer.search(query, top_k=top_k, content_type_filter="wiki")
             return [
                 {
                     "path": r.file_path,
                     "title": r.section_title or Path(r.file_path).stem,
                     "folder": str(Path(r.file_path).parent).replace("\\", "/"),
                     "score": r.score,
-                    "chunk": (
-                        r.content[:300] + "..." if len(r.content) > 300 else r.content
-                    ),
+                    "chunk": (r.content[:300] + "..." if len(r.content) > 300 else r.content),
                     "chunk_index": 0,
                     "total_chunks": 1,
                 }
@@ -554,9 +548,7 @@ class WikiRAG:
                 "db_path": s.get("db_path", ""),
             }
         total_chunks = sum(len(d.chunks) for d in self.documents)
-        total_words = sum(
-            len(TextTokenizer.tokenize(d.content)) for d in self.documents
-        )
+        total_words = sum(len(TextTokenizer.tokenize(d.content)) for d in self.documents)
 
         return {
             "backend": "in_memory",
@@ -564,9 +556,7 @@ class WikiRAG:
             "total_chunks": total_chunks,
             "total_words": total_words,
             "unique_terms": len(self.index.doc_freqs),
-            "avg_doc_length": (
-                round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0
-            ),
+            "avg_doc_length": (round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0),
         }
 
 
@@ -594,7 +584,5 @@ def get_wiki_rag(
             indexer = ProjectIndexer(Path(project_root))
             return WikiRAG(wiki_path, project_indexer=indexer)
         except Exception as e:
-            ch.dim(
-                f"[WikiRAG] Unified indexer unavailable ({e}), falling back to in-memory."
-            )
+            ch.dim(f"[WikiRAG] Unified indexer unavailable ({e}), falling back to in-memory.")
     return WikiRAG(wiki_path)

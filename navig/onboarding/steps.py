@@ -288,11 +288,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         sys.stdout.write("\n  Choose your AI provider:\n")
         for i, p in enumerate(providers, start=1):
-            local_tag = (
-                "  (local, no key needed)"
-                if not getattr(p, "requires_key", True)
-                else ""
-            )
+            local_tag = "  (local, no key needed)" if not getattr(p, "requires_key", True) else ""
             sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}\n")
         sys.stdout.write("\n")
         sys.stdout.flush()
@@ -485,19 +481,13 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
         try:
             pw = typer.prompt("  Vault passphrase", hide_input=True, default="").strip()
             if not pw:
-                return StepResult(
-                    status="skipped", output={"reason": "empty passphrase"}
-                )
-            confirm = typer.prompt(
-                "  Confirm passphrase", hide_input=True, default=""
-            ).strip()
+                return StepResult(status="skipped", output={"reason": "empty passphrase"})
+            confirm = typer.prompt("  Confirm passphrase", hide_input=True, default="").strip()
         except (KeyboardInterrupt, EOFError):
             return StepResult(status="skipped", output={"reason": "interrupted"})
 
         if pw != confirm:
-            return StepResult(
-                status="skipped", output={"reason": "passphrases did not match"}
-            )
+            return StepResult(status="skipped", output={"reason": "passphrases did not match"})
 
         try:
             from navig.vault.core_v2 import VaultV2
@@ -561,9 +551,7 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
             subprocess.run([sys.executable, "-m", "navig", "host", "add"], check=False)
             existing = list(hosts_dir.glob("*.yaml")) if hosts_dir.exists() else []
             if existing:
-                return StepResult(
-                    status="completed", output={"hostsFound": len(existing)}
-                )
+                return StepResult(status="completed", output={"hostsFound": len(existing)})
 
         return StepResult(
             status="skipped",
@@ -639,11 +627,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
         try:
             env_path = navig_dir / ".env"
             existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
-            lines = [
-                ln
-                for ln in existing.splitlines()
-                if not ln.startswith("TELEGRAM_BOT_TOKEN=")
-            ]
+            lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
             lines.append(f"TELEGRAM_BOT_TOKEN={token}")
             env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             try:
@@ -714,9 +698,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
 
         if not available:
             marker.write_text("none", encoding="utf-8")
-            return StepResult(
-                status="skipped", output={"reason": "no packs configured"}
-            )
+            return StepResult(status="skipped", output={"reason": "no packs configured"})
 
         import typer
 
@@ -753,9 +735,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
             if config_path.exists():
                 cfg2 = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             cfg2.setdefault("skills", {})["active_packs"] = chosen
-            config_path.write_text(
-                yaml.dump(cfg2, allow_unicode=True), encoding="utf-8"
-            )
+            config_path.write_text(yaml.dump(cfg2, allow_unicode=True), encoding="utf-8")
         except Exception:  # noqa: BLE001
             pass
 
@@ -788,9 +768,7 @@ def _step_sigil_genesis(navig_dir: Path, genesis: GenesisData) -> OnboardingStep
 
     def run() -> StepResult:
         if marker.exists():
-            return StepResult(
-                status="completed", output={"note": "already initialized"}
-            )
+            return StepResult(status="completed", output={"note": "already initialized"})
 
         try:
             from navig.identity.sigil_store import ensure_sigil  # type: ignore[import]
@@ -825,9 +803,7 @@ def _step_core_navig(navig_dir: Path) -> OnboardingStep:
 
     def run() -> StepResult:
         if marker.exists():
-            return StepResult(
-                status="completed", output={"note": "already initialized"}
-            )
+            return StepResult(status="completed", output={"note": "already initialized"})
 
         # Ensure the base directory tree exists
         for sub in ("state", "logs", "vault"):
@@ -883,18 +859,14 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
         if not typer.confirm("  Token validated. Save and continue?", default=True):
             return StepResult(status="skipped", output={"reason": "user declined"})
 
-        default_room_id = typer.prompt(
-            "  Default room ID (e.g. !abc:matrix.org)"
-        ).strip()
+        default_room_id = typer.prompt("  Default room ID (e.g. !abc:matrix.org)").strip()
 
         # Persist token to vault
         try:
             from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
 
             vault = get_vault_v2()
-            vault.put(
-                "matrix/access_token", json.dumps({"value": access_token}).encode()
-            )
+            vault.put("matrix/access_token", json.dumps({"value": access_token}).encode())
         except Exception:  # noqa: BLE001
             pass
 
@@ -952,9 +924,7 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
         smtp_host = typer.prompt("  SMTP host (or blank to skip)", default="").strip()
         if not smtp_host:
             marker.write_text("skipped", encoding="utf-8")
-            return StepResult(
-                status="skipped", output={"reason": "no SMTP host provided"}
-            )
+            return StepResult(status="skipped", output={"reason": "no SMTP host provided"})
 
         smtp_port_str = typer.prompt("  SMTP port", default="587").strip()
         try:
@@ -1017,9 +987,7 @@ def _step_social_networks(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        configure = typer.confirm(
-            "  Configure social network integrations?", default=False
-        )
+        configure = typer.confirm("  Configure social network integrations?", default=False)
         if not configure:
             marker.write_text("skipped", encoding="utf-8")
             return StepResult(status="skipped", output={"reason": "user declined"})
@@ -1079,9 +1047,7 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
             if not val:
                 continue
             try:
-                if typer.confirm(
-                    f"  Import {display_name} from environment?", default=True
-                ):
+                if typer.confirm(f"  Import {display_name} from environment?", default=True):
                     if vault is not None:
                         vault.put(vault_label, json.dumps({"value": val}).encode())
                     imported.append(display_name)

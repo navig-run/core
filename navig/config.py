@@ -112,9 +112,7 @@ class ConfigManager:
                 try:
                     from navig import console_helper as ch
 
-                    ch.info(
-                        f"Using explicit config directory: {self._explicit_config_dir}"
-                    )
+                    ch.info(f"Using explicit config directory: {self._explicit_config_dir}")
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
         else:
@@ -282,9 +280,7 @@ class ConfigManager:
                 if self.verbose:
                     from navig import console_helper as ch
 
-                    ch.warning(
-                        f"App config directory not accessible: {self.app_config_dir}"
-                    )
+                    ch.warning(f"App config directory not accessible: {self.app_config_dir}")
 
         # Always add global config as fallback (should always be accessible)
         if self._is_directory_accessible(self.global_config_dir):
@@ -293,9 +289,7 @@ class ConfigManager:
             # This is a critical error - global config should always be accessible
             from navig import console_helper as ch
 
-            ch.error(
-                f"Global config directory not accessible: {self.global_config_dir}"
-            )
+            ch.error(f"Global config directory not accessible: {self.global_config_dir}")
 
         return directories
 
@@ -355,16 +349,12 @@ class ConfigManager:
                             "Cannot create config directories even after fallback to global config. "
                             "Check permissions on your home directory."
                         ) from e
-                    return self._ensure_directories(
-                        _recursion_depth=_recursion_depth + 1
-                    )
+                    return self._ensure_directories(_recursion_depth=_recursion_depth + 1)
                 else:
                     # Critical error - cannot create global config
                     from navig import console_helper as ch
 
-                    ch.error(
-                        f"CRITICAL: Cannot create global config directory {directory}: {e}"
-                    )
+                    ch.error(f"CRITICAL: Cannot create global config directory {directory}: {e}")
                     ch.error("Please check permissions on your home directory.")
                     raise
 
@@ -513,9 +503,7 @@ Context provided with each query:
                     # ── Shadow Execution: validate fast result in background ──
                     import threading
 
-                    def _shadow_verify(
-                        fr: dict, cfg_file: Path, cfgmgr: "ConfigManager"
-                    ) -> None:
+                    def _shadow_verify(fr: dict, cfg_file: Path, cfgmgr: "ConfigManager") -> None:
                         try:
                             slow_result = cfgmgr._load_global_config(validate=False)
                             # Compare top-level keys as a lightweight diff
@@ -615,9 +603,7 @@ Context provided with each query:
                     if self.verbose:
                         from navig import console_helper as ch
 
-                        ch.success(
-                            f"Configuration migrated to version {config.get('version')}"
-                        )
+                        ch.success(f"Configuration migrated to version {config.get('version')}")
             except Exception as e:
                 if self.verbose:
                     from navig import console_helper as ch
@@ -789,9 +775,7 @@ Context provided with each query:
         """
         valid_modes = ["interactive", "auto"]
         if mode not in valid_modes:
-            raise ValueError(
-                f"Invalid mode '{mode}'. Must be one of: {', '.join(valid_modes)}"
-            )
+            raise ValueError(f"Invalid mode '{mode}'. Must be one of: {', '.join(valid_modes)}")
 
         if "execution" not in self.global_config:
             self.global_config["execution"] = {}
@@ -835,9 +819,7 @@ Context provided with each query:
         """
         valid_levels = ["critical", "standard", "verbose"]
         if level not in valid_levels:
-            raise ValueError(
-                f"Invalid level '{level}'. Must be one of: {', '.join(valid_levels)}"
-            )
+            raise ValueError(f"Invalid level '{level}'. Must be one of: {', '.join(valid_levels)}")
 
         if "execution" not in self.global_config:
             self.global_config["execution"] = {}
@@ -977,7 +959,7 @@ Context provided with each query:
         """Get AI system prompt."""
         if not self.ai_prompt_file.exists():
             self._create_default_ai_prompt()
-        return self.ai_prompt_file.read_text()
+        return self.ai_prompt_file.read_text(encoding="utf-8")
 
     def update_server_metadata(self, name: str, metadata: dict[str, Any]):
         """Update server metadata (from inspection)."""
@@ -1017,9 +999,7 @@ Context provided with each query:
             logger.warning("Failed to read local config %s: %s", local_config_file, e)
             return {}
 
-    def set_local_config(
-        self, data: dict[str, Any], directory: Path | None = None
-    ) -> None:
+    def set_local_config(self, data: dict[str, Any], directory: Path | None = None) -> None:
         """
         Write the project-local configuration (.navig/config.yaml).
         Creates the .navig directory if it doesn't exist.
@@ -1039,9 +1019,7 @@ Context provided with each query:
     # Context Management (Hosts and Apps)
     # =========================================================================
 
-    def get_active_host(
-        self, return_source: bool = False
-    ) -> str | None | tuple[str | None, str]:
+    def get_active_host(self, return_source: bool = False) -> str | None | tuple[str | None, str]:
         """
         Get currently active host name with hierarchical resolution.
 
@@ -1076,7 +1054,7 @@ Context provided with each query:
         local_navig = Path.cwd() / ".navig"
         if local_navig.exists() and local_navig.is_file():
             try:
-                content = local_navig.read_text().strip()
+                content = local_navig.read_text(encoding="utf-8").strip()
                 if ":" in content:
                     host_name, _ = content.split(":", 1)
                 else:
@@ -1090,7 +1068,7 @@ Context provided with each query:
         # Priority 4: Check global cache (set by `navig host use`)
         if self.active_host_file.exists():
             try:
-                host_name = self.active_host_file.read_text().strip()
+                host_name = self.active_host_file.read_text(encoding="utf-8").strip()
                 if host_name and self.host_exists(host_name):
                     return (host_name, "user") if return_source else host_name
             except (PermissionError, OSError):
@@ -1103,9 +1081,7 @@ Context provided with each query:
 
         return (None, "none") if return_source else None
 
-    def get_active_app(
-        self, return_source: bool = False
-    ) -> str | None | tuple[str | None, str]:
+    def get_active_app(self, return_source: bool = False) -> str | None | tuple[str | None, str]:
         """
         Get currently active app name with hierarchical resolution.
 
@@ -1155,7 +1131,7 @@ Context provided with each query:
         local_navig = Path.cwd() / ".navig"
         if local_navig.exists() and local_navig.is_file():
             try:
-                content = local_navig.read_text().strip()
+                content = local_navig.read_text(encoding="utf-8").strip()
                 if ":" in content:
                     _, app_name = content.split(":", 1)
                     return (app_name, "legacy") if return_source else app_name
@@ -1166,7 +1142,7 @@ Context provided with each query:
         # Priority 3: Check cached active app (project cache or user cache)
         if self.active_app_file.exists():
             try:
-                app_name = self.active_app_file.read_text().strip()
+                app_name = self.active_app_file.read_text(encoding="utf-8").strip()
                 if app_name:
                     # Determine if this is project or user cache
                     local_navig_dir = Path.cwd() / ".navig"
@@ -1197,9 +1173,7 @@ Context provided with each query:
                         continue
                 if len(local_apps) == 1:
                     # Single app in project - use it as the active app
-                    return (
-                        (local_apps[0], "project") if return_source else local_apps[0]
-                    )
+                    return (local_apps[0], "project") if return_source else local_apps[0]
 
         # Priority 5: Fall back to default app from active host
         host_name = self.get_active_host()
@@ -1336,9 +1310,7 @@ Context provided with each query:
         # Load or create local config
         local_config = self.get_local_config(target_dir)
 
-        if (
-            not local_config
-        ):  # If get_local_config returned empty, it means the file didn't exist or was empty/invalid
+        if not local_config:  # If get_local_config returned empty, it means the file didn't exist or was empty/invalid
             local_config = {
                 "app": {
                     "name": target_dir.name,
@@ -1630,9 +1602,7 @@ Context provided with each query:
 
         return hosts_with_app
 
-    def load_host_config(
-        self, host_name: str, use_cache: bool = True
-    ) -> dict[str, Any]:
+    def load_host_config(self, host_name: str, use_cache: bool = True) -> dict[str, Any]:
         """
         Load host configuration with hierarchical support.
 
@@ -1704,9 +1674,7 @@ Context provided with each query:
                     from navig import console_helper as ch
 
                     source = "app" if config_dir == self.app_config_dir else "global"
-                    ch.dim(
-                        f"✓ Loaded host '{host_name}' from {source} config (legacy format)"
-                    )
+                    ch.dim(f"✓ Loaded host '{host_name}' from {source} config (legacy format)")
 
                 # Cache the result
                 self._host_config_cache[host_name] = config
@@ -1739,9 +1707,7 @@ Context provided with each query:
             app_config = self.load_app_from_file(app_name, config_dir)
             if app_config and app_config.get("host") == host_name:
                 # Validate required field
-                if "webserver" not in app_config or "type" not in app_config.get(
-                    "webserver", {}
-                ):
+                if "webserver" not in app_config or "type" not in app_config.get("webserver", {}):
                     raise ValueError(
                         f"App '{app_name}' is missing required field 'webserver.type'. "
                         f"Please edit the app configuration and add this field."
@@ -1763,9 +1729,7 @@ Context provided with each query:
             app_config = host_config["apps"][app_name]
 
             # Validate webserver.type exists (REQUIRED field)
-            if "webserver" not in app_config or "type" not in app_config.get(
-                "webserver", {}
-            ):
+            if "webserver" not in app_config or "type" not in app_config.get("webserver", {}):
                 raise ValueError(
                     f"Missing 'webserver.type' in configuration for app '{app_name}' on host '{host_name}'. "
                     f"Please add 'webserver.type: nginx' or 'webserver.type: apache2' to your app config."
@@ -1812,9 +1776,7 @@ Context provided with each query:
         host_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(host_file, "w", encoding="utf-8") as f:
-            yaml.dump(
-                config, f, default_flow_style=False, sort_keys=False, allow_unicode=True
-            )
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
         if self.verbose:
             from navig import console_helper as ch
@@ -1904,9 +1866,7 @@ Context provided with each query:
                     from navig import console_helper as ch
 
                     location = "app" if config_dir == self.app_config_dir else "global"
-                    ch.dim(
-                        f"✓ Deleted host '{host_name}' from {location} config (legacy format)"
-                    )
+                    ch.dim(f"✓ Deleted host '{host_name}' from {location} config (legacy format)")
                 break  # Delete from first location found only
 
     def delete_app_config(self, host_name: str, app_name: str):
@@ -1937,9 +1897,7 @@ Context provided with each query:
                         if self.verbose:
                             from navig import console_helper as ch
 
-                            location = (
-                                "app" if config_dir == self.app_config_dir else "global"
-                            )
+                            location = "app" if config_dir == self.app_config_dir else "global"
                             ch.dim(
                                 f"✓ Deleted app '{app_name}' from {location} config (individual file)"
                             )
@@ -2221,9 +2179,7 @@ def get_config_manager(
 
     # Check if we need a new instance
     needs_new = (
-        force_new
-        or _config_manager_instance is None
-        or config_dir != _config_manager_config_dir
+        force_new or _config_manager_instance is None or config_dir != _config_manager_config_dir
     )
 
     if needs_new:

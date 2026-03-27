@@ -22,9 +22,7 @@ def vault():
 def test_vault_cli_list(vault):
     result = runner.invoke(app, ["cred", "list"])
     assert result.exit_code == 0
-    assert (
-        "NAVIG Credentials Vault" in result.stdout or "Vault is empty" in result.stdout
-    )
+    assert "NAVIG Credentials Vault" in result.stdout or "Vault is empty" in result.stdout
 
 
 def test_vault_cli_add_delete(vault):

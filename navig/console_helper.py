@@ -521,9 +521,7 @@ def print_code(
 ):
     """Print code with syntax highlighting."""
     Syntax = _get_syntax()
-    syntax = Syntax(
-        code, language, theme=theme, line_numbers=line_numbers, word_wrap=True
-    )
+    syntax = Syntax(code, language, theme=theme, line_numbers=line_numbers, word_wrap=True)
     console.print(syntax)
 
 
@@ -697,9 +695,7 @@ def requires_confirmation(
 
     # Check if operation level meets the confirmation threshold
     op_level = OPERATION_LEVELS.get(operation_type, 2)  # Default to standard
-    threshold = CONFIRMATION_THRESHOLDS.get(
-        confirmation_level, 2
-    )  # Default to standard
+    threshold = CONFIRMATION_THRESHOLDS.get(confirmation_level, 2)  # Default to standard
 
     return op_level <= threshold
 
@@ -748,9 +744,7 @@ def confirm_operation(
         auto_confirm = False
 
     # Check if confirmation is needed
-    if not requires_confirmation(
-        operation_type, confirmation_level, execution_mode, auto_confirm
-    ):
+    if not requires_confirmation(operation_type, confirmation_level, execution_mode, auto_confirm):
         return True
 
     # Build confirmation message
@@ -929,9 +923,7 @@ def confirm_action(message: str, default: bool = True) -> bool:
     return Confirm.ask(f"[{Colors.PROMPT}]{message}[/{Colors.PROMPT}]", default=default)
 
 
-def prompt_input(
-    message: str, default: str | None = None, password: bool = False
-) -> str:
+def prompt_input(message: str, default: str | None = None, password: bool = False) -> str:
     """
     Prompt user for input with rich formatting.
 

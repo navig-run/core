@@ -60,9 +60,7 @@ class LocalOperations:
     def connection(self) -> LocalConnection:
         """Lazy-load connection adapter."""
         if self._connection is None:
-            self._connection = LocalConnection(
-                working_directory=self._working_directory
-            )
+            self._connection = LocalConnection(working_directory=self._working_directory)
         return self._connection
 
     @property
@@ -229,11 +227,7 @@ class LocalOperations:
             SecurityCheck(
                 category="privileges",
                 status="warning" if is_admin else "ok",
-                message=(
-                    "Running with admin privileges"
-                    if is_admin
-                    else "Running as normal user"
-                ),
+                message=("Running with admin privileges" if is_admin else "Running as normal user"),
                 details={"is_admin": is_admin},
             )
         )
@@ -243,11 +237,7 @@ class LocalOperations:
         if firewall_result.exit_code == 0:
             # Try to detect if firewall is enabled
             output_lower = firewall_result.stdout.lower()
-            if (
-                "off" in output_lower
-                or "disabled" in output_lower
-                or "inactive" in output_lower
-            ):
+            if "off" in output_lower or "disabled" in output_lower or "inactive" in output_lower:
                 checks.append(
                     SecurityCheck(
                         category="firewall",

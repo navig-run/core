@@ -162,9 +162,7 @@ class AIClient:
 
         except Exception:
             # Fall back to env vars
-            self._navig_api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv(
-                "OPENAI_API_KEY"
-            )
+            self._navig_api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 
     def _detect_best_provider(self) -> str:
         """Detect the best available provider.
@@ -183,9 +181,7 @@ class AIClient:
                 )
 
                 parsed = urlparse(
-                    mcp_bridge_url.replace("ws://", "http://").replace(
-                        "wss://", "https://"
-                    )
+                    mcp_bridge_url.replace("ws://", "http://").replace("wss://", "https://")
                 )
                 host = parsed.hostname or "127.0.0.1"
                 port = parsed.port or _BDP
@@ -304,11 +300,7 @@ class AIClient:
             vault = get_vault()
             secret = vault.get_secret("github_models", "token", caller="ai_client")
             if secret:
-                val = (
-                    secret.reveal().strip()
-                    if hasattr(secret, "reveal")
-                    else str(secret).strip()
-                )
+                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
                 if val:
                     return val
         except Exception:  # noqa: BLE001
@@ -391,9 +383,7 @@ class AIClient:
                 except Exception:
                     if self.provider == "airllm":
                         # AirLLM error - try direct
-                        return await self._chat_airllm(
-                            messages, temperature, max_tokens
-                        )
+                        return await self._chat_airllm(messages, temperature, max_tokens)
 
         # Direct API call for OpenRouter/OpenAI
         if self.provider in ("openrouter", "openai") and self.api_key:
@@ -405,21 +395,15 @@ class AIClient:
 
         # Ollama/local
         if self.provider == "local":
-            return await self._chat_local(
-                messages, temperature, max_tokens, model=model
-            )
+            return await self._chat_local(messages, temperature, max_tokens, model=model)
 
         # MCP Bridge — VS Code Copilot via MCP WebSocket (preferred)
         if self.provider == "mcp_bridge":
-            return await self._chat_mcp_bridge(
-                messages, temperature, max_tokens, model=model
-            )
+            return await self._chat_mcp_bridge(messages, temperature, max_tokens, model=model)
 
         # GitHub Models — free tier via GitHub PAT
         if self.provider == "github_models":
-            return await self._chat_github_models(
-                messages, temperature, max_tokens, model=model
-            )
+            return await self._chat_github_models(messages, temperature, max_tokens, model=model)
 
         # No provider available
         raise RuntimeError(
@@ -513,9 +497,7 @@ class AIClient:
                 fb_messages.insert(0, {"role": "system", "content": FALLBACK_NOTE})
 
             try:
-                response_text = await self._execute_routed(
-                    fb_messages, fb_decision, temperature
-                )
+                response_text = await self._execute_routed(fb_messages, fb_decision, temperature)
                 telemetry.selected_tier = fb_decision.tier
                 telemetry.provider = fb_decision.provider
                 telemetry.model = fb_decision.model
@@ -623,9 +605,7 @@ class AIClient:
         from navig.providers import CompletionRequest, Message
 
         # Convert messages
-        provider_messages = [
-            Message(role=m["role"], content=m["content"]) for m in messages
-        ]
+        provider_messages = [Message(role=m["role"], content=m["content"]) for m in messages]
 
         request = CompletionRequest(
             messages=provider_messages,
@@ -695,9 +675,7 @@ class AIClient:
 
                 if response.status != 200:
                     error_text = await response.text()
-                    raise RuntimeError(
-                        f"AI API error ({response.status}): {error_text}"
-                    )
+                    raise RuntimeError(f"AI API error ({response.status}): {error_text}")
 
                 data = await response.json()
                 return data["choices"][0]["message"]["content"]
@@ -725,9 +703,7 @@ class AIClient:
             client = AirLLMClient(airllm_config=config)
 
             # Convert messages
-            provider_messages = [
-                Message(role=m["role"], content=m["content"]) for m in messages
-            ]
+            provider_messages = [Message(role=m["role"], content=m["content"]) for m in messages]
 
             request = CompletionRequest(
                 messages=provider_messages,
@@ -825,9 +801,7 @@ class AIClient:
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
-                    raise RuntimeError(
-                        f"Local AI error ({response.status}): {error_text}"
-                    )
+                    raise RuntimeError(f"Local AI error ({response.status}): {error_text}")
 
                 data = await response.json()
                 return data["choices"][0]["message"]["content"]
@@ -835,9 +809,7 @@ class AIClient:
         except Exception as e:
             raise RuntimeError(f"Local AI request failed: {e}") from e
 
-    async def complete(
-        self, prompt: str, system_prompt: str | None = None, **kwargs
-    ) -> str:
+    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs) -> str:
         """Simple completion with optional system prompt."""
         messages = []
 

@@ -230,9 +230,7 @@ def scan_files(
     min_confidence: float = float(cfg.get("min_confidence", 0.80))
 
     py_files = _collect_py_files(install_path)
-    logger.info(
-        "Scanning {} Python files (min_confidence={})", len(py_files), min_confidence
-    )
+    logger.info("Scanning {} Python files (min_confidence={})", len(py_files), min_confidence)
 
     all_findings: list[ScanFinding] = []
 

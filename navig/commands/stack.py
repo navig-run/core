@@ -65,9 +65,7 @@ def _check_prerequisites(stack_path: Path) -> bool:
     compose_file = stack_path / "docker-compose.yml"
     if not compose_file.exists():
         ch.error(f"No docker-compose.yml found in {stack_path}")
-        ch.info(
-            "Run the bootstrap script first: navig-core/scripts/bootstrap_navig_linux.sh"
-        )
+        ch.info("Run the bootstrap script first: navig-core/scripts/bootstrap_navig_linux.sh")
         return False
 
     return True
@@ -105,9 +103,7 @@ def stack_status(
 
 @stack_app.command("up")
 def stack_up(
-    detach: bool = typer.Option(
-        True, "--detach/--foreground", "-d", help="Run in background"
-    ),
+    detach: bool = typer.Option(True, "--detach/--foreground", "-d", help="Run in background"),
 ):
     """
     Start the NAVIG infrastructure stack.
@@ -136,9 +132,7 @@ def stack_up(
 
 @stack_app.command("down")
 def stack_down(
-    volumes: bool = typer.Option(
-        False, "--volumes", "-v", help="Also remove volumes (DATA LOSS)"
-    ),
+    volumes: bool = typer.Option(False, "--volumes", "-v", help="Also remove volumes (DATA LOSS)"),
 ):
     """
     Stop the NAVIG infrastructure stack.
@@ -174,9 +168,7 @@ def stack_down(
 
 @stack_app.command("logs")
 def stack_logs(
-    service: str | None = typer.Argument(
-        None, help="Service name (postgres, redis, ollama)"
-    ),
+    service: str | None = typer.Argument(None, help="Service name (postgres, redis, ollama)"),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
 ):
@@ -271,9 +263,7 @@ def stack_info():
     pinfo = platform_info()
 
     ch.header("NAVIG Stack Info")
-    ch.console.print(
-        f"  OS:           {pinfo['os']} ({pinfo.get('distro', pinfo['os_version'])})"
-    )
+    ch.console.print(f"  OS:           {pinfo['os']} ({pinfo.get('distro', pinfo['os_version'])})")
     ch.console.print(f"  Stack dir:    {stack_path}")
     ch.console.print(f"  Config dir:   {pinfo['paths']['config']}")
 

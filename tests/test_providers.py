@@ -148,9 +148,7 @@ class TestProviderFactory:
 class TestLLMProviderAdapter:
     def test_adapter_wraps_provider(self):
         class FakeProvider:
-            async def chat(
-                self, model, messages, temperature=0.7, max_tokens=512, **kw
-            ):
+            async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
                 class R:
                     content = "test response"
                     model_attr = model

@@ -285,9 +285,7 @@ class TestCapability:
 
 
 class TestTrustScore:
-    def _receipt(
-        self, outcome: ReceiptOutcome, node_id="n1", dur=1.0
-    ) -> ExecutionReceipt:
+    def _receipt(self, outcome: ReceiptOutcome, node_id="n1", dur=1.0) -> ExecutionReceipt:
         return ExecutionReceipt(
             mission_id="m" * 36,
             node_id=node_id,
@@ -333,9 +331,7 @@ class TestTrustScore:
         assert ts.cancel_count == 1
 
     def test_avg_duration(self):
-        receipts = [
-            self._receipt(ReceiptOutcome.SUCCEEDED, dur=d) for d in (1.0, 2.0, 3.0)
-        ]
+        receipts = [self._receipt(ReceiptOutcome.SUCCEEDED, dur=d) for d in (1.0, 2.0, 3.0)]
         ts = TrustScore.compute("n1", receipts)
         assert ts.avg_duration_secs == pytest.approx(2.0)
 

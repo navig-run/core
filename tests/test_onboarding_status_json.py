@@ -127,9 +127,7 @@ def test_status_plain_is_single_line(isolated_project: Path, capsys):
     assert " tunnel=" in line[0]
 
 
-def test_quickstart_creates_project_navig_dir(
-    isolated_project: Path, capsys, monkeypatch
-):
+def test_quickstart_creates_project_navig_dir(isolated_project: Path, capsys, monkeypatch):
     # Avoid local discovery (which can be environment-dependent) by forcing the prompt to decline.
     from navig.commands import quickstart as quickstart_mod
 
@@ -295,9 +293,7 @@ def test_file_list_json_envelope(isolated_project: Path, capsys, monkeypatch):
                     stderr="",
                 )
             if cmd.startswith("ls "):
-                return SimpleNamespace(
-                    returncode=0, stdout="foo.txt\nsubdir\n", stderr=""
-                )
+                return SimpleNamespace(returncode=0, stdout="foo.txt\nsubdir\n", stderr="")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(remote_module, "RemoteOperations", DummyRemoteOps)
@@ -409,9 +405,7 @@ def test_db_query_json_envelope(isolated_project: Path, capsys, monkeypatch):
     from navig.commands import db as db_mod
 
     monkeypatch.setattr(db_mod, "_detect_db_type", lambda _d, _c=None: "mysql")
-    monkeypatch.setattr(
-        db_mod, "_execute_db_query", lambda *_a, **_k: (True, "1\n", "")
-    )
+    monkeypatch.setattr(db_mod, "_execute_db_query", lambda *_a, **_k: (True, "1\n", ""))
 
     db_mod.db_query_cmd(
         query="SELECT 1",

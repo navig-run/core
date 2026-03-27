@@ -77,9 +77,7 @@ class Step1IdentityWidget(_WizardStepBase):
 
     def compose(self):  # type: ignore[override]
         yield Label("Operator name (display)")
-        yield Input(
-            value=self._cfg.profile_name, id="inp-profile-name", placeholder="operator"
-        )
+        yield Input(value=self._cfg.profile_name, id="inp-profile-name", placeholder="operator")
         yield Label("Workspace root")
         yield Input(
             value=self._cfg.workspace_root,
@@ -241,9 +239,7 @@ class Step4PacksWidget(_WizardStepBase):
     def compose(self):  # type: ignore[override]
         yield Label("Capability packs to activate")
         for display, key in self._PACKS:
-            yield Checkbox(
-                display, value=(key in self._cfg.capability_packs), id=f"cb-{key}"
-            )
+            yield Checkbox(display, value=(key in self._cfg.capability_packs), id=f"cb-{key}")
 
     @on(Checkbox.Changed)
     def _pack_toggled(self, event: Checkbox.Changed) -> None:
@@ -252,9 +248,7 @@ class Step4PacksWidget(_WizardStepBase):
             if key not in self._cfg.capability_packs:
                 self._cfg.capability_packs.append(key)
         else:
-            self._cfg.capability_packs = [
-                p for p in self._cfg.capability_packs if p != key
-            ]
+            self._cfg.capability_packs = [p for p in self._cfg.capability_packs if p != key]
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
@@ -442,10 +436,7 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
                 self.notify("Operator name cannot be empty.", severity="warning")
                 return False
         if self._step == 1:
-            if (
-                self._cfg.ai_provider not in ("ollama", "none")
-                and not self._cfg.api_key
-            ):
+            if self._cfg.ai_provider not in ("ollama", "none") and not self._cfg.api_key:
                 self.notify(
                     "No API key entered. You can add one later via `navig ai providers`.",
                     severity="warning",

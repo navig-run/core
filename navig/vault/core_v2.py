@@ -296,9 +296,7 @@ class VaultV2:
         """
         import json as _json
 
-        src_path = (
-            Path(source).expanduser() if isinstance(source, (str, Path)) else None
-        )
+        src_path = Path(source).expanduser() if isinstance(source, (str, Path)) else None
         if src_path is not None and src_path.exists():
             raw = src_path.read_text(encoding="utf-8")
             original_name = src_path.name

@@ -59,9 +59,7 @@ class CDPBridge(BrowserController):
 
         logger.info("[CDPBridge] Connecting to %s ...", self._cdp_endpoint)
         try:
-            self._browser = await self._playwright.chromium.connect_over_cdp(
-                self._cdp_endpoint
-            )
+            self._browser = await self._playwright.chromium.connect_over_cdp(self._cdp_endpoint)
         except Exception as exc:
             await self._playwright.stop()
             self._playwright = None

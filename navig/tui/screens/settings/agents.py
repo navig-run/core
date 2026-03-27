@@ -101,9 +101,7 @@ class AgentSettingsScreen(Screen):  # type: ignore[type-arg]
                 id="agent-provider",
             )
 
-            yield Label(
-                "Model (leave blank for default)", classes="field-label", markup=False
-            )
+            yield Label("Model (leave blank for default)", classes="field-label", markup=False)
             yield Input(
                 value=d["model"],
                 placeholder="e.g. gpt-4o, claude-3-5-sonnet",
@@ -158,18 +156,14 @@ class AgentSettingsScreen(Screen):  # type: ignore[type-arg]
             mode_sel = self.query_one("#agent-mode", Select)
 
             raw["agent"]["provider"] = (
-                str(provider_sel.value)
-                if provider_sel.value is not Select.BLANK
-                else "openai"
+                str(provider_sel.value) if provider_sel.value is not Select.BLANK else "openai"
             )
             raw["agent"]["model"] = self.query_one("#agent-model", Input).value.strip()
             raw["agent"]["agent_json_path"] = self.query_one(
                 "#agent-json-path", Input
             ).value.strip()
             raw["agent"]["execution_mode"] = (
-                str(mode_sel.value)
-                if mode_sel.value is not Select.BLANK
-                else "standard"
+                str(mode_sel.value) if mode_sel.value is not Select.BLANK else "standard"
             )
 
             save_config(raw, DEFAULT_CONFIG_FILE)

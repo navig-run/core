@@ -160,9 +160,7 @@ def _check_first_run() -> None:
         return
 
     # Shell-completion probes — must never block or print
-    if any(
-        v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")
-    ):
+    if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
         return
 
     navig_dir = Path.home() / ".navig"
@@ -233,9 +231,7 @@ def load_plugins_into_app(app) -> None:
             try:
                 app.add_typer(plugin_app, name=name)
             except Exception as e:
-                _failed_plugins.append(
-                    {"name": name, "reason": f"Failed to register: {e}"}
-                )
+                _failed_plugins.append({"name": name, "reason": f"Failed to register: {e}"})
 
     except Exception as e:
         # Plugin system failure should not break NAVIG
@@ -345,9 +341,7 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
     except Exception as e:
         import logging as _logging
 
-        _logging.getLogger(__name__).debug(
-            "Plugin check exception: %s", e, exc_info=True
-        )
+        _logging.getLogger(__name__).debug("Plugin check exception: %s", e, exc_info=True)
         pass
 
     return False
@@ -382,9 +376,7 @@ def add_plugin_commands(app) -> None:
 
     @plugin_app.command("list")
     def plugin_list(
-        all_plugins: bool = typer.Option(
-            False, "--all", "-a", help="Include disabled plugins"
-        ),
+        all_plugins: bool = typer.Option(False, "--all", "-a", help="Include disabled plugins"),
     ):
         """List all installed plugins."""
         from rich.table import Table
@@ -432,11 +424,7 @@ def add_plugin_commands(app) -> None:
                 info.version,
                 source,
                 status,
-                (
-                    info.description[:50] + "..."
-                    if len(info.description) > 50
-                    else info.description
-                ),
+                (info.description[:50] + "..." if len(info.description) > 50 else info.description),
             )
 
         ch.console.print(table)
@@ -609,9 +597,7 @@ def add_plugin_commands(app) -> None:
         elif path.startswith(("http://", "https://", "git@")):
             # Git URL installation
             ch.error("Git URL installation not yet implemented")
-            ch.dim(
-                "Clone the repository manually and use: navig plugin install ./path/to/plugin"
-            )
+            ch.dim("Clone the repository manually and use: navig plugin install ./path/to/plugin")
             raise typer.Exit(1)
 
         else:
@@ -778,9 +764,7 @@ def _handle_powershell_parsing_error(argv: list[str]) -> None:
     sys.stderr.write("[!] PowerShell Quoting Error Detected\n")
     sys.stderr.write("-" * 70 + "\n\n")
     sys.stderr.write("PowerShell broke your command before it reached navig.\n")
-    sys.stderr.write(
-        "Special characters like quotes, parentheses, and braces cause this.\n\n"
-    )
+    sys.stderr.write("Special characters like quotes, parentheses, and braces cause this.\n\n")
     sys.stderr.write("Solution 1: Use stdin (recommended)\n\n")
     sys.stderr.write("  @'\n")
     sys.stderr.write("  your complex command here\n")
@@ -792,9 +776,7 @@ def _handle_powershell_parsing_error(argv: list[str]) -> None:
     sys.stderr.write("  navig run --b64 --file cmd.txt\n\n")
     sys.stderr.write("Solution 3: Interactive editor\n\n")
     sys.stderr.write("  navig run -i\n\n")
-    sys.stderr.write(
-        "Tip: PowerShell here-strings @'...'@ preserve everything exactly.\n"
-    )
+    sys.stderr.write("Tip: PowerShell here-strings @'...'@ preserve everything exactly.\n")
     sys.stderr.write("-" * 70 + "\n\n")
 
 

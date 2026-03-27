@@ -100,9 +100,7 @@ def extract_webserver_type(config: dict[str, Any]) -> str:
     )
 
 
-def migrate_config(
-    old_path: Path, new_path: Path
-) -> tuple[dict[str, Any], dict[str, Any]]:
+def migrate_config(old_path: Path, new_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Convert old format configuration to new format.
 
@@ -233,9 +231,7 @@ def save_config(config: dict[str, Any], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(path, "w", encoding="utf-8") as f:
-        yaml.dump(
-            config, f, default_flow_style=False, sort_keys=False, allow_unicode=True
-        )
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
 
 def migrate_all_configs(
@@ -271,9 +267,7 @@ def migrate_all_configs(
         try:
             # Skip backup files
             if ".backup." in old_path.name:
-                results["skipped"].append(
-                    {"file": str(old_path), "reason": "Backup file"}
-                )
+                results["skipped"].append({"file": str(old_path), "reason": "Backup file"})
                 continue
 
             # Detect format

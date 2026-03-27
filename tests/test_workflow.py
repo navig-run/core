@@ -134,9 +134,7 @@ class TestWorkflow:
             WorkflowStep(name="Step 1", command="cmd1"),
             WorkflowStep(name="Step 2", command="cmd2"),
         ]
-        wf = Workflow(
-            name="Test", description="A test", variables={"host": "prod"}, steps=steps
-        )
+        wf = Workflow(name="Test", description="A test", variables={"host": "prod"}, steps=steps)
         assert len(wf.steps) == 2
         assert wf.variables["host"] == "prod"
 
@@ -244,9 +242,7 @@ class TestWorkflowValidation:
     def test_validate_missing_command(self):
         """Test validation catches step without command."""
         manager = WorkflowManager()
-        workflow = Workflow(
-            name="Test", steps=[WorkflowStep(name="Empty Step", command="")]
-        )
+        workflow = Workflow(name="Test", steps=[WorkflowStep(name="Empty Step", command="")])
         errors = manager.validate_workflow(workflow)
         assert any("has no command" in e for e in errors)
 
@@ -421,9 +417,7 @@ class TestBuiltinWorkflows:
             assert workflow is not None, f"Failed to load '{name}'"
 
             errors = manager.validate_workflow(workflow)
-            assert (
-                len(errors) == 0
-            ), f"Workflow '{name}' has validation errors: {errors}"
+            assert len(errors) == 0, f"Workflow '{name}' has validation errors: {errors}"
 
     def test_builtin_safe_deployment(self):
         """Test safe-deployment workflow structure."""

@@ -171,9 +171,7 @@ class STT:
 
         lang = language or self.config.language
         providers = (
-            [provider]
-            if provider
-            else [self.config.provider] + self.config.fallback_providers
+            [provider] if provider else [self.config.provider] + self.config.fallback_providers
         )
 
         last_error = None
@@ -181,13 +179,9 @@ class STT:
             if prov is None:
                 continue
             try:
-                result = await self._transcribe_with_provider(
-                    audio_path, prov, lang, **kwargs
-                )
+                result = await self._transcribe_with_provider(audio_path, prov, lang, **kwargs)
                 if result.success:
-                    result.latency_ms = int(
-                        (datetime.utcnow() - start_time).total_seconds() * 1000
-                    )
+                    result.latency_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
                     return result
                 else:
                     last_error = result.error
@@ -221,9 +215,7 @@ class STT:
         else:
             return STTResult(success=False, error=f"Unknown STT provider: {provider}")
 
-    async def _transcribe_deepgram(
-        self, audio_path: Path, language: str, **kwargs
-    ) -> STTResult:
+    async def _transcribe_deepgram(self, audio_path: Path, language: str, **kwargs) -> STTResult:
         """Transcribe using Deepgram API."""
         try:
             import aiohttp
@@ -293,9 +285,7 @@ class STT:
         except Exception as e:
             return STTResult(success=False, error=f"Deepgram error: {e}")
 
-    async def _transcribe_whisper_api(
-        self, audio_path: Path, language: str, **kwargs
-    ) -> STTResult:
+    async def _transcribe_whisper_api(self, audio_path: Path, language: str, **kwargs) -> STTResult:
         """Transcribe using OpenAI Whisper API."""
         try:
             import aiohttp
@@ -459,9 +449,7 @@ class STT:
 _default_stt: STT | None = None
 
 
-def _resolve_audio_file_params(
-    filename: str, *, is_voice: bool = False
-) -> tuple[str, str]:
+def _resolve_audio_file_params(filename: str, *, is_voice: bool = False) -> tuple[str, str]:
     """Return a normalized upload filename and MIME type for an audio file.
 
     Voice messages are normalized to Telegram's preferred ``.oga`` filename

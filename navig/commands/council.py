@@ -32,12 +32,8 @@ def council_callback(ctx: typer.Context):
 
 @council_app.command("run")
 def council_run(
-    question: str = typer.Argument(
-        ..., help="Question or topic for the council to deliberate"
-    ),
-    rounds: int = typer.Option(
-        1, "--rounds", "-r", help="Number of deliberation rounds (1-5)"
-    ),
+    question: str = typer.Argument(..., help="Question or topic for the council to deliberate"),
+    rounds: int = typer.Option(1, "--rounds", "-r", help="Number of deliberation rounds (1-5)"),
     json_output: bool = typer.Option(False, "--json", help="Full JSON output"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
     timeout: float | None = typer.Option(
@@ -107,11 +103,7 @@ def council_run(
         for resp in rnd.get("responses", []):
             confidence = resp.get("confidence", 0)
             conf_bar = "|" * int(confidence * 10)
-            status = (
-                "[green]"
-                if confidence > 0.7
-                else "[yellow]" if confidence > 0.4 else "[red]"
-            )
+            status = "[green]" if confidence > 0.7 else "[yellow]" if confidence > 0.4 else "[red]"
             ch.console.print(
                 f"  {status}{resp['name']}[/] ({resp['role']}): "
                 f"confidence {confidence:.2f} {conf_bar} "

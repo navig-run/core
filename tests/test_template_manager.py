@@ -277,9 +277,7 @@ def test_template_manager_toggle_template(create_template_files, temp_template_d
     assert template.is_enabled() == (not initial_state)
 
 
-def test_template_manager_dependency_validation(
-    create_template_files, temp_template_dir
-):
+def test_template_manager_dependency_validation(create_template_files, temp_template_dir):
     """Test dependency validation during enable."""
     # Create template with dependency
     metadata = {
@@ -299,9 +297,7 @@ def test_template_manager_dependency_validation(
     assert result is False
 
 
-def test_template_manager_dependency_satisfied(
-    create_template_files, temp_template_dir
-):
+def test_template_manager_dependency_satisfied(create_template_files, temp_template_dir):
     """Test enabling template with satisfied dependencies."""
     # Create base template
     base_metadata = {
@@ -361,9 +357,7 @@ def test_template_manager_validate_all(create_template_files, temp_template_dir)
     assert all(results.values())
 
 
-def test_template_manager_apply_template_config(
-    create_template_files, temp_template_dir
-):
+def test_template_manager_apply_template_config(create_template_files, temp_template_dir):
     """Test applying template configuration to server config."""
     metadata = {
         "name": "test-template",

@@ -5,9 +5,7 @@ from __future__ import annotations
 try:
     from aiohttp import web  # noqa: F401
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     json_error_response,
@@ -104,9 +102,7 @@ def _get(gw):
         try:
             job = cs.get_job(r.match_info["job_id"])
             if not job:
-                return json_error_response(
-                    "Job not found", status=404, code="not_found"
-                )
+                return json_error_response("Job not found", status=404, code="not_found")
             return json_ok(job.to_dict())
         except Exception as e:
             logger.exception("Failed to get cron job")
@@ -131,9 +127,7 @@ def _delete(gw):
         try:
             ok = cs.remove_job(r.match_info["job_id"])
             if not ok:
-                return json_error_response(
-                    "Job not found", status=404, code="not_found"
-                )
+                return json_error_response("Job not found", status=404, code="not_found")
             return json_ok({"deleted": True})
         except Exception as e:
             logger.exception("Failed to delete cron job")
@@ -158,9 +152,7 @@ def _enable(gw):
         try:
             ok = cs.enable_job(r.match_info["job_id"])
             if not ok:
-                return json_error_response(
-                    "Job not found", status=404, code="not_found"
-                )
+                return json_error_response("Job not found", status=404, code="not_found")
             return json_ok({"enabled": True})
         except Exception as e:
             logger.exception("Failed to enable cron job")
@@ -185,9 +177,7 @@ def _disable(gw):
         try:
             ok = cs.disable_job(r.match_info["job_id"])
             if not ok:
-                return json_error_response(
-                    "Job not found", status=404, code="not_found"
-                )
+                return json_error_response("Job not found", status=404, code="not_found")
             return json_ok({"disabled": True})
         except Exception as e:
             logger.exception("Failed to disable cron job")
@@ -212,9 +202,7 @@ def _run(gw):
         try:
             result = await cs.run_job_now(r.match_info["job_id"])
             if not result:
-                return json_error_response(
-                    "Job not found", status=404, code="not_found"
-                )
+                return json_error_response("Job not found", status=404, code="not_found")
             return json_ok(
                 {
                     "success": result.get("success", False),

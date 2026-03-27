@@ -17,9 +17,7 @@ def list_templates_cmd(options: dict[str, Any]):
     try:
         cfg = get_config_manager().global_config
         ttl_cfg = cfg.get("cache_ttl", {})
-        ttl_seconds = int(
-            ttl_cfg.get("templates_seconds", ttl_cfg.get("templates", 3600))
-        )
+        ttl_seconds = int(ttl_cfg.get("templates_seconds", ttl_cfg.get("templates", 3600)))
         from navig.cache_store import read_json_cache
 
         cache = read_json_cache(
@@ -238,7 +236,7 @@ def show_template_cmd(name: str, options: dict[str, Any]):
         ch.step("⚡ Commands:")
         for cmd in commands:
             ch.dim(f"  {cmd['name']}: {cmd['description']}")
-            ch.dim(f"    → {cmd['command']}", prefix="    ")
+            ch.dim(f"    → {cmd['command']}")
         ch.newline()
 
     # Environment Variables
@@ -355,9 +353,7 @@ def deploy_template_cmd(
         _render_template_commands(name, commands, options)
         return
 
-    command_def = next(
-        (cmd for cmd in commands if cmd.get("name") == command_name), None
-    )
+    command_def = next((cmd for cmd in commands if cmd.get("name") == command_name), None)
     if not command_def:
         ch.error(f"Command '{command_name}' not found for template '{name}'")
         if commands:
@@ -386,9 +382,7 @@ def deploy_template_cmd(
     run_remote_command(final_command, options)
 
 
-def deploy_template_overview_cmd(
-    name: str, dry_run: bool = False, ctx_obj: dict[str, Any] = None
-):
+def deploy_template_overview_cmd(name: str, dry_run: bool = False, ctx_obj: dict[str, Any] = None):
     """Deploy/run a template (enable and surface available commands)."""
     if ctx_obj is None:
         ctx_obj = {}
@@ -538,11 +532,7 @@ def validate_templates_cmd(options: dict[str, Any]):
     )
 
     for name, valid in results.items():
-        status = (
-            ch.status_text("Valid", "success")
-            if valid
-            else ch.status_text("Invalid", "error")
-        )
+        status = ch.status_text("Valid", "success") if valid else ch.status_text("Invalid", "error")
         table.add_row(name, status)
 
     ch.print_table(table)
@@ -559,9 +549,7 @@ def edit_template_cmd(name: str, options: dict[str, Any]):
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
     # Check if repo template exists

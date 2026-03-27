@@ -24,9 +24,7 @@ class TestCommandResult:
 
     def test_command_result_creation(self):
         """Test creating a CommandResult."""
-        result = CommandResult(
-            stdout="hello world", stderr="", exit_code=0, duration=1.5
-        )
+        result = CommandResult(stdout="hello world", stderr="", exit_code=0, duration=1.5)
         assert result.stdout == "hello world"
         assert result.stderr == ""
         assert result.exit_code == 0
@@ -34,9 +32,7 @@ class TestCommandResult:
 
     def test_command_result_to_dict(self):
         """Test CommandResult to_dict method."""
-        result = CommandResult(
-            stdout="output", stderr="error", exit_code=1, duration=2.0
-        )
+        result = CommandResult(stdout="output", stderr="error", exit_code=1, duration=2.0)
         d = result.to_dict()
         assert d["stdout"] == "output"
         assert d["stderr"] == "error"

@@ -74,9 +74,7 @@ class StatusRenderer:
     ) -> None:
         """Add a step to the pipeline and edit the message in-place."""
         self._current_progress = max(self._current_progress, progress)
-        self._steps.append(
-            _Step(icon=icon, text=step, detail=detail, is_warning=warning)
-        )
+        self._steps.append(_Step(icon=icon, text=step, detail=detail, is_warning=warning))
         await self._push()
 
     async def warn(self, tool_name: str, reason: str) -> None:

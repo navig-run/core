@@ -58,9 +58,7 @@ def test_agent_component_restart_and_retry(monkeypatch):
             self._state[action_id]["reset_attempts"] = bool(reset_attempts)
             return True
 
-    monkeypatch.setattr(
-        "navig.agent.remediation.RemediationEngine", FakeRemediationEngine
-    )
+    monkeypatch.setattr("navig.agent.remediation.RemediationEngine", FakeRemediationEngine)
 
     handler = MCPProtocolHandler()
     restart = handler._execute_tool(

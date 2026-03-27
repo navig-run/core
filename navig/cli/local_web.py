@@ -75,9 +75,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     @software_app.command("list")
     def software_list_cmd(
         ctx: typer.Context,
-        limit: int | None = typer.Option(
-            None, "--limit", "-l", help="Limit number of results"
-        ),
+        limit: int | None = typer.Option(None, "--limit", "-l", help="Limit number of results"),
     ):
         """List installed software packages."""
         from navig.commands.local import software_list
@@ -113,9 +111,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     def local_show_cmd(
         ctx: typer.Context,
         info: bool = typer.Option(True, "--info", "-i", help="Show system information"),
-        resources: bool = typer.Option(
-            False, "--resources", "-r", help="Show resource usage"
-        ),
+        resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
     ):
         """Show local system information."""
         if resources:
@@ -131,9 +127,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     def local_audit_cmd(
         ctx: typer.Context,
         ai: bool = typer.Option(False, "--ai", "-a", help="Include AI analysis"),
-        verbose: bool = typer.Option(
-            False, "--verbose", "-v", help="Show detailed information"
-        ),
+        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed information"),
     ):
         """Run local security audit."""
         from navig.commands.local import security_audit
@@ -290,12 +284,8 @@ def register_local_web_commands(app: typer.Typer) -> None:
     def web_hestia_list(
         ctx: typer.Context,
         users: bool = typer.Option(False, "--users", "-u", help="List HestiaCP users"),
-        domains: bool = typer.Option(
-            False, "--domains", "-d", help="List HestiaCP domains"
-        ),
-        user_filter: str | None = typer.Option(
-            None, "--user", help="Filter domains by username"
-        ),
+        domains: bool = typer.Option(False, "--domains", "-d", help="List HestiaCP domains"),
+        user_filter: str | None = typer.Option(None, "--user", help="Filter domains by username"),
         plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
     ):
         """List HestiaCP resources (users, domains)."""
@@ -312,15 +302,9 @@ def register_local_web_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         resource: str = typer.Argument(..., help="Resource type: user or domain"),
         name: str = typer.Argument(..., help="Username or domain name"),
-        password: str | None = typer.Option(
-            None, "--password", "-p", help="Password (for user)"
-        ),
-        email: str | None = typer.Option(
-            None, "--email", "-e", help="Email (for user)"
-        ),
-        user: str | None = typer.Option(
-            None, "--user", "-u", help="Username (for domain)"
-        ),
+        password: str | None = typer.Option(None, "--password", "-p", help="Password (for user)"),
+        email: str | None = typer.Option(None, "--email", "-e", help="Email (for user)"),
+        user: str | None = typer.Option(None, "--user", "-u", help="Username (for domain)"),
     ):
         """Add HestiaCP user or domain."""
         if resource == "user":
@@ -346,9 +330,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         resource: str = typer.Argument(..., help="Resource type: user or domain"),
         name: str = typer.Argument(..., help="Username or domain name"),
-        user: str | None = typer.Option(
-            None, "--user", "-u", help="Username (for domain)"
-        ),
+        user: str | None = typer.Option(None, "--user", "-u", help="Username (for domain)"),
         force: bool = typer.Option(
             False, "--force", "-f", help="Force deletion without confirmation"
         ),
@@ -373,9 +355,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     @app.command("webserver-list-vhosts", hidden=True)
     def webserver_list_vhosts_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig web vhosts']"""
-        ch.warning(
-            "'navig webserver-list-vhosts' is deprecated. Use 'navig web vhosts' instead."
-        )
+        ch.warning("'navig webserver-list-vhosts' is deprecated. Use 'navig web vhosts' instead.")
         from navig.commands.webserver import list_vhosts
 
         list_vhosts(ctx.obj)
@@ -383,9 +363,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     @app.command("webserver-test-config", hidden=True)
     def webserver_test_config_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig web test']"""
-        ch.warning(
-            "'navig webserver-test-config' is deprecated. Use 'navig web test' instead."
-        )
+        ch.warning("'navig webserver-test-config' is deprecated. Use 'navig web test' instead.")
         from navig.commands.webserver import test_config
 
         test_config(ctx.obj)
@@ -393,9 +371,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     @app.command("webserver-reload", hidden=True)
     def webserver_reload_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig web reload']"""
-        ch.warning(
-            "'navig webserver-reload' is deprecated. Use 'navig web reload' instead."
-        )
+        ch.warning("'navig webserver-reload' is deprecated. Use 'navig web reload' instead.")
         from navig.commands.webserver import reload_server
 
         reload_server(ctx.obj)

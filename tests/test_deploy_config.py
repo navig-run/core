@@ -77,9 +77,7 @@ class TestDeployConfigFromDict:
         assert cfg.restart.compose_file == "docker-compose.prod.yml"
 
     def test_command_adapter(self):
-        raw = {
-            "restart": {"adapter": "command", "command": "supervisorctl restart myapp"}
-        }
+        raw = {"restart": {"adapter": "command", "command": "supervisorctl restart myapp"}}
         cfg = DeployConfig.from_dict(raw)
         assert cfg.restart.adapter == "command"
         assert cfg.restart.command == "supervisorctl restart myapp"
@@ -91,9 +89,7 @@ class TestDeployConfigFromDict:
         assert cfg.app == "myapi"
 
     def test_push_excludes_list(self):
-        raw = {
-            "push": {"source": "./", "target": "/app/", "excludes": [".env", "tmp/"]}
-        }
+        raw = {"push": {"source": "./", "target": "/app/", "excludes": [".env", "tmp/"]}}
         cfg = DeployConfig.from_dict(raw)
         assert ".env" in cfg.push.excludes
         assert "tmp/" in cfg.push.excludes
@@ -160,12 +156,8 @@ class TestDeployResult:
             finished_at=started,
         )
         result.phases = [
-            PhaseResult(
-                phase=DeployPhase.PRE_CHECK, success=True, message="ok", elapsed=0.5
-            ),
-            PhaseResult(
-                phase=DeployPhase.PUSH, success=True, message="synced", elapsed=3.2
-            ),
+            PhaseResult(phase=DeployPhase.PRE_CHECK, success=True, message="ok", elapsed=0.5),
+            PhaseResult(phase=DeployPhase.PUSH, success=True, message="synced", elapsed=3.2),
         ]
         return result
 

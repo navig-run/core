@@ -154,9 +154,7 @@ class MemoryManager:
             try:
                 from navig.memory.embeddings import LocalEmbeddingProvider
 
-                self._embedding_provider = LocalEmbeddingProvider(
-                    model_name=self.embedding_model
-                )
+                self._embedding_provider = LocalEmbeddingProvider(model_name=self.embedding_model)
                 _debug_log(f"Loaded embedding model: {self.embedding_model}")
             except ImportError as e:
                 _debug_log(f"Embeddings unavailable: {e}")
@@ -238,9 +236,7 @@ class MemoryManager:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.index(
-                force=force, embed=embed, progress_callback=progress_callback
-            ),
+            lambda: self.index(force=force, embed=embed, progress_callback=progress_callback),
         )
 
     def index_file(
@@ -294,9 +290,7 @@ class MemoryManager:
                 response = copy.copy(response)
                 response.results = response.results[:limit]
 
-            _debug_log(
-                f"Memory Cache Hit: Prewarmed context used for '{query[:20]}...'"
-            )
+            _debug_log(f"Memory Cache Hit: Prewarmed context used for '{query[:20]}...'")
             return response
 
         return self.search_engine.search(
@@ -345,9 +339,7 @@ class MemoryManager:
         import asyncio
 
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.prewarm(query=query, limit=limit)
-        )
+        return await loop.run_in_executor(None, lambda: self.prewarm(query=query, limit=limit))
 
     # ---------- Context Injection ----------
 
@@ -480,8 +472,7 @@ class MemoryManager:
         summary_message = {
             "role": "system",
             "content": (
-                f"[Conversation Summary — {len(to_summarize)} earlier messages]\n"
-                + summary_text
+                f"[Conversation Summary — {len(to_summarize)} earlier messages]\n" + summary_text
             ),
         }
 

@@ -84,9 +84,7 @@ async def _chat(messages: list, model: str = "") -> str:
         ch.info("  Check that:")
         ch.info("    1. VS Code is running with the Bridge extension active")
         ch.info("    2. The SSH tunnel is up (systemctl status bridge-tunnel)")
-        ch.info(
-            "    3. bridge.mcp_url / bridge.token in ~/.navig/config.yaml are correct"
-        )
+        ch.info("    3. bridge.mcp_url / bridge.token in ~/.navig/config.yaml are correct")
         raise typer.Exit(1)
     try:
         resp = await provider.chat(model=model, messages=messages, max_tokens=4096)
@@ -102,9 +100,7 @@ async def _chat(messages: list, model: str = "") -> str:
 def copilot_ask(
     question: str = typer.Argument(..., help="Natural language question"),
     model: str | None = typer.Option(None, "--model", "-m", help="Model override"),
-    system: str | None = typer.Option(
-        None, "--system", "-s", help="Custom system prompt"
-    ),
+    system: str | None = typer.Option(None, "--system", "-s", help="Custom system prompt"),
 ):
     """
     Ask Copilot a question and get a response.
@@ -124,12 +120,8 @@ def copilot_ask(
 
 @copilot_app.command("explain")
 def copilot_explain(
-    target: str = typer.Argument(
-        ..., help="File path, error message, or code snippet to explain"
-    ),
-    lines: int = typer.Option(
-        50, "--lines", "-n", help="Number of lines (for log files)"
-    ),
+    target: str = typer.Argument(..., help="File path, error message, or code snippet to explain"),
+    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines (for log files)"),
     model: str | None = typer.Option(None, "--model", "-m", help="Model override"),
     remote: bool = typer.Option(
         False, "--remote", "-r", help="Read file from remote host via NAVIG"
@@ -161,7 +153,9 @@ def copilot_explain(
                     timeout=30,
                 )
                 if result.returncode == 0 and result.stdout.strip():
-                    content = f"File: {target} (last {lines} lines)\n```\n{result.stdout.strip()}\n```"
+                    content = (
+                        f"File: {target} (last {lines} lines)\n```\n{result.stdout.strip()}\n```"
+                    )
                 else:
                     ch.warning(f"Could not read remote file: {result.stderr.strip()}")
                     content = target
@@ -174,9 +168,7 @@ def copilot_explain(
                 with open(target, errors="replace") as f:
                     file_lines = f.readlines()
                 tail = file_lines[-lines:] if len(file_lines) > lines else file_lines
-                content = (
-                    f"File: {target} (last {lines} lines)\n```\n{''.join(tail)}```"
-                )
+                content = f"File: {target} (last {lines} lines)\n```\n{''.join(tail)}```"
             except Exception as e:
                 ch.warning(f"Could not read file: {e}")
                 content = target

@@ -110,9 +110,7 @@ def project_dir(tmp_path: Path) -> Path:
     )
 
     # config files
-    (tmp_path / "package.json").write_text(
-        '{"name": "test-project", "version": "1.0.0"}'
-    )
+    (tmp_path / "package.json").write_text('{"name": "test-project", "version": "1.0.0"}')
     (tmp_path / "tsconfig.json").write_text('{"compilerOptions": {"target": "es2020"}}')
 
     # docs
@@ -256,9 +254,7 @@ class TestChunking:
         assert chunks[0].end_line == 3
 
     def test_section_title_extraction(self):
-        content = (
-            "export function handleAuth(req: Request): Response {\n  return ok();\n}"
-        )
+        content = "export function handleAuth(req: Request): Response {\n  return ok();\n}"
         chunks = chunk_file("handlers.ts", content, ProjectIndexConfig())
         assert len(chunks) == 1
         assert chunks[0].section_title == "handleAuth"
@@ -282,9 +278,7 @@ class TestFullScan:
         assert stats["chunks_created"] > 0
         assert stats["duration_s"] >= 0
 
-    def test_scan_ignores_node_modules(
-        self, indexer: ProjectIndexer, project_dir: Path
-    ):
+    def test_scan_ignores_node_modules(self, indexer: ProjectIndexer, project_dir: Path):
         indexer.scan()
         s = indexer.stats()
         # node_modules should be excluded
@@ -391,9 +385,7 @@ class TestSearch:
         results = indexer.search("server", top_k=2)
         assert len(results) <= 2
 
-    def test_search_results_have_scores(
-        self, indexer: ProjectIndexer, project_dir: Path
-    ):
+    def test_search_results_have_scores(self, indexer: ProjectIndexer, project_dir: Path):
         indexer.scan()
         results = indexer.search("authenticateUser email password")
         assert len(results) > 0
@@ -418,9 +410,9 @@ class TestSearch:
             file_counts[r.file_path] = file_counts.get(r.file_path, 0) + 1
 
         for path, count in file_counts.items():
-            assert (
-                count <= indexer.config.max_chunks_per_file
-            ), f"{path} has {count} chunks, exceeds cap of {indexer.config.max_chunks_per_file}"
+            assert count <= indexer.config.max_chunks_per_file, (
+                f"{path} has {count} chunks, exceeds cap of {indexer.config.max_chunks_per_file}"
+            )
 
     def test_content_type_boosting(self, indexer: ProjectIndexer, project_dir: Path):
         # Add a .navig/plans file mentioning "authentication"
@@ -495,18 +487,18 @@ class TestContentTypeFilter:
         with ProjectIndexer(project_dir) as idx:
             idx.scan()
             results = idx.search("authentication", content_type_filter="docs")
-            assert all(
-                r.content_type == "docs" for r in results
-            ), f"Expected only 'docs', got: {[r.content_type for r in results]}"
+            assert all(r.content_type == "docs" for r in results), (
+                f"Expected only 'docs', got: {[r.content_type for r in results]}"
+            )
 
     def test_filter_code_only(self, project_dir: Path):
         """content_type_filter='code' should return only code chunks."""
         with ProjectIndexer(project_dir) as idx:
             idx.scan()
             results = idx.search("authentication", content_type_filter="code")
-            assert all(
-                r.content_type == "code" for r in results
-            ), f"Expected only 'code', got: {[r.content_type for r in results]}"
+            assert all(r.content_type == "code" for r in results), (
+                f"Expected only 'code', got: {[r.content_type for r in results]}"
+            )
 
     def test_filter_no_match_returns_empty(self, project_dir: Path):
         """Filtering to an unused type should return []."""
@@ -622,6 +614,6 @@ class TestWikiRAGUnifiedDelegation:
             rag = WikiRAG(wiki_path, project_indexer=idx)
             results = rag.search("login token authentication", top_k=5)
             # Should find the wiki file we just indexed
-            assert any(
-                "auth-guide" in r["path"] for r in results
-            ), f"Expected auth-guide.md in results, got: {[r['path'] for r in results]}"
+            assert any("auth-guide" in r["path"] for r in results), (
+                f"Expected auth-guide.md in results, got: {[r['path'] for r in results]}"
+            )

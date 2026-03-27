@@ -92,9 +92,7 @@ class Heart(Component):
         self._start_time = datetime.now()
 
         # Emit starting event
-        await self.emit(
-            EventType.AGENT_STARTING, {"components": list(self._components.keys())}
-        )
+        await self.emit(EventType.AGENT_STARTING, {"components": list(self._components.keys())})
 
         # Start remediation engine first
         self._remediation._heart = self  # Give remediation access to Heart
@@ -120,9 +118,7 @@ class Heart(Component):
                 try:
                     await component.start()
                 except Exception as e:
-                    await self.emit(
-                        EventType.COMPONENT_ERROR, {"component": name, "error": str(e)}
-                    )
+                    await self.emit(EventType.COMPONENT_ERROR, {"component": name, "error": str(e)})
 
         # Start background tasks
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
@@ -130,14 +126,10 @@ class Heart(Component):
 
         # Start goal processing if planner is attached
         if self._goal_planner:
-            self._goal_processing_task = asyncio.create_task(
-                self._goal_processing_loop()
-            )
+            self._goal_processing_task = asyncio.create_task(self._goal_processing_loop())
 
         # Emit started event
-        await self.emit(
-            EventType.AGENT_STARTED, {"components": list(self._components.keys())}
-        )
+        await self.emit(EventType.AGENT_STARTED, {"components": list(self._components.keys())})
 
     async def _on_stop(self) -> None:
         """Stop all components gracefully."""
@@ -210,9 +202,7 @@ class Heart(Component):
             "last_beat": self._last_beat.isoformat() if self._last_beat else None,
             "uptime": self.uptime_seconds,
             "components": len(self._components),
-            "running_components": sum(
-                1 for c in self._components.values() if c.is_running
-            ),
+            "running_components": sum(1 for c in self._components.values() if c.is_running),
         }
 
     async def _heartbeat_loop(self) -> None:
@@ -378,9 +368,7 @@ class Heart(Component):
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-    async def restart_component(
-        self, name: str, reason: str = "Manual restart"
-    ) -> bool:
+    async def restart_component(self, name: str, reason: str = "Manual restart") -> bool:
         """
         Restart a specific component with remediation tracking.
 
@@ -418,9 +406,7 @@ class Heart(Component):
             return component.state == ComponentState.RUNNING
 
         except Exception as e:
-            await self.emit(
-                EventType.COMPONENT_ERROR, {"component": name, "error": str(e)}
-            )
+            await self.emit(EventType.COMPONENT_ERROR, {"component": name, "error": str(e)})
             return False
 
     def get_status(self) -> dict[str, Any]:
@@ -434,13 +420,10 @@ class Heart(Component):
                 "last_beat": self._last_beat.isoformat() if self._last_beat else None,
             },
             "components": {
-                name: component.get_status()
-                for name, component in self._components.items()
+                name: component.get_status() for name, component in self._components.items()
             },
         }
 
     def get_component_states(self) -> dict[str, str]:
         """Get state of all components."""
-        return {
-            name: component.state.name for name, component in self._components.items()
-        }
+        return {name: component.state.name for name, component in self._components.items()}

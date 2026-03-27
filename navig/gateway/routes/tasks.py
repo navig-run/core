@@ -5,9 +5,7 @@ from __future__ import annotations
 try:
     from aiohttp import web  # noqa: F401
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     json_error_response,
@@ -131,9 +129,7 @@ def _get(gw):
             task_id = r.match_info["task_id"]
             task = await gw.task_queue.get(task_id)
             if not task:
-                return json_error_response(
-                    "Task not found", status=404, code="not_found"
-                )
+                return json_error_response("Task not found", status=404, code="not_found")
             return json_ok(task.to_dict())
         except Exception as e:
             return json_error_response(

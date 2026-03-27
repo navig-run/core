@@ -92,14 +92,10 @@ class GatewaySettingsScreen(Screen):  # type: ignore[type-arg]
             yield Switch(value=d["enabled"], id="gw-enabled")
 
             yield Label("Webhook URL", classes="field-label", markup=False)
-            yield Input(
-                value=d["webhook_url"], placeholder="https://…", id="gw-webhook-url"
-            )
+            yield Input(value=d["webhook_url"], placeholder="https://…", id="gw-webhook-url")
 
             yield Label("Telegram Bot Token", classes="field-label", markup=False)
-            yield Input(
-                value=d["bot_token"], placeholder="123456:ABC-…", id="gw-bot-token"
-            )
+            yield Input(value=d["bot_token"], placeholder="123456:ABC-…", id="gw-bot-token")
 
             yield Label("Webhook Secret", classes="field-label", markup=False)
             yield Input(
@@ -133,9 +129,7 @@ class GatewaySettingsScreen(Screen):  # type: ignore[type-arg]
 
             raw = load_navig_json() or {}
             raw.setdefault("gateway", {})
-            raw["gateway"]["webhook_url"] = self.query_one(
-                "#gw-webhook-url", Input
-            ).value.strip()
+            raw["gateway"]["webhook_url"] = self.query_one("#gw-webhook-url", Input).value.strip()
             raw["gateway"]["webhook_secret"] = self.query_one(
                 "#gw-webhook-secret", Input
             ).value.strip()

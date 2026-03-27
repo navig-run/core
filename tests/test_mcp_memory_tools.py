@@ -48,9 +48,7 @@ class TestMemoryRetrieve:
             from navig.mcp_server import memory_retrieve
 
             await memory_retrieve(query="q", limit=5, token_budget=500)
-            instance.retrieve.assert_called_once_with(
-                query="q", limit=5, token_budget=500
-            )
+            instance.retrieve.assert_called_once_with(query="q", limit=5, token_budget=500)
 
 
 # ---------------------------------------------------------------------------
@@ -98,9 +96,7 @@ class TestMemoryRemember:
 class TestMemoryForget:
     @pytest.mark.asyncio
     async def test_soft_delete_success(self):
-        with patch(
-            "navig.mcp_server._memory_store", return_value=_make_store(delete_ok=True)
-        ):
+        with patch("navig.mcp_server._memory_store", return_value=_make_store(delete_ok=True)):
             from navig.mcp_server import memory_forget
 
             result = await memory_forget(fact_id="abc-123")
@@ -108,9 +104,7 @@ class TestMemoryForget:
 
     @pytest.mark.asyncio
     async def test_soft_delete_not_found(self):
-        with patch(
-            "navig.mcp_server._memory_store", return_value=_make_store(delete_ok=False)
-        ):
+        with patch("navig.mcp_server._memory_store", return_value=_make_store(delete_ok=False)):
             from navig.mcp_server import memory_forget
 
             result = await memory_forget(fact_id="missing")

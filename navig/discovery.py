@@ -264,9 +264,7 @@ class ServerDiscovery:
         if mysql_info:
             databases.append(mysql_info)
             if progress:
-                ch.success(
-                    f"  MySQL: {mysql_info['version']} (port {mysql_info['port']})"
-                )
+                ch.success(f"  MySQL: {mysql_info['version']} (port {mysql_info['port']})")
 
         # Check PostgreSQL
         postgres_info = self._discover_postgresql()
@@ -285,9 +283,7 @@ class ServerDiscovery:
     def _discover_mysql(self) -> dict[str, Any] | None:
         """Detect MySQL/MariaDB installation."""
         # First check if process is running
-        success, stdout, _ = self._execute_ssh(
-            "ps aux | grep -E 'mysqld|mariadbd' | grep -v grep"
-        )
+        success, stdout, _ = self._execute_ssh("ps aux | grep -E 'mysqld|mariadbd' | grep -v grep")
         process_running = success and stdout
 
         # Check service status
@@ -397,9 +393,7 @@ class ServerDiscovery:
                 }
 
         # Method 3: Check HestiaCP MySQL config
-        success, stdout, _ = self._execute_ssh(
-            "cat /usr/local/hestia/conf/mysql.conf 2>/dev/null"
-        )
+        success, stdout, _ = self._execute_ssh("cat /usr/local/hestia/conf/mysql.conf 2>/dev/null")
         if success and stdout:
             # HestiaCP format: HOST='localhost' USER='admin' PASSWORD='...' CHARGER='...'
             user_match = re.search(r"USER='([^']+)'", stdout)
@@ -409,9 +403,7 @@ class ServerDiscovery:
 
         # Method 4: Check for mysql_config_editor (MySQL 5.6+)
         # This stores encrypted credentials, but we can try to use it
-        success, stdout, _ = self._execute_ssh(
-            "mysql_config_editor print --all 2>/dev/null"
-        )
+        success, stdout, _ = self._execute_ssh("mysql_config_editor print --all 2>/dev/null")
         if success and stdout and "password" in stdout.lower():
             # If credentials are stored, we can't extract them but we know they exist
             # Return a marker that credentials exist but are encrypted
@@ -426,9 +418,7 @@ class ServerDiscovery:
 
     def _discover_postgresql(self) -> dict[str, Any] | None:
         """Detect PostgreSQL installation."""
-        success, stdout, _ = self._execute_ssh(
-            "systemctl is-active postgresql 2>/dev/null"
-        )
+        success, stdout, _ = self._execute_ssh("systemctl is-active postgresql 2>/dev/null")
         if not success or stdout != "active":
             return None
 
@@ -514,9 +504,7 @@ class ServerDiscovery:
                 # Extract config path if it's in the command
                 match = re.search(r"-c\s+(\S+)", stdout)
                 if match:
-                    nginx_info["config_path"] = match.group(1).replace(
-                        "/nginx.conf", ""
-                    )
+                    nginx_info["config_path"] = match.group(1).replace("/nginx.conf", "")
 
         return nginx_info
 
@@ -535,9 +523,7 @@ class ServerDiscovery:
         }
 
         # Get Apache version
-        success, stdout, _ = self._execute_ssh(
-            "apache2 -v 2>/dev/null || httpd -v 2>/dev/null"
-        )
+        success, stdout, _ = self._execute_ssh("apache2 -v 2>/dev/null || httpd -v 2>/dev/null")
         if success:
             match = re.search(r"Apache/(\d+\.\d+\.\d+)", stdout)
             if match:
@@ -663,9 +649,7 @@ class ServerDiscovery:
             return apps
         return []
 
-    def discover_all(
-        self, progress: bool = True, skip_web_root: bool = False
-    ) -> dict[str, Any]:
+    def discover_all(self, progress: bool = True, skip_web_root: bool = False) -> dict[str, Any]:
         """
         Run all discovery tasks and return complete server profile.
 
@@ -695,9 +679,7 @@ class ServerDiscovery:
         discovered.update(self.discover_web_servers(progress=progress))
         discovered.update(self.discover_php(progress=progress))
         discovered.update(
-            self.discover_application_paths(
-                progress=progress, skip_web_root=skip_web_root
-            )
+            self.discover_application_paths(progress=progress, skip_web_root=skip_web_root)
         )
 
         if progress:
@@ -811,18 +793,14 @@ class ServerDiscovery:
         if hestia_info["detected"]:
             detected_templates["hestiacp"] = hestia_info
             if progress:
-                ch.success(
-                    f"✓ HestiaCP detected (v{hestia_info.get('version', 'unknown')})"
-                )
+                ch.success(f"✓ HestiaCP detected (v{hestia_info.get('version', 'unknown')})")
 
         # Detect Gitea
         gitea_info = self._detect_gitea()
         if gitea_info["detected"]:
             detected_templates["gitea"] = gitea_info
             if progress:
-                ch.success(
-                    f"✓ Gitea detected (v{gitea_info.get('version', 'unknown')})"
-                )
+                ch.success(f"✓ Gitea detected (v{gitea_info.get('version', 'unknown')})")
 
         if not detected_templates and progress:
             ch.dim("No templates detected")
@@ -879,25 +857,19 @@ class ServerDiscovery:
                     break
 
         # Check for listening port
-        success, stdout, _ = self._execute_ssh(
-            "ss -tlnp 2>/dev/null | grep -E ':5678\\s'"
-        )
+        success, stdout, _ = self._execute_ssh("ss -tlnp 2>/dev/null | grep -E ':5678\\s'")
         if success and stdout:
             info["ports"].append(5678)
 
         # Check for n8n home directory
-        success, stdout, _ = self._execute_ssh(
-            "test -d ~/.n8n && echo 'exists' || echo 'missing'"
-        )
+        success, stdout, _ = self._execute_ssh("test -d ~/.n8n && echo 'exists' || echo 'missing'")
         if success and "exists" in stdout:
             # Get actual home directory path
             success2, home_path, _ = self._execute_ssh("echo $HOME")
             if success2 and home_path:
                 info["paths"]["n8n_home"] = f"{home_path.strip()}/.n8n"
                 info["paths"]["workflows_dir"] = f"{home_path.strip()}/.n8n/workflows"
-                info["paths"][
-                    "credentials_dir"
-                ] = f"{home_path.strip()}/.n8n/credentials"
+                info["paths"]["credentials_dir"] = f"{home_path.strip()}/.n8n/credentials"
 
         # Check common installation paths
         for path in ["/opt/n8n", "/usr/local/n8n", "/var/lib/n8n"]:
@@ -927,9 +899,7 @@ class ServerDiscovery:
         }
 
         # Check for Hestia installation directory
-        success, stdout, _ = self._execute_ssh(
-            "test -d /usr/local/hestia && echo 'exists'"
-        )
+        success, stdout, _ = self._execute_ssh("test -d /usr/local/hestia && echo 'exists'")
         if success and "exists" in stdout:
             info["detected"] = True
             info["paths"]["hestia_root"] = "/usr/local/hestia"
@@ -960,9 +930,7 @@ class ServerDiscovery:
                     break
 
                 # Try VERSION= format
-                version_match = re.search(
-                    r'VERSION[=\s]+["\']?([0-9.]+)', stdout, re.IGNORECASE
-                )
+                version_match = re.search(r'VERSION[=\s]+["\']?([0-9.]+)', stdout, re.IGNORECASE)
                 if version_match:
                     info["version"] = version_match.group(1)
                     break
@@ -979,9 +947,7 @@ class ServerDiscovery:
             info["services"].append("hestia")
 
         # Check for web interface port
-        success, stdout, _ = self._execute_ssh(
-            "ss -tlnp 2>/dev/null | grep -E ':8083\\s'"
-        )
+        success, stdout, _ = self._execute_ssh("ss -tlnp 2>/dev/null | grep -E ':8083\\s'")
         if success and stdout:
             info["ports"].append(8083)
 
@@ -1029,34 +995,26 @@ class ServerDiscovery:
         if success and stdout:
             info["detected"] = True
             # Extract version (e.g., "Gitea version 1.21.3")
-            version_match = re.search(
-                r"version\s+(\d+\.\d+\.\d+)", stdout, re.IGNORECASE
-            )
+            version_match = re.search(r"version\s+(\d+\.\d+\.\d+)", stdout, re.IGNORECASE)
             if version_match:
                 info["version"] = version_match.group(1)
 
         # Check common binary locations
         for bin_path in ["/usr/local/bin/gitea", "/usr/bin/gitea", "/opt/gitea/gitea"]:
-            success, stdout, _ = self._execute_ssh(
-                f"test -f {bin_path} && echo 'exists'"
-            )
+            success, stdout, _ = self._execute_ssh(f"test -f {bin_path} && echo 'exists'")
             if success and "exists" in stdout:
                 info["detected"] = True
                 info["paths"]["gitea_binary"] = bin_path
                 break
 
         # Check for listening port
-        success, stdout, _ = self._execute_ssh(
-            "ss -tlnp 2>/dev/null | grep -E ':3000\\s'"
-        )
+        success, stdout, _ = self._execute_ssh("ss -tlnp 2>/dev/null | grep -E ':3000\\s'")
         if success and stdout:
             info["ports"].append(3000)
 
         # Check common installation paths
         for install_path in ["/var/lib/gitea", "/home/git/gitea", "/opt/gitea"]:
-            success, stdout, _ = self._execute_ssh(
-                f"test -d {install_path} && echo 'exists'"
-            )
+            success, stdout, _ = self._execute_ssh(f"test -d {install_path} && echo 'exists'")
             if success and "exists" in stdout:
                 info["paths"]["gitea_root"] = install_path
 
@@ -1072,9 +1030,7 @@ class ServerDiscovery:
 
         # Check for config file
         for config_path in ["/etc/gitea/app.ini", "/var/lib/gitea/custom/conf/app.ini"]:
-            success, stdout, _ = self._execute_ssh(
-                f"test -f {config_path} && echo 'exists'"
-            )
+            success, stdout, _ = self._execute_ssh(f"test -f {config_path} && echo 'exists'")
             if success and "exists" in stdout:
                 info["paths"]["gitea_config"] = config_path
                 break

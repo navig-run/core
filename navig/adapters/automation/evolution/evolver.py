@@ -35,9 +35,7 @@ class Evolver:
         # 1. Check Library First
         existing = self.library.find_script(goal)
         if existing:
-            info(
-                f"Hit! Found existing script for '{goal}' (Successes: {existing.success_count})"
-            )
+            info(f"Hit! Found existing script for '{goal}' (Successes: {existing.success_count})")
             if dry_run:
                 print(existing.script)
                 return EvolutionResult(True, existing.id, existing.script, 0)
@@ -102,9 +100,7 @@ Original Script:
                         border_style="yellow",
                     )
                 )
-                return EvolutionResult(
-                    True, final_script=current_script, attempts=attempt
-                )
+                return EvolutionResult(True, final_script=current_script, attempts=attempt)
 
             # Test Execution
             # We run with a short timeout to prevent hangs
@@ -114,9 +110,7 @@ Original Script:
                 success(f"Evolution successful on attempt {attempt}!")
                 # Save to library
                 script_id = self.library.save_script(goal, current_script)
-                return EvolutionResult(
-                    True, script_id, current_script, attempt, history
-                )
+                return EvolutionResult(True, script_id, current_script, attempt, history)
             else:
                 warning(f"Execution failed: {exec_res.stderr}")
                 current_error = exec_res.stderr

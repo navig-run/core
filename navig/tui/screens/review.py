@@ -108,9 +108,7 @@ class ReviewScreen(Screen):  # type: ignore[type-arg]
             yield SummaryPanel(self._cfg, id="review-summary")
             yield Label("")
             with Horizontal(id="review-btns"):
-                yield Button(
-                    "Confirm & Install  ✔", variant="primary", id="btn-confirm"
-                )
+                yield Button("Confirm & Install  ✔", variant="primary", id="btn-confirm")
                 yield Button("← Edit", variant="default", id="btn-back")
 
     def on_mount(self) -> None:
@@ -178,9 +176,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
 
     def compose(self):  # type: ignore[override]
         env = detect_environment()
-        packs_str = (
-            "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs) or "—"
-        )
+        packs_str = "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs) or "—"
         summary_text = (
             f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
             f"\n"
@@ -196,12 +192,8 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
                 yield Static(summary_text, id="final-summary", markup=True)
                 yield RichLog(id="final-log", markup=True, highlight=False, wrap=False)
                 with Horizontal(id="final-footer"):
-                    yield Button(
-                        "Press Enter to launch  →", variant="primary", id="btn-exit"
-                    )
-                    yield Button(
-                        "Retry write", variant="warning", id="btn-retry", display=False
-                    )
+                    yield Button("Press Enter to launch  →", variant="primary", id="btn-exit")
+                    yield Button("Retry write", variant="warning", id="btn-retry", display=False)
             yield Label(
                 "  [dim]Try:[/dim]  [bold #22d3ee]navig ask 'hello'[/bold #22d3ee]",
                 id="final-hint",
@@ -270,10 +262,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             await asyncio.sleep(0.5)
             summary_widget: Static = self.query_one("#final-summary", Static)
             env = detect_environment()
-            packs_str = (
-                "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs)
-                or "—"
-            )
+            packs_str = "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs) or "—"
             summary_widget.update(
                 f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
                 f"\n"

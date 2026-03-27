@@ -391,9 +391,7 @@ class ShadowIPCBridge:
         return None
 
     # ------------------------------------------------------------------
-    def _shadow_validate(
-        self, payload: dict[str, Any], fast_result: dict[str, Any]
-    ) -> None:
+    def _shadow_validate(self, payload: dict[str, Any], fast_result: dict[str, Any]) -> None:
         """Run the WebSocket path and compare against the fast result."""
         global _shadow_match_count
         try:
@@ -405,10 +403,7 @@ class ShadowIPCBridge:
             if fast_result == slow_result:
                 with _shadow_lock:
                     _shadow_match_count += 1
-                    if (
-                        _shadow_match_count >= SHADOW_PROMOTE_AFTER
-                        and not self._promoted
-                    ):
+                    if _shadow_match_count >= SHADOW_PROMOTE_AFTER and not self._promoted:
                         _promote_pipe()
                         self._promoted = True
             else:

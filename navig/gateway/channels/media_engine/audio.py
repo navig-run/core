@@ -113,9 +113,7 @@ def _stage_metadata(file_bytes: bytes) -> dict:
         f = mutagen.File(io.BytesIO(file_bytes))
         if f is None:
             return result
-        result["duration_sec"] = (
-            int(getattr(f, "info", None) and f.info.length or 0) or None
-        )
+        result["duration_sec"] = int(getattr(f, "info", None) and f.info.length or 0) or None
         result["bitrate"] = int(getattr(getattr(f, "info", None), "bitrate", 0)) or None
         tags = f.tags or {}
 
@@ -220,9 +218,7 @@ async def _stage_spotify(artist: str, title: str, budget: BudgetGuard) -> dict |
         auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
         token_data = await _fetch_json(
             "post",
-            _PRUL.get("spotify", {}).get(
-                "token", "https://accounts.spotify.com/api/token"
-            ),
+            _PRUL.get("spotify", {}).get("token", "https://accounts.spotify.com/api/token"),
             headers={
                 "Authorization": f"Basic {auth}",
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -282,9 +278,7 @@ async def _stage_lastfm(artist: str, title: str, budget: BudgetGuard) -> dict | 
             "listeners": track.get("listeners"),
             "tags": tags,
             "lastfm_url": track.get("url"),
-            "wiki_summary": (track.get("wiki", {}).get("summary") or "")
-            .split("<a href")[0]
-            .strip()
+            "wiki_summary": (track.get("wiki", {}).get("summary") or "").split("<a href")[0].strip()
             or None,
         }
     except Exception as exc:

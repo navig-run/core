@@ -235,9 +235,7 @@ class NervousSystem:
                         f"Error in event handler: {e}", exc_info=True
                     )
 
-            await asyncio.gather(
-                *[safe_call(h) for h in handlers], return_exceptions=True
-            )
+            await asyncio.gather(*[safe_call(h) for h in handlers], return_exceptions=True)
 
     def pause(self) -> None:
         """Pause event dispatching (events are queued)."""
@@ -297,10 +295,7 @@ class NervousSystem:
 
     def list_subscriptions(self) -> dict[str, int]:
         """List all event subscriptions."""
-        return {
-            event_type.name: len(handlers)
-            for event_type, handlers in self._handlers.items()
-        }
+        return {event_type.name: len(handlers) for event_type, handlers in self._handlers.items()}
 
 
 class EventEmitter:

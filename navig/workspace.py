@@ -73,17 +73,14 @@ class WorkspaceManager:
         if workspace_path is not None:
             explicit_path = self._validated_workspace_override(Path(workspace_path))
             explicit_is_project_style = (
-                explicit_path.name == "workspace"
-                and explicit_path.parent.name == ".navig"
+                explicit_path.name == "workspace" and explicit_path.parent.name == ".navig"
             )
             if explicit_is_project_style or is_project_workspace_path(
                 explicit_path, project_root=Path.cwd()
             ):
-                self.workspace_path, self.legacy_workspace_path = (
-                    resolve_personal_workspace_path(
-                        explicit_path,
-                        project_root=Path.cwd(),
-                    )
+                self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
+                    explicit_path,
+                    project_root=Path.cwd(),
                 )
             else:
                 self.workspace_path = explicit_path
@@ -99,11 +96,9 @@ class WorkspaceManager:
                 requested_workspace = DEFAULT_WORKSPACE_DIR
 
             # Personal/state files are now canonical at ~/.navig/workspace.
-            self.workspace_path, self.legacy_workspace_path = (
-                resolve_personal_workspace_path(
-                    requested_workspace,
-                    project_root=Path.cwd(),
-                )
+            self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
+                requested_workspace,
+                project_root=Path.cwd(),
             )
 
         if self.legacy_workspace_path:
@@ -171,9 +166,7 @@ class WorkspaceManager:
     def is_initialized(self) -> bool:
         """Check if workspace has been initialized."""
         for ws_path in self._candidate_workspace_paths():
-            if ws_path.exists() and any(
-                (ws_path / f).exists() for f in self.BOOTSTRAP_FILES
-            ):
+            if ws_path.exists() and any((ws_path / f).exists() for f in self.BOOTSTRAP_FILES):
                 return True
         return False
 
@@ -264,8 +257,7 @@ class WorkspaceManager:
     def has_bootstrap_pending(self) -> bool:
         """Check if BOOTSTRAP.md exists (first-run not completed)."""
         return any(
-            (ws_path / "BOOTSTRAP.md").exists()
-            for ws_path in self._candidate_workspace_paths()
+            (ws_path / "BOOTSTRAP.md").exists() for ws_path in self._candidate_workspace_paths()
         )
 
     def get_agent_identity(self) -> dict[str, str]:
@@ -428,9 +420,7 @@ class WorkspaceManager:
                     raw_value = line[match.end() :].strip()
 
                     # Handle empty values or placeholders
-                    if not raw_value or (
-                        raw_value.startswith("(") and raw_value.endswith(")")
-                    ):
+                    if not raw_value or (raw_value.startswith("(") and raw_value.endswith(")")):
                         continue
 
                     # Cleanup comments
@@ -449,9 +439,7 @@ class WorkspaceManager:
                         "package_managers",
                         "learning_targets",
                     ):
-                        preferences[key] = [
-                            l.strip() for l in raw_value.split(",") if l.strip()
-                        ]
+                        preferences[key] = [l.strip() for l in raw_value.split(",") if l.strip()]
                     elif key == "risk_tolerance":
                         lower_val = raw_value.lower()
                         if "low" in lower_val:
@@ -648,14 +636,10 @@ class WorkspaceManager:
         if prefs.get("os"):
             updates["technical_context.preferences"] = [prefs["os"]]
         if prefs.get("shell"):
-            shells = (
-                prefs["shell"] if isinstance(prefs["shell"], list) else [prefs["shell"]]
-            )
+            shells = prefs["shell"] if isinstance(prefs["shell"], list) else [prefs["shell"]]
             for shell in shells:
                 if shell and not shell.startswith("("):
-                    updates.setdefault("technical_context.preferences", []).append(
-                        shell
-                    )
+                    updates.setdefault("technical_context.preferences", []).append(shell)
 
         # Preferences
         if prefs.get("communication_style"):

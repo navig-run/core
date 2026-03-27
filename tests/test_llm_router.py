@@ -21,18 +21,14 @@ class TestAliasResolution:
 
         r = LLMModeRouter({})
         for alias in ("small", "chat", "casual", "talk", "hi", "hello"):
-            assert (
-                r.resolve_mode(alias) == "small_talk"
-            ), f"{alias} should map to small_talk"
+            assert r.resolve_mode(alias) == "small_talk", f"{alias} should map to small_talk"
 
     def test_big_tasks_aliases(self):
         from navig.llm_router import LLMModeRouter
 
         r = LLMModeRouter({})
         for alias in ("big", "complex", "plan", "reason", "think"):
-            assert (
-                r.resolve_mode(alias) == "big_tasks"
-            ), f"{alias} should map to big_tasks"
+            assert r.resolve_mode(alias) == "big_tasks", f"{alias} should map to big_tasks"
 
     def test_coding_aliases(self):
         from navig.llm_router import LLMModeRouter
@@ -46,18 +42,14 @@ class TestAliasResolution:
 
         r = LLMModeRouter({})
         for alias in ("sum", "summary", "tl;dr", "tldr", "digest"):
-            assert (
-                r.resolve_mode(alias) == "summarize"
-            ), f"{alias} should map to summarize"
+            assert r.resolve_mode(alias) == "summarize", f"{alias} should map to summarize"
 
     def test_research_aliases(self):
         from navig.llm_router import LLMModeRouter
 
         r = LLMModeRouter({})
         for alias in ("research", "analysis", "compare", "sources", "analyze", "study"):
-            assert (
-                r.resolve_mode(alias) == "research"
-            ), f"{alias} should map to research"
+            assert r.resolve_mode(alias) == "research", f"{alias} should map to research"
 
     def test_unknown_defaults_to_big_tasks(self):
         from navig.llm_router import LLMModeRouter
@@ -237,8 +229,6 @@ class TestResolvedLLMConfig:
     def test_repr(self):
         from navig.llm_router import ResolvedLLMConfig
 
-        cfg = ResolvedLLMConfig(
-            provider="ollama", model="dolphin:8b", mode="small_talk"
-        )
+        cfg = ResolvedLLMConfig(provider="ollama", model="dolphin:8b", mode="small_talk")
         assert "ollama" in repr(cfg)
         assert "dolphin" in repr(cfg)

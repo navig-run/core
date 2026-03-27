@@ -102,9 +102,7 @@ class Task:
             "timeout": self.timeout,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": (
-                self.completed_at.isoformat() if self.completed_at else None
-            ),
+            "completed_at": (self.completed_at.isoformat() if self.completed_at else None),
             "status": self.status.value,
             "result": str(self.result) if self.result else None,
             "error": self.error,
@@ -231,9 +229,7 @@ class TaskQueue:
             # Determine initial status
             if task.dependencies:
                 # Check if dependencies are met
-                deps_met = all(
-                    dep_id in self._completed for dep_id in task.dependencies
-                )
+                deps_met = all(dep_id in self._completed for dep_id in task.dependencies)
                 task.status = TaskStatus.QUEUED if deps_met else TaskStatus.WAITING
             else:
                 task.status = TaskStatus.QUEUED
@@ -251,9 +247,7 @@ class TaskQueue:
 
             return task
 
-    async def get_next(
-        self, wait: bool = False, timeout: float | None = None
-    ) -> Task | None:
+    async def get_next(self, wait: bool = False, timeout: float | None = None) -> Task | None:
         """
         Get next ready task from queue.
 
@@ -270,9 +264,7 @@ class TaskQueue:
                         continue
 
                     # Check dependencies again
-                    deps_met = all(
-                        dep_id in self._completed for dep_id in task.dependencies
-                    )
+                    deps_met = all(dep_id in self._completed for dep_id in task.dependencies)
 
                     if deps_met:
                         task.status = TaskStatus.RUNNING
@@ -295,9 +287,7 @@ class TaskQueue:
 
             try:
                 if timeout:
-                    await asyncio.wait_for(
-                        self._task_added_event.wait(), timeout - elapsed
-                    )
+                    await asyncio.wait_for(self._task_added_event.wait(), timeout - elapsed)
                 else:
                     await self._task_added_event.wait()
             except asyncio.TimeoutError:
@@ -367,9 +357,7 @@ class TaskQueue:
                 task.status = TaskStatus.QUEUED
                 # Re-add to heap after delay
                 asyncio.create_task(self._delayed_requeue(task))
-                logger.debug(
-                    f"Task retry scheduled: {task_id} (attempt {task.retry_count})"
-                )
+                logger.debug(f"Task retry scheduled: {task_id} (attempt {task.retry_count})")
             else:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now()
@@ -479,9 +467,7 @@ class TaskQueue:
         """Check if any waiting tasks can now be queued."""
         for task in self._tasks.values():
             if task.status == TaskStatus.WAITING:
-                deps_met = all(
-                    dep_id in self._completed for dep_id in task.dependencies
-                )
+                deps_met = all(dep_id in self._completed for dep_id in task.dependencies)
                 if deps_met:
                     task.status = TaskStatus.QUEUED
                     heapq.heappush(self._heap, task)
@@ -494,9 +480,7 @@ class TaskQueue:
 
         try:
             data = {
-                "tasks": {
-                    task_id: task.to_dict() for task_id, task in self._tasks.items()
-                },
+                "tasks": {task_id: task.to_dict() for task_id, task in self._tasks.items()},
                 "completed": list(self._completed),
             }
 
@@ -537,9 +521,7 @@ class TaskQueue:
         """Get queue statistics."""
         status_counts = {}
         for task in self._tasks.values():
-            status_counts[task.status.value] = (
-                status_counts.get(task.status.value, 0) + 1
-            )
+            status_counts[task.status.value] = status_counts.get(task.status.value, 0) + 1
 
         return {
             "total_tasks": len(self._tasks),

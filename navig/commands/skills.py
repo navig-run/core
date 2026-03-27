@@ -449,10 +449,7 @@ def run_skill_cmd(spec: str, extra_args: list[str], options: dict[str, Any]) -> 
 
         # Confirmation for risky commands
         if target_cmd.risk in ("destructive", "moderate"):
-            msg = (
-                target_cmd.confirmation_msg
-                or f"Run {target_cmd.risk} command: {syntax}?"
-            )
+            msg = target_cmd.confirmation_msg or f"Run {target_cmd.risk} command: {syntax}?"
             if not options.get("yes", False):
                 if not ch.confirm(msg):
                     ch.dim("  Cancelled.")

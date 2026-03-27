@@ -58,9 +58,7 @@ class ConversationalAgent:
         self._ai_client = ai_client
         self._on_status_update: Callable[[StatusEvent], Awaitable[None]] | None = None
         self._session_id: str = str(uuid.uuid4())[:8]
-        self.on_status_update = (
-            on_status_update  # triggers property setter — shim applied
-        )
+        self.on_status_update = on_status_update  # triggers property setter — shim applied
         self._soul_loader = soul_loader or get_soul_loader()
         self._history = history or ConversationHistory(user_id="default")
         self._lang = language_detector or LanguageDetector()
@@ -103,22 +101,16 @@ class ConversationalAgent:
                     )
                     if is_legacy:
                         _legacy = cb
-                        if inspect.iscoroutinefunction(
-                            _legacy
-                        ) or inspect.iscoroutinefunction(
+                        if inspect.iscoroutinefunction(_legacy) or inspect.iscoroutinefunction(
                             getattr(_legacy, "__call__", None)  # noqa: B004
                         ):
 
-                            async def cb(
-                                event: StatusEvent, _cb: Callable = _legacy
-                            ) -> None:  # noqa: E731
+                            async def cb(event: StatusEvent, _cb: Callable = _legacy) -> None:  # noqa: E731
                                 await _cb(event.message)
 
                         else:
 
-                            def cb(
-                                event: StatusEvent, _cb: Callable = _legacy
-                            ) -> None:  # noqa: E731
+                            def cb(event: StatusEvent, _cb: Callable = _legacy) -> None:  # noqa: E731
                                 _cb(event.message)
 
             except (ValueError, TypeError):
@@ -192,19 +184,11 @@ class ConversationalAgent:
         tod = (
             "morning"
             if 5 <= h < 12
-            else (
-                "afternoon"
-                if 12 <= h < 18
-                else "evening" if 18 <= h < 22 else "late night"
-            )
+            else ("afternoon" if 12 <= h < 18 else "evening" if 18 <= h < 22 else "late night")
         )
-        parts = [
-            f"Current time: {now.strftime('%H:%M')} ({tod}), {now.strftime('%A %d %B %Y')}."
-        ]
+        parts = [f"Current time: {now.strftime('%H:%M')} ({tod}), {now.strftime('%A %d %B %Y')}."]
         if uname := self._user_identity.get("username", ""):
-            parts.append(
-                f"You are talking to {uname} (your operator). Address them naturally."
-            )
+            parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
         elif uid := self._user_identity.get("user_id", ""):
             parts.append(f"User ID: {uid}.")
         return "\n".join(parts)
@@ -346,7 +330,5 @@ class ConversationalAgent:
         except Exception as exc:
             logger.warning("Unified router failed: %s", exc)
         if hasattr(self._ai_client, "chat_routed"):
-            return await self._ai_client.chat_routed(
-                msgs, user_message=message, tier_override=tier
-            )
+            return await self._ai_client.chat_routed(msgs, user_message=message, tier_override=tier)
         return await self._ai_client.chat(msgs)

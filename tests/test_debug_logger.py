@@ -137,9 +137,7 @@ class TestLogFormat:
 
     def test_ssh_command_format(self, debug_logger, temp_log_path):
         """Test SSH command log format."""
-        debug_logger.log_ssh_command(
-            "localhost", 22, "root", "echo hello", "subprocess"
-        )
+        debug_logger.log_ssh_command("localhost", 22, "root", "echo hello", "subprocess")
 
         with open(temp_log_path, "r") as f:
             content = f.read()

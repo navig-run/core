@@ -22,9 +22,7 @@ class TestInboxStore:
     def test_insert_and_get_event(self):
         from navig.inbox.store import InboxEvent
 
-        event = InboxEvent(
-            source_path="/tmp/test.md", filename="test.md", source_type="file"
-        )
+        event = InboxEvent(source_path="/tmp/test.md", filename="test.md", source_type="file")
         eid = self.store.insert_event(event)
         assert eid > 0
         fetched = self.store.get_event(eid)
@@ -67,13 +65,9 @@ class TestInboxStore:
         from navig.inbox.store import InboxEvent
 
         for i in range(3):
-            e = InboxEvent(
-                source_path=f"/tmp/f{i}.md", filename=f"f{i}.md", status="pending"
-            )
+            e = InboxEvent(source_path=f"/tmp/f{i}.md", filename=f"f{i}.md", status="pending")
             self.store.insert_event(e)
-        e = InboxEvent(
-            source_path="/tmp/routed.md", filename="routed.md", status="routed"
-        )
+        e = InboxEvent(source_path="/tmp/routed.md", filename="routed.md", status="routed")
         self.store.insert_event(e)
 
         pending = self.store.list_events(status="pending")
@@ -84,9 +78,7 @@ class TestInboxStore:
 
         e = InboxEvent(source_path="/tmp/b.md", filename="b.md", status="routed")
         eid = self.store.insert_event(e)
-        d = RoutingDecision(
-            event_id=eid, category="wiki/technical", mode="copy", destination="/x"
-        )
+        d = RoutingDecision(event_id=eid, category="wiki/technical", mode="copy", destination="/x")
         self.store.insert_decision(d)
 
         stats = self.store.stats()
@@ -98,9 +90,7 @@ class TestInboxStore:
 
         e = InboxEvent(source_path="/tmp/c.md", filename="c.md")
         eid = self.store.insert_event(e)
-        d = RoutingDecision(
-            event_id=eid, category="hub/tasks", mode="copy", destination="/x"
-        )
+        d = RoutingDecision(event_id=eid, category="hub/tasks", mode="copy", destination="/x")
         did = self.store.insert_decision(d)
         self.store.mark_decision_executed(did, "/target/c.md")
         decisions = self.store.decisions_for_event(eid)
@@ -169,9 +159,7 @@ class TestClassifier:
         assert result.category == "hub/changelog"
 
     def test_alternatives_populated(self):
-        result = self.clf.classify(
-            "Technical guide tutorial for the API endpoint documentation"
-        )
+        result = self.clf.classify("Technical guide tutorial for the API endpoint documentation")
         # Should have alternatives when there's a tie or close second
         assert isinstance(result.alternatives, list)
 
@@ -220,9 +208,7 @@ class TestInboxRouter:
 
     def test_route_low_confidence_ignored(self):
         src = self._make_file("low.md")
-        result = self.router.route(
-            src, self._classify("wiki/knowledge", confidence=0.1)
-        )
+        result = self.router.route(src, self._classify("wiki/knowledge", confidence=0.1))
         assert result.status == "ignored"
 
     def test_route_ignore_category(self):

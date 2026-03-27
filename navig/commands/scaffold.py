@@ -17,21 +17,15 @@ app = typer.Typer(help="Scaffold project structures from templates")
 
 @app.command("apply")
 def apply(
-    template_path: Path = typer.Argument(
-        ..., help="Path to YAML template file", exists=True
-    ),
+    template_path: Path = typer.Argument(..., help="Path to YAML template file", exists=True),
     target_dir: str = typer.Option(
         ".", "--target-dir", "-d", help="Target directory (local or remote)"
     ),
     host: str = typer.Option(
         None, "--host", "-h", help="Remote host to deploy to (defaults to local)"
     ),
-    set_var: list[str] = typer.Option(
-        None, "--set", help="Set variable like key=value"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Simulate without creating files"
-    ),
+    set_var: list[str] = typer.Option(None, "--set", help="Set variable like key=value"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate without creating files"),
 ):
     """
     Generate files/directories from a template.
@@ -111,34 +105,37 @@ def apply(
             ch.step(f"Uploading to {host}...")
 
             with ch.create_spinner("Uploading..."):
-                success = remote_ops.upload_file(
-                    archive_path, remote_archive_path, server_config
-                )
+                success = remote_ops.upload_file(archive_path, remote_archive_path, server_config)
 
             if not success:
                 ch.error("Upload failed")
                 raise typer.Exit(1)
 
+            import shlex
+
+            target_dir_safe = shlex.quote(target_dir)
+            remote_archive_safe = shlex.quote(remote_archive_path)
+
             # Extract
             ch.step("Extracting on remote host...")
 
             # Ensure target directory exists
-            mkdir_cmd = f"mkdir -p {target_dir}"
+            mkdir_cmd = f"mkdir -p {target_dir_safe}"
             remote_ops.execute_command(mkdir_cmd, server_config)
 
             # Extract tar
             # -C changes dir before extracting
-            tar_cmd = f"tar -xzf {remote_archive_path} -C {target_dir}"
+            tar_cmd = f"tar -xzf {remote_archive_safe} -C {target_dir_safe}"
             result = remote_ops.execute_command(tar_cmd, server_config)
 
             if result.returncode != 0:
                 ch.error(f"Extraction failed: {result.stderr}")
                 # Cleanup remote tmp
-                remote_ops.execute_command(f"rm {remote_archive_path}", server_config)
+                remote_ops.execute_command(f"rm -f {remote_archive_safe}", server_config)
                 raise typer.Exit(1)
 
             # Cleanup remote tmp
-            remote_ops.execute_command(f"rm {remote_archive_path}", server_config)
+            remote_ops.execute_command(f"rm -f {remote_archive_safe}", server_config)
 
             ch.success(f"Scaffold deployed to {host}:{target_dir}")
 

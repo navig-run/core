@@ -56,9 +56,7 @@ def store_status(
             journal = conn.execute("PRAGMA journal_mode").fetchone()[0]
             integrity = conn.execute("PRAGMA quick_check").fetchone()[0]
             size = db_path.stat().st_size
-            version_row = conn.execute(
-                "SELECT version FROM schema_version LIMIT 1"
-            ).fetchone()
+            version_row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             version = version_row[0] if version_row else "—"
             conn.close()
         except Exception as exc:
@@ -258,11 +256,7 @@ def store_migrate(
         navig / "bot" / "bot_data.db",
         navig / "daily_log.db",
     ]
-    pending = [
-        f
-        for f in legacy_files
-        if f.exists() and not f.with_suffix(".db.migrated").exists()
-    ]
+    pending = [f for f in legacy_files if f.exists() and not f.with_suffix(".db.migrated").exists()]
 
     if not pending:
         msg = "No pending migrations — all legacy databases have been migrated."
@@ -319,9 +313,7 @@ def store_migrate(
             if ms.vec_available:
                 count = ms.migrate_embeddings_to_vec()
                 if count > 0:
-                    console.print(
-                        f"  [green]✓[/green] Migrated {count} embeddings to vec0 table"
-                    )
+                    console.print(f"  [green]✓[/green] Migrated {count} embeddings to vec0 table")
             ms.close()
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -353,9 +345,7 @@ def store_cleanup(
             import json
 
             console.print_json(
-                json.dumps(
-                    {"dry_run": True, "files": [str(f) for f in targets]}, indent=2
-                )
+                json.dumps({"dry_run": True, "files": [str(f) for f in targets]}, indent=2)
             )
         else:
             console.print("[yellow]Dry run — would remove:[/yellow]")
@@ -364,9 +354,7 @@ def store_cleanup(
         raise typer.Exit()
 
     if not force:
-        confirm = typer.confirm(
-            f"Remove {len(targets)} migrated backup file(s)?", default=False
-        )
+        confirm = typer.confirm(f"Remove {len(targets)} migrated backup file(s)?", default=False)
         if not confirm:
             raise typer.Abort()
 

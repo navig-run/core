@@ -81,9 +81,7 @@ def rollback(
 ) -> None:
     """Roll back applied actions in reverse order (best-effort)."""
     applied_pairs = [
-        (a, r)
-        for a, r in zip(actions, results)
-        if r.state == ModuleState.APPLIED and a.reversible
+        (a, r) for a, r in zip(actions, results) if r.state == ModuleState.APPLIED and a.reversible
     ]
 
     for action, result in reversed(applied_pairs):

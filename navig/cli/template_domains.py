@@ -14,9 +14,7 @@ from navig.deprecation import deprecation_warning
 def register_template_domain_commands(app: typer.Typer) -> None:
     """Register deprecated addon and server-template command groups."""
 
-    addon_app = typer.Typer(
-        help="[DEPRECATED: Use 'navig flow template'] Addon commands"
-    )
+    addon_app = typer.Typer(help="[DEPRECATED: Use 'navig flow template'] Addon commands")
     app.add_typer(addon_app, name="addon", hidden=True)
 
     @addon_app.callback()
@@ -66,12 +64,8 @@ def register_template_domain_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         name: str = typer.Argument(..., help="Template name to run"),
         command: str | None = typer.Argument(None, help="Template command to execute"),
-        args: list[str] | None = typer.Argument(
-            None, help="Arguments for the template command"
-        ),
-        dry_run: bool = typer.Option(
-            False, "--dry-run", "-n", help="Preview without changes"
-        ),
+        args: list[str] | None = typer.Argument(None, help="Arguments for the template command"),
+        dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without changes"),
     ):
         """Run a template command (deprecated; use flow template run)."""
         deprecation_warning("navig addon run", "navig flow template run")
@@ -89,9 +83,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
     def addon_run(
         ctx: typer.Context,
         name: str = typer.Argument(..., help="Template name to run/deploy"),
-        dry_run: bool = typer.Option(
-            False, "--dry-run", "-n", help="Preview without changes"
-        ),
+        dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without changes"),
     ):
         """Run/deploy a template (deprecated)."""
         from navig.commands.template import addon_run_deprecated
@@ -191,9 +183,7 @@ def register_template_domain_commands(app: typer.Typer) -> None:
         server: str | None = typer.Option(
             None, "--server", "-s", help="Server name (uses active if omitted)"
         ),
-        force: bool = typer.Option(
-            False, "--force", "-f", help="Overwrite all custom settings"
-        ),
+        force: bool = typer.Option(False, "--force", "-f", help="Overwrite all custom settings"),
     ):
         """Sync template configuration from template."""
         from navig.commands.server_template import sync_template_cmd

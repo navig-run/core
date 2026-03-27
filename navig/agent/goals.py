@@ -63,9 +63,7 @@ class Subtask:
             "state": self.state.value,
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": (
-                self.completed_at.isoformat() if self.completed_at else None
-            ),
+            "completed_at": (self.completed_at.isoformat() if self.completed_at else None),
             "error": self.error,
             "result": self.result,
         }
@@ -80,14 +78,10 @@ class Subtask:
             state=SubtaskState(data["state"]),
             created_at=datetime.fromisoformat(data["created_at"]),
             started_at=(
-                datetime.fromisoformat(data["started_at"])
-                if data.get("started_at")
-                else None
+                datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None
             ),
             completed_at=(
-                datetime.fromisoformat(data["completed_at"])
-                if data.get("completed_at")
-                else None
+                datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None
             ),
             error=data.get("error"),
             result=data.get("result"),
@@ -116,9 +110,7 @@ class Goal:
             "subtasks": [st.to_dict() for st in self.subtasks],
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": (
-                self.completed_at.isoformat() if self.completed_at else None
-            ),
+            "completed_at": (self.completed_at.isoformat() if self.completed_at else None),
             "progress": self.progress,
             "metadata": self.metadata,
         }
@@ -132,14 +124,10 @@ class Goal:
             subtasks=[Subtask.from_dict(st) for st in data.get("subtasks", [])],
             created_at=datetime.fromisoformat(data["created_at"]),
             started_at=(
-                datetime.fromisoformat(data["started_at"])
-                if data.get("started_at")
-                else None
+                datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None
             ),
             completed_at=(
-                datetime.fromisoformat(data["completed_at"])
-                if data.get("completed_at")
-                else None
+                datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None
             ),
             progress=data.get("progress", 0.0),
             metadata=data.get("metadata", {}),
@@ -185,9 +173,7 @@ class GoalPlanner:
                 goal = Goal.from_dict(goal_data)
                 self._goals[goal.id] = goal
 
-            self.logger.log_operation(
-                "goals", {"action": "load", "count": len(self._goals)}
-            )
+            self.logger.log_operation("goals", {"action": "load", "count": len(self._goals)})
 
         except Exception as e:
             self.logger.log_operation("goals", {"action": "load", "error": str(e)})
@@ -203,9 +189,7 @@ class GoalPlanner:
             with open(self.goals_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
 
-            self.logger.log_operation(
-                "goals", {"action": "save", "count": len(self._goals)}
-            )
+            self.logger.log_operation("goals", {"action": "save", "count": len(self._goals)})
 
         except Exception as e:
             self.logger.log_operation("goals", {"action": "save", "error": str(e)})
@@ -316,9 +300,7 @@ class GoalPlanner:
         self.logger.log_operation("goals", {"action": "start", "id": goal_id})
         return True
 
-    def complete_subtask(
-        self, goal_id: str, subtask_id: str, result: str | None = None
-    ) -> bool:
+    def complete_subtask(self, goal_id: str, subtask_id: str, result: str | None = None) -> bool:
         """
         Mark a subtask as completed.
 
@@ -447,10 +429,7 @@ class GoalPlanner:
 
             # Check dependencies
             dependencies_met = all(
-                any(
-                    st.id == dep_id and st.state == SubtaskState.COMPLETED
-                    for st in goal.subtasks
-                )
+                any(st.id == dep_id and st.state == SubtaskState.COMPLETED for st in goal.subtasks)
                 for dep_id in subtask.dependencies
             )
 

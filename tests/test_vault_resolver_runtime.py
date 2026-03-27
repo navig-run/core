@@ -51,9 +51,7 @@ def test_resolve_secret_falls_back_to_vault(monkeypatch) -> None:
 
 def test_resolve_json_str_reads_path_from_env(monkeypatch, tmp_path: Path) -> None:
     service_account = tmp_path / "sa.json"
-    service_account.write_text(
-        '{"type":"service_account","project_id":"demo"}', encoding="utf-8"
-    )
+    service_account.write_text('{"type":"service_account","project_id":"demo"}', encoding="utf-8")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(service_account))
 
     assert '"project_id":"demo"' in resolve_json_str(
@@ -71,8 +69,6 @@ def test_resolve_json_str_falls_back_to_vault(monkeypatch) -> None:
     )
 
     assert (
-        resolve_json_str(
-            ["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"]
-        )
+        resolve_json_str(["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"])
         == '{"type":"service_account"}'
     )

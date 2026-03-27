@@ -60,9 +60,7 @@ class AIAssistant:
 
                 from navig.memory.conversation import ConversationStore
 
-                AIAssistant._conv_store = ConversationStore(
-                    Path.home() / ".navig" / "memory.db"
-                )
+                AIAssistant._conv_store = ConversationStore(Path.home() / ".navig" / "memory.db")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         return AIAssistant._conv_store
@@ -117,9 +115,7 @@ class AIAssistant:
                 elif hasattr(_mgr, "knowledge_base") and _mgr.knowledge_base:
                     _results = _mgr.knowledge_base.text_search(_q, limit=5)
                     if _results:
-                        _mem_ctx = "\n".join(
-                            f"- {e.key}: {e.content[:150]}" for e in _results
-                        )
+                        _mem_ctx = "\n".join(f"- {e.key}: {e.content[:150]}" for e in _results)
                 if _mem_ctx:
                     _parts.append("\n\n## What I Know\n" + _mem_ctx)
                 if hasattr(_mgr, "get_user_context"):
@@ -145,10 +141,7 @@ class AIAssistant:
                     _parts.append("\n\n## Known Facts (Graph)\n" + "\n".join(_lines))
                 _routines = _kg.get_routines(enabled_only=True)
                 if _routines:
-                    _rlines = [
-                        f"- {r.name}: {r.description or r.schedule}"
-                        for r in _routines[:5]
-                    ]
+                    _rlines = [f"- {r.name}: {r.description or r.schedule}" for r in _routines[:5]]
                     _parts.append("\n\n## Active Routines\n" + "\n".join(_rlines))
                 return "".join(_parts)
             except Exception:
@@ -172,17 +165,11 @@ class AIAssistant:
                         )
                         if len(_pairs) >= 3:
                             break
-                return (
-                    ("\n\n## Relevant Past Sessions\n" + "\n".join(_pairs))
-                    if _pairs
-                    else ""
-                )
+                return ("\n\n## Relevant Past Sessions\n" + "\n".join(_pairs)) if _pairs else ""
             except Exception:
                 return ""
 
-        with _cf.ThreadPoolExecutor(
-            max_workers=3, thread_name_prefix="navig_mem"
-        ) as _pool:
+        with _cf.ThreadPoolExecutor(max_workers=3, thread_name_prefix="navig_mem") as _pool:
             _f_kb, _f_kg, _f_ep = (
                 _pool.submit(_fetch_kb),
                 _pool.submit(_fetch_kg),
@@ -351,9 +338,7 @@ class AIAssistant:
             error_summary = ai_context_mgr.get_error_summary(hours=24)
 
             if error_summary["total_errors"] > 0:
-                lines.append(
-                    f"\nRecent Errors (Last 24h): {error_summary['total_errors']}"
-                )
+                lines.append(f"\nRecent Errors (Last 24h): {error_summary['total_errors']}")
 
                 if error_summary["categories"]:
                     lines.append("Error Categories:")
@@ -367,9 +352,7 @@ class AIAssistant:
                 if error_summary["common_errors"]:
                     lines.append("\nMost Common Issues:")
                     for i, err in enumerate(error_summary["common_errors"][:3], 1):
-                        lines.append(
-                            f"  {i}. [{err['category']}] {err['example'][:80]}..."
-                        )
+                        lines.append(f"  {i}. [{err['category']}] {err['example'][:80]}...")
         except Exception:
             pass  # Don't fail if error context unavailable
 
@@ -409,9 +392,7 @@ class AIAssistant:
 
         return data["choices"][0]["message"]["content"]
 
-    def analyze_error(
-        self, command: str, error_message: str, context: dict[str, Any]
-    ) -> str:
+    def analyze_error(self, command: str, error_message: str, context: dict[str, Any]) -> str:
         """
         Analyze error and suggest solutions using AI.
 
@@ -506,9 +487,7 @@ def ask_ai_with_context(
     ai_key = config_mgr.global_config.get("openrouter_api_key")
 
     if not ai_key:
-        return (
-            "Error: OpenRouter API key not configured. Set it in ~/.navig/config.yaml"
-        )
+        return "Error: OpenRouter API key not configured. Set it in ~/.navig/config.yaml"
 
     # Build messages
     messages = []

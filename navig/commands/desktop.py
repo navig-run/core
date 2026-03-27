@@ -57,11 +57,7 @@ class _DesktopClient:
 
     def __init__(self) -> None:
         agent_script = (
-            Path(__file__).parent.parent.parent
-            / "host"
-            / "internal"
-            / "desktop"
-            / "agent.py"
+            Path(__file__).parent.parent.parent / "host" / "internal" / "desktop" / "agent.py"
         )
         if not agent_script.exists():
             # Try relative to package install
@@ -196,12 +192,8 @@ def desktop_ping(
 
 @desktop_app.command("find")
 def desktop_find(
-    name: str | None = typer.Option(
-        None, "--name", "-n", help="Filter by element Name."
-    ),
-    class_name: str | None = typer.Option(
-        None, "--class", "-c", help="Filter by ClassName."
-    ),
+    name: str | None = typer.Option(None, "--name", "-n", help="Filter by element Name."),
+    class_name: str | None = typer.Option(None, "--class", "-c", help="Filter by ClassName."),
     control_type: str | None = typer.Option(
         None, "--type", "-t", help="Filter by control type (e.g. Button, Edit)."
     ),
@@ -237,9 +229,7 @@ def desktop_find(
 
 @desktop_app.command("click")
 def desktop_click(
-    handle: int = typer.Argument(
-        ..., help="Native window handle of the element to click."
-    ),
+    handle: int = typer.Argument(..., help="Native window handle of the element to click."),
     confirm: bool = typer.Option(
         False, "--confirm", help="Required flag for destructive operation."
     ),
@@ -251,9 +241,7 @@ def desktop_click(
         raise typer.Exit(1)
 
     if not confirm:
-        typer.echo(
-            "error: --confirm flag required for destructive operations", err=True
-        )
+        typer.echo("error: --confirm flag required for destructive operations", err=True)
         raise typer.Exit(1)
 
     client = _get_client()
@@ -282,9 +270,7 @@ def desktop_set(
         raise typer.Exit(1)
 
     if not confirm:
-        typer.echo(
-            "error: --confirm flag required for destructive operations", err=True
-        )
+        typer.echo("error: --confirm flag required for destructive operations", err=True)
         raise typer.Exit(1)
 
     client = _get_client()
@@ -353,9 +339,7 @@ def desktop_ahk(
         raise typer.Exit(1)
 
     if not confirm:
-        typer.echo(
-            "error: --confirm flag required for destructive operations", err=True
-        )
+        typer.echo("error: --confirm flag required for destructive operations", err=True)
         raise typer.Exit(1)
 
     # Resolve file vs inline script

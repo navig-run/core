@@ -85,12 +85,18 @@ class HealthChecker:
         expect = self._cfg.expected_status
         timeout = self._cfg.timeout_seconds
 
+        import shlex
+
+        method_safe = shlex.quote(method)
+        timeout_safe = shlex.quote(str(timeout))
+        url_safe = shlex.quote(url)
+
         # -sf: silent + fail on HTTP error (but we capture status ourselves)
         # -o /dev/null: discard body
         # -w '%{http_code}': print only status code
         # -X: HTTP method
         # --max-time: per-request timeout
-        cmd = f"curl -s -o /dev/null -w '%{{http_code}}' -X {method} --max-time {timeout} '{url}'"
+        cmd = f"curl -s -o /dev/null -w '%{{http_code}}' -X {method_safe} --max-time {timeout_safe} {url_safe}"
 
         result = self._remote.execute_command(cmd, self._server)
         if result.returncode != 0:

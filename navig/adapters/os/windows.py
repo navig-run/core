@@ -70,9 +70,7 @@ class WindowsAdapter(OSAdapter):
 
                 if version_match and version_idx > 0:
                     name = " ".join(parts[:version_idx])
-                    packages.append(
-                        PackageInfo(name=name, version=version_match, source="winget")
-                    )
+                    packages.append(PackageInfo(name=name, version=version_match, source="winget"))
                 elif len(parts) >= 2:
                     packages.append(
                         PackageInfo(
@@ -85,7 +83,9 @@ class WindowsAdapter(OSAdapter):
         return packages
 
     def get_package_install_command(self, package: str) -> str:
-        return f"winget install --id {package} --accept-source-agreements --accept-package-agreements"
+        return (
+            f"winget install --id {package} --accept-source-agreements --accept-package-agreements"
+        )
 
     def get_package_remove_command(self, package: str) -> str:
         return f"winget uninstall --id {package}"

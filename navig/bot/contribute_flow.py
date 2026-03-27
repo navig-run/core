@@ -396,9 +396,7 @@ class ContributeFlow:
             patch_str = build_patch(self._approved, repo_path)
             if not patch_str:
                 return {
-                    "text": _escape_md2(
-                        "⚠️ No effective patch changes. Nothing submitted."
-                    ),
+                    "text": _escape_md2("⚠️ No effective patch changes. Nothing submitted."),
                     "keyboard": None,
                     "done": True,
                     "pr_url": None,

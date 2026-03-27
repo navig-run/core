@@ -258,9 +258,7 @@ class FallbackPlanner:
                 )
 
         if any(w in lower for w in ("type", "write", "enter")):
-            m = re.search(
-                r'(?:type|write|enter)\s+["\']?(.+?)["\']?$', message, re.IGNORECASE
-            )
+            m = re.search(r'(?:type|write|enter)\s+["\']?(.+?)["\']?$', message, re.IGNORECASE)
             if m:
                 text = m.group(1)
                 return _make_plan(

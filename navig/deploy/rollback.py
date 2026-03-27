@@ -67,16 +67,20 @@ class RollbackManager:
             logger.info("[DRY RUN] snapshot: cp -r %s %s", self._target, snap_path)
             return SnapshotRecord(path=snap_path, created_at=ts)
 
+        import shlex
+
+        target_safe = shlex.quote(self._target)
+        snap_base_safe = shlex.quote(self._snapshot_base)
+        snap_path_safe = shlex.quote(snap_path)
+
         # Ensure snapshot base dir exists
-        mkdir_cmd = f"mkdir -p {self._snapshot_base}"
+        mkdir_cmd = f"mkdir -p {snap_base_safe}"
         r = self._remote.execute_command(mkdir_cmd, self._server)
         if r.returncode != 0:
-            raise RuntimeError(
-                f"Could not create snapshot dir {self._snapshot_base}: {r.stderr}"
-            )
+            raise RuntimeError(f"Could not create snapshot dir {self._snapshot_base}: {r.stderr}")
 
         # Create snapshot (cp, not rsync — same disk = fast)
-        cp_cmd = f"cp -r {self._target} {snap_path}"
+        cp_cmd = f"cp -r {target_safe} {snap_path_safe}"
         r = self._remote.execute_command(cp_cmd, self._server)
         if r.returncode != 0:
             raise RuntimeError(f"Snapshot failed: {r.stderr or r.stdout}")
@@ -85,9 +89,7 @@ class RollbackManager:
         logger.info("Snapshot created: %s", snap_path)
         return record
 
-    def restore_snapshot(
-        self, snapshot: SnapshotRecord | None = None
-    ) -> tuple[bool, str]:
+    def restore_snapshot(self, snapshot: SnapshotRecord | None = None) -> tuple[bool, str]:
         """
         Restore from the given snapshot (or load from last_deploy state file).
 
@@ -103,8 +105,13 @@ class RollbackManager:
         if self._dry_run:
             return True, f"[DRY RUN] would restore {snap_path} → {self._target}"
 
+        import shlex
+
+        target_safe = shlex.quote(self._target)
+        snap_path_safe = shlex.quote(snap_path)
+
         # Swap: remove current deployment, move snapshot into place
-        cmd = f"rm -rf {self._target} && mv {snap_path} {self._target}"
+        cmd = f"rm -rf {target_safe} && mv {snap_path_safe} {target_safe}"
         r = self._remote.execute_command(cmd, self._server)
         if r.returncode != 0:
             return False, f"Restore failed: {r.stderr or r.stdout}"
@@ -129,15 +136,20 @@ class RollbackManager:
         if keep <= 0 or self._dry_run:
             return
 
+        import shlex
+
+        snap_base_safe = shlex.quote(self._snapshot_base)
+
         # List snapshots, sorted by name descending (timestamps sort lexicographically)
-        list_cmd = f"ls -dt {self._snapshot_base}/*/ 2>/dev/null | tail -n +{keep + 1}"
+        list_cmd = f"ls -dt {snap_base_safe}/*/ 2>/dev/null | tail -n +{keep + 1}"
         r = self._remote.execute_command(list_cmd, self._server)
         old = [line.strip() for line in (r.stdout or "").splitlines() if line.strip()]
         if not old:
             return
 
         for path in old:
-            rm_cmd = f"rm -rf {path}"
+            path_safe = shlex.quote(path)
+            rm_cmd = f"rm -rf {path_safe}"
             res = self._remote.execute_command(rm_cmd, self._server)
             if res.returncode == 0:
                 logger.info("Pruned old snapshot: %s", path)
@@ -155,7 +167,5 @@ class RollbackManager:
             data = json.loads(self._state_path.read_text(encoding="utf-8"))
             return SnapshotRecord(path=data["path"], created_at=data["created_at"])
         except Exception as exc:
-            logger.warning(
-                "Could not read deploy state file %s: %s", self._state_path, exc
-            )
+            logger.warning("Could not read deploy state file %s: %s", self._state_path, exc)
             return None

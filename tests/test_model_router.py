@@ -82,9 +82,7 @@ class TestHeuristicRoute:
             mode="rules_then_fallback",
             small=ModelSlot(provider="ollama", model="qwen:3b", max_tokens=200),
             big=ModelSlot(provider="openrouter", model="gpt-4o", max_tokens=4096),
-            coder_big=ModelSlot(
-                provider="openrouter", model="deepseek-coder", max_tokens=8192
-            ),
+            coder_big=ModelSlot(provider="openrouter", model="deepseek-coder", max_tokens=8192),
         )
 
     def test_code_fence_routes_coder(self, cfg):
@@ -148,9 +146,7 @@ class TestFallbackLogic:
 
     def test_no_fallback_good_response(self):
         assert (
-            needs_fallback(
-                "Here is the detailed answer to your question about Python.", "small"
-            )
+            needs_fallback("Here is the detailed answer to your question about Python.", "small")
             is False
         )
 
@@ -204,9 +200,7 @@ class TestHybridRouter:
         cfg = RoutingConfig(
             small=ModelSlot(provider="ollama", model="qwen:3b", max_tokens=200),
             big=ModelSlot(provider="openrouter", model="gpt-4o", max_tokens=4096),
-            coder_big=ModelSlot(
-                provider="openrouter", model="deepseek-coder", max_tokens=8192
-            ),
+            coder_big=ModelSlot(provider="openrouter", model="deepseek-coder", max_tokens=8192),
         )
         router = HybridRouter(cfg)
         table = router.models_table()

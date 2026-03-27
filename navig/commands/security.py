@@ -109,9 +109,7 @@ def firewall_status(options):
         console.print(output)
 
         # Count rules
-        rule_count = len(
-            [line for line in output.split("\n") if "ALLOW" in line or "DENY" in line]
-        )
+        rule_count = len([line for line in output.split("\n") if "ALLOW" in line or "DENY" in line])
         console.print(f"\n[dim]Total rules: {rule_count}[/dim]")
 
 
@@ -155,7 +153,9 @@ def firewall_add_rule(port, protocol, allow_from, options):
             except ValueError:
                 console.print("[red]✗[/red] Invalid allow_from address")
                 return
-        command = f"sudo ufw allow from {allow_from_str} to any port {port_str} proto {protocol_str}"
+        command = (
+            f"sudo ufw allow from {allow_from_str} to any port {port_str} proto {protocol_str}"
+        )
         rule_desc = f"{port_str}/{protocol_str} from {allow_from_str}"
 
     if options.get("dry_run"):
@@ -204,9 +204,7 @@ def firewall_remove_rule(port, protocol, options):
     rule_desc = f"{port_str}/{protocol_str}"
 
     if options.get("dry_run"):
-        console.print(
-            f"[yellow]DRY RUN:[/yellow] Would remove firewall rule: {rule_desc}"
-        )
+        console.print(f"[yellow]DRY RUN:[/yellow] Would remove firewall rule: {rule_desc}")
         console.print(f"[dim]Command: {command}[/dim]")
         return
 
@@ -252,9 +250,7 @@ def firewall_enable(options):
 
     if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall enabled successfully")
-        console.print(
-            "[yellow]⚠[/yellow] Make sure SSH (port 22) is allowed to avoid lockout"
-        )
+        console.print("[yellow]⚠[/yellow] Make sure SSH (port 22) is allowed to avoid lockout")
     else:
         console.print(
             f"[red]✗[/red] Failed to enable firewall: {result.get('stderr', 'Unknown error')}"
@@ -329,9 +325,7 @@ def fail2ban_status(options):
         "systemctl is-active fail2ban 2>/dev/null", server_config
     )
     service_status = (
-        service_result["stdout"].strip()
-        if service_result["exit_code"] == 0
-        else "inactive"
+        service_result["stdout"].strip() if service_result["exit_code"] == 0 else "inactive"
     )
 
     if service_status != "active":
@@ -401,9 +395,7 @@ def fail2ban_status(options):
                     if ips_match:
                         ips = ips_match.group(1).strip()
                         if ips:
-                            console.print(
-                                f"[yellow]⚠[/yellow] {jail} banned IPs: {ips}"
-                            )
+                            console.print(f"[yellow]⚠[/yellow] {jail} banned IPs: {ips}")
 
         console.print(table)
 
@@ -456,9 +448,7 @@ def fail2ban_unban(ip_address, jail, options):
     if result["exit_code"] == 0:
         console.print("[green]✓[/green] IP address unbanned successfully")
     else:
-        console.print(
-            f"[red]✗[/red] Failed to unban IP: {result.get('stderr', 'Unknown error')}"
-        )
+        console.print(f"[red]✗[/red] Failed to unban IP: {result.get('stderr', 'Unknown error')}")
 
 
 def ssh_audit(options):
@@ -567,16 +557,12 @@ def ssh_audit(options):
 
     # Summary
     if issues_found:
-        console.print(
-            f"\n[yellow]⚠[/yellow] Found {len(issues_found)} settings to review"
-        )
+        console.print(f"\n[yellow]⚠[/yellow] Found {len(issues_found)} settings to review")
         console.print(
             "[dim]Edit /etc/ssh/sshd_config and restart SSH: sudo systemctl restart sshd[/dim]"
         )
     else:
-        console.print(
-            "\n[green]✓[/green] All SSH security settings are configured correctly"
-        )
+        console.print("\n[green]✓[/green] All SSH security settings are configured correctly")
 
 
 def check_security_updates(options):
@@ -658,9 +644,7 @@ def audit_connections(options):
 
     # Established connections
     console.print("[bold]Established Connections:[/bold]")
-    est_result = remote_ops.execute_command(
-        "ss -tunap 2>/dev/null | grep ESTAB", server_config
-    )
+    est_result = remote_ops.execute_command("ss -tunap 2>/dev/null | grep ESTAB", server_config)
 
     if est_result["exit_code"] == 0 and est_result["stdout"].strip():
         lines = est_result["stdout"].strip().split("\n")
@@ -677,9 +661,7 @@ def audit_connections(options):
 
     # Listening ports
     console.print("\n[bold]Listening Ports:[/bold]")
-    listen_result = remote_ops.execute_command(
-        "ss -tuln 2>/dev/null | grep LISTEN", server_config
-    )
+    listen_result = remote_ops.execute_command("ss -tuln 2>/dev/null | grep LISTEN", server_config)
 
     if listen_result["exit_code"] == 0 and listen_result["stdout"].strip():
         lines = listen_result["stdout"].strip().split("\n")
@@ -757,16 +739,16 @@ def config_audit(options):
         options: Global options (json_output, verbose, etc.)
     """
 
-    console.print(
-        "\n[bold cyan]═══ NAVIG Configuration Security Audit ═══[/bold cyan]\n"
-    )
+    console.print("\n[bold cyan]═══ NAVIG Configuration Security Audit ═══[/bold cyan]\n")
 
     config_manager = get_config_manager()
 
     try:
-        from navig.core.security import check_config_security  # noqa: F401
-        from navig.core.security import check_file_permissions  # noqa: F401
-        from navig.core.security import run_security_audit
+        from navig.core.security import (
+            check_config_security,  # noqa: F401
+            check_file_permissions,  # noqa: F401
+            run_security_audit,
+        )
     except ImportError:
         console.print("[red]✗[/red] Security module not available")
         console.print("[dim]Install with: pip install navig[security][/dim]")
@@ -776,9 +758,7 @@ def config_audit(options):
     global_config = config_manager.get_global_config()
 
     # Run audit
-    report = run_security_audit(
-        config=global_config, config_dir=config_manager.base_dir
-    )
+    report = run_security_audit(config=global_config, config_dir=config_manager.base_dir)
 
     if options.get("json_output"):
         console.print(json.dumps(report, indent=2))
@@ -905,9 +885,7 @@ def check_secrets(options):
 
                     secrets_found.append(
                         {
-                            "file": str(
-                                config_file.relative_to(config_manager.base_dir)
-                            ),
+                            "file": str(config_file.relative_to(config_manager.base_dir)),
                             "matches": match_count,
                         }
                     )
@@ -919,9 +897,7 @@ def check_secrets(options):
 
     if not secrets_found:
         console.print("[green]✓[/green] No secrets detected in configuration files")
-        console.print(
-            "[dim]Your configs appear to use environment variables correctly[/dim]"
-        )
+        console.print("[dim]Your configs appear to use environment variables correctly[/dim]")
         return
 
     # Display findings
@@ -935,9 +911,7 @@ def check_secrets(options):
 
     console.print(table)
 
-    console.print(
-        f"\n[red]⚠[/red] Found potential secrets in {len(secrets_found)} files"
-    )
+    console.print(f"\n[red]⚠[/red] Found potential secrets in {len(secrets_found)} files")
     console.print("\n[bold]Recommendations:[/bold]")
     console.print("  1. Use environment variables: api_key: ${OPENROUTER_API_KEY}")
     console.print("  2. Add to .gitignore if not already")

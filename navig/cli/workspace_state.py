@@ -44,12 +44,8 @@ def context_show(
 @context_app.command("set")
 def context_set(
     ctx: typer.Context,
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host to set as project default"
-    ),
-    app_name: str | None = typer.Option(
-        None, "--app", "-a", help="App to set as project default"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host to set as project default"),
+    app_name: str | None = typer.Option(None, "--app", "-a", help="App to set as project default"),
 ):
     """Set project-local context in `.navig/config.yaml`."""
     from navig.commands.context import set_context
@@ -119,9 +115,7 @@ def index_scan(
 def index_search(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="Search query"),
-    root: str | None = typer.Option(
-        None, "--root", "-r", help="Project root directory"
-    ),
+    root: str | None = typer.Option(None, "--root", "-r", help="Project root directory"),
     top_k: int = typer.Option(10, "--top", "-k", help="Max results to return"),
 ):
     """Search the project index using BM25 ranking."""
@@ -152,17 +146,13 @@ def index_search(
             for line in lines:
                 console.print(f"  [dim]{line}[/]")
             if len(result.content.split("\n")) > 5:
-                console.print(
-                    f"  [dim]... ({len(result.content.split(chr(10)))} lines total)[/]"
-                )
+                console.print(f"  [dim]... ({len(result.content.split(chr(10)))} lines total)[/]")
 
 
 @index_app.command("stats")
 def index_stats(
     ctx: typer.Context,
-    root: str | None = typer.Option(
-        None, "--root", "-r", help="Project root directory"
-    ),
+    root: str | None = typer.Option(None, "--root", "-r", help="Project root directory"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Show project index statistics."""
@@ -188,9 +178,7 @@ def index_stats(
 @index_app.command("drop")
 def index_drop(
     ctx: typer.Context,
-    root: str | None = typer.Option(
-        None, "--root", "-r", help="Project root directory"
-    ),
+    root: str | None = typer.Option(None, "--root", "-r", help="Project root directory"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Drop the project index (removes SQLite database)."""
@@ -237,18 +225,12 @@ def history_list(
     ctx: typer.Context,
     limit: int = typer.Option(20, "--limit", "-l", help="Number of entries to show"),
     host: str | None = typer.Option(None, "--host", "-h", help="Filter by host"),
-    type_filter: str | None = typer.Option(
-        None, "--type", "-t", help="Filter by operation type"
-    ),
+    type_filter: str | None = typer.Option(None, "--type", "-t", help="Filter by operation type"),
     status: str | None = typer.Option(
         None, "--status", "-s", help="Filter by status (success/failed)"
     ),
-    search: str | None = typer.Option(
-        None, "--search", "-q", help="Search in command text"
-    ),
-    since: str | None = typer.Option(
-        None, "--since", help="Time filter (e.g., 1h, 24h, 7d)"
-    ),
+    search: str | None = typer.Option(None, "--search", "-q", help="Search in command text"),
+    since: str | None = typer.Option(None, "--since", help="Time filter (e.g., 1h, 24h, 7d)"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -272,9 +254,7 @@ def history_list(
 @history_app.command("show")
 def history_show(
     ctx: typer.Context,
-    op_id: str = typer.Argument(
-        ..., help="Operation ID or index (1=last, 2=second-last)"
-    ),
+    op_id: str = typer.Argument(..., help="Operation ID or index (1=last, 2=second-last)"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Show detailed information about an operation."""
@@ -289,12 +269,8 @@ def history_show(
 def history_replay(
     ctx: typer.Context,
     op_id: str = typer.Argument(..., help="Operation ID or index to replay"),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="Show what would be done"
-    ),
-    modify: str | None = typer.Option(
-        None, "--modify", "-m", help="Modify command before replay"
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be done"),
+    modify: str | None = typer.Option(None, "--modify", "-m", help="Modify command before replay"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Replay a previous operation."""
@@ -319,9 +295,7 @@ def history_undo(
 def history_export(
     ctx: typer.Context,
     output: str = typer.Argument(..., help="Output file path"),
-    format: str = typer.Option(
-        "json", "--format", "-f", help="Export format (json, csv)"
-    ),
+    format: str = typer.Option("json", "--format", "-f", help="Export format (json, csv)"),
     limit: int = typer.Option(1000, "--limit", "-l", help="Max entries to export"),
 ):
     """Export operation history to file."""

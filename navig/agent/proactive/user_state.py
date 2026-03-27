@@ -155,15 +155,11 @@ class UserStateTracker:
 
         if message_type == "command" and command:
             self.stats.total_commands += 1
-            self.stats.command_counts[command] = (
-                self.stats.command_counts.get(command, 0) + 1
-            )
+            self.stats.command_counts[command] = self.stats.command_counts.get(command, 0) + 1
 
             # Track feature usage (group by command category)
             feature = command.split()[0] if command else "unknown"
-            self.stats.features_used[feature] = (
-                self.stats.features_used.get(feature, 0) + 1
-            )
+            self.stats.features_used[feature] = self.stats.features_used.get(feature, 0) + 1
 
         # Track peak hours
         hour = datetime.fromtimestamp(now).hour
@@ -294,18 +290,14 @@ class UserStateTracker:
 
         # Also find features used < 3 times
         rarely_used = [
-            f
-            for f, count in self.stats.features_used.items()
-            if count < 3 and f in known_features
+            f for f, count in self.stats.features_used.items() if count < 3 and f in known_features
         ]
 
         return never_used + rarely_used
 
     def get_frequent_commands(self, top_n: int = 5) -> list[tuple]:
         """Get most frequently used commands."""
-        sorted_cmds = sorted(
-            self.stats.command_counts.items(), key=lambda x: x[1], reverse=True
-        )
+        sorted_cmds = sorted(self.stats.command_counts.items(), key=lambda x: x[1], reverse=True)
         return sorted_cmds[:top_n]
 
     # ── Preference management ──────────────────────────────────

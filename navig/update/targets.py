@@ -70,9 +70,7 @@ class TargetResolver:
         for name in host_names:
             cfg = self._load_host(name)
             if cfg:
-                targets.append(
-                    UpdateTarget(node_id=name, type="ssh", server_config=cfg)
-                )
+                targets.append(UpdateTarget(node_id=name, type="ssh", server_config=cfg))
         return targets
 
     def _group_targets(self, group: str) -> list[UpdateTarget]:
@@ -88,9 +86,7 @@ class TargetResolver:
                 continue
             cfg = self._load_host(name)
             if cfg:
-                targets.append(
-                    UpdateTarget(node_id=name, type="ssh", server_config=cfg)
-                )
+                targets.append(UpdateTarget(node_id=name, type="ssh", server_config=cfg))
         return targets
 
     def _host_targets(self, host: str) -> list[UpdateTarget]:

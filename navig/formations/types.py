@@ -29,9 +29,7 @@ class AgentSpec:
     source_path: Path | None = None
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], source_path: Path | None = None
-    ) -> AgentSpec:
+    def from_dict(cls, data: dict[str, Any], source_path: Path | None = None) -> AgentSpec:
         return cls(
             id=data["id"],
             name=data["name"],
@@ -103,9 +101,7 @@ class Formation:
     loaded_agents: dict[str, AgentSpec] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], source_path: Path | None = None
-    ) -> Formation:
+    def from_dict(cls, data: dict[str, Any], source_path: Path | None = None) -> Formation:
         connectors = [ApiConnector.from_dict(c) for c in data.get("api_connectors", [])]
         return cls(
             id=data["id"],

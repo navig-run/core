@@ -51,9 +51,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     @assistant_app.command("context")
     def assistant_context(
         ctx: typer.Context,
-        clipboard: bool = typer.Option(
-            False, "--clipboard", help="Copy context to clipboard"
-        ),
+        clipboard: bool = typer.Option(False, "--clipboard", help="Copy context to clipboard"),
         file: str | None = typer.Option(None, "--file", help="Save context to file"),
     ):
         """[DEPRECATED: Use 'navig ai show --context']"""
@@ -111,9 +109,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     @hestia_app.command("domains")
     def hestia_list_domains(
         ctx: typer.Context,
-        user: str | None = typer.Option(
-            None, "--user", "-u", help="Filter by username"
-        ),
+        user: str | None = typer.Option(None, "--user", "-u", help="Filter by username"),
         plain: bool = typer.Option(
             False,
             "--plain",

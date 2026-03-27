@@ -207,9 +207,7 @@ def test_convert_chunked_splits_long_text(fmt, prefs):
 
 
 def test_prefs_json_roundtrip():
-    prefs = FormatterPrefs(
-        h1_symbol="🔶", bullet_style="▸", numbered_style=NUMBERED_STYLE_ROMAN
-    )
+    prefs = FormatterPrefs(h1_symbol="🔶", bullet_style="▸", numbered_style=NUMBERED_STYLE_ROMAN)
     restored = FormatterPrefs.from_json(prefs.to_json())
     assert restored.h1_symbol == "🔶"
     assert restored.bullet_style == "▸"

@@ -268,9 +268,7 @@ class TestServerTemplateInitialization:
         assert results["n8n"] == True
 
         # Verify server config was updated
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         assert "templates" in server_config
         assert "n8n" in server_config["templates"]
 
@@ -288,9 +286,7 @@ class TestServerTemplateInitialization:
 
         assert success == True
 
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         assert "gitea" in server_config["templates"]
 
         template_state = server_config["templates"]["gitea"]
@@ -298,9 +294,7 @@ class TestServerTemplateInitialization:
         assert template_state["auto_detected"] == False
         assert template_state["template_version"] == "1.5.0"
 
-    def test_initialize_nonexistent_template(
-        self, server_template_manager, test_server
-    ):
+    def test_initialize_nonexistent_template(self, server_template_manager, test_server):
         """Test initializing template that doesn't have template."""
         success = server_template_manager.initialize_template_manually(
             test_server, "nonexistent", enabled=False
@@ -320,9 +314,7 @@ class TestTemplateConfigMerging:
     def test_get_config_template_only(self, server_template_manager, test_server):
         """Test getting config from template only (no customization)."""
         # Initialize template
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
 
         # Get config
         print(
@@ -342,9 +334,7 @@ class TestTemplateConfigMerging:
         assert config["services"]["automation"] == "n8n.service"
         assert config["env_vars"]["N8N_PORT"] == "5678"
 
-    def test_get_config_with_detection_override(
-        self, server_template_manager, test_server
-    ):
+    def test_get_config_with_detection_override(self, server_template_manager, test_server):
         """Test config merging with detection info override."""
         # Initialize from detection
         detected_templates = {
@@ -359,9 +349,7 @@ class TestTemplateConfigMerging:
                 "ports": [5678],
             }
         }
-        server_template_manager.initialize_templates_from_detection(
-            test_server, detected_templates
-        )
+        server_template_manager.initialize_templates_from_detection(test_server, detected_templates)
 
         # Get merged config
         config = server_template_manager.get_template_config(
@@ -369,19 +357,13 @@ class TestTemplateConfigMerging:
         )
 
         assert config["paths"]["n8n_home"] == "/custom/.n8n"  # Detection override
-        assert (
-            config["paths"]["workflows_dir"] == "/custom/.n8n/workflows"
-        )  # Detection override
+        assert config["paths"]["workflows_dir"] == "/custom/.n8n/workflows"  # Detection override
         assert config["env_vars"]["N8N_PORT"] == "5678"  # From template
 
-    def test_get_config_with_custom_override(
-        self, server_template_manager, test_server
-    ):
+    def test_get_config_with_custom_override(self, server_template_manager, test_server):
         """Test config merging with custom file override."""
         # Initialize template
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
 
         # Set custom value
         server_template_manager.set_template_custom_value(
@@ -430,9 +412,7 @@ class TestTemplateCustomization:
 
     def test_set_custom_value_simple(self, server_template_manager, test_server):
         """Test setting a simple custom value."""
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
 
         success = server_template_manager.set_template_custom_value(
             test_server, "n8n", "env_vars.N8N_PORT", "9999"
@@ -441,9 +421,7 @@ class TestTemplateCustomization:
         assert success == True
 
         # Verify custom config file created (now uses YAML format)
-        custom_file = (
-            server_template_manager._get_server_template_dir(test_server) / "n8n.yaml"
-        )
+        custom_file = server_template_manager._get_server_template_dir(test_server) / "n8n.yaml"
         assert custom_file.exists()
 
         with open(custom_file, "r") as f:
@@ -452,16 +430,12 @@ class TestTemplateCustomization:
         assert custom_config["env_vars"]["N8N_PORT"] == "9999"
 
         # Verify marked as customized
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         assert server_config["templates"]["n8n"]["customized"] == True
 
     def test_set_custom_value_nested(self, server_template_manager, test_server):
         """Test setting nested custom value."""
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
 
         success = server_template_manager.set_template_custom_value(
             test_server, "n8n", "paths.workflows_dir", "/new/workflows"
@@ -474,17 +448,13 @@ class TestTemplateCustomization:
 
     def test_enable_disable_template(self, server_template_manager, test_server):
         """Test enabling and disabling template."""
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=False
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=False)
 
         # Enable
         success = server_template_manager.enable_template(test_server, "n8n")
         assert success == True
 
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         assert server_config["templates"]["n8n"]["enabled"] == True
         assert "last_enabled" in server_config["templates"]["n8n"]
 
@@ -492,21 +462,15 @@ class TestTemplateCustomization:
         success = server_template_manager.disable_template(test_server, "n8n")
         assert success == True
 
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         assert server_config["templates"]["n8n"]["enabled"] == False
         assert "last_disabled" in server_config["templates"]["n8n"]
 
     def test_list_server_templates(self, server_template_manager, test_server):
         """Test listing templates for a server."""
         # Initialize multiple templates
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
-        server_template_manager.initialize_template_manually(
-            test_server, "gitea", enabled=False
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
+        server_template_manager.initialize_template_manually(test_server, "gitea", enabled=False)
 
         # List all
         all_templates = server_template_manager.list_server_templates(
@@ -533,9 +497,7 @@ class TestTemplateSync:
     def test_sync_preserves_custom_values(self, server_template_manager, test_server):
         """Test that sync preserves custom values by default."""
         # Initialize and customize
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
         server_template_manager.set_template_custom_value(
             test_server, "n8n", "env_vars.N8N_PORT", "9999"
         )
@@ -550,23 +512,15 @@ class TestTemplateSync:
         config = server_template_manager.get_template_config(test_server, "n8n")
         assert config["env_vars"]["N8N_PORT"] == "9999"  # Custom preserved
 
-    def test_sync_updates_version(
-        self, server_template_manager, test_server, temp_templates_dir
-    ):
+    def test_sync_updates_version(self, server_template_manager, test_server, temp_templates_dir):
         """Test that sync updates template version."""
         # Initialize template
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
 
         # Manually set old version
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         server_config["templates"]["n8n"]["template_version"] = "0.9.0"
-        server_template_manager.config_manager.save_server_config(
-            test_server, server_config
-        )
+        server_template_manager.config_manager.save_server_config(test_server, server_config)
 
         # Update template version
         n8n_template_file = temp_templates_dir / "n8n" / "template.json"
@@ -580,25 +534,17 @@ class TestTemplateSync:
         server_template_manager.template_manager.discover_templates()
 
         # Sync
-        success = server_template_manager.sync_template_from_template(
-            test_server, "n8n"
-        )
+        success = server_template_manager.sync_template_from_template(test_server, "n8n")
         assert success == True
 
         # Verify version updated
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         assert server_config["templates"]["n8n"]["template_version"] == "2.0.0"
 
-    def test_sync_without_preserve_resets_custom(
-        self, server_template_manager, test_server
-    ):
+    def test_sync_without_preserve_resets_custom(self, server_template_manager, test_server):
         """Test that sync without preserve flag resets to template."""
         # Initialize and customize
-        server_template_manager.initialize_template_manually(
-            test_server, "n8n", enabled=True
-        )
+        server_template_manager.initialize_template_manually(test_server, "n8n", enabled=True)
         server_template_manager.set_template_custom_value(
             test_server, "n8n", "env_vars.N8N_PORT", "9999"
         )
@@ -615,9 +561,7 @@ class TestTemplateSync:
 
         # Custom file still exists (sync doesn't delete it)
         # But timestamp updated to indicate sync occurred
-        server_config = server_template_manager.config_manager.load_server_config(
-            test_server
-        )
+        server_config = server_template_manager.config_manager.load_server_config(test_server)
         assert "last_synced" in server_config["templates"]["n8n"]
 
 
@@ -629,9 +573,7 @@ class TestTemplateSync:
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_get_config_uninitialized_template(
-        self, server_template_manager, test_server
-    ):
+    def test_get_config_uninitialized_template(self, server_template_manager, test_server):
         """Test getting config for uninitialized template."""
         config = server_template_manager.get_template_config(test_server, "n8n")
         assert config is None
@@ -641,9 +583,7 @@ class TestEdgeCases:
         success = server_template_manager.enable_template(test_server, "n8n")
         assert success == False
 
-    def test_set_value_uninitialized_template(
-        self, server_template_manager, test_server
-    ):
+    def test_set_value_uninitialized_template(self, server_template_manager, test_server):
         """Test setting value for uninitialized template."""
         success = server_template_manager.set_template_custom_value(
             test_server, "n8n", "paths.test", "/test"
@@ -652,9 +592,7 @@ class TestEdgeCases:
 
     def test_sync_uninitialized_template(self, server_template_manager, test_server):
         """Test syncing uninitialized template."""
-        success = server_template_manager.sync_template_from_template(
-            test_server, "n8n"
-        )
+        success = server_template_manager.sync_template_from_template(test_server, "n8n")
         assert success == False
 
     def test_initialize_duplicate_template(self, server_template_manager, test_server):

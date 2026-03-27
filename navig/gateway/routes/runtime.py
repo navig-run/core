@@ -43,9 +43,7 @@ if TYPE_CHECKING:
 try:
     from aiohttp import web
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 
 logger = get_debug_logger()
 
@@ -62,12 +60,8 @@ def register(app: web.Application, gateway: NavigGateway) -> None:
     app.router.add_get("/runtime/missions", _list_missions(gateway))
     app.router.add_post("/runtime/missions", _create_mission(gateway))
     app.router.add_get("/runtime/missions/{mission_id}", _get_mission(gateway))
-    app.router.add_post(
-        "/runtime/missions/{mission_id}/advance", _advance_mission(gateway)
-    )
-    app.router.add_post(
-        "/runtime/missions/{mission_id}/complete", _complete_mission(gateway)
-    )
+    app.router.add_post("/runtime/missions/{mission_id}/advance", _advance_mission(gateway))
+    app.router.add_post("/runtime/missions/{mission_id}/complete", _complete_mission(gateway))
 
     # Receipt routes
     app.router.add_get("/runtime/receipts", _list_receipts(gateway))
@@ -102,9 +96,7 @@ def _register_node(gw: NavigGateway):
         try:
             body = await r.json()
         except Exception:
-            return json_error_response(
-                "Invalid JSON body", status=400, code="bad_request"
-            )
+            return json_error_response("Invalid JSON body", status=400, code="bad_request")
 
         actor = r.headers.get("X-Actor", r.remote or "unknown")
         block = await gw.policy_check("node.register", actor, raw_input=str(body))
@@ -124,9 +116,7 @@ def _register_node(gw: NavigGateway):
             return json_error_response(str(exc), status=422, code="validation_error")
         except Exception as exc:
             logger.error("register_node unexpected: %s", exc)
-            return json_error_response(
-                "Internal error", status=500, code="internal_error"
-            )
+            return json_error_response("Internal error", status=500, code="internal_error")
 
     return h
 
@@ -142,9 +132,7 @@ def _get_node(gw: NavigGateway):
         store = get_runtime_store()
         node = store.get_node(node_id)
         if node is None:
-            return json_error_response(
-                f"Node {node_id!r} not found", status=404, code="not_found"
-            )
+            return json_error_response(f"Node {node_id!r} not found", status=404, code="not_found")
         return json_ok(node.to_dict())
 
     return h
@@ -160,9 +148,7 @@ def _get_trust(gw: NavigGateway):
 
         store = get_runtime_store()
         if store.get_node(node_id) is None:
-            return json_error_response(
-                f"Node {node_id!r} not found", status=404, code="not_found"
-            )
+            return json_error_response(f"Node {node_id!r} not found", status=404, code="not_found")
         score = store.compute_trust_score(node_id)
         return json_ok(score.to_dict() if hasattr(score, "to_dict") else vars(score))
 
@@ -187,8 +173,7 @@ def _list_missions(gw: NavigGateway):
 
         store = get_runtime_store()
         missions = [
-            m.to_dict()
-            for m in store.list_missions(node_id=node_id, status=status, limit=limit)
+            m.to_dict() for m in store.list_missions(node_id=node_id, status=status, limit=limit)
         ]
         return json_ok({"missions": missions, "count": len(missions)})
 
@@ -203,9 +188,7 @@ def _create_mission(gw: NavigGateway):
         try:
             body = await r.json()
         except Exception:
-            return json_error_response(
-                "Invalid JSON body", status=400, code="bad_request"
-            )
+            return json_error_response("Invalid JSON body", status=400, code="bad_request")
 
         actor = r.headers.get("X-Actor", r.remote or "unknown")
         block = await gw.policy_check("mission.create", actor, raw_input=str(body))
@@ -225,9 +208,7 @@ def _create_mission(gw: NavigGateway):
             return json_error_response(str(exc), status=422, code="validation_error")
         except Exception as exc:
             logger.error("create_mission unexpected: %s", exc)
-            return json_error_response(
-                "Internal error", status=500, code="internal_error"
-            )
+            return json_error_response("Internal error", status=500, code="internal_error")
 
     return h
 
@@ -265,9 +246,7 @@ def _advance_mission(gw: NavigGateway):
         try:
             body = await r.json()
         except Exception:
-            return json_error_response(
-                "Invalid JSON body", status=400, code="bad_request"
-            )
+            return json_error_response("Invalid JSON body", status=400, code="bad_request")
 
         action = str(body.get("action", "")).strip()
         if not action:
@@ -276,9 +255,7 @@ def _advance_mission(gw: NavigGateway):
             )
 
         actor = r.headers.get("X-Actor", r.remote or "unknown")
-        block = await gw.policy_check(
-            f"mission.advance.{action}", actor, raw_input=str(body)
-        )
+        block = await gw.policy_check(f"mission.advance.{action}", actor, raw_input=str(body))
         if block is not None:
             return block
 
@@ -293,9 +270,7 @@ def _advance_mission(gw: NavigGateway):
             return json_error_response(str(exc), status=422, code="invalid_transition")
         except Exception as exc:
             logger.error("advance_mission error: %s", exc)
-            return json_error_response(
-                "Internal error", status=500, code="internal_error"
-            )
+            return json_error_response("Internal error", status=500, code="internal_error")
 
         return json_ok(updated.to_dict())
 
@@ -316,9 +291,7 @@ def _complete_mission(gw: NavigGateway):
         try:
             body = await r.json()
         except Exception:
-            return json_error_response(
-                "Invalid JSON body", status=400, code="bad_request"
-            )
+            return json_error_response("Invalid JSON body", status=400, code="bad_request")
 
         outcome = str(body.get("outcome", "success")).lower()
         output = body.get("output")
@@ -343,9 +316,7 @@ def _complete_mission(gw: NavigGateway):
             return json_error_response(str(exc), status=422, code="invalid_transition")
         except Exception as exc:
             logger.error("complete_mission error: %s", exc)
-            return json_error_response(
-                "Internal error", status=500, code="internal_error"
-            )
+            return json_error_response("Internal error", status=500, code="internal_error")
 
         return json_ok(receipt.to_dict(), status=201)
 
@@ -371,9 +342,7 @@ def _list_receipts(gw: NavigGateway):
         store = get_runtime_store()
         receipts = [
             rec.to_dict()
-            for rec in store.list_receipts(
-                node_id=node_id, mission_id=mission_id, limit=limit
-            )
+            for rec in store.list_receipts(node_id=node_id, mission_id=mission_id, limit=limit)
         ]
         return json_ok({"receipts": receipts, "count": len(receipts)})
 

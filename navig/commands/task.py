@@ -36,12 +36,8 @@ def task_callback(ctx: typer.Context) -> None:
 @task_app.command()
 def task_run(
     ctx: typer.Context,
-    instruction: str = typer.Argument(
-        ..., help="Natural-language instruction to route"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Preview routing without executing"
-    ),
+    instruction: str = typer.Argument(..., help="Natural-language instruction to route"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview routing without executing"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ) -> None:
     """Route a natural-language instruction through available task providers.

@@ -203,9 +203,7 @@ def scan_cmd(
             raise typer.Exit(1) from exc
 
     if not findings:
-        _console.print(
-            "[green]✓ No issues found above the confidence threshold.[/green]"
-        )
+        _console.print("[green]✓ No issues found above the confidence threshold.[/green]")
         raise typer.Exit(0)
 
     # ------------------------------------------------------------------
@@ -249,9 +247,7 @@ def scan_cmd(
             f"\n[bold green]✅ PR submitted:[/bold green] [link={pr_url}]{pr_url}[/link]"
         )
     else:
-        _console.print(
-            "[dim]No PR submitted (Telegram flow pending or cancelled).[/dim]"
-        )
+        _console.print("[dim]No PR submitted (Telegram flow pending or cancelled).[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -269,9 +265,7 @@ def status_cmd() -> None:
     table.add_column("Key", style="cyan")
     table.add_column("Value")
 
-    table.add_row(
-        "Enabled", "[green]yes[/green]" if cfg_typed.enabled else "[red]no[/red]"
-    )
+    table.add_row("Enabled", "[green]yes[/green]" if cfg_typed.enabled else "[red]no[/red]")
     table.add_row("Min confidence", str(cfg_typed.min_confidence))
     table.add_row("Token env var", cfg_typed.github_token_env)
     table.add_row("Target repo", cfg_typed.upstream_repo)
@@ -281,9 +275,7 @@ def status_cmd() -> None:
 
     table.add_row("Local clone", str(_CORE_REPO_DIR))
     clone_exists = (_CORE_REPO_DIR / ".git").exists()
-    table.add_row(
-        "Clone present", "[green]yes[/green]" if clone_exists else "[dim]no[/dim]"
-    )
+    table.add_row("Clone present", "[green]yes[/green]" if clone_exists else "[dim]no[/dim]")
 
     _console.print(table)
 

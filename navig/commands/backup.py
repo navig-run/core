@@ -57,9 +57,7 @@ def _verify_disk_space(
         (success: bool, message: str)
     """
     try:
-        stat = shutil.disk_usage(
-            backup_dir.parent if not backup_dir.exists() else backup_dir
-        )
+        stat = shutil.disk_usage(backup_dir.parent if not backup_dir.exists() else backup_dir)
         free_mb = stat.free / (1024 * 1024)
         required_mb = estimated_size_mb * safety_margin
 
@@ -187,9 +185,7 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
 
         if "missing" in result:
             ch.warning(f"⊘ {remote_file} (not found)")
-            results.append(
-                {"file": remote_file, "status": "skipped", "reason": "not found"}
-            )
+            results.append({"file": remote_file, "status": "skipped", "reason": "not found"})
             continue
 
         # Download file
@@ -208,9 +204,7 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
             success_count += 1
         except subprocess.CalledProcessError:
             ch.warning(f"✗ {remote_file} (access denied)")
-            results.append(
-                {"file": remote_file, "status": "failed", "reason": "access denied"}
-            )
+            results.append({"file": remote_file, "status": "failed", "reason": "access denied"})
 
     # Save metadata
     metadata = {
@@ -305,16 +299,13 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
         ]
 
         try:
-            result = subprocess.run(
-                list_cmd, capture_output=True, text=True, check=True
-            )
+            result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
             databases = [
                 db.strip()
                 for db in result.stdout.split("\n")
                 if db.strip()
                 and db.strip() != "Database"
-                and db.strip()
-                not in ["information_schema", "performance_schema", "mysql", "sys"]
+                and db.strip() not in ["information_schema", "performance_schema", "mysql", "sys"]
             ]
         except FileNotFoundError:
             ch.error("mysql client not found. Please install MySQL client tools.")
@@ -350,9 +341,7 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
 
             try:
                 with open(dump_file, "w", encoding="utf-8") as f:
-                    subprocess.run(
-                        dump_cmd, stdout=f, stderr=subprocess.PIPE, check=True
-                    )
+                    subprocess.run(dump_cmd, stdout=f, stderr=subprocess.PIPE, check=True)
 
                 # Compress if requested
                 if compress in ["gzip", "zstd"]:
@@ -372,14 +361,10 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
                         subprocess.run(compress_cmd, check=True, capture_output=True)
                         # Verify compressed file exists before deleting original
                         if final_file.exists() and final_file.stat().st_size > 0:
-                            dump_file.unlink(
-                                missing_ok=True
-                            )  # Remove uncompressed file
+                            dump_file.unlink(missing_ok=True)  # Remove uncompressed file
                             file_size = final_file.stat().st_size / (1024 * 1024)
                         else:
-                            ch.warning(
-                                "   Compression verification failed, keeping uncompressed"
-                            )
+                            ch.warning("   Compression verification failed, keeping uncompressed")
                             final_file = dump_file
                             file_size = dump_file.stat().st_size / (1024 * 1024)
                     except FileNotFoundError:
@@ -413,9 +398,7 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
                 )
             except subprocess.CalledProcessError as e:
                 ch.error(f"   ✗ {db_name} (dump failed: {e})")
-                results.append(
-                    {"database": db_name, "status": "failed", "error": str(e)}
-                )
+                results.append({"database": db_name, "status": "failed", "error": str(e)})
                 # Continue with other databases even if one fails
     finally:
         # Always cleanup temp config file
@@ -464,9 +447,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
     remote_ops = RemoteOperations(server_config)
 
     # Check if HestiaCP is installed
-    check_cmd = (
-        'command -v v-list-users >/dev/null 2>&1 && echo "installed" || echo "missing"'
-    )
+    check_cmd = 'command -v v-list-users >/dev/null 2>&1 && echo "installed" || echo "missing"'
     result = remote_ops.execute_command(check_cmd)
 
     if "missing" in result:
@@ -527,9 +508,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
 
         if "missing" in result:
             ch.warning(f"   ⊘ {remote_path} (not found)")
-            results.append(
-                {"directory": remote_path, "desc": desc, "status": "skipped"}
-            )
+            results.append({"directory": remote_path, "desc": desc, "status": "skipped"})
             continue
 
         # Create tar archive on remote server
@@ -562,9 +541,9 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
             local_tar.unlink()
 
             # Get size
-            size = sum(
-                f.stat().st_size for f in local_dir.rglob("*") if f.is_file()
-            ) / (1024 * 1024)
+            size = sum(f.stat().st_size for f in local_dir.rglob("*") if f.is_file()) / (
+                1024 * 1024
+            )
             file_count = len(list(local_dir.rglob("*")))
 
             total_size += size
@@ -678,9 +657,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
                             file_path,
                             local_file,
                         )
-                        results["nginx"].append(
-                            {"file": file_path, "status": "success"}
-                        )
+                        results["nginx"].append({"file": file_path, "status": "success"})
                     except (OSError, subprocess.CalledProcessError):
                         pass  # Cleanup - operation may fail
         else:
@@ -736,9 +713,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
                             file_path,
                             local_file,
                         )
-                        results["apache"].append(
-                            {"file": file_path, "status": "success"}
-                        )
+                        results["apache"].append({"file": file_path, "status": "success"})
                     except (OSError, subprocess.CalledProcessError):
                         pass  # Cleanup - operation may fail
         else:
@@ -851,9 +826,7 @@ def list_backups_cmd(options: dict[str, Any]):
                     backup_list.append(metadata)
         ch.raw_print(json.dumps({"backups": backup_list}))
     else:
-        table = Table(
-            title="📦 Available Backups", show_header=True, header_style="bold cyan"
-        )
+        table = Table(title="📦 Available Backups", show_header=True, header_style="bold cyan")
         table.add_column("Name", style="cyan")
         table.add_column("Type", style="yellow")
         table.add_column("Date", style="green")
@@ -869,30 +842,24 @@ def list_backups_cmd(options: dict[str, Any]):
                     timestamp = metadata.get("timestamp", "unknown")
 
                     # Calculate total size
-                    total_size = sum(
-                        f.stat().st_size for f in backup.rglob("*") if f.is_file()
-                    ) / (1024 * 1024)
-
-                    table.add_row(
-                        backup.name, backup_type, timestamp, f"{total_size:.2f} MB"
+                    total_size = sum(f.stat().st_size for f in backup.rglob("*") if f.is_file()) / (
+                        1024 * 1024
                     )
+
+                    table.add_row(backup.name, backup_type, timestamp, f"{total_size:.2f} MB")
             else:
                 # No metadata, just show basic info
-                size = sum(
-                    f.stat().st_size for f in backup.rglob("*") if f.is_file()
-                ) / (1024 * 1024)
-                mtime = datetime.fromtimestamp(backup.stat().st_mtime).strftime(
-                    "%Y-%m-%d %H:%M:%S"
+                size = sum(f.stat().st_size for f in backup.rglob("*") if f.is_file()) / (
+                    1024 * 1024
                 )
+                mtime = datetime.fromtimestamp(backup.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
                 table.add_row(backup.name, "unknown", mtime, f"{size:.2f} MB")
 
         ch.print(table)
         ch.info(f"\nBackups directory: {backups_dir}")
 
 
-def restore_backup_cmd(
-    backup_name: str, component: str | None, options: dict[str, Any]
-):
+def restore_backup_cmd(backup_name: str, component: str | None, options: dict[str, Any]):
     """Restore from backup (with confirmation)."""
     from navig.config import get_config_manager
 

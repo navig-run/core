@@ -79,9 +79,7 @@ class BootScreen(Screen):  # type: ignore[type-arg]
 
             # Phase 3: identity block
             env = detect_environment()
-            log.write(
-                "[dim #64748b]NAVIG mesh detected:[/dim #64748b]  [#22d3ee]0 nodes[/#22d3ee]"
-            )
+            log.write("[dim #64748b]NAVIG mesh detected:[/dim #64748b]  [#22d3ee]0 nodes[/#22d3ee]")
             log.write(
                 "[dim #64748b]Operator identity:[/dim #64748b]   [yellow]not registered[/yellow]"
             )

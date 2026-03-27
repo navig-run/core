@@ -65,9 +65,7 @@ class TestMemoryBatching(unittest.TestCase):
             # However _index_file returns dict with 'chunks': 1
             # _chunk_text is generator.
 
-            self.assertEqual(
-                self.provider.embed_calls, 3, "Should batch calls (ceil(12/5)=3)"
-            )
+            self.assertEqual(self.provider.embed_calls, 3, "Should batch calls (ceil(12/5)=3)")
 
     def test_chunking_separation(self):
         p = MagicMock()
