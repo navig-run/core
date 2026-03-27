@@ -151,6 +151,7 @@ class ConfigManager:
         self.active_host_file = self.cache_dir / "active_host.txt"
         self.active_app_file = self.cache_dir / "active_app.txt"
         self.active_server_file = self.cache_dir / "active_server.txt"
+        self.active_space_file = self.cache_dir / "active_space.txt"
         self.tunnels_file = self.cache_dir / "tunnels.json"
         self.db_file = self.base_dir / "navig.db"
 
@@ -1212,6 +1213,22 @@ Context provided with each query:
                 pass  # file already gone; expected
 
         return (None, "none") if return_source else None
+
+    # =========================================================================
+    # Space Management
+    # =========================================================================
+
+    def get_active_space(self) -> str:
+        """Return active space name (NAVIG_SPACE env → cache file → 'default')."""
+        from navig.commands.space import get_active_space as _get
+
+        return _get()
+
+    def set_active_space(self, name: str) -> None:
+        """Persist *name* as the active space."""
+        from navig.commands.space import _set_active_space
+
+        _set_active_space(name)
 
     def set_active_host(self, host_name: str, local: bool = None):
         """
