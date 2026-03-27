@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# NAVIG Installer — Linux / macOS / WSL
+# NAVIG Installer - Linux / macOS / WSL
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
 #
 # Usage:
@@ -385,7 +385,7 @@ check_autossh() {
     if command -v autossh &>/dev/null; then
         echo -e "${SUCCESS}✓${NC} autossh installed"
     else
-        echo -e "${WARN}!${NC} autossh install failed — Bridge tunnel auto-reconnect won't work"
+        echo -e "${WARN}!${NC} autossh install failed - Bridge tunnel auto-reconnect won't work"
     fi
 }
 
@@ -416,7 +416,7 @@ check_install_pipx() {
     fi
     echo -e "${WARN}→${NC} Installing pipx (isolated installs)..."
     if ! $PIP_CMD install --user pipx --quiet 2>/dev/null; then
-        echo -e "${WARN}!${NC} pipx install failed — using pip --user fallback"
+        echo -e "${WARN}!${NC} pipx install failed - using pip --user fallback"
         return 0
     fi
     # Expose the freshly installed pipx in the current session
@@ -428,7 +428,7 @@ check_install_pipx() {
         pipx ensurepath --quiet 2>/dev/null || true
         echo -e "${SUCCESS}✓${NC} pipx installed and on PATH"
     else
-        echo -e "${WARN}!${NC} pipx installed but not on PATH yet — restart shell or source ~/.bashrc"
+        echo -e "${WARN}!${NC} pipx installed but not on PATH yet - restart shell or source ~/.bashrc"
     fi
 }
 
@@ -490,7 +490,7 @@ install_navig_git() {
     fi
 
     if [[ "${PRODUCTION:-0}" == "1" ]]; then
-        echo -e "${WARN}→${NC} Installing NAVIG from source (production — no editable install)..."
+        echo -e "${WARN}→${NC} Installing NAVIG from source (production - no editable install)..."
         # Non-editable: no __editable__ finder overhead (~20ms startup savings)
         local pip_args=("install")
         if [[ -n "$EXTRAS" ]]; then
@@ -578,12 +578,12 @@ verify_install() {
 uninstall_navig() {
     local preserve_data="${1:-0}"
     echo -e "${WARN}→${NC} Uninstalling NAVIG..."
-    
+
     # Non-blocking failure log for uninstall
     set +e
     local log_file="${HOME}/.navig/logs/uninstall-fail.log"
     mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
-    
+
     _try() {
         if ! "$@" >> "$log_file" 2>&1; then
             echo -e "  ${WARN}!${NC} Failed: $* (see $log_file)"
@@ -595,7 +595,7 @@ uninstall_navig() {
         _try navig service stop
         _try navig service uninstall
     fi
-    
+
     # Step B: pip uninstall
     local pip_cmd=""
     command -v pip3 &>/dev/null && pip3 show navig &>/dev/null && pip_cmd="pip3"
@@ -603,19 +603,19 @@ uninstall_navig() {
     if [[ -n "$pip_cmd" ]]; then
         _try "$pip_cmd" uninstall navig -y
     fi
-    
+
     # Step C: Remove binary
     local user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
     local bin_dir="${user_base}/bin"
     if [[ -f "${bin_dir}/navig" || -L "${bin_dir}/navig" ]]; then
         _try rm -f "${bin_dir}/navig"
     fi
-    
+
     # Step D: Remove git clone
     if [[ "$INSTALL_METHOD" == "git" && -d "$GIT_DIR" ]]; then
         _try rm -rf "$GIT_DIR"
     fi
-    
+
     # Step E: Clean shell profiles
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         if [[ -f "$rc" ]] && grep -q "# NAVIG CLI" "$rc" 2>/dev/null; then
@@ -623,7 +623,7 @@ uninstall_navig() {
             # It's crude but cleans it up
         fi
     done
-    
+
     # Step F: Remove ~/.navig config dir
     local navig_dir="${HOME}/.navig"
     if [[ -d "$navig_dir" ]]; then
@@ -634,7 +634,7 @@ uninstall_navig() {
             _try rm -rf "$navig_dir"
         fi
     fi
-    
+
     # Step G: Remove cron jobs
     local existing_cron="$(crontab -l 2>/dev/null || true)"
     if [[ -n "$existing_cron" ]] && echo "$existing_cron" | grep -qi navig; then
@@ -652,7 +652,7 @@ main() {
         return 0
     fi
 
-    # Root guard — running as root is risky; require explicit opt-in
+    # Root guard - running as root is risky; require explicit opt-in
     if [[ "$(id -u)" -eq 0 ]] && [[ "${NAVIG_ALLOW_ROOT:-0}" != "1" ]]; then
         echo -e "${ERROR}Error: do not run the installer as root.${NC}"
         echo -e "  NAVIG installs per-user, not system-wide."
@@ -663,7 +663,7 @@ main() {
     print_banner
 
     if [[ "$DRY_RUN" == "1" ]]; then
-        echo -e "${INFO}Dry run mode — no changes will be made${NC}"
+        echo -e "${INFO}Dry run mode - no changes will be made${NC}"
         echo -e "  OS detection:     $(uname -s) / $(uname -m)"
         echo -e "  Install method:   ${INSTALL_METHOD}"
         echo -e "  Version:          ${VERSION:-latest}"
@@ -676,7 +676,7 @@ main() {
 
     # Step 0: Detect OS
     detect_os
-    
+
     # Handle state marker and prompt
     local marker="${HOME}/.navig/.install_state"
     if [[ -f "$marker" && "$ACTION" == "install" && "$NO_CONFIRM" == "0" ]]; then

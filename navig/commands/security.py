@@ -110,11 +110,18 @@ def firewall_add_rule(port, protocol, allow_from, options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
+    if not re.match(r"^\d+$", str(port)) or not re.match(r"^(tcp|udp)$", str(protocol)):
+        console.print("[red]✗[/red] Invalid port or protocol")
+        return
+
     # Build UFW command
     if allow_from == "any":
         command = f"sudo ufw allow {port}/{protocol}"
         rule_desc = f"{port}/{protocol} from any"
     else:
+        if not re.match(r"^[\da-fA-F\.\/:_-]+$", str(allow_from)):
+            console.print("[red]✗[/red] Invalid allow_from address")
+            return
         command = (
             f"sudo ufw allow from {allow_from} to any port {port} proto {protocol}"
         )
@@ -157,6 +164,10 @@ def firewall_remove_rule(port, protocol, options):
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
+
+    if not re.match(r"^\d+$", str(port)) or not re.match(r"^(tcp|udp)$", str(protocol)):
+        console.print("[red]✗[/red] Invalid port or protocol")
+        return
 
     command = f"sudo ufw delete allow {port}/{protocol}"
     rule_desc = f"{port}/{protocol}"
@@ -385,7 +396,14 @@ def fail2ban_unban(ip_address, jail, options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
+    if not re.match(r"^[\da-fA-F\.\/:-]+$", str(ip_address)):
+        console.print("[red]✗[/red] Invalid IP address")
+        return
+
     if jail:
+        if not re.match(r"^[\w-]+$", str(jail)):
+            console.print("[red]✗[/red] Invalid jail name")
+            return
         command = f"sudo fail2ban-client set {jail} unbanip {ip_address}"
         target = f"{ip_address} from {jail}"
     else:
@@ -712,11 +730,9 @@ def config_audit(options):
     config_manager = get_config_manager()
 
     try:
-        from navig.core.security import (
-            check_config_security,  # noqa: F401
-            check_file_permissions,  # noqa: F401
-            run_security_audit,
-        )
+        from navig.core.security import check_config_security  # noqa: F401
+        from navig.core.security import check_file_permissions  # noqa: F401
+        from navig.core.security import run_security_audit
     except ImportError:
         console.print("[red]✗[/red] Security module not available")
         console.print("[dim]Install with: pip install navig[security][/dim]")
@@ -801,7 +817,10 @@ def check_secrets(options):
     config_manager = get_config_manager()
 
     try:
-        from navig.core.security import DEFAULT_REDACT_PATTERNS, redact_sensitive_text  # noqa: F401
+        from navig.core.security import (  # noqa: F401
+            DEFAULT_REDACT_PATTERNS,
+            redact_sensitive_text,
+        )
     except ImportError:
         console.print("[red]✗[/red] Security module not available")
         return

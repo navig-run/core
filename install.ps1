@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# NAVIG Installer — Windows (PowerShell 5.1+)
+# NAVIG Installer - Windows (PowerShell 5.1+)
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
 #
 # Usage:
@@ -55,7 +55,7 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
     exit 1
 }
 
-# ── Encoding — set before any Write-Host so Unicode renders correctly ──────
+# ── Encoding - set before any Write-Host so Unicode renders correctly ──────
 $OutputEncoding           = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
@@ -313,7 +313,7 @@ function Show-InstalledActionMenu {
         $secondsRemaining = [int][Math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
         if ($secondsRemaining -le 0) {
             Write-Host ""
-            Write-NavInfo "No selection received within 30 seconds — canceling"
+            Write-NavInfo "No selection received within 30 seconds - canceling"
             return "cancel"
         }
 
@@ -321,7 +321,7 @@ function Show-InstalledActionMenu {
         $keyInfo = Read-KeyWithTimeout -TimeoutSeconds $secondsRemaining
         if ($null -eq $keyInfo) {
             Write-Host ""
-            Write-NavInfo "No selection received within 30 seconds — canceling"
+            Write-NavInfo "No selection received within 30 seconds - canceling"
             return "cancel"
         }
 
@@ -335,7 +335,7 @@ function Show-InstalledActionMenu {
             default {
                 $invalidSelections++
                 if ($invalidSelections -gt 1) {
-                    Write-NavInfo "Invalid input entered twice — canceling"
+                    Write-NavInfo "Invalid input entered twice - canceling"
                     return "cancel"
                 }
                 Write-NavErr "Invalid selection. Enter 1, 2, or 3."
@@ -404,7 +404,7 @@ function Invoke-WithSpinner {
         [string[]] $ArgList
     )
 
-    $frames = @('|','/','-','\')   # ASCII spinner — works everywhere
+    $frames = @('|','/','-','\')   # ASCII spinner - works everywhere
     $pad    = "                                        "
     $tmpOut = [System.IO.Path]::GetTempFileName()
     $tmpErr = [System.IO.Path]::GetTempFileName()
@@ -616,7 +616,7 @@ function Find-Pip {
 
 # ── Python installation ────────────────────────────────────────────────────
 function Install-PythonWindows {
-    Write-NavStep "Python not found — installing via winget..."
+    Write-NavStep "Python not found - installing via winget..."
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         try {
             winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements
@@ -624,7 +624,7 @@ function Install-PythonWindows {
             Write-NavOk "Python installed via winget"
             return $true
         } catch {
-            Write-NavStep "winget failed — falling back to direct download..."
+            Write-NavStep "winget failed - falling back to direct download..."
         }
     }
     Write-NavStep "Downloading Python 3.12 installer..."
@@ -680,7 +680,7 @@ function Test-SSH {
         Write-NavOk "SSH client available"
         return $true
     }
-    Write-NavInfo "SSH client not found — enable OpenSSH in Settings > Optional Features"
+    Write-NavInfo "SSH client not found - enable OpenSSH in Settings > Optional Features"
     return $true   # non-blocking: navig uses paramiko fallback
 }
 
@@ -688,7 +688,7 @@ function Test-SSH {
 function Find-Pipx {
     param([string]$PipCmd)
     if (Get-Command pipx -ErrorAction SilentlyContinue) { return "pipx" }
-    
+
     $pipParts = $PipCmd -split ' '
     $exe = $pipParts[0]
     try {
@@ -776,7 +776,7 @@ function Install-NavigGit {
     } else {
         $dirty = git -C $repoDir status --porcelain 2>$null
         if (-not $dirty) { git -C $repoDir pull --rebase 2>$null }
-        else             { Write-NavInfo "Repo has local changes — skipping git pull" }
+        else             { Write-NavInfo "Repo has local changes - skipping git pull" }
     }
 
     $pipParts = $PipCmd -split ' '
@@ -813,9 +813,9 @@ function Initialize-NavigConfig {
 function Write-ExistingNavigMessage {
     $ver = Get-NavigVersion
     if ($ver) {
-        Write-NavInfo "Existing NAVIG detected: $ver — upgrading"
+        Write-NavInfo "Existing NAVIG detected: $ver - upgrading"
     } else {
-        Write-NavInfo "Existing NAVIG detected — upgrading"
+        Write-NavInfo "Existing NAVIG detected - upgrading"
     }
 }
 
@@ -852,7 +852,7 @@ function Test-NavigInstall {
         }
     }
 
-    Write-NavInfo "navig installed — restart your terminal to pick up PATH changes"
+    Write-NavInfo "navig installed - restart your terminal to pick up PATH changes"
     return $false
 }
 
@@ -882,7 +882,7 @@ function Add-UninstallFailure {
         [string]$Message
     )
 
-    $entry = "$Step — $Message"
+    $entry = "$Step - $Message"
     $script:UninstallFailures += $entry
     Add-Content -Path $UNINSTALL_LOG -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $entry)
     Write-NavErr $entry
@@ -958,7 +958,7 @@ function Remove-NavigFiles {
             Write-NavOk "Removed pip package: navig (if present)"
         } catch {}
     } else {
-        Write-NavInfo "pip not available — skipping pip uninstall"
+        Write-NavInfo "pip not available - skipping pip uninstall"
     }
 
     try {
@@ -1242,7 +1242,7 @@ function Main {
     }
 
     if ($DryRun) {
-        Write-NavInfo "Dry run — no changes will be made"
+        Write-NavInfo "Dry run - no changes will be made"
         Write-Host ""
         Write-Host "  OS:              Windows $([System.Environment]::OSVersion.Version)" -ForegroundColor DarkGray
         Write-Host "  Installed:       $(if ($installState.IsInstalled) { 'yes' } else { 'no' })" -ForegroundColor DarkGray
@@ -1254,7 +1254,7 @@ function Main {
         Write-Host "  Git dir:         $GitDir"                                             -ForegroundColor DarkGray
         Write-Host "  Config dir:      $env:USERPROFILE\.navig\"                           -ForegroundColor DarkGray
         Write-Host ""
-        Write-NavInfo "Dry run complete — nothing was changed"
+        Write-NavInfo "Dry run complete - nothing was changed"
         return
     }
 
@@ -1266,12 +1266,12 @@ function Main {
     $resolvedAction = Resolve-NavigExecutionAction -IsInstalled $installState.IsInstalled -RequestedAction $requestedAction
     switch ($resolvedAction) {
         "cancel" {
-            Write-NavInfo "Canceled — no changes were made"
+            Write-NavInfo "Canceled - no changes were made"
             return
         }
         "uninstall" {
             if (-not $installState.IsInstalled) {
-                Write-NavInfo "NAVIG is not currently installed — removing leftover artifacts if any"
+                Write-NavInfo "NAVIG is not currently installed - removing leftover artifacts if any"
             }
             $uninstallResult = Invoke-NavigUninstall
             if (-not $uninstallResult.Success) { exit 1 }
@@ -1279,11 +1279,11 @@ function Main {
         }
         "reinstall" {
             if ($installState.IsInstalled) {
-                Write-NavInfo "Existing NAVIG detected — performing reinstall / repair"
+                Write-NavInfo "Existing NAVIG detected - performing reinstall / repair"
                 Invoke-NavigUninstall -PreserveUserData -ForReinstall | Out-Null
                 $installState = Get-NavigInstallState
             } else {
-                Write-NavInfo "No existing NAVIG installation found — continuing with install"
+                Write-NavInfo "No existing NAVIG installation found - continuing with install"
             }
         }
     }
@@ -1314,7 +1314,7 @@ function Main {
     Write-NavStep "Checking pip..."
     $pipCmd = Find-Pip -PythonCmd $pythonCmd
     if (-not $pipCmd) {
-        Write-NavStep "pip not found — bootstrapping via ensurepip..."
+        Write-NavStep "pip not found - bootstrapping via ensurepip..."
         $parts = $pythonCmd -split ' '
         & $parts[0] -m ensurepip --upgrade 2>$null
         $pipCmd = Find-Pip -PythonCmd $pythonCmd

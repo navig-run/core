@@ -353,7 +353,8 @@ def token_set(
                 ch.success("GitHub token updated in navig vault.")
             else:
                 vault.add(
-                    name="github_token",
+                    provider="github_token",
+                    credential_type="token",
                     data={"value": value},
                     metadata={"description": "GitHub PAT used by farmore"},
                 )

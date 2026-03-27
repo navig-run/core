@@ -154,7 +154,7 @@ def tools_schema(
 ) -> None:
     """Dump the OpenAPI schema for all registered tools."""
     registry = _get_registry()
-    schema = registry.to_openapi_schema(available_only=available_only)
+    schema = registry.to_openapi_schema()
     text = json.dumps(schema, indent=2)
 
     if output:
