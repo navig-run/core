@@ -220,18 +220,14 @@ class SetupWizard:
                 api_key = input(f"Enter your {provider} API key: ").strip()
 
             if api_key:
-                # Store as env var reference
+                # Store as env var reference in config
                 self.config["ai"][f"{provider}_api_key"] = f"${{{env_var}}}"
 
-                # Offer to save to .env
+                # Offer to save securely (vault-first, .env fallback)
                 print()
-                save_env = self._confirm("Save API key to ~/.navig/.env?", default=True)
+                save_env = self._confirm("Save API key securely?", default=True)
                 if save_env:
-                    env_file = self.navig_dir / ".env"
-                    env_file.parent.mkdir(parents=True, exist_ok=True)
-                    with open(env_file, "a", encoding="utf-8") as f:
-                        f.write(f"\n{env_var}={api_key}\n")
-                    print(f"  ✅ Saved to {env_file}")
+                    self._save_secret(env_var, api_key)
 
                 # Test connection
                 print()
@@ -271,6 +267,39 @@ class SetupWizard:
             return True
         except Exception:
             return False
+
+    def _save_secret(self, env_var: str, value: str) -> None:
+        """Save a secret to vault (encrypted, primary) with .env as fallback.
+
+        Follows the dual-write pattern used in navig/onboarding/steps.py so
+        both vault-aware and env-only consumers can resolve the value.
+        """
+        # Try vault-first (encrypted) storage.
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.resolver import ENV_VAULT_LABELS
+
+            vault_labels = ENV_VAULT_LABELS.get(env_var, [])
+            vault_path = (
+                vault_labels[0] if vault_labels else env_var.lower().replace("_", "/")
+            )
+            vlt = get_vault_v2()
+            vlt.put(vault_path, value.encode())
+            print(f"  ✅ Saved to vault (encrypted)")
+            return
+        except Exception:
+            pass  # Fall through to .env fallback
+
+        # Fallback: plain .env file with owner-only permissions.
+        env_file = self.navig_dir / ".env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(env_file, "a", encoding="utf-8") as f:
+            f.write(f"\n{env_var}={value}\n")
+        try:
+            env_file.chmod(0o600)
+        except OSError:
+            pass  # chmod may fail on Windows or when mocked in tests
+        print(f"  ✅ Saved to {env_file}")
 
     def _setup_ssh(self):
         """Configure SSH settings."""
@@ -391,12 +420,8 @@ class SetupWizard:
                 "allowed_users": user_ids,
             }
 
-            # Save token to .env
-            env_file = self.navig_dir / ".env"
-            env_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(env_file, "a", encoding="utf-8") as f:
-                f.write(f"\nTELEGRAM_BOT_TOKEN={bot_token}\n")
-            print(f"  ✅ Token saved to {env_file}")
+            # Save token securely (vault-first, .env fallback)
+            self._save_secret("TELEGRAM_BOT_TOKEN", bot_token)
         else:
             print("  ❌ Invalid bot token.")
 

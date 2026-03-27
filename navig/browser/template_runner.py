@@ -168,7 +168,7 @@ class TemplateRunner:
                     "ok": True,
                     "action": action,
                     "selector": candidate,
-                    "input": input_val,
+                    # input_val is intentionally omitted to avoid logging secrets.
                 }
             last_err = err
             logger.debug("[Templates] ✗ %s:%s → %s", kind, val, err)

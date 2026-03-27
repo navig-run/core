@@ -115,6 +115,19 @@ def repo_patch(payload: dict):
     return artifacts
 
 
+# Allowlist of safe test commands accepted via the /repo/test endpoint.
+# Free-form shell execution is never permitted — this prevents command-line
+# injection through user-controlled ``command`` values (CWE-78).
+_ALLOWED_TEST_COMMANDS: dict[str, list[str]] = {
+    "pytest -q": ["pytest", "-q"],
+    "pytest": ["pytest", "-q", "--tb=short"],
+    "pytest -v": ["pytest", "-v", "--tb=short"],
+    "python -m pytest": ["python", "-m", "pytest", "-q"],
+    "python -m pytest -q": ["python", "-m", "pytest", "-q"],
+    "python -m compileall -q .": ["python", "-m", "compileall", "-q", "."],
+}
+
+
 @app.post("/repo/test")
 def repo_test(payload: dict):
     repo_path = payload.get("repo_path")
@@ -122,8 +135,19 @@ def repo_test(payload: dict):
     if not repo_path:
         raise HTTPException(status_code=400, detail="repo_path required")
 
+    # Security: reject any command not in the explicit allowlist.
+    argv = _ALLOWED_TEST_COMMANDS.get(command)
+    if argv is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"command '{command}' is not allowed. "
+                f"Permitted values: {sorted(_ALLOWED_TEST_COMMANDS)}"
+            ),
+        )
+
     sandbox_repo = _copy_repo(repo_path)
-    run = _run(["bash", "-lc", command], cwd=str(sandbox_repo), timeout=240)
+    run = _run(argv, cwd=str(sandbox_repo), timeout=240)
     return {
         "sandbox_path": str(sandbox_repo),
         "command": command,

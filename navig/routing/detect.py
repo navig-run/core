@@ -12,9 +12,11 @@ import re
 
 # ── Patterns (ported from llm_router.py + model_router.py) ─────────
 
+# <\w+>[^<]*</\w+> replaces the former <\w+>.*</\w+> to eliminate polynomial
+# backtracking on adversarial HTML-like input (CWE-400 / ReDoS).
 _CODE_PATTERNS = re.compile(
     r"```|def\s+\w+|class\s+\w+|function\s+\w+|const\s+\w+\s*=|"
-    r"import\s+\w+|from\s+\w+\s+import|#include|<\w+>.*</\w+>|"
+    r"import\s+\w+|from\s+\w+\s+import|#include|<\w+>[^<]*</\w+>|"
     r"\bsyntax error\b|\bcompile\b|\bruntime\b|\bsegfault\b|"
     r"\.py\b|\.ts\b|\.js\b|\.rs\b|\.go\b|\.java\b|\.cpp\b|"
     r"\bfix\s+(the\s+)?(bug|error|issue|code|function|method)\b|"
@@ -23,17 +25,57 @@ _CODE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_GREETING_PATTERNS = re.compile(
-    r"^(hey|hi|hello|hola|sup|yo|howdy|greetings?|good\s+(morning|afternoon|evening))"
-    r"\s*[!.,?]*\s*$",
-    re.IGNORECASE,
+# Set-based greeting/casual detection avoids polynomial backtracking from
+# adjacent optional quantifiers (\s*[!.,?]*\s*$) in equivalent regexes.
+_GREETING_WORDS: frozenset[str] = frozenset(
+    {
+        "hey",
+        "hi",
+        "hello",
+        "hola",
+        "sup",
+        "yo",
+        "howdy",
+        "greetings",
+        "greeting",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    }
+)
+_CASUAL_WORDS: frozenset[str] = frozenset(
+    {
+        "thanks",
+        "thank",
+        "thx",
+        "ok",
+        "okay",
+        "cool",
+        "nice",
+        "great",
+        "sure",
+        "yep",
+        "nope",
+        "no",
+        "yes",
+        "lol",
+        "haha",
+        "wow",
+    }
 )
 
-_CASUAL_PATTERNS = re.compile(
-    r"^(thanks?|thx|ok|okay|cool|nice|great|sure|yep|yep|nope|no|yes|lol|haha|wow)"
-    r"\s*[!.?]*$",
-    re.IGNORECASE,
-)
+
+def _is_greeting(text: str) -> bool:
+    """Return True if *text* is a greeting phrase (exact, after stripping punctuation)."""
+    normalized = text.strip().rstrip("!.,? \t").casefold()
+    return normalized in _GREETING_WORDS
+
+
+def _is_casual(text: str) -> bool:
+    """Return True if *text* is a casual one-word acknowledgement."""
+    normalized = text.strip().rstrip("!.? \t").casefold()
+    return normalized in _CASUAL_WORDS
+
 
 _SUMMARIZE_PATTERNS = re.compile(
     r"\b(summarize|summary|summarise|tl;?dr|condense|digest|recap|brief|shorten|"
@@ -80,10 +122,10 @@ def detect_mode(text: str) -> tuple[str, float, list[str]]:
 
     # ── High-confidence short patterns ──
 
-    if len(text) < 60 and _GREETING_PATTERNS.search(text):
+    if len(text) < 60 and _is_greeting(text):
         return "small_talk", 0.95, ["greeting_pattern"]
 
-    if _CASUAL_PATTERNS.match(text):
+    if _is_casual(text):
         return "small_talk", 0.95, ["casual_pattern"]
 
     # ── Code detection (high signal) ──

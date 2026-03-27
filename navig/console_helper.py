@@ -8,6 +8,7 @@ Performance note: ALL Rich imports are deferred until actually needed
 to improve CLI startup time (~120 ms saved).
 """
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -263,9 +264,27 @@ def dim(message: str):
     console.print(f"[{Colors.DIM}]{message}[/{Colors.DIM}]")
 
 
+# Redact structured key=value sensitive patterns from raw output to prevent
+# accidental exposure of passwords, API keys, and tokens (CWE-312 / CWE-532).
+_RAW_REDACT_PATTERNS: list[tuple] = [
+    (re.compile(r'(?i)(pass(?:word)?["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
+    (re.compile(r'(?i)(secret["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
+    (re.compile(r'(?i)(token["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
+    (re.compile(r'(?i)(api[_\-]?key["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
+    (re.compile(r"\b(sk-(?:ant-|proj-)?[A-Za-z0-9_\-]{8,})\b"), r"sk-***"),
+]
+
+
+def _redact_raw_output(text: str) -> str:
+    """Redact sensitive key=value patterns from text before raw output."""
+    for pattern, replacement in _RAW_REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def raw_print(message: str):
     """Print raw text without formatting (for --raw flag)."""
-    print(message)
+    print(_redact_raw_output(str(message)))
 
 
 # ============================================================================
