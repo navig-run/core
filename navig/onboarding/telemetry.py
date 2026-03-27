@@ -1,4 +1,4 @@
-"""
+﻿"""
 navig.onboarding.telemetry — Anonymous one-time install telemetry.
 
 Privacy Contract (what IS and IS NOT collected)
@@ -49,21 +49,8 @@ _OPT_OUT_VAR = "NAVIG_NO_TELEMETRY"
 
 # ── Consent block (printed once on first install) ─────────────────────────
 
-_CONSENT_LINES = """
-  ┌─────────────────────────────────────────────────────────────────┐
-  │  NAVIG collects one anonymous install ping.                     │
-  │                                                                 │
-  │  ✓  OS name   ✓  CPU arch   ✓  Python version                  │
-  │  ✗  No IP     ✗  No user    ✗  No paths   ✗  No node ID        │
-  │                                                                 │
-  │  It's just a counter. We want to know how many people use this. │
-  │  Nothing is sold. Nothing is linked to you. No profile exists.  │
-  │                                                                 │
-  │  If you're the kind of person who ships real things, you get    │
-  │  why counting users matters without becoming surveillance.      │
-  │                                                                 │
-  │  Opt out any time:  export NAVIG_NO_TELEMETRY=1                 │
-  └─────────────────────────────────────────────────────────────────┘
+_CONSENT_LINES = """  One anonymous install ping · OS, arch, Python version — nothing else.
+  Opt out: export NAVIG_NO_TELEMETRY=1
 """
 
 

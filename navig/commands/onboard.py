@@ -1,4 +1,4 @@
-"""
+﻿"""
 NAVIG Onboarding Command — Animated, keyboard-first CLI setup wizard.
 
 Provides two modes:
@@ -16,16 +16,18 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import os
 import platform
 import shutil
 import socket
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from navig.workspace_ownership import (
     USER_WORKSPACE_DIR,
@@ -94,6 +96,234 @@ DEFAULT_WORKSPACE_DIR = USER_WORKSPACE_DIR
 DEFAULT_CONFIG_FILE = DEFAULT_NAVIG_DIR / "navig.json"
 
 # ---------------------------------------------------------------------------
+# Provider registry — single source of truth for all wizard flows
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ProviderDef:
+    """Describes a single AI provider — used across all wizard paths."""
+
+    id: str
+    label: str
+    type: Literal["cloud", "local", "other"]
+    env_vars: list[str]  # env var names that signal “already configured”
+    port: int | None  # TCP port to probe (local providers only)
+    local_path: str | None  # home-relative dir that signals install (e.g. ".jan")
+    api_key_url: str  # link to get an API key (empty for local/other)
+    start_cmd: str  # one-line start command when local service is off
+    note: str  # short display note shown inline
+
+
+#: All supported providers in preferred display order.
+PROVIDER_REGISTRY: list[ProviderDef] = [
+    # ── Cloud providers ────────────────────────────────────────────────────────
+    ProviderDef(
+        "openrouter",
+        "OpenRouter",
+        "cloud",
+        ["OPENROUTER_API_KEY"],
+        None,
+        None,
+        "https://openrouter.ai/keys",
+        "",
+        "recommended · access 200+ models",
+    ),
+    ProviderDef(
+        "openai",
+        "OpenAI",
+        "cloud",
+        ["OPENAI_API_KEY"],
+        None,
+        None,
+        "https://platform.openai.com/api-keys",
+        "",
+        "GPT-4o and o-series",
+    ),
+    ProviderDef(
+        "anthropic",
+        "Anthropic",
+        "cloud",
+        ["ANTHROPIC_API_KEY"],
+        None,
+        None,
+        "https://console.anthropic.com/settings/keys",
+        "",
+        "Claude 3.5 Sonnet / Haiku",
+    ),
+    ProviderDef(
+        "gemini",
+        "Google Gemini",
+        "cloud",
+        ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+        None,
+        None,
+        "https://aistudio.google.com/app/apikey",
+        "",
+        "Gemini 2.0 Flash / Pro",
+    ),
+    ProviderDef(
+        "mistral",
+        "Mistral AI",
+        "cloud",
+        ["MISTRAL_API_KEY"],
+        None,
+        None,
+        "https://console.mistral.ai/api-keys",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "cohere",
+        "Cohere",
+        "cloud",
+        ["COHERE_API_KEY"],
+        None,
+        None,
+        "https://dashboard.cohere.com/api-keys",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "groq",
+        "Groq",
+        "cloud",
+        ["GROQ_API_KEY"],
+        None,
+        None,
+        "https://console.groq.com/keys",
+        "",
+        "fastest inference",
+    ),
+    ProviderDef(
+        "nvidia",
+        "NVIDIA NIM",
+        "cloud",
+        ["NVIDIA_API_KEY"],
+        None,
+        None,
+        "https://build.nvidia.com/",
+        "",
+        "GPU-optimised models",
+    ),
+    ProviderDef(
+        "together",
+        "Together AI",
+        "cloud",
+        ["TOGETHER_API_KEY"],
+        None,
+        None,
+        "https://api.together.xyz/settings/api-keys",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "fireworks",
+        "Fireworks AI",
+        "cloud",
+        ["FIREWORKS_API_KEY"],
+        None,
+        None,
+        "https://fireworks.ai/account/api-keys",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "perplexity",
+        "Perplexity AI",
+        "cloud",
+        ["PERPLEXITY_API_KEY"],
+        None,
+        None,
+        "https://www.perplexity.ai/settings/api",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "xai",
+        "xAI (Grok)",
+        "cloud",
+        ["XAI_API_KEY"],
+        None,
+        None,
+        "https://console.x.ai/",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "deepseek",
+        "DeepSeek",
+        "cloud",
+        ["DEEPSEEK_API_KEY"],
+        None,
+        None,
+        "https://platform.deepseek.com/api_keys",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "azure",
+        "Azure OpenAI",
+        "cloud",
+        ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"],
+        None,
+        None,
+        "https://portal.azure.com/",
+        "",
+        "",
+    ),
+    ProviderDef(
+        "bedrock",
+        "AWS Bedrock",
+        "cloud",
+        ["AWS_ACCESS_KEY_ID", "AWS_REGION"],
+        None,
+        None,
+        "https://aws.amazon.com/bedrock/",
+        "",
+        "",
+    ),
+    # ── Local providers ──────────────────────────────────────────────────
+    ProviderDef(
+        "ollama",
+        "Ollama",
+        "local",
+        [],
+        11434,
+        None,
+        "https://ollama.com/download",
+        "ollama serve",
+        "",
+    ),
+    ProviderDef(
+        "lmstudio",
+        "LM Studio",
+        "local",
+        [],
+        1234,
+        ".lmstudio",
+        "https://lmstudio.ai/",
+        "",
+        "",
+    ),
+    ProviderDef("jan", "Jan", "local", [], None, ".jan", "https://jan.ai/", "", ""),
+    ProviderDef(
+        "localai",
+        "LocalAI",
+        "local",
+        ["LOCAL_AI_URL"],
+        8080,
+        None,
+        "https://localai.io/",
+        "",
+        "",
+    ),
+    # ── Other ────────────────────────────────────────────────────────────
+    ProviderDef("none", "Skip for now", "other", [], None, None, "", "", ""),
+]
+
+
+# ---------------------------------------------------------------------------
 # NavigConfig dataclass  (single source of truth across all wizard steps)
 # ---------------------------------------------------------------------------
 
@@ -110,6 +340,9 @@ class NavigConfig:
     # Step 2 — Provider
     ai_provider: str = "openrouter"
     api_key: str = ""
+    ai_provider_env_var: str = (
+        ""  # env var name resolved at runtime (never a raw secret)
+    )
 
     # Step 3 — Runtime
     local_runtime_enabled: bool = False
@@ -275,6 +508,275 @@ def check_api_key_in_env(provider: str) -> bool:
         return bool(os.environ.get(env_var))
 
 
+# ---------------------------------------------------------------------------
+# Provider detection — runs all probes concurrently, finishes within timeout_ms
+# ---------------------------------------------------------------------------
+
+
+def detect_providers(timeout_ms: int = 500) -> dict[str, bool]:
+    """
+    Probe every entry in PROVIDER_REGISTRY and return ``{provider_id: detected}``.
+
+    * Cloud providers: env-var check (in-process, zero I/O).
+    * Local providers: TCP connect to known port (concurrent, 300 ms per probe).
+    * Local path providers: ``Path.home() / local_path`` existence check.
+    All TCP probes run concurrently and are bounded by *timeout_ms* wall-clock time.
+    """
+    result: dict[str, bool] = {}
+    deadline = time.monotonic() + timeout_ms / 1000.0
+
+    # ── In-process checks (instant) ──────────────────────────────────────────
+    for p in PROVIDER_REGISTRY:
+        if p.type == "cloud":
+            result[p.id] = any(os.environ.get(v, "").strip() for v in p.env_vars)
+        elif p.type == "other":
+            result[p.id] = False
+        elif p.local_path:
+            # Path check; port probe (if present) may override below
+            result[p.id] = (Path.home() / p.local_path).exists()
+        else:
+            result[p.id] = False  # port-only — resolved in the TCP block
+
+    # Special case: LocalAI env var counts as detected even without a port probe
+    if os.environ.get("LOCAL_AI_URL", "").strip():
+        result["localai"] = True
+
+    # ── Concurrent TCP port probes ────────────────────────────────────────────
+    port_providers = [p for p in PROVIDER_REGISTRY if p.type == "local" and p.port]
+
+    def _tcp_probe(pdef: ProviderDef) -> tuple[str, bool]:
+        try:
+            with socket.create_connection(("127.0.0.1", pdef.port), timeout=0.3):  # type: ignore[arg-type]
+                return (pdef.id, True)
+        except OSError:
+            return (pdef.id, False)
+
+    if port_providers:
+        remaining = max(0.05, deadline - time.monotonic())
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(port_providers)
+        ) as executor:
+            futures = {executor.submit(_tcp_probe, p): p for p in port_providers}
+            try:
+                for fut in concurrent.futures.as_completed(futures, timeout=remaining):
+                    try:
+                        pid, detected = fut.result()
+                        # Port takes priority over path-existence for local providers
+                        if detected:
+                            result[pid] = True
+                        elif not result.get(pid):
+                            result[pid] = False
+                    except Exception:
+                        pass  # timed out or errored → keep existing value
+            except concurrent.futures.TimeoutError:
+                pass  # hard deadline hit — remaining probes treated as undetected
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Provider menu renderer — categorised, sorted, with status indicators
+# ---------------------------------------------------------------------------
+
+
+def render_provider_menu(
+    detected: dict[str, bool],
+    console: ConsoleType,
+) -> tuple[list[ProviderDef], int]:
+    """
+    Print a categorised, sorted provider selection menu to *console*.
+
+    Within each category, detected providers sort first (then alphabetically).
+
+    Returns:
+        ordered_providers: flat list in display order (position + 1 = 1-based number)
+        default_idx: 1-based default selection (first detected, else OpenRouter)
+    """
+    if not console:
+        return (PROVIDER_REGISTRY, 3)
+
+    def _sort_key(p: ProviderDef) -> tuple[int, str]:
+        return (0 if detected.get(p.id) else 1, p.label.lower())
+
+    cloud = sorted([p for p in PROVIDER_REGISTRY if p.type == "cloud"], key=_sort_key)
+    local = sorted([p for p in PROVIDER_REGISTRY if p.type == "local"], key=_sort_key)
+    other = [p for p in PROVIDER_REGISTRY if p.type == "other"]
+    ordered: list[ProviderDef] = cloud + local + other
+
+    console.print(
+        "\n  [dim]✓ = configured   ◉ = local service running   · = not detected[/dim]\n"
+    )
+
+    def _print_group(header: str, group: list[ProviderDef], start: int) -> int:
+        bar = "─" * max(0, 52 - len(header))
+        console.print(f"  [dim]── {header} {bar}[/dim]")
+        num = start
+        for p in group:
+            is_det = detected.get(p.id, False)
+            if p.type == "local":
+                symbol = "[bold cyan]◉[/bold cyan]" if is_det else "[dim]·[/dim]"
+            elif p.type == "cloud":
+                symbol = "[bold green]✓[/bold green]" if is_det else "[dim]·[/dim]"
+            else:
+                symbol = " "
+
+            note_parts: list[str] = []
+            if is_det:
+                if p.env_vars:
+                    note_parts.append(f"[green]{p.env_vars[0]} found[/green]")
+                elif p.port:
+                    note_parts.append(f"[cyan]running on :{p.port}[/cyan]")
+            elif p.note:
+                note_parts.append(f"[dim]{p.note}[/dim]")
+
+            note_str = "  " + note_parts[0] if note_parts else ""
+            console.print(f"  {num:>2}.  {symbol}  {p.label}{note_str}")
+            num += 1
+        console.print()
+        return num
+
+    num = 1
+    num = _print_group("Cloud Providers", cloud, num)
+    num = _print_group("Local Providers", local, num)
+    _print_group("Other", other, num)
+
+    # Default = first detected provider, fallback to OpenRouter
+    default_idx = next(
+        (i + 1 for i, p in enumerate(ordered) if detected.get(p.id)),
+        next(
+            (i + 1 for i, p in enumerate(ordered) if p.id == "openrouter"),
+            3,  # static fallback if OpenRouter somehow not in registry
+        ),
+    )
+    return (ordered, default_idx)
+
+
+# ---------------------------------------------------------------------------
+# Post-selection handler — shared by quickstart and manual flows
+# ---------------------------------------------------------------------------
+
+
+def _handle_provider_selection(
+    provider: ProviderDef,
+    detected: dict[str, bool],
+    console: ConsoleType,
+) -> tuple[str, str]:
+    """
+    Drive the post-selection UX for a chosen provider.
+
+    Returns ``(provider_id, env_var_name)`` where *env_var_name* is the env var
+    that holds the API key at runtime, or ``""`` for local / skip providers.
+    Raw secret values are always vaulted — never returned or stored in config.
+    """
+    if not console:
+        return (provider.id, provider.env_vars[0] if provider.env_vars else "")
+
+    is_detected = detected.get(provider.id, False)
+
+    # ── Skip ─────────────────────────────────────────────────────────────────
+    if provider.type == "other":
+        console.print(
+            "[dim]Skipping AI provider setup. Run 'navig init' again to configure later.[/dim]"
+        )
+        return ("none", "")
+
+    # ── Local provider ────────────────────────────────────────────────────────
+    if provider.type == "local":
+        if is_detected:
+            port_info = f" on :{provider.port}" if provider.port else ""
+            console.print(
+                f"[green]✓ {provider.label} running{port_info} — no API key needed.[/green]"
+            )
+        else:
+            console.print(
+                f"\n[yellow]⚠ {provider.label} is not currently running.[/yellow]"
+            )
+            if provider.api_key_url:
+                console.print(
+                    f"  Download: [link={provider.api_key_url}]{provider.api_key_url}[/link]"
+                )
+            if provider.start_cmd:
+                console.print(f"  Start with: [bold]{provider.start_cmd}[/bold]")
+            console.print()
+            try:
+                input("  Press Enter when ready (or Ctrl+C to cancel)... ")
+            except KeyboardInterrupt:
+                raise SystemExit("Setup cancelled. Re-run navig init to try again.")
+
+            # Re-probe with generous 2 s timeout
+            re_detected = detect_providers(timeout_ms=2000)
+            if re_detected.get(provider.id):
+                port_info = f" on :{provider.port}" if provider.port else ""
+                console.print(
+                    f"[green]✓ {provider.label} is now running{port_info}.[/green]"
+                )
+            else:
+                console.print(
+                    f"[yellow]⚠ Still cannot reach {provider.label}.[/yellow]"
+                )
+                try:
+                    choice = Prompt.ask(
+                        "  [c]ontinue anyway or [e]xit?",
+                        choices=["c", "e"],
+                        default="c",
+                    )
+                    if choice == "e":
+                        raise SystemExit(
+                            "Setup cancelled. Re-run navig init to try again."
+                        )
+                except KeyboardInterrupt:
+                    raise SystemExit("Setup cancelled. Re-run navig init to try again.")
+        return (provider.id, "")
+
+    # ── Cloud provider ────────────────────────────────────────────────────────
+    primary_env = provider.env_vars[0] if provider.env_vars else ""
+
+    if is_detected:
+        console.print(
+            f"[green]✓ {provider.label} — key found in {primary_env}.[/green]"
+        )
+        return (provider.id, primary_env)
+
+    # Key not found — prompt user
+    if provider.api_key_url:
+        console.print(f"  [dim]Get one at: {provider.api_key_url}[/dim]")
+
+    def _validate_key(key: str) -> bool:
+        stripped = key.strip()
+        return bool(
+            stripped
+            and len(stripped) >= 10
+            and " " not in stripped
+            and "\t" not in stripped
+        )
+
+    api_key = Prompt.ask(
+        f"  Enter your {provider.label} API key", password=True, default=""
+    )
+    if not _validate_key(api_key):
+        console.print(
+            "[yellow]⚠ Invalid key format — must be ≥ 10 chars with no spaces.[/yellow]"
+        )
+        api_key = Prompt.ask(
+            f"  Enter your {provider.label} API key (retry)", password=True, default=""
+        )
+        if not _validate_key(api_key):
+            raise SystemExit("Setup cancelled. Re-run navig init to try again.")
+
+    vault_id = _store_in_vault(
+        provider.id, primary_env, api_key.strip(), "api_key", console
+    )
+    if vault_id:
+        console.print(f"[green]✓ {provider.label} API key saved to vault.[/green]")
+    else:
+        console.print(
+            f"[yellow]⚠ Could not vault key. "
+            f"Set {primary_env} in your environment before running navig.[/yellow]"
+        )
+
+    return (provider.id, primary_env)
+
+
 def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
     """Convert NavigConfig -> JSON-serialisable dict matching navig.json schema."""
     return {
@@ -288,6 +790,7 @@ def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
             "defaults": {
                 "workspace": cfg.workspace_root,
                 "model": cfg.ai_provider,
+                "ai_provider_env_var": cfg.ai_provider_env_var,
                 "typing_mode": "instant",
             }
         },
@@ -913,16 +1416,40 @@ if _TEXTUAL_AVAILABLE:
         )
 
         _PROVIDERS = ["openrouter", "openai", "anthropic", "groq", "ollama", "none"]
+        # _PROVIDERS kept for reference; _ordered_providers drives rendering at runtime.
+        _ordered_providers: list[ProviderDef] = []  # populated in __init__
+        _detected: dict[str, bool] = {}  # populated in __init__
 
         def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
+            self._detected = detect_providers()
+
+            def _sort_key(p: ProviderDef) -> tuple[int, int, str]:
+                type_order = {"cloud": 0, "local": 1, "other": 2}
+                return (
+                    type_order.get(p.type, 9),
+                    0 if self._detected.get(p.id) else 1,
+                    p.label.lower(),
+                )
+
+            self._ordered_providers = sorted(PROVIDER_REGISTRY, key=_sort_key)
 
         def compose(self) -> ComposeResult:
-            yield Label("AI Provider")
+            yield Label(
+                "AI Provider  [dim](✓ configured · ◉ running)[/dim]", markup=True
+            )
             with RadioSet(id="radio-provider"):
-                for p in self._PROVIDERS:
-                    yield RadioButton(p, value=(p == self._cfg.ai_provider))
+                for p in self._ordered_providers:
+                    is_det = self._detected.get(p.id, False)
+                    if p.type == "local":
+                        badge = " ◉" if is_det else ""
+                    elif p.type == "cloud":
+                        badge = " ✓" if is_det else ""
+                    else:
+                        badge = ""
+                    display = f"{p.label}{badge}"
+                    yield RadioButton(display, value=(p.id == self._cfg.ai_provider))
             yield Label(
                 "API Key  [dim](stored in vault — not echoed)[/dim]", markup=True
             )
@@ -936,9 +1463,22 @@ if _TEXTUAL_AVAILABLE:
         @on(RadioSet.Changed, "#radio-provider")
         def _provider_changed(self, event: RadioSet.Changed) -> None:
             if event.pressed is not None:
-                self._cfg.ai_provider = event.pressed.label.plain  # type: ignore[union-attr]
+                label_plain: str = event.pressed.label.plain  # type: ignore[union-attr]
+                # Map displayed label back to provider id via _ordered_providers
+                matched = next(
+                    (
+                        p
+                        for p in self._ordered_providers
+                        if label_plain.startswith(p.label)
+                    ),
+                    None,
+                )
+                self._cfg.ai_provider = matched.id if matched else label_plain.strip()
+                local_ids = {p.id for p in PROVIDER_REGISTRY if p.type == "local"} | {
+                    "none"
+                }
                 inp: Input = self.query_one("#inp-api-key", Input)
-                inp.display = self._cfg.ai_provider not in ("ollama", "none")
+                inp.display = self._cfg.ai_provider not in local_ids
                 self._notify_parent()
 
         @on(Input.Changed, "#inp-api-key")
@@ -1681,50 +2221,36 @@ def run_quickstart(console: ConsoleType) -> dict[str, Any]:
     console.print(
         "[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[1/3][/#2c8bb7] [bold]AI Provider[/bold]"
     )
-    console.print("Which AI provider do you want to use?")
-    console.print("  1. OpenRouter (recommended - access to many models)")
-    console.print("  2. OpenAI")
-    console.print("  3. Anthropic")
-    console.print("  4. Ollama (local)")
-    console.print("  5. Skip for now")
+    console.print("Which AI provider do you want to use?\n")
 
-    provider_choice = Prompt.ask(
-        "Select provider", choices=["1", "2", "3", "4", "5"], default="1"
+    detected = detect_providers()
+    ordered_providers, default_idx = render_provider_menu(detected, console)
+    total = len(ordered_providers)
+
+    raw_choice = Prompt.ask(
+        f"Select provider [1-{total}]",
+        default=str(default_idx),
     )
+    try:
+        choice_idx = int(raw_choice.strip()) - 1
+        if not (0 <= choice_idx < total):
+            raise ValueError
+    except ValueError:
+        console.print(
+            f"[yellow]Invalid choice — using default ({default_idx}).[/yellow]"
+        )
+        choice_idx = default_idx - 1
 
-    provider_map = {
-        "1": "openrouter",
-        "2": "openai",
-        "3": "anthropic",
-        "4": "ollama",
-        "5": None,
-    }
+    selected_provider = ordered_providers[choice_idx]
+    provider_id, provider_env_var = _handle_provider_selection(
+        selected_provider, detected, console
+    )
+    config["agents"]["defaults"]["model"] = provider_id
+    config["agents"]["defaults"]["ai_provider_env_var"] = provider_env_var
 
-    provider = provider_map[provider_choice]
-    if provider:
-        config["agents"]["defaults"]["model"] = provider
-
-        if provider != "ollama":
-            api_key = Prompt.ask(
-                f"Enter {provider} API key (or press Enter to skip)",
-                password=True,
-                default="",
-            )
-            if api_key:
-                vault_id = _store_in_vault(
-                    provider, "api_key", api_key, "api_key", console
-                )
-                profile: dict[str, Any] = {"type": "api-key"}
-                if vault_id:
-                    profile["vault_id"] = vault_id
-                    console.print(f"[green]✓ {provider} API key saved to vault[/green]")
-                else:
-                    console.print(
-                        f"[yellow]⚠ {provider} API key could not be vaulted — skipped[/yellow]"
-                    )
-                config["auth"]["profiles"][provider] = profile
-        else:
-            console.print("[dim]Ollama uses local models, no API key needed[/dim]")
+    if provider_id not in ("none", "", "ollama", "lmstudio", "jan", "localai"):
+        # Cloud provider — profile entry references vault, never raw key
+        config["auth"]["profiles"][provider_id] = {"type": "api-key"}
 
     # Step 2: Telegram Bot (optional)
     console.print(
@@ -1844,44 +2370,61 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
         )
     )
 
-    providers = ["openrouter", "openai", "anthropic", "groq", "ollama"]
-    console.print("Available providers:")
-    for i, p in enumerate(providers, 1):
-        console.print(f"  {i}. {p}")
+    detected = detect_providers()
+    ordered_providers, default_idx = render_provider_menu(detected, console)
+    total = len(ordered_providers)
 
-    primary_choice = Prompt.ask(
-        "Primary AI provider", choices=["1", "2", "3", "4", "5"], default="1"
+    raw_choice = Prompt.ask(
+        f"Primary AI provider [1-{total}]",
+        default=str(default_idx),
     )
-    primary_provider = providers[int(primary_choice) - 1]
-    config["agents"]["defaults"]["model"] = primary_provider
+    try:
+        choice_idx = int(raw_choice.strip()) - 1
+        if not (0 <= choice_idx < total):
+            raise ValueError
+    except ValueError:
+        console.print(
+            f"[yellow]Invalid choice — using default ({default_idx}).[/yellow]"
+        )
+        choice_idx = default_idx - 1
 
-    # Configure multiple providers
-    configure_more = Confirm.ask("Configure additional providers?", default=True)
+    selected_provider = ordered_providers[choice_idx]
+    primary_provider_id, primary_env_var = _handle_provider_selection(
+        selected_provider, detected, console
+    )
+    config["agents"]["defaults"]["model"] = primary_provider_id
+    config["agents"]["defaults"]["ai_provider_env_var"] = primary_env_var
+
+    if primary_provider_id not in ("none", "", "ollama", "lmstudio", "jan", "localai"):
+        config["auth"]["profiles"][primary_provider_id] = {"type": "api-key"}
+
+    # Optionally configure additional cloud providers
+    configure_more = Confirm.ask("Configure additional providers?", default=False)
 
     while configure_more:
-        console.print("\nAvailable providers:", providers)
-        provider_name = Prompt.ask("Provider name", default="")
+        _, extra_default = render_provider_menu(detected, console)
+        extra_raw = Prompt.ask(
+            f"  Additional provider [1-{total}]",
+            default=str(extra_default),
+        )
+        try:
+            extra_idx = int(extra_raw.strip()) - 1
+            if not (0 <= extra_idx < total):
+                raise ValueError
+        except ValueError:
+            extra_idx = extra_default - 1
 
-        if provider_name and provider_name in providers:
-            if provider_name != "ollama":
-                api_key = Prompt.ask(f"{provider_name} API key", password=True)
-                if api_key:
-                    vault_id = _store_in_vault(
-                        provider_name, "api_key", api_key, "api_key", console
-                    )
-                    profile_entry: dict[str, Any] = {"type": "api-key"}
-                    if vault_id:
-                        profile_entry["vault_id"] = vault_id
-                        console.print(
-                            f"[green]✓ {provider_name} API key saved to vault[/green]"
-                        )
-                    else:
-                        console.print(
-                            f"[yellow]⚠ {provider_name} API key could not be vaulted — skipped[/yellow]"
-                        )
-                    config["auth"]["profiles"][provider_name] = profile_entry
-            else:
-                console.print("[dim]Ollama uses local models[/dim]")
+        extra_pdef = ordered_providers[extra_idx]
+        extra_id, _ = _handle_provider_selection(extra_pdef, detected, console)
+        if extra_id and extra_id not in (
+            "none",
+            "",
+            "ollama",
+            "lmstudio",
+            "jan",
+            "localai",
+        ):
+            config["auth"]["profiles"][extra_id] = {"type": "api-key"}
 
         configure_more = Confirm.ask("Configure another provider?", default=False)
 

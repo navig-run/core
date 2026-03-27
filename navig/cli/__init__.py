@@ -1,4 +1,4 @@
-"""
+﻿"""
 NAVIG CLI - No Admin Visible In Graveyard
 
 Keep your servers alive. Forever.
@@ -1775,18 +1775,17 @@ def init_command(
 
     # ── Interactive wizard ────────────────────────────────────────────────────
     from navig.commands.init import _maybe_send_first_run_ping
-    from navig.commands.onboard import run_init_wizard
+    from navig.commands.onboard import run_onboard
 
     if reconfigure:
-        run_init_wizard(mode="wizard", deep_link=provider or None)
+        run_onboard(flow="manual")
         return
 
     if settings:
-        run_init_wizard(mode="dashboard", deep_link=None)
+        run_onboard(flow="manual")
         return
 
-    deep = "provider" if provider else None
-    run_init_wizard(mode="auto", deep_link=deep)
+    run_onboard(flow="auto")
 
     try:
         _maybe_send_first_run_ping()
