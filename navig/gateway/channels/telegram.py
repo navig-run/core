@@ -32,7 +32,7 @@ try:
         ResponseKeyboardBuilder,
         _settings_header_text,
         build_settings_keyboard,
-        get_callback_store,
+        get_callback_store,  # noqa: F401
     )
 
     HAS_KEYBOARDS = True
@@ -42,8 +42,8 @@ except ImportError:
 # Session management
 try:
     from navig.gateway.channels.telegram_sessions import (
-        MentionGate,
-        SessionManager,
+        MentionGate,  # noqa: F401
+        SessionManager,  # noqa: F401
         get_mention_gate,
         get_session_manager,
     )
@@ -81,7 +81,7 @@ try:
     from navig.gateway.channels.telegram_mode_classifier import (
         classify_mode,
         extract_url,
-        mode_to_llm_tier,
+        mode_to_llm_tier,  # noqa: F401
         select_tools_for_text,
     )
 

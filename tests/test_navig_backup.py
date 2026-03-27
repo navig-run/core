@@ -104,7 +104,7 @@ class TestFormatSize:
 def _check_cryptography_available():
     """Helper to check if cryptography package is available."""
     try:
-        from cryptography.fernet import Fernet
+        from cryptography.fernet import Fernet  # noqa: F401
 
         return True
     except ImportError:

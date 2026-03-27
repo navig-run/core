@@ -1,5 +1,5 @@
-from collections.abc import Callable
-from typing import Any, Dict
+from collections.abc import Callable  # noqa: F401
+from typing import Any, Dict  # noqa: F401
 
 from navig.mcp.tools import agent, desktop, inventory, memory, runtime, system, wiki
 

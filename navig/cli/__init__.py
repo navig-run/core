@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401
 
 import typer
 
@@ -2252,7 +2252,7 @@ def index_scan(
         navig index scan
         navig index scan /path/to/project --full
     """
-    import time as _time
+    import time as _time  # noqa: F401
     from pathlib import Path
 
     from rich.console import Console as _Con
@@ -8124,7 +8124,7 @@ def skills_synthesize(
         navig skills synthesize --apply          # generate + save skills
         navig skills synthesize --min-occurrences 5 --apply --yes
     """
-    import typer as _typer
+    import typer as _typer  # noqa: F401
 
     try:
         from navig.agent.pattern_analyzer import PatternAnalyzer  # type: ignore
@@ -11729,7 +11729,7 @@ app.add_typer(proactive_app, name="proactive")
 def proactive_status():
     """Show proactive engine status."""
     try:
-        from navig.agent.proactive import ProactiveEngine
+        from navig.agent.proactive import ProactiveEngine  # noqa: F401
         from navig.config import get_config_manager
 
         cm = get_config_manager()

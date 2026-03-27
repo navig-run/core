@@ -97,7 +97,7 @@ class TelegramListener(InputListener):
             return
 
         try:
-            from navig_bot import NavigBot
+            from navig_bot import NavigBot  # noqa: F401
 
             # Create callback to emit messages
             async def message_handler(text: str, user_id: int, chat_id: int):

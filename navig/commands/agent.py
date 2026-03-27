@@ -1374,7 +1374,7 @@ def agent_goal(
         navig agent goal cancel --id abc123      # Cancel a goal
     """
     try:
-        from navig.agent.goals import GoalPlanner, GoalState
+        from navig.agent.goals import GoalPlanner, GoalState  # noqa: F401
 
         planner = GoalPlanner()
 

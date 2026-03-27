@@ -38,7 +38,7 @@ class AHKAIGenerator:
 
     def __init__(self):
         try:
-            from navig.ai import ask_ai_with_context
+            from navig.ai import ask_ai_with_context  # noqa: F401
 
             self.has_ai = True
         except ImportError:

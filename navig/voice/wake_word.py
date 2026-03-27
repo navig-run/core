@@ -339,7 +339,7 @@ class WakeWordEngine:
         """Load openWakeWord and optionally Silero VAD (blocking, run in executor)."""
         # ── openWakeWord ──────────────────────────────────────────────
         try:
-            import openwakeword
+            import openwakeword  # noqa: F401
             from openwakeword.model import Model as OWWModel
 
             self._oww_model = OWWModel(

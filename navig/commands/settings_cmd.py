@@ -105,7 +105,7 @@ def run_settings(
         from rich.console import Console
         from rich.panel import Panel
         from rich.table import Table
-        from rich.text import Text
+        from rich.text import Text  # noqa: F401
 
         RICH = True
     except ImportError:

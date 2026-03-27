@@ -450,7 +450,7 @@ function Show-Banner {
     $taglines = @(
         "Your servers are in good hands now.",
         "No admin visible in graveyard? Perfect.",
-        "SSH tunnels, remote ops — all in one CLI.",
+        "SSH tunnels, remote ops - all in one CLI.",
         "Because server management shouldn't feel like surgery.",
         "ctrl+c to exit. But why would you?",
         "Keeping uptime personal since 2024.",
@@ -460,14 +460,15 @@ function Show-Banner {
         "Born in the terminal. Lives in the cloud.",
         "Your devops sidekick. No cape required.",
         "Deploy, manage, survive. Repeat.",
-        "Less SSH, more SHH — it just works.",
+        "Less SSH, more SHH - it just works.",
         "The quiet guardian of your infrastructure.",
         "Admin by day, daemon by night."
     )
     $tagline = $taglines[(Get-Random -Maximum $taglines.Length)]
     Write-Host ""
-    Write-Host "  NAVIG " -NoNewline -ForegroundColor Cyan
-    Write-Host "— $tagline" -ForegroundColor DarkGray
+    if ($Version) { $vStr = "v$Version " } else { $vStr = "" }
+    Write-Host "  NAVIG $vStr" -NoNewline -ForegroundColor Cyan
+    Write-Host "- $tagline" -ForegroundColor DarkGray
     Write-Host ""
 }
 

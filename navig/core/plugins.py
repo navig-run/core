@@ -265,7 +265,7 @@ class Plugin(ABC):
     def _cleanup_hooks(self) -> None:
         """Unregister all hooks registered by this plugin."""
         try:
-            from navig.core.hooks import unregister_hook
+            from navig.core.hooks import unregister_hook  # noqa: F401
 
             for hook_id in self._hooks:
                 # Parse hook ID and unregister

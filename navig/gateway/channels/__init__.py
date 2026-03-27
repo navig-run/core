@@ -15,7 +15,7 @@ Supported Channels:
 - Google Chat (Chat API) - planned
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING  # noqa: F401
 
 # Lazy imports to avoid dependency issues
 _discord_channel = None
@@ -38,7 +38,7 @@ def get_matrix_channel():
 def is_matrix_available() -> bool:
     """Check if Matrix integration is available."""
     try:
-        import nio
+        import nio  # noqa: F401
 
         return True
     except ImportError:
@@ -81,7 +81,7 @@ def get_telegram_channel():
 def is_discord_available() -> bool:
     """Check if Discord integration is available."""
     try:
-        import discord
+        import discord  # noqa: F401
 
         return True
     except ImportError:
@@ -91,7 +91,7 @@ def is_discord_available() -> bool:
 def is_whatsapp_available() -> bool:
     """Check if WhatsApp integration is available."""
     try:
-        import aiohttp
+        import aiohttp  # noqa: F401
 
         return True
     except ImportError:
@@ -101,7 +101,7 @@ def is_whatsapp_available() -> bool:
 def is_telegram_available() -> bool:
     """Check if Telegram integration is available."""
     try:
-        import aiohttp
+        import aiohttp  # noqa: F401
 
         return True
     except ImportError:
