@@ -1083,38 +1083,46 @@ class AirLLMProvider(LLMProvider):
 
     async def chat(
         self,
+        model: str,
         messages: list[dict[str, str]],
-        model: str = "",
         temperature: float = 0.7,
         max_tokens: int = 512,
         **kwargs,
-    ) -> str:
+    ) -> LLMResponse:
         import asyncio
 
         engine = self._get_engine()
         prompt = "\n".join(
             f"{m['role'].upper()}: {m.get('content','')}" for m in messages
         )
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             lambda: engine.chat(prompt, max_new_tokens=max_tokens),
         )
-        return result if isinstance(result, str) else str(result)
+        text = result if isinstance(result, str) else str(result)
+        return LLMResponse(
+            content=text,
+            model=model or self.model,
+            provider=self.name,
+        )
 
     async def chat_stream(
         self,
+        model: str,
         messages: list[dict[str, str]],
-        model: str = "",
         temperature: float = 0.7,
         max_tokens: int = 512,
         **kwargs,
     ):
         # AirLLM has no native streaming; yield the full response as one chunk
-        text = await self.chat(
-            messages, model=model, temperature=temperature, max_tokens=max_tokens
+        resp = await self.chat(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        yield text
+        yield resp.content
 
     async def is_available(self) -> bool:
         try:

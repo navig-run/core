@@ -141,7 +141,9 @@ def package_list(
             }
             if status and pkg_id in loaded_state:
                 info = loaded_state[pkg_id]
-                entry["loaded"] = getattr(info, "loaded", False)
+                entry["loaded"] = getattr(
+                    info, "state", getattr(info, "loaded", False)
+                ) in ("enabled", "loaded", True)
                 entry["error"] = getattr(info, "error", None)
             out.append(entry)
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
@@ -179,14 +181,21 @@ def package_list(
             info = loaded_state.get(pkg_id)
             if info is None:
                 row.append("[dim]—[/dim]")
-            elif getattr(info, "loaded", False):
-                row.append("[green]✓ loaded[/green]")
-            elif getattr(info, "error", None):
-                err = getattr(info, "error", "")
-                short = err[:28] + "…" if len(err) > 29 else err
-                row.append(f"[red]✗ {short}[/red]")
             else:
-                row.append("[yellow]○ idle[/yellow]")
+                err = getattr(info, "error", None)
+                state_val = getattr(info, "state", None)
+                is_loaded = getattr(info, "loaded", False) or state_val in (
+                    "enabled",
+                    "loaded",
+                )
+                if is_loaded:
+                    row.append("[green]✓ loaded[/green]")
+                elif err:
+                    err_str = str(err)
+                    short = err_str[:28] + "…" if len(err_str) > 29 else err_str
+                    row.append(f"[red]✗ {short}[/red]")
+                else:
+                    row.append("[yellow]○ idle[/yellow]")
         row.append(m.get("description", ""))
         table.add_row(*row)
     _con.print(table)
@@ -307,6 +316,7 @@ def package_install(
     if isinstance(deps_block, dict):
         pip_deps = deps_block.get("pip", [])
     if pip_deps:
+        import shutil
         import subprocess
         import sys as _sys
 
@@ -314,8 +324,15 @@ def package_install(
             f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…"
         )
         try:
+            # Prefer uv for speed and PEP-668 compliance if available
+            uv_path = shutil.which("uv")
+            if uv_path:
+                cmd = [uv_path, "pip", "install", *pip_deps]
+            else:
+                cmd = [_sys.executable, "-m", "pip", "install", *pip_deps]
+
             subprocess.check_call(
-                [_sys.executable, "-m", "pip", "install", *pip_deps],
+                cmd,
                 stdout=_sys.stdout,
                 stderr=_sys.stderr,
             )

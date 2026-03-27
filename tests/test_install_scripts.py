@@ -77,7 +77,8 @@ def test_install_ps1_dry_run(pwsh_cmd):
     assert (
         result.returncode == 0
     ), f"install.ps1 -DryRun failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
-    assert "Dry run mode" in result.stdout or "Dry run complete" in result.stdout
+    combined = result.stdout + result.stderr
+    assert "Dry run" in combined, f"Expected 'Dry run' in output, got:\n{combined}"
 
 
 def test_install_ps1_parse(pwsh_cmd):

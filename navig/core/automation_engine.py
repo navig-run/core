@@ -217,7 +217,15 @@ class WorkflowEngine:
         if action == "run_command":
             cmd = args.get("command")
             if cmd:
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                import shlex
+
+                if sys.platform == "win32":
+                    # On Windows, use cmd /c with the command as a single string
+                    # argument to avoid shell=True while preserving cmd.exe features
+                    run_args = ["cmd", "/c", cmd]
+                else:
+                    run_args = shlex.split(cmd)
+                res = subprocess.run(run_args, capture_output=True, text=True)
                 if res.returncode == 0:
                     return res.stdout.strip()
             return ""

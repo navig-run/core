@@ -242,7 +242,7 @@ class ConfigSingleton:
         cache_file = self.cache_dir / "active_host.txt"
         if cache_file.exists():
             try:
-                cached_host = cache_file.read_text().strip()
+                cached_host = cache_file.read_text(encoding="utf-8").strip()
                 if cached_host:
                     return (cached_host, "cache")
             except Exception:  # noqa: BLE001
@@ -271,7 +271,7 @@ class ConfigSingleton:
                 # Write to cache file for quick switching
                 self._ensure_dirs()
                 cache_file = self.cache_dir / "active_host.txt"
-                cache_file.write_text(host)
+                cache_file.write_text(host, encoding="utf-8")
 
     def get_active_app(self) -> tuple[str | None, str]:
         """
@@ -299,7 +299,7 @@ class ConfigSingleton:
         cache_file = self.cache_dir / "active_app.txt"
         if cache_file.exists():
             try:
-                cached_app = cache_file.read_text().strip()
+                cached_app = cache_file.read_text(encoding="utf-8").strip()
                 if cached_app:
                     return (cached_app, "cache")
             except Exception:  # noqa: BLE001
@@ -322,7 +322,7 @@ class ConfigSingleton:
             else:
                 self._ensure_dirs()
                 cache_file = self.cache_dir / "active_app.txt"
-                cache_file.write_text(app_name)
+                cache_file.write_text(app_name, encoding="utf-8")
 
     # =========================================================================
     # Plugin Configuration
