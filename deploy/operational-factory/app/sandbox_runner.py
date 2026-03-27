@@ -23,24 +23,31 @@ def _run(cmd: list[str], cwd: str | None = None, timeout: int = 120):
 def _validate_repo_path(repo_path: str) -> Path:
     """Resolve and validate repo_path to prevent path traversal (CWE-22).
 
+    Uses relative_to() to confirm containment, then reconstructs the path
+    from the trusted root to break CodeQL's taint chain.
     Only allows paths within the user home directory, system temp directory,
     or well-known Docker workspace mounts (/repo, /workspace).
     """
-    resolved = Path(repo_path).resolve()
+    import os
+
+    resolved = Path(os.path.realpath(repo_path))
     allowed_roots: tuple[Path, ...] = (
         Path.home().resolve(),
         Path(tempfile.gettempdir()).resolve(),
         Path("/repo").resolve(),
         Path("/workspace").resolve(),
     )
-    if not any(
-        resolved == root or str(resolved).startswith(str(root) + "/")
-        for root in allowed_roots
-    ):
-        raise HTTPException(status_code=400, detail="repo_path is outside allowed directories")
-    if not resolved.exists():
-        raise HTTPException(status_code=400, detail=f"repo_path not found: {repo_path}")
-    return resolved
+    for root in allowed_roots:
+        try:
+            rel = resolved.relative_to(root)  # raises ValueError if not under root
+            # Rebuild from the trusted root to break taint chain (user data no longer present)
+            clean = root / rel
+            if not clean.exists():
+                raise HTTPException(status_code=400, detail="repo_path not found")
+            return clean
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="repo_path is outside allowed directories")
 
 
 def _copy_repo(repo_path: str) -> Path:
@@ -52,9 +59,7 @@ def _copy_repo(repo_path: str) -> Path:
         src,
         dst,
         dirs_exist_ok=True,
-        ignore=shutil.ignore_patterns(
-            ".venv", "node_modules", "__pycache__", ".pytest_cache"
-        ),
+        ignore=shutil.ignore_patterns(".venv", "node_modules", "__pycache__", ".pytest_cache"),
     )
     return dst
 
@@ -123,16 +128,12 @@ def repo_patch(payload: dict):
             ["git", "commit", "-m", "chore: add operational factory patch plan"],
             cwd=str(sandbox_repo),
         )
-        diff = _run(
-            ["git", "show", "--stat", "--patch", "--max-count=1"], cwd=str(sandbox_repo)
-        )
+        diff = _run(["git", "show", "--stat", "--patch", "--max-count=1"], cwd=str(sandbox_repo))
         artifacts["diff_summary"] = diff.get("stdout", "")[:5000]
         artifacts["mode"] = "git"
     else:
         artifacts["mode"] = "filesystem"
-        artifacts["diff_summary"] = (
-            "No git repository found; generated patch plan file only."
-        )
+        artifacts["diff_summary"] = "No git repository found; generated patch plan file only."
 
     return artifacts
 

@@ -277,9 +277,13 @@ class TestExtractUrl:
         assert self._extract("check https://example.com") == "https://example.com"
 
     def test_bare_domain_gets_https_prefix(self):
+        from urllib.parse import urlparse
+
         result = self._extract("is google.com up")
         assert result is not None
-        assert result.startswith("https://google.com")
+        parsed = urlparse(result)
+        assert parsed.scheme == "https"
+        assert parsed.hostname in ("google.com", "www.google.com")
 
     def test_no_url_returns_none(self):
         assert self._extract("what is the meaning of life") is None
