@@ -435,9 +435,16 @@ function Invoke-WithSpinner {
         Write-Host "`r  " -NoNewline
         Write-Host "[!!]" -NoNewline -ForegroundColor Red
         Write-Host "  $Label$pad"
-        if ($VerbosePreference -ne 'SilentlyContinue') {
-            Get-Content $tmpErr -ErrorAction SilentlyContinue |
-                ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
+        $errLines = Get-Content $tmpErr -ErrorAction SilentlyContinue
+        if ($errLines -and $errLines.Count -gt 0) {
+            $showLines = if ($VerbosePreference -ne 'SilentlyContinue') {
+                $errLines
+            } else {
+                $errLines | Select-Object -Last 6
+            }
+            $showLines | Where-Object { $_ -match '\S' } | ForEach-Object {
+                Write-Host "       $_" -ForegroundColor DarkGray
+            }
         }
     }
 
@@ -700,7 +707,6 @@ function Find-Pipx {
 
 function Install-Pipx {
     param([string]$PipCmd)
-    Write-NavStep "Installing pipx for isolated installation..."
     $pipParts = $PipCmd -split ' '
     $exe      = $pipParts[0]
     $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
@@ -708,13 +714,11 @@ function Install-Pipx {
 
     $code = Invoke-WithSpinner -Label "Installing pipx" -Exe $exe -ArgList $fullArgs
     if ($code -ne 0) {
-        Write-NavHint "pipx installation failed, falling back to pip --user"
+        Write-NavInfo "pipx unavailable - will use pip install --user instead"
         return $null
     }
 
-    try {
-        & pipx ensurepath 2>$null
-    } catch {}
+    try { & pipx ensurepath 2>$null } catch {}
 
     return "$exe -m pipx"
 }
@@ -726,6 +730,7 @@ function Install-NavigPip {
     if ($Version) { $installSpec = "navig==$Version" }
     if ($Extras)  { $installSpec = "navig[$Extras]"; if ($Version) { $installSpec = "navig[$Extras]==$Version" } }
 
+    # ── Try pipx first (isolated venv, cleanest install) ──────────────────
     $usePipx = Find-Pipx -PipCmd $PipCmd
     if (-not $usePipx) {
         $usePipx = Install-Pipx -PipCmd $PipCmd
@@ -736,22 +741,25 @@ function Install-NavigPip {
         $exe      = $pipxParts[0]
         $baseArgs = if ($pipxParts.Length -gt 1) { $pipxParts[1..($pipxParts.Length-1)] } else { @() }
         $fullArgs = $baseArgs + @("install", $installSpec, "--force")
-        $code = Invoke-WithSpinner -Label "Installing NAVIG via pipx ($installSpec)" -Exe $exe -ArgList $fullArgs
-        if ($code -ne 0) {
-            Write-NavHint "Manual fallback:  $usePipx install $installSpec"
-            exit 1
-        }
-    } else {
-        $pipParts = $PipCmd -split ' '
-        $exe      = $pipParts[0]
-        $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
-        $fullArgs = $baseArgs + @("install","--user","--upgrade",$installSpec)
+        $code = Invoke-WithSpinner -Label "Installing NAVIG via pipx" -Exe $exe -ArgList $fullArgs
+        if ($code -eq 0) { return }  # done
+        Write-NavInfo "pipx install failed - retrying with pip install --user"
+    }
 
-        $code = Invoke-WithSpinner -Label "Installing NAVIG via pip ($installSpec)" -Exe $exe -ArgList $fullArgs
-        if ($code -ne 0) {
-            Write-NavHint "Manual fallback:  pip install --user $installSpec"
-            exit 1
-        }
+    # ── pip --user (direct or fallback from pipx failure) ─────────────────
+    $pipParts = $PipCmd -split ' '
+    $exe      = $pipParts[0]
+    $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
+    $fullArgs = $baseArgs + @("install", "--user", "--upgrade", $installSpec)
+
+    $code = Invoke-WithSpinner -Label "Installing NAVIG via pip" -Exe $exe -ArgList $fullArgs
+    if ($code -ne 0) {
+        Write-NavErr "Installation failed"
+        Write-NavHint "Try manually:"
+        Write-NavHint "  pip install --user $installSpec"
+        Write-NavHint "  pip install --user --no-cache-dir $installSpec"
+        Write-NavHint "Docs: https://github.com/navig-run/core"
+        exit 1
     }
 }
 
