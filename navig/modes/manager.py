@@ -9,13 +9,16 @@ Mode profiles are defined in builtin.yaml and control:
   - output style
   - PIN-protected switching for privileged modes
 
-PIN storage: ~/.navig/.mode_pin  (SHA-256 of the 4-digit PIN, hex-encoded)
+PIN storage: ~/.navig/.mode_pin  (PBKDF2-HMAC-SHA256 v2; legacy SHA-256 v1 hashes upgraded automatically)
 Active mode: ~/.navig/config.yaml → active_mode
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
+import os
 from pathlib import Path
 from typing import Any
 
@@ -169,8 +172,36 @@ def _write_mode_key_fallback(cfg: Path, name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+# PIN hash format:
+#   v1 (legacy): bare SHA-256 hex string.
+#   v2 (current): "v2:<salt_b64>:<hash_b64>" using PBKDF2-HMAC-SHA256.
+_HASH_ALGO = "sha256"
+_HASH_ITERS = 260_000
+_SALT_LEN = 16
+
+
 def _hash_pin(pin: str) -> str:
-    return hashlib.sha256(pin.strip().encode()).hexdigest()
+    """Return a PBKDF2-HMAC-SHA256 hash of *pin* with a fresh random salt (v2 format)."""
+    salt = os.urandom(_SALT_LEN)
+    dk = hashlib.pbkdf2_hmac(_HASH_ALGO, pin.strip().encode(), salt, _HASH_ITERS)
+    return f"v2:{base64.b64encode(salt).decode()}:{base64.b64encode(dk).decode()}"
+
+
+def _verify_pin_hash(pin: str, stored: str) -> bool:
+    """Verify *pin* against a stored hash, supporting both v1 and v2 formats."""
+    if stored.startswith("v2:"):
+        try:
+            _, salt_b64, hash_b64 = stored.split(":", 2)
+            salt = base64.b64decode(salt_b64)
+            dk = hashlib.pbkdf2_hmac(
+                _HASH_ALGO, pin.strip().encode(), salt, _HASH_ITERS
+            )
+            return hmac.compare_digest(base64.b64decode(hash_b64), dk)
+        except Exception:
+            return False
+    # Legacy v1: bare unsalted SHA-256 -- verify only, never write new v1 hashes.
+    expected = hashlib.sha256(pin.strip().encode()).hexdigest()
+    return hmac.compare_digest(stored, expected)
 
 
 def has_pin() -> bool:
@@ -178,7 +209,7 @@ def has_pin() -> bool:
 
 
 def set_pin(pin: str) -> None:
-    """Store a SHA-256 hash of the 4-digit PIN."""
+    """Store a PBKDF2-HMAC-SHA256 hash of the 4-digit PIN (v2 format)."""
     if not pin.isdigit() or len(pin) != 4:
         raise ValueError("PIN must be exactly 4 digits.")
     _navig_home().mkdir(parents=True, exist_ok=True)
@@ -190,7 +221,12 @@ def verify_pin(pin: str) -> bool:
     if not _pin_path().exists():
         return False
     stored = _pin_path().read_text(encoding="utf-8").strip()
-    return stored == _hash_pin(pin)
+    if not _verify_pin_hash(pin, stored):
+        return False
+    # Opportunistically upgrade legacy v1 (SHA-256) hashes to v2 (PBKDF2).
+    if not stored.startswith("v2:"):
+        _pin_path().write_text(_hash_pin(pin), encoding="utf-8")
+    return True
 
 
 def prompt_pin(purpose: str = "switching to a privileged mode") -> bool:

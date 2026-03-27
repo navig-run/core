@@ -211,7 +211,14 @@ class SSHConnectionPool:
         ssh_password = ssh_config.get("ssh_password")
 
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Security: load system known-hosts and reject unrecognised keys by default to
+        # prevent MITM attacks.  Callers may set trust_new_host=True in ssh_config for
+        # first-connect onboarding, mirroring the pattern in navig/remote.py.
+        client.load_system_host_keys()
+        if ssh_config.get("trust_new_host", False):
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        else:
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         connect_kwargs = {
             "hostname": host,
