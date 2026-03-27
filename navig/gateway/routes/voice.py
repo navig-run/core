@@ -1,6 +1,10 @@
 """Voice and Command API routes.
 
 Routes: /api/voice/transcribe, /api/voice/synthesize, /api/voice/poll_wake, /api/command
+
+Note: aiohttp is resolved lazily so that PENDING_WAKES can be imported by
+wake_word.py without requiring aiohttp to be installed.  The RuntimeError is
+surfaced only when a request handler function is actually called.
 """
 
 from __future__ import annotations
@@ -12,12 +16,25 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-try:
-    from aiohttp import web
-except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+# Lazy aiohttp import — do NOT raise at module level so that other modules
+# (e.g. wake_word.py) can import PENDING_WAKES without aiohttp installed.
+_aiohttp_web = None
+
+
+def _get_web():
+    global _aiohttp_web
+    if _aiohttp_web is not None:
+        return _aiohttp_web
+    try:
+        from aiohttp import web as _web  # noqa: PLC0415
+
+        _aiohttp_web = _web
+        return _web
+    except ImportError as exc:
+        raise RuntimeError(
+            "aiohttp is required for gateway routes (pip install aiohttp)"
+        ) from exc
+
 
 if TYPE_CHECKING:
     from aiohttp import web  # noqa: F811
@@ -49,7 +66,7 @@ def register(app, gateway):
 
 
 def _transcribe(gw):
-    async def h(r: web.Request):
+    async def h(r):  # type: aiohttp.web.Request  # noqa: ANN001
         # Allow anonymous local access; Rust bridge is expected to send the token.
         _auth = require_bearer_auth(r, gw, allow_anonymous=True)
         reader = await r.multipart()
@@ -112,7 +129,7 @@ def _transcribe(gw):
 
 
 def _synthesize(gw):
-    async def h(r: web.Request):
+    async def h(r):  # type: aiohttp.web.Request
         data = await r.json()
         text = data.get("text")
         if not text:
@@ -151,7 +168,7 @@ def _synthesize(gw):
 
 
 def _command(gw):
-    async def h(r: web.Request):
+    async def h(r):  # type: aiohttp.web.Request
         data = await r.json()
         text = data.get("text")
         if not text:
@@ -185,7 +202,7 @@ def _command(gw):
 
 
 def _poll_wake(gw):
-    async def h(r: web.Request):
+    async def h(r):  # type: aiohttp.web.Request
         # Pop the oldest wake if any
         if PENDING_WAKES:
             wake = PENDING_WAKES.popleft()
@@ -198,7 +215,7 @@ def _poll_wake(gw):
             )
         else:
             # 404 means no wake event pending this poll
-            return web.json_response({"status": "no_event"}, status=404)
+            return _get_web().json_response({"status": "no_event"}, status=404)
 
     return h
 
@@ -214,13 +231,12 @@ class _SSEClient:
 
 
 def _events(gw):
-    async def h(r: web.Request):
+    async def h(r):  # type: aiohttp.web.Request
         import asyncio
         import json
 
-        from aiohttp import web
-
-        response = web.StreamResponse(
+        _web = _get_web()
+        response = _web.StreamResponse(
             status=200,
             reason="OK",
             headers={
