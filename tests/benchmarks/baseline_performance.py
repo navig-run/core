@@ -23,8 +23,6 @@ import statistics
 import subprocess
 import sys
 import time
-from pathlib import Path
-from typing import Callable
 
 # Number of iterations for each benchmark
 ITERATIONS = 5

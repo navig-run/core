@@ -7,9 +7,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from typing import Any, Dict
-
-import pytest
+from typing import Dict
 
 
 def _write_json(path: Path, data: Dict) -> None:

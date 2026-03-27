@@ -13,8 +13,6 @@ Covers:
 
 from __future__ import annotations
 
-import os
-import tempfile
 import textwrap
 from pathlib import Path
 
@@ -24,7 +22,6 @@ from navig.memory.project_indexer import (
     DEFAULT_EXCLUDES,
     ProjectIndexConfig,
     ProjectIndexer,
-    ProjectSearchResult,
     _is_ignored,
     _is_indexable,
     chunk_file,

@@ -6,7 +6,6 @@ strings even when the terminal cannot encode emoji (Windows cp1252 / charmap).
 """
 
 import importlib
-import sys
 import types
 from unittest.mock import MagicMock, patch
 

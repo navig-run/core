@@ -13,7 +13,7 @@ import json
 import os
 import tempfile
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -431,7 +431,6 @@ class TestAuditRoute:
 
     def test_requires_auth(self):
         from navig.gateway.routes.audit import _tail
-        from navig.gateway.routes.common import require_bearer_auth
 
         gw = self._make_gw()
         req = self._make_request(gw, token="wrong-token")
@@ -505,7 +504,6 @@ class TestRoutePolicyGates:
 
     def test_daemon_stop_policy_allow_proceeds(self):
         """ALLOW decision — stop should initiate (we just check it reaches task creation)."""
-        import asyncio as _aio
 
         from navig.gateway.routes.daemon import _daemon_stop
 

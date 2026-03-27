@@ -3,9 +3,7 @@ Tests for NAVIG Configuration Backup & Export System.
 """
 
 import json
-import os
 import shutil
-import tarfile
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch

@@ -38,7 +38,7 @@ from __future__ import annotations
 # from telegram.ext import ContextTypes
 import logging
 
-from plugin_base import BotPlugin, PluginContext, PluginEvent, PluginMeta
+from plugin_base import BotPlugin, PluginMeta
 from telegram import Update
 from telegram.ext import ContextTypes
 

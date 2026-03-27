@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from navig.agent.conv.agent import ConversationalAgent
 from navig.agent.conv.console_renderer import ConsoleStatusRenderer
 from navig.agent.conv.executor import ExecutionStep, Task, TaskExecutor

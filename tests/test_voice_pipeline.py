@@ -1,11 +1,9 @@
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from navig.voice.pipeline import VoicePipeline
-from navig.voice.session_manager import VoiceSessionManager
 
 
 @pytest.fixture

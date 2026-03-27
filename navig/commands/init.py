@@ -144,15 +144,15 @@ def init_app(options: Dict[str, Any]) -> None:
             try:
                 try:
                     os.chmod(
+                        navig_dir,
+                        stat.S_IRWXU
+                        | stat.S_IRGRP
+                        | stat.S_IXGRP
+                        | stat.S_IROTH
+                        | stat.S_IXOTH,
+                    )
                 except (OSError, PermissionError):
                     pass
-                    navig_dir,
-                    stat.S_IRWXU
-                    | stat.S_IRGRP
-                    | stat.S_IXGRP
-                    | stat.S_IROTH
-                    | stat.S_IXOTH,
-                )
             except Exception as e:
                 if not quiet:
                     ch.warning(f"Could not set permissions: {e}")

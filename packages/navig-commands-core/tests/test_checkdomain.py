@@ -5,7 +5,6 @@ Run with: py -3 -m pytest tests/ -q
 
 from __future__ import annotations
 
-import asyncio
 import pathlib
 import sys
 import unittest

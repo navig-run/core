@@ -5,10 +5,6 @@ and Telegram webhook support.
 Run: pytest tests/test_bridge.py -v
 """
 
-import asyncio
-import json
-import time
-from typing import Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

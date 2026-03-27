@@ -2,7 +2,6 @@
 Tests for ConfigManager with new two-tier hierarchy.
 """
 
-import os
 import shutil
 import tempfile
 from pathlib import Path

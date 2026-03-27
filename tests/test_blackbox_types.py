@@ -1,8 +1,6 @@
 import json
 from datetime import datetime, timezone
 
-import pytest
-
 from navig.blackbox.types import BlackboxEvent, Bundle, EventType
 
 

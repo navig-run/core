@@ -8,9 +8,6 @@ These tests verify commands work end-to-end with proper:
 - JSON output formatting
 """
 
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
-
 import pytest
 
 

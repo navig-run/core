@@ -3,10 +3,6 @@ Tests for the audio file handler: classification, keyboard layout,
 MIME resolution, and STT routing.
 """
 
-from pathlib import Path
-
-import pytest
-
 from navig.gateway.channels.telegram_voice import _classify_audio
 
 # ---------------------------------------------------------------------------

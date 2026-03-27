@@ -17,11 +17,8 @@ Covers:
 
 from __future__ import annotations
 
-import math
-import os
 import sqlite3
 import struct
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -149,7 +146,6 @@ class TestEngine:
 
     def test_pragmas_applied(self, tmp_path):
         from navig.storage.engine import Engine
-        from navig.storage.pragma_profiles import FAST
 
         engine = Engine()
         db = _make_db(tmp_path, "runtime.db")

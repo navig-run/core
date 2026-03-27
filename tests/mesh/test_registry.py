@@ -3,11 +3,7 @@ Tests for navig.mesh.registry — unit coverage for NodeRecord health, eviction,
 best-peer selection, and persistence round-trip.
 """
 
-import json
 import time
-from pathlib import Path
-
-import pytest
 
 from navig.mesh.registry import (
     DEGRADED_AFTER_S,

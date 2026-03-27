@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.update.lifecycle import UpdateEngine
 from navig.update.models import VersionInfo
 from navig.update.targets import UpdateTarget

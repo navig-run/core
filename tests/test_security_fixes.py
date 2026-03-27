@@ -11,7 +11,6 @@ Tests verify that security vulnerabilities have been properly fixed:
 
 import os
 import subprocess
-import tempfile
 import unittest
 from unittest import mock
 

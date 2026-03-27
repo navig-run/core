@@ -1,10 +1,9 @@
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from navig.blackbox.export import export_bundle
-from navig.blackbox.types import BlackboxEvent, Bundle, EventType
+from navig.blackbox.types import Bundle
 
 
 @pytest.fixture

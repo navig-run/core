@@ -11,14 +11,12 @@ Tests the wiki management functionality including:
 
 import shutil
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 import yaml
 
 from navig.commands.wiki import (
-    WIKI_STRUCTURE,
     categorize_content,
     ensure_wiki_initialized,
     find_broken_links,

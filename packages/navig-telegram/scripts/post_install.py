@@ -7,7 +7,6 @@ Checks for the Telegram bot token and prints a setup message.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 

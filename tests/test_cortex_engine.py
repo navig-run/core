@@ -16,12 +16,10 @@ Playwright tests are marked @pytest.mark.browser and skipped in unit CI
 unless NAVIG_RUN_BROWSER_TESTS=1 is set.
 """
 
-import asyncio
 import json
 import os
-import re
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
@@ -390,7 +388,6 @@ class TestCDPBridge:
 
     def test_cdp_bridge_inherits_controller_methods(self):
         from navig.browser.cdp_bridge import CDPBridge
-        from navig.browser.controller import BrowserController
 
         bridge = CDPBridge()
         # Must have all the Phase 1+2 methods

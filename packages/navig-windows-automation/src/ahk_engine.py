@@ -2,16 +2,13 @@
 NAVIG AutoHotkey v2 Adapter
 """
 
-import asyncio
 import os
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
-
-from navig.console_helper import console, error, info, success, warning
+from typing import List, Optional, Tuple, Union
 
 
 @dataclass

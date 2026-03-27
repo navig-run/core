@@ -451,7 +451,6 @@ class TestRunInstall:
     def test_operator_dry_run_has_telegram_action(self, tmp_path):
         """telegram module emits a SKIPPED action when no token — still present."""
         from navig.installer import run_install
-        from navig.installer.contracts import ModuleState
 
         results = run_install(
             profile="operator",

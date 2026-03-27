@@ -12,7 +12,6 @@ import os
 import re
 import urllib.request
 from pathlib import Path
-from typing import Any
 
 from telegram import Update
 from telegram.ext import ContextTypes

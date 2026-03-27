@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from navig.selfheal.patcher import build_patch
 from navig.selfheal.scanner import ScanFinding
 

@@ -351,7 +351,7 @@ class TestMatrixAdminClient:
 
     def test_get_admin_client_singleton(self):
         import navig.comms.matrix_admin as admin_mod
-        from navig.comms.matrix_admin import _admin_client, get_admin_client
+        from navig.comms.matrix_admin import get_admin_client
 
         # Reset singleton
         admin_mod._admin_client = None
@@ -735,7 +735,6 @@ class TestMatrixNotifier:
     @pytest.mark.asyncio
     async def test_send_alert_convenience(self):
         from navig.gateway.matrix_notifier import MatrixNotifier
-        from navig.gateway.notifications import NotificationPriority
 
         mock_bot = MagicMock()
         mock_bot.send_message = AsyncMock(return_value="$evt1")
@@ -878,7 +877,6 @@ class TestMatrixInboxCLI:
     """Smoke tests for navig matrix inbox commands."""
 
     def test_inbox_list_requires_notifications_feature(self):
-        from click.exceptions import Exit
         from typer.testing import CliRunner
 
         from navig.commands.matrix import matrix_app
@@ -1581,7 +1579,7 @@ class TestMatrixStoreRooms:
         return MatrixStore(os.path.join(tmp, "test.db"))
 
     def test_upsert_and_get(self):
-        from navig.comms.matrix_store import MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1601,7 +1599,7 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_upsert_updates(self):
-        from navig.comms.matrix_store import MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1612,7 +1610,7 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_list_rooms_filter(self):
-        from navig.comms.matrix_store import MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1625,7 +1623,7 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_remove_room(self):
-        from navig.comms.matrix_store import MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1637,7 +1635,7 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_room_metadata(self):
-        from navig.comms.matrix_store import MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1661,7 +1659,7 @@ class TestMatrixStoreEvents:
         return MatrixStore(os.path.join(tmp, "test.db"))
 
     def test_add_and_get(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1683,7 +1681,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_duplicate_event_id_ignored(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1700,7 +1698,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_events_ordered_by_origin_ts(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1721,7 +1719,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_get_events_limit(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1740,7 +1738,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_get_events_since_ts(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1761,7 +1759,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_get_events_by_type(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1788,7 +1786,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_batch_insert(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1808,7 +1806,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_prune_events(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1832,7 +1830,7 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_count_unique_senders(self):
-        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1859,7 +1857,7 @@ class TestMatrixStoreBridges:
         return MatrixStore(os.path.join(tmp, "test.db"))
 
     def test_add_and_get(self):
-        from navig.comms.matrix_store import MatrixBridge, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixBridge, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1879,7 +1877,7 @@ class TestMatrixStoreBridges:
             store.close()
 
     def test_remove_bridge(self):
-        from navig.comms.matrix_store import MatrixBridge, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixBridge, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1896,7 +1894,7 @@ class TestMatrixStoreBridges:
             store.close()
 
     def test_get_all_bridges(self):
-        from navig.comms.matrix_store import MatrixBridge, MatrixRoom, MatrixStore
+        from navig.comms.matrix_store import MatrixBridge, MatrixRoom
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)

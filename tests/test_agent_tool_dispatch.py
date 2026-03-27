@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -60,7 +60,6 @@ async def test_fallthrough_to_tool_router_success():
     _reset()
     from navig.agent.conv.executor import TaskExecutor
     from navig.tools.router import get_tool_router
-    from navig.tools.schemas import ToolCallAction
     from navig.tools.schemas import ToolResult as RouterToolResult
     from navig.tools.schemas import ToolResultStatus
 

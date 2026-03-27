@@ -17,13 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from navig.gateway.channels.telegram_autoheal import (
     AutoHealMixin,

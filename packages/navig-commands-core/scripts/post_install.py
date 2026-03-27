@@ -1,6 +1,3 @@
-import sys
-
-
 def main() -> None:
     print("navig-commands-core post-install")
     print("  Verifying runtime dependencies...")

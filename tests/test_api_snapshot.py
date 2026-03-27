@@ -21,12 +21,10 @@ Covers:
 from __future__ import annotations
 
 import json
-import shutil
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, patch
+from typing import Any, Dict
+from unittest.mock import patch
 
 import pytest
 
@@ -366,7 +364,7 @@ class TestLoadSnapshotPolicies:
     """Tests for load_snapshot_policies."""
 
     def test_from_dict(self):
-        from navig.memory.snapshot import SnapshotPolicy, load_snapshot_policies
+        from navig.memory.snapshot import load_snapshot_policies
 
         config = {
             "trading.fetch.ohlc": {"store": True, "retention": "7d"},
@@ -914,7 +912,7 @@ class TestApiPackRegistration:
     """Test that api_pack registers 6 tools with correct metadata."""
 
     def test_register_all_tools(self):
-        from navig.tools.router import ToolDomain, ToolRegistry
+        from navig.tools.router import ToolRegistry
 
         registry = ToolRegistry()
         from navig.tools.domains.api_pack import register_tools

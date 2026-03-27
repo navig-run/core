@@ -4,9 +4,7 @@ Tests for Interactive Menu System
 The Schema tests all operations. Every path. Every edge case.
 """
 
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -18,7 +16,6 @@ from navig.commands.interactive import (
     prompt_selection,
     show_status,
 )
-from navig.config import ConfigManager
 
 
 class TestCommandHistory:

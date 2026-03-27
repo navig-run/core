@@ -13,9 +13,7 @@ import asyncio
 import sys
 import textwrap
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # Make imports work from tests/ subdirectory

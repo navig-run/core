@@ -6,7 +6,6 @@ Compares old BaseStore implementation vs new Engine-backed implementation.
 Tests: writes, batch writes, reads, write batching, query timing.
 """
 
-import sqlite3
 import statistics
 import sys
 import tempfile
@@ -15,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from navig.storage import WriteBatcher, get_engine
+from navig.storage import get_engine
 from navig.store.base import BaseStore
 
 
@@ -291,8 +290,6 @@ def benchmark_pragma_profiles():
     """Test PRAGMA profile impact."""
     print("\n5. PRAGMA Profile Impact (1000 writes each)")
     print("=" * 60)
-
-    from navig.storage import PragmaProfile
 
     with tempfile.TemporaryDirectory() as tmpdir:
         try:

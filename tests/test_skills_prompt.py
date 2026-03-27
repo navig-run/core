@@ -1,7 +1,6 @@
 """Tests for Skills prompt renderer."""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -10,7 +9,7 @@ class TestSkillsPrompt:
 
     def test_json_manifest_renders(self, tmp_path):
         """JSON skill manifest renders correctly via template."""
-        from navig.skills_renderer import _manual_render, render_skills_prompt
+        from navig.skills_renderer import _manual_render
 
         # Create a skill JSON
         skill_dir = tmp_path / "skills"

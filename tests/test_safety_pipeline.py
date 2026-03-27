@@ -16,11 +16,6 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import json
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Any, Dict
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -303,13 +298,7 @@ class TestToolRouterNeedsConfirmation:
         assert "requires human confirmation" in result.error
 
     def test_blocked_tool_still_denied(self):
-        from navig.tools.router import (
-            SafetyLevel,
-            ToolDomain,
-            ToolMeta,
-            ToolRegistry,
-            ToolRouter,
-        )
+        from navig.tools.router import ToolDomain, ToolMeta, ToolRegistry, ToolRouter
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = ToolRegistry()
@@ -401,7 +390,7 @@ class TestApprovalPolicy:
         assert policy.is_user_auto_approved("random") is False
 
     def test_classify_alias(self):
-        from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+        from navig.approval.policies import ApprovalPolicy
 
         policy = ApprovalPolicy.default()
         assert policy.classify("host list") == policy.classify_command("host list")
@@ -417,7 +406,7 @@ class TestApprovalRequest:
 
     def test_to_dict(self):
         from navig.approval.manager import ApprovalRequest
-        from navig.approval.policies import ApprovalLevel, ApprovalStatus
+        from navig.approval.policies import ApprovalLevel
 
         req = ApprovalRequest(
             id="abc123",

@@ -4,7 +4,6 @@ Tests for navig.mesh.dedup — DeduplicationFilter and HandoffQueue.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from unittest.mock import AsyncMock
 

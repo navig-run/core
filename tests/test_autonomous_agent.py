@@ -10,9 +10,7 @@ Verifies all components are working:
 5. Session management
 """
 
-import json
 import time
-from datetime import datetime
 
 import pytest
 import requests

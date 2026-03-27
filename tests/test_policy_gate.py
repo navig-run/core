@@ -9,13 +9,7 @@ import unittest
 from pathlib import Path
 
 from navig.gateway.audit_log import AuditLog
-from navig.gateway.policy_gate import (
-    PolicyConfig,
-    PolicyDecision,
-    PolicyGate,
-    PolicyResult,
-    PolicyRule,
-)
+from navig.gateway.policy_gate import PolicyDecision, PolicyGate
 
 # ---------------------------------------------------------------------------
 # PolicyGate tests

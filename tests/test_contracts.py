@@ -10,10 +10,6 @@ Coverage:
   - RuntimeStore CRUD + persistence + restart recovery
 """
 
-import json
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from navig.contracts import (
@@ -22,7 +18,6 @@ from navig.contracts import (
     Capability,
     ExecutionReceipt,
     Mission,
-    MissionPriority,
     MissionStatus,
     Node,
     NodeOS,

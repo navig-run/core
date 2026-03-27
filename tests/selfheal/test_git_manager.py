@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from navig.selfheal.git_manager import (
     UPSTREAM_URL,
     apply_patch,
-    commit_and_push,
     create_branch,
     sync_fork,
 )

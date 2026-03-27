@@ -4,14 +4,10 @@ import pytest
 
 from navig.llm_routing_types import (
     LLMChunk,
-    LLMClientProtocol,
     LLMProviderAdapter,
     LLMResult,
-    ModelRouterProtocol,
     ModelSelection,
     ModeRouterProtocol,
-    ProviderClientAdapter,
-    ProviderFactoryProtocol,
     RoutingContext,
     UnifiedProviderFactory,
     get_provider_factory,

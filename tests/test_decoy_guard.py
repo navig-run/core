@@ -7,7 +7,6 @@ Covers:
 - Integration: unauthorized never touches real handler
 """
 
-import re
 from datetime import date
 from unittest.mock import patch
 

@@ -1,5 +1,4 @@
 import os
-import time
 
 import httpx
 from app.settings import REDIS_URL, RUNTIME_URL

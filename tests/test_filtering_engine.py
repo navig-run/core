@@ -7,17 +7,12 @@ Run: pytest tests/test_filtering_engine.py -v
 
 from __future__ import annotations
 
-import textwrap
 import threading
 import time
 from pathlib import Path
 
-import pytest
-
 from navig.agents.filtering_engine import (
     FilteringEngine,
-    FilterResult,
-    NormalizationRule,
     apply_frontmatter,
     normalize_headings,
 )

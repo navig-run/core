@@ -12,7 +12,6 @@ Tests syntax, imports, and basic functionality of all 8 new modules:
 - webserver
 """
 
-import importlib
 import sys
 from pathlib import Path
 

@@ -13,13 +13,11 @@ import json
 import shutil
 import tempfile
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 import yaml
 
-from navig.config import ConfigManager
 from navig.discovery import ServerDiscovery
 from navig.server_template_manager import ServerTemplateManager
 from navig.template_manager import TemplateManager
