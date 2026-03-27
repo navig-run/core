@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -28,9 +29,7 @@ def _validate_repo_path(repo_path: str) -> Path:
     Only allows paths within the user home directory, system temp directory,
     or well-known Docker workspace mounts (/repo, /workspace).
     """
-    import os
-
-    resolved = Path(os.path.realpath(repo_path))
+    resolved = Path(os.path.realpath(repo_path))  # noqa: PTH208
     allowed_roots: tuple[Path, ...] = (
         Path.home().resolve(),
         Path(tempfile.gettempdir()).resolve(),
@@ -99,7 +98,7 @@ def repo_patch(payload: dict):
         raise HTTPException(status_code=400, detail="repo_path required")
 
     sandbox_repo = _copy_repo(repo_path)
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     patch_file = sandbox_repo / "OPERATIONAL_FACTORY_PATCH_PLAN.md"
     patch_file.write_text(
         "# Operational Factory Patch Plan\n\n"

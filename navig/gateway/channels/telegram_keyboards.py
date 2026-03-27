@@ -9,7 +9,7 @@ Three keyboard profiles (max 2 rows, max 3 buttons/row):
 
 Callback data schema:  action:hash
   action = button action type
-  hash   = 6-char MD5 key into CallbackStore
+  hash   = 6-char SHA-256 key into CallbackStore
 """
 
 from __future__ import annotations
