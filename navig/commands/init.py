@@ -7,7 +7,7 @@ Initialize app-specific .navig/ directory for hierarchical configuration.
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -77,7 +77,7 @@ def _copy_instructions_file(project_root: Path) -> bool:
         return False
 
 
-def init_app(options: Dict[str, Any]) -> None:
+def init_app(options: dict[str, Any]) -> None:
     """
     Initialize app-specific .navig/ directory.
 

@@ -1902,9 +1902,7 @@ def whoami_command(
             ch.dim(f"  entity path: {state_file}")
         except Exception:  # noqa: BLE001
             pass
-    from navig.commands.whoami import run_whoami
-
-    run_whoami(debug=debug)
+    run_whoami()
 
 
 @app.command("settings")
@@ -7474,9 +7472,7 @@ def config_edit(
     target: str | None = typer.Argument(None, help="Host name or host:app to edit"),
 ):
     """Open configuration in default editor."""
-    from navig.commands.config import edit_config
-
-    edit_config(target=target)
+    edit_config({"target": target})
 
 
 @config_app.command("backup")
@@ -11242,9 +11238,7 @@ def config_audit(
     """
     Audit configuration for security and validity.
     """
-    from navig.commands.security import config_audit as run_audit
-
-    run_audit(fix=fix)
+    run_audit({"fix": fix})
 
 
 @config_app.command("show")

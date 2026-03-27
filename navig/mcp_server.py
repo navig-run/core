@@ -752,7 +752,9 @@ async def memory_remember(text: str, source: str = "mcp") -> dict:
 
     store = _memory_store()
     extractor = FactExtractor(store)
-    added = extractor.extract_and_store(text=text, source=source)
+    added = await extractor.extract_and_store(
+        user_text=text, assistant_text="", source_platform=source
+    )
     return {"added": added}
 
 

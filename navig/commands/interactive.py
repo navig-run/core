@@ -4115,7 +4115,7 @@ def execute_wiki_search(state: MenuState):
         term = Prompt.ask(f"[{COLORS['action']}]Search term[/{COLORS['action']}]")
 
         if term:
-            wiki_cmd.cmd_search(term)
+            wiki_cmd.cmd_search(query=term)
             state.history.add(f"navig wiki search '{term}'", "Wiki search", True)
 
         console.print()

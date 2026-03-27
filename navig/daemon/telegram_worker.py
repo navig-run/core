@@ -192,7 +192,15 @@ async def _mcp_reconnect_loop(
             # Attempt (re)connect
             logger.info("MCP reconnect: attempting %s → %s", name, mcp_cfg["mcp_url"])
             try:
-                await mgr.add_client(name=name, url=mcp_cfg["mcp_url"])
+                from navig.mcp.client import MCPClientConfig
+
+                await mgr.add_client(
+                    config=MCPClientConfig(
+                        id=name,
+                        url=mcp_cfg["mcp_url"],
+                        transport="sse" if "http" in mcp_cfg["mcp_url"] else "stdio",
+                    )
+                )
                 logger.info("MCP reconnect: %s connected", name)
             except Exception as e:
                 logger.debug("MCP reconnect failed: %s", e)
@@ -247,9 +255,14 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
 
             gateway.mcp_client_manager = MCPClientManager()
             try:
+                from navig.mcp.client import MCPClientConfig
+
                 await gateway.mcp_client_manager.add_client(
-                    name="vscode-copilot",
-                    url=mcp_cfg["mcp_url"],
+                    config=MCPClientConfig(
+                        id="vscode-copilot",
+                        url=mcp_cfg["mcp_url"],
+                        transport="sse" if "http" in mcp_cfg["mcp_url"] else "stdio",
+                    )
                 )
                 logger.info("MCP Bridge client connected → %s", mcp_cfg["mcp_url"])
             except Exception as e:
