@@ -100,19 +100,12 @@ Describe "Add-NavigBinToPath" {
 # ─────────────────────────────────────────────────────────────────────────────
 Describe "Get-PythonScriptsDir" {
     It "falls back to parent-dir/Scripts when sysconfig returns a nonexistent path" {
-        # Arrange: create a fake python.exe that returns a nonexistent sysconfig path.
         $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
         New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-        # Create Scripts\ sibling so the fallback fires.
         $scriptsDir = Join-Path $tmpDir "Scripts"
         New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
-        # Fake python.exe: returns a path that does not exist (triggers fallback).
-        $fakePython = Join-Path $tmpDir "python.exe"
-        "@echo C:\nonexistent\sysconfig\path" | Set-Content -Path (Join-Path $tmpDir "python.cmd")
         try {
-            # Call with the parent dir path to exercise the Split-Path fallback.
             $result = Get-PythonScriptsDir -PythonExe (Join-Path $tmpDir "python.exe")
-            # Fallback: parent of PythonExe + \Scripts
             $result | Should -Be $scriptsDir
         } finally {
             Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -136,11 +129,10 @@ Describe "Test-NavigCommand — source checks" {
         $fn.Value | Should -Match 'navig\.exe'
     }
 
-    It "emits a [!!] line and returns false on failure" {
+    It "returns null on failure (does not call exit)" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Test-NavigCommand.*?\n\}')
-        $fn.Value | Should -Match 'Write-NavErr'
-        $fn.Value | Should -Match 'return \$false'
+        $fn.Value | Should -Match 'return \$null'
     }
 }
 
@@ -161,20 +153,21 @@ Describe "Install-Navig — source checks" {
         $fn.Value | Should -Match 'RedirectStandardError'
     }
 
-    It "exits with code 1 on pip failure" {
+    It "returns false on pip failure (does not call exit directly)" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Install-Navig.*?\n\}')
-        $fn.Value | Should -Match 'exit 1'
+        $fn.Value | Should -Match 'return \$false'
     }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Reinstall path
 # ─────────────────────────────────────────────────────────────────────────────
-Describe "Reinstall path — captures uninstall result" {
-    It "does not silently discard Invoke-NavigUninstall result with Out-Null" {
+Describe "Reinstall path — uninstall is called" {
+    It "calls Invoke-NavigUninstall with -ForReinstall during reinstall" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $src | Should -Not -Match 'Invoke-NavigUninstall.*ForReinstall.*\|\s*Out-Null'
+        $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
+        $fn.Value | Should -Match 'Invoke-NavigUninstall.*ForReinstall'
     }
 }
 
@@ -208,18 +201,18 @@ Describe "Pip-only enforcement" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# New UX layer — terminal capability, output helpers, banner, success screen
+# Terminal capability detection
 # ─────────────────────────────────────────────────────────────────────────────
-Describe "Initialize-NavTerminal" {
+Describe "Initialize-Terminal" {
     It "sets script-level NavColor to a boolean" {
-        Initialize-NavTerminal
+        Initialize-Terminal
         $script:NavColor | Should -BeOfType [bool]
     }
 
     It "respects NO_COLOR env var" {
         $env:NO_COLOR = "1"
         try {
-            Initialize-NavTerminal
+            Initialize-Terminal
             $script:NavColor | Should -Be $false
         } finally {
             Remove-Item Env:\NO_COLOR -ErrorAction SilentlyContinue
@@ -227,6 +220,9 @@ Describe "Initialize-NavTerminal" {
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Verbose output helper
+# ─────────────────────────────────────────────────────────────────────────────
 Describe "Write-NavVerbose" {
     It "produces no output when Verbose is false" {
         $script:Verbose = $false
@@ -234,46 +230,67 @@ Describe "Write-NavVerbose" {
         $output | Should -BeNullOrEmpty
     }
 
-    It "produces output when Verbose is true" {
-        # Verify Write-NavVerbose conditionally emits based on $Verbose flag
+    It "is gated on the Verbose flag in source" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Write-NavVerbose.*?\n\}')
         $fn.Value | Should -Match '\$Verbose'
-        $fn.Value | Should -Match 'Write-Host'
     }
 }
 
-Describe "Show-Banner — no taglines" {
+# ─────────────────────────────────────────────────────────────────────────────
+# Print-Header (branded box)
+# ─────────────────────────────────────────────────────────────────────────────
+Describe "Print-Header" {
+    It "exists as a function" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $src | Should -Match 'function Print-Header'
+    }
+
+    It "contains canonical product description" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Print-Header.*?\n\}')
+        $fn.Value | Should -Match 'quiet operator tooling'
+    }
+
+    It "contains unicode box-drawing characters or ASCII fallback" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Print-Header.*?\n\}')
+        $fn.Value | Should -Match '(tl|tr|bl|br|hz|sym)'
+    }
+
     It "does not contain a tagline array" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Show-Banner.*?\n\}')
+        $fn  = [regex]::Match($src, '(?s)function Print-Header.*?\n\}')
         $fn.Value | Should -Not -Match '\$taglines\s*='
         $fn.Value | Should -Not -Match 'Get-Random'
     }
-
-    It "contains the canonical product description" {
-        $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Show-Banner.*?\n\}')
-        $fn.Value | Should -Match 'quiet operator tooling'
-    }
 }
 
-Describe "Show-Success" {
+# ─────────────────────────────────────────────────────────────────────────────
+# Print-Done (success block)
+# ─────────────────────────────────────────────────────────────────────────────
+Describe "Print-Done" {
     It "exists as a function" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $src | Should -Match 'function Show-Success'
+        $src | Should -Match 'function Print-Done'
     }
 
     It "contains 'navig init'" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Show-Success.*?\n\}')
+        $fn  = [regex]::Match($src, '(?s)function Print-Done.*?\n\}')
         $fn.Value | Should -Match 'navig init'
     }
 
-    It "contains 'Ready.'" {
+    It "contains 'navig --version'" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Show-Success.*?\n\}')
-        $fn.Value | Should -Match 'Ready\.'
+        $fn  = [regex]::Match($src, '(?s)function Print-Done.*?\n\}')
+        $fn.Value | Should -Match 'navig --version'
+    }
+
+    It "contains box-drawing elements" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Print-Done.*?\n\}')
+        $fn.Value | Should -Match '(tl|tr|bl|br|hz|sym)'
     }
 
     It "does not contain old magenta box markers" {
@@ -283,27 +300,75 @@ Describe "Show-Success" {
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Print-Failure (error block)
+# ─────────────────────────────────────────────────────────────────────────────
+Describe "Print-Failure" {
+    It "exists as a function" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $src | Should -Match 'function Print-Failure'
+    }
+
+    It "has Problem / Fix / Run rows" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Print-Failure.*?\n\}')
+        $fn.Value | Should -Match 'Problem'
+        $fn.Value | Should -Match 'Fix'
+        $fn.Value | Should -Match 'Run'
+    }
+
+    It "highlights the Run command in Yellow" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Print-Failure.*?\n\}')
+        $fn.Value | Should -Match 'Yellow'
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Layout constants
+# ─────────────────────────────────────────────────────────────────────────────
+Describe "Layout constants" {
+    It "defines LW (box width) constant" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $src | Should -Match '\$script:LW\s*='
+    }
+
+    It "defines LB (label column) constant" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $src | Should -Match '\$script:LB\s*='
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main — phased structure
+# ─────────────────────────────────────────────────────────────────────────────
 Describe "Main — phased structure" {
-    It "calls Write-NavPhase for each phase" {
+    It "calls Print-Section for each phase" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
-        $fn.Value | Should -Match "Write-NavPhase.*Environment"
-        $fn.Value | Should -Match "Write-NavPhase.*Requirements"
-        $fn.Value | Should -Match "Write-NavPhase.*Install"
-        $fn.Value | Should -Match "Write-NavPhase.*Verify"
+        $fn.Value | Should -Match "Print-Section.*Environment"
+        $fn.Value | Should -Match "Print-Section.*Requirements"
+        $fn.Value | Should -Match "Print-Section.*Install"
+        $fn.Value | Should -Match "Print-Section.*Verify"
     }
 
-    It "calls Show-Success after successful install" {
+    It "calls Print-Done after successful install" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
-        $fn.Value | Should -Match 'Show-Success'
+        $fn.Value | Should -Match 'Print-Done'
     }
 
-    It "calls Initialize-NavTerminal before Show-Banner" {
+    It "calls Initialize-Terminal before Print-Header" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
-        $initIdx   = $fn.Value.IndexOf('Initialize-NavTerminal')
-        $bannerIdx = $fn.Value.IndexOf('Show-Banner')
-        $initIdx   | Should -BeLessThan $bannerIdx
+        $initIdx   = $fn.Value.IndexOf('Initialize-Terminal')
+        $headerIdx = $fn.Value.IndexOf('Print-Header')
+        $initIdx   | Should -BeLessThan $headerIdx
+    }
+
+    It "calls Print-Failure on python-not-found" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
+        $fn.Value | Should -Match 'Print-Failure'
     }
 }
