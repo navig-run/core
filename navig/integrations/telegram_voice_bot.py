@@ -140,7 +140,7 @@ class TelegramVoiceBot:
                 CallbackQueryHandler,
                 CommandHandler,
                 MessageHandler,
-                filters,
+                filters,  # noqa: F401
             )
         except ImportError as exc:
             raise RuntimeError(

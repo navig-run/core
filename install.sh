@@ -57,7 +57,7 @@ REPO_URL="https://github.com/navig-run/core.git"
 TAGLINES=(
     "Your servers are in good hands now."
     "No admin visible in graveyard? Perfect."
-    "SSH tunnels, remote ops — all in one CLI."
+    "SSH tunnels, remote ops - all in one CLI."
     "Because server management shouldn't feel like surgery."
     "ctrl+c to exit. But why would you?"
     "Keeping uptime personal since 2024."
@@ -67,7 +67,7 @@ TAGLINES=(
     "Born in the terminal. Lives in the cloud."
     "Your devops sidekick. No cape required."
     "Deploy, manage, survive. Repeat."
-    "Less SSH, more SHH — it just works."
+    "Less SSH, more SHH - it just works."
     "The quiet guardian of your infrastructure."
     "Admin by day, daemon by night."
 )
@@ -78,8 +78,12 @@ pick_tagline() {
 
 # ── Banner ────────────────────────────────────────────────────
 print_banner() {
+    local v=""
+    if [ -n "$VERSION" ]; then
+        v="v$VERSION "
+    fi
     echo ""
-    echo -e "${ACCENT}${BOLD}  NAVIG ${NC}— ${DIM}$(pick_tagline)${NC}"
+    echo -e "${ACCENT}${BOLD}  NAVIG ${v}${NC}- ${DIM}$(pick_tagline)${NC}"
     echo ""
 }
 

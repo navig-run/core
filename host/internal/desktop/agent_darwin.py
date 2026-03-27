@@ -40,15 +40,15 @@ if platform.system() != "Darwin":
 
 try:
     from ApplicationServices import (  # type: ignore
-        AXObserver,
+        AXObserver,  # noqa: F401
         AXUIElementCopyAttributeValue,
-        AXUIElementCreateApplication,
+        AXUIElementCreateApplication,  # noqa: F401
         AXUIElementCreateSystemWide,
         AXUIElementPerformAction,
         AXUIElementSetAttributeValue,
         kAXChildrenAttribute,
         kAXFocusedAttribute,
-        kAXFocusedUIElementAttribute,
+        kAXFocusedUIElementAttribute,  # noqa: F401
         kAXPositionAttribute,
         kAXPressAction,
         kAXRoleAttribute,
@@ -57,8 +57,8 @@ try:
         kAXValueAttribute,
     )
     from CoreFoundation import (  # type: ignore
-        CFStringCreateWithCString,
-        kCFStringEncodingUTF8,
+        CFStringCreateWithCString,  # noqa: F401
+        kCFStringEncodingUTF8,  # noqa: F401
     )
 
     _has_ax = True

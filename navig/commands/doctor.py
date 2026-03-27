@@ -428,9 +428,9 @@ def doctor(
     """Run self-diagnostics on the NAVIG installation."""
 
     try:
-        from rich import print as rprint
+        from rich import print as rprint  # noqa: F401
         from rich.console import Console
-        from rich.table import Table
+        from rich.table import Table  # noqa: F401
 
         console = Console()
         _has_rich = True

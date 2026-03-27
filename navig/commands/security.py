@@ -713,8 +713,8 @@ def config_audit(options):
 
     try:
         from navig.core.security import (
-            check_config_security,
-            check_file_permissions,
+            check_config_security,  # noqa: F401
+            check_file_permissions,  # noqa: F401
             run_security_audit,
         )
     except ImportError:
@@ -801,7 +801,7 @@ def check_secrets(options):
     config_manager = get_config_manager()
 
     try:
-        from navig.core.security import DEFAULT_REDACT_PATTERNS, redact_sensitive_text
+        from navig.core.security import DEFAULT_REDACT_PATTERNS, redact_sensitive_text  # noqa: F401
     except ImportError:
         console.print("[red]✗[/red] Security module not available")
         return

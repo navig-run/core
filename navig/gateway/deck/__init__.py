@@ -11,7 +11,7 @@ Splits logic into:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401
 
 try:
     from aiohttp import web

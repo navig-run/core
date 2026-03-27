@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 try:
-    from aiohttp import web
+    from aiohttp import web  # noqa: F401
 except ImportError as _exc:
     raise RuntimeError(
         "aiohttp is required for gateway routes (pip install aiohttp)"

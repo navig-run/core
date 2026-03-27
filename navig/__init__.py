@@ -34,7 +34,7 @@ def _resolve_version() -> str:
             pass
 
     try:
-        from importlib.metadata import PackageNotFoundError, version
+        from importlib.metadata import PackageNotFoundError, version  # noqa: F401
 
         return version("navig")
     except Exception:

@@ -62,7 +62,7 @@ def is_image_generation_available() -> bool:
 def is_web_tools_available() -> bool:
     """Check if web tools are available."""
     try:
-        from .web import web_fetch
+        from .web import web_fetch  # noqa: F401
 
         return True
     except ImportError:

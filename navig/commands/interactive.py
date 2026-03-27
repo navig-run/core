@@ -66,7 +66,7 @@ def _init_questionary():
         return  # Already initialized
 
     try:
-        import questionary
+        import questionary  # noqa: F401
         from questionary import Style
 
         QUESTIONARY_AVAILABLE = True
@@ -3506,7 +3506,7 @@ def launch_menu(options: dict[str, Any]):
     """
     # Check if Rich is available
     try:
-        from rich.console import Console
+        from rich.console import Console  # noqa: F401
     except ImportError:
         print("\n[ERROR] Rich library not installed.")
         print("\nTo use the interactive menu, install Rich:")
