@@ -91,3 +91,44 @@ Describe "Reinstall path — captures uninstall result" {
         $src | Should -Not -Match 'Invoke-NavigUninstall.*ForReinstall.*\|\s*Out-Null'
     }
 }
+
+Describe "Add-NavigBinToPath" {
+    It "adds dir to current session PATH" {
+        $tmpBin = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType Directory -Path $tmpBin -Force | Out-Null
+        $before = $env:PATH
+        try {
+            Add-NavigBinToPath -BinDir $tmpBin
+            $env:PATH | Should -BeLike "*$tmpBin*"
+        } finally {
+            $env:PATH = $before
+            Remove-Item $tmpBin -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "does not duplicate a dir already on PATH" {
+        $tmpBin = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType Directory -Path $tmpBin -Force | Out-Null
+        $env:PATH = "$tmpBin;$env:PATH"
+        $before = $env:PATH
+        try {
+            Add-NavigBinToPath -BinDir $tmpBin
+            ($env:PATH -split ';' | Where-Object { $_ -eq $tmpBin }).Count | Should -Be 1
+        } finally {
+            $env:PATH = $before
+            Remove-Item $tmpBin -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Describe "Test-NavigInstall — pipx shim" {
+    It "finds navig.cmd in .local\bin without requiring a terminal restart" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        # .local\bin must appear in the scan list inside Test-NavigInstall
+        $fn = [regex]::Match($src, '(?s)function Test-NavigInstall.*?\n\}')
+        $body = $fn.Value
+        $body | Should -Match '\.local\\bin'
+        # navig.cmd must be a checked candidate
+        $body | Should -Match 'navig\.cmd'
+    }
+}

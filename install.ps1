@@ -792,6 +792,10 @@ function Install-NavigPip {
         }
         if ($code -eq 0) {
             try { & pipx ensurepath 2>$null } catch {}
+            # pipx ensurepath writes to the registry but NOT to the current
+            # session's $env:PATH — add the pipx bin dir immediately so navig
+            # is callable in this same terminal without a restart.
+            Add-NavigBinToPath -BinDir (Join-Path $HOME ".local\bin")
             return
         }
         Write-NavInfo "pipx install failed - retrying with pip install --user"
@@ -905,6 +909,25 @@ function Write-ExistingNavigMessage {
     }
 }
 
+# ── PATH helper: add a bin dir to the current session and User registry ────
+function Add-NavigBinToPath {
+    param([string]$BinDir)
+    if (-not (Test-Path $BinDir)) { return }
+
+    # Current session PATH
+    if ($env:PATH -notlike "*$BinDir*") {
+        $env:PATH = "$BinDir;$env:PATH"
+    }
+
+    # Permanent User PATH (survives new terminal)
+    try {
+        $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+        if ($userPath -notlike "*$BinDir*") {
+            [System.Environment]::SetEnvironmentVariable("PATH", "$BinDir;$userPath", "User")
+        }
+    } catch {}
+}
+
 # ── Verify installation ───────────────────────────────────────────────────
 function Test-NavigInstall {
     $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
@@ -928,17 +951,29 @@ function Test-NavigInstall {
         "C:\Python313\Scripts"
     )
 
-    foreach ($p in $pipPaths) {
-        if (Test-Path (Join-Path $p "navig.exe")) {
-            $env:PATH = "$p;$env:PATH"
+    # Also check the pipx shim directory (.cmd is what pipx creates on Windows)
+    $extraPaths = @(
+        (Join-Path $HOME ".local\bin"),
+        (Join-Path $env:LOCALAPPDATA "Programs\pipx\venvs\navig\Scripts")
+    )
+
+    foreach ($p in ($pipPaths + $extraPaths)) {
+        $candidates = @("navig.exe", "navig.cmd") | ForEach-Object { Join-Path $p $_ }
+        if ($candidates | Where-Object { Test-Path $_ }) {
+            Add-NavigBinToPath -BinDir $p
             Write-NavOk "navig found at $p"
-            Write-NavInfo "Add to PATH permanently:"
-            Write-NavHint "[Environment]::SetEnvironmentVariable('PATH', `"$p;`" + [Environment]::GetEnvironmentVariable('PATH','User'), 'User')"
             return $true
         }
     }
 
-    Write-NavInfo "navig installed - restart your terminal to pick up PATH changes"
+    # Last-chance: try running navig directly (may work now that PATH was refreshed)
+    if (Get-Command navig -ErrorAction SilentlyContinue) {
+        Write-NavOk "navig command verified in PATH"
+        return $true
+    }
+
+    Write-NavInfo "navig installed — open a new terminal to use it"
+    Write-NavHint "Or run: `$env:PATH = [Environment]::GetEnvironmentVariable('PATH','User') + ';' + `$env:PATH"
     return $false
 }
 
