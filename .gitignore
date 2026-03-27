@@ -1,5 +1,5 @@
 # ===============================================
-# NAVIG CLI — Git Ignore Configuration
+# NAVIG CLI - Git Ignore Configuration
 # ===============================================
 # This file specifies intentionally untracked files that Git should ignore.
 # See: https://git-scm.com/docs/gitignore
@@ -143,13 +143,13 @@ discord-*.json              # Discord config with secrets
 vault.salt                  # Vault salt file
 
 # Cython compiled binaries (generated at build time, not committed)
-*.pyd                       # Cython/C extension — Windows
+*.pyd                       # Cython/C extension - Windows
 # *.so compiled by Cython are already covered by *.so above
 
 # NAVIG Configuration
-# ~/.navig/ is the global user store — never in a repo
+# ~/.navig/ is the global user store - never in a repo
 ~/.navig/                   # Global user NAVIG config (shouldn't be in repo anyway)
-# .navig/ is TRACKED — plans/, brand/, wiki/, agents/ all live here
+# .navig/ is TRACKED - plans/, brand/, wiki/, agents/ all live here
 # Only runtime / credential files inside it are ignored (see list below)
 .archive/                   # Local archive folder
 nohup.out                   # Background process output
@@ -158,7 +158,7 @@ nohup.out                   # Background process output
 # Backups and Archives
 # ===============================================
 .backups/                   # Backup directory
-.backup/                     # Local backup folder (singular)
+.backup/                    # Local backup folder (singular)
 *.backup                    # Backup files
 *.bak                       # Backup files
 *.INSECURE.bak              # Security-removed code backups
@@ -190,7 +190,7 @@ site/                       # MkDocs build directory
 # App-Specific
 # ===============================================
 
-# Documentation and Tests (tracked — essential to the project)
+# Documentation and Tests (tracked - essential to the project)
 # docs/
 # tests/
 
@@ -232,17 +232,19 @@ cython_debug/               # Cython debug symbols
 node_modules
 
 # AI IDE Configuration
-# .agents/ .claude/ .codex/ .gemini/ are TRACKED — auto-synced from
-# .github/copilot-instructions.md via scripts/sync-instructions.ps1
 # Per-developer overrides only:
 .augment
 .clinerules
 .cursorrules
 .windsurfrules
 .agent/
+.agents/
+.claude/
+.codex/
+.gemini/
 .ruff_cache/
 
-# Archive (cleanup staging — never commit)
+# Archive (cleanup staging - never commit)
 .archive/
 
 # Bot stack (separate private repo)
@@ -256,7 +258,7 @@ requirements-bot.txt
 knowledge/
 .env.remote
 
-# NAVIG reports (security scans, secret scans — never commit)
+# NAVIG reports (security scans, secret scans - never commit)
 .navig/reports/
 
 # Dev scratch / test output files in repo root (never commit)
@@ -318,7 +320,7 @@ temp_restore/
 # Runtime local data (user-specific, not for VCS)
 userdata/
 
-# host/ — compiled binaries and runtime logs
+# host/ - compiled binaries and runtime logs
 host/out.log
 host/build_errors.txt
 host/*.exe
@@ -326,21 +328,20 @@ host/*.exe
 # Community stub folder (separate repo at navig-community/)
 navig-community/
 
-# Runtime store — live content lives in ~/.navig/store/, not in VCS
+# Runtime store - live content lives in ~/.navig/store/, not in VCS
 store/
 
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
 
-# Private dev-only plugin — never commit
+# Private dev-only plugin - never commit
 navig/plugins/llm_bridge/
 navig/plugins/llm-bridge/
 
 # Rust
 host/crates/**/target/
+**/target/
 
 # Local workspace
 .local/
-
-# Fallback
-**/target/
+$null
