@@ -226,8 +226,7 @@ def screen_d_text(provider_id: str, model_id: str, page: int, cfg: AudioConfig) 
     total = len(mdata.get("voices", []))
     total_pages = max(1, (total + VOICES_PER_PAGE - 1) // VOICES_PER_PAGE)
     return (
-        f"🎙 *Select Voice*  _(page {page + 1}/{total_pages})_\n"
-        f"Current: `{cfg.voice}`"
+        f"🎙 *Select Voice*  _(page {page + 1}/{total_pages})_\nCurrent: `{cfg.voice}`"
     )
 
 

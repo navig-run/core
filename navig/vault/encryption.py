@@ -253,8 +253,7 @@ class VaultEncryption:
         # 2. Generate/set new key
         # 3. Re-encrypt all data with new key
         raise NotImplementedError(
-            "Key rotation is not yet implemented. "
-            "Please backup and recreate credentials."
+            "Key rotation is not yet implemented. Please backup and recreate credentials."
         )
 
 

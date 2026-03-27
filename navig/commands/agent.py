@@ -682,7 +682,7 @@ After=network.target
 
 [Service]
 Type=simple
-User={os.environ.get('USER', 'root')}
+User={os.environ.get("USER", "root")}
 ExecStart={python_path} -m navig agent start --foreground
 Restart=on-failure
 RestartSec=5
@@ -1282,7 +1282,7 @@ def agent_learn(
 
 
 @agent_app.command("service")
-def agent_service(
+def agent_service(  # noqa: F811
     action: str = typer.Argument(..., help="Action: install, uninstall, status"),
     start: bool = typer.Option(
         True, "--start/--no-start", help="Start service after install"

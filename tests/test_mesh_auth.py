@@ -87,7 +87,6 @@ def _make_discovery(registry: NodeRegistry, secret=None) -> MeshDiscovery:
 
 
 class TestSignPayload(unittest.TestCase):
-
     def test_returns_hex_string(self):
         tag = sign_payload(_SAMPLE_PAYLOAD, _SECRET_A)
         self.assertIsInstance(tag, str)
@@ -118,7 +117,6 @@ class TestSignPayload(unittest.TestCase):
 
 
 class TestVerifyPayload(unittest.TestCase):
-
     def setUp(self):
         self.signed = attach_hmac(_SAMPLE_PAYLOAD, _SECRET_A)
 
@@ -145,7 +143,6 @@ class TestVerifyPayload(unittest.TestCase):
 
 
 class TestAttachHmac(unittest.TestCase):
-
     def test_adds_hmac_field(self):
         result = attach_hmac(_SAMPLE_PAYLOAD, _SECRET_A)
         self.assertIn(HMAC_FIELD, result)
@@ -169,7 +166,6 @@ class TestAttachHmac(unittest.TestCase):
 
 
 class TestLoadSecret(unittest.TestCase):
-
     def test_returns_none_when_unconfigured(self):
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("NAVIG_MESH_SECRET", None)
@@ -196,7 +192,6 @@ class TestLoadSecret(unittest.TestCase):
 
 
 class TestParsePacketAuth(unittest.TestCase):
-
     def _make_packet(self, secret=None) -> bytes:
         payload = dict(_SAMPLE_PAYLOAD)
         if secret:
@@ -228,7 +223,6 @@ class TestParsePacketAuth(unittest.TestCase):
 
 
 class TestMeshDiscoveryAuth(unittest.IsolatedAsyncioTestCase):
-
     async def asyncSetUp(self):
         self._tmpA = tempfile.TemporaryDirectory()
         self._tmpB = tempfile.TemporaryDirectory()

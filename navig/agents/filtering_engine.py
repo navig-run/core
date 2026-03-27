@@ -84,13 +84,7 @@ def apply_frontmatter(content: str, content_type: str = "other") -> str:
         return content  # already has frontmatter
 
     today = datetime.now().strftime("%Y-%m-%d")
-    fm = (
-        "---\n"
-        f"type: {content_type}\n"
-        f"created: {today}\n"
-        "navig_filter: auto\n"
-        "---\n\n"
-    )
+    fm = f"---\ntype: {content_type}\ncreated: {today}\nnavig_filter: auto\n---\n\n"
     return fm + content
 
 

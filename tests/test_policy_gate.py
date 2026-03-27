@@ -150,7 +150,6 @@ class TestPolicyGateHardDeny(unittest.TestCase):
 
 
 class TestAuditLog(unittest.TestCase):
-
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self._log_path = Path(self._tmpdir.name) / "audit.jsonl"

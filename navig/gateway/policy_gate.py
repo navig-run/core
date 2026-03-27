@@ -208,7 +208,4 @@ class PolicyGate:
         }
 
     def __repr__(self) -> str:  # pragma: no cover
-        return (
-            f"PolicyGate(default={self._config.default.value!r}, "
-            f"rules={len(self._config.rules)})"
-        )
+        return f"PolicyGate(default={self._config.default.value!r}, rules={len(self._config.rules)})"

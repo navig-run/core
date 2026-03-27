@@ -90,13 +90,7 @@ class HealthChecker:
         # -w '%{http_code}': print only status code
         # -X: HTTP method
         # --max-time: per-request timeout
-        cmd = (
-            f"curl -s -o /dev/null "
-            f"-w '%{{http_code}}' "
-            f"-X {method} "
-            f"--max-time {timeout} "
-            f"'{url}'"
-        )
+        cmd = f"curl -s -o /dev/null -w '%{{http_code}}' -X {method} --max-time {timeout} '{url}'"
 
         result = self._remote.execute_command(cmd, self._server)
         if result.returncode != 0:

@@ -151,7 +151,6 @@ def test_wizard_save_config(wizard, mock_print):
         patch("builtins.open"),
         patch("os.chmod"),
     ):
-
         wizard.config = {"new": True}
         wizard._save_config()
         # It merges because reconfigure=True
@@ -164,7 +163,6 @@ def test_install_daemon_linux():
         patch("os.geteuid", create=True, return_value=1),
         patch("subprocess.run") as mock_run,
     ):
-
         assert install_daemon("auto") is True
         mock_run.assert_called()
 
@@ -176,7 +174,6 @@ def test_install_daemon_darwin():
         patch("pathlib.Path.write_text"),
         patch("subprocess.run") as mock_run,
     ):
-
         assert install_daemon("auto") is True
         mock_run.assert_called_once()
 
@@ -191,7 +188,6 @@ def test_run_wizard():
         patch("navig.cli.wizard.SetupWizard") as mock_class,
         patch("navig.cli.wizard.install_daemon") as mock_install,
     ):
-
         mock_instance = MagicMock()
         mock_instance.run.return_value = True
         mock_class.return_value = mock_instance
@@ -210,7 +206,6 @@ def test_wizard_run_flow(wizard, mock_print):
         patch.object(wizard, "_setup_hosts"),
         patch.object(wizard, "_save_config"),
     ):
-
         assert wizard.run() is True
 
     # KeyboardInterrupt propagation catch testing

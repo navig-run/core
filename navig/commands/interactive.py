@@ -2299,13 +2299,13 @@ def execute_list_backups(state: MenuState):
     table.add_column("Size", style=COLORS["accent"], justify="right")
     table.add_column("Modified", style=COLORS["info"])
 
-    for backup in sorted(backups, key=lambda x: x.stat().st_mtime, reverse=True):
-        size_mb = backup.stat().st_size / (1024 * 1024)
-        modified = datetime.fromtimestamp(backup.stat().st_mtime).strftime(
+    for bkp in sorted(backups, key=lambda x: x.stat().st_mtime, reverse=True):
+        size_mb = bkp.stat().st_size / (1024 * 1024)
+        modified = datetime.fromtimestamp(bkp.stat().st_mtime).strftime(
             "%Y-%m-%d %H:%M"
         )
 
-        table.add_row(backup.name, f"{size_mb:.2f} MB", modified)
+        table.add_row(bkp.name, f"{size_mb:.2f} MB", modified)
 
     console.print(table)
     state.history.add("navig list-backups", "List backups", True)
@@ -3459,28 +3459,28 @@ def show_quick_help(state: MenuState):
     show_header(state)
 
     help_content = f"""
-[{COLORS['primary']}]━━━ NAVIG Keyboard Shortcuts ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS['primary']}]
+[{COLORS["primary"]}]━━━ NAVIG Keyboard Shortcuts ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/{COLORS["primary"]}]
 
-[{COLORS['accent']}]Navigation:[/{COLORS['accent']}]
+[{COLORS["accent"]}]Navigation:[/{COLORS["accent"]}]
   ↑/↓ arrows   Navigate menu options
   Enter        Select highlighted option
   0/ESC        Go back / Exit menu
   Ctrl+C       Quick exit (any menu)
 
-[{COLORS['accent']}]Quick Access Keys (Main Menu):[/{COLORS['accent']}]
+[{COLORS["accent"]}]Quick Access Keys (Main Menu):[/{COLORS["accent"]}]
   [1-7]        SysOps (Infrastructure)
   [A,R,T,F,L]  DevOps (Applications)
   [G,M,P,W,B]  LifeOps (Automation)
   [C,H,?]      System options
 
-[{COLORS['accent']}]Common Commands:[/{COLORS['accent']}]
+[{COLORS["accent"]}]Common Commands:[/{COLORS["accent"]}]
   navig menu          Open this interactive menu
   navig help          Show full help
   navig host use X    Switch to host X
   navig app use X     Switch to app X
   navig run "cmd"     Execute remote command
 
-[{COLORS['accent']}]Tips:[/{COLORS['accent']}]
+[{COLORS["accent"]}]Tips:[/{COLORS["accent"]}]
   • Set active host/app first for context-aware operations
   • Use Tab for command completion in CLI
   • All commands support --help for detailed options

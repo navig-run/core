@@ -173,7 +173,7 @@ class WorkflowEngine:
                 try:
                     result = safe_eval(cond, eval_vars)
                     if not result:
-                        info(f"Skipping step {i+1} (condition false): {cond}")
+                        info(f"Skipping step {i + 1} (condition false): {cond}")
                         continue
                 except Exception as e:
                     warning(

@@ -137,37 +137,37 @@ steps:
 
             for i, step in enumerate(data["steps"]):
                 if not isinstance(step, dict):
-                    return f"Step {i+1} must be a dictionary"
+                    return f"Step {i + 1} must be a dictionary"
 
                 if "action" not in step:
-                    return f"Step {i+1} missing 'action'"
+                    return f"Step {i + 1} missing 'action'"
 
                 action = step["action"]
                 if action not in known_actions and not action.startswith("custom_"):
                     # Warning only? Or strict?
                     # Let's be strict for core actions to prevent hallucinations
-                    return f"Step {i+1}: Unknown action '{action}'"
+                    return f"Step {i + 1}: Unknown action '{action}'"
 
                 if "args" in step and not isinstance(step["args"], dict):
-                    return f"Step {i+1}: 'args' must be a dictionary"
+                    return f"Step {i + 1}: 'args' must be a dictionary"
 
                 # Validate platform constraints
                 if "platform" in step:
                     if not isinstance(step["platform"], dict):
-                        return f"Step {i+1}: 'platform' must be a dictionary"
+                        return f"Step {i + 1}: 'platform' must be a dictionary"
 
                     for plat, override in step["platform"].items():
                         if plat not in ["windows", "linux", "macos"]:
-                            return f"Step {i+1}: Unknown platform '{plat}'"
+                            return f"Step {i + 1}: Unknown platform '{plat}'"
 
                         if not isinstance(override, dict):
-                            return f"Step {i+1}: Platform override for '{plat}' must be a dictionary"
+                            return f"Step {i + 1}: Platform override for '{plat}' must be a dictionary"
 
                         if (
                             "action" in override
                             and override["action"] not in known_actions
                         ):
-                            return f"Step {i+1} ({plat}): Unknown action '{override['action']}'"
+                            return f"Step {i + 1} ({plat}): Unknown action '{override['action']}'"
 
             return None  # Valid
         except yaml.YAMLError as e:

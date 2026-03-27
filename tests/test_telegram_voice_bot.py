@@ -24,7 +24,6 @@ async def test_handle_voice_message(bot):
             "navig.integrations.telegram_voice_bot.TelegramVoiceBot._call_tts"
         ) as mock_tts,
     ):
-
         import tempfile
         from pathlib import Path
 

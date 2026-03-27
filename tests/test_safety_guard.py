@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 
 class TestSafetyGuard:
-
     def test_destructive_commands_uncensored_triggers(self):
         """Destructive commands with is_uncensored=True → guard triggers."""
         from navig.safety_guard import require_human_confirmation_if_destructive

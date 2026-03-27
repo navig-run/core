@@ -143,7 +143,11 @@ def package_list(
                 info = loaded_state[pkg_id]
                 entry["loaded"] = getattr(
                     info, "state", getattr(info, "loaded", False)
-                ) in ("enabled", "loaded", True)
+                ) in (
+                    "enabled",
+                    "loaded",
+                    True,
+                )
                 entry["error"] = getattr(info, "error", None)
             out.append(entry)
         sys.stdout.write(json.dumps(out, indent=2) + "\n")

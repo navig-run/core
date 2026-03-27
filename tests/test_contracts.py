@@ -34,7 +34,6 @@ from navig.contracts import (
 
 
 class TestNode:
-
     def test_default_fields(self):
         n = Node(hostname="test-host")
         assert n.hostname == "test-host"
@@ -126,7 +125,6 @@ class TestNode:
 
 
 class TestMission:
-
     def test_default_fields(self):
         m = Mission(title="Do something")
         assert m.title == "Do something"
@@ -230,7 +228,6 @@ class TestMission:
 
 
 class TestExecutionReceipt:
-
     def _make(self, outcome=ReceiptOutcome.SUCCEEDED, **kw) -> ExecutionReceipt:
         defaults = dict(
             mission_id="a" * 36,
@@ -275,7 +272,6 @@ class TestExecutionReceipt:
 
 
 class TestCapability:
-
     def test_defaults(self):
         c = Capability(slug="llm")
         assert c.version == "1.0.0"
@@ -289,7 +285,6 @@ class TestCapability:
 
 
 class TestTrustScore:
-
     def _receipt(
         self, outcome: ReceiptOutcome, node_id="n1", dur=1.0
     ) -> ExecutionReceipt:
@@ -357,7 +352,6 @@ class TestTrustScore:
 
 
 class TestRuntimeStore:
-
     @pytest.fixture()
     def store(self, tmp_path):
         return reset_runtime_store(tmp_path / "runtime")

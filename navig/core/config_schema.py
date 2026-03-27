@@ -491,8 +491,7 @@ def validate_global_config(
         import warnings
 
         warnings.warn(
-            "Pydantic not installed. Config validation disabled. "
-            "Install with: pip install pydantic"
+            "Pydantic not installed. Config validation disabled. Install with: pip install pydantic"
         )
         return None
 

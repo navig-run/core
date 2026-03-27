@@ -761,8 +761,7 @@ class GitHubModelsProvider(LLMProvider):
 
         # All models in chain exhausted
         raise RuntimeError(
-            f"All GitHub Models exhausted for chain starting at {model}. "
-            f"Last error: {last_error}"
+            f"All GitHub Models exhausted for chain starting at {model}. Last error: {last_error}"
         )
 
     async def _chat_single(
@@ -1093,7 +1092,7 @@ class AirLLMProvider(LLMProvider):
 
         engine = self._get_engine()
         prompt = "\n".join(
-            f"{m['role'].upper()}: {m.get('content','')}" for m in messages
+            f"{m['role'].upper()}: {m.get('content', '')}" for m in messages
         )
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -1171,8 +1170,7 @@ def create_provider(name: str, **kwargs) -> LLMProvider:
     cls = _PROVIDER_MAP.get(name.lower())
     if cls is None:
         raise ValueError(
-            f"Unknown provider {name!r}. "
-            f"Available: {', '.join(sorted(_PROVIDER_MAP))}"
+            f"Unknown provider {name!r}. Available: {', '.join(sorted(_PROVIDER_MAP))}"
         )
     return cls(**kwargs)
 

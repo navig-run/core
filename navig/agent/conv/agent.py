@@ -106,7 +106,7 @@ class ConversationalAgent:
                         if inspect.iscoroutinefunction(
                             _legacy
                         ) or inspect.iscoroutinefunction(
-                            getattr(_legacy, "__call__", None)
+                            getattr(_legacy, "__call__", None)  # noqa: B004
                         ):
 
                             async def cb(
@@ -137,7 +137,7 @@ class ConversationalAgent:
             # Use inspect (not deprecated asyncio.iscoroutinefunction) and also
             # detect callable class instances whose __call__ is async.
             is_coro_fn = inspect.iscoroutinefunction(cb) or inspect.iscoroutinefunction(
-                getattr(cb, "__call__", None)
+                getattr(cb, "__call__", None)  # noqa: B004
             )
             if is_coro_fn:
                 await cb(event)
@@ -313,7 +313,9 @@ class ConversationalAgent:
         # Optional streaming path — only activates if ai_client exposes chat_stream
         if hasattr(self._ai_client, "chat_stream"):
             tokens: list[str] = []
-            async for token in self._ai_client.chat_stream(msgs, user_message=message, tier_override=tier):  # type: ignore[union-attr]
+            async for token in self._ai_client.chat_stream(
+                msgs, user_message=message, tier_override=tier
+            ):  # type: ignore[union-attr]
                 tokens.append(token)
                 await self._emit_event(
                     StatusEvent(

@@ -496,7 +496,7 @@ def update_check(
         elif vi.error:
             _p(
                 con,
-                f"[red][✗][/red]  [bold]{vi.node_id}[/bold]  " f"[red]{vi.error}[/red]",
+                f"[red][✗][/red]  [bold]{vi.node_id}[/bold]  [red]{vi.error}[/red]",
             )
         else:
             _p(
@@ -797,8 +797,8 @@ def update_history_cmd(
             ts = (e.get("timestamp") or "")[:16]
             ok = "ok" if e.get("ok") else "fail"
             print(
-                f"{ts}  {e.get('node_id','?'):20}  "
-                f"{e.get('old_version','?'):12} → {e.get('new_version') or '?':12}  {ok}"
+                f"{ts}  {e.get('node_id', '?'):20}  "
+                f"{e.get('old_version', '?'):12} → {e.get('new_version') or '?':12}  {ok}"
             )
 
 

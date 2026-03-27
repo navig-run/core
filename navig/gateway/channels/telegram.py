@@ -27,12 +27,12 @@ except ImportError:
 
 # Inline keyboard system
 try:
-    from navig.gateway.channels.telegram_keyboards import (
+    from navig.gateway.channels.telegram_keyboards import (  # noqa: F401
         CallbackHandler,
         ResponseKeyboardBuilder,
         _settings_header_text,
         build_settings_keyboard,
-        get_callback_store,  # noqa: F401
+        get_callback_store,
     )
 
     HAS_KEYBOARDS = True
@@ -41,9 +41,9 @@ except ImportError:
 
 # Session management
 try:
+    from navig.gateway.channels.telegram_sessions import MentionGate  # noqa: F401
+    from navig.gateway.channels.telegram_sessions import SessionManager  # noqa: F401
     from navig.gateway.channels.telegram_sessions import (
-        MentionGate,  # noqa: F401
-        SessionManager,  # noqa: F401
         get_mention_gate,
         get_session_manager,
     )
@@ -78,10 +78,10 @@ except ImportError:
 
 # Mode classifier
 try:
-    from navig.gateway.channels.telegram_mode_classifier import (
+    from navig.gateway.channels.telegram_mode_classifier import (  # noqa: F401
         classify_mode,
         extract_url,
-        mode_to_llm_tier,  # noqa: F401
+        mode_to_llm_tier,
         select_tools_for_text,
     )
 

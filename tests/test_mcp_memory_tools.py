@@ -1,5 +1,6 @@
 # tests/test_mcp_memory_tools.py
 """Contract tests for MCP memory tool handlers (not storage layer)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

@@ -452,11 +452,7 @@ class RefinementEngine:
         total = len(session.questions)
         q_num = session.current_q + 1
         keyboard = build_skip_keyboard(session)
-        text = (
-            f"🤔 *Question {q_num}/{total}*\n\n"
-            f"{q}\n\n"
-            f"_Reply with your answer, or tap Skip._"
-        )
+        text = f"🤔 *Question {q_num}/{total}*\n\n{q}\n\n_Reply with your answer, or tap Skip._"
         msg = await self.channel.send_message(
             session.chat_id,
             text,

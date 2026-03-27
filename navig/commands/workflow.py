@@ -228,14 +228,14 @@ class WorkflowManager:
 
         for i, step in enumerate(workflow.steps):
             if not step.command:
-                errors.append(f"Step {i+1} '{step.name}' has no command")
+                errors.append(f"Step {i + 1} '{step.name}' has no command")
 
             # Check for undefined variables
             var_pattern = r"\$\{(\w+)\}"
             variables = re.findall(var_pattern, step.command)
             for var in variables:
                 if var not in workflow.variables:
-                    errors.append(f"Step {i+1} uses undefined variable: ${{{var}}}")
+                    errors.append(f"Step {i + 1} uses undefined variable: ${{{var}}}")
 
         return errors
 

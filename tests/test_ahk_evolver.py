@@ -12,7 +12,6 @@ def evolver():
         patch("navig.adapters.automation.evolution.evolver.AHKAIGenerator") as mock_gen,
         patch("navig.adapters.automation.evolution.evolver.ScriptLibrary") as mock_lib,
     ):
-
         ev = Evolver()
         return ev
 

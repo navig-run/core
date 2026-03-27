@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for Unicode-safe monitoring output helpers.
 
 Ensures that _traffic_light, _disk_status, and _health_icon return sensible

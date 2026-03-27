@@ -664,7 +664,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
             local_subdir.mkdir(exist_ok=True)
 
             # List files and download each
-            files_cmd = f'find {remote_path.rstrip("/")} -type f'
+            files_cmd = f"find {remote_path.rstrip('/')} -type f"
             files_result = remote_ops.execute_command(files_cmd)
 
             for file_path in files_result.strip().split("\n"):
@@ -722,7 +722,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
             local_subdir = apache_dir / Path(remote_path.rstrip("/")).name
             local_subdir.mkdir(exist_ok=True)
 
-            files_cmd = f'find {remote_path.rstrip("/")} -type f'
+            files_cmd = f"find {remote_path.rstrip('/')} -type f"
             files_result = remote_ops.execute_command(files_cmd)
 
             for file_path in files_result.strip().split("\n"):

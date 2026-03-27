@@ -1,4 +1,4 @@
-﻿"""
+"""
 navig.onboarding.telemetry — Anonymous one-time install telemetry.
 
 Privacy Contract (what IS and IS NOT collected)

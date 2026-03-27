@@ -39,7 +39,6 @@ def test_create_bundle(tmp_dir):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.read_text", return_value="line1\nline2"),
     ):
-
         mock_rec.return_value.read_events.return_value = [
             BlackboxEvent.create(EventType.COMMAND, {"a": 1})
         ]
@@ -65,7 +64,6 @@ def test_create_bundle_defaults():
         patch("navig.blackbox.crash.list_crashes", return_value=[]),
         patch("navig.platform.paths.blackbox_dir", return_value=Path("/tmp")),
     ):
-
         mock_rec.return_value.read_events.return_value = []
         bundle = create_bundle()
         assert bundle.event_count() == 0

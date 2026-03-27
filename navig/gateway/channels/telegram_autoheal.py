@@ -593,8 +593,7 @@ class AutoHealMixin:
             return HealResult(
                 status="partial",
                 message=(
-                    "🐝 *Hive Mind* submitted a GitHub PR for this failure.\n\n"
-                    f"[View PR]({pr_url})"
+                    f"🐝 *Hive Mind* submitted a GitHub PR for this failure.\n\n[View PR]({pr_url})"
                 ),
                 pr_url=pr_url,
                 should_retry=False,
@@ -739,11 +738,7 @@ class AutoHealMixin:
         """Send the failure badge + 3-button heal keyboard as one message."""
         badge = _CLASS_BADGE[ctx.failure_class]
         explanation = _CLASS_EXPLANATION[ctx.failure_class]
-        text = (
-            f"❌ *Command failed — {badge}*\n\n"
-            f"{explanation}\n\n"
-            "Choose an action:"
-        )
+        text = f"❌ *Command failed — {badge}*\n\n{explanation}\n\nChoose an action:"
 
         keyboard = self._build_heal_keyboard(ctx)
         await self.send_message(

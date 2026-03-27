@@ -331,8 +331,7 @@ class Engine:
         with lock:
             # Ensure version table
             conn.execute(
-                "CREATE TABLE IF NOT EXISTS schema_version "
-                "(version INTEGER PRIMARY KEY)"
+                "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)"
             )
 
             row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()

@@ -341,7 +341,6 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             try:
                 os.unlink(config_file)
             except OSError:
-
                 pass  # Cleanup - file deletion may faildef repair_table_cmd(table: str, options: Dict[str, Any]):
     """Repair database table.
 
@@ -438,7 +437,6 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             try:
                 os.unlink(config_file)
             except OSError:
-
                 pass  # Cleanup - file deletion may faildef list_users_cmd(options: Dict[str, Any]):
     """List database users.
 
@@ -526,7 +524,6 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             try:
                 os.unlink(config_file)
             except OSError:
-
                 pass  # Cleanup - file deletion may faildef list_tables_cmd(database: str, options: Dict[str, Any]):
     """List tables in a database.
 
@@ -648,5 +645,4 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             try:
                 os.unlink(config_file)
             except OSError:
-
                 pass  # Cleanup - file deletion may fail

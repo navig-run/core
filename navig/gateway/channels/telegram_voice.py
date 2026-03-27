@@ -118,9 +118,9 @@ except ImportError:
 
 def _detect_lang(text: str) -> str:
     """Return ISO-639-1 code based on dominant Unicode script and accent chars."""
-    cyrillic = sum(1 for c in text if "\u0400" <= c <= "\u04FF")
-    arabic = sum(1 for c in text if "\u0600" <= c <= "\u06FF")
-    cjk = sum(1 for c in text if "\u4E00" <= c <= "\u9FFF")
+    cyrillic = sum(1 for c in text if "\u0400" <= c <= "\u04ff")
+    arabic = sum(1 for c in text if "\u0600" <= c <= "\u06ff")
+    cjk = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
     fr_chars = sum(1 for c in text if c in "àâæçéèêëîïôùûüÿœÀÂÆÇÉÈÊËÎÏÔÙÛÜŸŒ")
     de_chars = sum(1 for c in text if c in "äöüÄÖÜß")
     es_chars = sum(1 for c in text if c in "ñáéíóúÑÁÉÍÓÚ¿¡")

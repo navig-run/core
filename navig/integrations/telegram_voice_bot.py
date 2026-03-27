@@ -135,17 +135,16 @@ class TelegramVoiceBot:
     def _build_application(self, token: str):
         """Build the python-telegram-bot Application with all handlers registered."""
         try:
+            from telegram.ext import filters  # noqa: F401
             from telegram.ext import (
                 Application,
                 CallbackQueryHandler,
                 CommandHandler,
                 MessageHandler,
-                filters,  # noqa: F401
             )
         except ImportError as exc:
             raise RuntimeError(
-                "python-telegram-bot not installed. "
-                "Install with: pip install python-telegram-bot"
+                "python-telegram-bot not installed. Install with: pip install python-telegram-bot"
             ) from exc
 
         builder = Application.builder().token(token)

@@ -96,10 +96,9 @@ class TestRegistryIntegrity:
         from navig.providers.registry import list_enabled_providers
 
         enabled = list_enabled_providers()
-        assert len(enabled) >= 5, (
-            f"Expected ≥5 enabled providers, got {len(enabled)}: "
-            f"{[p.id for p in enabled]}"
-        )
+        assert (
+            len(enabled) >= 5
+        ), f"Expected ≥5 enabled providers, got {len(enabled)}: {[p.id for p in enabled]}"
 
 
 # ─── Factory Coverage Tests ────────────────────────────────────────────────────

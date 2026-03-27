@@ -368,8 +368,7 @@ def blackbox_crashes(
     con.print(f"[bold]{len(crashes)} crash report(s):[/bold]\n")
     for cr in crashes:
         con.print(
-            f"  [red]{cr.timestamp}[/red]  "
-            f"[bold]{cr.exception_type}[/bold]: {cr.exception_msg}"
+            f"  [red]{cr.timestamp}[/red]  [bold]{cr.exception_type}[/bold]: {cr.exception_msg}"
         )
         if cr.recent_commands:
             last_cmd = cr.recent_commands[-1]

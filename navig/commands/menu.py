@@ -244,8 +244,7 @@ def run_menu(non_interactive: bool = False) -> None:
             from rich.console import Console
 
             Console().print(
-                f"[yellow]TUI unavailable — falling back to plain menu[/yellow]  "
-                f"[dim]({exc})[/dim]"
+                f"[yellow]TUI unavailable — falling back to plain menu[/yellow]  [dim]({exc})[/dim]"
             )
             _run_plain_menu()
             return

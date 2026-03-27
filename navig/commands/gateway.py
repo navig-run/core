@@ -430,7 +430,7 @@ def gateway_test(
             if r["ok"]
             else ("[dim]–[/dim]" if r["ok"] is None else "[red]✗[/red]")
         )
-        detail = f"  [dim]{r.get('reason','')}[/dim]" if r.get("reason") else ""
+        detail = f"  [dim]{r.get('reason', '')}[/dim]" if r.get("reason") else ""
         ch.console.print(f"  {icon} {r['channel']}{detail}")
     ch.console.print()
 

@@ -888,7 +888,9 @@ COMMAND_HANDLER_MAP: dict[str, str | Callable[[dict[str, Any]], str]] = {
     "ssl": lambda args: f"/ssl {args.get('domain', '')}",
     # Docker
     "docker_ps": "/docker",
-    "docker_logs": lambda args: f"/logs {args.get('container', '')} {args.get('lines', '')}".strip(),
+    "docker_logs": lambda args: (
+        f"/logs {args.get('container', '')} {args.get('lines', '')}".strip()
+    ),
     "docker_restart": lambda args: f"/restart {args.get('container', '')}",
     # Database
     "db_list": "/db",
@@ -914,7 +916,9 @@ COMMAND_HANDLER_MAP: dict[str, str | Callable[[dict[str, Any]], str]] = {
     # Crypto & Finance
     "crypto": lambda args: f"/crypto {args.get('symbol', '')}".strip(),
     "crypto_list": "/crypto_list",
-    "convert": lambda args: f"/convert {args.get('amount', '')} {args.get('from_currency', '')} {args.get('to_currency', '')}",
+    "convert": lambda args: (
+        f"/convert {args.get('amount', '')} {args.get('from_currency', '')} {args.get('to_currency', '')}"
+    ),
     # Weather
     "weather": lambda args: f"/weather {args.get('location', '')}".strip(),
     # Developer Tools

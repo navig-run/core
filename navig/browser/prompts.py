@@ -37,7 +37,6 @@ Two prompts exist for the two operating modes:
 #  }
 # ─────────────────────────────────────────────────────────────────────────────
 
-
 CORTEX_A11Y_PROMPT = """\
 You are Cortex, a browser automation agent operating in A11Y mode.
 You receive a numbered accessibility tree. Each line is:

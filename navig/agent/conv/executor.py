@@ -129,7 +129,7 @@ class TaskExecutor:
         self.current_task = task
         if task.status == TaskStatus.PLANNING:
             steps_desc = "\n".join(
-                f"  {i+1}. {s.description}" for i, s in enumerate(task.plan)
+                f"  {i + 1}. {s.description}" for i, s in enumerate(task.plan)
             )
             return f"{message}\n\nPlan:\n{steps_desc}\n\nReply 'yes' to proceed or 'no' to cancel."
         return await self.execute(task)
@@ -349,7 +349,7 @@ class TaskExecutor:
             # detect callable class instances whose __call__ is async.
             cb = self._notify_cb
             is_coro_fn = inspect.iscoroutinefunction(cb) or inspect.iscoroutinefunction(
-                getattr(cb, "__call__", None)
+                getattr(cb, "__call__", None)  # noqa: B004
             )
             if is_coro_fn:
                 await cb(event)

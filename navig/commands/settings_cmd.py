@@ -139,8 +139,7 @@ def run_settings(
         if RICH:
             console = Console()
             console.print(
-                f"[bold yellow]↺[/bold yellow] Reset [cyan]{key}[/cyan] "
-                f"in layer ({_badge(layer)})"
+                f"[bold yellow]↺[/bold yellow] Reset [cyan]{key}[/cyan] in layer ({_badge(layer)})"
             )
         else:
             print(f"Reset {key} in layer {layer}")

@@ -32,9 +32,9 @@ def test_hierarchical_config():
 
     # Create temp directory for testing
     test_dir = Path(tempfile.mkdtemp(prefix="navig-hierarchy-test-"))
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"Test directory: {test_dir}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     try:
         original_dir = Path.cwd()

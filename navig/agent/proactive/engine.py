@@ -109,8 +109,7 @@ class ProactiveEngine:
                                 action="notify",
                                 context={"source": "calendar", "event": evt.title},
                                 messages=[
-                                    f"Upcoming event: {evt.title} at "
-                                    f"{evt.start.strftime('%H:%M')}"
+                                    f"Upcoming event: {evt.title} at {evt.start.strftime('%H:%M')}"
                                 ],
                             )
 
@@ -165,8 +164,7 @@ class ProactiveEngine:
                                     "subject": msg.subject,
                                 },
                                 messages=[
-                                    f"[{label}] Unread email from "
-                                    f"{msg.sender}: {msg.subject}"
+                                    f"[{label}] Unread email from {msg.sender}: {msg.subject}"
                                 ],
                             )
 

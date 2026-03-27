@@ -277,7 +277,7 @@ class GoalPlanner:
         goal.subtasks = []
 
         for i, st_def in enumerate(subtasks):
-            subtask_id = f"{goal_id}-{i+1}"
+            subtask_id = f"{goal_id}-{i + 1}"
             subtask = Subtask(
                 id=subtask_id,
                 description=st_def["description"],

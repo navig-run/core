@@ -643,13 +643,7 @@ class InboxRouterAgent:
             target_path = None
 
         now = datetime.now().strftime("%Y-%m-%d")
-        frontmatter = (
-            "---\n"
-            f"type: {content_type}\n"
-            f"created: {now}\n"
-            f"source: inbox/{filename}\n"
-            "---\n\n"
-        )
+        frontmatter = f"---\ntype: {content_type}\ncreated: {now}\nsource: inbox/{filename}\n---\n\n"
         transformed = frontmatter + content
 
         return {

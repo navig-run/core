@@ -416,7 +416,7 @@ For conversation, respond naturally without JSON.
     def _has_cjk(text: str) -> bool:
         """Return True if text contains any CJK Unified Ideograph."""
         return any(
-            "\u4E00" <= ch <= "\u9FFF" or "\u3400" <= ch <= "\u4DBF" for ch in text
+            "\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf" for ch in text
         )
 
     @staticmethod
@@ -651,8 +651,8 @@ For conversation, respond naturally without JSON.
         Script-based detection for CJK and Cyrillic, then heuristic
         keyword detection for Latin-script languages (French, etc.).
         """
-        has_cyrillic = any("\u0400" <= ch <= "\u04FF" for ch in message)
-        has_cjk = any("\u4E00" <= ch <= "\u9FFF" for ch in message)
+        has_cyrillic = any("\u0400" <= ch <= "\u04ff" for ch in message)
+        has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in message)
         has_latin = any(("A" <= ch <= "Z") or ("a" <= ch <= "z") for ch in message)
 
         if has_cyrillic and not has_cjk:
@@ -977,7 +977,7 @@ For conversation, respond naturally without JSON.
         if needs_confirmation:
             # Wait for confirmation
             steps_desc = "\n".join(
-                [f"  {i+1}. {s.description}" for i, s in enumerate(task.plan)]
+                [f"  {i + 1}. {s.description}" for i, s in enumerate(task.plan)]
             )
             return f"{message}\n\nPlan:\n{steps_desc}\n\nReply 'yes' or 'go' to proceed, or 'no' to cancel."
 
@@ -995,7 +995,7 @@ For conversation, respond naturally without JSON.
         for i, step in enumerate(task.plan):
             task.current_step = i
 
-            await self._notify(f"⚙️ Step {i+1}/{len(task.plan)}: {step.description}")
+            await self._notify(f"⚙️ Step {i + 1}/{len(task.plan)}: {step.description}")
 
             try:
                 result = await self._execute_step(step)
@@ -1014,7 +1014,7 @@ For conversation, respond naturally without JSON.
                 task.attempts += 1
                 if task.attempts < task.max_attempts:
                     await self._notify(
-                        f"⚠️ Step {i+1} failed: {e}. Trying alternative..."
+                        f"⚠️ Step {i + 1} failed: {e}. Trying alternative..."
                     )
                     # Could implement retry logic or alternative approaches here
                     results.append(

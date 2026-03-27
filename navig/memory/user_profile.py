@@ -504,7 +504,7 @@ class UserProfile:
         # Backup before clearing
         if self._profile_path.exists():
             backup_path = self._profile_path.with_suffix(
-                f'.json.{datetime.now().strftime("%Y%m%d_%H%M%S")}.bak'
+                f".json.{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak"
             )
             shutil.copy2(self._profile_path, backup_path)
 

@@ -118,7 +118,7 @@ class HeartbeatRunner:
         self._task = asyncio.create_task(self._run_loop())
 
         logger.info(
-            f"Heartbeat runner started " f"(interval: {self.config.interval_minutes}m)"
+            f"Heartbeat runner started (interval: {self.config.interval_minutes}m)"
         )
 
         # Emit start event
@@ -276,7 +276,7 @@ class HeartbeatRunner:
 {heartbeat_instructions}
 
 ## Hosts to Check
-{chr(10).join(f'- {h}' for h in host_list)}
+{chr(10).join(f"- {h}" for h in host_list)}
 
 ## Required Response Format
 If everything is healthy, respond with EXACTLY:

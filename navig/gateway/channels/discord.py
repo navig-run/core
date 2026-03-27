@@ -111,8 +111,7 @@ class DiscordChannel:
         """
         if not DISCORD_AVAILABLE:
             raise ImportError(
-                "discord.py is required for Discord channel. "
-                "Install: pip install discord.py"
+                "discord.py is required for Discord channel. Install: pip install discord.py"
             )
 
         self.config = config

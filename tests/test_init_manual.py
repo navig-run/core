@@ -20,9 +20,9 @@ def test_init():
     """Test app initialization."""
     # Create temp directory
     test_dir = Path(tempfile.mkdtemp(prefix="navig-test-"))
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Test directory: {test_dir}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     try:
         # Change to test directory

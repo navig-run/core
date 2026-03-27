@@ -271,10 +271,7 @@ class CapabilityPromoter:
 
     def _build_promotion_message(self, feature: FeatureInfo) -> str:
         """Build a natural promotion message for a feature."""
-        return (
-            f"💡 *{feature.name}*: {feature.description}\n"
-            f"Try: `{feature.example_command}`"
-        )
+        return f"💡 *{feature.name}*: {feature.description}\nTry: `{feature.example_command}`"
 
     def get_all_feature_keys(self) -> list[str]:
         """Get all registered feature keys (for underused feature detection)."""

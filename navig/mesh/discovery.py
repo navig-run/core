@@ -309,9 +309,7 @@ class MeshDiscovery:
                 rtt_ms = (time.monotonic() - t0) * 1000
                 if resp.status == 200:
                     self._registry.record_probe_success(peer.node_id, rtt_ms)
-                    logger.debug(
-                        f"[mesh.probe] {peer.node_id} OK " f"rtt={rtt_ms:.0f}ms"
-                    )
+                    logger.debug(f"[mesh.probe] {peer.node_id} OK rtt={rtt_ms:.0f}ms")
                 else:
                     self._registry.record_probe_failure(peer.node_id)
                     logger.debug(f"[mesh.probe] {peer.node_id} HTTP {resp.status}")
