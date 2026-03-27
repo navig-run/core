@@ -101,3 +101,105 @@ def test_install_ps1_parse(pwsh_cmd):
     assert (
         result.returncode == 0
     ), f"install.ps1 failed parsing:\n{result.stderr}\n{result.stdout}"
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage: invalid actions, isolation, arg validation
+# ---------------------------------------------------------------------------
+
+
+def test_install_sh_invalid_action_exits_nonzero(bash_cmd):
+    """install.sh should exit non-zero on an unknown --action value."""
+    if not bash_cmd:
+        pytest.skip("bash not found")
+    assert INSTALL_SH.exists(), "install.sh not found"
+
+    result = run_cmd([bash_cmd, "install.sh", "--action", "bogus"])
+    assert result.returncode != 0, (
+        "install.sh should exit non-zero for unknown action\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    combined = result.stdout + result.stderr
+    assert any(
+        keyword in combined.lower()
+        for keyword in ("unsupported", "unknown", "invalid", "bogus")
+    ), f"Expected error context in output, got:\n{combined}"
+
+
+def test_install_ps1_invalid_action_exits_nonzero(pwsh_cmd):
+    """install.ps1 should exit non-zero on an unsupported -Action value."""
+    if not pwsh_cmd:
+        pytest.skip("powershell not found")
+    assert INSTALL_PS1.exists(), "install.ps1 not found"
+
+    result = run_cmd(
+        [
+            pwsh_cmd,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            "install.ps1",
+            "-Action",
+            "bogus",
+        ]
+    )
+    assert result.returncode != 0, (
+        "install.ps1 should exit non-zero for unknown action\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    combined = result.stdout + result.stderr
+    assert any(
+        keyword in combined.lower()
+        for keyword in ("unsupported", "unknown", "invalid", "bogus")
+    ), f"Expected error context in output, got:\n{combined}"
+
+
+def test_install_sh_dev_sync_isolation(bash_cmd):
+    """NAVIG_DEV_SYNC=1 without navig-www: install.sh must still exit 0 in dry-run."""
+    if not bash_cmd:
+        pytest.skip("bash not found")
+    assert INSTALL_SH.exists(), "install.sh not found"
+
+    import os
+
+    env = {**os.environ, "NAVIG_DEV_SYNC": "1"}
+    result = subprocess.run(
+        [bash_cmd, "install.sh", "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        "install.sh --dry-run must succeed even when NAVIG_DEV_SYNC=1 and navig-www is absent\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
+def test_install_ps1_dev_sync_isolation(pwsh_cmd, tmp_path):
+    """NAVIG_DEV_SYNC=1 without navig-www: install.ps1 must still exit 0 in dry-run."""
+    if not pwsh_cmd:
+        pytest.skip("powershell not found")
+    assert INSTALL_PS1.exists(), "install.ps1 not found"
+
+    import os
+
+    env = {**os.environ, "NAVIG_DEV_SYNC": "1"}
+    result = subprocess.run(
+        [
+            pwsh_cmd,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(INSTALL_PS1),
+            "-DryRun",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),  # tmp dir has no navig-www sibling
+        env=env,
+    )
+    assert result.returncode == 0, (
+        "install.ps1 -DryRun must succeed even when NAVIG_DEV_SYNC=1 and navig-www is absent\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )

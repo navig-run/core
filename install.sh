@@ -17,15 +17,19 @@
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
-# ── Colors ────────────────────────────────────────────────────
-BOLD='\033[1m'
-DIM='\033[2m'
-ACCENT='\033[1;36m'    # Cyan
-SUCCESS='\033[1;32m'   # Green
-WARN='\033[1;33m'      # Yellow
-ERROR='\033[1;31m'     # Red
-INFO='\033[0;36m'      # Light cyan
-NC='\033[0m'           # No Color
+# ── Colors (suppressed when stdout is not a terminal) ───────────
+if [ -t 1 ]; then
+    BOLD='\033[1m'
+    DIM='\033[2m'
+    ACCENT='\033[1;36m'    # Cyan
+    SUCCESS='\033[1;32m'   # Green
+    WARN='\033[1;33m'      # Yellow
+    ERROR='\033[1;31m'     # Red
+    INFO='\033[0;36m'      # Light cyan
+    NC='\033[0m'           # No Color
+else
+    BOLD='' DIM='' ACCENT='' SUCCESS='' WARN='' ERROR='' INFO='' NC=''
+fi
 
 # ── Temp cleanup ──────────────────────────────────────────────
 TMPFILES=()
@@ -37,13 +41,14 @@ mktempfile() { local t; t="$(mktemp)"; TMPFILES+=("$t"); echo "$t"; }
 OS=""
 ARCH=""
 PYTHON_CMD=""
-PIP_CMD=""
+PIP_CMD=()
 VERSION="${NAVIG_VERSION:-}"
 INSTALL_METHOD="${NAVIG_INSTALL_METHOD:-pip}"
 EXTRAS="${NAVIG_EXTRAS:-}"
 INSTALL_PROFILE="${NAVIG_INSTALL_PROFILE:-operator}"
 GIT_DIR="${HOME}/navig-core"
 GIT_UPDATE=1
+PRODUCTION=${PRODUCTION:-0}
 NO_CONFIRM="${NAVIG_NO_CONFIRM:-0}"
 DRY_RUN=0
 VERBOSE=0
@@ -92,8 +97,6 @@ print_usage() {
     echo "NAVIG Installer"
     echo ""
     echo "Usage:"
-    echo "  curl -fsSL https://navig.run/install.sh | bash"
-
     echo "  curl -fsSL https://navig.run/install.sh | bash"
     echo "  curl -fsSL https://navig.run/install.sh | bash -s -- [ACTION] [OPTIONS]"
     echo ""
@@ -144,19 +147,19 @@ parse_args() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --uninstall)  ACTION="uninstall"; shift ;;
-            --reinstall)  ACTION="reinstall"; shift ;;
-            --version)    VERSION="$2"; shift 2 ;;
-
-            --method)     INSTALL_METHOD="$2"; shift 2 ;;
-            --dev)        INSTALL_METHOD="git"; DEV_MODE=1; shift ;;
-            --git-dir)    GIT_DIR="$2"; shift 2 ;;
-            --extras)     EXTRAS="$2"; shift 2 ;;
-            --profile)    INSTALL_PROFILE="$2"; shift 2 ;;
-            --no-confirm) NO_CONFIRM=1; shift ;;
-            --dry-run)    DRY_RUN=1; shift ;;
-            --verbose)    VERBOSE=1; shift ;;
-            --help|-h)    HELP=1; shift ;;
+            --uninstall)    ACTION="uninstall"; shift ;;
+            --reinstall)    ACTION="reinstall"; shift ;;
+            --version)      VERSION="$2"; shift 2 ;;
+            --method)       INSTALL_METHOD="$2"; shift 2 ;;
+            --dev)          INSTALL_METHOD="git"; DEV_MODE=1; shift ;;
+            --git-dir)      GIT_DIR="$2"; shift 2 ;;
+            --extras)       EXTRAS="$2"; shift 2 ;;
+            --profile)      INSTALL_PROFILE="$2"; shift 2 ;;
+            --production)   PRODUCTION=1; shift ;;
+            --no-confirm)   NO_CONFIRM=1; shift ;;
+            --dry-run)      DRY_RUN=1; shift ;;
+            --verbose)      VERBOSE=1; shift ;;
+            --help|-h)      HELP=1; shift ;;
             *)
                 echo -e "${ERROR}Unknown option: $1${NC}"
                 print_usage
@@ -168,6 +171,9 @@ parse_args() {
 
 configure_verbose() {
     if [[ "$VERBOSE" == "1" ]]; then
+        # Note: set -x traces all commands including those that expand env vars.
+        # Avoid --verbose on systems where secrets (e.g. NAVIG_TELEGRAM_BOT_TOKEN)
+        # are in the environment — they will appear in output.
         set -x
     fi
 }
@@ -243,7 +249,9 @@ detect_python() {
     for cmd in "${candidates[@]}"; do
         if command -v "$cmd" &>/dev/null; then
             local ver
-            ver="$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+' | head -1)"
+            # grep -oE is portable to both GNU grep and macOS/BSD grep
+            # grep -oP (Perl regex) is NOT available on macOS stock grep
+            ver="$("$cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)"
             local major minor
             major="$(echo "$ver" | cut -d. -f1)"
             minor="$(echo "$ver" | cut -d. -f2)"
@@ -258,19 +266,28 @@ detect_python() {
 }
 
 detect_pip() {
-    # Try pip associated with our python
+    # Store PIP_CMD as an array to prevent word-splitting on "python3 -m pip"
     if "$PYTHON_CMD" -m pip --version &>/dev/null; then
-        PIP_CMD="$PYTHON_CMD -m pip"
+        PIP_CMD=("$PYTHON_CMD" -m pip)
         return 0
     fi
     # Try standalone pip3/pip
     for cmd in pip3 pip; do
         if command -v "$cmd" &>/dev/null; then
-            PIP_CMD="$cmd"
+            PIP_CMD=("$cmd")
             return 0
         fi
     done
     return 1
+}
+
+# ── Dedup apt-get update ─────────────────────────────────────
+_APT_UPDATED=0
+_apt_update() {
+    if [[ "$_APT_UPDATED" == "0" ]]; then
+        maybe_sudo apt-get update -y
+        _APT_UPDATED=1
+    fi
 }
 
 install_python() {
@@ -281,7 +298,7 @@ install_python() {
     elif [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
         require_sudo
         if command -v apt-get &>/dev/null; then
-            maybe_sudo apt-get update -y
+            _apt_update
             maybe_sudo apt-get install -y python3 python3-pip python3-venv
         elif command -v dnf &>/dev/null; then
             maybe_sudo dnf install -y python3 python3-pip
@@ -316,7 +333,7 @@ install_git() {
     elif [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
         require_sudo
         if command -v apt-get &>/dev/null; then
-            maybe_sudo apt-get update -y
+            _apt_update
             maybe_sudo apt-get install -y git
         elif command -v dnf &>/dev/null; then
             maybe_sudo dnf install -y git
@@ -415,7 +432,7 @@ check_install_pipx() {
         return 0
     fi
     echo -e "${WARN}→${NC} Installing pipx (isolated installs)..."
-    if ! $PIP_CMD install --user pipx --quiet 2>/dev/null; then
+    if ! "${PIP_CMD[@]}" install --user pipx --quiet 2>/dev/null; then
         echo -e "${WARN}!${NC} pipx install failed - using pip --user fallback"
         return 0
     fi
@@ -456,7 +473,7 @@ install_navig_pip() {
 
     pip_args+=("$install_spec")
 
-    if ! $PIP_CMD "${pip_args[@]}"; then
+    if ! "${PIP_CMD[@]}" "${pip_args[@]}"; then
         echo -e "${ERROR}Error: pip install failed${NC}"
         echo -e "Try manually: ${INFO}pip install ${install_spec}${NC}"
         exit 1
@@ -489,7 +506,7 @@ install_navig_git() {
         fi
     fi
 
-    if [[ "${PRODUCTION:-0}" == "1" ]]; then
+    if [[ "$PRODUCTION" == "1" ]]; then
         echo -e "${WARN}→${NC} Installing NAVIG from source (production - no editable install)..."
         # Non-editable: no __editable__ finder overhead (~20ms startup savings)
         local pip_args=("install")
@@ -508,7 +525,7 @@ install_navig_git() {
         fi
     fi
 
-    $PIP_CMD "${pip_args[@]}"
+    "${PIP_CMD[@]}" "${pip_args[@]}"
 
     echo -e "${SUCCESS}✓${NC} NAVIG installed from source"
     echo -e "${INFO}i${NC} Source directory: ${INFO}${repo_dir}${NC}"
@@ -541,8 +558,10 @@ check_existing_navig() {
 resolve_navig_version() {
     if command -v navig &>/dev/null; then
         navig --version 2>/dev/null | head -1 || echo ""
+    elif [[ ${#PIP_CMD[@]} -gt 0 ]]; then
+        "${PIP_CMD[@]}" show navig 2>/dev/null | grep -i "^version:" | awk '{print $2}' || echo ""
     else
-        $PIP_CMD show navig 2>/dev/null | grep -i "^version:" | awk '{print $2}' || echo ""
+        echo ""
     fi
 }
 
@@ -616,11 +635,16 @@ uninstall_navig() {
         _try rm -rf "$GIT_DIR"
     fi
 
-    # Step E: Clean shell profiles
+    # Step E: Clean shell profiles (atomic: write to tmp first, then mv)
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         if [[ -f "$rc" ]] && grep -q "# NAVIG CLI" "$rc" 2>/dev/null; then
-            _try grep -v "# NAVIG CLI" "$rc" > "${rc}.tmp" && _try mv "${rc}.tmp" "$rc"
-            # It's crude but cleans it up
+            local rctmp
+            rctmp="$(mktemp)"
+            if grep -v "# NAVIG CLI" "$rc" > "$rctmp" 2>/dev/null; then
+                _try mv "$rctmp" "$rc"
+            else
+                rm -f "$rctmp"
+            fi
         fi
     done
 
@@ -684,7 +708,13 @@ main() {
         echo "1) Repair / Reinstall (preserve data)"
         echo "2) Uninstall"
         echo "3) Cancel"
-        read -p "Select an option [1-3]: " opt
+        # Only prompt when stdin is an interactive terminal
+        if [[ -t 0 ]]; then
+            read -rp "Select an option [1-3]: " opt
+        else
+            echo -e "  ${INFO}Non-interactive session - skipping prompt, continuing install.${NC}"
+            opt=""
+        fi
         case "$opt" in
             1) ACTION="reinstall" ;;
             2) ACTION="uninstall" ;;
@@ -821,10 +851,12 @@ main() {
 if [[ "${NAVIG_INSTALL_SH_NO_RUN:-0}" != "1" ]]; then
     parse_args "$@"
     configure_verbose
-    # Tee all output to ~/.navig/logs/install.log from the start.
-    # The log dir is also created in setup_navig_config, but we need it
-    # before main() runs so the tee captures the full session.
+    # Tee all output to ~/.navig/logs/install.log.
+    # Process substitution ( >(tee ...) ) requires bash 4+.
+    # macOS ships with bash 3.2 — guard to avoid a syntax/runtime error.
     mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
-    exec > >(tee -a "${HOME}/.navig/logs/install.log") 2>&1
+    if (( BASH_VERSINFO[0] >= 4 )); then
+        exec > >(tee -a "${HOME}/.navig/logs/install.log") 2>&1
+    fi
     main
 fi
