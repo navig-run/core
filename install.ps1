@@ -424,10 +424,18 @@ function Invoke-WithSpinner {
             Start-Sleep -Milliseconds 100
             $i++
         }
+        # WaitForExit() ensures the OS has fully flushed the exit code into the
+        # Process object. On Windows, HasExited can flip true before ExitCode is
+        # reliable — this call is a no-op if the process already exited.
+        $proc.WaitForExit()
         $code = $proc.ExitCode
-        # Capture error lines NOW before finally cleans up the temp file
+        # Capture lines for diagnostics. Prefer stderr; fall back to stdout
+        # when stderr is empty (e.g. pipx writes its main output to stdout).
         if ($code -ne 0) {
             $errorLines = @(Get-Content $tmpErr -ErrorAction SilentlyContinue)
+            if (-not $errorLines -or $errorLines.Count -eq 0) {
+                $errorLines = @(Get-Content $tmpOut -ErrorAction SilentlyContinue)
+            }
         }
     } catch {
         $code = 1
@@ -448,7 +456,7 @@ function Invoke-WithSpinner {
             $showLines = if ($VerbosePreference -ne 'SilentlyContinue') {
                 $errorLines
             } else {
-                $errorLines | Select-Object -Last 6
+                $errorLines | Select-Object -Last 12
             }
             $showLines | Where-Object { $_ -match '\S' } | ForEach-Object {
                 Write-Host "       $_" -ForegroundColor DarkGray
@@ -760,7 +768,25 @@ function Install-NavigPip {
         $baseArgs = if ($pipxParts.Length -gt 1) { $pipxParts[1..($pipxParts.Length-1)] } else { @() }
         $fullArgs = $baseArgs + @("install", $installSpec, "--force")
         $code = Invoke-WithSpinner -Label "Installing NAVIG via pipx" -Exe $exe -ArgList $fullArgs
-        if ($code -eq 0) { return }  # done
+        # On Windows, pipx's .cmd shim can report a non-zero exit code via
+        # Start-Process even when the install succeeded (PATH env variance,
+        # shim-launch overhead). Do a secondary shim-existence check.
+        if ($code -ne 0) {
+            $shims = @(
+                (Join-Path $HOME ".local\bin\navig.exe"),
+                (Join-Path $HOME ".local\bin\navig.cmd"),
+                (Join-Path $HOME "AppData\Local\Programs\pipx\venvs\navig\Scripts\navig.exe"),
+                (Join-Path $HOME ".local\pipx\venvs\navig\Scripts\navig.exe")
+            )
+            if ($shims | Where-Object { Test-Path $_ }) {
+                Write-NavInfo "pipx reported non-zero but navig shim found — treating as success"
+                $code = 0
+            }
+        }
+        if ($code -eq 0) {
+            try { & pipx ensurepath 2>$null } catch {}
+            return
+        }
         Write-NavInfo "pipx install failed - retrying with pip install --user"
     }
 
@@ -772,6 +798,12 @@ function Install-NavigPip {
 
     $code = Invoke-WithSpinner -Label "Installing NAVIG via pip" -Exe $exe -ArgList $fullArgs
     if ($code -ne 0) {
+        # Auto-retry once with --no-cache-dir (clears any corrupted cache entries)
+        Write-NavInfo "pip install failed - retrying with --no-cache-dir"
+        $retryArgs = $baseArgs + @("install", "--user", "--upgrade", "--no-cache-dir", $installSpec)
+        $code = Invoke-WithSpinner -Label "Installing NAVIG via pip (no-cache)" -Exe $exe -ArgList $retryArgs
+    }
+    if ($code -ne 0) {
         Write-NavErr "Installation failed"
         Write-NavHint "Try manually:"
         Write-NavHint "  pip install --user $installSpec"
@@ -779,6 +811,10 @@ function Install-NavigPip {
         Write-NavHint "Docs: https://github.com/navig-run/core"
         exit 1
     }
+    # Refresh PATH for the current session so navig is immediately usable
+    # without requiring a terminal restart.
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("PATH","User")    + ";" + $env:PATH
 }
 
 # ── Install via git ───────────────────────────────────────────────────────
