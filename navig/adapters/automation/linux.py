@@ -80,9 +80,7 @@ class LinuxAdapter:
 
     def _run_command(self, cmd: list, capture_output=True) -> ExecutionResult:
         try:
-            result = subprocess.run(
-                cmd, capture_output=capture_output, text=True, timeout=10
-            )
+            result = subprocess.run(cmd, capture_output=capture_output, text=True, timeout=10)
             return ExecutionResult(
                 success=result.returncode == 0,
                 stdout=result.stdout,
@@ -160,15 +158,11 @@ class LinuxAdapter:
 
     def activate_window(self, selector: str) -> ExecutionResult:
         """Activate window by title."""
-        return self._run_command(
-            ["xdotool", "search", "--name", selector, "windowactivate"]
-        )
+        return self._run_command(["xdotool", "search", "--name", selector, "windowactivate"])
 
     def close_window(self, selector: str) -> ExecutionResult:
         """Close window."""
-        return self._run_command(
-            ["xdotool", "search", "--name", selector, "windowkill"]
-        )
+        return self._run_command(["xdotool", "search", "--name", selector, "windowkill"])
 
     def move_window(
         self, selector: str, x: int, y: int, width: int = None, height: int = None
@@ -182,17 +176,13 @@ class LinuxAdapter:
         win_id = search_result.stdout.strip().split("\n")[0]
 
         # Move
-        move_result = self._run_command(
-            ["xdotool", "windowmove", win_id, str(x), str(y)]
-        )
+        move_result = self._run_command(["xdotool", "windowmove", win_id, str(x), str(y)])
         if not move_result.success:
             return move_result
 
         # Resize if dimensions provided
         if width and height:
-            return self._run_command(
-                ["xdotool", "windowsize", win_id, str(width), str(height)]
-            )
+            return self._run_command(["xdotool", "windowsize", win_id, str(width), str(height)])
 
         return move_result
 
@@ -204,9 +194,7 @@ class LinuxAdapter:
 
     def minimize_window(self, selector: str) -> ExecutionResult:
         """Minimize window."""
-        return self._run_command(
-            ["xdotool", "search", "--name", selector, "windowminimize"]
-        )
+        return self._run_command(["xdotool", "search", "--name", selector, "windowminimize"])
 
     def snap_window(self, selector: str, position: str) -> ExecutionResult:
         """Snap window to screen position."""
@@ -270,9 +258,7 @@ class LinuxAdapter:
                 title = parts[7] if len(parts) > 7 else ""
 
                 windows.append(
-                    WindowInfo(
-                        id=win_id, title=title, x=x, y=y, width=w, height=h, pid=0
-                    )
+                    WindowInfo(id=win_id, title=title, x=x, y=y, width=w, height=h, pid=0)
                 )
 
         return windows

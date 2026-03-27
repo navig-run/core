@@ -33,9 +33,7 @@ def _make_remote_ops(stdout: str = "2.4.16", returncode: int = 0):
 class TestCheckLocal:
     def test_returns_version_info(self):
         checker = VersionChecker(_make_source("2.5.0"))
-        with patch(
-            "navig.update.checker.VersionChecker._latest_cached", return_value="2.5.0"
-        ):
+        with patch("navig.update.checker.VersionChecker._latest_cached", return_value="2.5.0"):
             vi = checker.check_local()
         assert vi.node_id == "local"
         assert vi.current != ""

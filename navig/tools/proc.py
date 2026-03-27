@@ -221,16 +221,10 @@ async def run_process(
     # Build environment
     env: dict[str, str] | None = None
     if opts.env_extra:
-        env = {
-            k: str(v)
-            for k, v in {**os.environ, **opts.env_extra}.items()
-            if v is not None
-        }
+        env = {k: str(v) for k, v in {**os.environ, **opts.env_extra}.items() if v is not None}
 
     stdin_mode = (
-        asyncio.subprocess.PIPE
-        if opts.input_data is not None
-        else asyncio.subprocess.DEVNULL
+        asyncio.subprocess.PIPE if opts.input_data is not None else asyncio.subprocess.DEVNULL
     )
 
     t0 = time.monotonic()
@@ -292,9 +286,7 @@ async def run_process(
     if opts.no_output_timeout_s and opts.no_output_timeout_s > 0:
         no_output_deadline = time.monotonic() + opts.no_output_timeout_s
 
-    async def _read_stream(
-        stream: asyncio.StreamReader, chunks: list[bytes], tag: str
-    ) -> None:
+    async def _read_stream(stream: asyncio.StreamReader, chunks: list[bytes], tag: str) -> None:
         nonlocal no_output_deadline
         while True:
             chunk = await stream.read(4096)
@@ -308,13 +300,9 @@ async def run_process(
     async def _communicate() -> None:
         tasks = []
         if proc.stdout:
-            tasks.append(
-                asyncio.create_task(_read_stream(proc.stdout, stdout_chunks, "stdout"))
-            )
+            tasks.append(asyncio.create_task(_read_stream(proc.stdout, stdout_chunks, "stdout")))
         if proc.stderr:
-            tasks.append(
-                asyncio.create_task(_read_stream(proc.stderr, stderr_chunks, "stderr"))
-            )
+            tasks.append(asyncio.create_task(_read_stream(proc.stderr, stderr_chunks, "stderr")))
         if tasks:
             await asyncio.gather(*tasks)
         await proc.wait()

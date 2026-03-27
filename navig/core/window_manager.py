@@ -33,12 +33,7 @@ class WindowManager:
         layout_data = []
         for w in windows:
             # Filter out system windows or unlikely targets
-            if (
-                w.title
-                and w.title != "Program Manager"
-                and w.width > 0
-                and w.height > 0
-            ):
+            if w.title and w.title != "Program Manager" and w.width > 0 and w.height > 0:
                 layout_data.append(asdict(w))
 
         file_path = self.layout_dir / f"{name}.json"

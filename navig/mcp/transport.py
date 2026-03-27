@@ -72,11 +72,7 @@ class StdioTransport(MCPTransport):
         if self.env:
             # Resolve environment variable references
             for key, value in self.env.items():
-                if (
-                    isinstance(value, str)
-                    and value.startswith("${")
-                    and value.endswith("}")
-                ):
+                if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
                     env_var = value[2:-1]
                     value = os.environ.get(env_var, "")
                 full_env[key] = value
@@ -103,9 +99,7 @@ class StdioTransport(MCPTransport):
             logger.info(f"MCP stdio transport connected: {self.command}")
 
         except FileNotFoundError as _exc:
-            raise RuntimeError(
-                f"MCP server command not found: {self.command}"
-            ) from _exc
+            raise RuntimeError(f"MCP server command not found: {self.command}") from _exc
         except Exception as e:
             raise RuntimeError(f"Failed to start MCP server: {e}") from e
 
@@ -259,9 +253,7 @@ class SSETransport(MCPTransport):
         try:
             import aiohttp
         except ImportError as _exc:
-            raise ImportError(
-                "aiohttp required for SSE transport: pip install aiohttp"
-            ) from _exc
+            raise ImportError("aiohttp required for SSE transport: pip install aiohttp") from _exc
 
         self._session = aiohttp.ClientSession(headers=self.headers)
         logger.info(f"MCP SSE transport connected: {self.url}")

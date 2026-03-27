@@ -317,9 +317,7 @@ class SystemEventQueue:
         """Get all pending events."""
         return list(self._pending.values())
 
-    def get_history(
-        self, event_type: str | None = None, limit: int = 50
-    ) -> list[SystemEvent]:
+    def get_history(self, event_type: str | None = None, limit: int = 50) -> list[SystemEvent]:
         """Get event history."""
         events = self._history
 
@@ -402,9 +400,7 @@ class SmartNotificationFilter:
             if quiet_hours_enabled is not None
             else _env_bool("NAVIG_QUIET_HOURS_ENABLED", False)
         )
-        self.quiet_hours_start = int(
-            os.getenv("NAVIG_QUIET_HOURS_START", quiet_hours_start)
-        )
+        self.quiet_hours_start = int(os.getenv("NAVIG_QUIET_HOURS_START", quiet_hours_start))
         self.quiet_hours_end = int(os.getenv("NAVIG_QUIET_HOURS_END", quiet_hours_end))
         self.notifications_enabled = bool(
             notifications_enabled

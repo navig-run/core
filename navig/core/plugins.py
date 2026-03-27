@@ -243,9 +243,7 @@ class Plugin(ABC):
     # Hook Integration
     # =========================================================================
 
-    def register_hook(
-        self, event_key: str, handler: Callable, priority: int = 100
-    ) -> str:
+    def register_hook(self, event_key: str, handler: Callable, priority: int = 100) -> str:
         """
         Register a hook handler.
 
@@ -295,9 +293,7 @@ def plugin(
     """
 
     def decorator(cls: type[Plugin]) -> type[Plugin]:
-        cls.metadata = PluginMetadata(
-            name=name, version=version, description=description, **kwargs
-        )
+        cls.metadata = PluginMetadata(name=name, version=version, description=description, **kwargs)
         return cls
 
     return decorator
@@ -365,11 +361,7 @@ class PluginRegistry:
                         discovered.append(info)
 
                 # Also support single-file plugins
-                elif (
-                    item.is_file()
-                    and item.suffix == ".py"
-                    and not item.name.startswith("_")
-                ):
+                elif item.is_file() and item.suffix == ".py" and not item.name.startswith("_"):
                     info = self._discover_plugin_file(item)
                     if info:
                         discovered.append(info)
@@ -381,9 +373,7 @@ class PluginRegistry:
         try:
             # Load the module
             module_name = f"navig_plugins.{path.name}"
-            spec = importlib.util.spec_from_file_location(
-                module_name, path / "__init__.py"
-            )
+            spec = importlib.util.spec_from_file_location(module_name, path / "__init__.py")
             if spec is None or spec.loader is None:
                 return None
 
@@ -458,9 +448,7 @@ class PluginRegistry:
     # Lifecycle Management
     # =========================================================================
 
-    def load_plugin(
-        self, name: str, config: dict[str, Any] | None = None
-    ) -> PluginInfo:
+    def load_plugin(self, name: str, config: dict[str, Any] | None = None) -> PluginInfo:
         """
         Load a discovered plugin.
 

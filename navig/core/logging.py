@@ -114,9 +114,7 @@ def _configure_root_logger(log_file: Path | None = None, level: int = logging.IN
             show_path=False,
             markup=False,
             highlighter=None,
-            console=__import__("rich.console", fromlist=["Console"]).Console(
-                stderr=True
-            ),
+            console=__import__("rich.console", fromlist=["Console"]).Console(stderr=True),
         )
     except ImportError:
         console_handler = logging.StreamHandler(sys.stderr)

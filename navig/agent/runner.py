@@ -189,9 +189,7 @@ class Agent:
             "running": self._running,
             "started_at": self._started_at.isoformat() if self._started_at else None,
             "uptime_seconds": (
-                (datetime.now() - self._started_at).total_seconds()
-                if self._started_at
-                else 0
+                (datetime.now() - self._started_at).total_seconds() if self._started_at else 0
             ),
             "mode": self.config.mode,
             "personality": self.config.personality.profile,

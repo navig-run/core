@@ -45,10 +45,7 @@ class TestSkillsPrompt:
 
         skill_dir = tmp_path / "skills"
         skill_dir.mkdir()
-        md_content = (
-            "# My Skill\n\nThis is a skill description.\n"
-            + "Line {}\n".format("x") * 60
-        )
+        md_content = "# My Skill\n\nThis is a skill description.\n" + "Line {}\n".format("x") * 60
         (skill_dir / "md_skill.md").write_text(md_content)
 
         # Load first 50 lines

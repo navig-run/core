@@ -92,17 +92,15 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
     def compose(self):  # type: ignore[override]
         with Vertical(id="checks-panel"):
             yield Label("System Checks", id="checks-title")
-            for label, *_ in self._CHECK_DEFS:
+            for idx, (label, *_) in enumerate(self._CHECK_DEFS):
                 import re as _re
 
                 _safe_id = _re.sub(r"[^a-zA-Z0-9_-]", "", label[:24].replace(" ", "_"))
-                row = CheckRow(label, id=f"check-{_safe_id or str(id(label))}")
+                row = CheckRow(label, id=f"check-{_safe_id or f'idx-{idx}'}")
                 yield row
             yield Label("")
             with Horizontal(id="checks-footer"):
-                yield Button(
-                    "Continue  →", variant="primary", id="btn-continue", disabled=True
-                )
+                yield Button("Continue  →", variant="primary", id="btn-continue", disabled=True)
                 yield Button("← Back", variant="default", id="btn-back")
 
     def on_mount(self) -> None:

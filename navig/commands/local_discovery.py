@@ -143,9 +143,7 @@ class LocalDiscovery:
         try:
             # Get local IP addresses
             hostname = socket.gethostname()
-            network_info["ip_addresses"] = list(
-                set(socket.gethostbyname_ex(hostname)[2])
-            )
+            network_info["ip_addresses"] = list(set(socket.gethostbyname_ex(hostname)[2]))
 
             # Add loopback if not present
             if "127.0.0.1" not in network_info["ip_addresses"]:
@@ -202,9 +200,7 @@ class LocalDiscovery:
             success, stdout, _ = run_local_command("sqlite3 --version")
             if success:
                 version = stdout.split()[0] if stdout else "unknown"
-                databases.append(
-                    {"type": "sqlite", "version": version, "command": "sqlite3"}
-                )
+                databases.append({"type": "sqlite", "version": version, "command": "sqlite3"})
                 self._log(f"  ✓ SQLite {version}", "success")
 
         # Redis
@@ -241,9 +237,7 @@ class LocalDiscovery:
                 # nginx outputs version to stderr
                 version_line = stdout or ""
                 version = (
-                    version_line.split("/")[1].split()[0]
-                    if "/" in version_line
-                    else "unknown"
+                    version_line.split("/")[1].split()[0] if "/" in version_line else "unknown"
                 )
                 web_servers.append(
                     {
@@ -258,11 +252,7 @@ class LocalDiscovery:
         # Apache
         apache_cmd = "httpd" if not self.is_windows else "httpd"
         if check_command_exists(apache_cmd) or check_command_exists("apache2"):
-            cmd = (
-                "apache2 -v 2>&1"
-                if check_command_exists("apache2")
-                else "httpd -v 2>&1"
-            )
+            cmd = "apache2 -v 2>&1" if check_command_exists("apache2") else "httpd -v 2>&1"
             success, stdout, _ = run_local_command(cmd)
             if success or stdout:
                 for line in stdout.split("\n"):
@@ -343,9 +333,7 @@ class LocalDiscovery:
         if check_command_exists("composer"):
             success, stdout, _ = run_local_command("composer --version")
             if success:
-                php_info["composer"] = (
-                    stdout.split()[2] if len(stdout.split()) > 2 else "installed"
-                )
+                php_info["composer"] = stdout.split()[2] if len(stdout.split()) > 2 else "installed"
 
         self.discovered_data["php"] = php_info
         self._log(f"  ✓ PHP {version}", "success")
@@ -419,9 +407,7 @@ class LocalDiscovery:
         if check_command_exists(pip_cmd):
             success, stdout, _ = run_local_command(f"{pip_cmd} --version")
             if success:
-                python_info["pip"] = (
-                    stdout.split()[1] if len(stdout.split()) > 1 else "installed"
-                )
+                python_info["pip"] = stdout.split()[1] if len(stdout.split()) > 1 else "installed"
 
         self.discovered_data["python"] = python_info
         self._log(f"  ✓ Python {version}", "success")
@@ -450,9 +436,7 @@ class LocalDiscovery:
         }
 
         # Check if Docker daemon is running
-        success, stdout, _ = run_local_command(
-            'docker info --format "{{.ServerVersion}}"'
-        )
+        success, stdout, _ = run_local_command('docker info --format "{{.ServerVersion}}"')
         docker_info["running"] = success
 
         # Check for docker-compose
@@ -609,12 +593,8 @@ def discover_local_host(
         from navig.cache_store import read_json_cache, write_json_cache
 
         ttl_cfg = config_manager.global_config.get("cache_ttl", {})
-        ttl_seconds = int(
-            ttl_cfg.get("host_discovery_seconds", ttl_cfg.get("host_discovery", 300))
-        )
-        cache = read_json_cache(
-            "host_discovery.json", ttl_seconds=ttl_seconds, no_cache=no_cache
-        )
+        ttl_seconds = int(ttl_cfg.get("host_discovery_seconds", ttl_cfg.get("host_discovery", 300)))
+        cache = read_json_cache("host_discovery.json", ttl_seconds=ttl_seconds, no_cache=no_cache)
         if cache.hit and not cache.expired and isinstance(cache.data, dict):
             cached_payload = cache.data
             if progress:
@@ -658,9 +638,7 @@ def discover_local_host(
     # Show summary
     if progress:
         console.print()
-        console.print(
-            Panel("[bold cyan]Local Environment Summary[/bold cyan]", expand=False)
-        )
+        console.print(Panel("[bold cyan]Local Environment Summary[/bold cyan]", expand=False))
 
         # Create summary table
         table = Table(box=None, show_header=False, padding=(0, 2))
@@ -669,9 +647,7 @@ def discover_local_host(
 
         os_info = discovered.get("os", {})
         table.add_row("OS", os_info.get("display_name", "Unknown"))
-        table.add_row(
-            "Hostname", discovered.get("network", {}).get("hostname", "localhost")
-        )
+        table.add_row("Hostname", discovered.get("network", {}).get("hostname", "localhost"))
 
         # Databases
         dbs = discovered.get("databases", [])
@@ -706,9 +682,7 @@ def discover_local_host(
 
     # Confirm creation
     if not auto_confirm:
-        if not Confirm.ask(
-            f"Create host configuration '[cyan]{name}[/cyan]'?", default=True
-        ):
+        if not Confirm.ask(f"Create host configuration '[cyan]{name}[/cyan]'?", default=True):
             ch.warning("Cancelled.")
             return None
 

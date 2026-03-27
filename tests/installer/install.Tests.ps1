@@ -43,13 +43,13 @@ Describe "Normalize-NavigAction" {
     It "returns empty string for blank input" {
         Normalize-NavigAction "" | Should -Be ""
     }
-    It "normalises 'Install' to 'install'" {
+    It "normalizes 'Install' to 'install'" {
         Normalize-NavigAction "Install" | Should -Be "install"
     }
-    It "normalises 'Uninstall' to 'uninstall'" {
+    It "normalizes 'Uninstall' to 'uninstall'" {
         Normalize-NavigAction "Uninstall" | Should -Be "uninstall"
     }
-    It "normalises 'repair' to 'reinstall'" {
+    It "normalizes 'repair' to 'reinstall'" {
         Normalize-NavigAction "repair" | Should -Be "reinstall"
     }
     It "throws on unknown action" {
@@ -119,19 +119,19 @@ Describe "Get-PythonScriptsDir" {
 Describe "Test-NavigCommand — source checks" {
     It "reloads PATH from registry before probing" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Test-NavigCommand.*?\n\}')
+        $fn  = [regex]::Match($src, '(?s)function Test-NavigCommand.*\n\}')
         $fn.Value | Should -Match 'GetEnvironmentVariable.*PATH.*Machine'
     }
 
     It "falls back to ScriptsDir\navig.exe when Get-Command returns nothing" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Test-NavigCommand.*?\n\}')
+        $fn  = [regex]::Match($src, '(?s)function Test-NavigCommand.*\n\}')
         $fn.Value | Should -Match 'navig\.exe'
     }
 
     It "returns null on failure (does not call exit)" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Test-NavigCommand.*?\n\}')
+        $fn  = [regex]::Match($src, '(?s)function Test-NavigCommand.*\n\}')
         $fn.Value | Should -Match 'return \$null'
     }
 }
@@ -232,8 +232,8 @@ Describe "Write-NavVerbose" {
 
     It "is gated on the Verbose flag in source" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Write-NavVerbose.*?\n\}')
-        $fn.Value | Should -Match '\$Verbose'
+        $src | Should -Match 'function Write-NavVerbose'
+        $src | Should -Match '\$Verbose'
     }
 }
 

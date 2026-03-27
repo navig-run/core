@@ -49,9 +49,7 @@ class ProactiveDisplay:
 
         # Check for destructive operations
         if self._is_destructive_operation(command, args):
-            destructive_warnings = self._get_destructive_warnings(
-                command, args, context
-            )
+            destructive_warnings = self._get_destructive_warnings(command, args, context)
             warnings.extend(destructive_warnings)
 
             # Require confirmation if configured
@@ -97,10 +95,7 @@ class ProactiveDisplay:
         """Check if current server is marked as production."""
         # void: production. where mistakes cost money. or worse, reputation.
         server = context.get("server", {})
-        return (
-            server.get("environment") == "production"
-            or "prod" in server.get("name", "").lower()
-        )
+        return server.get("environment") == "production" or "prod" in server.get("name", "").lower()
 
     def _get_destructive_warnings(
         self, command: str, args: dict[str, Any], context: dict[str, Any]
@@ -123,9 +118,7 @@ class ProactiveDisplay:
 
             if "DROP TABLE" in query.upper():
                 warnings.append("[!] DESTRUCTIVE: DROP TABLE operation")
-                warnings.append(
-                    "    This will permanently delete the table and all data"
-                )
+                warnings.append("    This will permanently delete the table and all data")
                 warnings.append("    Ensure you have a recent backup")
 
             elif "DELETE FROM" in query.upper():
@@ -181,9 +174,7 @@ class ProactiveDisplay:
 
         # Pattern: Multiple single file uploads
         if command == "upload":
-            upload_count = sum(
-                1 for h in history if h.get("command", "").startswith("upload")
-            )
+            upload_count = sum(1 for h in history if h.get("command", "").startswith("upload"))
             if upload_count >= 3:
                 suggestions.append(
                     "[TIP] Use 'navig upload <directory>' or 'navig upload file1 file2 file3' "
@@ -192,9 +183,7 @@ class ProactiveDisplay:
 
         # Pattern: Frequent service restarts
         if command == "restart":
-            restart_count = sum(
-                1 for h in history if h.get("command", "").startswith("restart")
-            )
+            restart_count = sum(1 for h in history if h.get("command", "").startswith("restart"))
             if restart_count >= 3:
                 suggestions.append(
                     "[TIP] Service restarting frequently. Run 'navig assistant analyze' "
@@ -219,11 +208,7 @@ class ProactiveDisplay:
 
             # Filter for recent entries
             cutoff = datetime.now() - timedelta(minutes=minutes)
-            recent = [
-                h
-                for h in all_history
-                if datetime.fromisoformat(h["timestamp"]) >= cutoff
-            ]
+            recent = [h for h in all_history if datetime.fromisoformat(h["timestamp"]) >= cutoff]
 
             return recent
 

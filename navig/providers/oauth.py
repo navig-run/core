@@ -185,9 +185,7 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 self._send_response("Authentication failed. You can close this window.")
             elif code and state:
                 self.server.oauth_result = {"code": code, "state": state}
-                self._send_response(
-                    "Authentication successful! You can close this window."
-                )
+                self._send_response("Authentication successful! You can close this window.")
             else:
                 self.server.oauth_result = {"error": "Missing code or state"}
                 self._send_response("Invalid callback. Missing code or state.")
@@ -517,9 +515,7 @@ def run_oauth_flow_interactive(
     log("\nExchanging code for tokens...")
 
     try:
-        credentials = asyncio.run(
-            exchange_code_for_tokens(provider, code, code_verifier)
-        )
+        credentials = asyncio.run(exchange_code_for_tokens(provider, code, code_verifier))
         log("Authentication successful!")
         return OAuthFlowResult(success=True, credentials=credentials)
     except Exception as e:
@@ -582,9 +578,7 @@ def run_oauth_flow_headless(
 
     # Exchange code for tokens
     try:
-        credentials = asyncio.run(
-            exchange_code_for_tokens(provider, code, code_verifier)
-        )
+        credentials = asyncio.run(exchange_code_for_tokens(provider, code, code_verifier))
         return OAuthFlowResult(success=True, credentials=credentials)
     except Exception as e:
         return OAuthFlowResult(success=False, error=str(e))

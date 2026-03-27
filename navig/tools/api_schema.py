@@ -60,11 +60,7 @@ def redact_sensitive(
     if isinstance(data, dict):
         out = {}
         for k, v in data.items():
-            if (
-                _SENSITIVE_KEYS_RE.search(str(k))
-                or extra_keys
-                and str(k).lower() in extra_keys
-            ):
+            if _SENSITIVE_KEYS_RE.search(str(k)) or extra_keys and str(k).lower() in extra_keys:
                 out[k] = _REDACTED
             else:
                 out[k] = redact_sensitive(v, extra_keys=extra_keys)
@@ -85,9 +81,7 @@ class ApiSource:
 
     tool: str
     endpoint: str = ""
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 @dataclass
@@ -203,9 +197,7 @@ def validate_api_result(result: ApiToolResult) -> list[str]:
     if not result.source.tool:
         issues.append("source.tool is empty")
     if not isinstance(result.normalized, (dict, list)):
-        issues.append(
-            f"normalized must be dict or list, got {type(result.normalized).__name__}"
-        )
+        issues.append(f"normalized must be dict or list, got {type(result.normalized).__name__}")
     if result.status == "error" and not result.error:
         issues.append("status is 'error' but error message is empty")
     return issues

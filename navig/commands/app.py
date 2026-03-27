@@ -50,12 +50,8 @@ def list_apps(options: dict[str, Any]) -> None:
                         app_info = {
                             "host": host,
                             "app": app_name,
-                            "webserver": app_config.get("webserver", {}).get(
-                                "type", "N/A"
-                            ),
-                            "database": app_config.get("database", {}).get(
-                                "type", "N/A"
-                            ),
+                            "webserver": app_config.get("webserver", {}).get("type", "N/A"),
+                            "database": app_config.get("database", {}).get("type", "N/A"),
                             "is_active": app_name == active_app,
                             "is_default": app_name == default_app,
                         }
@@ -185,9 +181,7 @@ def list_apps(options: dict[str, Any]) -> None:
 
             if show_all:
                 app_info["paths"] = app_config.get("paths", {})
-                app_info["database_name"] = app_config.get("database", {}).get(
-                    "name", "N/A"
-                )
+                app_info["database_name"] = app_config.get("database", {}).get("name", "N/A")
 
             app_data.append(app_info)
         except Exception as e:
@@ -373,9 +367,7 @@ def current_app(options: dict[str, Any]) -> None:
         return
 
     if not active_app:
-        ch.warning(
-            "No active app configured", "Use 'navig app use <name>' to set active app."
-        )
+        ch.warning("No active app configured", "Use 'navig app use <name>' to set active app.")
         return
 
     # Map source to display format
@@ -389,9 +381,7 @@ def current_app(options: dict[str, Any]) -> None:
 
     ch.header("Active Context")
     ch.console.print(f"[cyan]  Host:    {active_host}[/cyan]")
-    ch.console.print(
-        f"[green]  App: {active_app}[/green] {source_display.get(source, '')}"
-    )
+    ch.console.print(f"[green]  App: {active_app}[/green] {source_display.get(source, '')}")
 
 
 def add_app(options: dict[str, Any]) -> None:
@@ -817,9 +807,7 @@ def clone_app(options: dict[str, Any]) -> None:
 
         ch.newline()
         ch.header("Next Steps")
-        ch.console.print(
-            f"[green]1. Edit configuration: navig app edit {new_name}[/green]"
-        )
+        ch.console.print(f"[green]1. Edit configuration: navig app edit {new_name}[/green]")
         ch.console.print(f"[green]2. Set as active: navig app use {new_name}[/green]")
         ch.console.print("[green]3. Deploy application to the new paths[/green]")
     except Exception as e:
@@ -963,12 +951,8 @@ def search_apps(options: dict[str, Any]) -> None:
                             {
                                 "host": host_name,
                                 "app": app_name,
-                                "webserver": app_config.get("webserver", {}).get(
-                                    "type", "N/A"
-                                ),
-                                "database": app_config.get("database", {}).get(
-                                    "type", "N/A"
-                                ),
+                                "webserver": app_config.get("webserver", {}).get("type", "N/A"),
+                                "database": app_config.get("database", {}).get("type", "N/A"),
                             }
                         )
                     except Exception:
@@ -1001,9 +985,7 @@ def search_apps(options: dict[str, Any]) -> None:
         )
 
         for result in results:
-            table.add_row(
-                result["host"], result["app"], result["webserver"], result["database"]
-            )
+            table.add_row(result["host"], result["app"], result["webserver"], result["database"])
 
         ch.print_table(table)
 
@@ -1067,9 +1049,7 @@ def migrate_apps(options: dict[str, Any]) -> None:
 
     # Confirm migration
     if not dry_run:
-        if not ch.confirm_action(
-            f"Migrate {app_count} app(s) to individual files?", default=True
-        ):
+        if not ch.confirm_action(f"Migrate {app_count} app(s) to individual files?", default=True):
             ch.warning("Migration cancelled.")
             return
 
@@ -1138,18 +1118,14 @@ def app_callback(ctx: typer.Context):
 @app_app.command("list")
 def app_list(
     ctx: typer.Context,
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host to list apps from"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host to list apps from"),
     all: bool = typer.Option(
         False,
         "--all",
         "-a",
         help="Show all apps from all hosts with detailed information",
     ),
-    format: str = typer.Option(
-        "table", "--format", "-f", help="Output format: table, json, yaml"
-    ),
+    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, yaml"),
     plain: bool = typer.Option(
         False, "--plain", help="Output plain text (one app per line) for scripting"
     ),
@@ -1175,9 +1151,7 @@ def app_use(
     local: bool = typer.Option(
         False, "--local", "-l", help="Set as local active app (current directory only)"
     ),
-    clear_local: bool = typer.Option(
-        False, "--clear-local", help="Clear local active app setting"
-    ),
+    clear_local: bool = typer.Option(False, "--clear-local", help="Clear local active app setting"),
 ):
     """
     Set active app (global or local scope).
@@ -1234,9 +1208,7 @@ def app_add(
 def app_remove(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to remove"),
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host to remove app from"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host to remove app from"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
     """Remove app from a host."""
@@ -1253,9 +1225,7 @@ def app_remove(
 def app_show(
     ctx: typer.Context,
     app_name: str | None = typer.Argument(None, help="App name to show"),
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host containing the app"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host containing the app"),
     current: bool = typer.Option(False, "--current", help="Show currently active app"),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
@@ -1280,9 +1250,7 @@ def app_show(
 def app_edit(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to edit"),
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host containing the app"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host containing the app"),
 ):
     """Edit app configuration in default editor."""
     from navig.commands.app import edit_app
@@ -1298,9 +1266,7 @@ def app_clone(
     ctx: typer.Context,
     source: str = typer.Argument(..., help="Source app name to clone"),
     new_name: str = typer.Argument(..., help="New app name"),
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host containing the app"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host containing the app"),
 ):
     """[DEPRECATED: Use 'navig app add <name> --from <source>'] Clone app."""
     deprecation_warning("navig app clone", "navig app add <name> --from <source>")
@@ -1317,9 +1283,7 @@ def app_clone(
 def app_info(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to show info for"),
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host containing the app"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host containing the app"),
 ):
     """[DEPRECATED: Use 'navig app show'] Show detailed app information."""
     deprecation_warning("navig app info", "navig app show")
@@ -1346,9 +1310,7 @@ def app_search(
 @app_app.command("migrate")
 def app_migrate(
     ctx: typer.Context,
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Host to migrate apps from"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host to migrate apps from"),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be migrated without making changes"
     ),

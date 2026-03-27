@@ -19,9 +19,7 @@ from navig.lazy_loader import lazy_import
 _ch = lazy_import("navig.console_helper")
 _kg_mod = lazy_import("navig.memory.knowledge_graph")
 
-kg_app = typer.Typer(
-    name="kg", help="Knowledge graph — remember facts, routines, and habits"
-)
+kg_app = typer.Typer(name="kg", help="Knowledge graph — remember facts, routines, and habits")
 
 
 def _kg():
@@ -32,9 +30,7 @@ def _kg():
 def kg_remember(
     subject: str = typer.Argument(..., help="Entity (e.g. 'user', 'github.com')"),
     predicate: str = typer.Argument(..., help="Relation (e.g. 'pays_bills_on')"),
-    object_: str = typer.Argument(
-        ..., metavar="OBJECT", help="Value (e.g. '15th of month')"
-    ),
+    object_: str = typer.Argument(..., metavar="OBJECT", help="Value (e.g. '15th of month')"),
     confidence: float = typer.Option(1.0, "--confidence", "-c", min=0.0, max=1.0),
     source: str = typer.Option("user_statement", "--source", "-s"),
     overwrite: bool = typer.Option(
@@ -79,9 +75,7 @@ def kg_remember(
 @kg_app.command("recall")
 def kg_recall(
     subject: str = typer.Argument(..., help="Subject entity to recall facts about"),
-    predicate: str | None = typer.Option(
-        None, "--predicate", "-p", help="Filter by predicate"
-    ),
+    predicate: str | None = typer.Option(None, "--predicate", "-p", help="Filter by predicate"),
     min_confidence: float = typer.Option(0.0, "--min-confidence"),
     json_output: bool = typer.Option(False, "--json"),
 ):

@@ -51,9 +51,7 @@ class SkillRunTool(BaseTool):
                 error="skill_id arg required. Use /skill list to see available skills.",
             )
 
-        await self._emit(
-            on_status, f"Running skill `{skill_id}`…", command or "(no command)", 20
-        )
+        await self._emit(on_status, f"Running skill `{skill_id}`…", command or "(no command)", 20)
 
         # Validate that the skill exists
         try:
@@ -82,17 +80,14 @@ class SkillRunTool(BaseTool):
                 summary = (
                     f"**{skill.name}** (v{skill.version}) — {skill.safety}\n"
                     f"Category: {skill.category}\n"
-                    f"Tags: {', '.join(skill.tags) or 'none'}\n\n"
-                    + skill.body_markdown[:1500]
+                    f"Tags: {', '.join(skill.tags) or 'none'}\n\n" + skill.body_markdown[:1500]
                 )
                 return ToolResult(
                     name=self.name,
                     success=True,
                     output={"info": summary},
                 )
-            return ToolResult(
-                name=self.name, success=False, error="command arg required"
-            )
+            return ToolResult(name=self.name, success=False, error="command arg required")
 
         # Build CLI invocation
         navig_bin_argv = _find_navig_bin()
@@ -121,8 +116,7 @@ class SkillRunTool(BaseTool):
         )
 
         combined = (
-            proc_result.stdout
-            + ("\n" + proc_result.stderr if proc_result.stderr else "")
+            proc_result.stdout + ("\n" + proc_result.stderr if proc_result.stderr else "")
         ).strip()
 
         returncode = proc_result.returncode

@@ -70,12 +70,8 @@ def list_sessions(
 
 @sessions_app.command("show")
 def show_session(
-    session_key: str = typer.Argument(
-        ..., help="Session key (e.g., telegram:user:123)"
-    ),
-    messages: int = typer.Option(
-        10, "--messages", "-n", help="Number of messages to show"
-    ),
+    session_key: str = typer.Argument(..., help="Session key (e.g., telegram:user:123)"),
+    messages: int = typer.Option(10, "--messages", "-n", help="Number of messages to show"),
 ):
     """Show details of a specific session."""
     try:

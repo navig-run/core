@@ -21,9 +21,7 @@ def render_keymap_footer(
     try:
         if not keymap:
             return
-        parts = [
-            f"[bold cyan]{k}[/bold cyan] [dim]{v}[/dim]" for k, v in keymap.items()
-        ]
+        parts = [f"[bold cyan]{k}[/bold cyan] [dim]{v}[/dim]" for k, v in keymap.items()]
         console.print(separator.join(parts))
     except Exception:
         try:

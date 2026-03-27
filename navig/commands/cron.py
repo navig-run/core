@@ -70,13 +70,9 @@ def cron_list():
 @cron_app.command("add")
 def cron_add(
     name: str = typer.Argument(..., help="Job name"),
-    schedule: str = typer.Argument(
-        ..., help="Schedule (e.g., 'every 30 minutes', '0 * * * *')"
-    ),
+    schedule: str = typer.Argument(..., help="Schedule (e.g., 'every 30 minutes', '0 * * * *')"),
     command: str = typer.Argument(..., help="Command to run"),
-    disabled: bool = typer.Option(
-        False, "--disabled", help="Create job in disabled state"
-    ),
+    disabled: bool = typer.Option(False, "--disabled", help="Create job in disabled state"),
 ):
     """
     Add a new scheduled job.
@@ -129,9 +125,7 @@ def cron_remove(
     try:
         import requests
 
-        response = requests.delete(
-            f"http://localhost:8789/cron/jobs/{job_id}", timeout=5
-        )
+        response = requests.delete(f"http://localhost:8789/cron/jobs/{job_id}", timeout=5)
         if response.status_code == 200:
             ch.success(f"Removed job: {job_id}")
         else:
@@ -153,9 +147,7 @@ def cron_run(
     try:
         import requests
 
-        response = requests.post(
-            f"http://localhost:8789/cron/jobs/{job_id}/run", timeout=300
-        )
+        response = requests.post(f"http://localhost:8789/cron/jobs/{job_id}/run", timeout=300)
         if response.status_code == 200:
             result = response.json()
             if result.get("success"):
@@ -181,9 +173,7 @@ def cron_enable(
     try:
         import requests
 
-        response = requests.post(
-            f"http://localhost:8789/cron/jobs/{job_id}/enable", timeout=5
-        )
+        response = requests.post(f"http://localhost:8789/cron/jobs/{job_id}/enable", timeout=5)
         if response.status_code == 200:
             ch.success(f"Enabled job: {job_id}")
         else:
@@ -203,9 +193,7 @@ def cron_disable(
     try:
         import requests
 
-        response = requests.post(
-            f"http://localhost:8789/cron/jobs/{job_id}/disable", timeout=5
-        )
+        response = requests.post(f"http://localhost:8789/cron/jobs/{job_id}/disable", timeout=5)
         if response.status_code == 200:
             ch.success(f"Disabled job: {job_id}")
         else:
@@ -237,9 +225,7 @@ def cron_status():
                 ch.info(f"  Total jobs: {total_jobs}")
                 ch.info(f"  Enabled jobs: {enabled_jobs}")
                 if cron.get("next_job"):
-                    ch.info(
-                        f"  Next job: {cron.get('next_job')} in {cron.get('next_run_in', '?')}"
-                    )
+                    ch.info(f"  Next job: {cron.get('next_job')} in {cron.get('next_run_in', '?')}")
             else:
                 ch.warning("Cron service is not running")
                 ch.info("Start gateway to enable cron: navig gateway start")

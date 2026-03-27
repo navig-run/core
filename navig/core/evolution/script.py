@@ -47,9 +47,7 @@ Constraints:
 - Use type hints.
 """
 
-    def _generate(
-        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
-    ) -> Any:
+    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
         prompt = f"Goal: Create a python script to {goal}\n\n"
 
         if previous_artifact:
@@ -96,9 +94,7 @@ if __name__ == "__main__":
             filename = "script.py"
 
             # Check for "# filename: ..." comment
-            name_match = re.search(
-                r"^#\s*filename:\s*(.+?)$", code, re.MULTILINE | re.IGNORECASE
-            )
+            name_match = re.search(r"^#\s*filename:\s*(.+?)$", code, re.MULTILINE | re.IGNORECASE)
             if name_match:
                 filename = name_match.group(1).strip()
             else:

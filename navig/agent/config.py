@@ -69,9 +69,7 @@ class EyesConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EyesConfig:
         return cls(
-            monitoring_interval=data.get(
-                "monitoring_interval", cls.monitoring_interval
-            ),
+            monitoring_interval=data.get("monitoring_interval", cls.monitoring_interval),
             disk_threshold=data.get("disk_threshold", cls.disk_threshold),
             memory_threshold=data.get("memory_threshold", cls.memory_threshold),
             cpu_threshold=data.get("cpu_threshold", cls.cpu_threshold),
@@ -243,9 +241,7 @@ class HandsConfig:
     def from_dict(cls, data: dict[str, Any]) -> HandsConfig:
         return cls(
             command_timeout=data.get("command_timeout", cls.command_timeout),
-            require_confirmation=data.get(
-                "require_confirmation", cls().require_confirmation
-            ),
+            require_confirmation=data.get("require_confirmation", cls().require_confirmation),
             safe_mode=data.get("safe_mode", cls.safe_mode),
             sudo_allowed=data.get("sudo_allowed", cls.sudo_allowed),
             max_concurrent_commands=data.get(
@@ -270,12 +266,8 @@ class HeartConfig:
             component_restart_delay=data.get(
                 "component_restart_delay", cls.component_restart_delay
             ),
-            max_restart_attempts=data.get(
-                "max_restart_attempts", cls.max_restart_attempts
-            ),
-            health_check_interval=data.get(
-                "health_check_interval", cls.health_check_interval
-            ),
+            max_restart_attempts=data.get("max_restart_attempts", cls.max_restart_attempts),
+            health_check_interval=data.get("health_check_interval", cls.health_check_interval),
         )
 
 
@@ -295,9 +287,7 @@ class MemoryConfig:
         storage = data.get("storage", str(cls().storage_path))
         return cls(
             storage_path=Path(storage).expanduser(),
-            max_history_messages=data.get(
-                "max_history_messages", cls.max_history_messages
-            ),
+            max_history_messages=data.get("max_history_messages", cls.max_history_messages),
             context_window=data.get("context_window", cls.context_window),
             enable_embeddings=data.get("enable_embeddings", cls.enable_embeddings),
         )
@@ -358,9 +348,7 @@ class AgentConfig:
 
     enabled: bool = True
     mode: str = "autonomous"  # autonomous, supervised, observe-only
-    workspace: Path = field(
-        default_factory=lambda: Path.home() / ".navig" / "agent" / "workspace"
-    )
+    workspace: Path = field(default_factory=lambda: Path.home() / ".navig" / "agent" / "workspace")
 
     brain: BrainConfig = field(default_factory=BrainConfig)
     eyes: EyesConfig = field(default_factory=EyesConfig)

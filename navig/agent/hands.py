@@ -289,9 +289,7 @@ class Hands(Component):
 
             try:
                 # Wait for completion with timeout
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout
-                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
                 duration = (datetime.now() - start_time).total_seconds()
 
@@ -336,9 +334,7 @@ class Hands(Component):
             self._command_history = self._command_history[-self._max_history :]
 
         # Emit completion event
-        event_type = (
-            EventType.COMMAND_COMPLETED if result.success else EventType.COMMAND_FAILED
-        )
+        event_type = EventType.COMMAND_COMPLETED if result.success else EventType.COMMAND_FAILED
         await self.emit(
             event_type,
             {"result": result.to_dict()},
@@ -373,9 +369,7 @@ class Hands(Component):
 
         # Wait for approval (with timeout)
         try:
-            await asyncio.wait_for(
-                approval_event.wait(), timeout=300
-            )  # 5 minute timeout
+            await asyncio.wait_for(approval_event.wait(), timeout=300)  # 5 minute timeout
             return self._pending_actions.get(action_id, action).approved or False
         except asyncio.TimeoutError:
             return False
@@ -447,9 +441,7 @@ class Hands(Component):
 
         return True
 
-    async def run_workflow(
-        self, name: str, variables: dict[str, str] = None
-    ) -> CommandResult:
+    async def run_workflow(self, name: str, variables: dict[str, str] = None) -> CommandResult:
         """Run an automation workflow directly."""
         from navig.core.automation_engine import WorkflowEngine
 
@@ -535,9 +527,7 @@ class Hands(Component):
                 "click": lambda: adapter.click(
                     kwargs.get("x"), kwargs.get("y"), kwargs.get("button", "left")
                 ),
-                "type": lambda: adapter.type_text(
-                    kwargs.get("text"), kwargs.get("delay", 50)
-                ),
+                "type": lambda: adapter.type_text(kwargs.get("text"), kwargs.get("delay", 50)),
                 "open_app": lambda: adapter.open_app(kwargs.get("target")),
                 "snap_window": lambda: adapter.snap_window(
                     kwargs.get("selector"), kwargs.get("position")
@@ -546,22 +536,14 @@ class Hands(Component):
                 "set_clipboard": lambda: adapter.set_clipboard(kwargs.get("text")),
                 "get_focused_window": lambda: adapter.get_focused_window(),
                 "windows": lambda: adapter.get_all_windows(),
-                "activate_window": lambda: adapter.activate_window(
-                    kwargs.get("selector")
-                ),
+                "activate_window": lambda: adapter.activate_window(kwargs.get("selector")),
                 "close_window": lambda: adapter.close_window(kwargs.get("selector")),
-                "minimize_window": lambda: adapter.minimize_window(
-                    kwargs.get("selector")
-                ),
-                "maximize_window": lambda: adapter.maximize_window(
-                    kwargs.get("selector")
-                ),
+                "minimize_window": lambda: adapter.minimize_window(kwargs.get("selector")),
+                "maximize_window": lambda: adapter.maximize_window(kwargs.get("selector")),
             }
 
             if action not in method_map:
-                raise ValueError(
-                    f"Unknown action: {action}. Available: {list(method_map.keys())}"
-                )
+                raise ValueError(f"Unknown action: {action}. Available: {list(method_map.keys())}")
 
             return method_map[action]()
 
@@ -616,9 +598,7 @@ class Hands(Component):
         """Run a Python script."""
         return await self.execute(f"navig script run {name}")
 
-    async def evolve_ahk(
-        self, goal: str, retries: int = 3, dry_run: bool = False
-    ) -> CommandResult:
+    async def evolve_ahk(self, goal: str, retries: int = 3, dry_run: bool = False) -> CommandResult:
         """
         Generate and evolve an AHK script using AI.
 

@@ -8,9 +8,7 @@ from navig.voice.session_manager import SessionConfig, VoiceSessionManager
 @pytest.fixture
 async def manager():
     m = VoiceSessionManager(
-        config=SessionConfig(
-            silence_timeout_seconds=0.01, max_listen_seconds=0.1, min_audio_ms=0
-        )
+        config=SessionConfig(silence_timeout_seconds=0.01, max_listen_seconds=0.1, min_audio_ms=0)
     )
     await m.start()
     yield m

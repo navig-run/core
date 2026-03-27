@@ -247,9 +247,7 @@ class UpdateEngine:
 
         # Prefer delegating to navig on the remote node (self-contained update)
         cmd = "navig update run --force --no-rollback 2>&1 || pip install --upgrade navig 2>&1"
-        r = self._remote_ops.execute_command(
-            cmd, server_config=target.server_config or {}
-        )
+        r = self._remote_ops.execute_command(cmd, server_config=target.server_config or {})
 
         rc = getattr(r, "returncode", 0) if hasattr(r, "returncode") else 0
         stderr = getattr(r, "stderr", "") or ""
@@ -317,9 +315,7 @@ class UpdateEngine:
                 raise RuntimeError("No remote_ops for rollback")
             pkg = f"navig=={old_version}"
             cmd = f"pip install '{pkg}' -q 2>&1 || uv pip install '{pkg}' 2>&1"
-            self._remote_ops.execute_command(
-                cmd, server_config=target.server_config or {}
-            )
+            self._remote_ops.execute_command(cmd, server_config=target.server_config or {})
 
     # ------------------------------------------------------------------
     # History

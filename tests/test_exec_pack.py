@@ -170,9 +170,7 @@ async def test_run_shell_env_injection():
     else:
         cmd = "echo $TEST_NAVIG_VAR"
 
-    result = await _run_shell(
-        cmd, env_extra={"TEST_NAVIG_VAR": "navig_ok"}, timeout_seconds=10
-    )
+    result = await _run_shell(cmd, env_extra={"TEST_NAVIG_VAR": "navig_ok"}, timeout_seconds=10)
     assert "navig_ok" in result["stdout"]
 
 

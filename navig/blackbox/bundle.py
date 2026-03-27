@@ -129,9 +129,7 @@ def inspect_bundle(path: Path) -> Bundle:
 
     return Bundle(
         id=manifest.get("bundle_id", "unknown"),
-        created_at=datetime.fromisoformat(
-            manifest.get("created_at", "2000-01-01T00:00:00+00:00")
-        ),
+        created_at=datetime.fromisoformat(manifest.get("created_at", "2000-01-01T00:00:00+00:00")),
         navig_version=manifest.get("navig_version", "unknown"),
         events=events,
         crash_reports=crash_reports,

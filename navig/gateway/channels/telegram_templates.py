@@ -82,9 +82,7 @@ def t1_greeting(
         text = _enforce_limit(text, 200)
     else:
         text = _enforce_limit(base, GREETING_LIMIT)
-    return FormattedMessage(
-        text=text, template_id=TemplateID.GREETING, keyboard_profile="none"
-    )
+    return FormattedMessage(text=text, template_id=TemplateID.GREETING, keyboard_profile="none")
 
 
 def t2_status(
@@ -110,12 +108,8 @@ def t2_status(
             return FormattedMessage(
                 text=text, template_id=TemplateID.STATUS, keyboard_profile="expand"
             )
-        return FormattedMessage(
-            text=text, template_id=TemplateID.STATUS, keyboard_profile="none"
-        )
-    return FormattedMessage(
-        text=base, template_id=TemplateID.STATUS, keyboard_profile="none"
-    )
+        return FormattedMessage(text=text, template_id=TemplateID.STATUS, keyboard_profile="none")
+    return FormattedMessage(text=base, template_id=TemplateID.STATUS, keyboard_profile="none")
 
 
 def t3_incident(
@@ -127,13 +121,9 @@ def t3_incident(
 ) -> FormattedMessage:
     """T3 — Incident / alert — entity alarm."""
     human_clause = "need your call on this." if human_needed else "handled it."
-    base = (
-        f"🚨 {service} went down. impact: {impact}. I've {action_taken}. {human_clause}"
-    )
+    base = f"🚨 {service} went down. impact: {impact}. I've {action_taken}. {human_clause}"
     base = _enforce_limit(base, 200)
-    return FormattedMessage(
-        text=base, template_id=TemplateID.INCIDENT, keyboard_profile="action"
-    )
+    return FormattedMessage(text=base, template_id=TemplateID.INCIDENT, keyboard_profile="action")
 
 
 def t4_task_done(
@@ -154,9 +144,7 @@ def t4_task_done(
         return FormattedMessage(
             text=text, template_id=TemplateID.TASK_DONE, keyboard_profile="none"
         )
-    return FormattedMessage(
-        text=base, template_id=TemplateID.TASK_DONE, keyboard_profile="none"
-    )
+    return FormattedMessage(text=base, template_id=TemplateID.TASK_DONE, keyboard_profile="none")
 
 
 def t5_briefing(
@@ -209,9 +197,7 @@ def t7_ack(
     if next_suggestion:
         base += f" {next_suggestion}"
     base = _enforce_limit(base, ACK_LIMIT)
-    return FormattedMessage(
-        text=base, template_id=TemplateID.ACK, keyboard_profile="none"
-    )
+    return FormattedMessage(text=base, template_id=TemplateID.ACK, keyboard_profile="none")
 
 
 def t8_approval(
@@ -223,9 +209,7 @@ def t8_approval(
     """T8 — Approval request — entity requesting consent."""
     base = f"⚠️ I want to {action}. risk: {risk}. alternative: {alternative}."
     base = _enforce_limit(base, 250)
-    return FormattedMessage(
-        text=base, template_id=TemplateID.APPROVAL, keyboard_profile="action"
-    )
+    return FormattedMessage(text=base, template_id=TemplateID.APPROVAL, keyboard_profile="action")
 
 
 def t10_error(
@@ -237,9 +221,7 @@ def t10_error(
     """T10 — Error / failure — entity stumble."""
     base = f"❌ …{what_failed}. {why}. {what_next}."
     base = _enforce_limit(base, 200)
-    return FormattedMessage(
-        text=base, template_id=TemplateID.ERROR, keyboard_profile="feedback"
-    )
+    return FormattedMessage(text=base, template_id=TemplateID.ERROR, keyboard_profile="feedback")
 
 
 # ────────────────────────────────────────────────────────────────
@@ -319,9 +301,7 @@ _GREETING_RE = re.compile(
 )
 _STATUS_RE = re.compile(r"(all\s+systems|status|health|uptime|running)", re.IGNORECASE)
 _ERROR_RE = re.compile(r"^(❌|error|failed|sorry,?\s+i\s+can)", re.IGNORECASE)
-_ACK_RE = re.compile(
-    r"^(glad|no\s+problem|you'?re\s+welcome|done|got\s+it)", re.IGNORECASE
-)
+_ACK_RE = re.compile(r"^(glad|no\s+problem|you'?re\s+welcome|done|got\s+it)", re.IGNORECASE)
 
 
 def auto_detect_template(ai_response: str) -> TemplateID | None:

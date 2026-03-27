@@ -13,9 +13,7 @@ from rich.table import Table
 from navig import console_helper as ch
 
 
-def _execute_hestia_cmd(
-    command: str, server_config: dict, options: dict[str, Any]
-) -> dict:
+def _execute_hestia_cmd(command: str, server_config: dict, options: dict[str, Any]) -> dict:
     """Execute HestiaCP command via API or CLI.
 
     Args:
@@ -171,9 +169,7 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
                         pass  # malformed JSON; skip line
 
             if options.get("json"):
-                ch.raw_print(
-                    json.dumps({"domains": all_domains, "count": len(all_domains)})
-                )
+                ch.raw_print(json.dumps({"domains": all_domains, "count": len(all_domains)}))
             elif options.get("plain"):
                 # Plain text output - one domain per line for scripting
                 for domain in all_domains:
@@ -187,9 +183,7 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
 
                 for domain, info in all_domains.items():
                     ssl_status = "✓" if info.get("SSL", "no") == "yes" else "✗"
-                    table.add_row(
-                        domain, info.get("USER", ""), info.get("IP", ""), ssl_status
-                    )
+                    table.add_row(domain, info.get("USER", ""), info.get("IP", ""), ssl_status)
 
                 ch.console.print(table)
                 ch.dim(f"\nTotal: {len(all_domains)} domains")
@@ -221,9 +215,7 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
 
         if options.get("json"):
             ch.raw_print(
-                json.dumps(
-                    {"user": user, "domains": domains_data, "count": len(domains_data)}
-                )
+                json.dumps({"user": user, "domains": domains_data, "count": len(domains_data)})
             )
         elif options.get("plain"):
             # Plain text output - one domain per line for scripting
@@ -238,9 +230,7 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
 
             for domain, info in domains_data.items():
                 ssl_status = "✓" if info.get("SSL", "no") == "yes" else "✗"
-                table.add_row(
-                    domain, info.get("IP", ""), ssl_status, info.get("BACKEND", "")
-                )
+                table.add_row(domain, info.get("IP", ""), ssl_status, info.get("BACKEND", ""))
 
             ch.console.print(table)
             ch.dim(f"\nTotal: {len(domains_data)} domains")
@@ -328,9 +318,7 @@ def delete_user_cmd(username: str, options: dict[str, Any]):
     # Dry run
     if options.get("dry_run"):
         if options.get("json"):
-            ch.raw_print(
-                json.dumps({"success": True, "dry_run": True, "user": username})
-            )
+            ch.raw_print(json.dumps({"success": True, "dry_run": True, "user": username}))
         else:
             ch.info(f"[DRY RUN] Would delete user: {username}")
         return True
@@ -342,9 +330,7 @@ def delete_user_cmd(username: str, options: dict[str, Any]):
                 ch.warning("Cancelled.")
                 return False
         else:
-            ch.raw_print(
-                json.dumps({"success": False, "error": "Use --force in JSON mode"})
-            )
+            ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
             return False
 
     # Execute
@@ -430,9 +416,7 @@ def delete_domain_cmd(user: str, domain: str, options: dict[str, Any]):
 
     if options.get("dry_run"):
         if options.get("json"):
-            ch.raw_print(
-                json.dumps({"success": True, "dry_run": True, "domain": domain})
-            )
+            ch.raw_print(json.dumps({"success": True, "dry_run": True, "domain": domain}))
         else:
             ch.info(f"[DRY RUN] Would delete domain: {domain} from user: {user}")
         return True
@@ -443,9 +427,7 @@ def delete_domain_cmd(user: str, domain: str, options: dict[str, Any]):
                 ch.warning("Cancelled.")
                 return False
         else:
-            ch.raw_print(
-                json.dumps({"success": False, "error": "Use --force in JSON mode"})
-            )
+            ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
             return False
 
     cmd = f"v-delete-web-domain {user} {domain}"

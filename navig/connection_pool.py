@@ -83,9 +83,7 @@ class SSHConnection:
             self.use_count += 1
 
             try:
-                stdin, stdout, stderr = self.client.exec_command(
-                    command, timeout=timeout
-                )
+                stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
                 stdout_text = stdout.read().decode("utf-8", errors="ignore").strip()
                 stderr_text = stderr.read().decode("utf-8", errors="ignore").strip()
                 exit_status = stdout.channel.recv_exit_status()

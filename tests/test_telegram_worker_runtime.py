@@ -30,9 +30,7 @@ async def test_run_requires_token(monkeypatch, navig_log_capture):
 
     await tw._run(enable_gateway=False)
     combined = "\n".join(navig_log_capture)
-    assert (
-        "TELEGRAM_BOT_TOKEN not configured; Telegram bot will be disabled" in combined
-    )
+    assert "TELEGRAM_BOT_TOKEN not configured; Telegram bot will be disabled" in combined
 
 
 @pytest.mark.asyncio
@@ -92,9 +90,7 @@ async def test_run_starts_and_stops_gateway_and_channel(monkeypatch):
     )
     monkeypatch.setattr(tw, "_deck_config", lambda: {"enabled": True})
     monkeypatch.setattr(tw, "NavigGateway", lambda: gateway)
-    monkeypatch.setattr(
-        tw, "create_telegram_channel", lambda *_args, **_kwargs: channel
-    )
+    monkeypatch.setattr(tw, "create_telegram_channel", lambda *_args, **_kwargs: channel)
     monkeypatch.setattr(tw, "_start_gateway_http", start_http)
     monkeypatch.setattr(tw, "_stop_gateway_http", stop_http)
     monkeypatch.setattr(tw.asyncio, "Event", _PreSetEvent)

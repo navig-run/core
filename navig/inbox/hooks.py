@@ -76,9 +76,7 @@ class HookSystem:
     """
 
     # Valid stage names
-    STAGES = frozenset(
-        {"before_classify", "after_classify", "before_route", "after_route"}
-    )
+    STAGES = frozenset({"before_classify", "after_classify", "before_route", "after_route"})
 
     def __init__(self) -> None:
         self._hooks: dict[str, list[HookFn]] = {s: [] for s in self.STAGES}
@@ -101,9 +99,7 @@ class HookSystem:
             hooks.register("before_classify", my_fn)
         """
         if stage not in self.STAGES:
-            raise ValueError(
-                f"Unknown hook stage: {stage!r}. Valid: {sorted(self.STAGES)}"
-            )
+            raise ValueError(f"Unknown hook stage: {stage!r}. Valid: {sorted(self.STAGES)}")
 
         if fn is None:
             # Used as decorator factory
@@ -183,9 +179,7 @@ class HookSystem:
                 self.register(stage, fn)
                 loaded += 1
             except Exception as exc:
-                logger.warning(
-                    "Could not load hook %s.%s: %s", module_name, fn_name, exc
-                )
+                logger.warning("Could not load hook %s.%s: %s", module_name, fn_name, exc)
         return loaded
 
 

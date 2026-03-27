@@ -72,9 +72,7 @@ def render_sparklines(
         console.print(f"[bold]{title}[/bold]")
         for m in has_spark:
             color = COLOR_STYLE.get(m.color, m.color)
-            console.print(
-                f"  [dim]{m.label.ljust(18)}[/dim] [{color}]{m.sparkline}[/{color}]"
-            )
+            console.print(f"  [dim]{m.label.ljust(18)}[/dim] [{color}]{m.sparkline}[/{color}]")
     except Exception:
         try:
             for m in metrics:

@@ -69,9 +69,7 @@ class OpenAIValidator(CredentialValidator):
                     message=f"API error: {response.status_code} - {error}",
                 )
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 
@@ -107,9 +105,7 @@ class AnthropicValidator(CredentialValidator):
             elif response.status_code == 401:
                 return TestResult(success=False, message="Invalid API key")
             elif response.status_code == 429:
-                return TestResult(
-                    success=False, message="Rate limited - key may be valid"
-                )
+                return TestResult(success=False, message="Rate limited - key may be valid")
             else:
                 error = response.json().get("error", {}).get("message", "Unknown")
                 return TestResult(
@@ -117,9 +113,7 @@ class AnthropicValidator(CredentialValidator):
                     message=f"API error: {response.status_code} - {error}",
                 )
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 
@@ -154,13 +148,9 @@ class OpenRouterValidator(CredentialValidator):
             elif response.status_code == 401:
                 return TestResult(success=False, message="Invalid API key")
             else:
-                return TestResult(
-                    success=False, message=f"API error: {response.status_code}"
-                )
+                return TestResult(success=False, message=f"API error: {response.status_code}")
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 
@@ -191,13 +181,9 @@ class GroqValidator(CredentialValidator):
             elif response.status_code == 401:
                 return TestResult(success=False, message="Invalid API key")
             else:
-                return TestResult(
-                    success=False, message=f"API error: {response.status_code}"
-                )
+                return TestResult(success=False, message=f"API error: {response.status_code}")
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 
@@ -236,17 +222,11 @@ class GitHubValidator(CredentialValidator):
             elif response.status_code == 401:
                 return TestResult(success=False, message="Invalid or expired token")
             elif response.status_code == 403:
-                return TestResult(
-                    success=False, message="Token valid but lacks permissions"
-                )
+                return TestResult(success=False, message="Token valid but lacks permissions")
             else:
-                return TestResult(
-                    success=False, message=f"API error: {response.status_code}"
-                )
+                return TestResult(success=False, message=f"API error: {response.status_code}")
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 
@@ -282,13 +262,9 @@ class GitLabValidator(CredentialValidator):
             elif response.status_code == 401:
                 return TestResult(success=False, message="Invalid or expired token")
             else:
-                return TestResult(
-                    success=False, message=f"API error: {response.status_code}"
-                )
+                return TestResult(success=False, message=f"API error: {response.status_code}")
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 
@@ -390,17 +366,11 @@ class JiraValidator(CredentialValidator):
             elif response.status_code == 401:
                 return TestResult(success=False, message="Invalid credentials")
             elif response.status_code == 403:
-                return TestResult(
-                    success=False, message="Token valid but lacks permissions"
-                )
+                return TestResult(success=False, message="Token valid but lacks permissions")
             else:
-                return TestResult(
-                    success=False, message=f"API error: {response.status_code}"
-                )
+                return TestResult(success=False, message=f"API error: {response.status_code}")
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 
@@ -465,13 +435,9 @@ class GitHubModelsValidator(CredentialValidator):
                     message="Rate limited — token may be valid but quota exhausted",
                 )
             else:
-                return TestResult(
-                    success=False, message=f"API error: {response.status_code}"
-                )
+                return TestResult(success=False, message=f"API error: {response.status_code}")
         except ImportError:
-            return TestResult(
-                success=False, message="httpx not available for validation"
-            )
+            return TestResult(success=False, message="httpx not available for validation")
         except Exception as e:
             return TestResult(success=False, message=f"Connection error: {e}")
 

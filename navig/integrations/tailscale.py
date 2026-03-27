@@ -108,9 +108,7 @@ class Tailscale:
         self_hostname = self_node.get("HostName", "")
         # TailscaleIPs is a list; take the first IPv4
         self_ips: list = self_node.get("TailscaleIPs", [])
-        self_ip = next(
-            (ip for ip in self_ips if ":" not in ip), self_ips[0] if self_ips else ""
-        )
+        self_ip = next((ip for ip in self_ips if ":" not in ip), self_ips[0] if self_ips else "")
 
         peers: list[TailscalePeer] = []
         for _id, peer in (data.get("Peer") or {}).items():

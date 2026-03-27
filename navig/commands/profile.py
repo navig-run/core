@@ -101,9 +101,7 @@ def profile_show():
         ch.dim(f"  Formations  : {', '.join(m.formations_default)}")
     if m.gated_commands:
         ch.dim(f"  Extra gates : {', '.join(m.gated_commands)}")
-    ch.dim(
-        f"  PIN stored  : {'yes' if has_pin() else 'no  ← set with: navig profile pin-set'}"
-    )
+    ch.dim(f"  PIN stored  : {'yes' if has_pin() else 'no  ← set with: navig profile pin-set'}")
     print()
 
 
@@ -114,12 +112,8 @@ def profile_show():
 
 @profile_app.command("set")
 def profile_set(
-    name: str = typer.Argument(
-        ..., help="Profile name: node, builder, operator, architect"
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip PIN prompt (use with care)"
-    ),
+    name: str = typer.Argument(..., help="Profile name: node, builder, operator, architect"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip PIN prompt (use with care)"),
 ):
     """Switch to a different operating profile."""
     from navig.modes import get_active_mode_name, get_mode, prompt_pin, set_active_mode

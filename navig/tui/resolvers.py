@@ -200,8 +200,7 @@ def resolve_agent() -> StatusBadge:
             # Check soul.json as secondary signal
             soul_path = Path("store/agents/navig/soul.json")
             soul_ok = (
-                soul_path.is_file()
-                or (Path.home() / ".navig/agents/navig/soul.json").is_file()
+                soul_path.is_file() or (Path.home() / ".navig/agents/navig/soul.json").is_file()
             )
             soul_indicator = " soul.json ✓" if soul_ok else ""
             return StatusBadge(

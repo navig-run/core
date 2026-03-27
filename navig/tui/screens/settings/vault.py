@@ -94,9 +94,7 @@ class VaultSettingsScreen(Screen):  # type: ignore[type-arg]
 
         def _placeholder(key: str, name: str) -> str:
             return (
-                f"{name} (already set — enter to replace)"
-                if ex.get(key)
-                else f"Paste {name} here"
+                f"{name} (already set — enter to replace)" if ex.get(key) else f"Paste {name} here"
             )
 
         with Vertical(id="vault-panel"):

@@ -117,9 +117,7 @@ class HeartbeatRunner:
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
 
-        logger.info(
-            f"Heartbeat runner started (interval: {self.config.interval_minutes}m)"
-        )
+        logger.info(f"Heartbeat runner started (interval: {self.config.interval_minutes}m)")
 
         # Emit start event
         if self.gateway.event_queue:
@@ -434,9 +432,7 @@ Begin the health check now. Be thorough but efficient.
                 return
 
         # Send via channel
-        await self.gateway.send_notification(
-            channel=channel, recipient=recipient, message=message
-        )
+        await self.gateway.send_notification(channel=channel, recipient=recipient, message=message)
 
     def get_status(self) -> dict[str, Any]:
         """Get heartbeat status."""
@@ -444,12 +440,8 @@ Begin the health check now. Be thorough but efficient.
             "running": self._running,
             "enabled": self.config.enabled,
             "interval_minutes": self.config.interval_minutes,
-            "last_heartbeat": (
-                self._last_heartbeat.isoformat() if self._last_heartbeat else None
-            ),
-            "next_heartbeat": (
-                self._next_heartbeat.isoformat() if self._next_heartbeat else None
-            ),
+            "last_heartbeat": (self._last_heartbeat.isoformat() if self._last_heartbeat else None),
+            "next_heartbeat": (self._next_heartbeat.isoformat() if self._next_heartbeat else None),
             "time_until_next": self.get_time_until_next(),
             "history_count": len(self._history),
             "last_success": self._history[-1].success if self._history else None,

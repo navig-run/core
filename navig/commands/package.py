@@ -92,15 +92,9 @@ def _load_package(name: str) -> tuple[dict | None, Path | None, str]:
 def package_list(
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
-    builtin_only: bool = typer.Option(
-        False, "--builtin", help="Show only built-in packages"
-    ),
-    user_only: bool = typer.Option(
-        False, "--user", help="Show only user-installed packages"
-    ),
-    status: bool = typer.Option(
-        False, "--status", "-s", help="Show runtime load status"
-    ),
+    builtin_only: bool = typer.Option(False, "--builtin", help="Show only built-in packages"),
+    user_only: bool = typer.Option(False, "--user", help="Show only user-installed packages"),
+    status: bool = typer.Option(False, "--status", "-s", help="Show runtime load status"),
 ):
     """List all available packages."""
     packages = _discover_packages()
@@ -141,9 +135,7 @@ def package_list(
             }
             if status and pkg_id in loaded_state:
                 info = loaded_state[pkg_id]
-                entry["loaded"] = getattr(
-                    info, "state", getattr(info, "loaded", False)
-                ) in (
+                entry["loaded"] = getattr(info, "state", getattr(info, "loaded", False)) in (
                     "enabled",
                     "loaded",
                     True,
@@ -304,9 +296,7 @@ def package_install(
     dest = dest_root / pkg_id
     if dest.exists():
         if not force:
-            ch.error(
-                f"Package '{pkg_id}' already installed at {dest}. Use --force to overwrite."
-            )
+            ch.error(f"Package '{pkg_id}' already installed at {dest}. Use --force to overwrite.")
             raise typer.Exit(1)
         shutil.rmtree(dest)
 
@@ -324,9 +314,7 @@ def package_install(
         import subprocess
         import sys as _sys
 
-        ch.info(
-            f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…"
-        )
+        ch.info(f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…")
         try:
             # Prefer uv for speed and PEP-668 compliance if available
             uv_path = shutil.which("uv")

@@ -96,9 +96,7 @@ def _step_git(src_dir, force):
             elapsed=elapsed,
         )
     commit_line = pull.stdout.strip().splitlines()[-1] if pull.stdout.strip() else ""
-    result = _Result(
-        "Sync with upstream", ok=True, note=commit_line[:80], elapsed=elapsed
-    )
+    result = _Result("Sync with upstream", ok=True, note=commit_line[:80], elapsed=elapsed)
     t1 = time.monotonic()
     uv = shutil.which("uv")
     if uv:
@@ -189,16 +187,12 @@ def _step_plugins():
 
         mgr = get_plugin_manager()
         user_plugins = [
-            p
-            for p in (mgr.list_plugins() or {}).values()
-            if getattr(p, "source", "") == "user"
+            p for p in (mgr.list_plugins() or {}).values() if getattr(p, "source", "") == "user"
         ]
         note = f"{len(user_plugins)} user plugin(s)" if user_plugins else "up to date"
         return _Result("Plugins", ok=True, note=note, elapsed=time.monotonic() - t0)
     except Exception:
-        return _Result(
-            "Plugins", ok=True, note="up to date", elapsed=time.monotonic() - t0
-        )
+        return _Result("Plugins", ok=True, note="up to date", elapsed=time.monotonic() - t0)
 
 
 def _reload_version():
@@ -218,12 +212,7 @@ def _sync_path(src_dir, con):
         venv_exe = src_dir / ".venv" / "Scripts" / "navig.exe"
         path_navig = shutil.which("navig")
         path_exe = Path(path_navig) if path_navig else None
-        if (
-            venv_exe.exists()
-            and path_exe
-            and path_exe.exists()
-            and venv_exe != path_exe
-        ):
+        if venv_exe.exists() and path_exe and path_exe.exists() and venv_exe != path_exe:
             shutil.copy2(str(venv_exe), str(path_exe))
             _p(con, f"[dim]  + PATH entry synced: {path_exe}[/dim]")
     except Exception:  # noqa: BLE001
@@ -302,16 +291,10 @@ def _run_update(check=False, force=False, dry_run=False, channel=None):
             r = fn()
         results.append(r)
         if _RICH and con:
-            icon = (
-                "[bold green]\u2713[/bold green]"
-                if r.ok
-                else "[bold red]\u2717[/bold red]"
-            )
+            icon = "[bold green]\u2713[/bold green]" if r.ok else "[bold red]\u2717[/bold red]"
             note_style = "dim" if r.ok else "yellow"
             note_part = (
-                f"  [dim]\u00b7[/dim]  [{note_style}]{r.note[:52]}[/{note_style}]"
-                if r.note
-                else ""
+                f"  [dim]\u00b7[/dim]  [{note_style}]{r.note[:52]}[/{note_style}]" if r.note else ""
             )
             con.print(f"  {icon}  {label}{note_part}  [dim]{r.elapsed:.1f}s[/dim]")
         else:
@@ -351,11 +334,7 @@ def _run_update(check=False, force=False, dry_run=False, channel=None):
         con.print(Rule(title=title, style="green"))
         con.print()
     else:
-        arrow = (
-            f"{old_version} -> {new_version}"
-            if upgraded
-            else f"{new_version} up to date"
-        )
+        arrow = f"{old_version} -> {new_version}" if upgraded else f"{new_version} up to date"
         print(f"\nOK  {arrow}  ({total_elapsed:.1f}s)\n")
 
     all_warnings = [w for r in results for w in r.warnings]
@@ -437,16 +416,10 @@ def _update_callback(
 
 @update_app.command("check")
 def update_check(
-    host: str | None = typer.Option(
-        None, "--host", "-H", help="Target host (default: local)."
-    ),
+    host: str | None = typer.Option(None, "--host", "-H", help="Target host (default: local)."),
     group: str | None = typer.Option(None, "--group", "-g", help="Host group name."),
-    all_hosts: bool = typer.Option(
-        False, "--all", "-a", help="Check all configured hosts."
-    ),
-    channel: str = typer.Option(
-        "stable", "--channel", help="Channel: stable, beta, nightly."
-    ),
+    all_hosts: bool = typer.Option(False, "--all", "-a", help="Check all configured hosts."),
+    channel: str = typer.Option("stable", "--channel", help="Channel: stable, beta, nightly."),
     json_out: bool = typer.Option(False, "--json", help="Output JSON."),
 ) -> None:
     """Check current vs. latest available version (no changes made)."""
@@ -467,9 +440,7 @@ def update_check(
         raise typer.Exit(1) from exc
 
     try:
-        targets = TargetResolver(cm).resolve(
-            host=host, group=group, all_hosts=all_hosts
-        )
+        targets = TargetResolver(cm).resolve(host=host, group=group, all_hosts=all_hosts)
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -513,28 +484,16 @@ def update_check(
 
 @update_app.command("run")
 def update_run(
-    host: str | None = typer.Option(
-        None, "--host", "-H", help="Target host (default: local)."
-    ),
+    host: str | None = typer.Option(None, "--host", "-H", help="Target host (default: local)."),
     group: str | None = typer.Option(None, "--group", "-g", help="Host group."),
-    all_hosts: bool = typer.Option(
-        False, "--all", "-a", help="Update all configured hosts."
-    ),
-    channel: str = typer.Option(
-        "stable", "--channel", help="Channel: stable, beta, nightly."
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Update even if already on latest."
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show plan without applying."
-    ),
+    all_hosts: bool = typer.Option(False, "--all", "-a", help="Update all configured hosts."),
+    channel: str = typer.Option("stable", "--channel", help="Channel: stable, beta, nightly."),
+    force: bool = typer.Option(False, "--force", "-f", help="Update even if already on latest."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show plan without applying."),
     no_rollback: bool = typer.Option(
         False, "--no-rollback", help="Disable auto-rollback on failure."
     ),
-    skip_backup: bool = typer.Option(
-        False, "--skip-backup", help="Skip pre-update version pin."
-    ),
+    skip_backup: bool = typer.Option(False, "--skip-backup", help="Skip pre-update version pin."),
     json_out: bool = typer.Option(False, "--json", help="Output JSON result."),
 ) -> None:
     """Apply updates to one or more nodes."""
@@ -555,9 +514,7 @@ def update_run(
         raise typer.Exit(1) from exc
 
     try:
-        targets = TargetResolver(cm).resolve(
-            host=host, group=group, all_hosts=all_hosts
-        )
+        targets = TargetResolver(cm).resolve(host=host, group=group, all_hosts=all_hosts)
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -614,9 +571,7 @@ def update_run(
 @update_app.command("rollback")
 def update_rollback(
     version: str = typer.Argument(..., help="Version to roll back to, e.g. 2.4.15"),
-    host: str | None = typer.Option(
-        None, "--host", "-H", help="Target host (default: local)."
-    ),
+    host: str | None = typer.Option(None, "--host", "-H", help="Target host (default: local)."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
 ) -> None:
     """Roll back NAVIG to a specific version."""
@@ -663,9 +618,7 @@ def update_rollback(
 
 @update_app.command("status")
 def update_status(
-    host: str | None = typer.Option(
-        None, "--host", "-H", help="Target host (default: local)."
-    ),
+    host: str | None = typer.Option(None, "--host", "-H", help="Target host (default: local)."),
     json_out: bool = typer.Option(False, "--json", help="Output JSON."),
 ) -> None:
     """Show current installed version and update source config."""
@@ -701,9 +654,7 @@ def update_status(
             raise typer.Exit(1) from exc
         from navig.update.checker import VersionChecker
 
-        vi = VersionChecker(source).check_ssh(
-            target.node_id, target.server_config or {}
-        )
+        vi = VersionChecker(source).check_ssh(target.node_id, target.server_config or {})
         if json_out:
             typer.echo(json.dumps(vi.to_dict(), indent=2))
         else:
@@ -738,9 +689,7 @@ def update_status(
             src_cfg.get("type", "pypi") if isinstance(src_cfg, dict) else str(src_cfg),
         )
         grid.add_row("Location", str(src_dir))
-        con.print(
-            Panel(grid, title="[bold]NAVIG[/bold]", border_style="cyan", padding=(0, 2))
-        )
+        con.print(Panel(grid, title="[bold]NAVIG[/bold]", border_style="cyan", padding=(0, 2)))
     else:
         print(f"NAVIG  v{current}  ({install_type})  ch={channel}  {src_dir}")
 
@@ -839,9 +788,7 @@ def update_nodes(
 
 @update_app.command("source")
 def update_source(
-    show: bool = typer.Option(
-        True, "--show/--no-show", help="Display current source config."
-    ),
+    show: bool = typer.Option(True, "--show/--no-show", help="Display current source config."),
     json_out: bool = typer.Option(False, "--json", help="Output JSON."),
 ) -> None:
     """Show the configured update source."""

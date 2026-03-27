@@ -35,18 +35,10 @@ class TestDiscoverAllReturnStructure:
     def test_discover_all_returns_dict(self, mock_discovery):
         """discover_all() should return a dictionary."""
         with patch.object(mock_discovery, "test_connection", return_value=True):
-            with patch.object(
-                mock_discovery, "discover_os", return_value={"os": "Ubuntu"}
-            ):
-                with patch.object(
-                    mock_discovery, "discover_databases", return_value={}
-                ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+            with patch.object(mock_discovery, "discover_os", return_value={"os": "Ubuntu"}):
+                with patch.object(mock_discovery, "discover_databases", return_value={}):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",
@@ -62,15 +54,9 @@ class TestDiscoverAllReturnStructure:
 
         with patch.object(mock_discovery, "test_connection", return_value=True):
             with patch.object(mock_discovery, "discover_os", return_value=os_info):
-                with patch.object(
-                    mock_discovery, "discover_databases", return_value={}
-                ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+                with patch.object(mock_discovery, "discover_databases", return_value={}):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",
@@ -87,15 +73,9 @@ class TestDiscoverAllReturnStructure:
 
         with patch.object(mock_discovery, "test_connection", return_value=True):
             with patch.object(mock_discovery, "discover_os", return_value={}):
-                with patch.object(
-                    mock_discovery, "discover_databases", return_value=db_info
-                ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+                with patch.object(mock_discovery, "discover_databases", return_value=db_info):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",
@@ -111,15 +91,9 @@ class TestDiscoverAllReturnStructure:
 
         with patch.object(mock_discovery, "test_connection", return_value=True):
             with patch.object(mock_discovery, "discover_os", return_value={}):
-                with patch.object(
-                    mock_discovery, "discover_databases", return_value={}
-                ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+                with patch.object(mock_discovery, "discover_databases", return_value={}):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",
@@ -140,15 +114,9 @@ class TestDiscoverAllValueTypes:
 
         with patch.object(mock_discovery, "test_connection", return_value=True):
             with patch.object(mock_discovery, "discover_os", return_value=os_info):
-                with patch.object(
-                    mock_discovery, "discover_databases", return_value={}
-                ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+                with patch.object(mock_discovery, "discover_databases", return_value={}):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",
@@ -165,15 +133,9 @@ class TestDiscoverAllValueTypes:
 
         with patch.object(mock_discovery, "test_connection", return_value=True):
             with patch.object(mock_discovery, "discover_os", return_value={}):
-                with patch.object(
-                    mock_discovery, "discover_databases", return_value=db_info
-                ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+                with patch.object(mock_discovery, "discover_databases", return_value=db_info):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",
@@ -182,9 +144,7 @@ class TestDiscoverAllValueTypes:
                                 result = mock_discovery.discover_all(progress=False)
 
         if "databases" in result:
-            assert isinstance(
-                result["databases"], list
-            ), "'databases' value must be a list"
+            assert isinstance(result["databases"], list), "'databases' value must be a list"
 
     def test_web_root_is_string(self, mock_discovery):
         """The 'web_root' value should be a string."""
@@ -192,15 +152,9 @@ class TestDiscoverAllValueTypes:
 
         with patch.object(mock_discovery, "test_connection", return_value=True):
             with patch.object(mock_discovery, "discover_os", return_value={}):
-                with patch.object(
-                    mock_discovery, "discover_databases", return_value={}
-                ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+                with patch.object(mock_discovery, "discover_databases", return_value={}):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",
@@ -209,9 +163,7 @@ class TestDiscoverAllValueTypes:
                                 result = mock_discovery.discover_all(progress=False)
 
         if "web_root" in result:
-            assert isinstance(
-                result["web_root"], str
-            ), "'web_root' value must be a string"
+            assert isinstance(result["web_root"], str), "'web_root' value must be a string"
 
 
 class TestDiscoverAllErrorHandling:
@@ -227,20 +179,14 @@ class TestDiscoverAllErrorHandling:
     def test_discover_all_handles_partial_failure(self, mock_discovery):
         """discover_all() should handle partial detection failures."""
         with patch.object(mock_discovery, "test_connection", return_value=True):
-            with patch.object(
-                mock_discovery, "discover_os", return_value={"os": "Ubuntu"}
-            ):
+            with patch.object(mock_discovery, "discover_os", return_value={"os": "Ubuntu"}):
                 with patch.object(
                     mock_discovery,
                     "discover_databases",
                     side_effect=Exception("Detection failed"),
                 ):
-                    with patch.object(
-                        mock_discovery, "discover_web_servers", return_value={}
-                    ):
-                        with patch.object(
-                            mock_discovery, "discover_php", return_value={}
-                        ):
+                    with patch.object(mock_discovery, "discover_web_servers", return_value={}):
+                        with patch.object(mock_discovery, "discover_php", return_value={}):
                             with patch.object(
                                 mock_discovery,
                                 "discover_application_paths",

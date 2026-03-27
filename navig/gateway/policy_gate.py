@@ -201,11 +201,12 @@ class PolicyGate:
         return {
             "default": self._config.default.value,
             "rules": [
-                {"pattern": r.pattern, "action": r.decision.value}
-                for r in self._config.rules
+                {"pattern": r.pattern, "action": r.decision.value} for r in self._config.rules
             ],
             "hard_deny_patterns": self._HARD_DENY,
         }
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"PolicyGate(default={self._config.default.value!r}, rules={len(self._config.rules)})"
+        return (
+            f"PolicyGate(default={self._config.default.value!r}, rules={len(self._config.rules)})"
+        )

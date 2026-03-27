@@ -79,9 +79,7 @@ class TelegramBridge:
     All methods are async. Use asyncio.run() or an existing event loop.
     """
 
-    def __init__(
-        self, bot_token: str, chat_id: int | str, timeout_seconds: int = 300
-    ) -> None:
+    def __init__(self, bot_token: str, chat_id: int | str, timeout_seconds: int = 300) -> None:
         self._token = bot_token
         self._chat_id = int(chat_id)
         self._timeout = timeout_seconds
@@ -137,10 +135,7 @@ class TelegramBridge:
         corr = str(uuid.uuid4())[:8]
 
         # Build inline keyboard
-        keyboard = [
-            [InlineKeyboardButton(opt, callback_data=f"{corr}:{opt}")]
-            for opt in options
-        ]
+        keyboard = [[InlineKeyboardButton(opt, callback_data=f"{corr}:{opt}")] for opt in options]
         markup = InlineKeyboardMarkup(keyboard)
 
         bot = Bot(token=self._token)
@@ -239,9 +234,7 @@ class TelegramBridge:
 
     # ─────────────────────── callback handler ──────────────────────────────
 
-    def resolve_callback(
-        self, callback_data: str, text_reply: str | None = None
-    ) -> None:
+    def resolve_callback(self, callback_data: str, text_reply: str | None = None) -> None:
         """
         Called by the Telegram listener loop when a user presses a button or replies.
         Resolves any waiting future.

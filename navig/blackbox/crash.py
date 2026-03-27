@@ -77,11 +77,7 @@ def record_crash(
         exc_val = exc
         exc_tb = exc.__traceback__
 
-    tb_str = (
-        "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
-        if exc_type
-        else ""
-    )
+    tb_str = "".join(traceback.format_exception(exc_type, exc_val, exc_tb)) if exc_type else ""
 
     # Memory usage
     mem_mb = 0.0
@@ -105,9 +101,7 @@ def record_crash(
         from .types import EventType
 
         events = get_recorder().read_events(limit=10, event_type=EventType.COMMAND)
-        recent = [
-            e.payload.get("command", "") for e in events if e.payload.get("command")
-        ]
+        recent = [e.payload.get("command", "") for e in events if e.payload.get("command")]
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 

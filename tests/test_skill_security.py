@@ -51,9 +51,7 @@ class TestValidateInstallSpec:
         assert exc_info.value.field_name == "install.download.url"
 
     def test_valid_download_https(self):
-        _validate_install_spec(
-            {"download": {"url": "https://releases.example.com/tool.tar.gz"}}
-        )
+        _validate_install_spec({"download": {"url": "https://releases.example.com/tool.tar.gz"}})
 
     def test_non_dict_spec_is_ignored(self):
         _validate_install_spec("not a dict")  # should not raise

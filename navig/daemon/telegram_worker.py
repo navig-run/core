@@ -89,9 +89,7 @@ def _mcp_bridge_config() -> dict:
     }
 
 
-async def _start_gateway_http(
-    gateway: NavigGateway, tg_config: dict, deck_cfg: dict
-) -> None:
+async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: dict) -> None:
     """
     Start ONLY the HTTP server portion of the gateway (no blocking loop).
 
@@ -305,9 +303,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
 
     # ── MCP reconnect background task ──
     if mcp_cfg.get("auto_connect") and gateway.mcp_client_manager:
-        mcp_reconnect_task = asyncio.create_task(
-            _mcp_reconnect_loop(gateway, mcp_cfg, stop_event)
-        )
+        mcp_reconnect_task = asyncio.create_task(_mcp_reconnect_loop(gateway, mcp_cfg, stop_event))
 
     try:
         while not stop_event.is_set():

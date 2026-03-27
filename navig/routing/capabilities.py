@@ -88,16 +88,12 @@ MODE_CAPABILITIES: dict[str, ModeProfile] = {
 # only for daemon-side fallback providers.
 
 OPENROUTER_MODELS: dict[str, frozenset[str]] = {
-    "anthropic/claude-sonnet-4.5": frozenset(
-        {"fast", "strong", "coder", "format_strict"}
-    ),
+    "anthropic/claude-sonnet-4.5": frozenset({"fast", "strong", "coder", "format_strict"}),
     "anthropic/claude-sonnet-4": frozenset({"fast", "coder", "format_strict"}),
     # NOTE: claude-opus-4 is catalogued for capability lookup only.
     # It must NEVER appear as a routing default — too expensive for automated tasks.
     # Users may select it explicitly via CLI flag allow_premium=True.
-    "anthropic/claude-opus-4": frozenset(
-        {"strong", "coder", "format_strict", "long_context"}
-    ),
+    "anthropic/claude-opus-4": frozenset({"strong", "coder", "format_strict", "long_context"}),
     "openai/gpt-4o": frozenset({"fast", "coder", "format_strict", "tool_capable"}),
     "openai/gpt-4o-mini": frozenset({"fast", "format_strict", "tool_capable"}),
     "deepseek/deepseek-v3.2": frozenset({"fast", "coder", "long_context"}),

@@ -122,9 +122,7 @@ class RemoteOperations:
 
         # Source and destination
         scp_args.append(str(local_path))
-        scp_args.append(
-            f"{server_config['user']}@{server_config['host']}:{remote_path}"
-        )
+        scp_args.append(f"{server_config['user']}@{server_config['host']}:{remote_path}")
 
         try:
             result = subprocess.run(scp_args, timeout=_SSH_TIMEOUT)
@@ -149,9 +147,7 @@ class RemoteOperations:
             scp_args.extend(["-i", server_config["ssh_key"]])
 
         # Source and destination
-        scp_args.append(
-            f"{server_config['user']}@{server_config['host']}:{remote_path}"
-        )
+        scp_args.append(f"{server_config['user']}@{server_config['host']}:{remote_path}")
         scp_args.append(str(local_path))
 
         try:

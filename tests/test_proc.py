@@ -160,9 +160,7 @@ async def test_run_process_timeout_sets_termination():
 async def test_run_process_structured_output_includes_elapsed_ms():
     from navig.tools.proc import ProcessOptions, run_process, shell_argv
 
-    result = await run_process(
-        shell_argv("echo timer_test"), ProcessOptions(timeout_s=10.0)
-    )
+    result = await run_process(shell_argv("echo timer_test"), ProcessOptions(timeout_s=10.0))
     assert isinstance(result.elapsed_ms, float)
     assert result.elapsed_ms >= 0.0
 
@@ -178,9 +176,7 @@ async def test_run_process_env_extra_injected():
 
     result = await run_process(
         shell_argv(cmd),
-        ProcessOptions(
-            timeout_s=10.0, env_extra={"NAVIG_PROC_TESTVAR": "proc_injected"}
-        ),
+        ProcessOptions(timeout_s=10.0, env_extra={"NAVIG_PROC_TESTVAR": "proc_injected"}),
     )
     assert "proc_injected" in result.stdout
 
@@ -250,9 +246,7 @@ async def test_on_event_callback_fires_timeout_event():
 def test_run_process_sync_basic():
     from navig.tools.proc import ProcessOptions, run_process_sync, shell_argv
 
-    result = run_process_sync(
-        shell_argv("echo sync_ok"), ProcessOptions(timeout_s=10.0)
-    )
+    result = run_process_sync(shell_argv("echo sync_ok"), ProcessOptions(timeout_s=10.0))
     assert "sync_ok" in result.stdout
     assert result.returncode == 0
     assert result.termination == "exit"

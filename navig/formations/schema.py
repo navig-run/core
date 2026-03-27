@@ -193,18 +193,13 @@ PROFILE_SCHEMA: dict[str, Any] = {
 }
 
 
-def _validate_with_jsonschema(
-    data: dict[str, Any], schema: dict[str, Any]
-) -> list[str]:
+def _validate_with_jsonschema(data: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     """Validate data against JSON Schema. Returns list of error messages."""
     try:
         import jsonschema
 
         validator = jsonschema.Draft7Validator(schema)
-        return [
-            e.message
-            for e in sorted(validator.iter_errors(data), key=lambda e: list(e.path))
-        ]
+        return [e.message for e in sorted(validator.iter_errors(data), key=lambda e: list(e.path))]
     except ImportError:
         return _validate_manually(data, schema)
 
@@ -241,9 +236,7 @@ def _validate_manually(data: dict[str, Any], schema: dict[str, Any]) -> list[str
             if expected_type == "string" and isinstance(value, str):
                 min_len = prop_schema.get("minLength", 0)
                 if len(value) < min_len:
-                    errors.append(
-                        f"Field '{key}' must be at least {min_len} characters"
-                    )
+                    errors.append(f"Field '{key}' must be at least {min_len} characters")
 
             if expected_type == "array" and isinstance(value, list):
                 min_items = prop_schema.get("minItems", 0)
@@ -268,9 +261,7 @@ def validate_agent_file(path: Path) -> AgentSpec:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        raise FormationValidationError(
-            f"Invalid JSON in agent file: {e}", path=path
-        ) from e
+        raise FormationValidationError(f"Invalid JSON in agent file: {e}", path=path) from e
     return validate_agent_data(data, path=path)
 
 
@@ -293,21 +284,15 @@ def validate_formation_data(
 def validate_formation_file(path: Path) -> Formation:
     """Load and validate a formation.json file. Returns Formation."""
     if not path.exists():
-        raise FormationValidationError(
-            f"Formation manifest not found: {path}", path=path
-        )
+        raise FormationValidationError(f"Formation manifest not found: {path}", path=path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        raise FormationValidationError(
-            f"Invalid JSON in formation manifest: {e}", path=path
-        ) from e
+        raise FormationValidationError(f"Invalid JSON in formation manifest: {e}", path=path) from e
 
     _, errors = validate_formation_data(data, path=path)
     if errors:
-        raise FormationValidationError(
-            "Invalid formation manifest", path=path, errors=errors
-        )
+        raise FormationValidationError("Invalid formation manifest", path=path, errors=errors)
 
     return Formation.from_dict(data, source_path=path)
 

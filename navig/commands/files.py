@@ -71,9 +71,7 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
                 )
             )
         else:
-            ch.success(
-                "Upload complete. No traces left."
-            )  # void: except in logs. always in logs.
+            ch.success("Upload complete. No traces left.")  # void: except in logs. always in logs.
     else:
         if json_enabled:
             ch.raw_print(json.dumps({"success": False, "error": "Upload failed"}))
@@ -123,32 +121,8 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
         ch.info("  1. File not found: Check path with 'navig list /path'")
         ch.info("  2. Permission denied: Check file permissions")
         ch.info('     Fix: navig run "chmod 644 /remote/file"')
-        ch.info(
-            "  3. Local disk full: Check space with 'df -h' (Unix) or 'dir' (Windows)"
-        )
+        ch.info("  3. Local disk full: Check space with 'df -h' (Unix) or 'dir' (Windows)")
         ch.info("  4. Network timeout: Check connection with 'navig tunnel status'")
-
-
-def list_remote_directory(remote_path: str, options: dict[str, Any]):
-    """List remote directory contents."""
-    from navig.config import get_config_manager
-    from navig.remote import RemoteOperations
-
-    config_manager = get_config_manager()
-    remote_ops = RemoteOperations(config_manager)
-
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
-
-    server_config = config_manager.load_server_config(server_name)
-    result = remote_ops.execute_command(f"ls -lah {remote_path}", server_config)
-
-    if result.returncode == 0:
-        ch.raw_print(result.stdout)
-    else:
-        ch.error(f"Error: {result.stderr}")
 
 
 from pathlib import Path
@@ -177,18 +151,10 @@ def file_callback(ctx: typer.Context):
 def file_add(
     ctx: typer.Context,
     local: Path = typer.Argument(..., help="Local file/directory path"),
-    remote: str | None = typer.Argument(
-        None, help="Remote path (auto-detected if omitted)"
-    ),
-    dir: bool = typer.Option(
-        False, "--dir", "-d", help="Create directory instead of upload"
-    ),
-    mode: str = typer.Option(
-        "755", "--mode", "-m", help="Permission mode for directories"
-    ),
-    parents: bool = typer.Option(
-        True, "--parents", "-p", help="Create parent directories"
-    ),
+    remote: str | None = typer.Argument(None, help="Remote path (auto-detected if omitted)"),
+    dir: bool = typer.Option(False, "--dir", "-d", help="Create directory instead of upload"),
+    mode: str = typer.Option("755", "--mode", "-m", help="Permission mode for directories"),
+    parents: bool = typer.Option(True, "--parents", "-p", help="Create parent directories"),
 ):
     """Add file/directory to remote (upload or mkdir)."""
     if dir:
@@ -210,9 +176,7 @@ def file_list(
     all: bool = typer.Option(False, "--all", "-a", help="Show hidden files"),
     tree: bool = typer.Option(False, "--tree", "-t", help="Show tree structure"),
     depth: int = typer.Option(2, "--depth", "-d", help="Tree depth (with --tree)"),
-    tables: bool = typer.Option(
-        False, "--tables", help="Show database tables (for db list)"
-    ),
+    tables: bool = typer.Option(False, "--tables", help="Show database tables (for db list)"),
     containers: bool = typer.Option(False, "--containers", help="Show containers"),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
@@ -233,9 +197,7 @@ def file_list(
 def file_show(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path"),
-    download: Path | None = typer.Option(
-        None, "--download", "-d", help="Download to local path"
-    ),
+    download: Path | None = typer.Option(None, "--download", "-d", help="Download to local path"),
     lines: str | None = typer.Option(
         None, "--lines", "-n", help="Number of lines or range (e.g., 50 or 100-200)"
     ),
@@ -260,18 +222,12 @@ def file_show(
 def file_edit(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path"),
-    content: str | None = typer.Option(
-        None, "--content", "-c", help="Content to write"
-    ),
+    content: str | None = typer.Option(None, "--content", "-c", help="Content to write"),
     mode: str | None = typer.Option(None, "--mode", "-m", help="Set permissions"),
     owner: str | None = typer.Option(None, "--owner", "-o", help="Set ownership"),
-    append: bool = typer.Option(
-        False, "--append", "-a", help="Append instead of overwrite"
-    ),
+    append: bool = typer.Option(False, "--append", "-a", help="Append instead of overwrite"),
     stdin: bool = typer.Option(False, "--stdin", "-s", help="Read from stdin"),
-    from_file: Path | None = typer.Option(
-        None, "--from-file", "-f", help="Read from local file"
-    ),
+    from_file: Path | None = typer.Option(None, "--from-file", "-f", help="Read from local file"),
 ):
     """Edit remote file (write content, change permissions/owner)."""
     if content or stdin or from_file:

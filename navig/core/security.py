@@ -52,9 +52,7 @@ DEFAULT_REDACT_PATTERNS: list[tuple[re.Pattern, str]] = [
     ),  # MySQL password
     # Authorization headers
     (
-        re.compile(
-            r"Authorization\s*[:=]\s*Bearer\s+([A-Za-z0-9._\-+=]+)", re.IGNORECASE
-        ),
+        re.compile(r"Authorization\s*[:=]\s*Bearer\s+([A-Za-z0-9._\-+=]+)", re.IGNORECASE),
         r"Authorization: Bearer ***REDACTED***",
     ),
     (
@@ -174,9 +172,7 @@ def redact_sensitive_text(
     return result
 
 
-def redact_dict(
-    data: dict[str, Any], sensitive_keys: list[str] | None = None
-) -> dict[str, Any]:
+def redact_dict(data: dict[str, Any], sensitive_keys: list[str] | None = None) -> dict[str, Any]:
     """
     Recursively redact sensitive values from a dictionary.
 
@@ -242,9 +238,7 @@ class MissingEnvVarError(Exception):
     def __init__(self, var_name: str, config_path: str):
         self.var_name = var_name
         self.config_path = config_path
-        super().__init__(
-            f'Missing env var "${var_name}" referenced at config path: {config_path}'
-        )
+        super().__init__(f'Missing env var "${var_name}" referenced at config path: {config_path}')
 
 
 # Pattern for valid env var names (uppercase letters, digits, underscore)
@@ -290,8 +284,7 @@ def substitute_env_vars(
         }
     elif isinstance(config, list):
         return [
-            substitute_env_vars(item, env, f"{path}[{i}]", strict)
-            for i, item in enumerate(config)
+            substitute_env_vars(item, env, f"{path}[{i}]", strict) for i, item in enumerate(config)
         ]
     else:
         # Primitives pass through unchanged
@@ -511,9 +504,7 @@ def is_safe_executable(executable: str) -> bool:
     return exe_name in SAFE_EXECUTABLES
 
 
-def validate_command_safety(
-    command: str, allow_unsafe: bool = False
-) -> tuple[bool, str | None]:
+def validate_command_safety(command: str, allow_unsafe: bool = False) -> tuple[bool, str | None]:
     """
     Validate a command for safety before execution.
 
@@ -688,9 +679,7 @@ def check_config_security(config: dict[str, Any]) -> list[SecurityFinding]:
     return findings
 
 
-def run_security_audit(
-    config: dict[str, Any], config_dir: Path | None = None
-) -> dict[str, Any]:
+def run_security_audit(config: dict[str, Any], config_dir: Path | None = None) -> dict[str, Any]:
     """
     Run a comprehensive security audit.
 

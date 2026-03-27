@@ -145,9 +145,7 @@ class Eyes(Component):
     async def _on_health_check(self) -> dict[str, Any]:
         """Health check for eyes."""
         return {
-            "last_metrics": (
-                self._last_metrics.to_dict() if self._last_metrics else None
-            ),
+            "last_metrics": (self._last_metrics.to_dict() if self._last_metrics else None),
             "alert_count": len(self._alerts),
             "watched_logs": len(self.config.log_paths),
             "watched_files": len(self.config.watch_paths),
@@ -165,9 +163,7 @@ class Eyes(Component):
                 self._last_metrics = metrics
 
                 # Emit metrics event
-                await self.emit(
-                    EventType.METRIC_COLLECTED, {"metrics": metrics.to_dict()}
-                )
+                await self.emit(EventType.METRIC_COLLECTED, {"metrics": metrics.to_dict()})
 
                 # Check thresholds and emit alerts
                 await self._check_thresholds(metrics)
@@ -262,9 +258,7 @@ class Eyes(Component):
                 EventType.ALERT_TRIGGERED,
                 {"alert": alert.to_dict()},
                 priority=(
-                    EventPriority.HIGH
-                    if alert.level == "critical"
-                    else EventPriority.NORMAL
+                    EventPriority.HIGH if alert.level == "critical" else EventPriority.NORMAL
                 ),
             )
 

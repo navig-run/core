@@ -12,9 +12,7 @@ from rich.table import Table
 from navig import console_helper as ch
 
 
-def _validate_sql_identifier(
-    identifier: str, identifier_type: str = "identifier"
-) -> bool:
+def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier") -> bool:
     """
     Validate SQL identifier (database, table, column name).
 
@@ -317,11 +315,7 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
 
         if result.returncode == 0:
             if options.get("json"):
-                ch.raw_print(
-                    json.dumps(
-                        {"success": True, "table": table, "output": result.stdout}
-                    )
-                )
+                ch.raw_print(json.dumps({"success": True, "table": table, "output": result.stdout}))
             else:
                 ch.success(f"✓ Optimized table: {table}")
                 ch.raw_print(result.stdout)
@@ -413,11 +407,7 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
 
         if result.returncode == 0:
             if options.get("json"):
-                ch.raw_print(
-                    json.dumps(
-                        {"success": True, "table": table, "output": result.stdout}
-                    )
-                )
+                ch.raw_print(json.dumps({"success": True, "table": table, "output": result.stdout}))
             else:
                 ch.success(f"✓ Repaired table: {table}")
                 ch.raw_print(result.stdout)
@@ -621,11 +611,7 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
 
         # Output
         if options.get("json"):
-            ch.raw_print(
-                json.dumps(
-                    {"database": database, "tables": tables, "count": len(tables)}
-                )
-            )
+            ch.raw_print(json.dumps({"database": database, "tables": tables, "count": len(tables)}))
         else:
             table = Table(title=f"Tables in {database}")
             table.add_column("Table", style="cyan")

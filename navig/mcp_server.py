@@ -212,9 +212,7 @@ class MCPProtocolHandler:
         try:
             result = self._execute_tool(tool_name, arguments)
             return {
-                "content": [
-                    {"type": "text", "text": json.dumps(result, indent=2, default=str)}
-                ]
+                "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]
             }
         except Exception as e:
             return {
@@ -282,19 +280,13 @@ class MCPProtocolHandler:
             pages = self._execute_tool("navig_wiki_list", {})
             if isinstance(pages, dict) and "error" in pages:
                 return f"# Wiki\n\n{pages['error']}"
-            return "# Wiki Index\n\n" + "\n".join(
-                f"- [{p['title']}]({p['path']})" for p in pages
-            )
+            return "# Wiki Index\n\n" + "\n".join(f"- [{p['title']}]({p['path']})" for p in pages)
         elif uri == "navig://context":
             return json.dumps(self._execute_tool("navig_get_context", {}), indent=2)
         elif uri in ("navig://agent/status", "agent://status"):
-            return json.dumps(
-                self._execute_tool("navig_agent_status_get", {}), indent=2
-            )
+            return json.dumps(self._execute_tool("navig_agent_status_get", {}), indent=2)
         elif uri in ("navig://agent/goals", "agent://goals"):
-            return json.dumps(
-                self._execute_tool("navig_agent_goal_list", {"limit": 100}), indent=2
-            )
+            return json.dumps(self._execute_tool("navig_agent_goal_list", {"limit": 100}), indent=2)
         elif uri in ("navig://agent/remediation", "agent://remediation"):
             return json.dumps(
                 self._execute_tool("navig_agent_remediation_list", {"limit": 100}),
@@ -305,15 +297,11 @@ class MCPProtocolHandler:
             if report_path.exists():
                 return report_path.read_text(encoding="utf-8", errors="replace")
             return json.dumps(
-                self._execute_tool(
-                    "navig_agent_learning_run", {"days": 7, "export": False}
-                ),
+                self._execute_tool("navig_agent_learning_run", {"days": 7, "export": False}),
                 indent=2,
             )
         elif uri in ("navig://agent/service", "agent://service"):
-            return json.dumps(
-                self._execute_tool("navig_agent_service_status", {}), indent=2
-            )
+            return json.dumps(self._execute_tool("navig_agent_service_status", {}), indent=2)
         elif uri == "navig://runtime/nodes":
             from navig.contracts.store import get_runtime_store
 
@@ -323,16 +311,12 @@ class MCPProtocolHandler:
             from navig.contracts.store import get_runtime_store
 
             store = get_runtime_store()
-            return json.dumps(
-                [m.to_dict() for m in store.list_missions(limit=50)], indent=2
-            )
+            return json.dumps([m.to_dict() for m in store.list_missions(limit=50)], indent=2)
         elif uri == "navig://runtime/receipts":
             from navig.contracts.store import get_runtime_store
 
             store = get_runtime_store()
-            return json.dumps(
-                [r.to_dict() for r in store.list_receipts(limit=50)], indent=2
-            )
+            return json.dumps([r.to_dict() for r in store.list_receipts(limit=50)], indent=2)
         else:
             raise ValueError(f"Unknown resource: {uri}")
 
@@ -414,9 +398,7 @@ def start_mcp_server(mode: str = "stdio", port: int = 3001, token: str | None = 
         raise ValueError(f"Unknown mode: {mode}. Use 'stdio' or 'websocket'.")
 
 
-def _run_websocket_server(
-    handler: MCPProtocolHandler, port: int, token: str | None = None
-):
+def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: str | None = None):
     """Start a WebSocket MCP server with optional token auth.
 
     The server speaks JSON-RPC 2.0 over WebSocket frames.
@@ -499,9 +481,7 @@ def _run_websocket_server(
                 except Exception:
                     continue
 
-                digest = hashlib.sha256(
-                    resource_text.encode("utf-8", errors="replace")
-                ).hexdigest()
+                digest = hashlib.sha256(resource_text.encode("utf-8", errors="replace")).hexdigest()
 
                 state = notification_state[topic]
                 if digest != state["last_seen_digest"]:
@@ -523,10 +503,7 @@ def _run_websocket_server(
                         "params": params,
                     }
                     payload = json.dumps(payload_obj, default=str)
-                    if (
-                        len(payload.encode("utf-8", errors="replace"))
-                        > max_notification_bytes
-                    ):
+                    if len(payload.encode("utf-8", errors="replace")) > max_notification_bytes:
                         payload = json.dumps(
                             {
                                 "jsonrpc": "2.0",
@@ -546,8 +523,7 @@ def _run_websocket_server(
                     state["last_seen_digest"] is not None
                     and state["last_seen_digest"] != state["last_emitted_digest"]
                     and state["last_seen_at"] is not None
-                    and (now - state["last_seen_at"]).total_seconds()
-                    >= debounce_seconds
+                    and (now - state["last_seen_at"]).total_seconds() >= debounce_seconds
                     and state["last_payload"] is not None
                 ):
                     await _broadcast_notification(state["last_payload"])
@@ -731,19 +707,13 @@ def _memory_store():
     return KeyFactStore(db_path=_KEY_FACTS_DB_PATH)
 
 
-async def memory_retrieve(
-    query: str, limit: int = 10, token_budget: int = 2000
-) -> dict:
+async def memory_retrieve(query: str, limit: int = 10, token_budget: int = 2000) -> dict:
     """Retrieve ranked key facts matching query within token budget."""
     from navig.memory.fact_retriever import FactRetriever
 
     retriever = FactRetriever(_memory_store())
-    facts = retriever.retrieve(query=query, limit=limit, token_budget=token_budget)
-    return {
-        "facts": [
-            f.model_dump() if hasattr(f, "model_dump") else vars(f) for f in facts
-        ]
-    }
+    facts = retriever.retrieve(query=query, limit=limit, max_tokens=token_budget)
+    return {"facts": [f.model_dump() if hasattr(f, "model_dump") else vars(f) for f in facts]}
 
 
 async def memory_remember(text: str, source: str = "mcp") -> dict:
@@ -780,12 +750,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="NAVIG MCP Server")
-    parser.add_argument(
-        "--websocket", action="store_true", help="Run in WebSocket mode"
-    )
-    parser.add_argument(
-        "--port", type=int, default=3001, help="WebSocket port (default 3001)"
-    )
+    parser.add_argument("--websocket", action="store_true", help="Run in WebSocket mode")
+    parser.add_argument("--port", type=int, default=3001, help="WebSocket port (default 3001)")
     parser.add_argument(
         "--token", type=str, default=None, help="Auth token (auto-generated if omitted)"
     )

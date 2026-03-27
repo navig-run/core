@@ -129,9 +129,7 @@ class TestApplyPatchCallsGit:
         with patch("subprocess.run", side_effect=fake_run):
             apply_patch(tmp_path, patch_content)
 
-        check_call = next(
-            (c for c in git_calls if "apply" in c and "--check" in c), None
-        )
+        check_call = next((c for c in git_calls if "apply" in c and "--check" in c), None)
         assert check_call is not None, "git apply --check was never called"
 
     def test_apply_patch_calls_git_apply_after_check(self, tmp_path: Path) -> None:
@@ -160,9 +158,7 @@ class TestApplyPatchCallsGit:
 
         def fake_run(cmd: list[str], **kwargs) -> MagicMock:
             if "--check" in cmd:
-                raise subprocess.CalledProcessError(
-                    1, cmd, stderr=b"patch does not apply"
-                )
+                raise subprocess.CalledProcessError(1, cmd, stderr=b"patch does not apply")
             return MagicMock(stdout="", returncode=0)
 
         with patch("subprocess.run", side_effect=fake_run):

@@ -157,9 +157,7 @@ class TestToolResult:
     def test_summary_success_dict(self):
         from navig.tools.registry import ToolResult
 
-        r = ToolResult(
-            name="t", success=True, output={"status": "ok", "latency_ms": 120}
-        )
+        r = ToolResult(name="t", success=True, output={"status": "ok", "latency_ms": 120})
         s = r.summary()
         assert "status" in s
         assert "ok" in s

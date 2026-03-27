@@ -98,9 +98,7 @@ class SlashCommandEntry:
 
     command: str  # without leading "/"
     description: str  # shown in Telegram command list and /help
-    cli_template: str | None = (
-        None  # navig CLI template; ``{args}`` is replaced with user input
-    )
+    cli_template: str | None = None  # navig CLI template; ``{args}`` is replaced with user input
     handler: str | None = None  # method name on TelegramCommandsMixin to call directly
     visible: bool = True  # include in /help and setMyCommands
     category: str = "general"  # section heading for /help
@@ -108,12 +106,8 @@ class SlashCommandEntry:
 
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Core ----------------------------------------------------------------
-    SlashCommandEntry(
-        "start", "Wake up greeting", handler="_handle_start", category="core"
-    ),
-    SlashCommandEntry(
-        "help", "Command reference", handler="_handle_help", category="core"
-    ),
+    SlashCommandEntry("start", "Wake up greeting", handler="_handle_start", category="core"),
+    SlashCommandEntry("help", "Command reference", handler="_handle_help", category="core"),
     SlashCommandEntry(
         "status",
         "System health check",
@@ -147,9 +141,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="core",
         visible=False,
     ),
-    SlashCommandEntry(
-        "briefing", "Today's summary", handler="_handle_briefing", category="core"
-    ),
+    SlashCommandEntry("briefing", "Today's summary", handler="_handle_briefing", category="core"),
     SlashCommandEntry(
         "deck",
         "Open the command deck",
@@ -157,12 +149,8 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="core",
         visible=False,
     ),
-    SlashCommandEntry(
-        "ping", "Quick alive check", handler="_handle_ping", category="core"
-    ),
-    SlashCommandEntry(
-        "skill", "Run a NAVIG skill - /skill list to browse", category="core"
-    ),
+    SlashCommandEntry("ping", "Quick alive check", handler="_handle_ping", category="core"),
+    SlashCommandEntry("skill", "Run a NAVIG skill - /skill list to browse", category="core"),
     # --- Monitoring ----------------------------------------------------------
     SlashCommandEntry(
         "disk",
@@ -170,12 +158,8 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template="host monitor show --disk",
         category="monitoring",
     ),
-    SlashCommandEntry(
-        "memory", "RAM status", cli_template='run "free -h"', category="monitoring"
-    ),
-    SlashCommandEntry(
-        "cpu", "Load / CPU info", cli_template='run "uptime"', category="monitoring"
-    ),
+    SlashCommandEntry("memory", "RAM status", cli_template='run "free -h"', category="monitoring"),
+    SlashCommandEntry("cpu", "Load / CPU info", cli_template='run "uptime"', category="monitoring"),
     SlashCommandEntry(
         "uptime", "Server uptime", cli_template='run "uptime -p"', category="monitoring"
     ),
@@ -213,22 +197,16 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="monitoring",
     ),
     # --- Docker --------------------------------------------------------------
-    SlashCommandEntry(
-        "docker", "List containers", cli_template="docker ps", category="docker"
-    ),
+    SlashCommandEntry("docker", "List containers", cli_template="docker ps", category="docker"),
     SlashCommandEntry(
         "logs",
         "Container logs (+ name)",
         cli_template="docker logs {args} -n 50",
         category="docker",
     ),
-    SlashCommandEntry(
-        "restart", "Restart container (+ name) or daemon", category="docker"
-    ),
+    SlashCommandEntry("restart", "Restart container (+ name) or daemon", category="docker"),
     # --- Database ------------------------------------------------------------
-    SlashCommandEntry(
-        "db", "List databases", cli_template="db list", category="database"
-    ),
+    SlashCommandEntry("db", "List databases", cli_template="db list", category="database"),
     SlashCommandEntry(
         "tables",
         "Tables in a database (+ db name)",
@@ -236,9 +214,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="database",
     ),
     # --- Tools ---------------------------------------------------------------
-    SlashCommandEntry(
-        "hosts", "Configured servers", cli_template="host list", category="tools"
-    ),
+    SlashCommandEntry("hosts", "Configured servers", cli_template="host list", category="tools"),
     SlashCommandEntry(
         "use",
         "Switch active host (+ name)",
@@ -248,9 +224,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "run", "Execute remote command", cli_template='run "{args}"', category="tools"
     ),
-    SlashCommandEntry(
-        "backup", "Backup status", cli_template="backup show", category="tools"
-    ),
+    SlashCommandEntry("backup", "Backup status", cli_template="backup show", category="tools"),
     # --- Formatting & Reasoning --------------------------------------------------
     SlashCommandEntry(
         "format",
@@ -265,12 +239,8 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="tools",
         visible=False,
     ),
-    SlashCommandEntry(
-        "think", "Reason through a topic — paginated cards", category="tools"
-    ),
-    SlashCommandEntry(
-        "refine", "Sharpen your idea with AI clarification", category="tools"
-    ),
+    SlashCommandEntry("think", "Reason through a topic — paginated cards", category="tools"),
+    SlashCommandEntry("refine", "Sharpen your idea with AI clarification", category="tools"),
     # --- Utilities -----------------------------------------------------------
     SlashCommandEntry(
         "ip",
@@ -278,9 +248,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template='run "curl -s ifconfig.me"',
         category="utilities",
     ),
-    SlashCommandEntry(
-        "time", "Server time", cli_template='run "date"', category="utilities"
-    ),
+    SlashCommandEntry("time", "Server time", cli_template='run "date"', category="utilities"),
     SlashCommandEntry(
         "weather",
         "Weather report",
@@ -329,9 +297,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="model",
         visible=False,
     ),
-    SlashCommandEntry(
-        "mode", "Set focus mode (work, deep-focus, etc.)", category="model"
-    ),
+    SlashCommandEntry("mode", "Set focus mode (work, deep-focus, etc.)", category="model"),
     SlashCommandEntry("big", "Force big model for next message", category="model"),
     SlashCommandEntry("small", "Force small model for next message", category="model"),
     SlashCommandEntry("coder", "Force coder model for next message", category="model"),
@@ -471,9 +437,7 @@ class TelegramCommandsMixin:
         # Auth status
         if getattr(self, "allowed_users", None):
             is_allowed = user_id in self.allowed_users
-            lines.append(
-                f"🔐 Auth: {'✅ Allowed' if is_allowed else '❌ Not in allowed list'}"
-            )
+            lines.append(f"🔐 Auth: {'✅ Allowed' if is_allowed else '❌ Not in allowed list'}")
 
         # Model tier preference
         tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
@@ -502,9 +466,7 @@ class TelegramCommandsMixin:
             lines.append("🔍 Debug mode: on")
 
         lines.append("")
-        lines.append(
-            "`/settings` to configure · `/voice` for audio · `/status` for routing"
-        )
+        lines.append("`/settings` to configure · `/voice` for audio · `/status` for routing")
         await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
     async def _handle_mode(self, chat_id: int, mode_arg: str, user_id: int = 0) -> None:
@@ -525,9 +487,7 @@ class TelegramCommandsMixin:
                     pass  # best-effort; failure is non-critical
             for mid, mp in MOOD_REGISTRY.items():
                 active_marker = " <b>- active</b>" if mid == current else ""
-                lines.append(
-                    f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>"
-                )
+                lines.append(f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>")
             lines.append(
                 "\n<code>/mode &lt;name&gt;</code> to switch  -  "
                 "<code>/mode auto</code> to let NAVIG decide"
@@ -548,9 +508,7 @@ class TelegramCommandsMixin:
                 get_user_state_tracker().set_preference("chat_mode", "auto")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-            await self.send_message(
-                chat_id, "- auto. reading the room.", parse_mode=None
-            )
+            await self.send_message(chat_id, "- auto. reading the room.", parse_mode=None)
             return
 
         try:
@@ -670,13 +628,9 @@ class TelegramCommandsMixin:
                         if mc:
                             icon = mode_icons.get(mode_name, "-")
                             display_name = mode_name.replace("_", " ")
-                            lines.append(
-                                f"  {icon} {display_name}: `{mc.provider}:{mc.model}`"
-                            )
+                            lines.append(f"  {icon} {display_name}: `{mc.provider}:{mc.model}`")
                             if mc.fallback_provider:
-                                lines.append(
-                                    f"  - `{mc.fallback_provider}:{mc.fallback_model}`"
-                                )
+                                lines.append(f"  - `{mc.fallback_provider}:{mc.fallback_model}`")
                 else:
                     lines.append("\n_LLM Mode Router: not active_")
             except Exception:
@@ -697,9 +651,7 @@ class TelegramCommandsMixin:
                     ("- big", cfg.big),
                     ("- coder", cfg.coder_big),
                 ]:
-                    lines.append(
-                        f"  {label}: `{slot.provider or '-'}:{slot.model or '-'}`"
-                    )
+                    lines.append(f"  {label}: `{slot.provider or '-'}:{slot.model or '-'}`")
             else:
                 lines.append("\n_Hybrid Router: disabled_")
 
@@ -813,9 +765,7 @@ class TelegramCommandsMixin:
         if button_row:
             keyboard_rows.append(list(button_row))
 
-        keyboard_rows.append(
-            [{"text": "🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
-        )
+        keyboard_rows.append([{"text": "🚫 No AI  — raw mode", "callback_data": "prov_noai"}])
         keyboard_rows.append([{"text": "✖ Close", "callback_data": "prov_close"}])
 
         await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard_rows)
@@ -1018,9 +968,7 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        lines.append(
-            f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)"
-        )
+        lines.append(f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)")
         lines.append(SEP)
 
         lines.append("- *Recent*")
@@ -1041,9 +989,7 @@ class TelegramCommandsMixin:
                 if ts_raw:
                     try:
                         if isinstance(ts_raw, (int, float)):
-                            ts_prefix = (
-                                _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
-                            )
+                            ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
                     except Exception:  # noqa: BLE001
@@ -1077,9 +1023,7 @@ class TelegramCommandsMixin:
                 _sk = f"agent:default:telegram:default:dm:{user_id}"
                 _s = sm.sessions.get(_sk)
                 if _s is not None:
-                    voice_label = (
-                        "on" if _s.metadata.get("voice_enabled", False) else "off"
-                    )
+                    voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -1116,9 +1060,7 @@ class TelegramCommandsMixin:
                     "failed",
                     "critical",
                 )
-                daemon_issues = [
-                    ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)
-                ]
+                daemon_issues = [ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)]
                 break
             except OSError:
                 pass  # best-effort cleanup
@@ -1192,9 +1134,7 @@ class TelegramCommandsMixin:
                         messages.append(
                             {
                                 "role": entry.get("role") or entry.get("type", "?"),
-                                "content": entry.get("content")
-                                or entry.get("text")
-                                or "",
+                                "content": entry.get("content") or entry.get("text") or "",
                             }
                         )
                     except Exception:  # noqa: BLE001
@@ -1259,9 +1199,7 @@ class TelegramCommandsMixin:
         target = (arg or "").strip().lower()
 
         if target in DAEMON_ALIASES:
-            await self.send_message(
-                chat_id, "- Restarting navig-daemon in 3s-", parse_mode=None
-            )
+            await self.send_message(chat_id, "- Restarting navig-daemon in 3s-", parse_mode=None)
             sudo_pass = os.environ.get("SUDO_PASS", "")
             if sudo_pass:
                 # Pass password via env var - never interpolated into shell string (SEC-3 fix)
@@ -1287,15 +1225,11 @@ class TelegramCommandsMixin:
                     start_new_session=True,
                 )
         else:
-            await self._handle_cli_command(
-                chat_id, user_id, metadata, f"docker restart {arg}"
-            )
+            await self._handle_cli_command(chat_id, user_id, metadata, f"docker restart {arg}")
 
     # -- Audio / settings menus ------------------------------------------------
 
-    async def _handle_audio_menu(
-        self, chat_id: int, user_id: int, is_group: bool = False
-    ) -> None:
+    async def _handle_audio_menu(self, chat_id: int, user_id: int, is_group: bool = False) -> None:
         """Send the /audio response-mode panel."""
         if not _HAS_KEYBOARDS or not _HAS_SESSIONS:
             await self.send_message(
@@ -1308,13 +1242,9 @@ class TelegramCommandsMixin:
         sm = get_session_manager()
         session = sm.get_or_create_session(chat_id, user_id, is_group)
         keyboard_rows = build_audio_keyboard(session)
-        await self.send_message(
-            chat_id, _audio_header_text(session), keyboard=keyboard_rows
-        )
+        await self.send_message(chat_id, _audio_header_text(session), keyboard=keyboard_rows)
 
-    async def _handle_voice_menu(
-        self, chat_id: int, user_id: int, is_group: bool = False
-    ) -> None:
+    async def _handle_voice_menu(self, chat_id: int, user_id: int, is_group: bool = False) -> None:
         """Send the /voice provider picker (provider -> model -> voice/speed/format)."""
         if _HAS_AUDIO_MENU:
             try:
@@ -1348,9 +1278,7 @@ class TelegramCommandsMixin:
         sm = get_session_manager()
         session = sm.get_or_create_session(chat_id, user_id, is_group)
         keyboard_rows = build_settings_hub_keyboard(session)
-        await self.send_message(
-            chat_id, _settings_hub_text(session), keyboard=keyboard_rows
-        )
+        await self.send_message(chat_id, _settings_hub_text(session), keyboard=keyboard_rows)
 
     # -- Formatting & Reasoning -------------------------------------------------
 
@@ -1429,9 +1357,7 @@ class TelegramCommandsMixin:
         from navig.gateway.channels.telegram_navigator import CardNavigator
 
         nav = CardNavigator(self)
-        await nav.create(
-            chat_id=chat_id, user_id=user_id, topic=topic, llm_text=llm_text
-        )
+        await nav.create(chat_id=chat_id, user_id=user_id, topic=topic, llm_text=llm_text)
 
     async def _handle_refine_cmd(
         self,
@@ -1464,9 +1390,7 @@ class TelegramCommandsMixin:
     @rate_limited
     @error_handled
     @typing_context
-    async def _handle_briefing(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
-    ) -> None:
+    async def _handle_briefing(self, chat_id: int, user_id: int, metadata: MessageMetadata) -> None:
         """Real-data system briefing - no AI, no invented content (/briefing)."""
         from datetime import datetime as _dt
         from datetime import timezone as _tz
@@ -1521,9 +1445,7 @@ class TelegramCommandsMixin:
             _s.close()
         except Exception:
             bridge_ok = False
-        lines.append(
-            f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}"
-        )
+        lines.append(f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}")
 
         try:
             from navig.vault import get_vault_v2
@@ -1573,9 +1495,7 @@ class TelegramCommandsMixin:
             if len(dfl) >= 2:
                 parts = dfl[1].split()
                 if len(parts) >= 3:
-                    lines.append(
-                        f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})"
-                    )
+                    lines.append(f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -1685,28 +1605,18 @@ class TelegramCommandsMixin:
             if result.success:
                 output_text = ""
                 if isinstance(result.output, dict):
-                    output_text = (
-                        result.output.get("output") or result.output.get("info") or ""
-                    )
+                    output_text = result.output.get("output") or result.output.get("info") or ""
                 else:
                     output_text = str(result.output or "")
 
                 header = f"- **{skill_name}**" + (f" - `{command}`" if command else "")
-                msg = (
-                    f"{header}\n\n{output_text[:3800]}"
-                    if output_text
-                    else f"{header}\n- Done."
-                )
+                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n- Done."
                 await self.send_message(chat_id, msg)
             else:
-                await self.send_message(
-                    chat_id, f"- Skill error:\n{result.error}", parse_mode=None
-                )
+                await self.send_message(chat_id, f"- Skill error:\n{result.error}", parse_mode=None)
 
         except Exception as exc:
-            await self.send_message(
-                chat_id, f"- /skill crashed: {exc}", parse_mode=None
-            )
+            await self.send_message(chat_id, f"- /skill crashed: {exc}", parse_mode=None)
 
     async def _skill_list(self, chat_id: int) -> None:
         """Send a paginated list of all available skills."""
@@ -1715,9 +1625,7 @@ class TelegramCommandsMixin:
 
             skills = load_all_skills()
         except Exception as exc:
-            await self.send_message(
-                chat_id, f"- Could not load skills: {exc}", parse_mode=None
-            )
+            await self.send_message(chat_id, f"- Could not load skills: {exc}", parse_mode=None)
             return
 
         if not skills:
@@ -1736,14 +1644,10 @@ class TelegramCommandsMixin:
         for cat, cat_skills in sorted(by_cat.items()):
             lines.append(f"\n**{cat.title()}**")
             for s in cat_skills:
-                safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(
-                    s.safety, "-"
-                )
+                safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(s.safety, "-")
                 lines.append(f"  {safety_icon} `{s.id}` - {s.name}")
 
-        lines.append(
-            "\n\nUsage: `/skill <id>` for info - `/skill <id> <command>` to run"
-        )
+        lines.append("\n\nUsage: `/skill <id>` for info - `/skill <id> <command>` to run")
         await self.send_message(chat_id, "\n".join(lines))
 
     # -- CLI command dispatch --------------------------------------------------
@@ -1864,9 +1768,7 @@ class TelegramCommandsMixin:
                         _log.getLogger(__name__).exception(
                             "autoheal: _heal_failure raised unexpectedly"
                         )
-                        await self.send_message(
-                            chat_id, response[:3950], parse_mode=None
-                        )
+                        await self.send_message(chat_id, response[:3950], parse_mode=None)
                     return
                 # -- Normal path ---------------------------------------------
                 if len(response) > 4000:
@@ -1932,7 +1834,5 @@ class TelegramCommandsMixin:
                     if url:
                         return url
                 except Exception as e:
-                    logger.debug(
-                        "Could not read deck_url from config %s: %s", cfg_path, e
-                    )
+                    logger.debug("Could not read deck_url from config %s: %s", cfg_path, e)
         return None

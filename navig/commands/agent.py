@@ -44,12 +44,8 @@ def agent_install(
         "-m",
         help="Operating mode (autonomous, supervised, observe-only)",
     ),
-    telegram: bool = typer.Option(
-        False, "--telegram", help="Enable Telegram integration"
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite existing configuration"
-    ),
+    telegram: bool = typer.Option(False, "--telegram", help="Enable Telegram integration"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing configuration"),
 ):
     """
     Install and configure agent mode.
@@ -104,9 +100,7 @@ def agent_install(
 @agent_app.command("run")
 def agent_run(
     agent_id: str = typer.Argument(..., help="Agent ID from the active formation"),
-    task: str = typer.Option(
-        ..., "--task", "-t", help="Task or question for the agent"
-    ),
+    task: str = typer.Option(..., "--task", "-t", help="Task or question for the agent"),
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
     timeout: float = typer.Option(30.0, "--timeout", help="Timeout in seconds"),
@@ -198,9 +192,7 @@ def agent_start(
         "-f/-b",
         help="Run in foreground or background",
     ),
-    config: Path | None = typer.Option(
-        None, "--config", "-c", help="Path to configuration file"
-    ),
+    config: Path | None = typer.Option(None, "--config", "-c", help="Path to configuration file"),
 ):
     """
     Start the autonomous agent.
@@ -349,9 +341,7 @@ def agent_status(
             ch.info("Agent Status")
             ch.console.print()
             ch.console.print("  Installed: [green]Yes[/]")
-            ch.console.print(
-                f"  Running: {'[green]Yes[/]' if running else '[red]No[/]'}"
-            )
+            ch.console.print(f"  Running: {'[green]Yes[/]' if running else '[red]No[/]'}")
             if running and pid:
                 ch.console.print(f"  PID: {pid}")
             ch.console.print(f"  Enabled: {'Yes' if config.enabled else 'No'}")
@@ -370,9 +360,7 @@ def agent_status(
 def agent_config_cmd(
     edit: bool = typer.Option(False, "--edit", "-e", help="Open config in editor"),
     show: bool = typer.Option(False, "--show", "-s", help="Show current config"),
-    set_key: str | None = typer.Option(
-        None, "--set", help="Set config key (dot notation)"
-    ),
+    set_key: str | None = typer.Option(None, "--set", help="Set config key (dot notation)"),
     value: str | None = typer.Option(None, "--value", "-v", help="Value for --set"),
 ):
     """
@@ -397,9 +385,7 @@ def agent_config_cmd(
 
     if edit:
         # Open in default editor
-        editor = os.environ.get(
-            "EDITOR", "nano" if sys.platform != "win32" else "notepad"
-        )
+        editor = os.environ.get("EDITOR", "nano" if sys.platform != "win32" else "notepad")
         subprocess.run([editor, str(config_path)])
         return
 
@@ -701,9 +687,7 @@ WantedBy=multi-user.target
             temp_file = Path("/tmp/navig-agent.service")
             temp_file.write_text(content)
 
-            subprocess.run(
-                ["sudo", "cp", str(temp_file), str(service_file)], check=True
-            )
+            subprocess.run(["sudo", "cp", str(temp_file), str(service_file)], check=True)
             subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
             subprocess.run(["sudo", "systemctl", "enable", service_name], check=True)
 
@@ -798,9 +782,7 @@ def _service_macos(action: str):
             ch.info("Service not installed")
 
     elif action == "status":
-        result = subprocess.run(
-            ["launchctl", "list", plist_name], capture_output=True, text=True
-        )
+        result = subprocess.run(["launchctl", "list", plist_name], capture_output=True, text=True)
         if result.returncode == 0:
             ch.success("Service is running")
             print(result.stdout)
@@ -930,8 +912,7 @@ def telegram_start(
             if sys.platform == "win32":
                 subprocess.Popen(
                     cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                    | subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -1037,17 +1018,13 @@ def telegram_setup():
     ch.console.print("  ALLOWED_TELEGRAM_USERS - Optional. Comma-separated user IDs")
     ch.console.print("  NAVIG_AI_MODEL         - Optional. Default: openrouter")
     ch.console.print("  TYPING_MODE            - Optional. instant/message/never")
-    ch.console.print(
-        "  NAVIG_GATEWAY_URL      - Optional. Gateway for session persistence"
-    )
+    ch.console.print("  NAVIG_GATEWAY_URL      - Optional. Gateway for session persistence")
 
 
 @agent_app.command("remediation")
 def agent_remediation(
     action: str | None = typer.Argument(None, help="Action: list, status, clear"),
-    action_id: str | None = typer.Option(
-        None, "--id", help="Action ID to check status"
-    ),
+    action_id: str | None = typer.Option(None, "--id", help="Action ID to check status"),
 ):
     """
     View and manage automatic remediation actions.
@@ -1091,9 +1068,7 @@ def agent_remediation(
                 )
                 ch.console.print(f"    ID: {act['id']}")
                 ch.console.print(f"    Type: {act['type']}")
-                ch.console.print(
-                    f"    Attempts: {act['attempts']}/{act['max_attempts']}"
-                )
+                ch.console.print(f"    Attempts: {act['attempts']}/{act['max_attempts']}")
                 if act.get("error"):
                     ch.console.print(f"    Error: {act['error']}")
                 ch.console.print()
@@ -1111,9 +1086,7 @@ def agent_remediation(
             ch.console.print(f"  Type: {status['type']}")
             ch.console.print(f"  Status: {status['status']}")
             ch.console.print(f"  Reason: {status['reason']}")
-            ch.console.print(
-                f"  Attempts: {status['attempts']}/{status['max_attempts']}"
-            )
+            ch.console.print(f"  Attempts: {status['attempts']}/{status['max_attempts']}")
             ch.console.print(f"  Timestamp: {status['timestamp']}")
 
             if status.get("error"):
@@ -1131,9 +1104,7 @@ def agent_remediation(
             ch.info("Valid actions: list, status, clear")
 
     except ImportError as _exc:
-        ch.error(
-            "Remediation engine not available. Make sure agent components are installed."
-        )
+        ch.error("Remediation engine not available. Make sure agent components are installed.")
         raise typer.Exit(1) from _exc
     except Exception as e:
         ch.error(f"Failed to access remediation engine: {e}")
@@ -1221,14 +1192,10 @@ def agent_learn(
             return
 
         # Display findings
-        ch.warning(
-            f"Found {sum(error_counts.values())} errors across {len(error_counts)} patterns"
-        )
+        ch.warning(f"Found {sum(error_counts.values())} errors across {len(error_counts)} patterns")
         ch.console.print()
 
-        for pattern_name, count in sorted(
-            error_counts.items(), key=lambda x: x[1], reverse=True
-        ):
+        for pattern_name, count in sorted(error_counts.items(), key=lambda x: x[1], reverse=True):
             pattern_display = pattern_name.replace("_", " ").title()
             ch.console.print(f"  [red]●[/red] {pattern_display}: {count} occurrences")
 
@@ -1272,9 +1239,7 @@ def agent_learn(
         if error_counts.get("component_error", 0) > 5:
             ch.console.print("  • Components may need restarting or reconfiguration")
         if error_counts.get("resource_exhausted", 0) > 0:
-            ch.console.print(
-                "  • [red]Critical:[/red] Check system resources (memory, disk)"
-            )
+            ch.console.print("  • [red]Critical:[/red] Check system resources (memory, disk)")
 
     except Exception as e:
         ch.error(f"Learning analysis failed: {e}")
@@ -1284,9 +1249,7 @@ def agent_learn(
 @agent_app.command("service")
 def agent_service(  # noqa: F811
     action: str = typer.Argument(..., help="Action: install, uninstall, status"),
-    start: bool = typer.Option(
-        True, "--start/--no-start", help="Start service after install"
-    ),
+    start: bool = typer.Option(True, "--start/--no-start", help="Start service after install"),
 ):
     """
     Manage NAVIG agent as a system service.
@@ -1344,9 +1307,7 @@ def agent_service(  # noqa: F811
             raise typer.Exit(1)
 
     except ImportError as _exc:
-        ch.error(
-            "Service management not available. Make sure agent components are installed."
-        )
+        ch.error("Service management not available. Make sure agent components are installed.")
         raise typer.Exit(1) from _exc
     except Exception as e:
         ch.error(f"Service operation failed: {e}")
@@ -1357,9 +1318,7 @@ def agent_service(  # noqa: F811
 def agent_goal(
     action: str = typer.Argument(..., help="Action: add, list, status, cancel"),
     goal_id: str | None = typer.Option(None, "--id", help="Goal ID for status/cancel"),
-    description: str | None = typer.Option(
-        None, "--desc", help="Goal description for add"
-    ),
+    description: str | None = typer.Option(None, "--desc", help="Goal description for add"),
 ):
     """
     Autonomous goal planning and execution tracking.
@@ -1390,9 +1349,7 @@ def agent_goal(
             ch.console.print(f"  ID: {goal_id}")
             ch.console.print()
             ch.info("The agent will decompose this goal into subtasks")
-            ch.console.print(
-                "Check progress with: navig agent goal status --id " + goal_id
-            )
+            ch.console.print("Check progress with: navig agent goal status --id " + goal_id)
 
         elif action == "list":
             goals = planner.list_goals()
@@ -1400,9 +1357,7 @@ def agent_goal(
             if not goals:
                 ch.info("No goals found")
                 ch.console.print()
-                ch.console.print(
-                    'Add a goal with: navig agent goal add --desc "description"'
-                )
+                ch.console.print('Add a goal with: navig agent goal add --desc "description"')
                 return
 
             ch.info(f"Goals ({len(goals)})")
@@ -1427,9 +1382,7 @@ def agent_goal(
                 ch.console.print(f"    ID: {goal.id}")
                 ch.console.print(f"    Progress: {goal.progress * 100:.0f}%")
                 ch.console.print(f"    Subtasks: {len(goal.subtasks)}")
-                ch.console.print(
-                    f"    Created: {goal.created_at.strftime('%Y-%m-%d %H:%M')}"
-                )
+                ch.console.print(f"    Created: {goal.created_at.strftime('%Y-%m-%d %H:%M')}")
                 ch.console.print()
 
         elif action == "status":
@@ -1450,13 +1403,9 @@ def agent_goal(
             ch.console.print(f"  Created: {goal.created_at.strftime('%Y-%m-%d %H:%M')}")
 
             if goal.started_at:
-                ch.console.print(
-                    f"  Started: {goal.started_at.strftime('%Y-%m-%d %H:%M')}"
-                )
+                ch.console.print(f"  Started: {goal.started_at.strftime('%Y-%m-%d %H:%M')}")
             if goal.completed_at:
-                ch.console.print(
-                    f"  Completed: {goal.completed_at.strftime('%Y-%m-%d %H:%M')}"
-                )
+                ch.console.print(f"  Completed: {goal.completed_at.strftime('%Y-%m-%d %H:%M')}")
 
             if goal.subtasks:
                 ch.console.print()
@@ -1474,9 +1423,7 @@ def agent_goal(
                     if st.command:
                         ch.console.print(f"       Command: {st.command}")
                     if st.dependencies:
-                        ch.console.print(
-                            f"       Depends on: {', '.join(st.dependencies)}"
-                        )
+                        ch.console.print(f"       Depends on: {', '.join(st.dependencies)}")
                     if st.error:
                         ch.console.print(f"       [red]Error: {st.error}[/red]")
 
@@ -1497,9 +1444,7 @@ def agent_goal(
             raise typer.Exit(1)
 
     except ImportError as _exc:
-        ch.error(
-            "Goal planning not available. Make sure agent components are installed."
-        )
+        ch.error("Goal planning not available. Make sure agent components are installed.")
         raise typer.Exit(1) from _exc
     except Exception as e:
         ch.error(f"Goal operation failed: {e}")
@@ -1508,9 +1453,7 @@ def agent_goal(
 
 @agent_app.command("soul")
 def agent_soul(
-    action: str = typer.Argument(
-        "show", help="Action: show, edit, create, reload, path"
-    ),
+    action: str = typer.Argument("show", help="Action: show, edit, create, reload, path"),
 ):
     """
     Manage agent personality via SOUL.md.

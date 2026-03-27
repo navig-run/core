@@ -164,9 +164,7 @@ def run_settings(
             tbl.add_row("Value", f"[white]{_mask(key, current)}[/white]")
             tbl.add_row("Source", _badge(src))
             tbl.add_row("Default", f"[dim]{_mask(key, default)}[/dim]")
-            console.print(
-                Panel(tbl, title="[bold]Setting[/bold]", border_style="#2271D0")
-            )
+            console.print(Panel(tbl, title="[bold]Setting[/bold]", border_style="#2271D0"))
         else:
             print(f"{key} = {current}  [{src}]  (default: {default})")
         return
@@ -207,18 +205,14 @@ def _display_rich(
                 f"[dim]{path}[/dim]",
                 status,
             )
-        console.print(
-            Panel(src_tbl, title="[bold]Settings Layers[/bold]", border_style="#2271D0")
-        )
+        console.print(Panel(src_tbl, title="[bold]Settings Layers[/bold]", border_style="#2271D0"))
 
     # Group keys
     grouped: dict[str, list[tuple[str, object, str]]] = {}
     for key, val in sorted(settings.items()):
         group = _group_for(key)
         grouped.setdefault(group, [])
-        src = (
-            _source_layer_for(key, resolver) if val != defaults.get(key) else "defaults"
-        )
+        src = _source_layer_for(key, resolver) if val != defaults.get(key) else "defaults"
         grouped[group].append((key, val, src))
 
     for prefix in _GROUPS:
@@ -295,9 +289,7 @@ def _reset_key(key: str, layer: str, resolver: SettingsResolver) -> None:  # typ
         flat = _flatten(raw)
         flat.pop(key, None)
         nested = _unflatten(flat)
-        path.write_text(
-            json.dumps(nested, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        path.write_text(json.dumps(nested, indent=2, ensure_ascii=False), encoding="utf-8")
         resolver._cache = None  # noqa: SLF001
     except Exception:  # noqa: BLE001
         pass

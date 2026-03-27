@@ -44,9 +44,7 @@ def _get_global_limiter() -> RateLimiter:
     if _global_limiter is None:
         from navig.config import get_config_manager
 
-        rl_cfg = (
-            get_config_manager().global_config.get("gateway", {}).get("rate_limit", {})
-        )
+        rl_cfg = get_config_manager().global_config.get("gateway", {}).get("rate_limit", {})
         _global_limiter = RateLimiter(
             max_requests=rl_cfg.get("max_requests_per_minute", 20),
             window_minutes=rl_cfg.get("window_minutes", 1),

@@ -167,9 +167,7 @@ def _junction_alive(target: Path) -> bool:
 
 @mount_app.command("add")
 def cmd_add(
-    label: str = typer.Argument(
-        ..., help="Short name for this mount (e.g. 'projects')"
-    ),
+    label: str = typer.Argument(..., help="Short name for this mount (e.g. 'projects')"),
     source: str = typer.Argument(..., help="Source directory to expose"),
     target: str | None = typer.Argument(
         None, help="Junction target path (default: %USERPROFILE%\\mnt\\<label>)"
@@ -214,13 +212,9 @@ def cmd_add(
             typer.secho(f"Failed to create junction: {err}", fg=typer.colors.RED)
             raise typer.Exit(1)
         entry["alive"] = True
-        typer.secho(
-            f"✓ Junction created: {target_path} → {source_path}", fg=typer.colors.GREEN
-        )
+        typer.secho(f"✓ Junction created: {target_path} → {source_path}", fg=typer.colors.GREEN)
     else:
-        typer.secho(
-            f"✓ Registered (no junction created): {label}", fg=typer.colors.YELLOW
-        )
+        typer.secho(f"✓ Registered (no junction created): {label}", fg=typer.colors.YELLOW)
 
     drives[label] = entry
     _save_registry(data)
@@ -281,9 +275,7 @@ def cmd_remove(
     if not no_delete:
         err = _remove_junction(target_path)
         if err:
-            typer.secho(
-                f"Warning: could not remove junction: {err}", fg=typer.colors.YELLOW
-            )
+            typer.secho(f"Warning: could not remove junction: {err}", fg=typer.colors.YELLOW)
         else:
             typer.secho(f"✓ Junction removed: {target_path}", fg=typer.colors.GREEN)
 
@@ -330,9 +322,7 @@ def cmd_verify(
         typer.secho(f"  {icon} {r['label']}: {r['target']}", fg=color)
 
     if dead:
-        typer.secho(
-            f"\n{len(dead)} dead junction(s): {', '.join(dead)}", fg=typer.colors.YELLOW
-        )
+        typer.secho(f"\n{len(dead)} dead junction(s): {', '.join(dead)}", fg=typer.colors.YELLOW)
     else:
         typer.secho(f"\nAll {len(results)} junction(s) alive.", fg=typer.colors.GREEN)
 

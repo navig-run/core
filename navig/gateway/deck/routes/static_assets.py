@@ -21,9 +21,7 @@ def _find_deck_static_dir(override: str | None = None) -> Path | None:
     candidates = [
         Path(__file__).parent.parent.parent.parent.parent / "deck-static",
         Path.home() / "navig-core" / "deck-static",
-        Path(__file__).parent.parent.parent.parent.parent.parent
-        / "navig-deck"
-        / "dist",
+        Path(__file__).parent.parent.parent.parent.parent.parent / "navig-deck" / "dist",
     ]
     for p in candidates:
         if p.is_dir() and (p / "index.html").exists():
@@ -34,7 +32,5 @@ def _find_deck_static_dir(override: str | None = None) -> Path | None:
 async def handle_deck_index(request: "web.Request") -> "web.Response":
     static_dir = _find_deck_static_dir()
     if not static_dir:
-        return web.Response(
-            text="Deck not built. Run: cd navig-deck && npm run build", status=404
-        )
+        return web.Response(text="Deck not built. Run: cd navig-deck && npm run build", status=404)
     return web.FileResponse(static_dir / "index.html")

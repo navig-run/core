@@ -115,9 +115,7 @@ class TrustScore:
         total = len(receipts)
         success = sum(1 for r in receipts if r.outcome == ReceiptOutcome.SUCCEEDED)
         failures = sum(
-            1
-            for r in receipts
-            if r.outcome in (ReceiptOutcome.FAILED, ReceiptOutcome.TIMED_OUT)
+            1 for r in receipts if r.outcome in (ReceiptOutcome.FAILED, ReceiptOutcome.TIMED_OUT)
         )
         cancels = sum(1 for r in receipts if r.outcome == ReceiptOutcome.CANCELLED)
 

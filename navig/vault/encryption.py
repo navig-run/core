@@ -128,9 +128,7 @@ class VaultEncryption:
             import keyring
 
             # Try to get existing key
-            stored_key = keyring.get_password(
-                self.KEYRING_SERVICE, self.KEYRING_USERNAME
-            )
+            stored_key = keyring.get_password(self.KEYRING_SERVICE, self.KEYRING_USERNAME)
             if stored_key:
                 # The stored key is already a valid Fernet key (base64-encoded string)
                 # Just convert it to bytes

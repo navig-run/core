@@ -49,9 +49,7 @@ def _ensure_dirs() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _make_logger(
-    name: str, log_file: Path, level: int = logging.INFO
-) -> logging.Logger:
+def _make_logger(name: str, log_file: Path, level: int = logging.INFO) -> logging.Logger:
     """Create a rotating-file logger."""
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -95,9 +93,7 @@ class ChildProcess:
         self.env_extra = env_extra or {}
         self.cwd = cwd
         self.enabled = enabled
-        self.critical = (
-            critical  # supervisor exits if a critical child fails permanently
-        )
+        self.critical = critical  # supervisor exits if a critical child fails permanently
 
         self.process: subprocess.Popen | None = None
         self.restart_count = 0
@@ -189,9 +185,7 @@ class ChildProcess:
             self.last_exit_code = rc
         return rc
 
-    def drain_output(
-        self, logger: logging.Logger, child_logger: logging.Logger
-    ) -> None:
+    def drain_output(self, logger: logging.Logger, child_logger: logging.Logger) -> None:
         """No-op — child output goes directly to log files now."""
         pass
 
@@ -244,9 +238,7 @@ class NavigDaemon:
     def __init__(self, *, health_port: int = 0):
         _ensure_dirs()
         self.logger = _make_logger("navig.daemon", LOG_DIR / "daemon.log")
-        self.child_logger = _make_logger(
-            "navig.daemon.children", LOG_DIR / "children.log"
-        )
+        self.child_logger = _make_logger("navig.daemon.children", LOG_DIR / "children.log")
         self.children: list[ChildProcess] = []
         self._running = False
         self._health_port = health_port
@@ -444,9 +436,7 @@ class NavigDaemon:
             await writer.drain()
             writer.close()
 
-        self._health_server = await asyncio.start_server(
-            handler, "127.0.0.1", self._health_port
-        )
+        self._health_server = await asyncio.start_server(handler, "127.0.0.1", self._health_port)
         self.logger.info("Health-check listening on 127.0.0.1:%d", self._health_port)
 
     # -- main loop ---------------------------------------------------------
@@ -466,9 +456,7 @@ class NavigDaemon:
                 )
                 return
             else:
-                self.logger.warning(
-                    "Stale PID file (pid=%s) — removing and starting fresh", pid
-                )
+                self.logger.warning("Stale PID file (pid=%s) — removing and starting fresh", pid)
                 self._remove_pid()
 
         self._running = True
@@ -569,9 +557,7 @@ class NavigDaemon:
                     return True
             # Force kill
             if sys.platform == "win32":
-                subprocess.run(
-                    ["taskkill", "/F", "/PID", str(pid), "/T"], capture_output=True
-                )
+                subprocess.run(["taskkill", "/F", "/PID", str(pid), "/T"], capture_output=True)
             else:
                 os.kill(pid, signal.SIGKILL)
             # Clean up PID file

@@ -117,9 +117,7 @@ class TunnelManager:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
 
-    def get_tunnel_status(
-        self, server_name: str | None = None
-    ) -> dict[str, Any] | None:
+    def get_tunnel_status(self, server_name: str | None = None) -> dict[str, Any] | None:
         """
         Get tunnel status for a server.
 
@@ -165,9 +163,7 @@ class TunnelManager:
         if server_name is None:
             server_name = self.config.get_active_server()
             if server_name is None:
-                raise ValueError(
-                    "No active server. Use 'navig server use <name>' first."
-                )
+                raise ValueError("No active server. Use 'navig server use <name>' first.")
 
         # Check if tunnel already exists
         existing_tunnel = self.get_tunnel_status(server_name)
@@ -189,9 +185,7 @@ class TunnelManager:
                 local_port = preferred_port
             except OSError:
                 # Port conflict. Shifting to stealth mode.
-                port_range = self.config.global_config.get(
-                    "tunnel_port_range", [3307, 3399]
-                )
+                port_range = self.config.global_config.get("tunnel_port_range", [3307, 3399])
                 local_port = self._find_available_port(port_range[0], port_range[1])
 
         # Build SSH tunnel command
@@ -261,9 +255,7 @@ class TunnelManager:
             tunnels[server_name] = tunnel_info
             self._save_tunnels(tunnels)
 
-            self._log(
-                f"[SUCCESS] Tunnel established: {server_name} -> 127.0.0.1:{local_port}"
-            )
+            self._log(f"[SUCCESS] Tunnel established: {server_name} -> 127.0.0.1:{local_port}")
 
             return tunnel_info
 
@@ -381,9 +373,7 @@ class TunnelManager:
 
         if len(active_tunnels) != len(tunnels):
             self._save_tunnels(active_tunnels)
-            self._log(
-                f"[INFO] Cleaned up {len(tunnels) - len(active_tunnels)} stale tunnel(s)"
-            )
+            self._log(f"[INFO] Cleaned up {len(tunnels) - len(active_tunnels)} stale tunnel(s)")
 
     @contextmanager
     def auto_tunnel(self, server_name: str | None = None, cleanup: bool = False):
@@ -423,9 +413,7 @@ class TunnelManager:
                 try:
                     self.stop_tunnel(server_name)
                 except Exception as e:
-                    self._log(
-                        f"[WARNING] Failed to cleanup tunnel in context manager: {e}"
-                    )
+                    self._log(f"[WARNING] Failed to cleanup tunnel in context manager: {e}")
 
     def check_tunnel_health(self, server_name: str | None = None) -> dict[str, Any]:
         """
@@ -496,9 +484,7 @@ class TunnelManager:
         if health["is_healthy"]:
             return {"recovered": False, "message": "Tunnel is already healthy"}
 
-        self._log(
-            f"[INFO] Recovering unhealthy tunnel for {server_name}: {health['issues']}"
-        )
+        self._log(f"[INFO] Recovering unhealthy tunnel for {server_name}: {health['issues']}")
 
         # Force stop (cleanup zombie processes)
         try:

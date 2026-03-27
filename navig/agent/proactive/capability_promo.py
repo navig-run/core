@@ -210,9 +210,7 @@ class CapabilityPromoter:
                 msg = self._build_promotion_message(feature)
                 self._promotion_history.append(feature.key)
                 if len(self._promotion_history) > self._max_history:
-                    self._promotion_history = self._promotion_history[
-                        -self._max_history :
-                    ]
+                    self._promotion_history = self._promotion_history[-self._max_history :]
                 return msg, feature.key
 
         # All top candidates were recently promoted — pick best anyway
@@ -220,9 +218,7 @@ class CapabilityPromoter:
         msg = self._build_promotion_message(feature)
         return msg, feature.key
 
-    def _score_candidates(
-        self, state: UserStateTracker
-    ) -> list[tuple[FeatureInfo, float]]:
+    def _score_candidates(self, state: UserStateTracker) -> list[tuple[FeatureInfo, float]]:
         """Score all features and return sorted candidates."""
         used_features = set(state.stats.features_used.keys())
         total_interactions = state.stats.total_messages

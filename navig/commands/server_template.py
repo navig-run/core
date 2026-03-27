@@ -19,15 +19,11 @@ def list_server_templates_cmd(options: dict[str, Any]):
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
     enabled_only = options.get("enabled_only", False)
-    templates = template_manager.list_server_templates(
-        server, enabled_only=enabled_only
-    )
+    templates = template_manager.list_server_templates(server, enabled_only=enabled_only)
 
     if not templates:
         if enabled_only:
@@ -78,14 +74,10 @@ def show_template_config_cmd(template_name: str, options: dict[str, Any]):
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
-    config = template_manager.get_template_config(
-        server, template_name, include_template=True
-    )
+    config = template_manager.get_template_config(server, template_name, include_template=True)
 
     if config is None:
         ch.error(
@@ -128,9 +120,7 @@ def show_template_config_cmd(template_name: str, options: dict[str, Any]):
 
     # Show commands count
     if config.get("commands"):
-        ch.info(
-            f"\n[bold cyan]Commands:[/bold cyan] {len(config['commands'])} available"
-        )
+        ch.info(f"\n[bold cyan]Commands:[/bold cyan] {len(config['commands'])} available")
 
 
 def enable_server_template_cmd(template_name: str, options: dict[str, Any]):
@@ -138,9 +128,7 @@ def enable_server_template_cmd(template_name: str, options: dict[str, Any]):
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
     if options.get("dry_run"):
@@ -157,9 +145,7 @@ def disable_server_template_cmd(template_name: str, options: dict[str, Any]):
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
     if options.get("dry_run"):
@@ -169,16 +155,12 @@ def disable_server_template_cmd(template_name: str, options: dict[str, Any]):
     template_manager.disable_template(server, template_name)
 
 
-def set_template_value_cmd(
-    template_name: str, key_path: str, value: str, options: dict[str, Any]
-):
+def set_template_value_cmd(template_name: str, key_path: str, value: str, options: dict[str, Any]):
     """Set a custom value for a server template configuration."""
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
     if options.get("dry_run"):
@@ -211,19 +193,13 @@ def sync_template_cmd(template_name: str, options: dict[str, Any]):
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
     preserve_custom = not options.get("force", False)
 
     if options.get("dry_run"):
-        action = (
-            "overwrite custom settings"
-            if not preserve_custom
-            else "preserve custom settings"
-        )
+        action = "overwrite custom settings" if not preserve_custom else "preserve custom settings"
         ch.dim(f"Would sync template '{template_name}' from template ({action})")
         return
 
@@ -251,23 +227,17 @@ def init_template_cmd(template_name: str, options: dict[str, Any]):
     server = options.get("server") or config_manager.get_active_server()
 
     if not server:
-        ch.error(
-            "No active server. Specify with --server or use 'navig server use <name>'"
-        )
+        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
         return
 
     enabled = options.get("enable", False)
 
     if options.get("dry_run"):
         status = "enabled" if enabled else "disabled"
-        ch.dim(
-            f"Would initialize template '{template_name}' for server '{server}' ({status})"
-        )
+        ch.dim(f"Would initialize template '{template_name}' for server '{server}' ({status})")
         return
 
-    success = template_manager.initialize_template_manually(
-        server, template_name, enabled=enabled
-    )
+    success = template_manager.initialize_template_manually(server, template_name, enabled=enabled)
 
     if success and options.get("verbose"):
         ch.dim(

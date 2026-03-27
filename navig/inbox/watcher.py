@@ -84,9 +84,7 @@ class _WatchfilesBackend:
 class _PollingBackend:
     """Fallback polling watcher when watchfiles is unavailable."""
 
-    def __init__(
-        self, dirs: list[Path], callback: FileCB, interval: float = 3.0
-    ) -> None:
+    def __init__(self, dirs: list[Path], callback: FileCB, interval: float = 3.0) -> None:
         self._dirs = dirs
         self._callback = callback
         self._interval = interval
@@ -108,9 +106,7 @@ class _PollingBackend:
                             logger.exception("Callback error for %s: %s", path, exc)
 
     def run(self) -> None:
-        logger.info(
-            "Inbox watcher started (polling, %.1fs) on: %s", self._interval, self._dirs
-        )
+        logger.info("Inbox watcher started (polling, %.1fs) on: %s", self._interval, self._dirs)
         # Initial scan — don't fire callbacks for pre-existing files
         for d in self._dirs:
             if not d.is_dir():
@@ -176,9 +172,7 @@ class InboxWatcher:
 
             self._backend = _WatchfilesBackend(self._dirs, self._callback)
         except ImportError:
-            self._backend = _PollingBackend(
-                self._dirs, self._callback, self._poll_interval
-            )
+            self._backend = _PollingBackend(self._dirs, self._callback, self._poll_interval)
 
         self._thread = threading.Thread(
             target=self._backend.run,

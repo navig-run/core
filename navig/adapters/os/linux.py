@@ -94,9 +94,7 @@ class LinuxAdapter(OSAdapter):
                 if len(parts) >= 2:
                     name = parts[0].rsplit(".", 1)[0]  # Remove arch suffix
                     packages.append(
-                        PackageInfo(
-                            name=name, version=parts[1], source=self.package_manager
-                        )
+                        PackageInfo(name=name, version=parts[1], source=self.package_manager)
                     )
 
         elif self.package_manager == "pacman":
@@ -104,9 +102,7 @@ class LinuxAdapter(OSAdapter):
             for line in output.strip().split("\n"):
                 parts = line.split()
                 if len(parts) >= 2:
-                    packages.append(
-                        PackageInfo(name=parts[0], version=parts[1], source="pacman")
-                    )
+                    packages.append(PackageInfo(name=parts[0], version=parts[1], source="pacman"))
 
         elif self.package_manager == "apk":
             # Format: package-name-version - description
@@ -114,9 +110,7 @@ class LinuxAdapter(OSAdapter):
                 match = re.match(r"^(\S+)-(\d[\d\.\-_a-zA-Z]*)\s", line)
                 if match:
                     packages.append(
-                        PackageInfo(
-                            name=match.group(1), version=match.group(2), source="apk"
-                        )
+                        PackageInfo(name=match.group(1), version=match.group(2), source="apk")
                     )
 
         return packages

@@ -25,9 +25,9 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
         try:
             q_stats = gateway.task_queue.get_stats()
             tasks_done = int(q_stats.get("status_counts", {}).get("completed", 0))
-            tasks_pending = int(
-                q_stats.get("status_counts", {}).get("queued", 0)
-            ) + int(q_stats.get("status_counts", {}).get("running", 0))
+            tasks_pending = int(q_stats.get("status_counts", {}).get("queued", 0)) + int(
+                q_stats.get("status_counts", {}).get("running", 0)
+            )
             task_status = "available"
         except Exception:
             task_status = "error"

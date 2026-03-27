@@ -1,9 +1,14 @@
-#Requires -Version 5.1
 # NAVIG Installer - Windows (PowerShell 5.1+)
 #
 # Usage:
 #   iwr -useb https://navig.run/install.ps1 | iex
 #   .\install.ps1 [-Version <ver>] [-Action install|uninstall|reinstall] [-Verbose]
+#
+
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Error "NAVIG requires PowerShell 5.1 or newer. You are running version $($PSVersionTable.PSVersion)."
+    exit 1
+}
 #
 # Environment:
 #   NAVIG_VERSION      Pin version (e.g. "2.4.14")

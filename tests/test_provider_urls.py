@@ -111,9 +111,7 @@ def _source_imports_prul(path: Path) -> bool:
     return False
 
 
-@pytest.mark.parametrize(
-    "consumer", _CONSUMER_FILES, ids=[p.name for p in _CONSUMER_FILES]
-)
+@pytest.mark.parametrize("consumer", _CONSUMER_FILES, ids=[p.name for p in _CONSUMER_FILES])
 def test_consumer_imports_provider_resource_urls(consumer):
     """Each consumer file must import PROVIDER_RESOURCE_URLS from navig.llm_router."""
     if not consumer.exists():

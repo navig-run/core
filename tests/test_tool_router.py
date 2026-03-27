@@ -254,9 +254,7 @@ class TestToolRegistry:
         reg = _fresh_registry()
         _register_echo(reg, "a")
         _register_echo(reg, "b")
-        reg.register(
-            ToolMeta(name="c", domain=ToolDomain.GENERAL, status=ToolStatus.DISABLED)
-        )
+        reg.register(ToolMeta(name="c", domain=ToolDomain.GENERAL, status=ToolStatus.DISABLED))
         summary = reg.get_status_summary()
         assert summary["total"] == 3
         assert summary["available"] == 2
@@ -337,9 +335,7 @@ class TestToolRouter:
         reg = _fresh_registry()
         _register_echo(reg)
         router = ToolRouter(registry=reg, safety_policy={"max_calls_per_turn": 2})
-        actions = [
-            ToolCallAction(tool="echo_tool", parameters={"i": i}) for i in range(5)
-        ]
+        actions = [ToolCallAction(tool="echo_tool", parameters={"i": i}) for i in range(5)]
         results = router.execute_multi(actions)
         assert len(results) == 3  # 2 executed + 1 denied
         assert results[0].success
@@ -513,9 +509,7 @@ class TestIntegration:
         _register_echo(reg)
         router = ToolRouter(registry=reg)
 
-        llm_text = (
-            '{"action": "tool_call", "tool": "echo_tool", "parameters": {"x": 42}}'
-        )
+        llm_text = '{"action": "tool_call", "tool": "echo_tool", "parameters": {"x": 42}}'
         action = parse_llm_action(llm_text)
         assert isinstance(action, ToolCallAction)
 

@@ -20,9 +20,7 @@ def speak_command(
         None, "--provider", "-p", help="TTS Provider (openai, elevenlabs, edge)"
     ),
     voice: str = typer.Option(None, "--voice", "-v", help="Voice ID/Name"),
-    output: Path | None = typer.Option(
-        None, "--output", "-o", help="Output file path (.mp3)"
-    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path (.mp3)"),
     play: bool = typer.Option(True, "--play/--no-play", help="Play audio immediately"),
 ):
     """Synthesize speech from text."""
@@ -43,9 +41,7 @@ def speak_command(
 
         ch.info(f"Synthesizing: '{text}'...")
 
-        result = await tts.synthesize(
-            text, provider=prov_enum, voice=voice, output_path=output
-        )
+        result = await tts.synthesize(text, provider=prov_enum, voice=voice, output_path=output)
 
         if result.success:
             ch.success(f"Audio saved to: {result.audio_path}")
@@ -106,9 +102,7 @@ def transcribe_command(
 
 @voice_app.command("list-voices")
 def list_voices(
-    provider: str = typer.Argument(
-        "openai", help="TTS Provider (openai, elevenlabs, edge)"
-    ),
+    provider: str = typer.Argument("openai", help="TTS Provider (openai, elevenlabs, edge)"),
 ):
     """List available voices for a provider."""
     import asyncio

@@ -182,9 +182,7 @@ def monitor_resources(options: dict[str, Any]) -> None:
         console.print(json.dumps(output, indent=2))
     else:
         # Create metrics table
-        table = Table(
-            title="Resource Usage", show_header=True, header_style="bold cyan"
-        )
+        table = Table(title="Resource Usage", show_header=True, header_style="bold cyan")
         table.add_column("Metric", style="cyan")
         table.add_column("Value", style="white")
         table.add_column("Status", style="green")
@@ -337,9 +335,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
         console.print(table)
 
         if alerts:
-            console.print(
-                f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]"
-            )
+            console.print(f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]")
             for alert in alerts:
                 console.print(f"  [red]•[/red] {alert}")
         else:
@@ -448,9 +444,7 @@ def monitor_services(options: dict[str, Any]) -> None:
         }
         console.print(json.dumps(output, indent=2))
     else:
-        table = Table(
-            title="Service Status", show_header=True, header_style="bold cyan"
-        )
+        table = Table(title="Service Status", show_header=True, header_style="bold cyan")
         table.add_column("Service", style="cyan")
         table.add_column("Status", justify="center")
         table.add_column("Health", justify="center")
@@ -509,9 +503,7 @@ def monitor_network(options: dict[str, Any]) -> None:
     remote = RemoteOperations(server_config)
 
     if options.get("dry_run"):
-        console.print(
-            f"[yellow]DRY RUN:[/yellow] Would check network stats on {app_name}"
-        )
+        console.print(f"[yellow]DRY RUN:[/yellow] Would check network stats on {app_name}")
         return
 
     console.print(
@@ -551,9 +543,7 @@ def monitor_network(options: dict[str, Any]) -> None:
         if _net_sections.get("CONN"):
             metrics["connection_summary"] = "\n".join(_net_sections["CONN"]).strip()
         try:
-            metrics["listening_ports"] = int(
-                (_net_sections.get("LISTEN", ["0"])[0] or "0").strip()
-            )
+            metrics["listening_ports"] = int((_net_sections.get("LISTEN", ["0"])[0] or "0").strip())
         except ValueError:
             pass  # malformed value; skip
         try:
@@ -576,9 +566,7 @@ def monitor_network(options: dict[str, Any]) -> None:
     else:
         # Connection summary panel
         conn_text = metrics.get("connection_summary", "No data")
-        panel = Panel(
-            conn_text, title="[cyan]Connection Summary[/cyan]", border_style="cyan"
-        )
+        panel = Panel(conn_text, title="[cyan]Connection Summary[/cyan]", border_style="cyan")
         console.print(panel)
 
         # Stats table
@@ -587,9 +575,7 @@ def monitor_network(options: dict[str, Any]) -> None:
         table.add_column("Value", style="white", justify="right")
 
         table.add_row("Listening Ports", str(metrics.get("listening_ports", 0)))
-        table.add_row(
-            "Established Connections", str(metrics.get("established_connections", 0))
-        )
+        table.add_row("Established Connections", str(metrics.get("established_connections", 0)))
 
         if "interfaces" in metrics:
             table.add_row("Network Interfaces", ", ".join(metrics["interfaces"]))
@@ -724,9 +710,7 @@ def generate_report(options: dict[str, Any]) -> None:
         disk_result = remote.execute_command(disk_cmd, server_config)
         if disk_result.returncode == 0:
             for line in disk_result.stdout.strip().split("\n"):
-                match = re.match(
-                    r"(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)%\s+(\S+)", line
-                )
+                match = re.match(r"(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)%\s+(\S+)", line)
                 if match:
                     device, size, used, available, usage, mount = match.groups()
                     usage_int = int(usage)
@@ -757,9 +741,7 @@ def generate_report(options: dict[str, Any]) -> None:
             "fail2ban",
         ]
         for service in services:
-            status_cmd = (
-                f"systemctl is-active {service} 2>/dev/null || echo 'not-installed'"
-            )
+            status_cmd = f"systemctl is-active {service} 2>/dev/null || echo 'not-installed'"
             result = remote.execute_command(status_cmd, server_config)
             status = result.stdout.strip() if result.returncode == 0 else "unknown"
 
@@ -775,9 +757,7 @@ def generate_report(options: dict[str, Any]) -> None:
         estab_cmd = "ss -tn | grep ESTAB | wc -l"
         estab_result = remote.execute_command(estab_cmd, server_config)
         if estab_result.returncode == 0:
-            report["network"]["established_connections"] = int(
-                estab_result.stdout.strip()
-            )
+            report["network"]["established_connections"] = int(estab_result.stdout.strip())
 
         progress.update(task, advance=1)
 

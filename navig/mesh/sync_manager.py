@@ -100,9 +100,7 @@ class SyncManager:
         self._state = self._build_local_state()
         self._state_hash = self._hash_state(self._state)
         self._task = asyncio.create_task(self._loop(), name="sync_manager")
-        logger.info(
-            "[sync] SyncManager started (interval=%ds)", self._broadcast_interval_s
-        )
+        logger.info("[sync] SyncManager started (interval=%ds)", self._broadcast_interval_s)
 
     async def stop(self) -> None:
         """Stop the sync loop cleanly."""
@@ -218,14 +216,10 @@ class SyncManager:
 
             async with (
                 _aio.ClientSession() as session,
-                session.get(
-                    url, timeout=_aio.ClientTimeout(total=PULL_TIMEOUT_S)
-                ) as resp,
+                session.get(url, timeout=_aio.ClientTimeout(total=PULL_TIMEOUT_S)) as resp,
             ):
                 if resp.status != 200:
-                    logger.warning(
-                        "[sync] Pull failed (HTTP %d) from %s", resp.status, url
-                    )
+                    logger.warning("[sync] Pull failed (HTTP %d) from %s", resp.status, url)
                     return
                 data = await resp.json()
 

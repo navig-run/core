@@ -28,9 +28,7 @@ class TestBaseStore:
             PRAGMAS = {"cache_size": -4000}
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
 
         return DummyStore(tmp_path / "test.db")
 
@@ -124,24 +122,18 @@ class TestBaseStore:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
 
         class V2Store(BaseStore):
             SCHEMA_VERSION = 2
             migrated = False
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
 
             def _migrate(self, conn, from_v, to_v):
                 if from_v == 1 and to_v == 2:
-                    conn.execute(
-                        "ALTER TABLE items ADD COLUMN description TEXT DEFAULT ''"
-                    )
+                    conn.execute("ALTER TABLE items ADD COLUMN description TEXT DEFAULT ''")
                     V2Store.migrated = True
 
         db_path = tmp_path / "migrate.db"
@@ -227,8 +219,7 @@ class TestAuditStore:
     def test_batch_insert(self, tmp_path):
         store = self._make_store(tmp_path)
         events = [
-            {"action": f"test.batch.{i}", "actor": "agent", "status": "success"}
-            for i in range(100)
+            {"action": f"test.batch.{i}", "actor": "agent", "status": "success"} for i in range(100)
         ]
         count = store.log_events_batch(events)
         assert count == 100
@@ -389,9 +380,7 @@ class TestRuntimeStore:
         store = self._make_store(tmp_path)
         now = datetime.now(timezone.utc)
         past = now - timedelta(minutes=5)
-        rid = store.create_reminder(
-            user_id=1, chat_id=1, message="Call Bob", remind_at=past
-        )
+        rid = store.create_reminder(user_id=1, chat_id=1, message="Call Bob", remind_at=past)
         assert rid > 0
 
         due = store.get_due_reminders()
@@ -405,9 +394,7 @@ class TestRuntimeStore:
     def test_cancel_reminder(self, tmp_path):
         store = self._make_store(tmp_path)
         future = datetime.now(timezone.utc) + timedelta(hours=1)
-        rid = store.create_reminder(
-            user_id=1, chat_id=1, message="Later", remind_at=future
-        )
+        rid = store.create_reminder(user_id=1, chat_id=1, message="Later", remind_at=future)
         assert store.cancel_reminder(rid, user_id=1) is True
         assert store.cancel_reminder(rid, user_id=1) is False  # already deleted
         store.close()
@@ -550,9 +537,7 @@ class TestRuntimeStore:
             )
         """
         )
-        conn.execute(
-            "INSERT INTO notes (user_id, chat_id, text) VALUES (1, 1, 'legacy note')"
-        )
+        conn.execute("INSERT INTO notes (user_id, chat_id, text) VALUES (1, 1, 'legacy note')")
         conn.commit()
         conn.close()
 
@@ -631,9 +616,7 @@ class TestRuntimeStore:
 
         # Create legacy + marker
         conn = sqlite3.connect(str(legacy_db))
-        conn.execute(
-            "CREATE TABLE command_stats (command TEXT PRIMARY KEY, count INTEGER)"
-        )
+        conn.execute("CREATE TABLE command_stats (command TEXT PRIMARY KEY, count INTEGER)")
         conn.execute("INSERT INTO command_stats VALUES ('should_not_migrate', 99)")
         conn.commit()
         conn.close()

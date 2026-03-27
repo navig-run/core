@@ -87,13 +87,9 @@ def _get_cached(cache: dict[str, CacheEntry], key: str) -> Any | None:
     return None
 
 
-def _set_cached(
-    cache: dict[str, CacheEntry], key: str, data: Any, ttl_minutes: int = 15
-):
+def _set_cached(cache: dict[str, CacheEntry], key: str, data: Any, ttl_minutes: int = 15):
     """Set cached data with TTL."""
-    cache[key] = CacheEntry(
-        data=data, expires_at=datetime.now() + timedelta(minutes=ttl_minutes)
-    )
+    cache[key] = CacheEntry(data=data, expires_at=datetime.now() + timedelta(minutes=ttl_minutes))
 
 
 # =============================================================================
@@ -134,14 +130,8 @@ def html_to_markdown(html_content: str) -> dict[str, str | None]:
         Dict with 'text' (markdown) and 'title' (page title if found)
     """
     # Extract title
-    title_match = re.search(
-        r"<title[^>]*>([\s\S]*?)</title>", html_content, re.IGNORECASE
-    )
-    title = (
-        _normalize_whitespace(_strip_tags(title_match.group(1)))
-        if title_match
-        else None
-    )
+    title_match = re.search(r"<title[^>]*>([\s\S]*?)</title>", html_content, re.IGNORECASE)
+    title = _normalize_whitespace(_strip_tags(title_match.group(1))) if title_match else None
 
     text = html_content
 
@@ -173,9 +163,7 @@ def html_to_markdown(html_content: str) -> dict[str, str | None]:
         prefix = "#" * min(6, max(1, level))
         return f"\n{prefix} {body}\n"
 
-    text = re.sub(
-        r"<h([1-6])[^>]*>([\s\S]*?)</h\1>", convert_heading, text, flags=re.IGNORECASE
-    )
+    text = re.sub(r"<h([1-6])[^>]*>([\s\S]*?)</h\1>", convert_heading, text, flags=re.IGNORECASE)
 
     # Convert list items
     def convert_li(match):
@@ -185,9 +173,7 @@ def html_to_markdown(html_content: str) -> dict[str, str | None]:
     text = re.sub(r"<li[^>]*>([\s\S]*?)</li>", convert_li, text, flags=re.IGNORECASE)
 
     # Convert code blocks
-    text = re.sub(
-        r"<pre[^>]*>([\s\S]*?)</pre>", r"\n```\n\1\n```\n", text, flags=re.IGNORECASE
-    )
+    text = re.sub(r"<pre[^>]*>([\s\S]*?)</pre>", r"\n```\n\1\n```\n", text, flags=re.IGNORECASE)
     text = re.sub(r"<code[^>]*>([\s\S]*?)</code>", r"`\1`", text, flags=re.IGNORECASE)
 
     # Convert line breaks and block elements
@@ -335,9 +321,7 @@ def web_fetch(
             if extracted:
                 text = extracted
                 # Try to get title
-                title_match = re.search(
-                    r"<title[^>]*>([\s\S]*?)</title>", content, re.IGNORECASE
-                )
+                title_match = re.search(r"<title[^>]*>([\s\S]*?)</title>", content, re.IGNORECASE)
                 title = (
                     _normalize_whitespace(_strip_tags(title_match.group(1)))
                     if title_match
@@ -474,9 +458,7 @@ def _search_brave(
                 )
             )
 
-        return WebSearchResult(
-            success=True, results=results, query=query, provider="brave"
-        )
+        return WebSearchResult(success=True, results=results, query=query, provider="brave")
 
     except Exception as e:
         return WebSearchResult(
@@ -561,9 +543,7 @@ def _search_duckduckgo(
                 error="No results found. DuckDuckGo Instant Answer API is limited. Try Brave Search for better results.",
             )
 
-        return WebSearchResult(
-            success=True, results=results, query=query, provider="duckduckgo"
-        )
+        return WebSearchResult(success=True, results=results, query=query, provider="duckduckgo")
 
     except Exception as e:
         return WebSearchResult(

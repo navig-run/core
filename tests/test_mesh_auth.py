@@ -62,9 +62,7 @@ _SAMPLE_PAYLOAD = {
 
 def _make_registry(tmp_path: Path, suffix: str) -> NodeRegistry:
     with (
-        patch(
-            "navig.mesh.registry._derive_node_id", return_value=f"navig-test-{suffix}"
-        ),
+        patch("navig.mesh.registry._derive_node_id", return_value=f"navig-test-{suffix}"),
         patch("navig.mesh.registry.NodeRegistry._local_ip", return_value="127.0.0.1"),
         patch("navig.mesh.registry._measure_load", return_value=0.1),
         patch(
@@ -233,9 +231,7 @@ class TestMeshDiscoveryAuth(unittest.IsolatedAsyncioTestCase):
         self._tmpA.cleanup()
         self._tmpB.cleanup()
 
-    async def _deliver(
-        self, src: MeshDiscovery, dst: MeshDiscovery, ptype="hello"
-    ) -> None:
+    async def _deliver(self, src: MeshDiscovery, dst: MeshDiscovery, ptype="hello") -> None:
         packet = _build_packet(src._registry, ptype, seq=1, secret=src._secret)
         with patch.object(dst, "_send", new=AsyncMock()):
             await dst._handle_packet(packet, "127.0.0.1")

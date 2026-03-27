@@ -130,27 +130,21 @@ class TestSubscriptionFilter:
         # Must match ALL criteria
         assert (
             filt.matches(
-                _make_envelope(
-                    topic="agent.heartbeat", severity=Severity.WARNING, source="heart"
-                )
+                _make_envelope(topic="agent.heartbeat", severity=Severity.WARNING, source="heart")
             )
             is True
         )
         # Wrong severity
         assert (
             filt.matches(
-                _make_envelope(
-                    topic="agent.heartbeat", severity=Severity.INFO, source="heart"
-                )
+                _make_envelope(topic="agent.heartbeat", severity=Severity.INFO, source="heart")
             )
             is False
         )
         # Wrong source
         assert (
             filt.matches(
-                _make_envelope(
-                    topic="agent.heartbeat", severity=Severity.WARNING, source="eyes"
-                )
+                _make_envelope(topic="agent.heartbeat", severity=Severity.WARNING, source="eyes")
             )
             is False
         )
@@ -389,9 +383,9 @@ class TestNormalisation:
         from navig.agent.nervous_system import EventType
 
         for et in EventType:
-            assert (
-                et.name in _EVENT_TYPE_TOPIC_MAP
-            ), f"EventType.{et.name} missing from _EVENT_TYPE_TOPIC_MAP"
+            assert et.name in _EVENT_TYPE_TOPIC_MAP, (
+                f"EventType.{et.name} missing from _EVENT_TYPE_TOPIC_MAP"
+            )
 
 
 # ---------------------------------------------------------------------------

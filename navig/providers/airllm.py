@@ -86,11 +86,9 @@ class AirLLMConfig:
             max_vram_gb=float(os.environ.get("AIRLLM_MAX_VRAM_GB", "8")),
             compression=os.environ.get("AIRLLM_COMPRESSION"),
             layer_shards_path=os.environ.get("AIRLLM_LAYER_SHARDS_PATH"),
-            hf_token=os.environ.get("HF_TOKEN")
-            or os.environ.get("HUGGING_FACE_HUB_TOKEN"),
+            hf_token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"),
             prefetching=os.environ.get("AIRLLM_PREFETCHING", "true").lower() == "true",
-            delete_original=os.environ.get("AIRLLM_DELETE_ORIGINAL", "false").lower()
-            == "true",
+            delete_original=os.environ.get("AIRLLM_DELETE_ORIGINAL", "false").lower() == "true",
             max_length=int(os.environ.get("AIRLLM_MAX_LENGTH", "4096")),
             max_new_tokens=int(os.environ.get("AIRLLM_MAX_NEW_TOKENS", "2048")),
             device=os.environ.get("AIRLLM_DEVICE", "cuda"),
@@ -192,9 +190,7 @@ class AirLLMClient(BaseProviderClient):
             model_kwargs["compression"] = self.airllm_config.compression
 
         if self.airllm_config.layer_shards_path:
-            model_kwargs["layer_shards_saving_path"] = (
-                self.airllm_config.layer_shards_path
-            )
+            model_kwargs["layer_shards_saving_path"] = self.airllm_config.layer_shards_path
 
         if self.airllm_config.hf_token:
             model_kwargs["hf_token"] = self.airllm_config.hf_token
@@ -344,9 +340,7 @@ class AirLLMClient(BaseProviderClient):
 
             # Calculate token counts
             input_token_count = input_ids.shape[-1]
-            output_token_count = (
-                generation_output.sequences[0].shape[-1] - input_token_count
-            )
+            output_token_count = generation_output.sequences[0].shape[-1] - input_token_count
 
             return response_text, {
                 "prompt_tokens": input_token_count,

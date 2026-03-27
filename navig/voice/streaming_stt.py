@@ -183,9 +183,7 @@ class StreamingSTT:
             api_key = self._get_deepgram_key()
             if api_key:
                 try:
-                    async for result in self._stream_deepgram(
-                        audio_queue, api_key, buffered
-                    ):
+                    async for result in self._stream_deepgram(audio_queue, api_key, buffered):
                         yield result
                     return  # success — no fallback needed
                 except Exception as exc:
@@ -396,9 +394,7 @@ class StreamingSTT:
                 logger.error("STT fallback failed: %s", result.error)
                 return None
 
-            latency_ms = (
-                time.monotonic() - (self._start_time or time.monotonic())
-            ) * 1000
+            latency_ms = (time.monotonic() - (self._start_time or time.monotonic())) * 1000
             return StreamingSTTResult(
                 transcript=result.text or "",
                 is_final=True,

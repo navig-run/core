@@ -455,9 +455,7 @@ def check_docker() -> dict[str, Any]:
     }
 
     try:
-        proc = _sp.run(
-            ["docker", "--version"], capture_output=True, text=True, timeout=5
-        )
+        proc = _sp.run(["docker", "--version"], capture_output=True, text=True, timeout=5)
         if proc.returncode == 0:
             result["available"] = True
             # "Docker version 29.2.1, build a5c7197"

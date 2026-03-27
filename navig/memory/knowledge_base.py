@@ -70,17 +70,11 @@ class KnowledgeEntry:
             key=data["key"],
             content=data["content"],
             summary=data.get("summary"),
-            tags=(
-                json.loads(data["tags"])
-                if isinstance(data["tags"], str)
-                else data["tags"]
-            ),
+            tags=(json.loads(data["tags"]) if isinstance(data["tags"], str) else data["tags"]),
             source=data.get("source", ""),
             created_at=datetime.fromisoformat(data["created_at"]),
             expires_at=(
-                datetime.fromisoformat(data["expires_at"])
-                if data.get("expires_at")
-                else None
+                datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
             ),
             metadata=(
                 json.loads(data["metadata"])

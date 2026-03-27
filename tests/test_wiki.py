@@ -248,9 +248,7 @@ class TestWikiSearch:
         """Test case-insensitive search."""
         init_wiki(temp_wiki)
 
-        (temp_wiki / "knowledge" / "concepts" / "test.md").write_text(
-            "# API Documentation"
-        )
+        (temp_wiki / "knowledge" / "concepts" / "test.md").write_text("# API Documentation")
 
         results = search_wiki(temp_wiki, "api")
         assert len(results) == 1

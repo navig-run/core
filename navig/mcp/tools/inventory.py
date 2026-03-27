@@ -90,9 +90,7 @@ def _tool_list_hosts(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
                 "user": config.get("user"),
                 "port": config.get("port", 22),
                 "key": config.get("key"),
-                "apps": (
-                    list(config.get("apps", {}).keys()) if config.get("apps") else []
-                ),
+                "apps": (list(config.get("apps", {}).keys()) if config.get("apps") else []),
             }
         )
 

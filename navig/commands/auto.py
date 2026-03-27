@@ -68,9 +68,7 @@ def auto_status():
 def auto_click(
     x: int = typer.Argument(..., help="X coordinate"),
     y: int = typer.Argument(..., help="Y coordinate"),
-    button: str = typer.Option(
-        "left", "--button", "-b", help="Mouse button (left/right/middle)"
-    ),
+    button: str = typer.Option("left", "--button", "-b", help="Mouse button (left/right/middle)"),
 ):
     """Click at screen coordinates."""
     adapter = _get_adapter()
@@ -89,9 +87,7 @@ def auto_click(
 @auto_app.command("type")
 def auto_type(
     text: str = typer.Argument(..., help="Text to type"),
-    delay: int = typer.Option(
-        50, "--delay", "-d", help="Delay between keystrokes (ms)"
-    ),
+    delay: int = typer.Option(50, "--delay", "-d", help="Delay between keystrokes (ms)"),
 ):
     """Type text."""
     adapter = _get_adapter()
@@ -177,9 +173,7 @@ def auto_snap(
 
 @auto_app.command("clipboard")
 def auto_clipboard(
-    text: str | None = typer.Argument(
-        None, help="Text to copy (if omitted, prints clipboard)"
-    ),
+    text: str | None = typer.Argument(None, help="Text to copy (if omitted, prints clipboard)"),
 ):
     """Get or set clipboard content."""
     adapter = _get_adapter()

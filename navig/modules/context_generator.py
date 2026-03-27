@@ -29,9 +29,7 @@ class ContextGenerator:
         self.ai_context_dir = assistant.ai_context_dir
         self.config = assistant.assistant_config
 
-    def generate_context_summary(
-        self, config_manager, remote_ops=None
-    ) -> dict[str, Any]:
+    def generate_context_summary(self, config_manager, remote_ops=None) -> dict[str, Any]:
         """
         Generate comprehensive context summary for AI assistants.
 
@@ -54,9 +52,7 @@ class ContextGenerator:
             server_name = config_manager.get_active_server()
             if server_name:
                 server_config = config_manager.load_server_config(server_name)
-                context["server"] = self._build_server_context(
-                    server_config, remote_ops
-                )
+                context["server"] = self._build_server_context(server_config, remote_ops)
         except Exception as e:
             context["server"] = {"error": str(e)}
 
@@ -66,9 +62,7 @@ class ContextGenerator:
 
         # Resource usage
         if remote_ops and server_config:
-            context["resource_usage"] = self._get_resource_usage(
-                remote_ops, server_config
-            )
+            context["resource_usage"] = self._get_resource_usage(remote_ops, server_config)
 
         # Recent operations
         context["recent_operations"] = self._get_recent_operations(limit=20)
@@ -139,9 +133,7 @@ class ContextGenerator:
 
         for service in services:
             try:
-                result = remote_ops.execute_command(
-                    f"systemctl is-active {service}", server_config
-                )
+                result = remote_ops.execute_command(f"systemctl is-active {service}", server_config)
                 if result.returncode == 0 and result.stdout.strip() == "active":
                     # Get uptime
                     uptime_result = remote_ops.execute_command(
@@ -165,9 +157,7 @@ class ContextGenerator:
 
         return services_status
 
-    def _get_resource_usage(
-        self, remote_ops, server_config: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _get_resource_usage(self, remote_ops, server_config: dict[str, Any]) -> dict[str, Any]:
         """Get current resource usage."""
         try:
             # Use auto_detection module if available
@@ -214,8 +204,7 @@ class ContextGenerator:
             active = [
                 i
                 for i in issues
-                if i.get("status") == "active"
-                and datetime.fromisoformat(i["timestamp"]) >= cutoff
+                if i.get("status") == "active" and datetime.fromisoformat(i["timestamp"]) >= cutoff
             ]
 
             return active
@@ -239,9 +228,7 @@ class ContextGenerator:
         # Server info
         if "server" in context and "name" in context["server"]:
             server = context["server"]
-            lines.append(
-                f"Managing server: {server.get('name')} ({server.get('host')})"
-            )
+            lines.append(f"Managing server: {server.get('name')} ({server.get('host')})")
             if "os" in server:
                 lines.append(f"OS: {server['os']}")
 

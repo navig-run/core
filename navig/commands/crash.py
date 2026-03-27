@@ -14,9 +14,7 @@ console = Console()
 
 @app.command("export")
 def export_crash_report(
-    output: Path = typer.Option(
-        None, "--output", "-o", help="Path to save the crash report JSON"
-    ),
+    output: Path = typer.Option(None, "--output", "-o", help="Path to save the crash report JSON"),
     limit: int = typer.Option(
         1,
         "--limit",
@@ -50,9 +48,7 @@ def export_crash_report(
             # Print to stdout
             console.print(report_str)
             console.print("\n[dim]-- End of Crash Report --[/dim]")
-            console.print(
-                "[dim]Copy the above JSON to include in a GitHub issue.[/dim]"
-            )
+            console.print("[dim]Copy the above JSON to include in a GitHub issue.[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error exporting crash report:[/red] {e}")

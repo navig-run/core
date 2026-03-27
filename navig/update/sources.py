@@ -230,9 +230,7 @@ class LocalFileSource(_BaseSource):
 
             return Path(self._path).read_text(encoding="utf-8").strip().lstrip("v")
         except Exception as exc:
-            raise SourceError(
-                f"Cannot read version file '{self._path}': {exc}"
-            ) from exc
+            raise SourceError(f"Cannot read version file '{self._path}': {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -248,17 +246,13 @@ def build_source(cfg: dict[str, Any], channel: str = "stable") -> _BaseSource:
         return PyPISource(package=cfg.get("package", "navig"), channel=channel)
 
     if src_type == "github":
-        return GitHubSource(
-            repo=cfg.get("repo", "navig-os/navig-core"), token=cfg.get("token")
-        )
+        return GitHubSource(repo=cfg.get("repo", "navig-os/navig-core"), token=cfg.get("token"))
 
     if src_type == "git-repo":
         return GitRepoSource(repo_path=cfg.get("path", "."), remote=cfg.get("remote"))
 
     if src_type == "artifact-url":
-        return ArtifactURLSource(
-            url=cfg["url"], json_key=cfg.get("json_key", "version")
-        )
+        return ArtifactURLSource(url=cfg["url"], json_key=cfg.get("json_key", "version"))
 
     if src_type == "local-file":
         return LocalFileSource(path=cfg["path"])

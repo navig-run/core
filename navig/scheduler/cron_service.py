@@ -102,19 +102,9 @@ class CronJob:
             timeout_seconds=data.get("timeout_seconds", 300),
             retry_count=data.get("retry_count", 0),
             max_retries=data.get("max_retries", 3),
-            last_run=(
-                datetime.fromisoformat(data["last_run"])
-                if data.get("last_run")
-                else None
-            ),
-            next_run=(
-                datetime.fromisoformat(data["next_run"])
-                if data.get("next_run")
-                else None
-            ),
-            last_status=(
-                JobStatus(data["last_status"]) if data.get("last_status") else None
-            ),
+            last_run=(datetime.fromisoformat(data["last_run"]) if data.get("last_run") else None),
+            next_run=(datetime.fromisoformat(data["next_run"]) if data.get("next_run") else None),
+            last_status=(JobStatus(data["last_status"]) if data.get("last_status") else None),
             last_output=data.get("last_output"),
             created_at=(
                 datetime.fromisoformat(data["created_at"])

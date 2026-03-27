@@ -137,9 +137,7 @@ class FormatterPrefs:
     def from_json(cls, raw: str) -> FormatterPrefs:
         try:
             data = json.loads(raw)
-            return cls(
-                **{k: v for k, v in data.items() if k in cls.__dataclass_fields__}
-            )
+            return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
         except Exception:
             return cls()
 
@@ -297,9 +295,7 @@ class MarkdownFormatter:
         text = _RE_HR.sub(prefs.hr_symbol, text)
 
         # -- Step 4: blockquotes -------------------------------------------
-        text = _RE_BLOCKQUOTE.sub(
-            lambda m: f"{prefs.blockquote_symbol} {m.group(1)}", text
-        )
+        text = _RE_BLOCKQUOTE.sub(lambda m: f"{prefs.blockquote_symbol} {m.group(1)}", text)
 
         # -- Step 5: bold / italic -----------------------------------------
         if prefs.output_format == OUTPUT_FORMAT_HTML:

@@ -24,18 +24,16 @@ class TestRegistryIntegrity:
         from navig.providers.registry import ALL_PROVIDERS
 
         ids = [p.id for p in ALL_PROVIDERS]
-        assert len(ids) == len(
-            set(ids)
-        ), f"Duplicate provider IDs: {[i for i in ids if ids.count(i) > 1]}"
+        assert len(ids) == len(set(ids)), (
+            f"Duplicate provider IDs: {[i for i in ids if ids.count(i) > 1]}"
+        )
 
     def test_all_providers_have_valid_tier(self):
         from navig.providers.registry import ALL_PROVIDERS
 
         valid_tiers = {"cloud", "local", "proxy"}
         for p in ALL_PROVIDERS:
-            assert (
-                p.tier in valid_tiers
-            ), f"Provider '{p.id}' has invalid tier '{p.tier}'"
+            assert p.tier in valid_tiers, f"Provider '{p.id}' has invalid tier '{p.tier}'"
 
     def test_all_providers_have_display_name(self):
         from navig.providers.registry import ALL_PROVIDERS
@@ -55,9 +53,7 @@ class TestRegistryIntegrity:
         local_ids = {"ollama", "llamacpp", "airllm"}
         for p in ALL_PROVIDERS:
             if p.id in local_ids:
-                assert (
-                    not p.requires_key
-                ), f"Local provider '{p.id}' should not require a key"
+                assert not p.requires_key, f"Local provider '{p.id}' should not require a key"
 
     def test_cloud_providers_require_key(self):
         from navig.providers.registry import ALL_PROVIDERS
@@ -96,9 +92,9 @@ class TestRegistryIntegrity:
         from navig.providers.registry import list_enabled_providers
 
         enabled = list_enabled_providers()
-        assert (
-            len(enabled) >= 5
-        ), f"Expected ≥5 enabled providers, got {len(enabled)}: {[p.id for p in enabled]}"
+        assert len(enabled) >= 5, (
+            f"Expected ≥5 enabled providers, got {len(enabled)}: {[p.id for p in enabled]}"
+        )
 
 
 # ─── Factory Coverage Tests ────────────────────────────────────────────────────
@@ -177,9 +173,9 @@ class TestVerifier:
         result = verify_provider(manifest)
 
         # Ollama requires no key — key_detected should be True (vacuously)
-        assert (
-            result.key_detected is True
-        ), "Local provider 'ollama' should pass key check (no key required)"
+        assert result.key_detected is True, (
+            "Local provider 'ollama' should pass key check (no key required)"
+        )
 
 
 # ─── Wizard Dynamic Loading Tests ─────────────────────────────────────────────
@@ -253,9 +249,7 @@ class TestRoutingStrategy:
     def test_agentic_keywords_trigger_agentic(self):
         from navig.agent.routing_strategy import classify_request
 
-        prompt = (
-            "plan and execute a workflow to orchestrate and delegate multiple subtasks"
-        )
+        prompt = "plan and execute a workflow to orchestrate and delegate multiple subtasks"
         result = classify_request([{"role": "user", "content": prompt}])
         assert result.tier == "AGENTIC"
         assert result.agentic_score >= 0.5
@@ -263,7 +257,9 @@ class TestRoutingStrategy:
     def test_reasoning_keywords_trigger_reasoning(self):
         from navig.agent.routing_strategy import classify_request
 
-        prompt = "analyze and compare the trade-offs between microservices and monolith architectures"
+        prompt = (
+            "analyze and compare the trade-offs between microservices and monolith architectures"
+        )
         result = classify_request([{"role": "user", "content": prompt}])
         assert result.tier == "REASONING"
 

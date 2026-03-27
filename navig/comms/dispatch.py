@@ -100,9 +100,7 @@ async def send_user_notification(
     if resolved == "matrix":
         return await _send_matrix(target, message, options)
 
-    return DeliveryResult.failure(
-        channel=resolved, error=f"Unknown channel: {resolved}"
-    )
+    return DeliveryResult.failure(channel=resolved, error=f"Unknown channel: {resolved}")
 
 
 # ---------------------------------------------------------------------------

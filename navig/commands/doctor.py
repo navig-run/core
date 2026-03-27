@@ -125,13 +125,9 @@ def check_config() -> list[tuple[str, bool, str]]:
         content = config_path.read_text(encoding="utf-8", errors="replace")
         cfg = yaml.safe_load(content) or {}
         version = cfg.get("version", "missing")
-        results.append(
-            _check("Config file", True, f"{config_path} (v{version}, valid YAML)")
-        )
+        results.append(_check("Config file", True, f"{config_path} (v{version}, valid YAML)"))
     except Exception as e:
-        results.append(
-            _check("Config file", False, f"YAML error in {config_path}: {e}")
-        )
+        results.append(_check("Config file", False, f"YAML error in {config_path}: {e}"))
 
     return results
 
@@ -142,9 +138,7 @@ def check_cache_dir() -> list[tuple[str, bool, str]]:
     cache_dir = Path.home() / ".navig" / "cache"
 
     if not cache_dir.exists():
-        results.append(
-            _check("Cache dir", False, f"{cache_dir} does not exist", warn=True)
-        )
+        results.append(_check("Cache dir", False, f"{cache_dir} does not exist", warn=True))
         return results
 
     test_file = cache_dir / ".write_test"
@@ -227,9 +221,7 @@ def check_sockets(target_port: int = 8789) -> list[tuple[str, bool, str]]:
                     )
                 )
     except Exception as e:
-        results.append(
-            _check("Port Occupation", False, f"Socket error on port {target_port}: {e}")
-        )
+        results.append(_check("Port Occupation", False, f"Socket error on port {target_port}: {e}"))
 
     return results
 
@@ -280,9 +272,7 @@ def check_skills() -> list[tuple[str, bool, str]]:
         else:
             results.append(_check("Skills", True, f"{total} found, 0 invalid"))
     else:
-        results.append(
-            _check("Skills", True, "Skills dir not found (non-fatal)", warn=True)
-        )
+        results.append(_check("Skills", True, "Skills dir not found (non-fatal)", warn=True))
 
     return results
 
@@ -297,10 +287,7 @@ def check_gateway(port: int = 8789) -> list[tuple[str, bool, str]]:
 
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
-            cfg = (
-                yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace"))
-                or {}
-            )
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
             port = cfg.get("gateway", {}).get("port", port)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -332,10 +319,7 @@ def check_env_keys() -> list[tuple[str, bool, str]]:
 
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
-            cfg = (
-                yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace"))
-                or {}
-            )
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
@@ -359,9 +343,7 @@ def check_env_keys() -> list[tuple[str, bool, str]]:
         results.append(_check("MESH_TOKEN", True, f"present ({mesh_token_path})"))
     else:
         results.append(
-            _check(
-                "MESH_TOKEN", False, "not found (generated on gateway start)", warn=True
-            )
+            _check("MESH_TOKEN", False, "not found (generated on gateway start)", warn=True)
         )
 
     return results
@@ -403,9 +385,7 @@ def check_python_deps() -> list[tuple[str, bool, str]]:
             importlib.import_module(mod)
             results.append(_check(f"Python/{mod}", True, purpose))
         except ImportError:
-            results.append(
-                _check(f"Python/{mod}", False, f"missing — affects {purpose}")
-            )
+            results.append(_check(f"Python/{mod}", False, f"missing — affects {purpose}"))
 
     return results
 
@@ -420,9 +400,7 @@ def doctor(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show all checks, including passing ones"
     ),
-    skip_deps: bool = typer.Option(
-        False, "--skip-deps", help="Skip Python dependency checks"
-    ),
+    skip_deps: bool = typer.Option(False, "--skip-deps", help="Skip Python dependency checks"),
     port: int = typer.Option(8789, "--port", help="Gateway port to probe"),
 ):
     """Run self-diagnostics on the NAVIG installation."""
@@ -480,9 +458,7 @@ def doctor(
     if all_ok:
         footer += f"\n{footer_icon} All checks passed."
     else:
-        footer += (
-            f"\n{footer_icon} Some issues found. Review items marked with ✗ or ⚠ above."
-        )
+        footer += f"\n{footer_icon} Some issues found. Review items marked with ✗ or ⚠ above."
     print(footer)
 
     if not all_ok:

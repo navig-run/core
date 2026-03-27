@@ -131,9 +131,7 @@ _MEMORY_PATTERNS = re.compile(
 )
 
 _HINT_PATTERNS: dict[str, re.Pattern] = {
-    "task_roadmap": re.compile(
-        r"(?:roadmap|plan|todo|task|sprint|phase)", re.IGNORECASE
-    ),
+    "task_roadmap": re.compile(r"(?:roadmap|plan|todo|task|sprint|phase)", re.IGNORECASE),
     "brief": re.compile(r"(?:brief|spec|prd|proposal|rfc|feature)", re.IGNORECASE),
     "wiki_knowledge": re.compile(
         r"(?:guide|howto|tutorial|reference|wiki|doc|setup)", re.IGNORECASE
@@ -304,9 +302,7 @@ def _get_tfidf_data() -> dict[str, Any]:
     for doc in docs:
         for term in set(doc["tokens"]):
             doc_freq[term] = doc_freq.get(term, 0) + 1
-    idf = {
-        term: math.log((doc_count + 1) / (df + 1)) + 1 for term, df in doc_freq.items()
-    }
+    idf = {term: math.log((doc_count + 1) / (df + 1)) + 1 for term, df in doc_freq.items()}
 
     # Aggregate TF-IDF vector per category (mean of exemplars)
     cat_vectors: dict[str, dict[str, float]] = {}
@@ -393,13 +389,9 @@ def heuristic_classify(content: str, filename: str = "") -> tuple[str, float]:
     checkboxes = sum(1 for l in lines if re.match(r"^\s*-\s*\[[ x]\]", l))
     if checkboxes >= 3:
         sims["task_roadmap"] = sims.get("task_roadmap", 0.0) + 0.1
-    if re.search(
-        r"^#{1,2}\s*(?:problem|solution|scope|requirements)", content, re.I | re.M
-    ):
+    if re.search(r"^#{1,2}\s*(?:problem|solution|scope|requirements)", content, re.I | re.M):
         sims["brief"] = sims.get("brief", 0.0) + 0.1
-    if re.search(
-        r"^#{1,2}\s*(?:step|prerequisites|troubleshoot)", content, re.I | re.M
-    ):
+    if re.search(r"^#{1,2}\s*(?:step|prerequisites|troubleshoot)", content, re.I | re.M):
         sims["wiki_knowledge"] = sims.get("wiki_knowledge", 0.0) + 0.08
     if re.search(r"^\d{4}-\d{2}-\d{2}", content, re.M):
         sims["memory_log"] = sims.get("memory_log", 0.0) + 0.08
@@ -643,7 +635,9 @@ class InboxRouterAgent:
             target_path = None
 
         now = datetime.now().strftime("%Y-%m-%d")
-        frontmatter = f"---\ntype: {content_type}\ncreated: {now}\nsource: inbox/{filename}\n---\n\n"
+        frontmatter = (
+            f"---\ntype: {content_type}\ncreated: {now}\nsource: inbox/{filename}\n---\n\n"
+        )
         transformed = frontmatter + content
 
         return {

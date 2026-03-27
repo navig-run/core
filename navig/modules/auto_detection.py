@@ -146,27 +146,17 @@ class AutoDetection:
         """
         error_lower = error_message.lower()
 
-        if any(
-            kw in error_lower
-            for kw in ["permission denied", "access denied", "forbidden"]
-        ):
+        if any(kw in error_lower for kw in ["permission denied", "access denied", "forbidden"]):
             return "permission"
         elif any(
-            kw in error_lower
-            for kw in ["connection refused", "timeout", "network", "unreachable"]
+            kw in error_lower for kw in ["connection refused", "timeout", "network", "unreachable"]
         ):
             return "network"
-        elif any(
-            kw in error_lower
-            for kw in ["disk full", "no space", "out of memory", "oom"]
-        ):
+        elif any(kw in error_lower for kw in ["disk full", "no space", "out of memory", "oom"]):
             return "resource_exhaustion"
         elif any(kw in error_lower for kw in ["not found", "no such file", "missing"]):
             return "dependency_missing"
-        elif any(
-            kw in error_lower
-            for kw in ["syntax error", "parse error", "invalid syntax"]
-        ):
+        elif any(kw in error_lower for kw in ["syntax error", "parse error", "invalid syntax"]):
             return "syntax"
         elif any(kw in error_lower for kw in ["config", "configuration"]):
             return "configuration"
@@ -244,27 +234,19 @@ class AutoDetection:
                 "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1",
                 server_config,
             )
-            cpu_percent = (
-                float(cpu_result.stdout.strip()) if cpu_result.returncode == 0 else 0.0
-            )
+            cpu_percent = float(cpu_result.stdout.strip()) if cpu_result.returncode == 0 else 0.0
 
             # Get memory usage
             mem_result = remote_ops.execute_command(
                 "free | grep Mem | awk '{print ($3/$2) * 100.0}'", server_config
             )
-            memory_percent = (
-                float(mem_result.stdout.strip()) if mem_result.returncode == 0 else 0.0
-            )
+            memory_percent = float(mem_result.stdout.strip()) if mem_result.returncode == 0 else 0.0
 
             # Get disk usage
             disk_result = remote_ops.execute_command(
                 "df -h / | tail -1 | awk '{print $5}' | cut -d'%' -f1", server_config
             )
-            disk_percent = (
-                float(disk_result.stdout.strip())
-                if disk_result.returncode == 0
-                else 0.0
-            )
+            disk_percent = float(disk_result.stdout.strip()) if disk_result.returncode == 0 else 0.0
 
             metrics = {
                 "timestamp": datetime.now().isoformat(),
@@ -356,9 +338,7 @@ class AutoDetection:
         except Exception as e:
             ch.dim(f"Could not update performance baseline: {e}")
 
-    def _calculate_averages(
-        self, metrics_history: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    def _calculate_averages(self, metrics_history: list[dict[str, Any]]) -> dict[str, Any]:
         """Calculate rolling averages from metrics history."""
         if not metrics_history:
             return {}
@@ -372,20 +352,16 @@ class AutoDetection:
 
         def avg_for_window(start_time):
             window_metrics = [
-                m
-                for m in metrics_history
-                if datetime.fromisoformat(m["timestamp"]) >= start_time
+                m for m in metrics_history if datetime.fromisoformat(m["timestamp"]) >= start_time
             ]
             if not window_metrics:
                 return None
 
             return {
-                "cpu": sum(m.get("cpu_percent", 0) for m in window_metrics)
-                / len(window_metrics),
+                "cpu": sum(m.get("cpu_percent", 0) for m in window_metrics) / len(window_metrics),
                 "memory": sum(m.get("memory_percent", 0) for m in window_metrics)
                 / len(window_metrics),
-                "disk": sum(m.get("disk_percent", 0) for m in window_metrics)
-                / len(window_metrics),
+                "disk": sum(m.get("disk_percent", 0) for m in window_metrics) / len(window_metrics),
             }
 
         return {

@@ -230,9 +230,7 @@ class Trigger:
             name=data.get("name", "Unnamed"),
             type=TriggerType(data.get("type", "manual")),
             description=data.get("description", ""),
-            conditions=[
-                TriggerCondition.from_dict(c) for c in data.get("conditions", [])
-            ],
+            conditions=[TriggerCondition.from_dict(c) for c in data.get("conditions", [])],
             actions=[TriggerAction.from_dict(a) for a in data.get("actions", [])],
             status=TriggerStatus(data.get("status", "enabled")),
             cooldown_seconds=data.get("cooldown_seconds", 60),
@@ -487,9 +485,7 @@ class TriggerManager:
 
         for condition in trigger.conditions:
             # Get actual value from event data
-            actual_value = event.data.get(
-                condition.target, event.data.get(condition.type)
-            )
+            actual_value = event.data.get(condition.target, event.data.get(condition.type))
 
             if not condition.evaluate(actual_value):
                 return False
@@ -554,9 +550,7 @@ class TriggerManager:
             elif action.type == ActionType.WORKFLOW:
                 return self._run_workflow(action.target, action.params)
             elif action.type == ActionType.NOTIFY:
-                return self._send_notification(
-                    action.target, trigger, event, action.params
-                )
+                return self._send_notification(action.target, trigger, event, action.params)
             elif action.type == ActionType.WEBHOOK:
                 return self._call_webhook(action.target, trigger, event, action.params)
             elif action.type == ActionType.SCRIPT:
@@ -604,9 +598,7 @@ class TriggerManager:
         except Exception as e:
             return False, str(e)
 
-    def _run_workflow(
-        self, workflow_name: str, params: dict[str, Any]
-    ) -> tuple[bool, str]:
+    def _run_workflow(self, workflow_name: str, params: dict[str, Any]) -> tuple[bool, str]:
         """Run a workflow."""
         from navig.commands.workflow import WorkflowManager
 
@@ -745,9 +737,7 @@ class TriggerManager:
     # MANUAL TRIGGER
     # ========================================================================
 
-    def fire_trigger(
-        self, trigger_id: str, dry_run: bool = False
-    ) -> TriggerResult | None:
+    def fire_trigger(self, trigger_id: str, dry_run: bool = False) -> TriggerResult | None:
         """Manually fire a trigger."""
         trigger = self.get_trigger(trigger_id)
         if not trigger:
@@ -1053,9 +1043,7 @@ def add_trigger_interactive():
         trigger.host = host
         trigger.metric = metric
         trigger.conditions = [
-            TriggerCondition(
-                type="metric", operator="gte", value=int(threshold), target=metric
-            )
+            TriggerCondition(type="metric", operator="gte", value=int(threshold), target=metric)
         ]
 
     # Save
@@ -1218,9 +1206,7 @@ def show_trigger_history(
     if plain:
         for entry in history:
             status = "OK" if entry["success"] else "FAIL"
-            print(
-                f"{entry['timestamp']}\t{entry['trigger_id']}\t{status}\t{entry['message']}"
-            )
+            print(f"{entry['timestamp']}\t{entry['trigger_id']}\t{status}\t{entry['message']}")
         return
 
     table = Table(title="Trigger History")

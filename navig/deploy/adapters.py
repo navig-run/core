@@ -24,9 +24,7 @@ class ServiceAdapter(abc.ABC):
 
     name: str = ""
 
-    def __init__(
-        self, server_config: dict[str, Any], remote_ops: Any, dry_run: bool = False
-    ):
+    def __init__(self, server_config: dict[str, Any], remote_ops: Any, dry_run: bool = False):
         self._cfg = server_config
         self._remote = remote_ops
         self._dry_run = dry_run
@@ -80,9 +78,7 @@ class DockerComposeAdapter(ServiceAdapter):
 
     name = "docker-compose"
 
-    def __init__(
-        self, app_root: str, compose_file: str = "docker-compose.yml", **kwargs
-    ):
+    def __init__(self, app_root: str, compose_file: str = "docker-compose.yml", **kwargs):
         super().__init__(**kwargs)
         self._app_root = app_root
         self._compose_file = compose_file
@@ -143,17 +139,13 @@ def build_adapter(
     cls = _ADAPTERS.get(adapter_name)
     if cls is None:
         known = ", ".join(sorted(_ADAPTERS))
-        raise ValueError(
-            f"Unknown restart adapter '{adapter_name}'. Valid options: {known}"
-        )
+        raise ValueError(f"Unknown restart adapter '{adapter_name}'. Valid options: {known}")
 
     kwargs = dict(server_config=server_config, remote_ops=remote_ops, dry_run=dry_run)
 
     if adapter_name in ("systemd", "pm2"):
         if not restart_cfg.service:
-            raise ValueError(
-                f"Adapter '{adapter_name}' requires restart.service to be set."
-            )
+            raise ValueError(f"Adapter '{adapter_name}' requires restart.service to be set.")
         return cls(service=restart_cfg.service, **kwargs)
 
     if adapter_name == "docker-compose":

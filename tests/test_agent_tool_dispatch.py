@@ -14,9 +14,7 @@ import pytest
 def _make_step(action: str, params: dict | None = None):
     from navig.agent.conv.executor import ExecutionStep
 
-    return ExecutionStep(
-        action=action, description=f"Test {action}", params=params or {}
-    )
+    return ExecutionStep(action=action, description=f"Test {action}", params=params or {})
 
 
 def _reset():
@@ -166,9 +164,8 @@ async def test_execute_multi_step_action_success():
     _reset()
     from navig.agent.conv.executor import TaskExecutor
     from navig.tools.router import get_tool_router
-    from navig.tools.schemas import MultiStepAction, ToolCallAction
+    from navig.tools.schemas import MultiStepAction, ToolCallAction, ToolResultStatus
     from navig.tools.schemas import ToolResult as RouterToolResult
-    from navig.tools.schemas import ToolResultStatus
 
     mock_result = RouterToolResult(
         tool="system_info",
@@ -212,16 +209,11 @@ async def test_execute_multi_step_action_stops_on_failure():
     _reset()
     from navig.agent.conv.executor import TaskExecutor
     from navig.tools.router import get_tool_router
-    from navig.tools.schemas import MultiStepAction, ToolCallAction
+    from navig.tools.schemas import MultiStepAction, ToolCallAction, ToolResultStatus
     from navig.tools.schemas import ToolResult as RouterToolResult
-    from navig.tools.schemas import ToolResultStatus
 
-    ok_result = RouterToolResult(
-        tool="t1", status=ToolResultStatus.SUCCESS, output="ok"
-    )
-    fail_result = RouterToolResult(
-        tool="t2", status=ToolResultStatus.ERROR, error="Boom"
-    )
+    ok_result = RouterToolResult(tool="t1", status=ToolResultStatus.SUCCESS, output="ok")
+    fail_result = RouterToolResult(tool="t2", status=ToolResultStatus.ERROR, error="Boom")
 
     call_log: list[str] = []
 
@@ -308,9 +300,8 @@ async def test_bridged_handler_raises_on_failure():
 
 def test_bridge_all_registers_tools():
     from navig.tools.bridge import bridge_all
-    from navig.tools.registry import BaseTool
+    from navig.tools.registry import BaseTool, ToolResult
     from navig.tools.registry import ToolRegistry as BaseRegistry
-    from navig.tools.registry import ToolResult
     from navig.tools.router import ToolRegistry as RouterRegistry
 
     class ToolA(BaseTool):
@@ -340,9 +331,8 @@ def test_bridge_all_registers_tools():
 
 def test_bridge_all_skips_duplicates():
     from navig.tools.bridge import bridge_all
-    from navig.tools.registry import BaseTool
+    from navig.tools.registry import BaseTool, ToolResult
     from navig.tools.registry import ToolRegistry as BaseRegistry
-    from navig.tools.registry import ToolResult
     from navig.tools.router import ToolRegistry as RouterRegistry
 
     class DupTool(BaseTool):
@@ -458,12 +448,8 @@ def test_is_eligible_user_invocable_gate():
         source_path=Path("."),
         user_invocable=False,
     )
-    ctx_open = SkillEligibilityContext(
-        platform="all", safety_max="safe", user_invocable_only=False
-    )
-    ctx_only = SkillEligibilityContext(
-        platform="all", safety_max="safe", user_invocable_only=True
-    )
+    ctx_open = SkillEligibilityContext(platform="all", safety_max="safe", user_invocable_only=False)
+    ctx_only = SkillEligibilityContext(platform="all", safety_max="safe", user_invocable_only=True)
     assert is_eligible(skill, ctx_open) is True
     assert is_eligible(skill, ctx_only) is False
 
@@ -487,9 +473,7 @@ def test_is_eligible_required_tags():
         examples=[],
         source_path=Path("."),
     )
-    ctx_ok = SkillEligibilityContext(
-        platform="all", safety_max="safe", required_tags=["devops"]
-    )
+    ctx_ok = SkillEligibilityContext(platform="all", safety_max="safe", required_tags=["devops"])
     ctx_miss = SkillEligibilityContext(
         platform="all", safety_max="safe", required_tags=["kubernetes"]
     )
@@ -516,9 +500,7 @@ def test_is_eligible_excluded_tags():
         examples=[],
         source_path=Path("."),
     )
-    ctx = SkillEligibilityContext(
-        platform="all", safety_max="safe", excluded_tags=["dangerous"]
-    )
+    ctx = SkillEligibilityContext(platform="all", safety_max="safe", excluded_tags=["dangerous"])
     assert is_eligible(skill, ctx) is False
 
 

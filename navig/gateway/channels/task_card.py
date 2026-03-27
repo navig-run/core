@@ -99,11 +99,7 @@ def render_big(view: TaskView) -> str:
     visible = (
         view.steps
         if view.expanded
-        else (
-            [view.active_step]
-            if view.active_step
-            else ([view.steps[0]] if view.steps else [])
-        )
+        else ([view.active_step] if view.active_step else ([view.steps[0]] if view.steps else []))
     )
     for step in visible:
         if step is None:
@@ -140,9 +136,7 @@ def build_keyboard(view: TaskView) -> dict[str, Any]:
     }
 
 
-def make_task(
-    steps: list[tuple[str, str]], title: str = "🤖 Working on it..."
-) -> TaskView:
+def make_task(steps: list[tuple[str, str]], title: str = "🤖 Working on it...") -> TaskView:
     return TaskView(
         title=title,
         steps=[TaskStep(key=k, label=l) for k, l in steps],
@@ -166,9 +160,7 @@ async def send_task_card(channel: Any, chat_id: int, view: TaskView) -> int | No
     return None
 
 
-async def update_task_card(
-    channel: Any, chat_id: int, view: TaskView, force: bool = False
-) -> None:
+async def update_task_card(channel: Any, chat_id: int, view: TaskView, force: bool = False) -> None:
     """Edit the live status card via NAVIG Telegram channel"""
     if not view.message_id:
         return

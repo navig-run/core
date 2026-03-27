@@ -220,9 +220,7 @@ class EngagementCoordinator:
 
     # ─── Action Evaluators ──────────────────────────────────────────
 
-    def _evaluate_greeting(
-        self, state: OperatorState, tod: TimeOfDay
-    ) -> EngagementResult | None:
+    def _evaluate_greeting(self, state: OperatorState, tod: TimeOfDay) -> EngagementResult | None:
         """
         Evaluate whether to send a greeting.
 
@@ -234,10 +232,7 @@ class EngagementCoordinator:
 
         # Always greet a returning user (with cooldown)
         if state == OperatorState.JUST_ARRIVED:
-            if (
-                hours_since is None
-                or hours_since >= self.config.greeting_cooldown_hours
-            ):
+            if hours_since is None or hours_since >= self.config.greeting_cooldown_hours:
                 msg = self._build_greeting(tod, returning=True)
                 return EngagementResult(
                     action=EngagementAction.GREETING,
@@ -248,10 +243,7 @@ class EngagementCoordinator:
 
         # Morning greeting
         if tod in (TimeOfDay.EARLY_MORNING, TimeOfDay.MORNING):
-            if (
-                hours_since is None
-                or hours_since >= self.config.greeting_cooldown_hours
-            ):
+            if hours_since is None or hours_since >= self.config.greeting_cooldown_hours:
                 if state in (OperatorState.ACTIVE, OperatorState.IDLE):
                     msg = self._build_greeting(tod, returning=False)
                     return EngagementResult(
@@ -262,9 +254,7 @@ class EngagementCoordinator:
                     )
         return None
 
-    def _evaluate_wrapup(
-        self, state: OperatorState, tod: TimeOfDay
-    ) -> EngagementResult | None:
+    def _evaluate_wrapup(self, state: OperatorState, tod: TimeOfDay) -> EngagementResult | None:
         """Evaluate whether to offer an evening wrap-up."""
         hour = datetime.now().hour
         start, end = self.config.wrapup_hours
@@ -297,19 +287,11 @@ class EngagementCoordinator:
                     )
         return None
 
-    def _evaluate_capability_promo(
-        self, state: OperatorState
-    ) -> EngagementResult | None:
+    def _evaluate_capability_promo(self, state: OperatorState) -> EngagementResult | None:
         """Evaluate whether to promote an underused feature."""
         hours_since = self.state.hours_since("capability_promo")
-        if (
-            hours_since is None
-            or hours_since >= self.config.capability_promo_cooldown_hours
-        ):
-            if (
-                self.state.stats.total_messages
-                >= self.config.min_interactions_before_promo
-            ):
+        if hours_since is None or hours_since >= self.config.capability_promo_cooldown_hours:
+            if self.state.stats.total_messages >= self.config.min_interactions_before_promo:
                 if state in (OperatorState.ACTIVE, OperatorState.IDLE):
                     if random.random() < self.config.capability_promo_probability:
                         promo = self._get_capability_promoter()
@@ -326,16 +308,10 @@ class EngagementCoordinator:
     def _evaluate_contextual_tip(self, state: OperatorState) -> EngagementResult | None:
         """Evaluate whether to offer a contextual usage tip."""
         hours_since = self.state.hours_since("capability_promo")  # same cooldown
-        if (
-            hours_since is None
-            or hours_since >= self.config.contextual_tip_cooldown_hours
-        ):
+        if hours_since is None or hours_since >= self.config.contextual_tip_cooldown_hours:
             if state == OperatorState.ACTIVE:
                 frequent = self.state.get_frequent_commands(top_n=3)
-                if (
-                    frequent
-                    and random.random() < self.config.contextual_tip_probability
-                ):
+                if frequent and random.random() < self.config.contextual_tip_probability:
                     cmd, count = frequent[0]
                     msg = self._build_contextual_tip(cmd, count)
                     if msg:
@@ -370,10 +346,7 @@ class EngagementCoordinator:
     def _evaluate_feedback_ask(self, state: OperatorState) -> EngagementResult | None:
         """Evaluate whether to ask for self-improvement feedback."""
         hours_since = self.state.hours_since("feedback_ask")
-        if (
-            hours_since is None
-            or hours_since >= self.config.feedback_ask_cooldown_hours
-        ):
+        if hours_since is None or hours_since >= self.config.feedback_ask_cooldown_hours:
             # Need minimum relationship before asking
             first_seen = self.state.stats.first_seen
             if first_seen:

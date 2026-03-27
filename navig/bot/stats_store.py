@@ -244,9 +244,7 @@ class BotStatsStore:
         conn = self._get_conn()
 
         # Total commands today
-        today_start = (
-            _utc_now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        )
+        today_start = _utc_now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         row = conn.execute(
             """
             SELECT COUNT(*) as count FROM command_log WHERE executed_at >= ?
@@ -308,12 +306,8 @@ class BotStatsStore:
             CommandStat(
                 command=r["command"],
                 count=r["count"],
-                last_used=(
-                    datetime.fromisoformat(r["last_used"]) if r["last_used"] else None
-                ),
-                avg_duration_ms=(
-                    r["total_duration_ms"] / r["count"] if r["count"] > 0 else 0
-                ),
+                last_used=(datetime.fromisoformat(r["last_used"]) if r["last_used"] else None),
+                avg_duration_ms=(r["total_duration_ms"] / r["count"] if r["count"] > 0 else 0),
                 error_count=r["error_count"],
             )
             for r in rows
@@ -408,9 +402,7 @@ class BotStatsStore:
         """Mark a reminder as completed."""
         conn = self._get_conn()
         with self._lock:
-            conn.execute(
-                "UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,)
-            )
+            conn.execute("UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,))
             conn.commit()
 
     def cancel_reminder(self, reminder_id: int, user_id: int) -> bool:
@@ -429,9 +421,7 @@ class BotStatsStore:
     def get_ai_state(self, user_id: int) -> dict[str, Any] | None:
         """Get AI conversation state for a user."""
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM ai_state WHERE user_id = ?", (user_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM ai_state WHERE user_id = ?", (user_id,)).fetchone()
 
         if not row:
             return None
@@ -499,9 +489,7 @@ class BotStatsStore:
 
         # Check database
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT value, expires_at FROM cache WHERE key = ?", (key,)
-        ).fetchone()
+        row = conn.execute("SELECT value, expires_at FROM cache WHERE key = ?", (key,)).fetchone()
 
         if not row:
             return None
@@ -604,10 +592,7 @@ class BotStatsStore:
             (user_id, limit),
         ).fetchall()
 
-        return [
-            {"id": r["id"], "text": r["text"], "created_at": r["created_at"]}
-            for r in rows
-        ]
+        return [{"id": r["id"], "text": r["text"], "created_at": r["created_at"]} for r in rows]
 
     def delete_note(self, note_id: int, user_id: int) -> bool:
         """Delete a note. Returns True if deleted."""

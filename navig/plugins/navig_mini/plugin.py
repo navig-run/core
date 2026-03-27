@@ -55,16 +55,12 @@ def _navig_get(key: str, default: str = "") -> str:
 
 def _cfg() -> dict:
     return {
-        "url": _navig_get(
-            "mini.url", os.environ.get("MINI_AGENT_URL", "http://10.0.0.34:9191")
-        ),
+        "url": _navig_get("mini.url", os.environ.get("MINI_AGENT_URL", "http://10.0.0.34:9191")),
         "secret": _navig_get(
             "mini.secret",
             os.environ.get("MINI_AGENT_SECRET", os.environ.get("AGENT_SECRET", "")),
         ),
-        "ssh_host": _navig_get(
-            "mini.ssh_host", os.environ.get("MINI_SSH_HOST", "wd-cloud-nas")
-        ),
+        "ssh_host": _navig_get("mini.ssh_host", os.environ.get("MINI_SSH_HOST", "wd-cloud-nas")),
     }
 
 
@@ -134,9 +130,7 @@ def cmd_status(
     t.add_column(style="cyan")
     t.add_row("URL", aurl)
     t.add_row("Uptime", f"{s.get('uptime_sec', '?')}s")
-    t.add_row(
-        "RAM", f"{s.get('ram_free_mb', '?')} MB free / {s.get('ram_total_mb', '?')} MB"
-    )
+    t.add_row("RAM", f"{s.get('ram_free_mb', '?')} MB free / {s.get('ram_total_mb', '?')} MB")
     t.add_row(
         "Disk",
         f"{s.get('disk_pct', '?')} used — {s.get('disk_free', '?')} free  [{s.get('disk_path', '?')}]",
@@ -149,9 +143,7 @@ def cmd_status(
 
 @app.command("run")
 def cmd_run(
-    cmd: str = typer.Argument(
-        ..., help="Command to execute (must be in agent allowlist)"
-    ),
+    cmd: str = typer.Argument(..., help="Command to execute (must be in agent allowlist)"),
     url: str | None = typer.Option(None, "--url", "-u"),
     secret: str | None = typer.Option(None, "--secret", "-s"),
     timeout: int = typer.Option(30, "--timeout", "-t", help="Timeout in seconds"),
@@ -187,9 +179,7 @@ def cmd_deploy(
     host: str | None = typer.Option(
         None, "--host", "-H", help="NAVIG host name (default: mini.ssh_host)"
     ),
-    remote_dir: str = typer.Option(
-        "~/navig-mini", "--dir", "-d", help="Remote install directory"
-    ),
+    remote_dir: str = typer.Option("~/navig-mini", "--dir", "-d", help="Remote install directory"),
     restart: bool = typer.Option(True, help="Restart agent after deploy"),
     local_dir: str | None = typer.Option(
         None, "--local", "-l", help="Local navig-mini/ path (auto-detected if omitted)"
@@ -214,9 +204,7 @@ def cmd_deploy(
 
     if not source_dir:
         console.print("[red]✗ Cannot locate navig-mini/ source directory.[/red]")
-        console.print(
-            "  Use [cyan]--local /path/to/navig-mini[/cyan] or set NAVIG_MINI_DIR"
-        )
+        console.print("  Use [cyan]--local /path/to/navig-mini[/cyan] or set NAVIG_MINI_DIR")
         raise typer.Exit(1)
 
     console.print(f"\n  [cyan]Deploying to[/cyan] [bold]{ssh_host}[/bold]:{remote_dir}")
@@ -265,9 +253,7 @@ def cmd_deploy(
 
     console.print("\n  [bold green]Deploy complete![/bold green]")
     url_port = cfg["url"].rsplit(":", 1)[-1] if ":" in cfg["url"] else "9191"
-    console.print(
-        f"  Verify: [cyan]navig mini status --url http://DEVICE_IP:{url_port}[/cyan]\n"
-    )
+    console.print(f"  Verify: [cyan]navig mini status --url http://DEVICE_IP:{url_port}[/cyan]\n")
 
 
 @app.command("logs")
@@ -297,12 +283,8 @@ def cmd_logs(
 
 @app.command("restart")
 def cmd_restart(
-    service: str = typer.Argument(
-        "agent", help="What to restart: agent | monitor | <proc-name>"
-    ),
-    remote_dir: str = typer.Option(
-        "~/navig-mini", "--dir", "-d", help="Remote install directory"
-    ),
+    service: str = typer.Argument("agent", help="What to restart: agent | monitor | <proc-name>"),
+    remote_dir: str = typer.Option("~/navig-mini", "--dir", "-d", help="Remote install directory"),
     host: str | None = typer.Option(None, "--host", "-H"),
     url: str | None = typer.Option(None, "--url", "-u"),
 ):
@@ -316,15 +298,11 @@ def cmd_restart(
             f"pkill -f {remote_dir}/agent.py 2>/dev/null; sleep 1; "
             f"nohup python3 {remote_dir}/agent.py >> {remote_dir}/agent.log 2>&1 </dev/null &"
         )
-        subprocess.run(
-            ["navig", "run", cmd, "--host", ssh_host], capture_output=True, text=True
-        )
+        subprocess.run(["navig", "run", cmd, "--host", ssh_host], capture_output=True, text=True)
         time.sleep(3)
         p = _ping(aurl)
         if p:
-            console.print(
-                f"  [green]✓[/green] Agent restarted — uptime {p.get('uptime', 0)}s"
-            )
+            console.print(f"  [green]✓[/green] Agent restarted — uptime {p.get('uptime', 0)}s")
         else:
             console.print(
                 "  [yellow]⚠[/yellow] Agent may still be starting — check: [cyan]navig mini logs[/cyan]"
@@ -335,17 +313,13 @@ def cmd_restart(
         r = subprocess.run(
             ["navig", "run", cmd, "--host", ssh_host], capture_output=True, text=True
         )
-        console.print(
-            "  [green]✓[/green] Monitor stopped (cron will restart it within 5 min)"
-        )
+        console.print("  [green]✓[/green] Monitor stopped (cron will restart it within 5 min)")
 
     else:
         # Delegate to agent /run endpoint
         asec = cfg["secret"]
         if not asec:
-            console.print(
-                "[red]✗ No HMAC secret — cannot use agent /run endpoint[/red]"
-            )
+            console.print("[red]✗ No HMAC secret — cannot use agent /run endpoint[/red]")
             raise typer.Exit(1)
         r = _post(aurl, "/run", asec, {"cmd": f"pkill -c {service}"}, timeout=10)
         console.print(
@@ -355,9 +329,7 @@ def cmd_restart(
 
 @app.command("list")
 def cmd_list(
-    check: bool = typer.Option(
-        False, "--check", "-c", help="Probe each agent via HTTP"
-    ),
+    check: bool = typer.Option(False, "--check", "-c", help="Probe each agent via HTTP"),
     json_out: bool = typer.Option(False, "--json"),
 ):
     """[bold]List all configured NAVIG Mini agents.[/bold]"""
@@ -371,15 +343,11 @@ def cmd_list(
     default_host = _navig_get("mini.ssh_host", "")
 
     if default_url and not any(a.get("url") == default_url for a in agents):
-        agents.insert(
-            0, {"name": "default", "url": default_url, "ssh_host": default_host}
-        )
+        agents.insert(0, {"name": "default", "url": default_url, "ssh_host": default_host})
 
     if not agents:
         console.print("  [dim]No agents configured.[/dim]")
-        console.print(
-            "  Register one: [cyan]navig config set mini.url http://DEVICE:9191[/cyan]"
-        )
+        console.print("  Register one: [cyan]navig config set mini.url http://DEVICE:9191[/cyan]")
         return
 
     if json_out:
@@ -398,9 +366,7 @@ def cmd_list(
         if check:
             p = _ping(a.get("url", ""), timeout=2)
             row.append(
-                f"[green]✓ up ({p.get('uptime', 0)}s)[/green]"
-                if p
-                else "[red]✗ unreachable[/red]"
+                f"[green]✓ up ({p.get('uptime', 0)}s)[/green]" if p else "[red]✗ unreachable[/red]"
             )
         t.add_row(*row)
 

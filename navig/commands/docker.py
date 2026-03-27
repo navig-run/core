@@ -44,9 +44,7 @@ def docker_ps(
     elif format == "names":
         docker_format = '--format "{{.Names}}"'
     else:
-        docker_format = (
-            '--format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"'
-        )
+        docker_format = '--format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"'
 
     cmd = f"docker ps {docker_format}"
     if all:
@@ -231,9 +229,7 @@ def docker_compose(
         "config",
     ]
     if action not in valid_actions:
-        ch.error(
-            f"Invalid action: {action}", f"Valid actions: {', '.join(valid_actions)}"
-        )
+        ch.error(f"Invalid action: {action}", f"Valid actions: {', '.join(valid_actions)}")
         return
 
     import shlex
@@ -434,9 +430,7 @@ def docker_start(container: str, options: dict[str, Any]):
 
     import shlex
 
-    result = remote_ops.execute_command(
-        f"docker start {shlex.quote(container)}", host_config
-    )
+    result = remote_ops.execute_command(f"docker start {shlex.quote(container)}", host_config)
 
     if result.returncode == 0:
         ch.success(f"✓ Container {container} started")
@@ -444,9 +438,7 @@ def docker_start(container: str, options: dict[str, Any]):
         ch.error(f"Failed to start container: {container}")
 
 
-def docker_stats(
-    options: dict[str, Any], container: str | None = None, no_stream: bool = True
-):
+def docker_stats(options: dict[str, Any], container: str | None = None, no_stream: bool = True):
     """Show Docker container resource usage statistics."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -501,15 +493,9 @@ def _docker_callback(ctx: _t.Context):
 @docker_app.command("ps")
 def _docker_ps_cmd(
     ctx: _t.Context,
-    all: bool = _t.Option(
-        False, "--all", "-a", help="Show all containers (including stopped)"
-    ),
-    filter: str | None = _t.Option(
-        None, "--filter", "-f", help="Filter by name (grep pattern)"
-    ),
-    format: str = _t.Option(
-        "table", "--format", help="Output format: table, json, names"
-    ),
+    all: bool = _t.Option(False, "--all", "-a", help="Show all containers (including stopped)"),
+    filter: str | None = _t.Option(None, "--filter", "-f", help="Filter by name (grep pattern)"),
+    format: str = _t.Option("table", "--format", help="Output format: table, json, names"),
 ):
     """
     List Docker containers on remote host.
@@ -529,9 +515,7 @@ def _docker_logs_cmd(
     container: str = _t.Argument(..., help="Container name or ID"),
     tail: int | None = _t.Option(None, "--tail", "-n", help="Number of lines to show"),
     follow: bool = _t.Option(False, "--follow", "-f", help="Follow log output"),
-    since: str | None = _t.Option(
-        None, "--since", help="Show logs since (e.g., 10m, 1h)"
-    ),
+    since: str | None = _t.Option(None, "--since", help="Show logs since (e.g., 10m, 1h)"),
 ):
     """
     View Docker container logs.
@@ -551,9 +535,7 @@ def _docker_exec_cmd(
     ctx: _t.Context,
     container: str = _t.Argument(..., help="Container name or ID"),
     command: str = _t.Argument(..., help="Command to execute"),
-    interactive: bool = _t.Option(
-        False, "--interactive", "-i", help="Interactive mode with TTY"
-    ),
+    interactive: bool = _t.Option(False, "--interactive", "-i", help="Interactive mode with TTY"),
     user: str | None = _t.Option(None, "--user", "-u", help="Run as specific user"),
     workdir: str | None = _t.Option(None, "--workdir", "-w", help="Working directory"),
 ):
@@ -566,9 +548,7 @@ def _docker_exec_cmd(
         navig docker exec postgres "psql -U postgres -c 'SELECT 1'"
         navig docker exec app "php artisan migrate" -u www-data
     """
-    docker_exec(
-        container, command, ctx.obj, interactive=interactive, user=user, workdir=workdir
-    )
+    docker_exec(container, command, ctx.obj, interactive=interactive, user=user, workdir=workdir)
 
 
 @docker_app.command("compose")
@@ -577,18 +557,14 @@ def _docker_compose_cmd(
     action: str = _t.Argument(
         ..., help="Action: up, down, restart, stop, start, pull, build, logs, ps"
     ),
-    path: str | None = _t.Option(
-        None, "--path", "-p", help="Path to docker-compose.yml directory"
-    ),
+    path: str | None = _t.Option(None, "--path", "-p", help="Path to docker-compose.yml directory"),
     services: str | None = _t.Option(
         None, "--services", "-s", help="Comma-separated list of services"
     ),
     detach: bool = _t.Option(
         True, "--detach/--no-detach", "-d", help="Run in background (for 'up')"
     ),
-    build: bool = _t.Option(
-        False, "--build", "-b", help="Build images before starting"
-    ),
+    build: bool = _t.Option(False, "--build", "-b", help="Build images before starting"),
     pull: bool = _t.Option(False, "--pull", help="Pull images before starting"),
 ):
     """

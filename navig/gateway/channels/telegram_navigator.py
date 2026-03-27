@@ -110,9 +110,7 @@ def split_into_cards(
         if len(chunk) <= max_chars:
             final.append(chunk)
         else:
-            final.extend(
-                chunk[i : i + max_chars] for i in range(0, len(chunk), max_chars)
-            )
+            final.extend(chunk[i : i + max_chars] for i in range(0, len(chunk), max_chars))
     return final
 
 
@@ -172,9 +170,7 @@ def build_nav_keyboard(
     nav_row: list[dict] = []
     if idx > 0:
         nav_row.append({"text": "◀ Prev", "callback_data": f"card:prev:{key}"})
-    nav_row.append(
-        {"text": f"📄 {idx + 1}/{total}", "callback_data": f"card:jump:{key}:{idx}"}
-    )
+    nav_row.append({"text": f"📄 {idx + 1}/{total}", "callback_data": f"card:jump:{key}:{idx}"})
     if idx < total - 1:
         nav_row.append({"text": "Next ▶", "callback_data": f"card:next:{key}"})
     rows.append(nav_row)
@@ -318,9 +314,7 @@ class CardNavigator:
 
     # ── Internal ─────────────────────────────────────────────────
 
-    async def _send_card(
-        self, send_fn: SendFn, session: CardSession, idx: int
-    ) -> int | None:
+    async def _send_card(self, send_fn: SendFn, session: CardSession, idx: int) -> int | None:
         keyboard = build_nav_keyboard(session, idx)
         text = _format_card(session, idx)
         try:

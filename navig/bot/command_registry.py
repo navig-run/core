@@ -85,9 +85,7 @@ class CommandRegistry:
     # Registration API
     # ------------------------------------------------------------------
 
-    def add(
-        self, schema: dict[str, Any], *, tags: list[str] | None = None
-    ) -> BotCommand:
+    def add(self, schema: dict[str, Any], *, tags: list[str] | None = None) -> BotCommand:
         """Register a raw command schema dict (mirrors the ``COMMAND_TOOLS`` list entry format).
 
         Parameters
@@ -113,9 +111,7 @@ class CommandRegistry:
         self._commands[name] = cmd
         return cmd
 
-    def register(
-        self, fn: Callable[[], dict[str, Any]]
-    ) -> Callable[[], dict[str, Any]]:
+    def register(self, fn: Callable[[], dict[str, Any]]) -> Callable[[], dict[str, Any]]:
         """Decorator: call ``fn()`` to get the schema, then register it.
 
         The decorated function is returned unchanged so it can still be called

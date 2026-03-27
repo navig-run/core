@@ -25,9 +25,7 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    def __init__(
-        self, response: _FakeResponse | None = None, exc: Exception | None = None
-    ) -> None:
+    def __init__(self, response: _FakeResponse | None = None, exc: Exception | None = None) -> None:
         self._response = response
         self._exc = exc
 
@@ -188,9 +186,7 @@ def test_matrix_step_writes_config_and_vault(monkeypatch, tmp_path: Path) -> Non
     assert config["matrix"]["default_room_id"] == "!room:matrix.org"
 
 
-def test_review_step_returns_jump_target_when_user_declines(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_review_step_returns_jump_target_when_user_declines(monkeypatch, tmp_path: Path) -> None:
     artifact = tmp_path / "onboarding.json"
     artifact.write_text(
         json.dumps(

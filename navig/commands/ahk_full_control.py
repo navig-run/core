@@ -19,9 +19,7 @@ Add to navig/commands/ahk.py before the Workflows section (line ~1438)
 
 @ahk_app.command("processes")
 def ahk_processes(
-    filter_name: Optional[str] = typer.Option(
-        None, "--filter", help="Filter by process name"
-    ),
+    filter_name: Optional[str] = typer.Option(None, "--filter", help="Filter by process name"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all running processes."""
@@ -37,9 +35,7 @@ def ahk_processes(
     processes = adapter.get_processes()
 
     if filter_name:
-        processes = [
-            p for p in processes if filter_name.lower() in p.get("name", "").lower()
-        ]
+        processes = [p for p in processes if filter_name.lower() in p.get("name", "").lower()]
 
     if json_output:
         print(json.dumps(processes, indent=2))
@@ -287,9 +283,7 @@ def ahk_find(
     table.add_column("Size", style="blue")
 
     for win in windows:
-        table.add_row(
-            win.title[:50], win.class_name, str(win.pid), f"{win.width}x{win.height}"
-        )
+        table.add_row(win.title[:50], win.class_name, str(win.pid), f"{win.width}x{win.height}")
 
     console.print(table)
 
@@ -320,9 +314,7 @@ def ahk_notify(
 
 @ahk_app.command("volume")
 def ahk_volume(
-    level: Optional[int] = typer.Argument(
-        None, help="Volume level 0-100 (omit to show current)"
-    ),
+    level: Optional[int] = typer.Argument(None, help="Volume level 0-100 (omit to show current)"),
 ):
     """Get or set system volume."""
     adapter = _get_adapter()

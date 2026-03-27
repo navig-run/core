@@ -122,9 +122,7 @@ def prompts_list(
 @prompts_app.command("get")
 def prompts_get(
     slug: str = typer.Argument(..., help="Prompt slug (filename without .md)."),
-    json_output: bool = typer.Option(
-        False, "--json", help="Wrap output in JSON envelope."
-    ),
+    json_output: bool = typer.Option(False, "--json", help="Wrap output in JSON envelope."),
 ) -> None:
     """Output prompt content — intended for programmatic consumption by navig-bridge/CLI."""
     filepath = _resolve(slug)
@@ -137,9 +135,7 @@ def prompts_get(
     if json_output:
         import json
 
-        typer.echo(
-            json.dumps({"slug": slug, "content": content, "path": str(filepath)})
-        )
+        typer.echo(json.dumps({"slug": slug, "content": content, "path": str(filepath)}))
     else:
         typer.echo(content, nl=False)
 

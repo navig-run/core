@@ -29,9 +29,7 @@ class TestCommandHistory:
         history.add("navig sql SELECT 1", "Execute SQL", True)
 
         assert len(history.commands) == 2
-        assert (
-            history.commands[0]["command"] == "navig sql SELECT 1"
-        )  # Most recent first
+        assert history.commands[0]["command"] == "navig sql SELECT 1"  # Most recent first
         assert history.commands[1]["command"] == "navig host list"
 
     def test_max_size_limit(self):
@@ -252,9 +250,7 @@ class TestLaunchMenu:
     @patch("navig.commands.interactive.console")
     @patch("navig.commands.interactive.ConfigManager")
     @patch("navig.commands.interactive.show_main_menu")
-    def test_launch_menu_terminal_size_warning(
-        self, mock_main_menu, mock_config, mock_console
-    ):
+    def test_launch_menu_terminal_size_warning(self, mock_main_menu, mock_config, mock_console):
         """Test warning when terminal size is too small."""
         mock_console.width = 40  # Too small
         mock_console.height = 15  # Too small
@@ -281,9 +277,7 @@ class TestHostExecutions:
 
         execute_host_list(state)
 
-        mock_host_module.list_hosts.assert_called_once_with(
-            {"all": True, "format": "table"}
-        )
+        mock_host_module.list_hosts.assert_called_once_with({"all": True, "format": "table"})
         assert len(state.history.commands) == 1
         assert state.history.commands[0]["success"] is True
 
@@ -357,9 +351,7 @@ class TestDatabaseExecutions:
     @patch("navig.commands.interactive.Prompt.ask")
     @patch("navig.commands.interactive.console")
     @patch("navig.commands.interactive.ConfigManager")
-    def test_execute_db_backup(
-        self, mock_config, mock_console, mock_prompt, mock_db_module
-    ):
+    def test_execute_db_backup(self, mock_config, mock_console, mock_prompt, mock_db_module):
         """Test execute_db_backup function."""
         from navig.commands.interactive import MenuState, execute_db_backup
 

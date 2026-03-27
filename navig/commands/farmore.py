@@ -167,21 +167,13 @@ def farmore_search(
     limit: Annotated[
         int, typer.Option("--limit", "-l", min=1, max=100, help="Max repos to clone")
     ] = 20,
-    language: Annotated[
-        str | None, typer.Option("--language", help="Filter by language")
-    ] = None,
-    min_stars: Annotated[
-        int | None, typer.Option("--min-stars", help="Minimum star count")
-    ] = None,
+    language: Annotated[str | None, typer.Option("--language", help="Filter by language")] = None,
+    min_stars: Annotated[int | None, typer.Option("--min-stars", help="Minimum star count")] = None,
     sort: Annotated[
         str, typer.Option("--sort", help="Sort: stars|forks|updated|best-match")
     ] = "stars",
-    yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Auto-confirm, no prompt")
-    ] = False,
-    workers: Annotated[
-        int, typer.Option("--workers", "-w", help="Parallel clone workers")
-    ] = 4,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Auto-confirm, no prompt")] = False,
+    workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel clone workers")] = 4,
     token: Annotated[
         str | None,
         typer.Option("--token", "-t", help="GitHub token (overrides auto-resolve)"),
@@ -233,19 +225,11 @@ def farmore_search(
 @farmore_app.command("backup")
 def farmore_backup(
     target: Annotated[str, typer.Argument(help="GitHub username or org to backup")],
-    dest: Annotated[
-        Path | None, typer.Option("--dest", "-d", help="Destination directory")
-    ] = None,
-    visibility: Annotated[
-        str, typer.Option("--visibility", help="all|public|private")
-    ] = "all",
-    workers: Annotated[
-        int, typer.Option("--workers", "-w", help="Parallel clone workers")
-    ] = 4,
+    dest: Annotated[Path | None, typer.Option("--dest", "-d", help="Destination directory")] = None,
+    visibility: Annotated[str, typer.Option("--visibility", help="all|public|private")] = "all",
+    workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel clone workers")] = 4,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Auto-confirm")] = False,
-    token: Annotated[
-        str | None, typer.Option("--token", "-t", help="GitHub token")
-    ] = None,
+    token: Annotated[str | None, typer.Option("--token", "-t", help="GitHub token")] = None,
 ):
     """
     📦 Clone / mirror every repo for a user or organisation.
@@ -277,12 +261,8 @@ def farmore_backup(
 @farmore_app.command("clone")
 def farmore_clone(
     repo: Annotated[str, typer.Argument(help="owner/repo or full GitHub URL")],
-    dest: Annotated[
-        Path | None, typer.Option("--dest", "-d", help="Destination directory")
-    ] = None,
-    token: Annotated[
-        str | None, typer.Option("--token", "-t", help="GitHub token")
-    ] = None,
+    dest: Annotated[Path | None, typer.Option("--dest", "-d", help="Destination directory")] = None,
+    token: Annotated[str | None, typer.Option("--token", "-t", help="GitHub token")] = None,
 ):
     """
     ⬇️  Clone a single repository (with farmore if available, else plain git).

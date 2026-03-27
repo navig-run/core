@@ -52,33 +52,24 @@ class TestAutoEvolvePolicy:
 
     def test_non_whitelisted_command_denied(self):
         policy = self._policy(enabled=True)
-        assert (
-            policy.is_auto_evolve_allowed("db drop production", audit_log_live=True)
-            is False
-        )
+        assert policy.is_auto_evolve_allowed("db drop production", audit_log_live=True) is False
 
     def test_dangerous_command_never_auto_approved(self):
         """run rm -rf * is DANGEROUS — must not be auto-approved regardless of whitelist."""
         policy = self._policy(enabled=True)
         # Force it onto whitelist to prove the level check blocks it
         policy.auto_evolve_whitelist = ["run rm *"]
-        assert (
-            policy.is_auto_evolve_allowed("run rm -rf *", audit_log_live=True) is False
-        )
+        assert policy.is_auto_evolve_allowed("run rm -rf *", audit_log_live=True) is False
 
     def test_never_command_never_auto_approved(self):
         policy = self._policy(enabled=True)
         policy.auto_evolve_whitelist = ["run rm -rf /"]
-        assert (
-            policy.is_auto_evolve_allowed("run rm -rf /", audit_log_live=True) is False
-        )
+        assert policy.is_auto_evolve_allowed("run rm -rf /", audit_log_live=True) is False
 
     def test_custom_whitelist(self):
         policy = self._policy(enabled=True)
         policy.auto_evolve_whitelist = ["custom.*"]
-        assert (
-            policy.is_auto_evolve_allowed("custom.deploy", audit_log_live=True) is True
-        )
+        assert policy.is_auto_evolve_allowed("custom.deploy", audit_log_live=True) is True
         assert (
             policy.is_auto_evolve_allowed("fix", audit_log_live=True) is False
         )  # not in custom list
@@ -180,9 +171,7 @@ class TestApprovalManagerAutoEvolveApproval:
     @pytest.mark.asyncio
     async def test_whitelisted_command_approved_silently(self):
         mgr = self._manager_auto_evolve_on()
-        result = await mgr.request_approval(
-            command="fix", user_id="agent", channel="api"
-        )
+        result = await mgr.request_approval(command="fix", user_id="agent", channel="api")
         assert result is True
 
     @pytest.mark.asyncio
@@ -217,9 +206,7 @@ class TestApprovalManagerAutoEvolveApproval:
             mgr.set_auto_evolve(True)
             await mgr.request_approval(command="skill.patch", user_id="agent")
             records = audit.tail(10)
-            auto_records = [
-                r for r in records if r.get("action") == "approval.auto_evolve"
-            ]
+            auto_records = [r for r in records if r.get("action") == "approval.auto_evolve"]
             assert len(auto_records) == 1
             assert auto_records[0]["metadata"]["auto_evolve"] is True
 
@@ -231,9 +218,7 @@ class TestApprovalManagerAutoEvolveApproval:
             # auto_evolve stays OFF
             called = []
             mgr.on_request(lambda req: called.append(req))
-            task = asyncio.create_task(
-                mgr.request_approval(command="fix", user_id="agent")
-            )
+            task = asyncio.create_task(mgr.request_approval(command="fix", user_id="agent"))
             await asyncio.sleep(0.05)
             assert len(called) == 1  # request was queued, not auto-approved
             task.cancel()
@@ -299,9 +284,7 @@ class TestAutoEvolveRoutes:
             mgr = ApprovalManager(audit_log=audit)
             app = _build_auto_evolve_app(mgr)
             async with TestClient(TestServer(app)) as client:
-                resp = await client.post(
-                    "/approval/auto-evolve", json={"enabled": True}
-                )
+                resp = await client.post("/approval/auto-evolve", json={"enabled": True})
                 assert resp.status == 200
                 body = await resp.json()
                 data = body["data"]

@@ -212,9 +212,7 @@ class MatrixE2EEManager:
 
     # ── SAS Verification Flow ──
 
-    async def start_verification(
-        self, user_id: str, device_id: str
-    ) -> VerificationSession | None:
+    async def start_verification(self, user_id: str, device_id: str) -> VerificationSession | None:
         """Initiate SAS verification with a specific device."""
         txn_id = await self._bot.start_verification(user_id, device_id)
         if not txn_id:
@@ -262,11 +260,7 @@ class MatrixE2EEManager:
 
     def get_active_sessions(self) -> list[VerificationSession]:
         """Get all non-terminal sessions."""
-        return [
-            s
-            for s in self._sessions.values()
-            if s.state not in ("confirmed", "cancelled")
-        ]
+        return [s for s in self._sessions.values() if s.state not in ("confirmed", "cancelled")]
 
     # ── Verification Callback ──
 

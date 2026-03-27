@@ -111,9 +111,7 @@ async def handle_deck_llm_modes_update(request: "web.Request") -> "web.Response"
         try:
             temperature = float(temperature)
             if not (0.0 <= temperature <= 2.0):
-                return web.json_response(
-                    {"error": "temperature must be 0.0-2.0"}, status=400
-                )
+                return web.json_response({"error": "temperature must be 0.0-2.0"}, status=400)
         except (ValueError, TypeError):
             return web.json_response({"error": "invalid temperature"}, status=400)
 
@@ -121,9 +119,7 @@ async def handle_deck_llm_modes_update(request: "web.Request") -> "web.Response"
         try:
             max_tokens = int(max_tokens)
             if max_tokens < 1 or max_tokens > 131072:
-                return web.json_response(
-                    {"error": "max_tokens must be 1-131072"}, status=400
-                )
+                return web.json_response({"error": "max_tokens must be 1-131072"}, status=400)
         except (ValueError, TypeError):
             return web.json_response({"error": "invalid max_tokens"}, status=400)
 

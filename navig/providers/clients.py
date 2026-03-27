@@ -142,9 +142,7 @@ class BaseProviderClient(ABC):
     async def _get_client(self):
         """Get or create HTTP client."""
         if not HTTPX_AVAILABLE:
-            raise ImportError(
-                "httpx is required for provider clients. Install: pip install httpx"
-            )
+            raise ImportError("httpx is required for provider clients. Install: pip install httpx")
 
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
@@ -238,9 +236,7 @@ class OpenAIClient(BaseProviderClient):
         # Build request body
         body: dict[str, Any] = {
             "model": request.model,
-            "messages": [
-                {"role": m.role, "content": m.content} for m in request.messages
-            ],
+            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": request.stream,

@@ -442,9 +442,7 @@ def _run_tui_menu() -> None:  # noqa: C901
             match = next((m for m in MENU_ITEMS if m["id"] == item_id), None)
             if match:
                 try:
-                    self.query_one("#preview", Static).update(
-                        self._render_preview(match)
-                    )
+                    self.query_one("#preview", Static).update(self._render_preview(match))
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
 

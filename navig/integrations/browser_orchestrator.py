@@ -71,9 +71,7 @@ async def run_browser_task(
 
     for attempt in range(max_hitl_retries + 1):
         if attempt > 0:
-            logger.info(
-                "Browser task %s: retry %d/%d", task_id, attempt, max_hitl_retries
-            )
+            logger.info("Browser task %s: retry %d/%d", task_id, attempt, max_hitl_retries)
 
         # POST task to Go daemon
         try:
@@ -92,9 +90,7 @@ async def run_browser_task(
             screenshot = result["artifacts"]["screenshotPaths"][-1]
 
         if on_progress:
-            await on_progress(
-                "step_complete", {"attempt": attempt, "needs_human": needs_human}
-            )
+            await on_progress("step_complete", {"attempt": attempt, "needs_human": needs_human})
 
         # ── No human needed: done ─────────────────────────────────────────────
         if not needs_human:
@@ -165,11 +161,7 @@ def _inject_2fa_steps(task_spec: dict[str, Any], code: str) -> None:
         inject.append({"fill": {"target": sel, "value": code}})
     # Try to submit
     inject.append(
-        {
-            "click": {
-                "target": "button[type=submit], input[type=submit], [data-action*=verify]"
-            }
-        }
+        {"click": {"target": "button[type=submit], input[type=submit], [data-action*=verify]"}}
     )
     inject.append({"wait": {"kind": "dom_ready"}})
 

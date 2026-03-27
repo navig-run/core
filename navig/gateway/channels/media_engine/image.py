@@ -140,12 +140,8 @@ def _stage_classify(file_bytes: bytes) -> dict:
                     return round(deg, 6)
 
                 try:
-                    lat = _to_deg(
-                        gps_raw["GPSLatitude"], gps_raw.get("GPSLatitudeRef", "N")
-                    )
-                    lon = _to_deg(
-                        gps_raw["GPSLongitude"], gps_raw.get("GPSLongitudeRef", "E")
-                    )
+                    lat = _to_deg(gps_raw["GPSLatitude"], gps_raw.get("GPSLatitudeRef", "N"))
+                    lon = _to_deg(gps_raw["GPSLongitude"], gps_raw.get("GPSLongitudeRef", "E"))
                     result["gps"] = {"lat": lat, "lon": lon}
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
@@ -168,14 +164,10 @@ async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> str | None:
         from navig.config import get_config_manager
 
         _vision_model: str = (
-            get_config_manager()
-            .global_config.get("media_engine", {})
-            .get("vision_model", "gpt-4o")
+            get_config_manager().global_config.get("media_engine", {}).get("vision_model", "gpt-4o")
         )
         _vision_max_tokens: int = (
-            get_config_manager()
-            .global_config.get("media_engine", {})
-            .get("vision_max_tokens", 300)
+            get_config_manager().global_config.get("media_engine", {}).get("vision_max_tokens", 300)
         )
         b64 = base64.b64encode(file_bytes).decode()
         payload = {
@@ -222,11 +214,7 @@ async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> str | None:
 
         data = await _with_retry(_call)
         description = (
-            (data or {})
-            .get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
+            (data or {}).get("choices", [{}])[0].get("message", {}).get("content", "").strip()
         )
         if description:
             budget.charge("openai_vision")
@@ -269,9 +257,7 @@ async def _stage_serpapi(file_bytes: bytes, budget: BudgetGuard) -> list[dict] |
         async def _call():
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 r = await client.get(
-                    _PRUL.get("serpapi", {}).get(
-                        "search", "https://serpapi.com/search"
-                    ),
+                    _PRUL.get("serpapi", {}).get("search", "https://serpapi.com/search"),
                     params={
                         "engine": "google_lens",
                         "url": data_url,
@@ -322,9 +308,7 @@ async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> list[dict] 
             )
         except Exception:
             try:
-                credentials = service_account.Credentials.from_service_account_file(
-                    creds_raw
-                )
+                credentials = service_account.Credentials.from_service_account_file(creds_raw)
             except Exception:
                 credentials = None
 
@@ -436,9 +420,7 @@ def _build_image_card(
             title = (m.get("title") or "")[:50]
             link = m.get("link", "")
             source = m.get("source", "")
-            entry = (
-                f'• <a href="{link}">{title or source}</a>' if link else f"• {title}"
-            )
+            entry = f'• <a href="{link}">{title or source}</a>' if link else f"• {title}"
             if source and link:
                 entry += f" <i>({source})</i>"
             parts.append(entry)
@@ -500,13 +482,9 @@ class ImageEngine:
             ocr_text: str | None = None
             serp_matches: list | None = None
 
-            vision_fut = asyncio.wait_for(
-                _stage_vision(file_bytes, self._budget), timeout=_TIMEOUT
-            )
+            vision_fut = asyncio.wait_for(_stage_vision(file_bytes, self._budget), timeout=_TIMEOUT)
             ocr_fut = loop.run_in_executor(None, _stage_ocr, file_bytes)
-            serp_fut = asyncio.wait_for(
-                _stage_serpapi(file_bytes, self._budget), timeout=_TIMEOUT
-            )
+            serp_fut = asyncio.wait_for(_stage_serpapi(file_bytes, self._budget), timeout=_TIMEOUT)
 
             try:
                 description, ocr_text, serp_matches = await asyncio.gather(

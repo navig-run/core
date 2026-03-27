@@ -12,9 +12,7 @@ description: {description}
 ---
 
 # {title}
-""".format(
-        name=name, description=description, title=name.replace("-", " ").title()
-    )
+""".format(name=name, description=description, title=name.replace("-", " ").title())
     path.write_text(content, encoding="utf-8")
 
 

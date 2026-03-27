@@ -179,9 +179,7 @@ class SettingsResolver:
             node = node.setdefault(part, {})
         node[parts[-1]] = value
 
-        file_path.write_text(
-            json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        file_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
         self._cache = None  # invalidate cache
 
     def all_sources(self) -> list[tuple[str, Path, bool]]:
@@ -201,12 +199,8 @@ class SettingsResolver:
                 )
             )
         if self.project_root:
-            sources.append(
-                ("project", self.project_root / ".navig" / "settings.json", False)
-            )
-            sources.append(
-                ("local", self.project_root / ".navig" / "settings.local.json", False)
-            )
+            sources.append(("project", self.project_root / ".navig" / "settings.json", False))
+            sources.append(("local", self.project_root / ".navig" / "settings.local.json", False))
 
         return [(name, path, path.is_file()) for name, path, _ in sources]
 

@@ -106,9 +106,7 @@ def migrate_from_legacy(
             "SELECT id, provider, profile_id, label, credential_type FROM credentials"
         ).fetchall()
     except sqlite3.OperationalError:
-        report.errors.append(
-            "Legacy DB schema unrecognised — is this a NAVIG credentials DB?"
-        )
+        report.errors.append("Legacy DB schema unrecognised — is this a NAVIG credentials DB?")
         conn.close()
         return report
 

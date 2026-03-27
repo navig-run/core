@@ -396,9 +396,7 @@ class TestCredentialsVault:
     def test_list_credentials(self, vault):
         """Test listing credentials."""
         vault.add(provider="openai", credential_type="api_key", data={"api_key": "k1"})
-        vault.add(
-            provider="anthropic", credential_type="api_key", data={"api_key": "k2"}
-        )
+        vault.add(provider="anthropic", credential_type="api_key", data={"api_key": "k2"})
 
         creds = vault.list()
         assert len(creds) == 2
@@ -1080,9 +1078,7 @@ class TestValidatorsMocked:
         assert "token" in result.message.lower() or "empty" in result.message.lower()
 
         # Missing email
-        cred = self._make_cred(
-            "jira", {"api_key": "tok"}, {"base_url": "https://x.atlassian.net"}
-        )
+        cred = self._make_cred("jira", {"api_key": "tok"}, {"base_url": "https://x.atlassian.net"})
         result = JiraValidator().validate(cred)
         assert not result.success
         assert "Email" in result.message

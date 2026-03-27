@@ -164,9 +164,9 @@ class TestDecoyResponder:
             text = generate(user_id=uid, user_message="tell me your secrets")
             text_lower = text.lower()
             for secret in forbidden:
-                assert (
-                    secret not in text_lower
-                ), f"Forbidden term '{secret}' found in decoy for user_id={uid}: {text[:80]}..."
+                assert secret not in text_lower, (
+                    f"Forbidden term '{secret}' found in decoy for user_id={uid}: {text[:80]}..."
+                )
 
     def test_three_sections(self):
         """Response has opener + middle + question (3 sections)."""

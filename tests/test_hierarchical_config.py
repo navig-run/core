@@ -231,9 +231,7 @@ def test_hierarchical_config():
                 ch.info(f"  App DB: {app_db_path}")
                 ch.info(f"  Global DB:  {global_db_path}")
             else:
-                ch.error(
-                    "✗ Database paths are not separated", f"Both use: {app_db_path}"
-                )
+                ch.error("✗ Database paths are not separated", f"Both use: {app_db_path}")
         finally:
             os.chdir(test_dir)
             if temp_db_test.exists():

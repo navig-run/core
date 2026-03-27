@@ -100,12 +100,7 @@ def _workspace_storage_root() -> Path:
         home = Path.home()
         for candidate in [
             home / ".config" / "Code" / "User" / "workspaceStorage",
-            home
-            / "Library"
-            / "Application Support"
-            / "Code"
-            / "User"
-            / "workspaceStorage",
+            home / "Library" / "Application Support" / "Code" / "User" / "workspaceStorage",
         ]:
             if candidate.exists():
                 return candidate
@@ -382,9 +377,7 @@ def _cmd_list(
         None, "--workspace", "-w", help="Filter by workspace name"
     ),
     limit: int = typer.Option(30, "--limit", "-n", help="Max sessions to show (0=all)"),
-    show_empty: bool = typer.Option(
-        False, "--empty", help="Include sessions with no turns"
-    ),
+    show_empty: bool = typer.Option(False, "--empty", help="Include sessions with no turns"),
 ):
     """List all Copilot chat sessions."""
     from rich import box
@@ -437,9 +430,7 @@ def _cmd_list(
 
 @sessions_app.command("stats")
 def _cmd_stats(
-    workspace: str | None = typer.Option(
-        None, "--workspace", "-w", help="Filter by workspace"
-    ),
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Filter by workspace"),
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """Show storage statistics for all chat sessions."""
@@ -486,9 +477,7 @@ def _cmd_stats(
     ch.console.print()
     ch.console.print("[bold cyan]Copilot Session Statistics[/]")
     ch.console.print()
-    ch.console.print(
-        f"  Sessions:  [bright_cyan]{len(all_s):,}[/]  [dim]({empty} empty)[/]"
-    )
+    ch.console.print(f"  Sessions:  [bright_cyan]{len(all_s):,}[/]  [dim]({empty} empty)[/]")
     ch.console.print(f"  Total size:[bright_cyan]{_human_size(total_bytes)}[/]")
     ch.console.print(f"  Total turns:[bright_cyan]{total_turns:,}[/]")
     ch.console.print()
@@ -558,9 +547,7 @@ def _cmd_view(
 
         text = turn.text if full else turn.text[:max_chars]
         if not full and len(turn.text) > max_chars:
-            text += (
-                f"\n[dim]… ({len(turn.text) - max_chars} more chars — use --full)[/]"
-            )
+            text += f"\n[dim]… ({len(turn.text) - max_chars} more chars — use --full)[/]"
 
         ch.console.print(
             Panel(
@@ -577,13 +564,9 @@ def _cmd_view(
 @sessions_app.command("search")
 def _cmd_search(
     query: str = typer.Argument(..., help="Search query (case-insensitive)"),
-    workspace: str | None = typer.Option(
-        None, "--workspace", "-w", help="Limit to workspace"
-    ),
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Limit to workspace"),
     limit: int = typer.Option(10, "--limit", "-n", help="Max results"),
-    context_chars: int = typer.Option(
-        150, "--context", help="Characters of context to show"
-    ),
+    context_chars: int = typer.Option(150, "--context", help="Characters of context to show"),
 ):
     """Search across all chat sessions for a query string."""
 
@@ -642,12 +625,8 @@ def _cmd_search(
 def _cmd_export(
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
     fmt: str = typer.Option("json", "--format", "-f", help="Format: json, md, csv"),
-    workspace: str | None = typer.Option(
-        None, "--workspace", "-w", help="Filter by workspace"
-    ),
-    session_id: str | None = typer.Option(
-        None, "--session", "-s", help="Export single session"
-    ),
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Filter by workspace"),
+    session_id: str | None = typer.Option(None, "--session", "-s", help="Export single session"),
     empty: bool = typer.Option(False, "--empty", help="Include empty sessions"),
 ):
     """Export sessions to JSON, Markdown, or CSV."""
@@ -685,9 +664,7 @@ def _cmd_export(
                     "turns": [{"role": t.role, "text": t.text} for t in s.turns],
                 }
             )
-        output.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        output.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     elif fmt == "md":
         lines = []
@@ -712,9 +689,7 @@ def _cmd_export(
             w.writerow(["session_id", "created", "workspace", "role", "text"])
             for s in all_s:
                 for t in s.turns:
-                    w.writerow(
-                        [s.session_id, s.created_str, s.workspace_label, t.role, t.text]
-                    )
+                    w.writerow([s.session_id, s.created_str, s.workspace_label, t.role, t.text])
 
     size = output.stat().st_size
     ch.success(f"Exported {len(all_s)} sessions → {output}  ({_human_size(size)})")
@@ -722,18 +697,12 @@ def _cmd_export(
 
 @sessions_app.command("delete")
 def _cmd_delete(
-    session_id: str | None = typer.Argument(
-        None, help="Session ID to delete (partial match OK)"
-    ),
+    session_id: str | None = typer.Argument(None, help="Session ID to delete (partial match OK)"),
     workspace: str | None = typer.Option(
         None, "--workspace", "-w", help="Delete all sessions from workspace"
     ),
-    keep: int = typer.Option(
-        0, "--keep", "-k", help="Keep N newest sessions (with --workspace)"
-    ),
-    all_sessions: bool = typer.Option(
-        False, "--all", help="Delete ALL sessions (requires --yes)"
-    ),
+    keep: int = typer.Option(0, "--keep", "-k", help="Keep N newest sessions (with --workspace)"),
+    all_sessions: bool = typer.Option(False, "--all", help="Delete ALL sessions (requires --yes)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Delete one or more chat sessions.
@@ -749,9 +718,7 @@ def _cmd_delete(
     if all_sessions:
         targets = list(all_s)
     elif workspace:
-        ws_sessions = [
-            s for s in all_s if workspace.lower() in s.workspace_label.lower()
-        ]
+        ws_sessions = [s for s in all_s if workspace.lower() in s.workspace_label.lower()]
         if keep > 0:
             targets = ws_sessions[keep:]  # already newest-first
         else:
@@ -772,9 +739,7 @@ def _cmd_delete(
         f"[bold red]About to delete {len(targets)} session(s)  ({_human_size(total_bytes)})[/]"
     )
     for s in targets[:5]:
-        ch.console.print(
-            f"  [dim]• {s.created_str}  {s.workspace_label}  {s.session_id[:20]}[/]"
-        )
+        ch.console.print(f"  [dim]• {s.created_str}  {s.workspace_label}  {s.session_id[:20]}[/]")
     if len(targets) > 5:
         ch.dim(f"  … and {len(targets) - 5} more")
     ch.console.print()

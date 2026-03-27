@@ -81,9 +81,7 @@ class PluginManager:
         cache_file = self.config.cache_dir / "plugins_cache.json"
         current_mtime = 0
         try:
-            current_mtime = max(
-                p.stat().st_mtime for p in self.plugin_dirs if p.exists()
-            )
+            current_mtime = max(p.stat().st_mtime for p in self.plugin_dirs if p.exists())
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -135,9 +133,9 @@ class PluginManager:
                 info = self._get_plugin_info(plugin_path, source)
 
                 # Check if disabled
-                if self.config.is_plugin_disabled(
-                    info.name
-                ) or self.config.is_plugin_disabled(plugin_path.name):
+                if self.config.is_plugin_disabled(info.name) or self.config.is_plugin_disabled(
+                    plugin_path.name
+                ):
                     info.enabled = False
 
                 # Later sources override earlier (same name)
@@ -189,9 +187,7 @@ class PluginManager:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        source_metadata = self._extract_plugin_source_metadata(
-            plugin_path / "plugin.py"
-        )
+        source_metadata = self._extract_plugin_source_metadata(plugin_path / "plugin.py")
         if source_metadata.get("name"):
             info.name = source_metadata["name"]
         if source_metadata.get("version"):
@@ -204,9 +200,7 @@ class PluginManager:
         if requirements_file.exists():
             try:
                 deps = requirements_file.read_text().strip().split("\n")
-                info.dependencies = [
-                    d.strip() for d in deps if d.strip() and not d.startswith("#")
-                ]
+                info.dependencies = [d.strip() for d in deps if d.strip() and not d.startswith("#")]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -237,10 +231,7 @@ class PluginManager:
                 target_name = node.target.id
                 value_node = node.value
 
-            if (
-                target_name not in {"name", "version", "description"}
-                or value_node is None
-            ):
+            if target_name not in {"name", "version", "description"} or value_node is None:
                 continue
 
             try:
@@ -326,9 +317,7 @@ class PluginManager:
             info.error = f"Load error: {e}"
             return (False, info.error)
 
-    def load_all_plugins(
-        self, silent: bool = False
-    ) -> tuple[list[str], list[dict[str, str]]]:
+    def load_all_plugins(self, silent: bool = False) -> tuple[list[str], list[dict[str, str]]]:
         """
         Load all discovered plugins.
 
@@ -355,13 +344,9 @@ class PluginManager:
 
         # Log failures
         if failed and not silent:
-            console.print(
-                "[yellow]⚠ Some plugins failed to load:[/yellow]", file=sys.stderr
-            )
+            console.print("[yellow]⚠ Some plugins failed to load:[/yellow]", file=sys.stderr)
             for plugin in failed:
-                console.print(
-                    f"  • {plugin['name']}: {plugin['reason']}", file=sys.stderr
-                )
+                console.print(f"  • {plugin['name']}: {plugin['reason']}", file=sys.stderr)
 
         return (loaded, failed)
 

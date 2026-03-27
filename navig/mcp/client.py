@@ -97,11 +97,7 @@ class MCPClient:
     @property
     def is_connected(self) -> bool:
         """Check if client is connected and initialized."""
-        return (
-            self._transport is not None
-            and self._transport.is_connected()
-            and self._initialized
-        )
+        return self._transport is not None and self._transport.is_connected() and self._initialized
 
     @property
     def tools(self) -> list[MCPTool]:
@@ -136,9 +132,7 @@ class MCPClient:
             self._transport = SSETransport(self.config.url)
         else:
             if not self.config.command:
-                raise ValueError(
-                    f"Stdio transport requires 'command' for client {self.id}"
-                )
+                raise ValueError(f"Stdio transport requires 'command' for client {self.id}")
             self._transport = StdioTransport(
                 command=self.config.command,
                 args=self.config.args,
@@ -208,9 +202,7 @@ class MCPClient:
             raise RuntimeError(f"MCP client {self.id} not connected")
 
         if name not in self._tools:
-            raise ValueError(
-                f"Tool not found: {name} (available: {list(self._tools.keys())})"
-            )
+            raise ValueError(f"Tool not found: {name} (available: {list(self._tools.keys())})")
 
         response = await self._send_request(
             MCPMethod.TOOLS_CALL, {"name": name, "arguments": arguments or {}}
@@ -362,9 +354,7 @@ class MCPClient:
             )
             self._prompts[prompt.name] = prompt
 
-    async def _send_request(
-        self, method: MCPMethod, params: dict[str, Any]
-    ) -> JSONRPCResponse:
+    async def _send_request(self, method: MCPMethod, params: dict[str, Any]) -> JSONRPCResponse:
         """Send request and wait for response."""
         self._request_id += 1
 

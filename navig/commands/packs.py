@@ -89,9 +89,7 @@ class PackManifest:
         return d
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], source_path: Path | None = None
-    ) -> "PackManifest":
+    def from_dict(cls, data: dict[str, Any], source_path: Path | None = None) -> "PackManifest":
         """Create from dictionary."""
         # Handle type enum
         pack_type = data.get("type", "runbook")
@@ -161,9 +159,7 @@ class PackManager:
 
         # Pack directories
         self.builtin_dir = self._get_builtin_dir()
-        self.installed_dir = (
-            self.config_manager.global_config_dir / "packs" / "installed"
-        )
+        self.installed_dir = self.config_manager.global_config_dir / "packs" / "installed"
         self.local_dir = self.config_manager.global_config_dir / "packs" / "local"
 
         # Ensure directories exist
@@ -516,9 +512,7 @@ class PackManager:
                 if not dry_run:
                     if interactive:
                         # Ask user to confirm
-                        result = typer.prompt(
-                            "   Run command? [y/n/s(kip)]", default="y"
-                        ).lower()
+                        result = typer.prompt("   Run command? [y/n/s(kip)]", default="y").lower()
 
                         if result == "n":
                             ch.warning(f"   Checklist stopped at step {i}")
@@ -545,9 +539,7 @@ class PackManager:
             else:
                 # Manual step
                 if not dry_run and interactive:
-                    typer.prompt(
-                        "   Press Enter when complete", default="", show_default=False
-                    )
+                    typer.prompt("   Press Enter when complete", default="", show_default=False)
                 completed += 1
 
             print()
@@ -608,9 +600,7 @@ class PackManager:
             print()
 
         if failed:
-            ch.warning(
-                f"Runbook complete: {completed}/{len(steps)} steps ({failed} failed)"
-            )
+            ch.warning(f"Runbook complete: {completed}/{len(steps)} steps ({failed} failed)")
         else:
             ch.success(f"Runbook complete: {completed}/{len(steps)} steps")
 
@@ -739,9 +729,7 @@ class PackManager:
 
         try:
             with open(pack_file, "w", encoding="utf-8") as f:
-                yaml.dump(
-                    manifest.to_dict(), f, default_flow_style=False, sort_keys=False
-                )
+                yaml.dump(manifest.to_dict(), f, default_flow_style=False, sort_keys=False)
 
             self._loaded = False
             return pack_file
@@ -818,9 +806,7 @@ def list_packs(
             ch.info(f"Valid types: {', '.join(t.value for t in PackType)}")
             return
 
-    packs = manager.list_packs(
-        pack_type=type_filter, tag=tag, installed_only=installed_only
-    )
+    packs = manager.list_packs(pack_type=type_filter, tag=tag, installed_only=installed_only)
 
     if not packs:
         ch.info("No packs found")
@@ -834,9 +820,7 @@ def list_packs(
 
     if plain:
         for pack in packs:
-            status = (
-                "installed" if "installed" in str(pack.source_path) else "available"
-            )
+            status = "installed" if "installed" in str(pack.source_path) else "available"
             print(f"{pack.name}\t{pack.type.value}\t{status}\t{pack.description[:50]}")
         return
 
@@ -866,11 +850,7 @@ def list_packs(
             pack.type.value,
             pack.version,
             status,
-            (
-                pack.description[:40] + "..."
-                if len(pack.description) > 40
-                else pack.description
-            ),
+            (pack.description[:40] + "..." if len(pack.description) > 40 else pack.description),
         )
 
     console.print(table)

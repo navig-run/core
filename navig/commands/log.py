@@ -27,17 +27,11 @@ def log_callback(ctx: typer.Context):
 @log_app.command("show")
 def log_show(
     ctx: typer.Context,
-    service: str = typer.Argument(
-        ..., help="Service name (nginx, php-fpm, mysql, app, etc.)"
-    ),
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Docker container name"
-    ),
+    service: str = typer.Argument(..., help="Service name (nginx, php-fpm, mysql, app, etc.)"),
+    container: str | None = typer.Option(None, "--container", "-c", help="Docker container name"),
     tail: bool = typer.Option(False, "--tail", "-f", help="Follow logs in real-time"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines"),
-    since: str | None = typer.Option(
-        None, "--since", help="Show logs since (e.g., 10m, 1h)"
-    ),
+    since: str | None = typer.Option(None, "--since", help="Show logs since (e.g., 10m, 1h)"),
 ):
     """Show service or container logs."""
     if container:

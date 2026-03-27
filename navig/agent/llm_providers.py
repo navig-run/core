@@ -146,9 +146,7 @@ class OllamaProvider(LLMProvider):
 
         t0 = time.monotonic()
         aio = await _get_aiohttp()
-        async with session.post(
-            url, json=payload, timeout=aio.ClientTimeout(total=45)
-        ) as resp:
+        async with session.post(url, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Ollama error ({resp.status}): {text}")
@@ -171,9 +169,7 @@ class OllamaProvider(LLMProvider):
     async def is_available(self) -> bool:
         try:
             session = await self._get_session()
-            async with session.get(
-                f"{self.base_url}/api/tags", timeout=_timeout(3)
-            ) as r:
+            async with session.get(f"{self.base_url}/api/tags", timeout=_timeout(3)) as r:
                 return r.status == 200
         except Exception:
             return False
@@ -324,9 +320,7 @@ class LlamaCppProvider(LLMProvider):
 
         t0 = time.monotonic()
         aio = await _get_aiohttp()
-        async with session.post(
-            url, json=payload, timeout=aio.ClientTimeout(total=45)
-        ) as resp:
+        async with session.post(url, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"llama.cpp error ({resp.status}): {text}")
@@ -377,9 +371,7 @@ class McpBridgeProvider(LLMProvider):
     DEFAULT_URL = f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
-        super().__init__(
-            base_url=base_url or self.DEFAULT_URL, api_key=api_key, **kwargs
-        )
+        super().__init__(base_url=base_url or self.DEFAULT_URL, api_key=api_key, **kwargs)
         self._ws = None
         self._request_id = 0
         self._initialized = False
@@ -403,9 +395,7 @@ class McpBridgeProvider(LLMProvider):
         import socket as _socket
         from urllib.parse import urlparse as _urlparse
 
-        _parsed = _urlparse(
-            self.base_url.replace("ws://", "http://").replace("wss://", "https://")
-        )
+        _parsed = _urlparse(self.base_url.replace("ws://", "http://").replace("wss://", "https://"))
         _bridge_host = _parsed.hostname or "127.0.0.1"
         _bridge_port = _parsed.port or BRIDGE_DEFAULT_PORT
         try:
@@ -469,9 +459,7 @@ class McpBridgeProvider(LLMProvider):
         resp = await self._ws.receive_json(timeout=120)
 
         if resp.get("error"):
-            raise RuntimeError(
-                f"MCP tool error: {resp['error'].get('message', resp['error'])}"
-            )
+            raise RuntimeError(f"MCP tool error: {resp['error'].get('message', resp['error'])}")
 
         result = resp.get("result", {})
         if result.get("isError"):
@@ -501,9 +489,7 @@ class McpBridgeProvider(LLMProvider):
         t0 = time.monotonic()
 
         tool_args: dict = {
-            "messages": [
-                {"role": m["role"], "content": m["content"]} for m in messages
-            ],
+            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
             "max_tokens": max_tokens,
         }
         if model:
@@ -665,15 +651,9 @@ class GitHubModelsProvider(LLMProvider):
             from navig.vault import get_vault
 
             vault = get_vault()
-            secret = vault.get_secret(
-                "github_models", "token", caller="github_models_provider"
-            )
+            secret = vault.get_secret("github_models", "token", caller="github_models_provider")
             if secret:
-                val = (
-                    secret.reveal().strip()
-                    if hasattr(secret, "reveal")
-                    else str(secret).strip()
-                )
+                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
                 if val:
                     return val
         except Exception:  # noqa: BLE001
@@ -764,9 +744,7 @@ class GitHubModelsProvider(LLMProvider):
             f"All GitHub Models exhausted for chain starting at {model}. Last error: {last_error}"
         )
 
-    async def _chat_single(
-        self, model: str, messages, temperature=0.7, max_tokens=4096, **kw
-    ):
+    async def _chat_single(self, model: str, messages, temperature=0.7, max_tokens=4096, **kw):
         """Make a single chat request to one specific model."""
         session = await self._get_session()
         url = f"{self.base_url}/chat/completions"
@@ -862,17 +840,13 @@ class AnthropicProvider(OpenAIProvider):
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super(OpenAIProvider, self).__init__(
             base_url=base_url or "https://api.anthropic.com/v1",
-            api_key=api_key
-            or os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("CLAUDE_API_KEY", ""),
+            api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY", ""),
             **kwargs,
         )
 
     async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
         if not self.api_key:
-            raise RuntimeError(
-                "Anthropic API key not set (ANTHROPIC_API_KEY or CLAUDE_API_KEY)"
-            )
+            raise RuntimeError("Anthropic API key not set (ANTHROPIC_API_KEY or CLAUDE_API_KEY)")
         session = await self._get_session()
         url = f"{self.base_url}/chat/completions"
         headers = {
@@ -936,11 +910,8 @@ class GoogleProvider(OpenAIProvider):
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super(OpenAIProvider, self).__init__(
-            base_url=base_url
-            or "https://generativelanguage.googleapis.com/v1beta/openai",
-            api_key=api_key
-            or os.getenv("GEMINI_API_KEY")
-            or os.getenv("GOOGLE_API_KEY", ""),
+            base_url=base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
+            api_key=api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", ""),
             **kwargs,
         )
 
@@ -956,9 +927,7 @@ class NvidiaProvider(OpenAIProvider):
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super(OpenAIProvider, self).__init__(
             base_url=base_url or "https://integrate.api.nvidia.com/v1",
-            api_key=api_key
-            or os.getenv("NVIDIA_API_KEY")
-            or os.getenv("NIM_API_KEY", ""),
+            api_key=api_key or os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY", ""),
             **kwargs,
         )
 
@@ -1091,9 +1060,7 @@ class AirLLMProvider(LLMProvider):
         import asyncio
 
         engine = self._get_engine()
-        prompt = "\n".join(
-            f"{m['role'].upper()}: {m.get('content', '')}" for m in messages
-        )
+        prompt = "\n".join(f"{m['role'].upper()}: {m.get('content', '')}" for m in messages)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,

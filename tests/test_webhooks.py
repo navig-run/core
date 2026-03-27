@@ -24,9 +24,7 @@ class TestSignatureVerification:
         body = b'{"action": "push"}'
 
         # Calculate expected signature
-        signature = (
-            "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        )
+        signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
         result = verify_github_signature(
             body=body,
@@ -84,9 +82,7 @@ class TestSignatureVerification:
         body = b'{"ref": "refs/heads/main"}'
         config = SignatureConfig.for_github()
 
-        signature = (
-            "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        )
+        signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
         result = verify_signature(body, signature, secret, config)
 

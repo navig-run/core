@@ -96,9 +96,7 @@ def test_decomposer_long_task_splits():
     from navig.mesh.collective import TaskDecomposer
 
     # Build something with enough sentences and length
-    task = ". ".join(
-        [f"Sentence number {i} about something interesting" for i in range(20)]
-    )
+    task = ". ".join([f"Sentence number {i} about something interesting" for i in range(20)])
     d = TaskDecomposer()
     result = d.decompose(task, peer_count=4)
     assert len(result) >= 2

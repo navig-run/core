@@ -99,15 +99,9 @@ def benchmark_single_writes():
             new_stats = measure(new_write, 100)
 
             # Results
-            print(
-                f"Old BaseStore: {old_stats['mean']:.2f}ms avg, {old_stats['p95']:.2f}ms p95"
-            )
-            print(
-                f"New Engine:    {new_stats['mean']:.2f}ms avg, {new_stats['p95']:.2f}ms p95"
-            )
-            improvement = (
-                (old_stats["mean"] - new_stats["mean"]) / old_stats["mean"]
-            ) * 100
+            print(f"Old BaseStore: {old_stats['mean']:.2f}ms avg, {old_stats['p95']:.2f}ms p95")
+            print(f"New Engine:    {new_stats['mean']:.2f}ms avg, {new_stats['p95']:.2f}ms p95")
+            improvement = ((old_stats["mean"] - new_stats["mean"]) / old_stats["mean"]) * 100
             print(f"Improvement:   {improvement:+.1f}%")
         finally:
             old_store.close()
@@ -134,9 +128,7 @@ def benchmark_batch_writes():
                 data = []
                 for i in range(100):
                     counter[0] += 1
-                    data.append(
-                        (f"key_{counter[0]}", f"value_{counter[0]}", time.time())
-                    )
+                    data.append((f"key_{counter[0]}", f"value_{counter[0]}", time.time()))
                 old_store._write_many(
                     "INSERT INTO test_data (key, value, timestamp) VALUES (?, ?, ?)",
                     data,
@@ -151,9 +143,7 @@ def benchmark_batch_writes():
                 data = []
                 for i in range(100):
                     counter[0] += 1
-                    data.append(
-                        (f"key_{counter[0]}", f"value_{counter[0]}", time.time())
-                    )
+                    data.append((f"key_{counter[0]}", f"value_{counter[0]}", time.time()))
                 new_store._write_many(
                     "INSERT INTO test_data (key, value, timestamp) VALUES (?, ?, ?)",
                     data,
@@ -162,15 +152,9 @@ def benchmark_batch_writes():
             new_stats = measure(new_batch, 50)
 
             # Results
-            print(
-                f"Old BaseStore: {old_stats['mean']:.2f}ms avg, {old_stats['p95']:.2f}ms p95"
-            )
-            print(
-                f"New Engine:    {new_stats['mean']:.2f}ms avg, {new_stats['p95']:.2f}ms p95"
-            )
-            improvement = (
-                (old_stats["mean"] - new_stats["mean"]) / old_stats["mean"]
-            ) * 100
+            print(f"Old BaseStore: {old_stats['mean']:.2f}ms avg, {old_stats['p95']:.2f}ms p95")
+            print(f"New Engine:    {new_stats['mean']:.2f}ms avg, {new_stats['p95']:.2f}ms p95")
+            improvement = ((old_stats["mean"] - new_stats["mean"]) / old_stats["mean"]) * 100
             print(f"Improvement:   {improvement:+.1f}%")
         finally:
             old_store.close()
@@ -224,15 +208,9 @@ def benchmark_reads():
             new_stats = measure(new_read, 1000)
 
             # Results
-            print(
-                f"Old BaseStore: {old_stats['mean']:.2f}ms avg, {old_stats['p95']:.2f}ms p95"
-            )
-            print(
-                f"New Engine:    {new_stats['mean']:.2f}ms avg, {new_stats['p95']:.2f}ms p95"
-            )
-            improvement = (
-                (old_stats["mean"] - new_stats["mean"]) / old_stats["mean"]
-            ) * 100
+            print(f"Old BaseStore: {old_stats['mean']:.2f}ms avg, {old_stats['p95']:.2f}ms p95")
+            print(f"New Engine:    {new_stats['mean']:.2f}ms avg, {new_stats['p95']:.2f}ms p95")
+            improvement = ((old_stats["mean"] - new_stats["mean"]) / old_stats["mean"]) * 100
             print(f"Improvement:   {improvement:+.1f}%")
         finally:
             old_store.close()
@@ -341,9 +319,7 @@ def benchmark_pragma_profiles():
             print(f"FAST (runtime.db):     {fast_time:.2f}ms")
             print(f"BALANCED (memory.db):  {balanced_time:.2f}ms")
             print(f"DURABLE (audit.db):    {durable_time:.2f}ms")
-            print(
-                f"FAST vs DURABLE:       {(durable_time / fast_time):.2f}x slower (expected)"
-            )
+            print(f"FAST vs DURABLE:       {(durable_time / fast_time):.2f}x slower (expected)")
         finally:
             fast_store.close()
             balanced_store.close()

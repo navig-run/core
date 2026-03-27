@@ -466,9 +466,7 @@ class OperationRecorder:
         """Get the last N operations."""
         return list(self.iter_operations(limit=n, reverse=True))
 
-    def get_by_command(
-        self, command_pattern: str, limit: int = 10
-    ) -> list[OperationRecord]:
+    def get_by_command(self, command_pattern: str, limit: int = 10) -> list[OperationRecord]:
         """Find operations matching a command pattern."""
         return list(self.iter_operations(limit=limit, search=command_pattern))
 

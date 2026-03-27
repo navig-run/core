@@ -44,12 +44,8 @@ async def test_send_response_strips_search_tags_before_building_keyboard(
     channel._maybe_send_voice = AsyncMock(return_value=False)
     channel.send_message = AsyncMock(return_value={"message_id": 1})
 
-    fake_session = SimpleNamespace(
-        action_cards_enabled=True, voice_response_to_text="text"
-    )
-    monkeypatch.setattr(
-        tg, "get_session_manager", lambda: _FakeSessionManager(fake_session)
-    )
+    fake_session = SimpleNamespace(action_cards_enabled=True, voice_response_to_text="text")
+    monkeypatch.setattr(tg, "get_session_manager", lambda: _FakeSessionManager(fake_session))
 
     builder = MagicMock()
     builder.build.return_value = [[{"text": "Card", "callback_data": "cb:1"}]]
@@ -62,9 +58,7 @@ async def test_send_response_strips_search_tags_before_building_keyboard(
         "<search>latest CNN news today</search>\n\n"
         "Based on the latest from CNN:"
     )
-    await channel._send_response(
-        123, raw, "latest cnn news", user_id=99, is_group=False
-    )
+    await channel._send_response(123, raw, "latest cnn news", user_id=99, is_group=False)
 
     sent_text = channel.send_message.await_args.args[1]
     assert "searchqualityreflection" not in sent_text
@@ -101,12 +95,8 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(
     channel._record_assistant_msg = MagicMock()
     channel._is_debug_mode = MagicMock(return_value=False)
 
-    fake_session = SimpleNamespace(
-        action_cards_enabled=True, voice_response_to_text="text"
-    )
-    monkeypatch.setattr(
-        tg, "get_session_manager", lambda: _FakeSessionManager(fake_session)
-    )
+    fake_session = SimpleNamespace(action_cards_enabled=True, voice_response_to_text="text")
+    monkeypatch.setattr(tg, "get_session_manager", lambda: _FakeSessionManager(fake_session))
 
     builder = MagicMock()
     builder.build.return_value = [
@@ -183,9 +173,9 @@ def test_card_nav_keyboard_last_card_has_accept():
     )
     keyboard = build_nav_keyboard(session, idx=2)  # last card (0-based)
     flat_buttons = [btn["text"] for row in keyboard for btn in row]
-    assert any(
-        "Accept" in t for t in flat_buttons
-    ), f"Accept button missing from last card keyboard: {flat_buttons}"
-    assert any(
-        "Refine" in t for t in flat_buttons
-    ), f"Refine button missing from last card keyboard: {flat_buttons}"
+    assert any("Accept" in t for t in flat_buttons), (
+        f"Accept button missing from last card keyboard: {flat_buttons}"
+    )
+    assert any("Refine" in t for t in flat_buttons), (
+        f"Refine button missing from last card keyboard: {flat_buttons}"
+    )

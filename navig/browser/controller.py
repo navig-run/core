@@ -147,9 +147,7 @@ class BrowserController:
                 user_data_path=str(user_data), **{**launch_opts, **context_opts}
             )
             self._page = (
-                self._context.pages[0]
-                if self._context.pages
-                else await self._context.new_page()
+                self._context.pages[0] if self._context.pages else await self._context.new_page()
             )
         else:
             self._browser = await self._playwright.chromium.launch(**launch_opts)
@@ -204,9 +202,7 @@ class BrowserController:
 
         return True
 
-    async def navigate(
-        self, url: str, wait_until: str = "domcontentloaded"
-    ) -> dict[str, Any]:
+    async def navigate(self, url: str, wait_until: str = "domcontentloaded") -> dict[str, Any]:
         """
         Navigate to URL.
 
@@ -358,9 +354,7 @@ class BrowserController:
                 rest = stripped[2:]
                 # Extract role (first word) and name (quoted string if present)
                 m = _re.match(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?', rest)
-                role = (
-                    m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
-                )
+                role = m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
                 name = (m.group(2) or m.group(3) or "").strip() if m else ""
 
                 ref_map[ref_id] = {"role": role, "name": name, "raw_line": line}
@@ -372,9 +366,7 @@ class BrowserController:
 
         return "\n".join(annotated_lines), ref_map
 
-    async def click_by_ref(
-        self, ref_id: int, ref_map: dict, timeout: int = 5000
-    ) -> dict:
+    async def click_by_ref(self, ref_id: int, ref_map: dict, timeout: int = 5000) -> dict:
         """Click an element by its ARIA ref ID.
 
         Uses get_by_role(role, name=name) for maximum cross-browser reliability.
@@ -423,9 +415,7 @@ class BrowserController:
             )
             return {"ok": True}
         except Exception as exc:
-            logger.debug(
-                "[fill_fast] JS inject failed, falling back to fill(): %s", exc
-            )
+            logger.debug("[fill_fast] JS inject failed, falling back to fill(): %s", exc)
             try:
                 await self._page.fill(selector, text, timeout=timeout)
                 return {"ok": True}
@@ -512,7 +502,9 @@ class BrowserController:
             suggestion = (
                 "scroll into view"
                 if "not visible" in err
-                else "wait for element" if "timeout" in err else "check selector syntax"
+                else "wait for element"
+                if "timeout" in err
+                else "check selector syntax"
             )
             return {
                 "ok": False,
@@ -634,9 +626,7 @@ class BrowserController:
         await self._ensure_started()
 
         if selector:
-            await self._page.evaluate(
-                f"document.querySelector('{selector}').scrollBy({x}, {y})"
-            )
+            await self._page.evaluate(f"document.querySelector('{selector}').scrollBy({x}, {y})")
         else:
             await self._page.evaluate(f"window.scrollBy({x}, {y})")
 
@@ -698,8 +688,7 @@ class BrowserController:
 
         if not path:
             path = str(
-                self._screenshot_dir
-                / f"page_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                self._screenshot_dir / f"page_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
             )
 
         await self._page.pdf(path=path)

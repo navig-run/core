@@ -59,26 +59,18 @@ class PipelineConfig:
     """Unified configuration for the VoicePipeline."""
 
     # Wake word
-    keyword: str = field(
-        default_factory=lambda: _get_voice_setting("keyword", "hey_jarvis")
-    )
-    threshold: float = field(
-        default_factory=lambda: _get_voice_setting("threshold", 0.45)
-    )
+    keyword: str = field(default_factory=lambda: _get_voice_setting("keyword", "hey_jarvis"))
+    threshold: float = field(default_factory=lambda: _get_voice_setting("threshold", 0.45))
 
     # STT
-    stt_primary: str = field(
-        default_factory=lambda: _get_voice_setting("stt_primary", "deepgram")
-    )
+    stt_primary: str = field(default_factory=lambda: _get_voice_setting("stt_primary", "deepgram"))
     stt_fallback: str = field(
         default_factory=lambda: _get_voice_setting("stt_fallback", "whisper_api")
     )
     language: str = field(default_factory=lambda: _get_voice_setting("language", "en"))
 
     # LLM
-    llm_model: str | None = field(
-        default_factory=lambda: _get_voice_setting("llm_model", None)
-    )
+    llm_model: str | None = field(default_factory=lambda: _get_voice_setting("llm_model", None))
     llm_system_prompt: str | None = (
         "You are NAVIG, an intelligent voice assistant. "
         "Be concise — responses are spoken aloud. "
@@ -86,9 +78,7 @@ class PipelineConfig:
     )
 
     # TTS
-    tts_provider: str = field(
-        default_factory=lambda: _get_voice_setting("tts_provider", "edge")
-    )
+    tts_provider: str = field(default_factory=lambda: _get_voice_setting("tts_provider", "edge"))
     tts_voice: str | None = field(default=None)
 
     # Session settings
@@ -275,9 +265,7 @@ class VoicePipeline:
                 "whisper_local": STTProvider.WHISPER_LOCAL,
             }
             stt_config = STTConfig(
-                provider=_provider_map.get(
-                    self.config.stt_primary, STTProvider.DEEPGRAM
-                ),
+                provider=_provider_map.get(self.config.stt_primary, STTProvider.DEEPGRAM),
                 fallback_providers=[
                     _provider_map.get(self.config.stt_fallback, STTProvider.WHISPER_API)
                 ],
@@ -287,9 +275,7 @@ class VoicePipeline:
             result = await stt.transcribe(audio_path, is_voice=is_voice)
             if result.success and result.text:
                 transcript = result.text
-                logger.info(
-                    "STT result (%.0fms): %r", result.latency_ms or 0, transcript[:80]
-                )
+                logger.info("STT result (%.0fms): %r", result.latency_ms or 0, transcript[:80])
             else:
                 logger.warning("STT produced no transcript: %s", result.error)
         except Exception as exc:
@@ -309,9 +295,7 @@ class VoicePipeline:
             try:
                 out_audio_path = await self._call_tts(response_text)
             except Exception as exc:
-                logger.warning(
-                    "TTS error: %s", exc
-                )  # Non-fatal: text response still useful
+                logger.warning("TTS error: %s", exc)  # Non-fatal: text response still useful
 
         duration_ms = (time.monotonic() - t0) * 1000
         logger.info(
@@ -342,18 +326,14 @@ class VoicePipeline:
 
             messages = []
             if self.config.llm_system_prompt:
-                messages.append(
-                    {"role": "system", "content": self.config.llm_system_prompt}
-                )
+                messages.append({"role": "system", "content": self.config.llm_system_prompt})
             messages.append({"role": "user", "content": transcript})
 
             kwargs: dict = {}
             if self.config.llm_model:
                 kwargs["model_override"] = self.config.llm_model
 
-            request = RouteRequest(
-                messages=messages, entrypoint="voice_pipeline", **kwargs
-            )
+            request = RouteRequest(messages=messages, entrypoint="voice_pipeline", **kwargs)
             response_text, _trace = await router.run(request)
             return (
                 response_text

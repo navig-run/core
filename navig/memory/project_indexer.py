@@ -253,9 +253,7 @@ def _load_ignore_rules(project_root: Path) -> list[str]:
         p = project_root / name
         if p.is_file():
             try:
-                for line in p.read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines():
+                for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
                     line = line.strip()
                     if line and not line.startswith("#"):
                         patterns.append(line)
@@ -264,9 +262,7 @@ def _load_ignore_rules(project_root: Path) -> list[str]:
     return patterns
 
 
-def _is_ignored(
-    rel_path: str, ignore_patterns: list[str], is_dir: bool = False
-) -> bool:
+def _is_ignored(rel_path: str, ignore_patterns: list[str], is_dir: bool = False) -> bool:
     """Check if a relative path matches any ignore pattern."""
     parts = rel_path.replace("\\", "/").split("/")
     for pattern in ignore_patterns:
@@ -358,9 +354,7 @@ def chunk_file(
         chunk_text = "\n".join(chunk_lines)
 
         if chunk_text.strip():
-            h = hashlib.sha256(
-                chunk_text.encode("utf-8", errors="replace")
-            ).hexdigest()[:16]
+            h = hashlib.sha256(chunk_text.encode("utf-8", errors="replace")).hexdigest()[:16]
             title = _extract_section_title(chunk_lines, ct)
             chunks.append(
                 Chunk(
@@ -507,9 +501,7 @@ class ProjectIndexer:
         for dirpath, dirnames, filenames in os.walk(self.project_root):
             # Skip ignored directories (in-place filter)
             rel_dir = os.path.relpath(dirpath, self.project_root)
-            if rel_dir != "." and _is_ignored(
-                rel_dir, self._ignore_patterns, is_dir=True
-            ):
+            if rel_dir != "." and _is_ignored(rel_dir, self._ignore_patterns, is_dir=True):
                 dirnames.clear()
                 continue
 
@@ -590,9 +582,9 @@ class ProjectIndexer:
                 logger.debug("[ProjectIndexer] Read error %s: %s", rel_path, e)
                 continue
 
-            content_hash = hashlib.sha256(
-                content.encode("utf-8", errors="replace")
-            ).hexdigest()[:16]
+            content_hash = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[
+                :16
+            ]
             ct = classify_content_type(rel_path)
             line_count = content.count("\n") + 1
 
@@ -708,15 +700,11 @@ class ProjectIndexer:
             except Exception:
                 continue
 
-            new_hash = hashlib.sha256(
-                content.encode("utf-8", errors="replace")
-            ).hexdigest()[:16]
+            new_hash = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:16]
 
             if new_hash == old_hash:
                 # mtime changed but content didn't — update mtime only
-                conn.execute(
-                    "UPDATE file_meta SET mtime = ? WHERE path = ?", (mtime, rel_path)
-                )
+                conn.execute("UPDATE file_meta SET mtime = ? WHERE path = ?", (mtime, rel_path))
                 continue
 
             # File changed — re-index it
@@ -929,14 +917,12 @@ class ProjectIndexer:
 
         file_count = conn.execute("SELECT COUNT(*) FROM file_meta").fetchone()[0]
         chunk_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-        total_chars = conn.execute(
-            "SELECT COALESCE(SUM(char_count), 0) FROM file_meta"
-        ).fetchone()[0]
+        total_chars = conn.execute("SELECT COALESCE(SUM(char_count), 0) FROM file_meta").fetchone()[
+            0
+        ]
 
         last_scan = None
-        row = conn.execute(
-            "SELECT value FROM index_meta WHERE key = 'last_scan'"
-        ).fetchone()
+        row = conn.execute("SELECT value FROM index_meta WHERE key = 'last_scan'").fetchone()
         if row:
             last_scan = float(row[0])
 
@@ -957,9 +943,7 @@ class ProjectIndexer:
     def file_tree_summary(self, max_lines: int = 80) -> str:
         """Generate a compact file tree for LLM context injection."""
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT path, content_type FROM file_meta ORDER BY path"
-        ).fetchall()
+        rows = conn.execute("SELECT path, content_type FROM file_meta ORDER BY path").fetchall()
 
         if not rows:
             return "(no files indexed)"
@@ -977,9 +961,7 @@ class ProjectIndexer:
             files = groups[folder]
             lines.append(f"  {folder}/ ({len(files)} files)")
             if len(lines) >= max_lines:
-                lines.append(
-                    f"  ... and {len(rows) - sum(len(v) for v in groups.values())} more"
-                )
+                lines.append(f"  ... and {len(rows) - sum(len(v) for v in groups.values())} more")
                 break
 
         return "\n".join(lines[:max_lines])

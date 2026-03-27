@@ -24,9 +24,7 @@ class AHKStatus:
         return {
             "detected": self.detected,
             "version": self.version,
-            "executable_path": (
-                str(self.executable_path) if self.executable_path else None
-            ),
+            "executable_path": (str(self.executable_path) if self.executable_path else None),
             "detection_method": self.detection_method,
         }
 
@@ -255,9 +253,7 @@ NAVIG will automatically detect it in standard locations.
                 duration_seconds=time.time() - start_time,
             )
 
-    def execute(
-        self, code: str, timeout: float = None, force: bool = False
-    ) -> ExecutionResult:
+    def execute(self, code: str, timeout: float = None, force: bool = False) -> ExecutionResult:
         """Execute inline AHK code."""
         # Wrap in V2 requirement just in case
         full_code = "#Requires AutoHotkey v2.0\n#SingleInstance Force\n" + code
@@ -267,9 +263,7 @@ NAVIG will automatically detect it in standard locations.
         self, script_path: Path, args: list[str] = None, timeout: float = None
     ) -> ExecutionResult:
         """Execute an AHK script file."""
-        return self._run_ahk_subprocess(
-            script_path, is_file=True, args=args, timeout=timeout
-        )
+        return self._run_ahk_subprocess(script_path, is_file=True, args=args, timeout=timeout)
 
     def run_detached(self, script_path: Path, args: list[str] = None) -> int:
         """Run script in background (detached). Returns PID."""
@@ -287,9 +281,7 @@ NAVIG will automatically detect it in standard locations.
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 cwd=str(script_path.parent),
-                creationflags=(
-                    subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0
-                ),
+                creationflags=(subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0),
             )
             return proc.pid
         except Exception:
@@ -300,24 +292,18 @@ NAVIG will automatically detect it in standard locations.
     def _run_primitive(self, name: str, args: list[str]) -> ExecutionResult:
         script_path = self._primitives_path / f"{name}.ahk"
         if not script_path.exists():
-            return ExecutionResult(
-                False, stderr=f"Primitive script not found: {script_path}"
-            )
+            return ExecutionResult(False, stderr=f"Primitive script not found: {script_path}")
 
         return self.execute_file(script_path, args=args)
 
     def _run_workflow(self, name: str, args: list[str]) -> ExecutionResult:
         script_path = self._workflows_path / f"{name}.ahk"
         if not script_path.exists():
-            return ExecutionResult(
-                False, stderr=f"Workflow script not found: {script_path}"
-            )
+            return ExecutionResult(False, stderr=f"Workflow script not found: {script_path}")
 
         return self.execute_file(script_path, args=args)
 
-    def click(
-        self, x: int, y: int, button: str = "left", clicks: int = 1
-    ) -> ExecutionResult:
+    def click(self, x: int, y: int, button: str = "left", clicks: int = 1) -> ExecutionResult:
         return self._run_primitive("click", [str(x), str(y), button, str(clicks)])
 
     def type_text(self, text: str, delay: int = 0) -> ExecutionResult:
@@ -505,9 +491,7 @@ NAVIG will automatically detect it in standard locations.
         """Get value of a UI control."""
         return self.read_text(selector, control_id)
 
-    def set_control_value(
-        self, selector: str, control_id: str, value: str
-    ) -> ExecutionResult:
+    def set_control_value(self, selector: str, control_id: str, value: str) -> ExecutionResult:
         """Set text of a UI control (Edit/ComboBox)."""
         safe_val = value.replace('"', '`"')
         code = f'ControlSetText "{safe_val}", "{control_id}", "{selector}"'
@@ -638,9 +622,7 @@ NAVIG will automatically detect it in standard locations.
             script = f'try ProcessClose("{identifier}")'
         return self.execute(script)
 
-    def start_process(
-        self, exe_path: str, args: str = "", wait: bool = False
-    ) -> ExecutionResult:
+    def start_process(self, exe_path: str, args: str = "", wait: bool = False) -> ExecutionResult:
         """Start a process."""
         safe_path = exe_path.replace('"', '`"')
         safe_args = args.replace('"', '`"') if args else ""
@@ -694,9 +676,7 @@ NAVIG will automatically detect it in standard locations.
                 return []
         return []
 
-    def move_window_to_monitor(
-        self, selector: str, monitor_index: int
-    ) -> ExecutionResult:
+    def move_window_to_monitor(self, selector: str, monitor_index: int) -> ExecutionResult:
         """Move window to specific monitor."""
         script = f"""
         try {{
@@ -750,9 +730,7 @@ NAVIG will automatically detect it in standard locations.
 
     # === Notifications ===
 
-    def show_notification(
-        self, title: str, message: str, duration: int = 3
-    ) -> ExecutionResult:
+    def show_notification(self, title: str, message: str, duration: int = 3) -> ExecutionResult:
         """Show Windows toast notification."""
         safe_title = title.replace('"', '`"')
         safe_msg = message.replace('"', '`"')
@@ -863,9 +841,7 @@ NAVIG will automatically detect it in standard locations.
                 pass  # best-effort; failure is non-critical
         return None
 
-    def find_windows(
-        self, title_pattern: str = "", class_pattern: str = ""
-    ) -> list[WindowInfo]:
+    def find_windows(self, title_pattern: str = "", class_pattern: str = "") -> list[WindowInfo]:
         """Find windows matching title or class pattern."""
         title_esc = title_pattern.replace('"', '`"')
         class_esc = class_pattern.replace('"', '`"')

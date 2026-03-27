@@ -84,9 +84,7 @@ class TestGitHubModelsProvider:
         p = GitHubModelsProvider(api_key="ghp_test")
 
         openai_response = {
-            "choices": [
-                {"message": {"content": "GitHub Models reply"}, "finish_reason": "stop"}
-            ],
+            "choices": [{"message": {"content": "GitHub Models reply"}, "finish_reason": "stop"}],
             "model": "gpt-4o",
             "usage": {"prompt_tokens": 50, "completion_tokens": 10},
         }
@@ -130,9 +128,7 @@ class TestGitHubModelsProvider:
         with patch.dict("os.environ", {}, clear=True):
             p = GitHubModelsProvider(api_key="")
             # Mock config manager to return no token
-            with patch(
-                "navig.agent.llm_providers.GitHubModelsProvider.is_available"
-            ) as mock_avail:
+            with patch("navig.agent.llm_providers.GitHubModelsProvider.is_available") as mock_avail:
                 mock_avail.return_value = False
                 assert await p.is_available() is False
 
@@ -182,9 +178,7 @@ class TestStreamingSupport:
         class DummyProvider(LLMProvider):
             name = "dummy"
 
-            async def chat(
-                self, model, messages, temperature=0.7, max_tokens=512, **kw
-            ):
+            async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
                 return LLMResponse(content="Full response", provider="dummy")
 
         p = DummyProvider()
@@ -212,9 +206,7 @@ class TestAIClientDetection:
     def test_github_models_detected_when_token_set(self):
         client = self._make_client()
         with patch.object(client, "_get_bridge_mcp_url", return_value=""):
-            with patch.object(
-                client, "_get_github_models_token", return_value="ghp_test"
-            ):
+            with patch.object(client, "_get_github_models_token", return_value="ghp_test"):
                 result = client._detect_best_provider()
                 assert result == "github_models"
 
@@ -291,9 +283,7 @@ class TestTelegramWebhook:
         ch._process_update = AsyncMock()
 
         update = {"update_id": 1, "message": {"text": "hi"}}
-        accepted = await ch.handle_webhook_update(
-            update, secret_header="correct-secret"
-        )
+        accepted = await ch.handle_webhook_update(update, secret_header="correct-secret")
         assert accepted is True
         ch._process_update.assert_awaited_once_with(update)
 
@@ -301,9 +291,7 @@ class TestTelegramWebhook:
     async def test_handle_webhook_rejects_when_stopped(self):
         from navig.gateway.channels.telegram import TelegramChannel
 
-        ch = TelegramChannel(
-            bot_token="123:FAKE", webhook_url="https://example.com/hook"
-        )
+        ch = TelegramChannel(bot_token="123:FAKE", webhook_url="https://example.com/hook")
         ch._running = False
 
         update = {"update_id": 1, "message": {"text": "hi"}}

@@ -159,9 +159,7 @@ class ServerTemplateManager:
 
         # Check if already initialized
         if template_name in server_config["templates"]:
-            ch.warning(
-                f"Template '{template_name}' already initialized for server '{server_name}'"
-            )
+            ch.warning(f"Template '{template_name}' already initialized for server '{server_name}'")
             return True
 
         # Initialize template config
@@ -244,12 +242,8 @@ class ServerTemplateManager:
                 merged_config["paths"].update(detection["paths"])
 
         # Apply custom overrides from file (check YAML first, then JSON for backwards compat)
-        yaml_config_file = (
-            self._get_server_template_dir(server_name) / f"{template_name}.yaml"
-        )
-        json_config_file = (
-            self._get_server_template_dir(server_name) / f"{template_name}.json"
-        )
+        yaml_config_file = self._get_server_template_dir(server_name) / f"{template_name}.yaml"
+        json_config_file = self._get_server_template_dir(server_name) / f"{template_name}.json"
 
         custom_config_file = None
         if yaml_config_file.exists():
@@ -297,21 +291,15 @@ class ServerTemplateManager:
         # Check if template is initialized
         templates = server_config.get("templates", {})
         if template_name not in templates:
-            ch.error(
-                f"Template '{template_name}' not initialized for server '{server_name}'"
-            )
+            ch.error(f"Template '{template_name}' not initialized for server '{server_name}'")
             return False
 
         # Ensure template directory exists
         self._ensure_server_template_dir(server_name)
 
         # Load or create custom config (prefer YAML, migrate JSON if exists)
-        yaml_config_file = (
-            self._get_server_template_dir(server_name) / f"{template_name}.yaml"
-        )
-        json_config_file = (
-            self._get_server_template_dir(server_name) / f"{template_name}.json"
-        )
+        yaml_config_file = self._get_server_template_dir(server_name) / f"{template_name}.yaml"
+        json_config_file = self._get_server_template_dir(server_name) / f"{template_name}.json"
 
         custom_config = {}
         if yaml_config_file.exists():
@@ -339,9 +327,7 @@ class ServerTemplateManager:
 
         # Mark as customized in server YAML
         server_config["templates"][template_name]["customized"] = True
-        server_config["templates"][template_name][
-            "last_modified"
-        ] = datetime.now().isoformat()
+        server_config["templates"][template_name]["last_modified"] = datetime.now().isoformat()
         self.config_manager.save_server_config(server_name, server_config)
 
         ch.success(f"Set {key_path} = {value} for template '{template_name}'")
@@ -357,9 +343,7 @@ class ServerTemplateManager:
 
         templates = server_config.get("templates", {})
         if template_name not in templates:
-            ch.error(
-                f"Template '{template_name}' not initialized. Initialize it first."
-            )
+            ch.error(f"Template '{template_name}' not initialized. Initialize it first.")
             return False
 
         if templates[template_name].get("enabled"):
@@ -462,9 +446,7 @@ class ServerTemplateManager:
         # Check if template is initialized
         templates = server_config.get("templates", {})
         if template_name not in templates:
-            ch.error(
-                f"Template '{template_name}' not initialized for server '{server_name}'"
-            )
+            ch.error(f"Template '{template_name}' not initialized for server '{server_name}'")
             return False
 
         # Get current template
@@ -488,9 +470,7 @@ class ServerTemplateManager:
                 f"Synced template '{template_name}' from template (v{old_version} -> v{new_version})"
             )
         else:
-            ch.success(
-                f"Synced template '{template_name}' from template (v{new_version})"
-            )
+            ch.success(f"Synced template '{template_name}' from template (v{new_version})")
 
         if preserve_custom:
             ch.dim("Custom overrides preserved")
@@ -507,11 +487,7 @@ class ServerTemplateManager:
         result = copy.deepcopy(base)
 
         for key, value in overlay.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._deep_merge(result[key], value)
             else:
                 result[key] = copy.deepcopy(value)

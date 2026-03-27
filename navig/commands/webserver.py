@@ -97,9 +97,7 @@ def list_vhosts(options: dict[str, Any]) -> None:
             enabled_result = remote_ops.execute_command(enabled_cmd, host_config)
             if enabled_result.returncode == 0 and enabled_result.stdout:
                 enabled_sites = [
-                    s.strip()
-                    for s in enabled_result.stdout.strip().split("\n")
-                    if s.strip()
+                    s.strip() for s in enabled_result.stdout.strip().split("\n") if s.strip()
                 ]
                 result_data["enabled"] = enabled_sites
 
@@ -112,9 +110,7 @@ def list_vhosts(options: dict[str, Any]) -> None:
             available_result = remote_ops.execute_command(available_cmd, host_config)
             if available_result.returncode == 0 and available_result.stdout:
                 available_sites = [
-                    s.strip()
-                    for s in available_result.stdout.strip().split("\n")
-                    if s.strip()
+                    s.strip() for s in available_result.stdout.strip().split("\n") if s.strip()
                 ]
                 result_data["available"] = available_sites
 
@@ -134,9 +130,7 @@ def list_vhosts(options: dict[str, Any]) -> None:
             table.add_row("✓ Enabled", f"[green]{site}[/green]")
 
         # Add disabled sites
-        disabled = [
-            s for s in result_data["available"] if s not in result_data["enabled"]
-        ]
+        disabled = [s for s in result_data["available"] if s not in result_data["enabled"]]
         for site in disabled:
             table.add_row("- Disabled", f"[dim]{site}[/dim]")
 
@@ -341,9 +335,7 @@ def enable_site(options: dict[str, Any]) -> None:
 
         if result_data["success"]:
             console.print(f"[green]✓ Site '{site_name}' enabled successfully[/green]")
-            console.print(
-                "[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]"
-            )
+            console.print("[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]")
         else:
             console.print(f"[red]✗ Failed to enable site '{site_name}'[/red]")
 
@@ -435,9 +427,7 @@ def disable_site(options: dict[str, Any]) -> None:
 
         if result_data["success"]:
             console.print(f"[green]✓ Site '{site_name}' disabled successfully[/green]")
-            console.print(
-                "[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]"
-            )
+            console.print("[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]")
         else:
             console.print(f"[red]✗ Failed to disable site '{site_name}'[/red]")
 
@@ -529,12 +519,8 @@ def enable_module(options: dict[str, Any]) -> None:
             return
 
         if result_data["success"]:
-            console.print(
-                f"[green]✓ Module '{module_name}' enabled successfully[/green]"
-            )
-            console.print(
-                "[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]"
-            )
+            console.print(f"[green]✓ Module '{module_name}' enabled successfully[/green]")
+            console.print("[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]")
         else:
             console.print(f"[red]✗ Failed to enable module '{module_name}'[/red]")
 
@@ -626,12 +612,8 @@ def disable_module(options: dict[str, Any]) -> None:
             return
 
         if result_data["success"]:
-            console.print(
-                f"[green]✓ Module '{module_name}' disabled successfully[/green]"
-            )
-            console.print(
-                "[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]"
-            )
+            console.print(f"[green]✓ Module '{module_name}' disabled successfully[/green]")
+            console.print("[cyan]→ Run 'navig webserver-reload' to apply changes[/cyan]")
         else:
             console.print(f"[red]✗ Failed to disable module '{module_name}'[/red]")
 
@@ -754,9 +736,7 @@ def reload_server(options: dict[str, Any]) -> None:
             return
 
         if result_data["reload_success"]:
-            console.print(
-                f"[green]✓ {server_type.upper()} reloaded successfully[/green]"
-            )
+            console.print(f"[green]✓ {server_type.upper()} reloaded successfully[/green]")
             if result_data["service_active"]:
                 console.print("[green]✓ Service is active[/green]")
             else:

@@ -125,9 +125,7 @@ class TestAnonId:
         import navig.onboarding.telemetry as t
 
         anon_id = t._build_anon_id()
-        assert all(
-            c in "0123456789abcdef" for c in anon_id
-        ), f"Non-hex chars in: {anon_id}"
+        assert all(c in "0123456789abcdef" for c in anon_id), f"Non-hex chars in: {anon_id}"
 
     def test_anon_id_is_deterministic(self):
         """Same machine should produce the same anon_id across calls."""

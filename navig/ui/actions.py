@@ -38,9 +38,7 @@ def render_actions(
                 if item.estimated_value
                 else ""
             )
-            console.print(
-                f"  [bold cyan]{item.index}.[/bold cyan]  {item.description}{val_str}"
-            )
+            console.print(f"  [bold cyan]{item.index}.[/bold cyan]  {item.description}{val_str}")
     except Exception:
         try:
             print(f"\n  {title}", file=sys.stdout)

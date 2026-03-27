@@ -69,9 +69,7 @@ async def handle_deck_vault_list(request: "web.Request") -> "web.Response":
                     "label": c.label,
                     "enabled": c.enabled,
                     "created_at": c.created_at.isoformat() if c.created_at else None,
-                    "last_used_at": (
-                        c.last_used_at.isoformat() if c.last_used_at else None
-                    ),
+                    "last_used_at": (c.last_used_at.isoformat() if c.last_used_at else None),
                     "metadata": c.metadata or {},
                 }
             )
@@ -79,9 +77,7 @@ async def handle_deck_vault_list(request: "web.Request") -> "web.Response":
             try:
                 full_cred = vault.get_by_id(c.id, caller="deck_vault_list")
                 if full_cred and full_cred.data:
-                    key_val = full_cred.data.get("api_key", "") or full_cred.data.get(
-                        "token", ""
-                    )
+                    key_val = full_cred.data.get("api_key", "") or full_cred.data.get("token", "")
                     items[-1]["key_preview"] = _mask_key(key_val)
                 else:
                     items[-1]["key_preview"] = "••••••••"

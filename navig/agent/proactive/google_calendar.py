@@ -47,9 +47,7 @@ class GoogleCalendar(CalendarProvider):
                     print("Credentials file not found. Running in mock mode.")
                     return
 
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_path, SCOPES
-                )
+                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
                 self.creds = flow.run_local_server(port=0)
 
             # Save the credentials for the next run
@@ -132,8 +130,6 @@ class GoogleCalendar(CalendarProvider):
         }
 
         created_event = (
-            self.service.events()
-            .insert(calendarId="primary", body=event_body)
-            .execute()
+            self.service.events().insert(calendarId="primary", body=event_body).execute()
         )
         return created_event.get("id")

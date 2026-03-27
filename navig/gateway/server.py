@@ -110,9 +110,7 @@ class NavigGateway:
             config: Gateway configuration (auto-loaded if None)
         """
         if not AIOHTTP_AVAILABLE:
-            raise ImportError(
-                "aiohttp is required for gateway. Install with: pip install aiohttp"
-            )
+            raise ImportError("aiohttp is required for gateway. Install with: pip install aiohttp")
 
         # Load config
         self.config_manager = get_config_manager()
@@ -235,15 +233,9 @@ class NavigGateway:
         # Wire unified comms dispatcher
         await self._init_comms()
 
-        logger.info(
-            f"✅ NAVIG Gateway started on {self.config.host}:{self.config.port}"
-        )
-        print(
-            f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}"
-        )
-        print(
-            f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}"
-        )
+        logger.info(f"✅ NAVIG Gateway started on {self.config.host}:{self.config.port}")
+        print(f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}")
+        print(f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}")
         print(f"   Storage: {self.storage_dir}")
         print("\n   Press Ctrl+C to stop\n")
 
@@ -331,9 +323,7 @@ class NavigGateway:
             make_rate_limit_middleware,
         )
 
-        rate_mw, self._auth_attempts = make_rate_limit_middleware(
-            window=60, max_failures=5
-        )
+        rate_mw, self._auth_attempts = make_rate_limit_middleware(window=60, max_failures=5)
         cors_mw = make_cors_middleware()
         self._app = web.Application(middlewares=[rate_mw, cors_mw])
 
@@ -427,9 +417,7 @@ class NavigGateway:
             new_interval = self.config.heartbeat_interval
 
             if old_interval != new_interval:
-                logger.info(
-                    f"Heartbeat interval changed: {old_interval} → {new_interval}"
-                )
+                logger.info(f"Heartbeat interval changed: {old_interval} → {new_interval}")
                 await self.heartbeat_runner.update_config()
 
     async def _process_message_queue(self):
@@ -488,14 +476,10 @@ class NavigGateway:
             updater = getattr(self.config_manager, "update_global_config", None)
             if callable(updater):
                 updater({"gateway": gw_cfg})
-                logger.info(
-                    "[Gateway] mesh_token auto-generated and saved to persistent config"
-                )
+                logger.info("[Gateway] mesh_token auto-generated and saved to persistent config")
             else:
                 self.config_manager.global_config["gateway"] = gw_cfg
-                logger.info(
-                    "[Gateway] mesh_token auto-generated and updated in-memory config"
-                )
+                logger.info("[Gateway] mesh_token auto-generated and updated in-memory config")
 
     # ------------------------------------------------------------------
     # Policy / Audit helpers
@@ -627,9 +611,7 @@ class NavigGateway:
             self.mcp_client_manager = MCPClientManager()
 
             # Auto-connect to configured MCP servers
-            mcp_servers = self.config_manager.global_config.get("mcp", {}).get(
-                "servers", []
-            )
+            mcp_servers = self.config_manager.global_config.get("mcp", {}).get("servers", [])
             for server_cfg in mcp_servers:
                 try:
                     await self.mcp_client_manager.add_client(
@@ -638,9 +620,7 @@ class NavigGateway:
                         url=server_cfg.get("url"),
                     )
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to connect MCP server {server_cfg.get('name')}: {e}"
-                    )
+                    logger.warning(f"Failed to connect MCP server {server_cfg.get('name')}: {e}")
 
             logger.info(
                 f"MCP client manager initialized with {len(self.mcp_client_manager.clients)} clients"
@@ -675,9 +655,7 @@ class NavigGateway:
 
             queue_path = str(self.storage_dir / "task_queue.json")
             self.task_queue = TaskQueue(persist_path=queue_path)
-            self.task_worker = TaskWorker(
-                self.task_queue, WorkerConfig(max_concurrent=5)
-            )
+            self.task_worker = TaskWorker(self.task_queue, WorkerConfig(max_concurrent=5))
 
             # Register built-in task handlers
             self._register_task_handlers()
@@ -699,19 +677,13 @@ class NavigGateway:
                 _mesh_secret = _load_mesh_secret(mesh_cfg.get("secret"))
                 if _mesh_secret:
                     logger.info("[mesh] BLAKE2b HMAC authentication active")
-                self._mesh_discovery = MeshDiscovery(
-                    self._mesh_registry, secret=_mesh_secret
-                )
+                self._mesh_discovery = MeshDiscovery(self._mesh_registry, secret=_mesh_secret)
                 await self._mesh_discovery.start()
                 logger.info("[mesh] Flux mesh discovery started")
             else:
-                logger.info(
-                    "[mesh] Mesh discovery disabled by config (mesh.enabled=false)"
-                )
+                logger.info("[mesh] Mesh discovery disabled by config (mesh.enabled=false)")
         except Exception as e:
-            logger.warning(
-                f"[mesh] Mesh discovery init failed — node runs isolated: {e}"
-            )
+            logger.warning(f"[mesh] Mesh discovery init failed — node runs isolated: {e}")
 
     def _register_task_handlers(self):
         """Register built-in task handlers."""
@@ -767,9 +739,7 @@ class NavigGateway:
                 from navig.gateway.channels.registry import ChannelRegistry
 
                 registry = (
-                    ChannelRegistry.instance()
-                    if hasattr(ChannelRegistry, "instance")
-                    else None
+                    ChannelRegistry.instance() if hasattr(ChannelRegistry, "instance") else None
                 )
                 if registry:
                     tg = registry.get_adapter("telegram")
@@ -865,14 +835,10 @@ class NavigGateway:
         await self.sessions.add_message(session_key, "user", message)
 
         # Build context
-        context = await self._build_agent_context(
-            agent_id, session, is_heartbeat, message=message
-        )
+        context = await self._build_agent_context(agent_id, session, is_heartbeat, message=message)
 
         # Run AI
-        response = await self._call_ai(
-            context=context, message=message, model=model, **kwargs
-        )
+        response = await self._call_ai(context=context, message=message, model=model, **kwargs)
 
         # Add assistant response to session
         await self.sessions.add_message(session_key, "assistant", response)
@@ -910,9 +876,7 @@ class NavigGateway:
                 filepath = base_dir / filename
                 if filepath.exists():
                     try:
-                        context["files"][filename] = filepath.read_text(
-                            encoding="utf-8"
-                        )
+                        context["files"][filename] = filepath.read_text(encoding="utf-8")
                         break
                     except Exception as e:
                         logger.warning(f"Failed to read {filename}: {e}")
@@ -923,9 +887,7 @@ class NavigGateway:
             memory_log = base_dir / "memory" / f"{today}.md"
             if memory_log.exists():
                 try:
-                    context["files"][f"memory/{today}.md"] = memory_log.read_text(
-                        encoding="utf-8"
-                    )
+                    context["files"][f"memory/{today}.md"] = memory_log.read_text(encoding="utf-8")
                     break
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
@@ -947,9 +909,7 @@ class NavigGateway:
             from navig.memory.manager import get_memory_manager
 
             mgr = get_memory_manager()
-            profile_ctx = (
-                mgr.get_user_context() if hasattr(mgr, "get_user_context") else None
-            )
+            profile_ctx = mgr.get_user_context() if hasattr(mgr, "get_user_context") else None
             if profile_ctx:
                 context["user_profile"] = profile_ctx
         except Exception as _profile_err:
@@ -1107,9 +1067,7 @@ class NavigGateway:
                     try:
                         body = _json.loads(resp.text)
                         if isinstance(body, dict) and "ok" in body and "data" in body:
-                            data = (
-                                body["data"] if isinstance(body["data"], dict) else {}
-                            )
+                            data = body["data"] if isinstance(body["data"], dict) else {}
                             if body.get("ok"):
                                 data = {"success": True, **data}
                             return _web.json_response(data, status=resp.status)
@@ -1222,9 +1180,7 @@ class NavigGateway:
             {
                 "success": True,
                 "started": engine.running,
-                "last_check": (
-                    engine.last_check.isoformat() if engine.last_check else None
-                ),
+                "last_check": (engine.last_check.isoformat() if engine.last_check else None),
                 "last_check_status": engine.last_check_status,
                 "last_error": engine.last_error,
                 "providers": engine.provider_status,
@@ -1298,9 +1254,7 @@ class NavigGateway:
         result = coordinator.engagement_tick()
         if result:
             if "telegram" in self.channels:
-                await self.deliver_message(
-                    channel="telegram", to=None, content=result.message
-                )
+                await self.deliver_message(channel="telegram", to=None, content=result.message)
             return web.json_response(
                 {
                     "success": True,
@@ -1344,9 +1298,7 @@ class NavigGateway:
         user_id = payload.get("user_id")
         message = payload.get("message")
         if not user_id or not message:
-            return web.Response(
-                status=400, text="Missing required fields: user_id, message"
-            )
+            return web.Response(status=400, text="Missing required fields: user_id, message")
         channel = payload.get("channel")
         metadata = payload.get("metadata", {})
         await self.router.route_message(
@@ -1368,9 +1320,7 @@ class NavigGateway:
                 "response": getattr(result, "response", None),
                 "issues_found": getattr(result, "issues_found", []),
                 "timestamp": (
-                    result.timestamp.isoformat()
-                    if getattr(result, "timestamp", None)
-                    else None
+                    result.timestamp.isoformat() if getattr(result, "timestamp", None) else None
                 ),
             }
         )

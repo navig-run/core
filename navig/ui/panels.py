@@ -53,9 +53,9 @@ def render_explanation(
         lines = [f"[bold]{title}[/bold]"]
         for c in causes:
             bar_len = max(1, c.confidence // 10)
-            bar = ("█" if not SAFE_MODE else "#") * bar_len + (
-                "░" if not SAFE_MODE else "."
-            ) * (10 - bar_len)
+            bar = ("█" if not SAFE_MODE else "#") * bar_len + ("░" if not SAFE_MODE else ".") * (
+                10 - bar_len
+            )
             sev_style = SEVERITY_STYLE.get(c.severity, "white")
             lines.append(
                 f"  [{sev_style}]{bar}[/{sev_style}] "

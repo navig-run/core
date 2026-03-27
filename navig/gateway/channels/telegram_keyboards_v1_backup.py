@@ -283,9 +283,7 @@ class ResponseKeyboardBuilder:
 
         # 1. Quick Reply Suggestions (up to 1 row of 2-3 buttons)
         if self.include_followups:
-            fup_row = self._build_followups(
-                category, ai_response, user_message, msg_hash
-            )
+            fup_row = self._build_followups(category, ai_response, user_message, msg_hash)
             if fup_row:
                 rows.append(fup_row)
 
@@ -297,9 +295,7 @@ class ResponseKeyboardBuilder:
 
         # 3. Structured Navigation (for comparisons / lists)
         if category in (ContentCategory.COMPARISON, ContentCategory.LIST):
-            nav_row = self._build_navigation(
-                category, msg_hash, user_message, ai_response
-            )
+            nav_row = self._build_navigation(category, msg_hash, user_message, ai_response)
             if nav_row:
                 rows.append(nav_row)
 
@@ -480,9 +476,7 @@ class ResponseKeyboardBuilder:
         return [
             self._make_button("👍", "fb_up", msg_hash, user_message, ai_response),
             self._make_button("👎", "fb_down", msg_hash, user_message, ai_response),
-            self._make_button(
-                "💡 Improve", "fb_improve", msg_hash, user_message, ai_response
-            ),
+            self._make_button("💡 Improve", "fb_improve", msg_hash, user_message, ai_response),
         ]
 
 
@@ -497,9 +491,7 @@ _ACTION_PROMPTS: dict[str, str] = {
         "Your previous answer was not satisfactory. "
         "Please provide a better, more complete answer."
     ),
-    "summarize": (
-        "Summarize the following response in 2-3 concise sentences:\n\n{ai_response}"
-    ),
+    "summarize": ("Summarize the following response in 2-3 concise sentences:\n\n{ai_response}"),
     "translate": (
         "Translate the following text to the user's other language "
         "(if the text is in English, translate to Russian; if in Russian, translate to English):\n\n"
@@ -600,9 +592,7 @@ class CallbackHandler:
         if action.startswith("fup"):
             followup_text = entry.extra.get("followup_text", "Tell me more")
             # Strip emoji prefix for cleaner AI prompt
-            clean_followup = re.sub(
-                r"^[\U0001f300-\U0001f9ff\u2600-\u27bf]+\s*", "", followup_text
-            )
+            clean_followup = re.sub(r"^[\U0001f300-\U0001f9ff\u2600-\u27bf]+\s*", "", followup_text)
             await self._answer_callback(cb_id, f"💬 {followup_text}")
             await self._send_as_new_message(chat_id, user_id, clean_followup)
             return
@@ -623,9 +613,7 @@ class CallbackHandler:
             code_blocks = _CODE_BLOCK.findall(entry.ai_response)
             if code_blocks:
                 # Send just the code, stripped of fences
-                code_text = "\n\n".join(
-                    block.strip("`").strip() for block in code_blocks
-                )
+                code_text = "\n\n".join(block.strip("`").strip() for block in code_blocks)
                 await self._answer_callback(cb_id, "📋 Code extracted")
                 # Send as plain monospaced
                 code_msg = f"```\n{code_text[:3900]}\n```"
@@ -668,13 +656,9 @@ class CallbackHandler:
                         user_message=entry.user_message,
                         message_id=message_id,
                     )
-                    await self.channel.send_message(
-                        chat_id, response, keyboard=keyboard
-                    )
+                    await self.channel.send_message(chat_id, response, keyboard=keyboard)
                 else:
-                    await self.channel.send_message(
-                        chat_id, "😅 Couldn't generate a response."
-                    )
+                    await self.channel.send_message(chat_id, "😅 Couldn't generate a response.")
             finally:
                 typing_task.cancel()
                 try:
@@ -718,9 +702,7 @@ class CallbackHandler:
                         ai_response=response,
                         user_message=text,
                     )
-                    await self.channel.send_message(
-                        chat_id, response, keyboard=keyboard
-                    )
+                    await self.channel.send_message(chat_id, response, keyboard=keyboard)
             except Exception as e:
                 logger.error("Followup failed: %s", e)
                 await self.channel.send_message(chat_id, f"😅 Follow-up failed: {e}")
@@ -731,9 +713,7 @@ class CallbackHandler:
                 except asyncio.CancelledError:
                     pass  # task cancelled; expected during shutdown
 
-    async def _get_ai_response(
-        self, prompt: str, user_id: int, entry: CallbackEntry
-    ) -> str | None:
+    async def _get_ai_response(self, prompt: str, user_id: int, entry: CallbackEntry) -> str | None:
         """Get AI response for an action prompt via the gateway pipeline."""
         if self.channel.on_message:
             try:

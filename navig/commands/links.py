@@ -26,9 +26,7 @@ from navig.lazy_loader import lazy_import
 _ch = lazy_import("navig.console_helper")
 _links_db_mod = lazy_import("navig.memory.links_db")
 
-links_app = typer.Typer(
-    name="links", help="Manage browser bookmarks with vault auto-login"
-)
+links_app = typer.Typer(name="links", help="Manage browser bookmarks with vault auto-login")
 
 
 def _db():
@@ -60,9 +58,7 @@ def _rprint(*args, **kwargs):
 def add_link(
     url: str = typer.Argument(..., help="URL to bookmark"),
     title: str | None = typer.Option(None, "--title", "-t", help="Page title"),
-    notes: str | None = typer.Option(
-        None, "--notes", "-n", help="Notes about this link"
-    ),
+    notes: str | None = typer.Option(None, "--notes", "-n", help="Notes about this link"),
     tags: str | None = typer.Option(None, "--tags", "-T", help="Comma-separated tags"),
     cred: str | None = typer.Option(
         None, "--cred", "-c", help="Vault credential ID for auto-login"
@@ -97,9 +93,7 @@ def add_link(
 @links_app.command("list")
 def list_links(
     tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag"),
-    cred: str | None = typer.Option(
-        None, "--cred", "-c", help="Filter by vault credential ID"
-    ),
+    cred: str | None = typer.Option(None, "--cred", "-c", help="Filter by vault credential ID"),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum number of results"),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
@@ -169,13 +163,9 @@ def search_links(
     con = _console()
     con.print(f'[bold]Found {len(links)} result(s) for[/bold] "{query}":\n')
     for link in links:
-        cred_hint = (
-            f" [green]🔑 {link.vault_cred_id}[/green]" if link.vault_cred_id else ""
-        )
+        cred_hint = f" [green]🔑 {link.vault_cred_id}[/green]" if link.vault_cred_id else ""
         tags_hint = f" [yellow][{', '.join(link.tags)}][/yellow]" if link.tags else ""
-        con.print(
-            f"  [cyan]{link.id}[/cyan] [blue]{link.url}[/blue]{cred_hint}{tags_hint}"
-        )
+        con.print(f"  [cyan]{link.id}[/cyan] [blue]{link.url}[/blue]{cred_hint}{tags_hint}")
         if link.title:
             con.print(f"       {link.title}")
         if link.notes:
@@ -221,9 +211,7 @@ def show_link(
 @links_app.command("open")
 def open_link(
     link_id: str = typer.Argument(..., help="Link ID"),
-    profile: str | None = typer.Option(
-        None, "--profile", "-p", help="Browser profile to use"
-    ),
+    profile: str | None = typer.Option(None, "--profile", "-p", help="Browser profile to use"),
     headless: bool = typer.Option(False, "--headless", help="Open in headless mode"),
 ):
     """
@@ -243,9 +231,7 @@ def open_link(
     db.record_visit(link_id)
 
     if link.vault_cred_id:
-        _ch.info(
-            f"Opening [blue]{link.url}[/blue] with auto-login (cred: {link.vault_cred_id})"
-        )
+        _ch.info(f"Opening [blue]{link.url}[/blue] with auto-login (cred: {link.vault_cred_id})")
         try:
             from navig.integrations.browser_orchestrator import run_browser_task
 
@@ -344,9 +330,7 @@ def delete_link(
 
 @links_app.command("import")
 def import_links(
-    file: str = typer.Argument(
-        ..., help="Path to JSON file (array of {url, title, notes, tags})"
-    ),
+    file: str = typer.Argument(..., help="Path to JSON file (array of {url, title, notes, tags})"),
     cred: str | None = typer.Option(
         None, "--cred", "-c", help="Apply this vault cred to all imported links"
     ),

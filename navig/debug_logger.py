@@ -41,9 +41,7 @@ class DebugLogger:
             r"\1***REDACTED***",
         ),
         (
-            re.compile(
-                r'(ssh_password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE
-            ),
+            re.compile(r'(ssh_password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
             r"\1***REDACTED***",
         ),
         (
@@ -216,9 +214,7 @@ class DebugLogger:
         if len(output_bytes) <= self.truncate_output_bytes:
             return output
 
-        truncated = output_bytes[: self.truncate_output_bytes].decode(
-            "utf-8", errors="replace"
-        )
+        truncated = output_bytes[: self.truncate_output_bytes].decode("utf-8", errors="replace")
         return f"{truncated}\n... [OUTPUT TRUNCATED - {len(output_bytes)} bytes total]"
 
     def _log(self, message: str):
@@ -281,9 +277,7 @@ class DebugLogger:
         ]
         self._log("\n".join(lines))
 
-    def log_ssh_result(
-        self, success: bool, output: str, error: str = "", duration_ms: float = 0
-    ):
+    def log_ssh_result(self, success: bool, output: str, error: str = "", duration_ms: float = 0):
         """
         Log the result of an SSH command.
 
@@ -374,9 +368,7 @@ class DebugLogger:
         lines.append("-" * 40)
         self._log("\n".join(lines))
 
-    def log_operation(
-        self, operation: str, details: dict[str, Any], success: bool = True
-    ):
+    def log_operation(self, operation: str, details: dict[str, Any], success: bool = True):
         """
         Log a general operation (file transfer, database query, etc.).
 

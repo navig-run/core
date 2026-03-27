@@ -90,9 +90,7 @@ class NavigMatrixBot:
         # Resolve E2EE: enabled only if config says so AND libolm is available
         want_e2ee = self.cfg.e2ee and HAS_OLM
         if self.cfg.e2ee and not HAS_OLM:
-            logger.warning(
-                "E2EE requested but libolm not installed. pip install matrix-nio[e2e]"
-            )
+            logger.warning("E2EE requested but libolm not installed. pip install matrix-nio[e2e]")
 
         # Resolve store path for crypto persistence
         store_dir = self.cfg.store_path or None
@@ -122,9 +120,7 @@ class NavigMatrixBot:
             self._client.user_id = self.cfg.user_id
             logger.info("Matrix: using access token for %s", self.cfg.user_id)
         else:
-            resp = await self._client.login(
-                self.cfg.password, device_name=self.cfg.device_name
-            )
+            resp = await self._client.login(self.cfg.password, device_name=self.cfg.device_name)
             if not isinstance(resp, LoginResponse):
                 raise RuntimeError(f"Matrix login failed: {resp}")
             logger.info("Matrix: logged in as %s", self.cfg.user_id)
@@ -142,9 +138,7 @@ class NavigMatrixBot:
                     self._on_key_verification,
                     KeyVerificationEvent,
                 )
-                logger.info(
-                    "Matrix: E2EE enabled, key verification callbacks registered"
-                )
+                logger.info("Matrix: E2EE enabled, key verification callbacks registered")
             except (ImportError, Exception) as exc:
                 logger.warning("Matrix: could not register E2EE callbacks: %s", exc)
 
@@ -273,9 +267,7 @@ class NavigMatrixBot:
             resp = await self._client.room_create(
                 name=name,
                 topic=topic,
-                visibility=(
-                    RoomVisibility.public if is_public else RoomVisibility.private
-                ),
+                visibility=(RoomVisibility.public if is_public else RoomVisibility.private),
                 invite=invite_user_ids or [],
             )
             if isinstance(resp, RoomCreateResponse):
@@ -477,9 +469,7 @@ class NavigMatrixBot:
 
         return rooms
 
-    async def get_room_messages(
-        self, room_id: str, limit: int = 20
-    ) -> list[dict[str, Any]]:
+    async def get_room_messages(self, room_id: str, limit: int = 20) -> list[dict[str, Any]]:
         """Fetch recent messages from a room via /messages endpoint."""
         if not self._client:
             return []
@@ -570,8 +560,7 @@ class NavigMatrixBot:
                         sender=event.sender,
                         event_type="m.room.message",
                         content={"body": getattr(event, "body", "")},
-                        origin_ts=getattr(event, "server_timestamp", 0)
-                        or int(time.time() * 1000),
+                        origin_ts=getattr(event, "server_timestamp", 0) or int(time.time() * 1000),
                     )
                 )
             except Exception:

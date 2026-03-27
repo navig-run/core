@@ -470,9 +470,7 @@ class Ears(Component):
     async def _on_health_check(self) -> dict[str, Any]:
         """Health check for ears."""
         return {
-            "listeners": {
-                name: listener._running for name, listener in self._listeners.items()
-            },
+            "listeners": {name: listener._running for name, listener in self._listeners.items()},
             "message_counts": self._message_counts,
             "queue_size": self._message_queue.qsize(),
         }
@@ -495,15 +493,11 @@ class Ears(Component):
             },
         )
 
-    async def get_next_message(
-        self, timeout: float | None = None
-    ) -> InputMessage | None:
+    async def get_next_message(self, timeout: float | None = None) -> InputMessage | None:
         """Get next message from queue."""
         try:
             if timeout:
-                return await asyncio.wait_for(
-                    self._message_queue.get(), timeout=timeout
-                )
+                return await asyncio.wait_for(self._message_queue.get(), timeout=timeout)
             else:
                 return self._message_queue.get_nowait()
         except (asyncio.TimeoutError, asyncio.QueueEmpty):

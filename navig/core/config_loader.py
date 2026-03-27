@@ -113,9 +113,7 @@ def _load_yaml_recursive(path: Path, seen_paths: set[Path], depth: int = 0) -> A
     return _process_includes(data, path.parent, seen_paths, depth)
 
 
-def _process_includes(
-    data: Any, base_dir: Path, seen_paths: set[Path], depth: int
-) -> Any:
+def _process_includes(data: Any, base_dir: Path, seen_paths: set[Path], depth: int) -> Any:
     """
     Traverse data structure and resolve $include directives.
     """
@@ -137,16 +135,13 @@ def _process_includes(
                 content = _load_yaml_recursive(inc_path, seen_paths.copy(), depth + 1)
 
                 if not isinstance(content, dict):
-                    raise ConfigLoaderError(
-                        f"Included file {inc_path} must be a dictionary"
-                    )
+                    raise ConfigLoaderError(f"Included file {inc_path} must be a dictionary")
 
                 included_data = _deep_merge(included_data, content)
 
         # 2. Process remaining keys recursively
         processed_data = {
-            k: _process_includes(v, base_dir, seen_paths, depth)
-            for k, v in data.items()
+            k: _process_includes(v, base_dir, seen_paths, depth) for k, v in data.items()
         }
 
         # 3. Merge included data with current data (current overrides included)

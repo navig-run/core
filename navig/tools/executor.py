@@ -94,9 +94,7 @@ class ToolExecutor:
             yield StreamFinal(output=output)
 
         except asyncio.TimeoutError:
-            yield StreamError(
-                f"Execution timed out after {request.timeout_s}s", code="timeout"
-            )
+            yield StreamError(f"Execution timed out after {request.timeout_s}s", code="timeout")
         except asyncio.CancelledError:
             yield StreamError("Execution cancelled", code="cancelled")
         except Exception as e:

@@ -147,9 +147,7 @@ def test_probe_free_cloud():
     # Config var
     with (
         patch.dict(os.environ, clear=True),
-        patch(
-            "navig.agent.llm_probe._read_navig_config_key", return_value="ghp_123456"
-        ),
+        patch("navig.agent.llm_probe._read_navig_config_key", return_value="ghp_123456"),
     ):
         res = _probe_free_cloud()
         assert res is not None

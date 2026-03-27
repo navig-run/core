@@ -116,9 +116,7 @@ class Scaffolder:
             if item_type == "directory":
                 self._create_directory(item_path, mode)
                 if "children" in item:
-                    self._process_structure(
-                        item.get("children", []), item_path, variables
-                    )
+                    self._process_structure(item.get("children", []), item_path, variables)
             else:
                 self._create_file(item, item_path, mode, variables)
 
@@ -143,9 +141,7 @@ class Scaffolder:
             if "{{" not in cond_str:
                 cond_str = "{{" + cond_str + "}}"
 
-            result = (
-                self.jinja_env.from_string(cond_str).render(**variables).strip().lower()
-            )
+            result = self.jinja_env.from_string(cond_str).render(**variables).strip().lower()
             return result in ("true", "yes", "1", "on")
         except Exception as e:
             ch.warning(f"Failed to evaluate condition '{condition}': {e}")

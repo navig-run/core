@@ -272,9 +272,7 @@ class DailyLog:
 
         return [dict(row) for row in rows]
 
-    def get_session_entries(
-        self, session_id: str | None = None
-    ) -> list[dict[str, Any]]:
+    def get_session_entries(self, session_id: str | None = None) -> list[dict[str, Any]]:
         """Get entries for a specific session."""
         self._ensure_initialized()
 
@@ -431,9 +429,7 @@ class DailyLog:
         """
         self._ensure_initialized()
 
-        cutoff = (datetime.utcnow() - timedelta(days=self.retention_days)).strftime(
-            "%Y-%m-%d"
-        )
+        cutoff = (datetime.utcnow() - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
 
         with self._get_connection() as conn:
             cursor = conn.execute("DELETE FROM interactions WHERE date < ?", (cutoff,))
@@ -458,9 +454,7 @@ class DailyLog:
             oldest = conn.execute("SELECT MIN(date) FROM interactions").fetchone()[0]
 
             by_role = dict(
-                conn.execute(
-                    "SELECT role, COUNT(*) FROM interactions GROUP BY role"
-                ).fetchall()
+                conn.execute("SELECT role, COUNT(*) FROM interactions GROUP BY role").fetchall()
             )
 
         return {

@@ -404,9 +404,7 @@ def classify_request(
     dimensions: dict[str, tuple[float, str | None]] = {}
 
     dimensions["tokenCount"] = _score_token_count(estimated_tokens)
-    dimensions["codePresence"] = _score_keywords(
-        ut, _CODE_KEYWORDS, 1, 2, 0.0, 0.5, 1.0, "code"
-    )
+    dimensions["codePresence"] = _score_keywords(ut, _CODE_KEYWORDS, 1, 2, 0.0, 0.5, 1.0, "code")
     dimensions["reasoningMarkers"] = _score_keywords(
         ut, _REASONING_KEYWORDS, 1, 2, 0.0, 0.7, 1.0, "reasoning"
     )
@@ -448,8 +446,7 @@ def classify_request(
 
     # Weighted aggregate score
     weighted_score = sum(
-        score * _DIMENSION_WEIGHTS.get(name, 0.0)
-        for name, (score, _) in dimensions.items()
+        score * _DIMENSION_WEIGHTS.get(name, 0.0) for name, (score, _) in dimensions.items()
     )
 
     # --- Agentic override ---

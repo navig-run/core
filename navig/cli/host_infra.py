@@ -81,9 +81,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @tunnel_app.command("show")
     def tunnel_show(
         ctx: typer.Context,
-        plain: bool = typer.Option(
-            False, "--plain", help="Output plain text for scripting"
-        ),
+        plain: bool = typer.Option(False, "--plain", help="Output plain text for scripting"),
         json: bool = typer.Option(False, "--json", help="Output JSON"),
     ):
         """Show tunnel status (canonical command)."""
@@ -136,19 +134,11 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @monitor_app.command("show")
     def monitor_show(
         ctx: typer.Context,
-        resources: bool = typer.Option(
-            False, "--resources", "-r", help="Show resource usage"
-        ),
+        resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
         disk: bool = typer.Option(False, "--disk", "-d", help="Show disk space"),
-        services: bool = typer.Option(
-            False, "--services", "-s", help="Show service status"
-        ),
-        network: bool = typer.Option(
-            False, "--network", "-n", help="Show network stats"
-        ),
-        threshold: int = typer.Option(
-            80, "--threshold", "-t", help="Alert threshold percentage"
-        ),
+        services: bool = typer.Option(False, "--services", "-s", help="Show service status"),
+        network: bool = typer.Option(False, "--network", "-n", help="Show network stats"),
+        threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
     ):
         """Show monitoring information (canonical command)."""
         if resources:
@@ -198,9 +188,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @monitor_app.command("disk", hidden=True)
     def monitor_disk_new(
         ctx: typer.Context,
-        threshold: int = typer.Option(
-            80, "--threshold", "-t", help="Alert threshold percentage"
-        ),
+        threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
     ):
         """[DEPRECATED: Use 'navig monitor show --disk'] Monitor disk space."""
         deprecation_warning("navig monitor disk", "navig monitor show --disk")
@@ -252,14 +240,10 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("monitor-disk", hidden=True)
     def monitor_disk_cmd(
         ctx: typer.Context,
-        threshold: int = typer.Option(
-            80, "--threshold", "-t", help="Alert threshold percentage"
-        ),
+        threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
     ):
         """[DEPRECATED: Use 'navig monitor disk']"""
-        ch.warning(
-            "'navig monitor-disk' is deprecated. Use 'navig monitor disk' instead."
-        )
+        ch.warning("'navig monitor-disk' is deprecated. Use 'navig monitor disk' instead.")
         from navig.commands.monitoring import monitor_disk
 
         monitor_disk(threshold, ctx.obj)
@@ -267,9 +251,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("monitor-services", hidden=True)
     def monitor_services_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig monitor services']"""
-        ch.warning(
-            "'navig monitor-services' is deprecated. Use 'navig monitor services' instead."
-        )
+        ch.warning("'navig monitor-services' is deprecated. Use 'navig monitor services' instead.")
         from navig.commands.monitoring import monitor_services
 
         monitor_services(ctx.obj)
@@ -277,9 +259,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("monitor-network", hidden=True)
     def monitor_network_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig monitor network']"""
-        ch.warning(
-            "'navig monitor-network' is deprecated. Use 'navig monitor network' instead."
-        )
+        ch.warning("'navig monitor-network' is deprecated. Use 'navig monitor network' instead.")
         from navig.commands.monitoring import monitor_network
 
         monitor_network(ctx.obj)
@@ -287,9 +267,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("health-check", hidden=True)
     def health_check_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig monitor health']"""
-        ch.warning(
-            "'navig health-check' is deprecated. Use 'navig monitor health' instead."
-        )
+        ch.warning("'navig health-check' is deprecated. Use 'navig monitor health' instead.")
         from navig.commands.monitoring import health_check
 
         health_check(ctx.obj)
@@ -297,9 +275,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("monitoring-report", hidden=True)
     def monitoring_report_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig monitor report']"""
-        ch.warning(
-            "'navig monitoring-report' is deprecated. Use 'navig monitor report' instead."
-        )
+        ch.warning("'navig monitoring-report' is deprecated. Use 'navig monitor report' instead.")
         from navig.commands.monitoring import generate_report
 
         generate_report(ctx.obj)
@@ -324,16 +300,10 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @security_app.command("show")
     def security_show(
         ctx: typer.Context,
-        firewall: bool = typer.Option(
-            False, "--firewall", "-f", help="Show firewall status"
-        ),
-        fail2ban: bool = typer.Option(
-            False, "--fail2ban", "-b", help="Show fail2ban status"
-        ),
+        firewall: bool = typer.Option(False, "--firewall", "-f", help="Show firewall status"),
+        fail2ban: bool = typer.Option(False, "--fail2ban", "-b", help="Show fail2ban status"),
         ssh: bool = typer.Option(False, "--ssh", "-s", help="Show SSH audit"),
-        updates: bool = typer.Option(
-            False, "--updates", "-u", help="Show security updates"
-        ),
+        updates: bool = typer.Option(False, "--updates", "-u", help="Show security updates"),
         connections: bool = typer.Option(
             False, "--connections", "-c", help="Show network connections"
         ),
@@ -382,12 +352,8 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     def security_firewall_add_new(
         ctx: typer.Context,
         port: int = typer.Argument(..., help="Port number"),
-        protocol: str = typer.Option(
-            "tcp", "--protocol", "-p", help="Protocol (tcp/udp)"
-        ),
-        allow_from: str = typer.Option(
-            "any", "--from", help="IP address or subnet (default: any)"
-        ),
+        protocol: str = typer.Option("tcp", "--protocol", "-p", help="Protocol (tcp/udp)"),
+        allow_from: str = typer.Option("any", "--from", help="IP address or subnet (default: any)"),
     ):
         """Add UFW firewall rule."""
         from navig.commands.security import firewall_add_rule
@@ -397,9 +363,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @security_app.command("edit")
     def security_edit(
         ctx: typer.Context,
-        firewall: bool = typer.Option(
-            False, "--firewall", "-f", help="Edit firewall rules"
-        ),
+        firewall: bool = typer.Option(False, "--firewall", "-f", help="Edit firewall rules"),
         port: int | None = typer.Option(None, "--port", "-p", help="Port number"),
         protocol: str = typer.Option("tcp", "--protocol", help="Protocol (tcp/udp)"),
         allow_from: str = typer.Option("any", "--from", help="IP address or subnet"),
@@ -407,12 +371,8 @@ def register_host_infra_commands(app: typer.Typer) -> None:
         remove: bool = typer.Option(False, "--remove", "-r", help="Remove a rule"),
         enable: bool = typer.Option(False, "--enable", help="Enable firewall"),
         disable: bool = typer.Option(False, "--disable", help="Disable firewall"),
-        unban: str | None = typer.Option(
-            None, "--unban", help="Unban IP address from fail2ban"
-        ),
-        jail: str | None = typer.Option(
-            None, "--jail", "-j", help="Jail name for fail2ban"
-        ),
+        unban: str | None = typer.Option(None, "--unban", help="Unban IP address from fail2ban"),
+        jail: str | None = typer.Option(None, "--jail", "-j", help="Jail name for fail2ban"),
     ):
         """Edit security settings (canonical command)."""
         if firewall:
@@ -445,9 +405,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     def security_firewall_remove_new(
         ctx: typer.Context,
         port: int = typer.Argument(..., help="Port number"),
-        protocol: str = typer.Option(
-            "tcp", "--protocol", "-p", help="Protocol (tcp/udp)"
-        ),
+        protocol: str = typer.Option("tcp", "--protocol", "-p", help="Protocol (tcp/udp)"),
     ):
         """Remove UFW firewall rule."""
         from navig.commands.security import firewall_remove_rule
@@ -480,9 +438,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     def security_unban_new(
         ctx: typer.Context,
         ip_address: str = typer.Argument(..., help="IP address to unban"),
-        jail: str = typer.Option(
-            None, "--jail", "-j", help="Jail name (default: all jails)"
-        ),
+        jail: str = typer.Option(None, "--jail", "-j", help="Jail name (default: all jails)"),
     ):
         """[DEPRECATED: Use 'navig security edit --unban <ip>'] Unban IP."""
         deprecation_warning("navig security unban", "navig security edit --unban <ip>")
@@ -522,9 +478,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("firewall-status", hidden=True)
     def firewall_status_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig security firewall']"""
-        ch.warning(
-            "'navig firewall-status' is deprecated. Use 'navig security firewall' instead."
-        )
+        ch.warning("'navig firewall-status' is deprecated. Use 'navig security firewall' instead.")
         from navig.commands.security import firewall_status
 
         firewall_status(ctx.obj)
@@ -532,18 +486,12 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("firewall-add", hidden=True)
     def firewall_add_cmd(
         port: int = typer.Argument(..., help="Port number"),
-        protocol: str = typer.Option(
-            "tcp", "--protocol", "-p", help="Protocol (tcp/udp)"
-        ),
-        allow_from: str = typer.Option(
-            "any", "--from", help="IP address or subnet (default: any)"
-        ),
+        protocol: str = typer.Option("tcp", "--protocol", "-p", help="Protocol (tcp/udp)"),
+        allow_from: str = typer.Option("any", "--from", help="IP address or subnet (default: any)"),
         ctx: typer.Context = typer.Context,
     ):
         """[DEPRECATED: Use 'navig security firewall-add']"""
-        ch.warning(
-            "'navig firewall-add' is deprecated. Use 'navig security firewall-add' instead."
-        )
+        ch.warning("'navig firewall-add' is deprecated. Use 'navig security firewall-add' instead.")
         from navig.commands.security import firewall_add_rule
 
         firewall_add_rule(port, protocol, allow_from, ctx.obj)
@@ -551,9 +499,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("firewall-remove", hidden=True)
     def firewall_remove_cmd(
         port: int = typer.Argument(..., help="Port number"),
-        protocol: str = typer.Option(
-            "tcp", "--protocol", "-p", help="Protocol (tcp/udp)"
-        ),
+        protocol: str = typer.Option("tcp", "--protocol", "-p", help="Protocol (tcp/udp)"),
         ctx: typer.Context = typer.Context,
     ):
         """[DEPRECATED: Use 'navig security firewall-remove']"""
@@ -567,9 +513,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("fail2ban-status", hidden=True)
     def fail2ban_status_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig security fail2ban']"""
-        ch.warning(
-            "'navig fail2ban-status' is deprecated. Use 'navig security fail2ban' instead."
-        )
+        ch.warning("'navig fail2ban-status' is deprecated. Use 'navig security fail2ban' instead.")
         from navig.commands.security import fail2ban_status
 
         fail2ban_status(ctx.obj)
@@ -577,9 +521,7 @@ def register_host_infra_commands(app: typer.Typer) -> None:
     @app.command("security-scan", hidden=True)
     def security_scan_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig security scan']"""
-        ch.warning(
-            "'navig security-scan' is deprecated. Use 'navig security scan' instead."
-        )
+        ch.warning("'navig security-scan' is deprecated. Use 'navig security scan' instead.")
         from navig.commands.security import security_scan
 
         security_scan(ctx.obj)

@@ -31,9 +31,7 @@ def _tail(gw):
             raw = [e for e in raw if e.get("status") == status]
 
         # Return most recent `limit` after filtering, newest-first
-        events = (
-            list(reversed(raw[-limit:])) if len(raw) > limit else list(reversed(raw))
-        )
+        events = list(reversed(raw[-limit:])) if len(raw) > limit else list(reversed(raw))
         return json_ok({"events": events, "count": len(events)})
 
     return h

@@ -150,9 +150,7 @@ def _space_list() -> None:
 
 @space_app.command("new")
 def space_new(
-    name: str = typer.Argument(
-        ..., help="Space name — slug format: a-z0-9 and hyphens"
-    ),
+    name: str = typer.Argument(..., help="Space name — slug format: a-z0-9 and hyphens"),
 ) -> None:
     """Create a new named space."""
     if not _validate_slug(name):

@@ -207,17 +207,12 @@ class _BM25:
             if term not in self.idf:
                 continue
             tf = tf_map.get(term, 0)
-            norm_tf = (tf * (self.K1 + 1)) / (
-                tf + self.K1 * (1 - self.B + self.B * dl / self.avdl)
-            )
+            norm_tf = (tf * (self.K1 + 1)) / (tf + self.K1 * (1 - self.B + self.B * dl / self.avdl))
             score += self.idf[term] * norm_tf
         return score
 
     def rank(self, query_terms: list[str]) -> list[tuple[str, float]]:
-        scored = [
-            (self.labels[i], self.score(query_terms, i))
-            for i in range(len(self.labels))
-        ]
+        scored = [(self.labels[i], self.score(query_terms, i)) for i in range(len(self.labels))]
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored
 

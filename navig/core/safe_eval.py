@@ -56,13 +56,13 @@ def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
     # Literals
     if isinstance(node, ast.Constant):  # Python 3.8+
         return node.value
-    if isinstance(
-        node, (ast.Str, ast.Num, ast.Bytes, ast.NameConstant)
-    ):  # Python < 3.8
+    if isinstance(node, (ast.Str, ast.Num, ast.Bytes, ast.NameConstant)):  # Python < 3.8
         return (
             node.n
             if isinstance(node, ast.Num)
-            else node.s if isinstance(node, ast.Str) else node.value
+            else node.s
+            if isinstance(node, ast.Str)
+            else node.value
         )
 
     # Data structures
@@ -99,9 +99,7 @@ def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
     if isinstance(node, ast.BinOp):
         op = calc_operators.get(type(node.op))
         if op:
-            return op(
-                _eval_node(node.left, variables), _eval_node(node.right, variables)
-            )
+            return op(_eval_node(node.left, variables), _eval_node(node.right, variables))
         raise ValueError(f"Unknown binary operator: {type(node.op)}")
 
     if isinstance(node, ast.Compare):

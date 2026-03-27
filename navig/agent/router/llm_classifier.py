@@ -135,9 +135,7 @@ def _read_cache(key: str) -> RequestTier | None:
         datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - inserted_at
     ).total_seconds()
     if age > CACHE_TTL_SECONDS:
-        logger.debug(
-            "llm_classifier: cache TTL expired key={} age_s={:.0f}", key[:16], age
-        )
+        logger.debug("llm_classifier: cache TTL expired key={} age_s={:.0f}", key[:16], age)
         return None
 
     logger.debug("llm_classifier: cache hit key={} tier={}", key[:16], tier)
@@ -178,9 +176,7 @@ def _parse_tier(raw: str) -> RequestTier | None:
     for tier in _TIER_SCAN_ORDER:
         if re.search(rf"\b{tier}\b", normalised):
             return tier
-    logger.warning(
-        "llm_classifier: _parse_tier could not extract tier from response={!r}", raw
-    )
+    logger.warning("llm_classifier: _parse_tier could not extract tier from response={!r}", raw)
     return None
 
 
@@ -198,9 +194,7 @@ async def _call_llm(prompt: str) -> RequestTier:
     """
     client = get_ai_client()
     truncated = prompt[:500]
-    logger.debug(
-        "llm_classifier: calling LLM for tier classification ({}chars)", len(truncated)
-    )
+    logger.debug("llm_classifier: calling LLM for tier classification ({}chars)", len(truncated))
 
     try:
         raw: str = await client.complete(
@@ -210,16 +204,12 @@ async def _call_llm(prompt: str) -> RequestTier:
             temperature=0,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "llm_classifier: LLM call failed, defaulting to MEDIUM — {}", exc
-        )
+        logger.warning("llm_classifier: LLM call failed, defaulting to MEDIUM — {}", exc)
         return "MEDIUM"
 
     tier = _parse_tier(raw)
     if tier is None:
-        logger.warning(
-            "llm_classifier: parse failure, defaulting to MEDIUM — raw={!r}", raw
-        )
+        logger.warning("llm_classifier: parse failure, defaulting to MEDIUM — raw={!r}", raw)
         return "MEDIUM"
 
     logger.debug("llm_classifier: LLM classified tier={} raw={!r}", tier, raw)

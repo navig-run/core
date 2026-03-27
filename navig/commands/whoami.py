@@ -27,9 +27,7 @@ def run_whoami() -> None:
                 "Run [bold cyan]navig onboard[/bold cyan] to generate your identity sigil.\n"
             )
         except ImportError:
-            print(
-                "No entity found.  Run `navig onboard` to generate your identity sigil."
-            )
+            print("No entity found.  Run `navig onboard` to generate your identity sigil.")
         return
 
     entity = derive_entity(data["seed"])

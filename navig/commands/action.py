@@ -162,9 +162,7 @@ def action_show(
     actions = _load_all_actions()
     action = next((a for a in actions if a.get("name") == name), None)
     if action is None:
-        ch.error(
-            f"Action '{name}' not found. Use 'navig action list' to see available actions."
-        )
+        ch.error(f"Action '{name}' not found. Use 'navig action list' to see available actions.")
         raise typer.Exit(1)
     ch.header(f"Action: {name}")
     ch.kv("Command", action.get("command", "—"))
@@ -251,9 +249,7 @@ def action_remove(
 @action_app.command("run")
 def action_run(
     name: str = typer.Argument(..., help="Action name to execute"),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Print command without executing"
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
 ):
     """Run a quick action by name."""
     actions = _load_all_actions()

@@ -59,9 +59,7 @@ class Task:
     final_result: str | None = None
     # Executor-private: excluded from __init__, __repr__, __eq__ to keep Task
     # as a pure data object; TaskExecutor sets this directly after construction.
-    _reflection_attempted: bool = field(
-        default=False, repr=False, compare=False, init=False
-    )
+    _reflection_attempted: bool = field(default=False, repr=False, compare=False, init=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise the essential task fields to a plain dict for logging / API responses."""
@@ -89,9 +87,7 @@ class TaskExecutor:
         max_attempts: int = 3,
     ) -> None:
         """Initialise the executor with an optional status callback, localisation store, and retry limit."""
-        self._notify_cb: Callable[[StatusEvent], Awaitable[None]] | None = (
-            on_status_update
-        )
+        self._notify_cb: Callable[[StatusEvent], Awaitable[None]] | None = on_status_update
         self._loc: LocalizationStore = localization or LocalizationStore()
         self._max_attempts = max(1, max_attempts)
         self.current_task: Task | None = None
@@ -128,9 +124,7 @@ class TaskExecutor:
         )
         self.current_task = task
         if task.status == TaskStatus.PLANNING:
-            steps_desc = "\n".join(
-                f"  {i + 1}. {s.description}" for i, s in enumerate(task.plan)
-            )
+            steps_desc = "\n".join(f"  {i + 1}. {s.description}" for i, s in enumerate(task.plan))
             return f"{message}\n\nPlan:\n{steps_desc}\n\nReply 'yes' to proceed or 'no' to cancel."
         return await self.execute(task)
 
@@ -265,12 +259,8 @@ class TaskExecutor:
                                     )
                                 )
                                 rem_result = await self._execute_step(rem_step)
-                                rem_step.status, rem_step.result = "success", str(
-                                    rem_result
-                                )
-                                results.append(
-                                    f"✅ (remediation) {rem_step.description}"
-                                )
+                                rem_step.status, rem_step.result = "success", str(rem_result)
+                                results.append(f"✅ (remediation) {rem_step.description}")
                                 await self._emit_event(
                                     StatusEvent(
                                         type="step_done",
@@ -292,8 +282,7 @@ class TaskExecutor:
                                         metadata={
                                             "error": str(exc),
                                             "attempt": attempt,
-                                            "is_final": attempt
-                                            >= self._max_attempts - 1,
+                                            "is_final": attempt >= self._max_attempts - 1,
                                         },
                                     )
                                 )
@@ -304,9 +293,7 @@ class TaskExecutor:
                                     )
                                     await asyncio.sleep(delay)
                         if last_rem_err is not None:
-                            rem_step.status, rem_step.error = "failed", str(
-                                last_rem_err
-                            )
+                            rem_step.status, rem_step.error = "failed", str(last_rem_err)
                             results.append(
                                 f"❌ (remediation) {rem_step.description}: {last_rem_err}"
                             )
@@ -383,16 +370,12 @@ class TaskExecutor:
         from navig.tools.schemas import ToolCallAction as _ToolCallAction
 
         _router = get_tool_router()
-        _result = await _router.async_execute(
-            _ToolCallAction(tool=action, parameters=params)
-        )
+        _result = await _router.async_execute(_ToolCallAction(tool=action, parameters=params))
         if _result.status == ToolResultStatus.SUCCESS:
             return _result.output
         if _result.status == ToolResultStatus.NOT_FOUND:
             raise ValueError(f"Unknown action: {action!r}")
-        raise RuntimeError(
-            f"Tool '{action}' failed ({_result.status.value}): {_result.error}"
-        )
+        raise RuntimeError(f"Tool '{action}' failed ({_result.status.value}): {_result.error}")
 
     async def execute_multi_step_action(
         self,

@@ -210,9 +210,7 @@ if PYDANTIC_OK:
         def validate_provider(cls, v: str) -> str:
             v = v.lower().strip()
             if v and v not in SUPPORTED_PROVIDERS:
-                logger.warning(
-                    "Unknown provider '%s' — may still work if OpenAI-compatible", v
-                )
+                logger.warning("Unknown provider '%s' — may still work if OpenAI-compatible", v)
             return v
 
     class UncensoredLocalModels(BaseModel):
@@ -663,9 +661,7 @@ class LLMModeRouter:
             )
 
         want_uncensored = (
-            prefer_uncensored
-            if prefer_uncensored is not None
-            else mode_cfg.use_uncensored
+            prefer_uncensored if prefer_uncensored is not None else mode_cfg.use_uncensored
         )
 
         # If uncensored is requested and the primary provider is censored,

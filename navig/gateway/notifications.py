@@ -228,9 +228,7 @@ class TelegramNotifier(ChannelNotifier):
 
                     # Special handling for engagement tick
                     if task.name == "engagement_tick":
-                        if (
-                            now - last_engagement
-                        ).total_seconds() >= engagement_interval:
+                        if (now - last_engagement).total_seconds() >= engagement_interval:
                             await self._run_task(task)
                             last_engagement = now
                         continue
@@ -282,13 +280,9 @@ class TelegramNotifier(ChannelNotifier):
                 return
 
             # Group by priority
-            critical = [
-                n for n in self.queue if n.priority == NotificationPriority.CRITICAL
-            ]
+            critical = [n for n in self.queue if n.priority == NotificationPriority.CRITICAL]
             high = [n for n in self.queue if n.priority == NotificationPriority.HIGH]
-            normal = [
-                n for n in self.queue if n.priority == NotificationPriority.NORMAL
-            ]
+            normal = [n for n in self.queue if n.priority == NotificationPriority.NORMAL]
             low = [n for n in self.queue if n.priority == NotificationPriority.LOW]
 
             # Send critical immediately
@@ -302,9 +296,7 @@ class TelegramNotifier(ChannelNotifier):
                 self.queue.remove(n)
 
             # Batch low priority (send if more than 3 or older than 30 min)
-            if len(low) >= 3 or (
-                low and (datetime.now() - low[0].created_at).seconds > 1800
-            ):
+            if len(low) >= 3 or (low and (datetime.now() - low[0].created_at).seconds > 1800):
                 await self._send_batched(low)
                 for n in low:
                     self.queue.remove(n)
@@ -319,9 +311,7 @@ class TelegramNotifier(ChannelNotifier):
         try:
             # Quiet-hours / DND gating
             if self._should_suppress(notification):
-                logger.debug(
-                    "Suppressed notification (quiet hours/DND): %s", notification.title
-                )
+                logger.debug("Suppressed notification (quiet hours/DND): %s", notification.title)
                 return
             message = notification.to_telegram_message()
             await self.channel.send_message(self.chat_id, message)

@@ -148,9 +148,7 @@ def require_human_confirmation_if_destructive(
                 _truncate(planned_action),
             )
         else:
-            logger.debug(
-                "Guard pass (no destructive pattern): %s", _truncate(planned_action)
-            )
+            logger.debug("Guard pass (no destructive pattern): %s", _truncate(planned_action))
         return True
 
     # Destructive action detected

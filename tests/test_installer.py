@@ -155,9 +155,7 @@ class TestRunner:
             ctx = InstallerContext(profile="node", dry_run=False, config_dir=tmp_path)
             # Build two sequential actions; second should not be reached
             actions = [
-                Action(
-                    id="core_cli.verify", description="check cli", module="core_cli"
-                ),
+                Action(id="core_cli.verify", description="check cli", module="core_cli"),
                 Action(
                     id="config_paths.mkdir.root",
                     description="mkdir root",
@@ -491,9 +489,7 @@ class TestTelegramModule:
         from navig.installer.contracts import InstallerContext
         from navig.installer.modules.telegram import plan
 
-        monkeypatch.setenv(
-            "NAVIG_TELEGRAM_BOT_TOKEN", "1234567890:AABBCCDDEEFFaabbccddeeff"
-        )
+        monkeypatch.setenv("NAVIG_TELEGRAM_BOT_TOKEN", "1234567890:AABBCCDDEEFFaabbccddeeff")
         ctx = InstallerContext(profile="operator", config_dir=tmp_path)
         actions = plan(ctx)
         assert len(actions) == 1

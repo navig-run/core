@@ -241,9 +241,7 @@ def migrate(
 
         for item in results["migrated"]:
             status = "DRY RUN" if item.get("dry_run") else "MIGRATED"
-            table.add_row(
-                Path(item["old_file"]).name, Path(item["new_file"]).name, status
-            )
+            table.add_row(Path(item["old_file"]).name, Path(item["new_file"]).name, status)
 
         console.print(table)
         console.print()
@@ -282,9 +280,7 @@ def migrate(
         ch.info(f"Would migrate {len(results['migrated'])} configuration(s)")
     else:
         if results["migrated"]:
-            ch.success(
-                f"Successfully migrated {len(results['migrated'])} configuration(s)"
-            )
+            ch.success(f"Successfully migrated {len(results['migrated'])} configuration(s)")
             ch.info("Old configurations are still available in ~/.navig/apps/")
             ch.info("Backups created with .backup.<timestamp>.yaml extension")
         else:
@@ -393,13 +389,9 @@ def validate(
                     )
                     continue
                 if isinstance(doc.data, dict):
-                    issues.extend(
-                        _validate_host_data(host_path, doc.data, doc, strict=strict)
-                    )
+                    issues.extend(_validate_host_data(host_path, doc.data, doc, strict=strict))
                 else:
-                    issues.extend(
-                        _validate_host_data(host_path, {}, doc, strict=strict)
-                    )
+                    issues.extend(_validate_host_data(host_path, {}, doc, strict=strict))
 
         if apps_dir.exists():
             for app_path in sorted(apps_dir.glob("*.y*ml")):
@@ -419,16 +411,10 @@ def validate(
                     continue
                 if isinstance(doc.data, dict):
                     issues.extend(
-                        _validate_app_data(
-                            app_path, doc.data, doc, known_hosts, strict=strict
-                        )
+                        _validate_app_data(app_path, doc.data, doc, known_hosts, strict=strict)
                     )
                 else:
-                    issues.extend(
-                        _validate_app_data(
-                            app_path, {}, doc, known_hosts, strict=strict
-                        )
-                    )
+                    issues.extend(_validate_app_data(app_path, {}, doc, known_hosts, strict=strict))
 
         if config_file.exists():
             try:
@@ -444,16 +430,13 @@ def validate(
                     }
                 )
 
-        scope_result["issues"] = sum(
-            1 for e in issues if e.get("file", "").startswith(str(root))
-        )
+        scope_result["issues"] = sum(1 for e in issues if e.get("file", "").startswith(str(root)))
         results.append(scope_result)
 
     if json_out:
         payload = {
             "ok": all(i.get("severity") != "error" for i in issues),
-            "scope": scope
-            or ("project" if any(r[0] == "project" for r in roots) else "global"),
+            "scope": scope or ("project" if any(r[0] == "project" for r in roots) else "global"),
             "strict": strict,
             "results": results,
             "issues": issues,
@@ -480,9 +463,7 @@ def validate(
         ch.dim("  - Then re-run: navig config validate")
         ch.dim("")
         ch.dim("Tip:")
-        ch.dim(
-            "  - Validate only the project config: navig config validate --scope project"
-        )
+        ch.dim("  - Validate only the project config: navig config validate --scope project")
         ch.dim("  - Validate both:                 navig config validate --scope both")
         raise typer.Exit(1)
 
@@ -524,9 +505,7 @@ def install_schemas(
         ch.dim("  Or:  --scope project  (installs under .navig in current dir)")
         raise typer.Exit(1)
 
-    target_root = (
-        (Path.home() / ".navig") if scope == "global" else (Path.cwd() / ".navig")
-    )
+    target_root = (Path.home() / ".navig") if scope == "global" else (Path.cwd() / ".navig")
     target_dir = target_root / "schemas"
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -579,9 +558,7 @@ def install_schemas(
                     "scope": scope,
                     "installed": [str(host_dst), str(app_dst)],
                     "vscode_settings_written": vscode_settings_written,
-                    "vscode_settings_path": (
-                        str(settings_path) if write_vscode_settings else None
-                    ),
+                    "vscode_settings_path": (str(settings_path) if write_vscode_settings else None),
                 },
                 indent=2,
             )
@@ -735,22 +712,16 @@ def show_settings():
     # Active context
     table.add_row("Active Host", active_host or "(none)", "Currently selected host")
     table.add_row("Active App", active_app or "(none)", "Currently selected app")
-    table.add_row(
-        "Default Host", default_host or "(none)", "Fallback when no active host"
-    )
+    table.add_row("Default Host", default_host or "(none)", "Fallback when no active host")
 
     # Other settings
-    table.add_row(
-        "Log Level", global_config.get("log_level", "INFO"), "Logging verbosity"
-    )
+    table.add_row("Log Level", global_config.get("log_level", "INFO"), "Logging verbosity")
     table.add_row(
         "Tunnel Auto-Cleanup",
         str(global_config.get("tunnel_auto_cleanup", True)),
         "Auto-stop tunnels when done",
     )
-    table.add_row(
-        "Config Directory", str(config_manager.base_dir), "Configuration storage path"
-    )
+    table.add_row("Config Directory", str(config_manager.base_dir), "Configuration storage path")
 
     console.print()
     console.print(table)

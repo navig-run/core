@@ -403,23 +403,15 @@ I am your autonomous operations companion. I help manage both your computer syst
         # Subscribe to events for mood tracking
         if self.nervous_system:
             self.nervous_system.subscribe(EventType.ALERT_TRIGGERED, self._on_alert)
-            self.nervous_system.subscribe(
-                EventType.COMMAND_COMPLETED, self._on_command_complete
-            )
-            self.nervous_system.subscribe(
-                EventType.COMMAND_FAILED, self._on_command_failed
-            )
+            self.nervous_system.subscribe(EventType.COMMAND_COMPLETED, self._on_command_complete)
+            self.nervous_system.subscribe(EventType.COMMAND_FAILED, self._on_command_failed)
 
     async def _on_stop(self) -> None:
         """Cleanup."""
         if self.nervous_system:
             self.nervous_system.unsubscribe(EventType.ALERT_TRIGGERED, self._on_alert)
-            self.nervous_system.unsubscribe(
-                EventType.COMMAND_COMPLETED, self._on_command_complete
-            )
-            self.nervous_system.unsubscribe(
-                EventType.COMMAND_FAILED, self._on_command_failed
-            )
+            self.nervous_system.unsubscribe(EventType.COMMAND_COMPLETED, self._on_command_complete)
+            self.nervous_system.unsubscribe(EventType.COMMAND_FAILED, self._on_command_failed)
 
     async def _on_health_check(self) -> dict[str, Any]:
         """Health check for soul."""
@@ -497,11 +489,7 @@ I am your autonomous operations companion. I help manage both your computer syst
                 "warning": self._profile.emoji_warning,
                 "info": self._profile.emoji_info,
             }
-            emoji = (
-                emoji_map.get(response_type, "") + " "
-                if response_type in emoji_map
-                else ""
-            )
+            emoji = emoji_map.get(response_type, "") + " " if response_type in emoji_map else ""
 
         # Check for template responses
         if response_type in self._profile.templates:
@@ -628,9 +616,7 @@ Conversational responses:
                 self._last_interaction.isoformat() if self._last_interaction else None
             ),
             "soul_file_loaded": self.has_soul_file(),
-            "soul_file_path": (
-                str(self._soul_loaded_from) if self._soul_loaded_from else None
-            ),
+            "soul_file_path": (str(self._soul_loaded_from) if self._soul_loaded_from else None),
         }
 
     def reload_soul(self) -> bool:

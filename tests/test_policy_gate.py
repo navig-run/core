@@ -109,9 +109,7 @@ class TestPolicyGateFromConfig(unittest.TestCase):
             ]
         )
         result = gate.check("db.query")
-        self.assertTrue(
-            result.is_allowed
-        )  # empty pattern rule skipped -> default allow
+        self.assertTrue(result.is_allowed)  # empty pattern rule skipped -> default allow
 
     def test_from_config_none(self):
         gate = PolicyGate.from_config(None)
@@ -159,15 +157,11 @@ class TestAuditLog(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def test_record_creates_file(self):
-        self.log.record(
-            actor="test", action="db.query", policy="allow", status="success"
-        )
+        self.log.record(actor="test", action="db.query", policy="allow", status="success")
         self.assertTrue(self._log_path.exists())
 
     def test_record_returns_dict(self):
-        rec = self.log.record(
-            actor="a", action="run.shell", policy="allow", status="success"
-        )
+        rec = self.log.record(actor="a", action="run.shell", policy="allow", status="success")
         self.assertIsInstance(rec, dict)
         self.assertEqual(rec["actor"], "a")
         self.assertEqual(rec["action"], "run.shell")
@@ -211,9 +205,7 @@ class TestAuditLog(unittest.TestCase):
 
     def test_multiple_records_appended(self):
         for i in range(5):
-            self.log.record(
-                actor="a", action=f"cmd.{i}", policy="allow", status="success"
-            )
+            self.log.record(actor="a", action=f"cmd.{i}", policy="allow", status="success")
         lines = self._log_path.read_text().strip().split("\n")
         self.assertEqual(len(lines), 5)
         for line in lines:
@@ -221,9 +213,7 @@ class TestAuditLog(unittest.TestCase):
 
     def test_tail_returns_last_n(self):
         for i in range(20):
-            self.log.record(
-                actor="a", action=f"cmd.{i}", policy="allow", status="success"
-            )
+            self.log.record(actor="a", action=f"cmd.{i}", policy="allow", status="success")
         tail = self.log.tail(5)
         self.assertEqual(len(tail), 5)
         self.assertEqual(tail[-1]["action"], "cmd.19")

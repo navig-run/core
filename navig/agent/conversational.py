@@ -98,22 +98,16 @@ class ConversationalAgent:
         # 1. Global workspace SOUL.md  (~/.navig/workspace/SOUL.md)
         try:
             home = Path.home()
-            soul_candidates.append(
-                (home / ".navig" / "workspace" / "SOUL.md", "workspace")
-            )
+            soul_candidates.append((home / ".navig" / "workspace" / "SOUL.md", "workspace"))
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
         # 2. Rich default SOUL (navig/resources/SOUL.default.md)
         pkg_root = Path(__file__).parent.parent  # navig/
-        soul_candidates.append(
-            (pkg_root / "resources" / "SOUL.default.md", "resources")
-        )
+        soul_candidates.append((pkg_root / "resources" / "SOUL.default.md", "resources"))
 
         # 3. Context SOUL.md (navig/agent/context/SOUL.md) — minimal fallback
-        soul_candidates.append(
-            (Path(__file__).parent / "context" / "SOUL.md", "context")
-        )
+        soul_candidates.append((Path(__file__).parent / "context" / "SOUL.md", "context"))
 
         raw_parts: list[str] = []
         sources: list[str] = []
@@ -415,9 +409,7 @@ For conversation, respond naturally without JSON.
     @staticmethod
     def _has_cjk(text: str) -> bool:
         """Return True if text contains any CJK Unified Ideograph."""
-        return any(
-            "\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf" for ch in text
-        )
+        return any("\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf" for ch in text)
 
     @staticmethod
     def _strip_cjk(text: str) -> str:
@@ -469,9 +461,7 @@ For conversation, respond naturally without JSON.
             # have to re-run mode detection from scratch (TR fix).
             mode_tier_hint: str | None = None
             if not tier_override:
-                llm_response, mode_tier_hint = await self._try_llm_mode_routing(
-                    message, messages
-                )
+                llm_response, mode_tier_hint = await self._try_llm_mode_routing(message, messages)
                 if llm_response is not None:
                     return llm_response
 
@@ -740,9 +730,7 @@ For conversation, respond naturally without JSON.
             },
         }
 
-        return translations.get(key, {}).get(
-            language_code, translations.get(key, {}).get("en", "")
-        )
+        return translations.get(key, {}).get(language_code, translations.get(key, {}).get("en", ""))
 
     async def _simple_response(self, message: str) -> str:
         """Simple pattern-based response when AI is not available."""
@@ -751,9 +739,7 @@ For conversation, respond naturally without JSON.
         # Detect intent
         if any(word in msg_lower for word in ["open", "launch", "start", "run"]):
             # Extract app name
-            app_match = re.search(
-                r"(?:open|launch|start|run)\s+(?:the\s+)?(\w+)", msg_lower
-            )
+            app_match = re.search(r"(?:open|launch|start|run)\s+(?:the\s+)?(\w+)", msg_lower)
             if app_match:
                 app = app_match.group(1)
                 return json.dumps(
@@ -822,9 +808,7 @@ For conversation, respond naturally without JSON.
             else:
                 position = "left"
 
-            app_match = re.search(
-                r"(?:snap|move|arrange)\s+(?:the\s+)?(\w+)", msg_lower
-            )
+            app_match = re.search(r"(?:snap|move|arrange)\s+(?:the\s+)?(\w+)", msg_lower)
             app = app_match.group(1) if app_match else "active window"
 
             return json.dumps(
@@ -891,9 +875,7 @@ For conversation, respond naturally without JSON.
                         "message": "Here are your workflows! 📜",
                     }
                 )
-            elif (
-                "create" in msg_lower or "make" in msg_lower or "generate" in msg_lower
-            ):
+            elif "create" in msg_lower or "make" in msg_lower or "generate" in msg_lower:
                 desc_match = re.search(
                     r"(?:create|make|generate)\s+(?:a\s+)?workflow\s+(?:to\s+|that\s+|for\s+)?(.+)",
                     msg_lower,
@@ -976,9 +958,7 @@ For conversation, respond naturally without JSON.
 
         if needs_confirmation:
             # Wait for confirmation
-            steps_desc = "\n".join(
-                [f"  {i + 1}. {s.description}" for i, s in enumerate(task.plan)]
-            )
+            steps_desc = "\n".join([f"  {i + 1}. {s.description}" for i, s in enumerate(task.plan)])
             return f"{message}\n\nPlan:\n{steps_desc}\n\nReply 'yes' or 'go' to proceed, or 'no' to cancel."
 
         # Execute immediately
@@ -1013,13 +993,9 @@ For conversation, respond naturally without JSON.
                 # Try to recover
                 task.attempts += 1
                 if task.attempts < task.max_attempts:
-                    await self._notify(
-                        f"⚠️ Step {i + 1} failed: {e}. Trying alternative..."
-                    )
+                    await self._notify(f"⚠️ Step {i + 1} failed: {e}. Trying alternative...")
                     # Could implement retry logic or alternative approaches here
-                    results.append(
-                        f"⚠️ {step.description} - {self._localize('retrying')}"
-                    )
+                    results.append(f"⚠️ {step.description} - {self._localize('retrying')}")
                     continue
                 else:
                     results.append(f"❌ {step.description} - failed: {e}")
@@ -1076,9 +1052,7 @@ For conversation, respond naturally without JSON.
             return result
 
         elif action == "auto.click":
-            result = adapter.click(
-                params.get("x"), params.get("y"), params.get("button", "left")
-            )
+            result = adapter.click(params.get("x"), params.get("y"), params.get("button", "left"))
             if hasattr(result, "success") and not result.success:
                 raise RuntimeError(result.stderr)
             return result
@@ -1090,9 +1064,7 @@ For conversation, respond naturally without JSON.
             return result
 
         elif action == "auto.snap_window":
-            result = adapter.snap_window(
-                params.get("selector", ""), params.get("position", "left")
-            )
+            result = adapter.snap_window(params.get("selector", ""), params.get("position", "left"))
             if hasattr(result, "success") and not result.success:
                 raise RuntimeError(result.stderr)
             return result
@@ -1119,9 +1091,7 @@ For conversation, respond naturally without JSON.
             else:
                 cmd_args = ["bash", "-c", cmd_str]
 
-            result = subprocess.run(
-                cmd_args, capture_output=True, text=True, timeout=60
-            )
+            result = subprocess.run(cmd_args, capture_output=True, text=True, timeout=60)
             if result.returncode != 0:
                 raise RuntimeError(result.stderr or f"Exit code: {result.returncode}")
             return result.stdout

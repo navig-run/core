@@ -118,17 +118,13 @@ class ConfigSingleton:
         """Save global configuration to disk."""
         self._ensure_dirs()
         with open(self.global_config_path, "w", encoding="utf-8") as f:
-            yaml.dump(
-                self._global_data, f, default_flow_style=False, allow_unicode=True
-            )
+            yaml.dump(self._global_data, f, default_flow_style=False, allow_unicode=True)
 
     def _save_project(self) -> None:
         """Save project-local configuration to disk."""
         self.project_config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.project_config_path, "w", encoding="utf-8") as f:
-            yaml.dump(
-                self._project_data, f, default_flow_style=False, allow_unicode=True
-            )
+            yaml.dump(self._project_data, f, default_flow_style=False, allow_unicode=True)
 
     def _get_nested(self, data: dict[str, Any], key: str, default: Any = None) -> Any:
         """Get value using dot notation (e.g., 'plugins.brain.db_path')."""
@@ -328,9 +324,7 @@ class ConfigSingleton:
     # Plugin Configuration
     # =========================================================================
 
-    def get_plugin_config(
-        self, plugin_name: str, key: str = None, default: Any = None
-    ) -> Any:
+    def get_plugin_config(self, plugin_name: str, key: str = None, default: Any = None) -> Any:
         """
         Get plugin-specific configuration.
 
@@ -365,27 +359,19 @@ class ConfigSingleton:
     def disable_plugin(self, plugin_name: str) -> None:
         """Disable a plugin."""
         with self._lock:
-            disabled = (
-                self._get_nested(self._global_data, "plugins.disabled_plugins") or []
-            )
+            disabled = self._get_nested(self._global_data, "plugins.disabled_plugins") or []
             if plugin_name not in disabled:
                 disabled.append(plugin_name)
-                self._set_nested(
-                    self._global_data, "plugins.disabled_plugins", disabled
-                )
+                self._set_nested(self._global_data, "plugins.disabled_plugins", disabled)
                 self._save_global()
 
     def enable_plugin(self, plugin_name: str) -> None:
         """Enable a previously disabled plugin."""
         with self._lock:
-            disabled = (
-                self._get_nested(self._global_data, "plugins.disabled_plugins") or []
-            )
+            disabled = self._get_nested(self._global_data, "plugins.disabled_plugins") or []
             if plugin_name in disabled:
                 disabled.remove(plugin_name)
-                self._set_nested(
-                    self._global_data, "plugins.disabled_plugins", disabled
-                )
+                self._set_nested(self._global_data, "plugins.disabled_plugins", disabled)
                 self._save_global()
 
     # =========================================================================

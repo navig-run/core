@@ -182,9 +182,7 @@ class PerplexityClient(BaseProviderClient):
     async def _get_client(self):
         """Get or create HTTP client."""
         if not HTTPX_AVAILABLE:
-            raise ImportError(
-                "httpx is required for Perplexity client. Install: pip install httpx"
-            )
+            raise ImportError("httpx is required for Perplexity client. Install: pip install httpx")
 
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
@@ -283,9 +281,7 @@ class PerplexityClient(BaseProviderClient):
 
         body: dict[str, Any] = {
             "model": model_id,
-            "messages": [
-                {"role": m.role, "content": m.content} for m in request.messages
-            ],
+            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
         }

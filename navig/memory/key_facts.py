@@ -136,11 +136,7 @@ class KeyFact:
         )
 
     def __repr__(self) -> str:
-        status = (
-            "active"
-            if self.is_active
-            else ("superseded" if self.superseded_by else "deleted")
-        )
+        status = "active" if self.is_active else ("superseded" if self.superseded_by else "deleted")
         return f"<KeyFact [{status}] {self.content[:60]}…>"
 
 
@@ -190,9 +186,7 @@ class KeyFactStore:
 
     def _conn(self) -> sqlite3.Connection:
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(
-                str(self.db_path), check_same_thread=False
-            )
+            self._local.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._local.conn.row_factory = sqlite3.Row
             self._local.conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn.execute("PRAGMA synchronous=NORMAL")
@@ -288,9 +282,7 @@ class KeyFactStore:
             existing = self._find_duplicate(fact.content)
             if existing and existing.id != fact.id:
                 # Merge: bump confidence, update metadata, keep original ID
-                existing.confidence = min(
-                    1.0, max(existing.confidence, fact.confidence) + 0.05
-                )
+                existing.confidence = min(1.0, max(existing.confidence, fact.confidence) + 0.05)
                 existing.updated_at = _utcnow()
                 existing.metadata.update(fact.metadata)
                 if fact.tags:
@@ -325,11 +317,7 @@ class KeyFactStore:
 
     def get(self, fact_id: str) -> KeyFact | None:
         """Get a single fact by ID."""
-        row = (
-            self._conn()
-            .execute("SELECT * FROM key_facts WHERE id = ?", (fact_id,))
-            .fetchone()
-        )
+        row = self._conn().execute("SELECT * FROM key_facts WHERE id = ?", (fact_id,)).fetchone()
         return KeyFact.from_row(row) if row else None
 
     def get_active(
@@ -355,9 +343,7 @@ class KeyFactStore:
         rows = self._conn().execute(query, params).fetchall()
         return [KeyFact.from_row(r) for r in rows]
 
-    def search_keyword(
-        self, query: str, limit: int = 20
-    ) -> list[tuple[KeyFact, float]]:
+    def search_keyword(self, query: str, limit: int = 20) -> list[tuple[KeyFact, float]]:
         """
         Keyword search via FTS5.  Returns (fact, rank) pairs.
         Falls back to LIKE if FTS5 is unavailable.
@@ -515,9 +501,7 @@ class KeyFactStore:
         active = conn.execute(
             "SELECT COUNT(*) FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL"
         ).fetchone()[0]
-        deleted = conn.execute(
-            "SELECT COUNT(*) FROM key_facts WHERE deleted = 1"
-        ).fetchone()[0]
+        deleted = conn.execute("SELECT COUNT(*) FROM key_facts WHERE deleted = 1").fetchone()[0]
         superseded = conn.execute(
             "SELECT COUNT(*) FROM key_facts WHERE superseded_by IS NOT NULL"
         ).fetchone()[0]
@@ -560,9 +544,7 @@ class KeyFactStore:
         normalized = " ".join(content.lower().split())
         rows = (
             self._conn()
-            .execute(
-                "SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL"
-            )
+            .execute("SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL")
             .fetchall()
         )
         for r in rows:

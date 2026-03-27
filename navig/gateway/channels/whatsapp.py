@@ -134,9 +134,7 @@ class WhatsAppMessage:
             message_id=data.get("id", ""),
             from_number=data.get("from", "").split("@")[0],  # Remove @c.us suffix
             content=data.get("body", ""),
-            timestamp=datetime.fromisoformat(
-                data.get("timestamp", datetime.now().isoformat())
-            ),
+            timestamp=datetime.fromisoformat(data.get("timestamp", datetime.now().isoformat())),
             is_group=data.get("isGroup", False),
             group_id=data.get("groupId"),
             group_name=data.get("groupName"),
@@ -337,9 +335,7 @@ class WhatsAppChannel:
 
         while self._running:
             try:
-                logger.info(
-                    f"Connecting to WhatsApp bridge at {self.config.bridge_ws_url}"
-                )
+                logger.info(f"Connecting to WhatsApp bridge at {self.config.bridge_ws_url}")
 
                 headers = {}
                 if self.config.api_key:
@@ -363,9 +359,7 @@ class WhatsAppChannel:
 
                             if event_type == "qr":
                                 # QR code for authentication
-                                logger.info(
-                                    "WhatsApp QR code received - scan to authenticate"
-                                )
+                                logger.info("WhatsApp QR code received - scan to authenticate")
                                 # Could emit event for UI display
 
                             elif event_type == "authenticated":
@@ -383,9 +377,7 @@ class WhatsAppChannel:
                                 logger.warning("WhatsApp disconnected")
 
                         except json.JSONDecodeError:
-                            logger.warning(
-                                f"Invalid JSON from bridge: {raw_message[:100]}"
-                            )
+                            logger.warning(f"Invalid JSON from bridge: {raw_message[:100]}")
                         except Exception as e:
                             logger.error(f"Error processing bridge message: {e}")
 

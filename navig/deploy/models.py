@@ -173,13 +173,9 @@ class DeployConfig:
         if self.health.retries == 5:
             self.health.retries = int(d.get("default_health_retries", 5))
         if self.health.interval_seconds == 5:
-            self.health.interval_seconds = int(
-                d.get("default_health_interval_seconds", 5)
-            )
+            self.health.interval_seconds = int(d.get("default_health_interval_seconds", 5))
         if self.health.timeout_seconds == 30:
-            self.health.timeout_seconds = int(
-                d.get("default_health_timeout_seconds", 30)
-            )
+            self.health.timeout_seconds = int(d.get("default_health_timeout_seconds", 30))
         if self.backup.keep_last == 5:
             self.backup.keep_last = int(d.get("snapshot_keep_last", 5))
 

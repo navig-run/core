@@ -467,9 +467,7 @@ COMMAND_TOOLS: list[dict[str, Any]] = [
             "description": "Save a note for later reference",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "Note text to save"}
-                },
+                "properties": {"text": {"type": "string", "description": "Note text to save"}},
                 "required": ["text"],
             },
         },
@@ -643,9 +641,7 @@ COMMAND_TOOLS: list[dict[str, Any]] = [
             "description": "Perform DNS lookup for a domain",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "domain": {"type": "string", "description": "Domain to look up"}
-                },
+                "properties": {"domain": {"type": "string", "description": "Domain to look up"}},
                 "required": ["domain"],
             },
         },
@@ -657,9 +653,7 @@ COMMAND_TOOLS: list[dict[str, Any]] = [
             "description": "Base64 encode text",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "Text to encode"}
-                },
+                "properties": {"text": {"type": "string", "description": "Text to encode"}},
                 "required": ["text"],
             },
         },
@@ -671,9 +665,7 @@ COMMAND_TOOLS: list[dict[str, Any]] = [
             "description": "Base64 decode text",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "Base64 text to decode"}
-                },
+                "properties": {"text": {"type": "string", "description": "Base64 text to decode"}},
                 "required": ["text"],
             },
         },
@@ -685,9 +677,7 @@ COMMAND_TOOLS: list[dict[str, Any]] = [
             "description": "Make an HTTP request to a URL",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "URL to request"}
-                },
+                "properties": {"url": {"type": "string", "description": "URL to request"}},
                 "required": ["url"],
             },
         },
@@ -905,9 +895,7 @@ COMMAND_HANDLER_MAP: dict[str, str | Callable[[dict[str, Any]], str]] = {
     "time": lambda args: f"/time {args.get('timezone', '')}".strip(),
     "pick": lambda args: f"/pick {' '.join(args.get('options', []))}",
     "flip": "/flip",
-    "roll": lambda args: (
-        f"/roll {args.get('sides', '')}".strip() if args.get("sides") else "/roll"
-    ),
+    "roll": lambda args: f"/roll {args.get('sides', '')}".strip() if args.get("sides") else "/roll",
     "note": lambda args: f"/note {args.get('text', '')}",
     "notes": "/notes",
     "remind": lambda args: _build_remind_cmd(args),

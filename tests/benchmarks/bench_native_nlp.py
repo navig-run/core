@@ -40,9 +40,7 @@ _LOW_PATTERNS = [
         re.I,
     ),
     re.compile(r"^(what|how|why|when|where|can you|could you|please|help)\s", re.I),
-    re.compile(
-        r"^(show me|list|display|print|run|execute|debug|fix|build|deploy)\s", re.I
-    ),
+    re.compile(r"^(show me|list|display|print|run|execute|debug|fix|build|deploy)\s", re.I),
 ]
 
 
@@ -170,9 +168,7 @@ def main():
     except ImportError:
         HAS = False
         print("[--] navig_nlp not found  (Python-only baseline)")
-        print(
-            "     build: cd host/crates/navig_nlp && py -3 -m maturin develop --release"
-        )
+        print("     build: cd host/crates/navig_nlp && py -3 -m maturin develop --release")
 
     sw = list(_STOP_WORDS)
     hdr = f"  {'Function + text':46s} {'py (µs)':>8s}  {'nat (µs)':>8s}  speedup"
@@ -213,18 +209,14 @@ def main():
             print(f"  tok_score medium[{i}] ({len(t):4d} ch)          {py_m:>8.1f}")
 
     # ── 3. Large text (1.8 KB) ─────────────────────────────────────────────
-    print(
-        f"\n  [3] tokenize_and_score — large text (~{len(LARGE_TEXT)} chars) — regex dominates"
-    )
+    print(f"\n  [3] tokenize_and_score — large text (~{len(LARGE_TEXT)} chars) — regex dominates")
     hr()
     print(hdr)
     hr()
     py_m, _ = bench(py_tokenize_and_score, (LARGE_TEXT,), iterations=LARGE_ITER)
     py_all.append(py_m)
     if HAS:
-        nat_m, _ = bench(
-            navig_nlp.tokenize_and_score, (LARGE_TEXT, sw), iterations=LARGE_ITER
-        )
+        nat_m, _ = bench(navig_nlp.tokenize_and_score, (LARGE_TEXT, sw), iterations=LARGE_ITER)
         nat_all.append(nat_m)
         print(
             f"  tok_score large  ({len(LARGE_TEXT):5d} ch)            {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}"
@@ -233,9 +225,7 @@ def main():
         print(f"  tok_score large  ({len(LARGE_TEXT):5d} ch)            {py_m:>8.1f}")
 
     # ── 4. batch_tokenize (Rayon parallel) ────────────────────────────────
-    print(
-        f"\n  [4] batch_tokenize — {len(BATCH_50)} texts, Rayon parallel (GIL released)"
-    )
+    print(f"\n  [4] batch_tokenize — {len(BATCH_50)} texts, Rayon parallel (GIL released)")
     hr()
     print(hdr)
     hr()
@@ -243,9 +233,7 @@ def main():
         lambda: [py_tokenize_and_score(t) for t in BATCH_50], (), iterations=BATCH_ITER
     )
     if HAS:
-        nat_batch_m, _ = bench(
-            navig_nlp.batch_tokenize, (BATCH_50, sw), iterations=BATCH_ITER
-        )
+        nat_batch_m, _ = bench(navig_nlp.batch_tokenize, (BATCH_50, sw), iterations=BATCH_ITER)
         print(
             f"  batch({len(BATCH_50)} texts) total          {py_batch_m:>8.1f}  {nat_batch_m:>8.1f} {speedup_tag(py_batch_m, nat_batch_m)}"
         )
@@ -287,9 +275,7 @@ def main():
         print(
             f"  is_low_signal       avg speedup : {ls_avg:.2f}x  (boolean, no alloc = consistent win)"
         )
-        print(
-            f"  batch_tokenize({len(BATCH_50)}) speedup : {batch_sp:.2f}x  (Rayon releases GIL)"
-        )
+        print(f"  batch_tokenize({len(BATCH_50)}) speedup : {batch_sp:.2f}x  (Rayon releases GIL)")
         print()
         print("  Recommendation: is_low_signal native path is always faster.")
         print("  tokenize_and_score: Rust wins on >300 char texts and batch mode.")

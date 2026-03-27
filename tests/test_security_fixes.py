@@ -45,11 +45,7 @@ class TestCommandInjectionProtection(unittest.TestCase):
             command = f"rm -rf {safe_output}"
 
             # Malicious parts should be quoted, not executable
-            if (
-                ";" in malicious_input
-                or "|" in malicious_input
-                or "&" in malicious_input
-            ):
+            if ";" in malicious_input or "|" in malicious_input or "&" in malicious_input:
                 self.assertIn("'", command)  # Should contain quotes
 
 
@@ -95,9 +91,7 @@ class TestSQLInjectionProtection(unittest.TestCase):
     @mock.patch("subprocess.run")
     @mock.patch("navig.tunnel.TunnelManager")
     @mock.patch("navig.config.get_config_manager")
-    def test_no_password_in_command_line(
-        self, mock_get_config, mock_tunnel_class, mock_subprocess
-    ):
+    def test_no_password_in_command_line(self, mock_get_config, mock_tunnel_class, mock_subprocess):
         """Verify database commands don't expose passwords in process args."""
         from navig.commands import database_advanced
 
@@ -125,9 +119,7 @@ class TestSQLInjectionProtection(unittest.TestCase):
         mock_subprocess.return_value.stdout = "table_name\t10.5\t1000\n"
 
         # Call optimize_table_cmd with dry_run to avoid actual command execution
-        database_advanced.optimize_table_cmd(
-            "users", {"dry_run": True, "app": "test-server"}
-        )
+        database_advanced.optimize_table_cmd("users", {"dry_run": True, "app": "test-server"})
 
         # With dry_run=True, subprocess should not be called
         # This verifies that sensitive data is not exposed even in the planning stage

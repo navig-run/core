@@ -161,33 +161,25 @@ class CrashHandler:
             if log_path:
                 console.print(f"[dim]Crash details saved to: {log_path}[/dim]")
 
-            console.print(
-                "[yellow]Tip:[/yellow] Run with [bold]--debug[/bold] for full details."
-            )
+            console.print("[yellow]Tip:[/yellow] Run with [bold]--debug[/bold] for full details.")
             console.print(
                 "     Or run [bold]navig crash export[/bold] to Create a report for GitHub."
             )
             console.print()
 
         except ImportError:
-            sys.stderr.write(
-                f"\n💥 Navig encountered an unexpected error ({err_type})\n"
-            )
+            sys.stderr.write(f"\n💥 Navig encountered an unexpected error ({err_type})\n")
             sys.stderr.write(f"   {msg}\n\n")
             if log_path:
                 sys.stderr.write(f"Crash details saved to: {log_path}\n")
             sys.stderr.write("Tip: Run with --debug for full details.\n")
-            sys.stderr.write(
-                "     Or run 'navig crash export' to create a report for GitHub.\n\n"
-            )
+            sys.stderr.write("     Or run 'navig crash export' to create a report for GitHub.\n\n")
 
     def get_latest_crash_report(self) -> dict[str, Any] | None:
         """Retrieve the content of the most recent crash log."""
         try:
             log_dir = self._get_log_dir()
-            logs = sorted(
-                log_dir.glob("crash-*.json"), key=os.path.getmtime, reverse=True
-            )
+            logs = sorted(log_dir.glob("crash-*.json"), key=os.path.getmtime, reverse=True)
 
             if not logs:
                 return None

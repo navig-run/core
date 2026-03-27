@@ -72,9 +72,7 @@ class StealthConfig:
         return cls(
             headless=stealth_cfg.get("headless", False),
             channel=stealth_cfg.get("channel", "chrome"),
-            user_data_dir=stealth_cfg.get(
-                "user_data_dir", "~/.navig/browser/profiles/stealth"
-            ),
+            user_data_dir=stealth_cfg.get("user_data_dir", "~/.navig/browser/profiles/stealth"),
             timeout_ms=stealth_cfg.get("timeout_seconds", 30) * 1000,
             proxy=stealth_cfg.get("proxy"),
             allowed_domains=stealth_cfg.get("allowed_domains", []),
@@ -140,9 +138,7 @@ class StealthController:
 
         # Reuse existing page or open a new one
         self._page = (
-            self._context.pages[0]
-            if self._context.pages
-            else await self._context.new_page()
+            self._context.pages[0] if self._context.pages else await self._context.new_page()
         )
         self._page.set_default_timeout(self.config.timeout_ms)
 
@@ -172,17 +168,12 @@ class StealthController:
             if blocked.lower().replace("*", "") in domain:
                 return False
         if self.config.allowed_domains:
-            return any(
-                a.lower().replace("*", "") in domain
-                for a in self.config.allowed_domains
-            )
+            return any(a.lower().replace("*", "") in domain for a in self.config.allowed_domains)
         return True
 
     # ── Core navigation ────────────────────────────────────────────────────────
 
-    async def navigate(
-        self, url: str, wait_until: str = "domcontentloaded"
-    ) -> dict[str, Any]:
+    async def navigate(self, url: str, wait_until: str = "domcontentloaded") -> dict[str, Any]:
         await self._ensure_started()
         if not self._check_domain(url):
             raise ValueError(f"Domain not allowed: {url}")
@@ -332,9 +323,7 @@ class StealthController:
             if stripped.startswith("- "):
                 rest = stripped[2:]
                 m = _re.match(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?', rest)
-                role = (
-                    m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
-                )
+                role = m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
                 name = (m.group(2) or m.group(3) or "").strip() if m else ""
                 ref_map[ref_id] = {"role": role, "name": name, "raw_line": line}
                 indent = line[: len(line) - len(stripped)]
@@ -394,9 +383,7 @@ class StealthController:
                 "ok": False,
                 "error": type(exc).__name__,
                 "detail": err[:200],
-                "suggestion": (
-                    "scroll into view" if "not visible" in err else "check selector"
-                ),
+                "suggestion": ("scroll into view" if "not visible" in err else "check selector"),
             }
 
     async def safe_fill(self, selector: str, text: str, timeout: int = 5000) -> dict:

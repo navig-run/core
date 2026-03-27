@@ -159,9 +159,7 @@ def load_or_create(navig_dir: Path, name: str) -> GenesisData:
     if genesis_path.exists():
         try:
             raw = json.loads(genesis_path.read_text(encoding="utf-8"))
-            return GenesisData(
-                **{k: raw.get(k) for k in GenesisData.__dataclass_fields__}
-            )
+            return GenesisData(**{k: raw.get(k) for k in GenesisData.__dataclass_fields__})
         except Exception:
             pass  # Corrupt file — regenerate
 
@@ -233,9 +231,7 @@ def _export_avatar_png(
 
         # Outer accent border
         b = 4
-        draw.rectangle(
-            [b, b, canvas_size - b, canvas_size - b], outline=accent, width=b
-        )
+        draw.rectangle([b, b, canvas_size - b, canvas_size - b], outline=accent, width=b)
 
         # QR centered, with label space at bottom
         label_h = 44
@@ -365,9 +361,7 @@ def render_qr_terminal(genesis: GenesisData) -> str:
             for row_idx in range(0, len(matrix), 2):
                 row_top = matrix[row_idx]
                 row_bot = (
-                    matrix[row_idx + 1]
-                    if row_idx + 1 < len(matrix)
-                    else [False] * len(row_top)
+                    matrix[row_idx + 1] if row_idx + 1 < len(matrix) else [False] * len(row_top)
                 )
                 row_str = ""
                 for t, bot in zip(row_top, row_bot):

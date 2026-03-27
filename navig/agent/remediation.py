@@ -81,9 +81,7 @@ class RemediationAction:
             component=data["component"],
             reason=data["reason"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
-            status=RemediationStatus(
-                data.get("status", RemediationStatus.PENDING.value)
-            ),
+            status=RemediationStatus(data.get("status", RemediationStatus.PENDING.value)),
             attempts=int(data.get("attempts", 0)),
             max_attempts=int(data.get("max_attempts", 5)),
             error=data.get("error"),
@@ -161,9 +159,7 @@ class RemediationEngine:
         self, component: str, reason: str, metadata: dict[str, Any] | None = None
     ) -> str:
         """Schedule a component restart (async API)."""
-        return self.schedule_restart_sync(
-            component=component, reason=reason, metadata=metadata
-        )
+        return self.schedule_restart_sync(component=component, reason=reason, metadata=metadata)
 
     def schedule_connection_retry_sync(
         self,
@@ -244,9 +240,7 @@ class RemediationEngine:
             )
 
             if not backups:
-                self._log(
-                    f"No backup found for {component}, cannot rollback", level="warning"
-                )
+                self._log(f"No backup found for {component}, cannot rollback", level="warning")
                 return False
 
             latest_backup = backups[0]
@@ -316,9 +310,7 @@ class RemediationEngine:
         self._save_actions()
 
         # Calculate backoff
-        backoff = action.backoff_seconds[
-            min(action.attempts - 1, len(action.backoff_seconds) - 1)
-        ]
+        backoff = action.backoff_seconds[min(action.attempts - 1, len(action.backoff_seconds) - 1)]
 
         self._log(
             f"Executing {action.type.value} for {action.component} (attempt {action.attempts}/{action.max_attempts})"
@@ -365,9 +357,7 @@ class RemediationEngine:
         try:
             # Get the component from Heart registry
             if not hasattr(self, "_heart") or not self._heart:
-                self._log(
-                    f"Cannot restart {action.component}: Heart not set", level="warning"
-                )
+                self._log(f"Cannot restart {action.component}: Heart not set", level="warning")
                 return False
 
             component = self._heart._components.get(action.component)
@@ -436,9 +426,7 @@ class RemediationEngine:
         action.error = None
         action.timestamp = datetime.now()
         self._save_actions()
-        self._log(
-            f"Requeued remediation action {action_id} (reset_attempts={reset_attempts})"
-        )
+        self._log(f"Requeued remediation action {action_id} (reset_attempts={reset_attempts})")
         return True
 
     def _log(self, message: str, level: str = "info") -> None:

@@ -84,9 +84,7 @@ def test_evolve_dry_run_new_script(evolver):
     evolver.adapter.get_all_windows.return_value = []
     evolver.adapter.get_screen_size.return_value = (1920, 1080)
 
-    evolver.generator.generate.return_value = MagicMock(
-        success=True, script="new script"
-    )
+    evolver.generator.generate.return_value = MagicMock(success=True, script="new script")
 
     res = evolver.evolve("test goal", dry_run=True)
     assert res.success is True

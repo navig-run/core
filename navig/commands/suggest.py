@@ -311,9 +311,7 @@ def show_suggestions(
 
     # Rich formatted output
     if not suggestions:
-        console.print(
-            "[dim]No suggestions available. Run some commands to build history.[/dim]"
-        )
+        console.print("[dim]No suggestions available. Run some commands to build history.[/dim]")
         return
 
     table = Table(
@@ -365,18 +363,14 @@ def run_suggestion(index: int, dry_run: bool = False) -> bool:
     suggestions = generate_suggestions(limit=10)
 
     if index < 1 or index > len(suggestions):
-        console.print(
-            f"[red]Invalid suggestion index. Choose 1-{len(suggestions)}[/red]"
-        )
+        console.print(f"[red]Invalid suggestion index. Choose 1-{len(suggestions)}[/red]")
         return False
 
     suggestion = suggestions[index - 1]
     cmd = suggestion["command"]
 
     if "{" in cmd:
-        console.print(
-            "[yellow]This command has placeholders that need values:[/yellow]"
-        )
+        console.print("[yellow]This command has placeholders that need values:[/yellow]")
         console.print(f"  {cmd}")
         console.print("[dim]Fill in the values and run manually.[/dim]")
         return False

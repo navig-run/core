@@ -53,9 +53,7 @@ class TestPatternMatching:
 
         for query in queries:
             result = intent_parser._parse_with_patterns(query)
-            assert (
-                result.command == "docker_ps"
-            ), f"Failed for: '{query}' - got {result.command}"
+            assert result.command == "docker_ps", f"Failed for: '{query}' - got {result.command}"
             assert result.confidence >= 0.7, f"Low confidence for: '{query}'"
 
     def test_disk_space_variations(self, intent_parser):
@@ -70,9 +68,7 @@ class TestPatternMatching:
 
         for query in queries:
             result = intent_parser._parse_with_patterns(query)
-            assert (
-                result.command == "disk"
-            ), f"Failed for: '{query}' - got {result.command}"
+            assert result.command == "disk", f"Failed for: '{query}' - got {result.command}"
             assert result.confidence >= 0.7
 
     def test_memory_variations(self, intent_parser):
@@ -86,9 +82,7 @@ class TestPatternMatching:
 
         for query in queries:
             result = intent_parser._parse_with_patterns(query)
-            assert (
-                result.command == "memory"
-            ), f"Failed for: '{query}' - got {result.command}"
+            assert result.command == "memory", f"Failed for: '{query}' - got {result.command}"
             assert result.confidence >= 0.7
 
     def test_switch_host(self, intent_parser):
@@ -103,9 +97,7 @@ class TestPatternMatching:
         for query, expected_host in queries_and_hosts:
             result = intent_parser._parse_with_patterns(query)
             assert result.command == "use_host", f"Failed for: '{query}'"
-            assert (
-                result.args.get("host_name") == expected_host
-            ), f"Wrong host for: '{query}'"
+            assert result.args.get("host_name") == expected_host, f"Wrong host for: '{query}'"
 
     def test_list_hosts(self, intent_parser):
         """Test listing hosts."""
@@ -151,9 +143,7 @@ class TestPatternMatching:
         for query, expected_symbol in queries:
             result = intent_parser._parse_with_patterns(query)
             assert result.command == "crypto", f"Failed for: '{query}'"
-            assert (
-                result.args.get("symbol") == expected_symbol
-            ), f"Wrong symbol for: '{query}'"
+            assert result.args.get("symbol") == expected_symbol, f"Wrong symbol for: '{query}'"
 
     def test_currency_conversion(self, intent_parser):
         """Test currency conversion queries."""
@@ -165,9 +155,7 @@ class TestPatternMatching:
 
     def test_reminder_parsing(self, intent_parser):
         """Test reminder parsing."""
-        result = intent_parser._parse_with_patterns(
-            "remind me in 30 minutes to check the logs"
-        )
+        result = intent_parser._parse_with_patterns("remind me in 30 minutes to check the logs")
         assert result.command == "remind"
         assert result.args.get("duration") == 30
         assert result.args.get("unit") == "minutes"
@@ -216,10 +204,7 @@ class TestCommandStringGeneration:
 
     def test_commands_with_args(self):
         """Test commands with arguments."""
-        assert (
-            get_command_string("use_host", {"host_name": "production"})
-            == "/use production"
-        )
+        assert get_command_string("use_host", {"host_name": "production"}) == "/use production"
         assert "nginx" in get_command_string("docker_logs", {"container": "nginx"})
         assert "example.com" in get_command_string("ssl", {"domain": "example.com"})
 
@@ -268,9 +253,7 @@ class TestIntentParseResult:
 
     def test_is_command_false_no_command(self):
         """Test is_command when no command detected."""
-        result = IntentParseResult(
-            command=None, args={}, confidence=0.0, raw_message="hello"
-        )
+        result = IntentParseResult(command=None, args={}, confidence=0.0, raw_message="hello")
         assert result.is_command is False
 
     def test_is_command_false_zero_confidence(self):
@@ -358,9 +341,7 @@ class TestConfirmationHandler:
 
         for msg in confirmations:
             assert confirmation_handler.is_confirmation(msg), f"Failed for: '{msg}'"
-            assert confirmation_handler.is_confirmed(
-                msg
-            ), f"Should be confirmed: '{msg}'"
+            assert confirmation_handler.is_confirmed(msg), f"Should be confirmed: '{msg}'"
 
     def test_is_confirmation_no(self, confirmation_handler):
         """Test confirmation detection for no responses."""
@@ -368,18 +349,16 @@ class TestConfirmationHandler:
 
         for msg in cancellations:
             assert confirmation_handler.is_confirmation(msg), f"Failed for: '{msg}'"
-            assert not confirmation_handler.is_confirmed(
-                msg
-            ), f"Should not be confirmed: '{msg}'"
+            assert not confirmation_handler.is_confirmed(msg), f"Should not be confirmed: '{msg}'"
 
     def test_is_not_confirmation(self, confirmation_handler):
         """Test non-confirmation messages."""
         messages = ["hello", "show docker containers", "what is the status"]
 
         for msg in messages:
-            assert not confirmation_handler.is_confirmation(
-                msg
-            ), f"Should not be confirmation: '{msg}'"
+            assert not confirmation_handler.is_confirmation(msg), (
+                f"Should not be confirmation: '{msg}'"
+            )
 
 
 # ============================================================================

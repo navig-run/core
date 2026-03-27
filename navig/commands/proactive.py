@@ -15,12 +15,8 @@ proactive_app = typer.Typer(help="Proactive assistance (calendar, email)")
 
 @proactive_app.command("start")
 def start_proactive_agent(
-    interval: int = typer.Option(
-        60, "--interval", "-i", help="Poll interval in seconds"
-    ),
-    calendar: bool = typer.Option(
-        True, "--calendar/--no-calendar", help="Enable calendar checks"
-    ),
+    interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
+    calendar: bool = typer.Option(True, "--calendar/--no-calendar", help="Enable calendar checks"),
     email: bool = typer.Option(True, "--email/--no-email", help="Enable email checks"),
 ):
     """
@@ -199,9 +195,7 @@ def proactive_test(
                 events = await cal.list_events(start, end)
                 ch.success(f"  Found {len(events)} events")
                 for e in events[:3]:
-                    ch.console.print(
-                        f"    • {e.title} @ {e.start.strftime('%Y-%m-%d %H:%M')}"
-                    )
+                    ch.console.print(f"    • {e.title} @ {e.start.strftime('%Y-%m-%d %H:%M')}")
             except Exception as e:
                 ch.error(f"  Calendar test failed: {e}")
 

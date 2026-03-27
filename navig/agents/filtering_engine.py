@@ -281,12 +281,7 @@ class FilteringEngine:
                 result = self.filter_file(md_path, dry_run=dry_run)
 
                 # Only collect actionable results
-                if (
-                    result.changed
-                    or result.would_change
-                    or result.skipped
-                    or result.error
-                ):
+                if result.changed or result.would_change or result.skipped or result.error:
                     results.append(result)
 
         return results

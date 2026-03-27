@@ -145,9 +145,7 @@ class HookRegistry:
         self._handlers: dict[str, list[tuple[int, HookHandler]]] = {}
         self._disabled_hooks: set[str] = set()
 
-    def register(
-        self, event_key: str, handler: HookHandler, priority: int = 100
-    ) -> None:
+    def register(self, event_key: str, handler: HookHandler, priority: int = 100) -> None:
         """
         Register a hook handler for an event.
 
@@ -180,9 +178,7 @@ class HookRegistry:
             return False
 
         original_len = len(self._handlers[event_key])
-        self._handlers[event_key] = [
-            (p, h) for p, h in self._handlers[event_key] if h != handler
-        ]
+        self._handlers[event_key] = [(p, h) for p, h in self._handlers[event_key] if h != handler]
 
         # Clean up empty lists
         if not self._handlers[event_key]:
@@ -385,9 +381,7 @@ def trigger_hook_sync(
         try:
             result = handler(event)
             if asyncio.iscoroutine(result):
-                logger.warning(
-                    f"Async handler skipped in sync context: {handler.__name__}"
-                )
+                logger.warning(f"Async handler skipped in sync context: {handler.__name__}")
                 result.close()  # Prevent coroutine warning
         except Exception as e:
             logger.error(f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}")
@@ -428,17 +422,13 @@ def before_command(command_name: str | None = None, priority: int = 100):
             if not event.context.get("confirmed"):
                 event.cancel = True
     """
-    event_key = (
-        f"command:before_{command_name}" if command_name else "command:before_execute"
-    )
+    event_key = f"command:before_{command_name}" if command_name else "command:before_execute"
     return register_hook(event_key, priority=priority)
 
 
 def after_command(command_name: str | None = None, priority: int = 100):
     """Decorator to register an after-command hook."""
-    event_key = (
-        f"command:after_{command_name}" if command_name else "command:after_execute"
-    )
+    event_key = f"command:after_{command_name}" if command_name else "command:after_execute"
     return register_hook(event_key, priority=priority)
 
 

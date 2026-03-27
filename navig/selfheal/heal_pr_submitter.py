@@ -94,9 +94,7 @@ class HealPRSubmitter:
         try:
             branch = create_branch(token)  # uses navig-selfheal/{date}-{hash} pattern
         except Exception as exc:
-            logger.warning(
-                "heal_pr: create_branch failed, using timestamp branch: %s", exc
-            )
+            logger.warning("heal_pr: create_branch failed, using timestamp branch: %s", exc)
             # Fall through — we'll attempt PR creation anyway
 
         username = get_github_username(token)
@@ -216,9 +214,7 @@ class HealPRSubmitter:
             )
         except Exception as exc:
             # Non-fatal — PR is open even if labels fail
-            logger.warning(
-                "heal_pr: could not attach labels to #%s: %s", pr_number, exc
-            )
+            logger.warning("heal_pr: could not attach labels to #%s: %s", pr_number, exc)
 
     @staticmethod
     def _build_pr_body(

@@ -29,9 +29,7 @@ def dummy_bundle():
 
 def test_export_bundle_unencrypted(tmp_dir, dummy_bundle):
     out = tmp_dir / "out"
-    with patch(
-        "navig.blackbox.export.write_bundle", return_value=(tmp_dir / "out.navbox")
-    ):
+    with patch("navig.blackbox.export.write_bundle", return_value=(tmp_dir / "out.navbox")):
         res = export_bundle(dummy_bundle, out, encrypted=False)
         assert res == (tmp_dir / "out.navbox")
 

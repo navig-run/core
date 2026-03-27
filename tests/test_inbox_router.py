@@ -107,10 +107,7 @@ class TestExtractTitle:
     def test_h1_extraction(self):
         from navig.agents.inbox_router import extract_title
 
-        assert (
-            extract_title("# My Great Plan\n\nSome content", "file.md")
-            == "My Great Plan"
-        )
+        assert extract_title("# My Great Plan\n\nSome content", "file.md") == "My Great Plan"
 
     def test_h2_not_extracted(self):
         from navig.agents.inbox_router import extract_title

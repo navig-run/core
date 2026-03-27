@@ -73,9 +73,7 @@ def _source_imports_bridge_reader(path: Path) -> bool:
     return False
 
 
-@pytest.mark.parametrize(
-    "consumer", _CONSUMER_FILES, ids=[p.name for p in _CONSUMER_FILES]
-)
+@pytest.mark.parametrize("consumer", _CONSUMER_FILES, ids=[p.name for p in _CONSUMER_FILES])
 def test_consumer_imports_from_bridge_grid_reader(consumer):
     """Each consumer file must import BRIDGE_DEFAULT_PORT (or get_llm_port) from bridge_grid_reader."""
     if not consumer.exists():

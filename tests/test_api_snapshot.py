@@ -67,9 +67,7 @@ class TestApiToolResult:
             status="ok",
             raw_json={"full": "payload"},
             normalized={"price": 42000.0, "symbol": "BTC/USD"},
-            source=ApiSource(
-                tool="trading.fetch.ohlc", endpoint="https://exchange.io/api"
-            ),
+            source=ApiSource(tool="trading.fetch.ohlc", endpoint="https://exchange.io/api"),
         )
         defaults.update(kwargs)
         return ApiToolResult(**defaults)
@@ -128,9 +126,7 @@ class TestApiToolResult:
     def test_from_error_factory(self):
         from navig.tools.api_schema import ApiToolResult
 
-        r = ApiToolResult.from_error(
-            "web.api.get_json", "Connection refused", "https://bad.api"
-        )
+        r = ApiToolResult.from_error("web.api.get_json", "Connection refused", "https://bad.api")
         assert r.status == "error"
         assert r.error == "Connection refused"
         assert r.source.tool == "web.api.get_json"
@@ -443,9 +439,7 @@ class TestSnapshotWriter:
         }
         return SnapshotWriter(snapshot_dir=snap_dir, policies=policies)
 
-    def _make_tool_result(
-        self, tool: str = "allowed.tool", **overrides
-    ) -> Dict[str, Any]:
+    def _make_tool_result(self, tool: str = "allowed.tool", **overrides) -> Dict[str, Any]:
         from navig.tools.api_schema import ApiSource, ApiToolResult
 
         r = ApiToolResult(
@@ -590,25 +584,19 @@ class TestLoadSnapshots:
         entries = load_snapshots(workspace="ws", snapshot_dir=populated_dir)
         assert len(entries) == 4  # all entries
         # Most recent first
-        assert entries[0].normalized == {
-            "v": 0
-        }  # reversed order: last line in file comes first
+        assert entries[0].normalized == {"v": 0}  # reversed order: last line in file comes first
 
     def test_filter_by_tool(self, populated_dir):
         from navig.memory.snapshot import load_snapshots
 
-        entries = load_snapshots(
-            workspace="ws", tool="tool.a", snapshot_dir=populated_dir
-        )
+        entries = load_snapshots(workspace="ws", tool="tool.a", snapshot_dir=populated_dir)
         assert all(e.tool == "tool.a" for e in entries)
         assert len(entries) == 3
 
     def test_filter_by_max_age(self, populated_dir):
         from navig.memory.snapshot import load_snapshots
 
-        entries = load_snapshots(
-            workspace="ws", max_age_minutes=30, snapshot_dir=populated_dir
-        )
+        entries = load_snapshots(workspace="ws", max_age_minutes=30, snapshot_dir=populated_dir)
         # Only entries within last 30 minutes (v=1, v=2, v=3)
         assert len(entries) == 3
 
@@ -654,19 +642,14 @@ class TestIsStale:
     def test_fresh_is_not_stale(self, fresh_dir):
         from navig.memory.snapshot import is_stale
 
-        assert (
-            is_stale("ws", "my.tool", max_age_minutes=60, snapshot_dir=fresh_dir)
-            is False
-        )
+        assert is_stale("ws", "my.tool", max_age_minutes=60, snapshot_dir=fresh_dir) is False
 
     def test_stale_when_no_snapshot(self, tmp_path):
         from navig.memory.snapshot import is_stale
 
         d = tmp_path / "empty_snaps"
         d.mkdir()
-        assert (
-            is_stale("ws", "missing.tool", max_age_minutes=60, snapshot_dir=d) is True
-        )
+        assert is_stale("ws", "missing.tool", max_age_minutes=60, snapshot_dir=d) is True
 
     def test_stale_when_old(self, tmp_path):
         from navig.memory.snapshot import is_stale
@@ -991,9 +974,7 @@ class TestIntegrationSnapshot:
         )
 
         # 2. Write via SnapshotWriter
-        policies = {
-            "infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")
-        }
+        policies = {"infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")}
         writer = SnapshotWriter(snapshot_dir=integration_dir, policies=policies)
         assert writer.write_from_api_result(result, workspace="project") is True
 
@@ -1023,9 +1004,7 @@ class TestIntegrationSnapshot:
             normalized={"uptime_hours": 720},
             source=ApiSource(tool="infra.metrics.node_status"),
         )
-        policies = {
-            "infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")
-        }
+        policies = {"infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")}
         writer = SnapshotWriter(snapshot_dir=snap_dir, policies=policies)
         writer.write_from_api_result(result, workspace="default")
 
@@ -1044,9 +1023,7 @@ class TestIntegrationSnapshot:
 
             from navig.memory.context_builder import ContextBuilder
 
-            builder = ContextBuilder(
-                config={"enabled": True, "include_api_snapshots": True}
-            )
+            builder = ContextBuilder(config={"enabled": True, "include_api_snapshots": True})
             ctx = builder.build_context("What is the server status?")
 
             assert len(ctx["api_snapshots"]) == 1
@@ -1060,9 +1037,7 @@ class TestIntegrationSnapshot:
 
             from navig.memory.context_builder import ContextBuilder
 
-            builder = ContextBuilder(
-                config={"enabled": True, "include_api_snapshots": True}
-            )
+            builder = ContextBuilder(config={"enabled": True, "include_api_snapshots": True})
             ctx = builder.build_context("Check server health")
 
             assert ctx["api_snapshots"] == []

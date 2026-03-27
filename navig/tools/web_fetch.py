@@ -55,9 +55,7 @@ class WebFetchTool(BaseTool):
         try:
             import httpx
         except ImportError:
-            return ToolResult(
-                name=self.name, success=False, error="httpx not installed"
-            )
+            return ToolResult(name=self.name, success=False, error="httpx not installed")
 
         try:
             async with httpx.AsyncClient(
@@ -87,9 +85,7 @@ class WebFetchTool(BaseTool):
             text = _extract_text(raw_html)
             text = text[:_MAX_CHARS]
 
-            await self._emit(
-                on_status, "Parsing content…", f"{len(text):,} chars extracted", 80
-            )
+            await self._emit(on_status, "Parsing content…", f"{len(text):,} chars extracted", 80)
 
             return ToolResult(
                 name=self.name,
@@ -103,13 +99,9 @@ class WebFetchTool(BaseTool):
             )
 
         except httpx.TimeoutException:
-            return ToolResult(
-                name=self.name, success=False, error="request timed out (15s)"
-            )
+            return ToolResult(name=self.name, success=False, error="request timed out (15s)")
         except httpx.ConnectError as exc:
-            return ToolResult(
-                name=self.name, success=False, error=f"connection failed: {exc}"
-            )
+            return ToolResult(name=self.name, success=False, error=f"connection failed: {exc}")
         except Exception as exc:
             return ToolResult(name=self.name, success=False, error=str(exc))
 
@@ -128,9 +120,7 @@ def _extract_text(html: str) -> str:
 
     # Fallback: basic HTML strip
     text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(
-        r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE
-    )
+    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"&nbsp;", " ", text)
     text = re.sub(r"&amp;", "&", text)

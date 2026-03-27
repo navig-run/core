@@ -78,9 +78,7 @@ async def handle_audio_callback(
     """
     # Always answer the callback query first to remove the spinner.
     # channel is a TelegramChannel (has _api_call), NOT a CallbackHandler (has _answer).
-    await channel._api_call(
-        "answerCallbackQuery", {"callback_query_id": cb_id, "text": ""}
-    )
+    await channel._api_call("answerCallbackQuery", {"callback_query_id": cb_id, "text": ""})
 
     cfg = load_config(user_id)
     parts = cb_data.split(":")  # ["audio", action, ...]
@@ -91,9 +89,7 @@ async def handle_audio_callback(
     try:
         # ── Screen A — provider list ────────────────────────────────
         if action == "providers":
-            await _edit(
-                channel, chat_id, message_id, screen_a_text(cfg), screen_a_keyboard(cfg)
-            )
+            await _edit(channel, chat_id, message_id, screen_a_text(cfg), screen_a_keyboard(cfg))
 
         # ── Screen B — model list ───────────────────────────────────
         elif action == "models" and len(parts) >= 3:

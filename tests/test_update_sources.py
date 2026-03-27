@@ -119,9 +119,7 @@ class TestArtifactURLSource:
 
     def test_unparseable_raises(self):
         source = ArtifactURLSource(url="http://example.com/bad")
-        with patch(
-            "urllib.request.urlopen", return_value=self._mock_urlopen("no version here")
-        ):
+        with patch("urllib.request.urlopen", return_value=self._mock_urlopen("no version here")):
             with pytest.raises(SourceError):
                 source.latest_version()
 

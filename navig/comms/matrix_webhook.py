@@ -117,9 +117,7 @@ async def push_matrix_stats(
                     stats.get("events"),
                 )
             else:
-                logger.warning(
-                    "Matrix stats push failed: %s %s", resp.status_code, resp.text[:200]
-                )
+                logger.warning("Matrix stats push failed: %s %s", resp.status_code, resp.text[:200])
             return ok
     except ImportError:
         # Fallback to urllib (sync, wrapped in thread)

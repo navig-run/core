@@ -298,9 +298,7 @@ class ApprovalManager:
         logger.info(f"Approval {request_id}: {'approved' if approved else 'denied'}")
         return True
 
-    def get_pending(
-        self, channel: str | None = None, user_id: str | None = None
-    ) -> list:
+    def get_pending(self, channel: str | None = None, user_id: str | None = None) -> list:
         """Get pending approval requests, optionally filtered."""
         requests = list(self._pending.values())
 
@@ -366,9 +364,7 @@ class ApprovalManager:
                         future.set_result(False)  # Deny on expiry
 
                 if expired_ids:
-                    logger.debug(
-                        f"Cleaned up {len(expired_ids)} expired approval requests"
-                    )
+                    logger.debug(f"Cleaned up {len(expired_ids)} expired approval requests")
 
             except asyncio.CancelledError:
                 break

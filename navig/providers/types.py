@@ -201,9 +201,7 @@ class AuthProfileStore:
     version: int = 1
     profiles: dict[str, AuthProfileCredential] = field(default_factory=dict)
     order: dict[str, list[str]] = field(default_factory=dict)  # provider -> profile IDs
-    last_good: dict[str, str] = field(
-        default_factory=dict
-    )  # provider -> last successful profile
+    last_good: dict[str, str] = field(default_factory=dict)  # provider -> last successful profile
     usage_stats: dict[str, ProfileUsageStats] = field(default_factory=dict)
 
 
@@ -261,9 +259,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=128000,
                 max_tokens=16384,
-                cost=ModelCost(
-                    input=0.15, output=0.6, cache_read=0.075, cache_write=0.15
-                ),
+                cost=ModelCost(input=0.15, output=0.6, cache_read=0.075, cache_write=0.15),
             ),
             ModelDefinition(
                 id="gpt-3.5-turbo",

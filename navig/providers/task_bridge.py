@@ -137,9 +137,7 @@ class EmailProvider(BaseTaskProvider):
                 error="email module not available (navig[email] not installed)",
             )
         except Exception as exc:
-            return ProviderResult(
-                provider=self.name, success=False, output="", error=str(exc)
-            )
+            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
 
 
 class CalendarProvider(BaseTaskProvider):
@@ -179,9 +177,7 @@ class CalendarProvider(BaseTaskProvider):
                 error="calendar module not available",
             )
         except Exception as exc:
-            return ProviderResult(
-                provider=self.name, success=False, output="", error=str(exc)
-            )
+            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
 
 
 class CommsProvider(BaseTaskProvider):
@@ -220,9 +216,7 @@ class CommsProvider(BaseTaskProvider):
         except ImportError:
             pass  # optional dependency not installed; feature disabled
         except Exception as exc:
-            return ProviderResult(
-                provider=self.name, success=False, output="", error=str(exc)
-            )
+            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
 
         return ProviderResult(
             provider=self.name,

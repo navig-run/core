@@ -61,6 +61,5 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
     return Result(
         action_id=action.id,
         state=ModuleState.SKIPPED,
-        message="No legacy paths to migrate"
-        + (f" ({'; '.join(skipped)})" if skipped else ""),
+        message="No legacy paths to migrate" + (f" ({'; '.join(skipped)})" if skipped else ""),
     )

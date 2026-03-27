@@ -165,9 +165,7 @@ class MCPManager:
     def _save_servers(self):
         """Save MCP servers to configuration file."""
         try:
-            servers_config = {
-                name: server.config for name, server in self.servers.items()
-            }
+            servers_config = {name: server.config for name, server in self.servers.items()}
 
             with open(self.servers_file, "w", encoding="utf-8") as f:
                 json.dump(servers_config, f, indent=2)
@@ -266,8 +264,7 @@ class MCPManager:
             results = [
                 s
                 for s in common_servers
-                if query.lower() in s["name"].lower()
-                or query.lower() in s["description"].lower()
+                if query.lower() in s["name"].lower() or query.lower() in s["description"].lower()
             ]
 
             ch.success(f"Found {len(results)} matching server(s)")
@@ -311,9 +308,7 @@ class MCPManager:
             elif server_type == "python":
                 # Install via pip
                 ch.step("Installing Python package...")
-                result = subprocess.run(
-                    ["pip", "install", package], capture_output=True, text=True
-                )
+                result = subprocess.run(["pip", "install", package], capture_output=True, text=True)
 
                 if result.returncode != 0:
                     ch.error(f"pip install failed: {result.stderr}")
@@ -376,9 +371,7 @@ class MCPManager:
         self._save_servers()
 
         ch.success(f"✓ MCP server '{name}' uninstalled")
-        ch.warning(
-            "Package may still be installed globally - remove manually if needed"
-        )
+        ch.warning("Package may still be installed globally - remove manually if needed")
         return True
 
     def enable_server(self, name: str) -> bool:

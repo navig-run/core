@@ -218,9 +218,7 @@ class AIContextManager:
             error_counts[error_key]["count"] += 1
 
         # Sort by frequency
-        common_errors = sorted(
-            error_counts.values(), key=lambda x: x["count"], reverse=True
-        )[:10]
+        common_errors = sorted(error_counts.values(), key=lambda x: x["count"], reverse=True)[:10]
 
         return {
             "total_errors": len(recent),
@@ -245,10 +243,7 @@ class AIContextManager:
 
         # Tunnel-related suggestions
         if "tunnel" in failed_command.lower() or "tunnel" in error_lower:
-            if (
-                "connection refused" in error_lower
-                or "could not connect" in error_lower
-            ):
+            if "connection refused" in error_lower or "could not connect" in error_lower:
                 suggestions.extend(
                     [
                         "Check if SSH server is running: navig run 'systemctl status sshd'",
@@ -279,10 +274,7 @@ class AIContextManager:
                 )
 
         # Database-related suggestions
-        if any(
-            cmd in failed_command.lower()
-            for cmd in ["sql", "backup", "restore", "database"]
-        ):
+        if any(cmd in failed_command.lower() for cmd in ["sql", "backup", "restore", "database"]):
             if "access denied" in error_lower or "authentication" in error_lower:
                 suggestions.extend(
                     [
@@ -312,10 +304,7 @@ class AIContextManager:
                 )
 
         # File operation suggestions
-        if any(
-            cmd in failed_command.lower()
-            for cmd in ["upload", "download", "list", "delete"]
-        ):
+        if any(cmd in failed_command.lower() for cmd in ["upload", "download", "list", "delete"]):
             if "permission denied" in error_lower:
                 suggestions.extend(
                     [
@@ -399,9 +388,7 @@ def get_ai_context_manager() -> AIContextManager:
     return _ai_context_manager
 
 
-def log_error(
-    category: str, command: str, error: str, context: dict[str, Any] | None = None
-):
+def log_error(category: str, command: str, error: str, context: dict[str, Any] | None = None):
     """Convenience function to log error.
 
     Args:

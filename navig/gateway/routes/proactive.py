@@ -7,9 +7,7 @@ import asyncio
 try:
     from aiohttp import web  # noqa: F401
 except ImportError as _exc:
-    raise RuntimeError(
-        "aiohttp is required for gateway routes (pip install aiohttp)"
-    ) from _exc
+    raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 from navig.agent.proactive.engine import get_proactive_engine
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
@@ -39,9 +37,7 @@ def _proactive_status(gw):
         return json_ok(
             {
                 "started": engine.running,
-                "last_check": (
-                    engine.last_check.isoformat() if engine.last_check else None
-                ),
+                "last_check": (engine.last_check.isoformat() if engine.last_check else None),
                 "last_check_status": engine.last_check_status,
                 "last_error": engine.last_error,
                 "providers": engine.provider_status,

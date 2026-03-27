@@ -47,9 +47,7 @@ class FormationRegistry:
                 f"[FORMATION] Registry loaded active formation: {self._active_formation.name}"
             )
         else:
-            logger.warning(
-                "[FORMATION] Registry initialized but no active formation was found."
-            )
+            logger.warning("[FORMATION] Registry initialized but no active formation was found.")
 
         self._initialized = True
 

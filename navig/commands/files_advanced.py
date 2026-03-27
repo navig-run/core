@@ -65,9 +65,7 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
     if options.get("dry_run"):
         msg = f"Would delete: {remote} ({'directory' if is_directory else 'file'})"
         if options.get("json"):
-            ch.raw_print(
-                json.dumps({"success": True, "dry_run": True, "action": delete_cmd})
-            )
+            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": delete_cmd}))
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
@@ -81,9 +79,7 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
                 return False
         else:
             # JSON mode: always require --force
-            ch.raw_print(
-                json.dumps({"success": False, "error": "Use --force in JSON mode"})
-            )
+            ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
             return False
 
     # Execute delete
@@ -146,9 +142,7 @@ def mkdir_cmd(remote: str, options: dict[str, Any]):
     if options.get("dry_run"):
         msg = f"Would create: {remote} (mode: {mode})"
         if options.get("json"):
-            ch.raw_print(
-                json.dumps({"success": True, "dry_run": True, "action": mkdir_cmd})
-            )
+            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": mkdir_cmd}))
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
@@ -217,9 +211,7 @@ def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
     if options.get("dry_run"):
         msg = f"Would set permissions: {remote} -> {mode}"
         if options.get("json"):
-            ch.raw_print(
-                json.dumps({"success": True, "dry_run": True, "action": chmod_cmd})
-            )
+            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": chmod_cmd}))
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
@@ -279,9 +271,7 @@ def chown_cmd(remote: str, owner: str, options: dict[str, Any]):
     if options.get("dry_run"):
         msg = f"Would change owner: {remote} -> {owner}"
         if options.get("json"):
-            ch.raw_print(
-                json.dumps({"success": True, "dry_run": True, "action": chown_cmd})
-            )
+            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": chown_cmd}))
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
@@ -707,9 +697,7 @@ def list_dir_cmd(
     remote_ops.execute_command(cmd, host_config, capture_output=False)
 
 
-def tree_cmd(
-    remote: str, options: dict[str, Any], depth: int = 2, dirs_only: bool = False
-):
+def tree_cmd(remote: str, options: dict[str, Any], depth: int = 2, dirs_only: bool = False):
     """Show directory tree structure.
 
     Args:

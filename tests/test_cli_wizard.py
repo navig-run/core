@@ -133,9 +133,7 @@ def test_wizard_setup_telegram(wizard, mock_input, mock_print):
 
 
 def test_wizard_setup_hosts(wizard, mock_input, mock_print):
-    with patch.object(
-        wizard, "_confirm", side_effect=[True, False]
-    ):  # Yes to add, no to another
+    with patch.object(wizard, "_confirm", side_effect=[True, False]):  # Yes to add, no to another
         mock_input.side_effect = ["myhost", "10.0.0.1", "root", "22"]
         wizard._setup_hosts()
 

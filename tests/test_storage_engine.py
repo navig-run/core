@@ -202,15 +202,13 @@ class TestEngine:
         db = _make_db(tmp_path)
         conn = engine.connect(db)
 
-        result = conn.execute(
-            """SELECT json_text('{"name":"bob","age":42}', 'name')"""
-        ).fetchone()[0]
+        result = conn.execute("""SELECT json_text('{"name":"bob","age":42}', 'name')""").fetchone()[
+            0
+        ]
         assert result == "bob"
 
         # Missing key
-        result2 = conn.execute(
-            """SELECT json_text('{"name":"bob"}', 'missing')"""
-        ).fetchone()[0]
+        result2 = conn.execute("""SELECT json_text('{"name":"bob"}', 'missing')""").fetchone()[0]
         assert result2 == ""
 
         # NULL input
@@ -267,9 +265,7 @@ class TestMigrationRunner:
         db = _make_db(tmp_path)
 
         def create(conn):
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)"
-            )
+            conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
 
         result = engine.run_migrations(db, target_version=1, create_schema=create)
         assert result["action"] == "created"
@@ -329,9 +325,7 @@ class TestMigrationRunner:
             conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY)")
             created.append(True)
 
-        result = engine.run_migrations(
-            db, target_version=1, create_schema=create, dry_run=True
-        )
+        result = engine.run_migrations(db, target_version=1, create_schema=create, dry_run=True)
         assert result["action"] == "dry_run_create"
         assert len(created) == 1  # create was called
 
@@ -767,9 +761,7 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
 
         store = SimpleStore(tmp_path / "test.db")
 
@@ -789,9 +781,7 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)")
 
         store = SimpleStore(tmp_path / "test.db")
         count = store._write_many(
@@ -811,9 +801,7 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)")
 
         store = SimpleStore(tmp_path / "test.db")
         result = store.maintenance()
@@ -828,9 +816,7 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, val TEXT)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, val TEXT)")
 
         store = SimpleStore(tmp_path / "test.db")
         store._write("INSERT INTO items VALUES (?, ?)", (1, "backup_test"))
@@ -853,9 +839,7 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)")
 
         store = SimpleStore(tmp_path / "test.db")
 

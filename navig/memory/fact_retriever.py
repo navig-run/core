@@ -187,9 +187,7 @@ class FactRetriever:
         Retrieve all active facts (no query-based filtering).
         Useful for "what do you remember about me?" queries.
         """
-        budget = (
-            max_tokens or self.config.max_tokens * 2
-        )  # Allow larger budget for "show all"
+        budget = max_tokens or self.config.max_tokens * 2  # Allow larger budget for "show all"
         facts = self.store.get_active(limit=200)
 
         if not facts:
@@ -349,9 +347,7 @@ class FactRetriever:
                     # Try truncating content
                     remaining = max_tokens - used_tokens - overhead - 5
                     if remaining > 20:
-                        truncated = rf.fact.content[
-                            : remaining * 4
-                        ]  # rough char estimate
+                        truncated = rf.fact.content[: remaining * 4]  # rough char estimate
                         rf.fact.content = truncated + "…"
                         selected.append(rf)
                 break

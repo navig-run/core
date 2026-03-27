@@ -19,9 +19,7 @@ class LocalizationStore:
     """
 
     def __init__(self, locales_root: Path | None = None) -> None:
-        self._root: Path = (
-            locales_root if locales_root is not None else _DEFAULT_LOCALES_ROOT
-        )
+        self._root: Path = locales_root if locales_root is not None else _DEFAULT_LOCALES_ROOT
         self._cache: dict[str, dict[str, str]] = {}
 
     # ── Public API ──────────────────────────────────────────────────────────

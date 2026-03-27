@@ -114,9 +114,7 @@ def _lan_ip() -> str:
 
 def _table(rows: list, headers: list) -> None:
     all_rows = [headers] + [[str(c) for c in r] for r in rows]
-    widths = [
-        max(len(r[i]) for r in all_rows if i < len(r)) for i in range(len(headers))
-    ]
+    widths = [max(len(r[i]) for r in all_rows if i < len(r)) for i in range(len(headers))]
     sep = "─" * (sum(widths) + 3 * len(widths) + 1)
     fmt = " | ".join(f"{{:<{w}}}" for w in widths)
     typer.echo(sep)
@@ -173,23 +171,13 @@ def peers(
                 p.get("hostname", "-"),
                 p.get("os", "-"),
                 p.get("health", "?"),
-                (
-                    f"{float(p.get('load_pct', 0)):.0f}%"
-                    if p.get("load_pct") is not None
-                    else "-"
-                ),
-                (
-                    f"{float(p.get('rtt_ms', 0)):.0f}ms"
-                    if p.get("rtt_ms") is not None
-                    else "-"
-                ),
+                (f"{float(p.get('load_pct', 0)):.0f}%" if p.get("load_pct") is not None else "-"),
+                (f"{float(p.get('rtt_ms', 0)):.0f}ms" if p.get("rtt_ms") is not None else "-"),
                 p.get("gateway_url", "-"),
             ]
         )
     _table(rows, ["Node ID", "Hostname", "OS", "Health", "Load", "RTT", "Gateway"])
-    typer.echo(
-        f"\n  {len(peer_list)} peer(s)   use `navig flux target <id>` to route\n"
-    )
+    typer.echo(f"\n  {len(peer_list)} peer(s)   use `navig flux target <id>` to route\n")
 
 
 @flux_app.command("scan")
@@ -238,8 +226,7 @@ def target(
         (
             p
             for p in peer_list
-            if p["node_id"].startswith(node_id)
-            or p.get("hostname", "").lower() == node_id.lower()
+            if p["node_id"].startswith(node_id) or p.get("hostname", "").lower() == node_id.lower()
         ),
         None,
     )
@@ -248,9 +235,7 @@ def target(
         raise SystemExit(1)
 
     _post("/mesh/target", {"node_id": match["node_id"]})
-    typer.echo(
-        f"🎯 Target set to: {match['node_id'][:16]}  ({match.get('hostname', '')})"
-    )
+    typer.echo(f"🎯 Target set to: {match['node_id'][:16]}  ({match.get('hostname', '')})")
 
 
 @flux_app.command("clear")
@@ -282,9 +267,7 @@ def add_node(
 def install(
     gateway: str = typer.Option("", "--gateway", help="Source gateway URL"),
     push: bool = typer.Option(False, "--push", help="Push install over SSH"),
-    peer: str | None = typer.Argument(
-        None, help="Target node_id / hostname (for --push)"
-    ),
+    peer: str | None = typer.Argument(None, help="Target node_id / hostname (for --push)"),
 ) -> None:
     """Show one-liner install commands, or push the install to a peer (--push)."""
     src = gateway or f"http://{_lan_ip()}:8789"

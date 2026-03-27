@@ -99,9 +99,7 @@ class TraySettings:
         if SETTINGS_FILE.exists():
             try:
                 data = json.loads(SETTINGS_FILE.read_text())
-                return cls(
-                    **{k: v for k, v in data.items() if k in cls.__dataclass_fields__}
-                )
+                return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         return cls()
@@ -156,9 +154,7 @@ class NavigTray:
         self.settings = TraySettings.load()
         self.gateway = ProcessState(name="Gateway")
         self.agent = ProcessState(name="Agent")
-        self.daemon = ProcessState(
-            name="Daemon"
-        )  # New: supervised daemon (bot+gateway+scheduler)
+        self.daemon = ProcessState(name="Daemon")  # New: supervised daemon (bot+gateway+scheduler)
         self._icon = None
         self._health_thread: threading.Thread | None = None
         self._running = False
@@ -238,9 +234,7 @@ class NavigTray:
                 stdout=fh,
                 stderr=subprocess.STDOUT,
                 cwd=str(Path.home()),
-                creationflags=(
-                    subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                ),
+                creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
             )
             state.status = Status.RUNNING
             state.started_at = datetime.now()
@@ -286,9 +280,7 @@ class NavigTray:
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             pids = [
-                int(p.strip())
-                for p in result.stdout.strip().split("\n")
-                if p.strip().isdigit()
+                int(p.strip()) for p in result.stdout.strip().split("\n") if p.strip().isdigit()
             ]
             for pid in pids:
                 try:
@@ -371,9 +363,7 @@ class NavigTray:
                 if sys.platform == "win32":
                     import ctypes
 
-                    ctypes.windll.kernel32.GenerateConsoleCtrlEvent(
-                        1, daemon_pid
-                    )  # CTRL_BREAK = 1
+                    ctypes.windll.kernel32.GenerateConsoleCtrlEvent(1, daemon_pid)  # CTRL_BREAK = 1
                 else:
                     os.kill(daemon_pid, signal.SIGTERM)
             except Exception as e:
@@ -383,11 +373,7 @@ class NavigTray:
             for _ in range(16):
                 time.sleep(0.5)
                 alive = False
-                if (
-                    self.daemon.process
-                    and self.daemon.is_alive
-                    or self._is_daemon_running()
-                ):
+                if self.daemon.process and self.daemon.is_alive or self._is_daemon_running():
                     alive = True
                 if not alive:
                     break
@@ -455,9 +441,7 @@ class NavigTray:
         try:
             import winreg
 
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER, REGISTRY_KEY, 0, winreg.KEY_READ
-            )
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_KEY, 0, winreg.KEY_READ)
             try:
                 winreg.QueryValueEx(key, REGISTRY_VALUE)
                 return True
@@ -589,9 +573,7 @@ class NavigTray:
         # --- status label ---
         parts = []
         if dm_running:
-            pid_str = (
-                f" (PID {self.daemon.process.pid})" if self.daemon.is_alive else ""
-            )
+            pid_str = f" (PID {self.daemon.process.pid})" if self.daemon.is_alive else ""
             parts.append(f"Bot: ON{pid_str}")
         if gw_running:
             parts.append("GW: ON")
@@ -674,9 +656,7 @@ class NavigTray:
                     ),
                     pystray.MenuItem(
                         "Installed Skills",
-                        _bg(
-                            lambda: self._run_navig_interactive(["skills", "installed"])
-                        ),
+                        _bg(lambda: self._run_navig_interactive(["skills", "installed"])),
                     ),
                 ),
             ),
@@ -737,9 +717,7 @@ class NavigTray:
                             )
                         ),
                     ),
-                    pystray.MenuItem(
-                        "Open NAVIG Terminal", _bg(lambda: self._open_navig_shell())
-                    ),
+                    pystray.MenuItem("Open NAVIG Terminal", _bg(lambda: self._open_navig_shell())),
                 ),
             ),
             # ── Settings ──
@@ -753,18 +731,14 @@ class NavigTray:
                     ),
                     pystray.MenuItem(
                         "Start bot when tray opens",
-                        lambda icon, item: self._toggle_setting(
-                            "start_daemon_on_launch"
-                        ),
+                        lambda icon, item: self._toggle_setting("start_daemon_on_launch"),
                         checked=lambda item: self.settings.start_daemon_on_launch,
                     ),
                     pystray.Menu.SEPARATOR,
                     pystray.MenuItem(
                         "Open Config Folder", _bg(lambda: os.startfile(str(NAVIG_DIR)))
                     ),
-                    pystray.MenuItem(
-                        "Open Log Folder", _bg(lambda: os.startfile(str(LOG_DIR)))
-                    ),
+                    pystray.MenuItem("Open Log Folder", _bg(lambda: os.startfile(str(LOG_DIR)))),
                 ),
             ),
             pystray.Menu.SEPARATOR,
@@ -782,9 +756,7 @@ class NavigTray:
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                creationflags=(
-                    subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                ),
+                creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
             )
         except Exception as e:
             log.error(f"Failed to run navig command: {e}")
@@ -818,9 +790,7 @@ class NavigTray:
             # Set title, show version, then drop to prompt
             init = f'title {title} && "{self._python}" -m navig --version && echo. && echo Type "navig --help" for commands && echo.'
             try:
-                subprocess.Popen(
-                    f'cmd /k "{init}"', creationflags=subprocess.CREATE_NEW_CONSOLE
-                )
+                subprocess.Popen(f'cmd /k "{init}"', creationflags=subprocess.CREATE_NEW_CONSOLE)
             except Exception as e:
                 log.error(f"Failed to open NAVIG shell: {e}")
 

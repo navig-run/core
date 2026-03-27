@@ -148,9 +148,7 @@ def nssm_install(start_now: bool = True) -> tuple[bool, str]:
         )
 
         if start_now:
-            subprocess.run(
-                ["nssm", "start", SERVICE_NAME], check=True, capture_output=True
-            )
+            subprocess.run(["nssm", "start", SERVICE_NAME], check=True, capture_output=True)
             return True, f"Service '{SERVICE_NAME}' installed and started via NSSM"
         return True, f"Service '{SERVICE_NAME}' installed via NSSM (not started)"
 
@@ -162,9 +160,7 @@ def nssm_install(start_now: bool = True) -> tuple[bool, str]:
 def nssm_uninstall() -> tuple[bool, str]:
     try:
         subprocess.run(["nssm", "stop", SERVICE_NAME], capture_output=True)
-        subprocess.run(
-            ["nssm", "remove", SERVICE_NAME, "confirm"], check=True, capture_output=True
-        )
+        subprocess.run(["nssm", "remove", SERVICE_NAME, "confirm"], check=True, capture_output=True)
         return True, "Service removed via NSSM"
     except subprocess.CalledProcessError as e:
         err = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
@@ -173,9 +169,7 @@ def nssm_uninstall() -> tuple[bool, str]:
 
 def nssm_status() -> tuple[bool, str]:
     try:
-        result = subprocess.run(
-            ["nssm", "status", SERVICE_NAME], capture_output=True, text=True
-        )
+        result = subprocess.run(["nssm", "status", SERVICE_NAME], capture_output=True, text=True)
         running = "SERVICE_RUNNING" in result.stdout
         return running, result.stdout.strip()
     except Exception as e:
@@ -429,16 +423,10 @@ def systemd_uninstall() -> tuple[bool, str]:
             subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
             return True, f"System service '{SYSTEMD_UNIT}' removed"
         elif user_unit.exists():
-            subprocess.run(
-                ["systemctl", "--user", "stop", SYSTEMD_UNIT], capture_output=True
-            )
-            subprocess.run(
-                ["systemctl", "--user", "disable", SYSTEMD_UNIT], capture_output=True
-            )
+            subprocess.run(["systemctl", "--user", "stop", SYSTEMD_UNIT], capture_output=True)
+            subprocess.run(["systemctl", "--user", "disable", SYSTEMD_UNIT], capture_output=True)
             user_unit.unlink(missing_ok=True)
-            subprocess.run(
-                ["systemctl", "--user", "daemon-reload"], capture_output=True
-            )
+            subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
             return True, f"User service '{SYSTEMD_UNIT}' removed"
         else:
             return False, f"No systemd unit found for '{SYSTEMD_UNIT}'"
@@ -577,9 +565,7 @@ def status(method: str | None = None) -> tuple[bool, str]:
         try:
             running_ts, detail_ts = task_scheduler_status()
             if "ERROR" not in detail_ts:
-                lines.append(
-                    f"\nTask Scheduler: {'Active' if running_ts else 'Inactive'}"
-                )
+                lines.append(f"\nTask Scheduler: {'Active' if running_ts else 'Inactive'}")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
     else:

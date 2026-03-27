@@ -113,9 +113,7 @@ def _show_modes():
 
 @mode_app.command("set")
 def mode_set(
-    mode: str = typer.Argument(
-        ..., help="Mode name or alias (e.g. coding, chat, research)"
-    ),
+    mode: str = typer.Argument(..., help="Mode name or alias (e.g. coding, chat, research)"),
     provider: str | None = typer.Option(
         None, "--provider", "-p", help="Provider (ollama, openai, groq, etc.)"
     ),
@@ -153,13 +151,9 @@ def mode_set(
     # Persist to config
     try:
         _persist_mode_config(router)
-        console.print(
-            f"[green]✓[/green] Mode [cyan]{canonical}[/cyan] updated and saved."
-        )
+        console.print(f"[green]✓[/green] Mode [cyan]{canonical}[/cyan] updated and saved.")
     except Exception as e:
-        console.print(
-            f"[yellow]⚠[/yellow] Updated in memory but failed to persist: {e}"
-        )
+        console.print(f"[yellow]⚠[/yellow] Updated in memory but failed to persist: {e}")
 
     # Show resolved config
     resolved = router.get_config(canonical)
@@ -180,9 +174,7 @@ def _persist_mode_config(router):
         raw["llm_router"] = {}
     raw["llm_router"]["llm_modes"] = router.get_all_modes()
     raw["llm_router"]["uncensored_overrides"] = (
-        router.uncensored.model_dump()
-        if hasattr(router.uncensored, "model_dump")
-        else {}
+        router.uncensored.model_dump() if hasattr(router.uncensored, "model_dump") else {}
     )
 
     cm.save_global_config(raw)
@@ -225,11 +217,7 @@ def mode_list(
         table.add_column("Installed", justify="center")
 
         for m in uncensored_info["local"]:
-            status = (
-                "[green]✓ pulled[/green]"
-                if m["available"]
-                else "[red]✗ not pulled[/red]"
-            )
+            status = "[green]✓ pulled[/green]" if m["available"] else "[red]✗ not pulled[/red]"
             table.add_row(m["alias"], m["model"], status)
         console.print(table)
     else:
@@ -246,11 +234,7 @@ def mode_list(
         table.add_column("API Key", justify="center")
 
         for m in uncensored_info["api"]:
-            status = (
-                "[green]✓ present[/green]"
-                if m["api_key_present"]
-                else "[red]✗ missing[/red]"
-            )
+            status = "[green]✓ present[/green]" if m["api_key_present"] else "[red]✗ missing[/red]"
             table.add_row(m["alias"], m["model"], m["provider"], status)
         console.print(table)
     else:

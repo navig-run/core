@@ -144,9 +144,7 @@ _FEATURE_FLAGS = {
     "voice": HAS_VOICE,
 }
 
-TELEGRAM_FEATURES = frozenset(
-    name for name, enabled in _FEATURE_FLAGS.items() if enabled
-)
+TELEGRAM_FEATURES = frozenset(name for name, enabled in _FEATURE_FLAGS.items() if enabled)
 
 
 class TelegramFeaturesMixin:

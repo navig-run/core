@@ -38,9 +38,7 @@ class MatrixRoom:
     topic: str = ""
     purpose: str = "general"  # general | notifications | alerts | bridge
     encrypted: bool = False
-    joined_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    joined_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -79,9 +77,7 @@ class MatrixEvent:
     event_type: str
     content: dict[str, Any] = field(default_factory=dict)
     origin_ts: int = 0
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -227,9 +223,7 @@ class MatrixStore(BaseStore):
         """
         )
 
-    def _migrate(
-        self, conn: sqlite3.Connection, from_version: int, to_version: int
-    ) -> None:
+    def _migrate(self, conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
         """Incremental schema migrations."""
         if from_version < 3:
             conn.executescript(
@@ -272,9 +266,7 @@ class MatrixStore(BaseStore):
 
     def get_room(self, room_id: str) -> MatrixRoom | None:
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM rooms WHERE room_id = ?", (room_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
         return MatrixRoom.from_row(row) if row else None
 
     def list_rooms(self, purpose: str | None = None) -> list[MatrixRoom]:
@@ -285,9 +277,7 @@ class MatrixStore(BaseStore):
                 (purpose,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM rooms ORDER BY joined_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM rooms ORDER BY joined_at DESC").fetchall()
         return [MatrixRoom.from_row(r) for r in rows]
 
     def remove_room(self, room_id: str) -> bool:
@@ -436,9 +426,7 @@ class MatrixStore(BaseStore):
                 (room_id,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM bridges ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM bridges ORDER BY created_at DESC").fetchall()
         return [MatrixBridge.from_row(r) for r in rows]
 
     def remove_bridge(self, bridge_id: int) -> bool:
@@ -483,9 +471,7 @@ class MatrixStore(BaseStore):
                 (user_id,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM device_trust ORDER BY updated_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM device_trust ORDER BY updated_at DESC").fetchall()
         return [dict(r) for r in rows]
 
     # ── Stats / Diagnostics ───────────────────────────────────

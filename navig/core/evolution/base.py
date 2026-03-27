@@ -36,13 +36,9 @@ class BaseEvolver(ABC):
         for attempt in range(1, self.max_retries + 1):
             # Generate / Refine
             try:
-                new_artifact = self._generate(
-                    goal, current_artifact, current_error, context
-                )
+                new_artifact = self._generate(goal, current_artifact, current_error, context)
             except Exception as e:
-                return EvolutionResult(
-                    False, error=f"Generation failed: {e}", attempts=attempt
-                )
+                return EvolutionResult(False, error=f"Generation failed: {e}", attempts=attempt)
 
             if not new_artifact:
                 return EvolutionResult(
@@ -73,9 +69,7 @@ class BaseEvolver(ABC):
         return None
 
     @abstractmethod
-    def _generate(
-        self, goal: str, previous_artifact: Any, error: str, context: Any
-    ) -> Any:
+    def _generate(self, goal: str, previous_artifact: Any, error: str, context: Any) -> Any:
         """Generate or refine the artifact."""
         pass
 

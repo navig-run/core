@@ -17,9 +17,7 @@ class YamlDocument:
     line_map: dict[YamlPath, int]
 
 
-def _node_to_python(
-    node: yaml.Node, path: YamlPath, line_map: dict[YamlPath, int]
-) -> Any:
+def _node_to_python(node: yaml.Node, path: YamlPath, line_map: dict[YamlPath, int]) -> Any:
     # Record the start line for this node as a best-effort fallback.
     if hasattr(node, "start_mark") and node.start_mark is not None:
         line_map.setdefault(path, int(node.start_mark.line) + 1)

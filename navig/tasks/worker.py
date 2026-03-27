@@ -172,9 +172,7 @@ class TaskWorker:
                 # Wait for available slot
                 async with self._semaphore:
                     # Get next task
-                    task = await self.queue.get_next(
-                        wait=True, timeout=self.config.poll_interval
-                    )
+                    task = await self.queue.get_next(wait=True, timeout=self.config.poll_interval)
 
                     if task:
                         # Start execution
@@ -285,9 +283,7 @@ class TaskWorker:
         return {
             "running": self._running,
             "started_at": (
-                self._stats["started_at"].isoformat()
-                if self._stats["started_at"]
-                else None
+                self._stats["started_at"].isoformat() if self._stats["started_at"] else None
             ),
             "active_tasks": self.active_tasks,
             "max_concurrent": self.config.max_concurrent,

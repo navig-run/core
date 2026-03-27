@@ -320,9 +320,7 @@ def _manual_render(skills: list[dict[str, Any]]) -> str:
     """Render skills prompt without Jinja2."""
     lines = ["You have access to the following tools/skills:", ""]
     for s in skills:
-        lines.append(
-            f"[{s.get('id', '?')}] {s.get('name', '')} — {s.get('summary', '')}"
-        )
+        lines.append(f"[{s.get('id', '?')}] {s.get('name', '')} — {s.get('summary', '')}")
         lines.append("Commands:")
         for cmd in s.get("commands", []):
             lines.append(f"- {cmd.get('signature', '')} : {cmd.get('description', '')}")

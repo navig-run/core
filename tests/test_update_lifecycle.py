@@ -204,18 +204,14 @@ class TestHistoryRecording:
                 side_effect=lambda t, nr: setattr(nr, "new_version", "2.5.0"),
             ),
         ):
-            engine = UpdateEngine(
-                [_local_target()], source=_make_source(), cache_dir=str(tmp_path)
-            )
+            engine = UpdateEngine([_local_target()], source=_make_source(), cache_dir=str(tmp_path))
             engine.run()
 
         hist_file = tmp_path / "update_history.jsonl"
         assert hist_file.exists()
         import json
 
-        entries = [
-            json.loads(l) for l in hist_file.read_text().splitlines() if l.strip()
-        ]
+        entries = [json.loads(l) for l in hist_file.read_text().splitlines() if l.strip()]
         assert len(entries) == 1
         assert entries[0]["old_version"] == "2.4.0"
         assert entries[0]["new_version"] == "2.5.0"

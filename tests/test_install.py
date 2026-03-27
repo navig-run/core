@@ -37,9 +37,9 @@ def test_help_flag():
     result = run([sys.executable, "-m", "navig", "--help"])
     assert result.returncode == 0, f"Non-zero exit: {result.stderr}"
     combined = (result.stdout + result.stderr).lower()
-    assert (
-        "usage" in combined or "navig" in combined
-    ), f"Expected 'usage' or 'navig' in help output, got:\n{combined[:500]}"
+    assert "usage" in combined or "navig" in combined, (
+        f"Expected 'usage' or 'navig' in help output, got:\n{combined[:500]}"
+    )
 
 
 def test_package_version_matches_pyproject():

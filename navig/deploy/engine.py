@@ -222,9 +222,11 @@ class DeployEngine:
         # 2. Remote disk check (warn below 20% free)
         if not dry_run and not errors:
             try:
-                target_dir = self._cfg.push.target
+                import shlex
+
+                target_dir_safe = shlex.quote(self._cfg.push.target)
                 r = self._remote.execute_command(
-                    f"df -P {target_dir} 2>/dev/null | tail -1 | awk '{{print $5}}'",
+                    f"df -P {target_dir_safe} 2>/dev/null | tail -1 | awk '{{print $5}}'",
                     self._server,
                 )
                 if r.returncode == 0:
@@ -306,15 +308,11 @@ class DeployEngine:
                 # Parse rsync summary line: "sent X bytes  received Y bytes"
                 summary = self._parse_rsync_summary(r.stdout)
                 emit(phase, "ok", summary)
-                return PhaseResult(
-                    phase=phase, success=True, message=summary, elapsed=elapsed
-                )
+                return PhaseResult(phase=phase, success=True, message=summary, elapsed=elapsed)
             else:
                 msg = (r.stderr or r.stdout).strip()[:300]
                 emit(phase, "fail", msg)
-                return PhaseResult(
-                    phase=phase, success=False, message=msg, elapsed=elapsed
-                )
+                return PhaseResult(phase=phase, success=False, message=msg, elapsed=elapsed)
         except subprocess.TimeoutExpired:
             elapsed = time.perf_counter() - t0
             msg = "rsync timed out after 300s"
@@ -345,15 +343,16 @@ class DeployEngine:
                 continue
 
             # Run each apply command in the deploy target directory
-            full_cmd = f"cd {self._cfg.push.target} && {cmd}"
+            import shlex
+
+            target_dir_safe = shlex.quote(self._cfg.push.target)
+            full_cmd = f"cd {target_dir_safe} && {cmd}"
             r = self._remote.execute_command(full_cmd, self._server)
             if r.returncode != 0:
                 elapsed = time.perf_counter() - t0
                 msg = f"`{cmd}` failed: {(r.stderr or r.stdout).strip()[:200]}"
                 emit(phase, "fail", msg)
-                return PhaseResult(
-                    phase=phase, success=False, message=msg, elapsed=elapsed
-                )
+                return PhaseResult(phase=phase, success=False, message=msg, elapsed=elapsed)
 
         elapsed = time.perf_counter() - t0
         msg = (
@@ -373,9 +372,7 @@ class DeployEngine:
         enriched_server = {**self._server, "_deploy_target_root": self._cfg.push.target}
 
         try:
-            adapter = build_adapter(
-                self._cfg.restart, enriched_server, self._remote, dry_run
-            )
+            adapter = build_adapter(self._cfg.restart, enriched_server, self._remote, dry_run)
         except ValueError as exc:
             elapsed = time.perf_counter() - t0
             msg = str(exc)
@@ -391,14 +388,10 @@ class DeployEngine:
             if not dry_run:
                 time.sleep(settle)
             emit(phase, "ok", detail)
-            return PhaseResult(
-                phase=phase, success=True, message=detail, elapsed=elapsed
-            )
+            return PhaseResult(phase=phase, success=True, message=detail, elapsed=elapsed)
         else:
             emit(phase, "fail", detail)
-            return PhaseResult(
-                phase=phase, success=False, message=detail, elapsed=elapsed
-            )
+            return PhaseResult(phase=phase, success=False, message=detail, elapsed=elapsed)
 
     def _phase_health(self, emit: ProgressCallback, dry_run: bool) -> PhaseResult:
         t0 = time.perf_counter()
@@ -441,9 +434,7 @@ class DeployEngine:
     # Rollback helper
     # ------------------------------------------------------------------
 
-    def _maybe_rollback(
-        self, result: DeployResult, emit: ProgressCallback
-    ) -> DeployResult:
+    def _maybe_rollback(self, result: DeployResult, emit: ProgressCallback) -> DeployResult:
         """Execute automatic rollback and update result accordingly."""
         if not self._rollback_mgr:
             return result
@@ -462,17 +453,13 @@ class DeployEngine:
         # Restart after restore
         enriched = {**self._server, "_deploy_target_root": self._cfg.push.target}
         try:
-            adapter = build_adapter(
-                self._cfg.restart, enriched, self._remote, self._dry_run
-            )
+            adapter = build_adapter(self._cfg.restart, enriched, self._remote, self._dry_run)
             adapter.restart()
         except Exception as exc:
             logger.warning("Restart after rollback failed: %s", exc)
 
         # Post-rollback health check
-        checker = HealthChecker(
-            self._cfg.health, self._server, self._remote, self._dry_run
-        )
+        checker = HealthChecker(self._cfg.health, self._server, self._remote, self._dry_run)
         checker.check()
 
         result.rolled_back = True
@@ -482,9 +469,7 @@ class DeployEngine:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _build_rsync_cmd(
-        self, source: str, target: str, excludes: list[str]
-    ) -> list[str]:
+    def _build_rsync_cmd(self, source: str, target: str, excludes: list[str]) -> list[str]:
         server = self._server
         host = f"{server['user']}@{server['host']}"
         port = server.get("port", 22)
@@ -544,9 +529,7 @@ class DeployEngine:
                 from navig.config import get_config_manager
 
                 cm = get_config_manager()
-                keep = int(
-                    cm._load_global_config().get("deploy", {}).get("history_keep", 50)
-                )
+                keep = int(cm._load_global_config().get("deploy", {}).get("history_keep", 50))
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
             history = DeployHistory(cache_dir=self._cache_dir, keep=keep)

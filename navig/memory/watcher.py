@@ -193,9 +193,7 @@ class MemoryWatcher:
             return
 
         # Separate deletions from updates
-        deleted = {
-            p.replace("deleted:", "") for p in changes if p.startswith("deleted:")
-        }
+        deleted = {p.replace("deleted:", "") for p in changes if p.startswith("deleted:")}
         updated = {p for p in changes if not p.startswith("deleted:")}
 
         files_indexed = 0

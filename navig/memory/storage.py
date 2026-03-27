@@ -303,9 +303,7 @@ class MemoryStorage:
 
         with self._lock:
             # Delete chunks first (foreign key)
-            cursor = conn.execute(
-                "DELETE FROM chunks WHERE file_path = ?", (file_path,)
-            )
+            cursor = conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
             deleted_chunks = cursor.rowcount
 
             conn.execute("DELETE FROM files WHERE file_path = ?", (file_path,))
@@ -408,9 +406,7 @@ class MemoryStorage:
         conn = self._get_conn()
 
         with self._lock:
-            cursor = conn.execute(
-                "DELETE FROM chunks WHERE file_path = ?", (file_path,)
-            )
+            cursor = conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
             conn.commit()
 
         return cursor.rowcount
@@ -652,9 +648,7 @@ class MemoryStorage:
 
         file_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         chunk_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-        total_tokens = (
-            conn.execute("SELECT SUM(token_count) FROM chunks").fetchone()[0] or 0
-        )
+        total_tokens = conn.execute("SELECT SUM(token_count) FROM chunks").fetchone()[0] or 0
         embedded_count = conn.execute(
             "SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL"
         ).fetchone()[0]
@@ -750,9 +744,7 @@ class MemoryStorage:
         """
         vec = self._get_vec()
         if not vec.available:
-            raise RuntimeError(
-                "sqlite-vec not available — install with: pip install sqlite-vec"
-            )
+            raise RuntimeError("sqlite-vec not available — install with: pip install sqlite-vec")
 
         hits = vec.search(query_embedding, limit=limit)
         if not hits:
@@ -761,9 +753,7 @@ class MemoryStorage:
         conn = self._get_conn()
         results: list[tuple[MemoryChunk, float]] = []
         for chunk_id, distance in hits:
-            row = conn.execute(
-                "SELECT * FROM chunks WHERE id = ?", (chunk_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
             if row:
                 results.append((MemoryChunk.from_dict(dict(row)), distance))
         return results
@@ -809,9 +799,7 @@ class MemoryStorage:
         conn = self._get_conn()
         for chunk_id, distance in vec_hits:
             if chunk_id not in scored:
-                row = conn.execute(
-                    "SELECT * FROM chunks WHERE id = ?", (chunk_id,)
-                ).fetchone()
+                row = conn.execute("SELECT * FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
                 if row:
                     combined = (1 - alpha) * (1 - distance)
                     scored[chunk_id] = (MemoryChunk.from_dict(dict(row)), combined)

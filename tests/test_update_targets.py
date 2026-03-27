@@ -127,7 +127,5 @@ class TestUpdateTarget:
         assert t.label == "local"
 
     def test_is_ssh(self):
-        t = UpdateTarget(
-            node_id="myhost", type="ssh", server_config={"host": "1.1.1.1"}
-        )
+        t = UpdateTarget(node_id="myhost", type="ssh", server_config={"host": "1.1.1.1"})
         assert not t.is_local

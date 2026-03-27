@@ -449,9 +449,7 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
                 ts_match = ts_regex.match(line)
                 if ts_match:
                     try:
-                        line_ts = datetime.strptime(
-                            ts_match.group("ts"), "%Y-%m-%d %H:%M:%S"
-                        )
+                        line_ts = datetime.strptime(ts_match.group("ts"), "%Y-%m-%d %H:%M:%S")
                         if line_ts < cutoff:
                             continue
                     except ValueError:
@@ -469,9 +467,7 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
     if counts.get("permission_denied", 0) > 5:
         recommendations.append("Check file permissions and user access rights.")
     if counts.get("config_error", 0) > 3:
-        recommendations.append(
-            "Validate configuration files for syntax/structure errors."
-        )
+        recommendations.append("Validate configuration files for syntax/structure errors.")
     if counts.get("component_error", 0) > 5:
         recommendations.append("Investigate recurring component lifecycle failures.")
     if counts.get("resource_exhausted", 0) > 0:
@@ -482,8 +478,7 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
         "days": days,
         "total_errors": int(sum(counts.values())),
         "patterns": {
-            name: {"count": count, "examples": examples[name]}
-            for name, count in counts.items()
+            name: {"count": count, "examples": examples[name]} for name, count in counts.items()
         },
         "recommendations": recommendations,
     }

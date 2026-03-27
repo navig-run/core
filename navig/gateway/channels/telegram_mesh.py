@@ -80,9 +80,7 @@ class TelegramMeshMixin:
                 host = p.get("hostname", p.get("node_id", "?"))
                 is_self = " *(you)*" if p.get("is_self") else ""
                 capabilities = ", ".join(p.get("capabilities", []) or []) or "—"
-                lines.append(
-                    f"{role_symbol} `{host}`{is_self} — load {load:.0%} — {capabilities}"
-                )
+                lines.append(f"{role_symbol} `{host}`{is_self} — load {load:.0%} — {capabilities}")
 
             await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 

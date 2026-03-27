@@ -135,9 +135,7 @@ def hosts_view(options: dict):
                 parts = line.split()
                 if len(parts) >= 2:
                     entries.append({"ip": parts[0], "hostnames": parts[1:]})
-        console.print(
-            json.dumps({"path": str(hosts_path), "entries": entries}, indent=2)
-        )
+        console.print(json.dumps({"path": str(hosts_path), "entries": entries}, indent=2))
         return
 
     if options.get("plain"):
@@ -148,9 +146,7 @@ def hosts_view(options: dict):
     # Rich display with syntax highlighting
     console.print(f"\n[cyan]📄 Hosts File: {hosts_path}[/cyan]\n")
 
-    if content.startswith("Permission denied") or content.startswith(
-        "Hosts file not found"
-    ):
+    if content.startswith("Permission denied") or content.startswith("Hosts file not found"):
         ch.error(content)
         return
 
@@ -454,9 +450,7 @@ Be concise and actionable."""
         response = query_ai(prompt, context=context)
 
         if response:
-            console.print(
-                Panel(response, title="🤖 AI Security Analysis", border_style="cyan")
-            )
+            console.print(Panel(response, title="🤖 AI Security Analysis", border_style="cyan"))
         else:
             ch.warning("AI analysis not available")
 
@@ -506,9 +500,7 @@ def security_firewall(options: dict):
 
     if result.exit_code != 0:
         ch.warning(f"Could not get firewall status: {result.stderr}")
-        ch.info(
-            "This may require admin privileges or the firewall service may not be running."
-        )
+        ch.info("This may require admin privileges or the firewall service may not be running.")
         return
 
     if options.get("plain"):

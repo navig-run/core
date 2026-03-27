@@ -102,9 +102,7 @@ class MatrixInboxBridge:
         self.filter_senders = set(filter_senders) if filter_senders else None
         self.ignore_notices = ignore_notices
 
-        self._inbox_dir = (
-            self.project_root / ".navig" / "plans" / "inbox" / MATRIX_INBOX_DIR
-        )
+        self._inbox_dir = self.project_root / ".navig" / "plans" / "inbox" / MATRIX_INBOX_DIR
         self._inbox_dir.mkdir(parents=True, exist_ok=True)
 
         self._message_count = 0

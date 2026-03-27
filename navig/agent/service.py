@@ -132,9 +132,7 @@ class ServiceInstaller:
             )
 
             # Reload systemd
-            subprocess.run(
-                systemctl_args + ["daemon-reload"], check=True, capture_output=True
-            )
+            subprocess.run(systemctl_args + ["daemon-reload"], check=True, capture_output=True)
 
             # Enable service
             subprocess.run(
@@ -174,18 +172,12 @@ class ServiceInstaller:
             subprocess.run(systemctl_args + ["stop", service_name], capture_output=True)
 
             # Disable service
-            subprocess.run(
-                systemctl_args + ["disable", service_name], capture_output=True
-            )
+            subprocess.run(systemctl_args + ["disable", service_name], capture_output=True)
 
             # Remove service file
             if is_user_service:
                 service_path = (
-                    self.home
-                    / ".config"
-                    / "systemd"
-                    / "user"
-                    / f"{service_name}.service"
+                    self.home / ".config" / "systemd" / "user" / f"{service_name}.service"
                 )
             else:
                 service_path = Path("/etc/systemd/system") / f"{service_name}.service"
@@ -286,9 +278,7 @@ WantedBy=default.target
             )
 
             # Load service
-            subprocess.run(
-                ["launchctl", "load", str(plist_path)], check=True, capture_output=True
-            )
+            subprocess.run(["launchctl", "load", str(plist_path)], check=True, capture_output=True)
 
             # Start if requested
             if start_now:
@@ -316,9 +306,7 @@ WantedBy=default.target
 
         try:
             # Unload service
-            subprocess.run(
-                ["launchctl", "unload", str(plist_path)], capture_output=True
-            )
+            subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
 
             # Remove plist file
             if plist_path.exists():
@@ -475,9 +463,7 @@ WantedBy=default.target
 
             # Start if requested
             if start_now:
-                subprocess.run(
-                    ["nssm", "start", service_name], check=True, capture_output=True
-                )
+                subprocess.run(["nssm", "start", service_name], check=True, capture_output=True)
                 return True, "Service installed and started using nssm"
             else:
                 return True, "Service installed using nssm"
@@ -511,9 +497,7 @@ WantedBy=default.target
 
             # Start if requested
             if start_now:
-                subprocess.run(
-                    ["sc", "start", service_name], check=True, capture_output=True
-                )
+                subprocess.run(["sc", "start", service_name], check=True, capture_output=True)
                 return True, "Service installed and started using sc.exe"
             else:
                 return True, "Service installed using sc.exe"
@@ -552,9 +536,7 @@ WantedBy=default.target
             else:
                 # Use sc.exe
                 subprocess.run(["sc", "stop", service_name], capture_output=True)
-                subprocess.run(
-                    ["sc", "delete", service_name], check=True, capture_output=True
-                )
+                subprocess.run(["sc", "delete", service_name], check=True, capture_output=True)
                 return True, "Service uninstalled using sc.exe"
 
         except subprocess.CalledProcessError as e:
@@ -570,9 +552,7 @@ WantedBy=default.target
         service_name = "NAVIGAgent"
 
         try:
-            result = subprocess.run(
-                ["sc", "query", service_name], capture_output=True, text=True
-            )
+            result = subprocess.run(["sc", "query", service_name], capture_output=True, text=True)
 
             is_running = "RUNNING" in result.stdout
             return is_running, result.stdout

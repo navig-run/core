@@ -202,7 +202,9 @@ def show_header(state: MenuState):
     elif host_info:
         context_line = f"📍 Context: {host_info} [dim](no app selected)[/dim]"
     else:
-        context_line = f"[{COLORS['dim']}]📍 Context: No active host (run 'navig host use <name>' to set)[/]"
+        context_line = (
+            f"[{COLORS['dim']}]📍 Context: No active host (run 'navig host use <name>' to set)[/]"
+        )
 
     # Timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -239,9 +241,7 @@ def show_status(message: str, status: str = "info"):
     console.print(f"[{color}]{icon} {message}[/{color}]")
 
 
-def create_menu_table(
-    title: str, items: list[tuple[str, str]], show_keys: bool = True
-) -> Table:
+def create_menu_table(title: str, items: list[tuple[str, str]], show_keys: bool = True) -> Table:
     """Create a formatted menu table."""
     table = Table(
         title=f"[{COLORS['primary']}]{title}[/{COLORS['primary']}]",
@@ -414,19 +414,13 @@ def show_status_dashboard(state: MenuState):
                 f"[{COLORS['success']}]●[/{COLORS['success']}] Host: {state.active_host}"
             )
     else:
-        status_items.append(
-            f"[{COLORS['dim']}]○[/{COLORS['dim']}] Host: [dim]not set[/dim]"
-        )
+        status_items.append(f"[{COLORS['dim']}]○[/{COLORS['dim']}] Host: [dim]not set[/dim]")
 
     # App status
     if state.active_app:
-        status_items.append(
-            f"[{COLORS['success']}]●[/{COLORS['success']}] App: {state.active_app}"
-        )
+        status_items.append(f"[{COLORS['success']}]●[/{COLORS['success']}] App: {state.active_app}")
     else:
-        status_items.append(
-            f"[{COLORS['dim']}]○[/{COLORS['dim']}] App: [dim]not set[/dim]"
-        )
+        status_items.append(f"[{COLORS['dim']}]○[/{COLORS['dim']}] App: [dim]not set[/dim]")
 
     # Recent command
     recent = state.history.get_recent(1)
@@ -439,9 +433,7 @@ def show_status_dashboard(state: MenuState):
             if len(last_cmd["description"]) > 25
             else last_cmd["description"]
         )
-        status_items.append(
-            f"[{status_color}]{status_icon}[/{status_color}] Last: {desc}"
-        )
+        status_items.append(f"[{status_color}]{status_icon}[/{status_color}] Last: {desc}")
 
     # Print dashboard in a single line
     console.print(f"  {' │ '.join(status_items)}")
@@ -528,13 +520,7 @@ def show_main_menu(state: MenuState) -> str | None:
     system_options.append(("0", "Exit"))
 
     # Combine all options
-    options = (
-        sysops_options
-        + devops_options
-        + lifeops_options
-        + intel_options
-        + system_options
-    )
+    options = sysops_options + devops_options + lifeops_options + intel_options + system_options
 
     # Map display labels to internal action names
     action_map = {
@@ -722,9 +708,7 @@ def show_app_management_menu(state: MenuState, standalone: bool = False) -> bool
             )
 
         except KeyboardInterrupt:
-            return (
-                not standalone
-            )  # True for submenu (continue parent), False for standalone (exit)
+            return not standalone  # True for submenu (continue parent), False for standalone (exit)
         except Exception as e:
             show_status(f"Error: {e}", "error")
             Prompt.ask(
@@ -748,12 +732,8 @@ def show_database_menu(state: MenuState, standalone: bool = False) -> bool:
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone  # True for submenu, False for standalone
 
         options = [
@@ -822,21 +802,13 @@ def show_webserver_menu(state: MenuState, standalone: bool = False) -> bool:
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone  # True for submenu, False for standalone
 
         if not state.active_app:
-            show_status(
-                "No active app selected. Please select an app first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active app selected. Please select an app first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone  # True for submenu, False for standalone
 
         options = [
@@ -902,12 +874,8 @@ def show_file_operations_menu(state: MenuState, standalone: bool = False) -> boo
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone  # True for submenu, False for standalone
 
         options = [
@@ -970,12 +938,8 @@ def show_maintenance_menu(state: MenuState, standalone: bool = False) -> bool:
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone  # True for submenu, False for standalone
 
         options = [
@@ -1041,12 +1005,8 @@ def show_monitoring_menu(state: MenuState, standalone: bool = False) -> bool:
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone
 
         options = [
@@ -1121,12 +1081,8 @@ def show_security_menu(state: MenuState, standalone: bool = False) -> bool:
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone
 
         options = [
@@ -1349,9 +1305,7 @@ def show_command_history(state: MenuState) -> bool:
 
     if not recent:
         show_status("No command history yet.", "info")
-        Prompt.ask(
-            f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-        )
+        Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
         return True
 
     # Create history table
@@ -1380,9 +1334,7 @@ def show_command_history(state: MenuState) -> bool:
     console.print()
 
     # Option to clear history
-    if Confirm.ask(
-        f"[{COLORS['action']}]Clear history?[/{COLORS['action']}]", default=False
-    ):
+    if Confirm.ask(f"[{COLORS['action']}]Clear history?[/{COLORS['action']}]", default=False):
         state.history.clear()
         show_status("History cleared.", "success")
 
@@ -1427,14 +1379,10 @@ def execute_host_switch(state: MenuState):
             host.use_host(selection, {})
             state.active_host = selection
             show_status(f"Switched to host: {selection}", "success")
-            state.history.add(
-                f"navig host use {selection}", f"Switch to host {selection}", True
-            )
+            state.history.add(f"navig host use {selection}", f"Switch to host {selection}", True)
         except Exception as e:
             show_status(f"Failed to switch host: {e}", "error")
-            state.history.add(
-                f"navig host use {selection}", f"Switch to host {selection}", False
-            )
+            state.history.add(f"navig host use {selection}", f"Switch to host {selection}", False)
             raise
 
 
@@ -1475,9 +1423,7 @@ def execute_discover_local(state: MenuState):
         name = "localhost"
 
     try:
-        result = discover_local_host(
-            name=name, auto_confirm=False, set_active=True, progress=True
-        )
+        result = discover_local_host(name=name, auto_confirm=False, set_active=True, progress=True)
 
         if result:
             state.history.add(
@@ -1516,14 +1462,10 @@ def execute_host_edit(state: MenuState):
         try:
             host.edit_host({"host_name": selection})
             show_status(f"Opening editor for host: {selection}", "success")
-            state.history.add(
-                f"navig host edit {selection}", f"Edit host {selection}", True
-            )
+            state.history.add(f"navig host edit {selection}", f"Edit host {selection}", True)
         except Exception as e:
             show_status(f"Failed to edit host: {e}", "error")
-            state.history.add(
-                f"navig host edit {selection}", f"Edit host {selection}", False
-            )
+            state.history.add(f"navig host edit {selection}", f"Edit host {selection}", False)
             raise
 
 
@@ -1581,19 +1523,13 @@ def execute_host_test(state: MenuState):
                 host.test_host({"host_name": selection, "silent": True})
             # Only show success if test_host didn't raise an exception
             show_status(f"Connection to {selection} successful.", "success")
-            state.history.add(
-                f"navig host test {selection}", f"Test host {selection}", True
-            )
+            state.history.add(f"navig host test {selection}", f"Test host {selection}", True)
         except RuntimeError:
             # test_host raises RuntimeError on failure - error already shown
-            state.history.add(
-                f"navig host test {selection}", f"Test host {selection}", False
-            )
+            state.history.add(f"navig host test {selection}", f"Test host {selection}", False)
         except Exception as e:
             show_status(f"Unexpected error: {e}", "error")
-            state.history.add(
-                f"navig host test {selection}", f"Test host {selection}", False
-            )
+            state.history.add(f"navig host test {selection}", f"Test host {selection}", False)
 
 
 def execute_host_inspect(state: MenuState):
@@ -1624,9 +1560,7 @@ def execute_host_inspect(state: MenuState):
             if result:
                 show_status(f"Host {selection} inspected successfully.", "success")
                 console.print()  # Blank line
-                console.print(
-                    f"[{COLORS['info']}]=== Discovery Summary ===[/{COLORS['info']}]"
-                )
+                console.print(f"[{COLORS['info']}]=== Discovery Summary ===[/{COLORS['info']}]")
 
                 # Show OS
                 discovered = result["discovered"]
@@ -1691,9 +1625,7 @@ def execute_host_inspect(state: MenuState):
                 state.active_host = original_active
         except Exception as e:
             show_status(f"Inspection failed: {e}", "error")
-            state.history.add(
-                f"navig host inspect {selection}", f"Inspect host {selection}", False
-            )
+            state.history.add(f"navig host inspect {selection}", f"Inspect host {selection}", False)
 
 
 def execute_host_info(state: MenuState):
@@ -1709,14 +1641,10 @@ def execute_host_info(state: MenuState):
     if selection:
         try:
             host.info_host({"host_name": selection})
-            state.history.add(
-                f"navig host info {selection}", f"View host info {selection}", True
-            )
+            state.history.add(f"navig host info {selection}", f"View host info {selection}", True)
         except Exception as e:
             show_status(f"Failed to show host info: {e}", "error")
-            state.history.add(
-                f"navig host info {selection}", f"View host info {selection}", False
-            )
+            state.history.add(f"navig host info {selection}", f"View host info {selection}", False)
             raise
 
 
@@ -1767,9 +1695,7 @@ def execute_app_init(state: MenuState):
     navig_dir = current_dir / ".navig"
     if navig_dir.exists():
         show_status("App already initialized (.navig/ exists)", "warning")
-        Prompt.ask(
-            f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default=""
-        )
+        Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
         return
 
     # Confirm initialization
@@ -1801,19 +1727,13 @@ def execute_app_init(state: MenuState):
             # Build informative prompt message
             config_summary = []
             if host_count > 0:
-                config_summary.append(
-                    f"{host_count} host{'s' if host_count != 1 else ''}"
-                )
+                config_summary.append(f"{host_count} host{'s' if host_count != 1 else ''}")
             if app_count > 0:
-                config_summary.append(
-                    f"{app_count} legacy config{'s' if app_count != 1 else ''}"
-                )
+                config_summary.append(f"{app_count} legacy config{'s' if app_count != 1 else ''}")
 
             prompt_msg = f"Found {' and '.join(config_summary)} in global config. Copy to this app?"
 
-            if Confirm.ask(
-                f"[{COLORS['action']}]{prompt_msg}[/{COLORS['action']}]", default=False
-            ):
+            if Confirm.ask(f"[{COLORS['action']}]{prompt_msg}[/{COLORS['action']}]", default=False):
                 copy_global = True
         # If no configs exist, skip the prompt entirely
 
@@ -1828,9 +1748,7 @@ def execute_app_init(state: MenuState):
     else:
         show_status("Initialization cancelled.", "info")
 
-    Prompt.ask(
-        f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default=""
-    )
+    Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
 
 
 def execute_app_list(state: MenuState):
@@ -1885,21 +1803,15 @@ def execute_app_switch(state: MenuState):
                     local_scope = False
 
                 # Use app with appropriate scope
-                app.use_app(
-                    {"app_name": app_name, "local": local_scope, "quiet": False}
-                )
+                app.use_app({"app_name": app_name, "local": local_scope, "quiet": False})
                 state.active_app = app_name
 
                 scope_text = "locally" if local_scope else "globally"
                 show_status(f"Switched to app: {app_name} ({scope_text})", "success")
-                state.history.add(
-                    f"navig app use {app_name}", f"Switch to app {app_name}", True
-                )
+                state.history.add(f"navig app use {app_name}", f"Switch to app {app_name}", True)
         except Exception as e:
             show_status(f"Failed to switch app: {e}", "error")
-            state.history.add(
-                f"navig app use {selection}", f"Switch to app {selection}", False
-            )
+            state.history.add(f"navig app use {selection}", f"Switch to app {selection}", False)
             raise
 
 
@@ -1943,20 +1855,14 @@ def execute_app_edit(state: MenuState):
 
     if selection:
         try:
-            host_name = (
-                selection.split("/", 1)[0] if "/" in selection else state.active_host
-            )
+            host_name = selection.split("/", 1)[0] if "/" in selection else state.active_host
             app_name = selection.split("/", 1)[1] if "/" in selection else selection
             app.edit_app({"app_name": app_name, "host": host_name})
             show_status(f"Opening editor for app: {app_name}", "success")
-            state.history.add(
-                f"navig app edit {app_name}", f"Edit app {app_name}", True
-            )
+            state.history.add(f"navig app edit {app_name}", f"Edit app {app_name}", True)
         except Exception as e:
             show_status(f"Failed to edit app: {e}", "error")
-            state.history.add(
-                f"navig app edit {selection}", f"Edit app {selection}", False
-            )
+            state.history.add(f"navig app edit {selection}", f"Edit app {selection}", False)
             raise
 
 
@@ -1986,9 +1892,7 @@ def execute_app_clone(state: MenuState):
         try:
             host_name = source.split("/", 1)[0] if "/" in source else state.active_host
             source_name = source.split("/", 1)[1] if "/" in source else source
-            app.clone_app(
-                {"source_name": source_name, "new_name": new_name, "host": host_name}
-            )
+            app.clone_app({"source_name": source_name, "new_name": new_name, "host": host_name})
             show_status(f"App '{source_name}' cloned to '{new_name}'.", "success")
             state.history.add(
                 f"navig app clone {source_name} {new_name}",
@@ -2023,19 +1927,13 @@ def execute_app_info(state: MenuState):
 
     if selection:
         try:
-            host_name = (
-                selection.split("/", 1)[0] if "/" in selection else state.active_host
-            )
+            host_name = selection.split("/", 1)[0] if "/" in selection else state.active_host
             app_name = selection.split("/", 1)[1] if "/" in selection else selection
             app.info_app({"app_name": app_name, "host": host_name})
-            state.history.add(
-                f"navig app info {app_name}", f"View app info {app_name}", True
-            )
+            state.history.add(f"navig app info {app_name}", f"View app info {app_name}", True)
         except Exception as e:
             show_status(f"Failed to show app info: {e}", "error")
-            state.history.add(
-                f"navig app info {selection}", f"View app info {selection}", False
-            )
+            state.history.add(f"navig app info {selection}", f"View app info {selection}", False)
             raise
 
 
@@ -2086,17 +1984,13 @@ def execute_app_remove(state: MenuState):
                 # Pass force=True to skip second confirmation, quiet=True to suppress duplicate message
                 app.remove_app({"app_name": app_name, "force": True, "quiet": True})
                 show_status(f"App '{app_name}' removed.", "removed")
-                state.history.add(
-                    f"navig app remove {app_name}", f"Remove app {app_name}", True
-                )
+                state.history.add(f"navig app remove {app_name}", f"Remove app {app_name}", True)
 
                 if state.active_app == app_name:
                     state.active_app = None
             except Exception as e:
                 show_status(f"Failed to remove app: {e}", "error")
-                state.history.add(
-                    f"navig app remove {selection}", f"Remove app {selection}", False
-                )
+                state.history.add(f"navig app remove {selection}", f"Remove app {selection}", False)
                 raise
 
 
@@ -2231,9 +2125,7 @@ def execute_db_backup(state: MenuState):
 
 def execute_db_restore(state: MenuState):
     """Restore database from backup."""
-    backup_path = Prompt.ask(
-        f"[{COLORS['action']}]Backup file path[/{COLORS['action']}]"
-    )
+    backup_path = Prompt.ask(f"[{COLORS['action']}]Backup file path[/{COLORS['action']}]")
 
     if not backup_path:
         show_status("File path cannot be empty.", "error")
@@ -2301,9 +2193,7 @@ def execute_list_backups(state: MenuState):
 
     for bkp in sorted(backups, key=lambda x: x.stat().st_mtime, reverse=True):
         size_mb = bkp.stat().st_size / (1024 * 1024)
-        modified = datetime.fromtimestamp(bkp.stat().st_mtime).strftime(
-            "%Y-%m-%d %H:%M"
-        )
+        modified = datetime.fromtimestamp(bkp.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
 
         table.add_row(bkp.name, f"{size_mb:.2f} MB", modified)
 
@@ -2338,9 +2228,7 @@ def execute_db_list(state: MenuState):
 def execute_db_tables(state: MenuState):
     """List tables in a database."""
     # First, try to list databases so user can see available options
-    console.print(
-        f"\n[{COLORS['dim']}]Fetching available databases...[/{COLORS['dim']}]"
-    )
+    console.print(f"\n[{COLORS['dim']}]Fetching available databases...[/{COLORS['dim']}]")
 
     db_name = Prompt.ask(f"[{COLORS['action']}]Database name[/{COLORS['action']}]")
 
@@ -2363,14 +2251,10 @@ def execute_db_tables(state: MenuState):
             db_type=None,
             options=options,
         )
-        state.history.add(
-            f"navig db-show-tables {db_name}", f"List tables in {db_name}", True
-        )
+        state.history.add(f"navig db-show-tables {db_name}", f"List tables in {db_name}", True)
     except Exception as e:
         show_status(f"Failed to list tables: {e}", "error")
-        state.history.add(
-            f"navig db-show-tables {db_name}", f"List tables in {db_name}", False
-        )
+        state.history.add(f"navig db-show-tables {db_name}", f"List tables in {db_name}", False)
         raise
 
 
@@ -2416,9 +2300,7 @@ def execute_webserver_reload(state: MenuState):
             f"[{COLORS['accent']}]Reloading webserver...[/{COLORS['accent']}]",
             spinner="dots",
         ):
-            webserver.reload_webserver(
-                {"host": state.active_host, "app": state.active_app}
-            )
+            webserver.reload_webserver({"host": state.active_host, "app": state.active_app})
         show_status("Webserver reloaded.", "success")
         state.history.add("navig webserver reload", "Reload webserver", True)
     except Exception as e:
@@ -2441,9 +2323,7 @@ def execute_webserver_restart(state: MenuState):
             f"[{COLORS['accent']}]Restarting webserver...[/{COLORS['accent']}]",
             spinner="dots",
         ):
-            webserver.restart_webserver(
-                {"host": state.active_host, "app": state.active_app}
-            )
+            webserver.restart_webserver({"host": state.active_host, "app": state.active_app})
         show_status("Webserver restarted.", "success")
         state.history.add("navig webserver restart", "Restart webserver", True)
     except Exception as e:
@@ -2454,9 +2334,7 @@ def execute_webserver_restart(state: MenuState):
 
 def execute_webserver_access_logs(state: MenuState):
     """View webserver access logs."""
-    lines = Prompt.ask(
-        f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50"
-    )
+    lines = Prompt.ask(f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50")
 
     try:
         webserver.view_logs(
@@ -2474,17 +2352,13 @@ def execute_webserver_access_logs(state: MenuState):
         )
     except Exception as e:
         show_status(f"Failed to view logs: {e}", "error")
-        state.history.add(
-            "navig webserver logs --type access", "View access logs", False
-        )
+        state.history.add("navig webserver logs --type access", "View access logs", False)
         raise
 
 
 def execute_webserver_error_logs(state: MenuState):
     """View webserver error logs."""
-    lines = Prompt.ask(
-        f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50"
-    )
+    lines = Prompt.ask(f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50")
 
     try:
         webserver.view_logs(
@@ -2540,22 +2414,16 @@ def execute_file_upload(state: MenuState):
                 {"app": state.active_app},
             )
         show_status(f"File uploaded: {local_file.name}", "success")
-        state.history.add(
-            f"navig upload {local_path}", f"Upload {local_file.name}", True
-        )
+        state.history.add(f"navig upload {local_path}", f"Upload {local_file.name}", True)
     except Exception as e:
         show_status(f"Upload failed: {e}", "error")
-        state.history.add(
-            f"navig upload {local_path}", f"Upload {local_file.name}", False
-        )
+        state.history.add(f"navig upload {local_path}", f"Upload {local_file.name}", False)
         raise
 
 
 def execute_file_download(state: MenuState):
     """Download a file from the server."""
-    remote_path = Prompt.ask(
-        f"[{COLORS['action']}]Remote file path[/{COLORS['action']}]"
-    )
+    remote_path = Prompt.ask(f"[{COLORS['action']}]Remote file path[/{COLORS['action']}]")
 
     if not remote_path:
         show_status("Remote path cannot be empty.", "error")
@@ -2605,9 +2473,7 @@ def execute_file_list(state: MenuState):
 
 def execute_file_mkdir(state: MenuState):
     """Create remote directory."""
-    remote_path = Prompt.ask(
-        f"[{COLORS['action']}]Remote directory path[/{COLORS['action']}]"
-    )
+    remote_path = Prompt.ask(f"[{COLORS['action']}]Remote directory path[/{COLORS['action']}]")
 
     if not remote_path:
         show_status("Path cannot be empty.", "error")
@@ -2616,22 +2482,16 @@ def execute_file_mkdir(state: MenuState):
     try:
         files.mkdir_cmd(remote_path, {"app": state.active_app, "parents": True})
         show_status(f"Directory created: {remote_path}", "success")
-        state.history.add(
-            f"navig mkdir {remote_path}", f"Create directory {remote_path}", True
-        )
+        state.history.add(f"navig mkdir {remote_path}", f"Create directory {remote_path}", True)
     except Exception as e:
         show_status(f"Failed to create directory: {e}", "error")
-        state.history.add(
-            f"navig mkdir {remote_path}", f"Create directory {remote_path}", False
-        )
+        state.history.add(f"navig mkdir {remote_path}", f"Create directory {remote_path}", False)
         raise
 
 
 def execute_file_delete(state: MenuState):
     """Delete remote file or directory."""
-    remote_path = Prompt.ask(
-        f"[{COLORS['action']}]Remote path to delete[/{COLORS['action']}]"
-    )
+    remote_path = Prompt.ask(f"[{COLORS['action']}]Remote path to delete[/{COLORS['action']}]")
 
     if not remote_path:
         show_status("Path cannot be empty.", "error")
@@ -2645,9 +2505,7 @@ def execute_file_delete(state: MenuState):
         return
 
     try:
-        files.delete_cmd(
-            remote_path, {"app": state.active_app, "recursive": True, "yes": True}
-        )
+        files.delete_cmd(remote_path, {"app": state.active_app, "recursive": True, "yes": True})
         show_status(f"Deleted: {remote_path}", "success")
         state.history.add(f"navig rm {remote_path}", f"Delete {remote_path}", True)
     except Exception as e:
@@ -2724,28 +2582,20 @@ def execute_maintenance_disk(state: MenuState):
 
 def execute_maintenance_service_status(state: MenuState):
     """Check service status."""
-    service = Prompt.ask(
-        f"[{COLORS['action']}]Service name[/{COLORS['action']}]", default="nginx"
-    )
+    service = Prompt.ask(f"[{COLORS['action']}]Service name[/{COLORS['action']}]", default="nginx")
 
     try:
         monitoring.service_status({"host": state.active_host, "service": service})
-        state.history.add(
-            f"navig service-status {service}", f"Check {service} status", True
-        )
+        state.history.add(f"navig service-status {service}", f"Check {service} status", True)
     except Exception as e:
         show_status(f"Failed to check service: {e}", "error")
-        state.history.add(
-            f"navig service-status {service}", f"Check {service} status", False
-        )
+        state.history.add(f"navig service-status {service}", f"Check {service} status", False)
         raise
 
 
 def execute_maintenance_restart_service(state: MenuState):
     """Restart a service."""
-    service = Prompt.ask(
-        f"[{COLORS['action']}]Service name[/{COLORS['action']}]", default="nginx"
-    )
+    service = Prompt.ask(f"[{COLORS['action']}]Service name[/{COLORS['action']}]", default="nginx")
 
     if not Confirm.ask(
         f"[{COLORS['warning']}]Restart {service}?[/{COLORS['warning']}]", default=False
@@ -2760,14 +2610,10 @@ def execute_maintenance_restart_service(state: MenuState):
         ):
             maintenance.restart_service({"host": state.active_host, "service": service})
         show_status(f"Service {service} restarted.", "success")
-        state.history.add(
-            f"navig service-restart {service}", f"Restart {service}", True
-        )
+        state.history.add(f"navig service-restart {service}", f"Restart {service}", True)
     except Exception as e:
         show_status(f"Failed to restart service: {e}", "error")
-        state.history.add(
-            f"navig service-restart {service}", f"Restart {service}", False
-        )
+        state.history.add(f"navig service-restart {service}", f"Restart {service}", False)
         raise
 
 
@@ -2919,9 +2765,7 @@ def show_flow_menu(state: MenuState, standalone: bool = False) -> bool:
                 name = Prompt.ask(f"[{COLORS['action']}]Flow name[/{COLORS['action']}]")
                 if name:
                     flow.show_flow_cmd(name, {})
-                    state.history.add(
-                        f"navig flow show {name}", f"Show flow {name}", True
-                    )
+                    state.history.add(f"navig flow show {name}", f"Show flow {name}", True)
             elif selection == "Run a flow":
                 name = Prompt.ask(f"[{COLORS['action']}]Flow name[/{COLORS['action']}]")
                 if name:
@@ -2930,30 +2774,22 @@ def show_flow_menu(state: MenuState, standalone: bool = False) -> bool:
                         spinner="dots",
                     ):
                         flow.run_flow_cmd(name, {})
-                    state.history.add(
-                        f"navig flow run {name}", f"Run flow {name}", True
-                    )
+                    state.history.add(f"navig flow run {name}", f"Run flow {name}", True)
             elif selection == "Test flow syntax":
                 name = Prompt.ask(f"[{COLORS['action']}]Flow name[/{COLORS['action']}]")
                 if name:
                     flow.test_flow_cmd(name, {})
-                    state.history.add(
-                        f"navig flow test {name}", f"Test flow {name}", True
-                    )
+                    state.history.add(f"navig flow test {name}", f"Test flow {name}", True)
             elif selection == "Create new flow":
                 name = Prompt.ask(f"[{COLORS['action']}]Flow name[/{COLORS['action']}]")
                 if name:
                     flow.add_flow_cmd(name, {})
-                    state.history.add(
-                        f"navig flow add {name}", f"Create flow {name}", True
-                    )
+                    state.history.add(f"navig flow add {name}", f"Create flow {name}", True)
             elif selection == "Edit flow":
                 name = Prompt.ask(f"[{COLORS['action']}]Flow name[/{COLORS['action']}]")
                 if name:
                     flow.edit_flow_cmd(name, {})
-                    state.history.add(
-                        f"navig flow edit {name}", f"Edit flow {name}", True
-                    )
+                    state.history.add(f"navig flow edit {name}", f"Edit flow {name}", True)
             elif selection == "Remove flow":
                 name = Prompt.ask(f"[{COLORS['action']}]Flow name[/{COLORS['action']}]")
                 if name and Confirm.ask(
@@ -2961,9 +2797,7 @@ def show_flow_menu(state: MenuState, standalone: bool = False) -> bool:
                     default=False,
                 ):
                     flow.remove_flow_cmd(name, {})
-                    state.history.add(
-                        f"navig flow remove {name}", f"Remove flow {name}", True
-                    )
+                    state.history.add(f"navig flow remove {name}", f"Remove flow {name}", True)
 
             console.print()
             Prompt.ask(
@@ -3030,21 +2864,15 @@ def show_local_menu(state: MenuState, standalone: bool = False) -> bool:
                 local.audit_cmd({})
                 state.history.add("navig local audit", "Security audit", True)
             elif selection == "Ping remote host":
-                host = Prompt.ask(
-                    f"[{COLORS['action']}]Host to ping[/{COLORS['action']}]"
-                )
+                host = Prompt.ask(f"[{COLORS['action']}]Host to ping[/{COLORS['action']}]")
                 if host:
                     local.ping_cmd(host, {})
                     state.history.add(f"navig local ping {host}", f"Ping {host}", True)
             elif selection == "DNS lookup":
-                domain = Prompt.ask(
-                    f"[{COLORS['action']}]Domain name[/{COLORS['action']}]"
-                )
+                domain = Prompt.ask(f"[{COLORS['action']}]Domain name[/{COLORS['action']}]")
                 if domain:
                     local.dns_cmd(domain, {})
-                    state.history.add(
-                        f"navig local dns {domain}", f"DNS lookup {domain}", True
-                    )
+                    state.history.add(f"navig local dns {domain}", f"DNS lookup {domain}", True)
 
             console.print()
             Prompt.ask(
@@ -3177,9 +3005,7 @@ def show_agent_gateway_menu(state: MenuState, standalone: bool = False) -> bool:
                 console.print(
                     f"[{COLORS['dim']}]  Check bot status with: navig bot status[/{COLORS['dim']}]"
                 )
-                state.history.add(
-                    "navig bot --gateway", "Start Telegram Bot (with Gateway)", True
-                )
+                state.history.add("navig bot --gateway", "Start Telegram Bot (with Gateway)", True)
             elif selection == "Start Telegram Bot (standalone)":
                 console.print(
                     f"\n[{COLORS['info']}]Starting NAVIG Telegram Bot (standalone)...[/{COLORS['info']}]"
@@ -3278,9 +3104,7 @@ def show_cron_menu(state: MenuState, standalone: bool = False) -> bool:
                 name = Prompt.ask(f"[{COLORS['action']}]Job name[/{COLORS['action']}]")
                 if name:
                     cron.add_cmd(name, {})
-                    state.history.add(
-                        f"navig cron add {name}", f"Add cron job {name}", True
-                    )
+                    state.history.add(f"navig cron add {name}", f"Add cron job {name}", True)
             elif selection == "Run job now":
                 name = Prompt.ask(f"[{COLORS['action']}]Job name[/{COLORS['action']}]")
                 if name:
@@ -3290,16 +3114,12 @@ def show_cron_menu(state: MenuState, standalone: bool = False) -> bool:
                 name = Prompt.ask(f"[{COLORS['action']}]Job name[/{COLORS['action']}]")
                 if name:
                     cron.enable_cmd(name, {})
-                    state.history.add(
-                        f"navig cron enable {name}", f"Enable job {name}", True
-                    )
+                    state.history.add(f"navig cron enable {name}", f"Enable job {name}", True)
             elif selection == "Disable job":
                 name = Prompt.ask(f"[{COLORS['action']}]Job name[/{COLORS['action']}]")
                 if name:
                     cron.disable_cmd(name, {})
-                    state.history.add(
-                        f"navig cron disable {name}", f"Disable job {name}", True
-                    )
+                    state.history.add(f"navig cron disable {name}", f"Disable job {name}", True)
             elif selection == "Remove job":
                 name = Prompt.ask(f"[{COLORS['action']}]Job name[/{COLORS['action']}]")
                 if name and Confirm.ask(
@@ -3307,9 +3127,7 @@ def show_cron_menu(state: MenuState, standalone: bool = False) -> bool:
                     default=False,
                 ):
                     cron.remove_cmd(name, {})
-                    state.history.add(
-                        f"navig cron remove {name}", f"Remove job {name}", True
-                    )
+                    state.history.add(f"navig cron remove {name}", f"Remove job {name}", True)
             elif selection == "Cron service status":
                 cron.status_cmd({})
                 state.history.add("navig cron status", "Cron status", True)
@@ -3345,12 +3163,8 @@ def show_monitoring_security_menu(state: MenuState, standalone: bool = False) ->
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone
 
         options = [
@@ -3412,9 +3226,7 @@ def show_monitoring_security_menu(state: MenuState, standalone: bool = False) ->
                 firewall_status(state.get_context())
                 state.history.add("navig security firewall", "Firewall status", True)
             elif selection == "Add firewall rule":
-                port = Prompt.ask(
-                    f"[{COLORS['action']}]Port number[/{COLORS['action']}]"
-                )
+                port = Prompt.ask(f"[{COLORS['action']}]Port number[/{COLORS['action']}]")
                 protocol = Prompt.ask(
                     f"[{COLORS['action']}]Protocol[/{COLORS['action']}]", default="tcp"
                 )
@@ -3487,9 +3299,7 @@ def show_quick_help(state: MenuState):
 """
     console.print(help_content)
     console.print()
-    Prompt.ask(
-        f"[{COLORS['dim']}]Press Enter to return to menu[/{COLORS['dim']}]", default=""
-    )
+    Prompt.ask(f"[{COLORS['dim']}]Press Enter to return to menu[/{COLORS['dim']}]", default="")
 
 
 # ============================================================================
@@ -3520,9 +3330,7 @@ def launch_menu(options: dict[str, Any]):
         console.print(
             f"[{COLORS['warning']}]⚠ Warning: Terminal size too small.[/{COLORS['warning']}]"
         )
-        console.print(
-            f"Minimum recommended: 60x20, current: {console.width}x{console.height}"
-        )
+        console.print(f"Minimum recommended: 60x20, current: {console.width}x{console.height}")
         console.print()
 
         if not Confirm.ask("Continue anyway?", default=False):
@@ -3626,9 +3434,7 @@ def launch_menu(options: dict[str, Any]):
 
     except Exception as e:
         console.print(f"\n[{COLORS['error']}][x] Fatal error: {e}[/{COLORS['error']}]")
-        console.print(
-            f"[{COLORS['dim']}]Check ~/.navig/navig.log for details.[/{COLORS['dim']}]\n"
-        )
+        console.print(f"[{COLORS['dim']}]Check ~/.navig/navig.log for details.[/{COLORS['dim']}]\n")
         sys.exit(1)
 
 
@@ -3669,9 +3475,7 @@ def _launch_ask_sessions(state: MenuState) -> None:
     console.print("  [bright_cyan]navig ask sessions stats[/]    — storage statistics")
     console.print("  [bright_cyan]navig ask sessions search Q[/] — full-text search")
     console.print("  [bright_cyan]navig ask sessions view ID[/]  — inspect a session")
-    console.print(
-        "  [bright_cyan]navig ask sessions export[/]   — export to JSON/MD/CSV"
-    )
+    console.print("  [bright_cyan]navig ask sessions export[/]   — export to JSON/MD/CSV")
     console.print("  [bright_cyan]navig ask sessions delete ID[/]— delete a session")
     console.print()
 
@@ -3700,9 +3504,7 @@ def _launch_ask_sessions(state: MenuState) -> None:
         query = console.input(f"[{COLORS['accent']}]Search query: [/]").strip()
         if query:
             clear_screen()
-            _run_navig_cmd(
-                state, ["ask", "sessions", "search", query], f"Search: {query}"
-            )
+            _run_navig_cmd(state, ["ask", "sessions", "search", query], f"Search: {query}")
 
 
 def _launch_memory_menu(state: MenuState) -> None:
@@ -3733,9 +3535,7 @@ def _launch_memory_menu(state: MenuState) -> None:
         query = console.input(f"[{COLORS['accent']}]Search: [/]").strip()
         if query:
             clear_screen()
-            _run_navig_cmd(
-                state, ["memory", "search", query], f"Memory search: {query}"
-            )
+            _run_navig_cmd(state, ["memory", "search", query], f"Memory search: {query}")
     elif selection == "List key facts":
         clear_screen()
         _run_navig_cmd(state, ["memory", "facts"], "List key facts")
@@ -3777,9 +3577,7 @@ def _run_standalone_menu(menu_func, menu_name: str):
 
         # Exit gracefully
         clear_screen()
-        console.print(
-            f"\n[{COLORS['primary']}][*] Exiting {menu_name}.[/{COLORS['primary']}]"
-        )
+        console.print(f"\n[{COLORS['primary']}][*] Exiting {menu_name}.[/{COLORS['primary']}]")
         console.print(
             f"[{COLORS['dim']}]    The void sees nothing we don't want it to see.[/{COLORS['dim']}]\n"
         )
@@ -3893,13 +3691,9 @@ def show_backup_menu(state: MenuState, standalone: bool = False) -> bool:
                 show_status("Exporting configuration as JSON...", "loading")
                 backup.export_config({"format": "json", "include_secrets": False})
                 show_status("Export complete.", "success")
-                state.history.add(
-                    "navig backup export --format json", "Export config JSON", True
-                )
+                state.history.add("navig backup export --format json", "Export config JSON", True)
             elif selection == "Import config":
-                file_path = Prompt.ask(
-                    f"[{COLORS['action']}]Backup file path[/{COLORS['action']}]"
-                )
+                file_path = Prompt.ask(f"[{COLORS['action']}]Backup file path[/{COLORS['action']}]")
                 if file_path:
                     show_status("Importing configuration...", "loading")
                     backup.import_config({"file": file_path})
@@ -3925,9 +3719,7 @@ def show_backup_menu(state: MenuState, standalone: bool = False) -> bool:
                 list_backups_cmd({})
                 state.history.add("navig list-backups", "List backups", True)
             elif selection == "Restore backup":
-                backup_name = Prompt.ask(
-                    f"[{COLORS['action']}]Backup name[/{COLORS['action']}]"
-                )
+                backup_name = Prompt.ask(f"[{COLORS['action']}]Backup name[/{COLORS['action']}]")
                 if backup_name:
                     from navig.commands.backup import restore_backup_cmd
 
@@ -3968,12 +3760,8 @@ def show_docker_menu(state: MenuState, standalone: bool = False) -> bool:
         show_header(state)
 
         if not state.active_host:
-            show_status(
-                "No active host selected. Please select a host first.", "warning"
-            )
-            Prompt.ask(
-                f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-            )
+            show_status("No active host selected. Please select a host first.", "warning")
+            Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
             return not standalone
 
         options = [
@@ -4000,40 +3788,28 @@ def show_docker_menu(state: MenuState, standalone: bool = False) -> bool:
                 docker_cmd.docker_ps_cmd({})
                 state.history.add("navig docker ps", "List containers", True)
             elif selection == "View container logs":
-                container = Prompt.ask(
-                    f"[{COLORS['action']}]Container name[/{COLORS['action']}]"
-                )
+                container = Prompt.ask(f"[{COLORS['action']}]Container name[/{COLORS['action']}]")
                 if container:
                     docker_cmd.docker_logs_cmd(container, {})
                     state.history.add("navig docker logs", "View container logs", True)
             elif selection == "Exec command in container":
-                container = Prompt.ask(
-                    f"[{COLORS['action']}]Container name[/{COLORS['action']}]"
-                )
-                command = Prompt.ask(
-                    f"[{COLORS['action']}]Command[/{COLORS['action']}]"
-                )
+                container = Prompt.ask(f"[{COLORS['action']}]Container name[/{COLORS['action']}]")
+                command = Prompt.ask(f"[{COLORS['action']}]Command[/{COLORS['action']}]")
                 if container and command:
                     docker_cmd.docker_exec_cmd(container, command, {})
                     state.history.add("navig docker exec", "Exec in container", True)
             elif selection == "Restart container":
-                container = Prompt.ask(
-                    f"[{COLORS['action']}]Container name[/{COLORS['action']}]"
-                )
+                container = Prompt.ask(f"[{COLORS['action']}]Container name[/{COLORS['action']}]")
                 if container:
                     docker_cmd.docker_restart_cmd(container, {})
                     state.history.add("navig docker restart", "Restart container", True)
             elif selection == "Stop container":
-                container = Prompt.ask(
-                    f"[{COLORS['action']}]Container name[/{COLORS['action']}]"
-                )
+                container = Prompt.ask(f"[{COLORS['action']}]Container name[/{COLORS['action']}]")
                 if container:
                     docker_cmd.docker_stop_cmd(container, {})
                     state.history.add("navig docker stop", "Stop container", True)
             elif selection == "Start container":
-                container = Prompt.ask(
-                    f"[{COLORS['action']}]Container name[/{COLORS['action']}]"
-                )
+                container = Prompt.ask(f"[{COLORS['action']}]Container name[/{COLORS['action']}]")
                 if container:
                     docker_cmd.docker_start_cmd(container, {})
                     state.history.add("navig docker start", "Start container", True)
@@ -4071,9 +3847,7 @@ def execute_remote_command_menu(state: MenuState):
 
     if not state.active_host:
         show_status("No active host selected. Please select a host first.", "warning")
-        Prompt.ask(
-            f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default=""
-        )
+        Prompt.ask(f"[{COLORS['dim']}]Press Enter to go back[/{COLORS['dim']}]", default="")
         return
 
     console.print(
@@ -4096,9 +3870,7 @@ def execute_remote_command_menu(state: MenuState):
         state.history.add("navig run", "Remote execution", False)
 
     console.print()
-    Prompt.ask(
-        f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default=""
-    )
+    Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
 
 
 def execute_wiki_search(state: MenuState):
@@ -4109,9 +3881,7 @@ def execute_wiki_search(state: MenuState):
     try:
         from navig.commands import wiki as wiki_cmd
 
-        console.print(
-            f"\n[{COLORS['primary']}]🔍 Search Knowledge Base[/{COLORS['primary']}]\n"
-        )
+        console.print(f"\n[{COLORS['primary']}]🔍 Search Knowledge Base[/{COLORS['primary']}]\n")
         term = Prompt.ask(f"[{COLORS['action']}]Search term[/{COLORS['action']}]")
 
         if term:
@@ -4119,15 +3889,11 @@ def execute_wiki_search(state: MenuState):
             state.history.add(f"navig wiki search '{term}'", "Wiki search", True)
 
         console.print()
-        Prompt.ask(
-            f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default=""
-        )
+        Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
 
     except Exception as e:
         show_status(f"Search failed: {e}", "error")
-        Prompt.ask(
-            f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default=""
-        )
+        Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
 
 
 def execute_wiki_menu(state: MenuState):
@@ -4165,15 +3931,11 @@ def execute_wiki_menu(state: MenuState):
                 state.history.add(f"navig wiki show '{topic}'", "Show wiki topic", True)
 
         console.print()
-        Prompt.ask(
-            f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default=""
-        )
+        Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
 
     except Exception as e:
         show_status(f"Wiki operation failed: {e}", "error")
-        Prompt.ask(
-            f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default=""
-        )
+        Prompt.ask(f"[{COLORS['dim']}]Press Enter to continue[/{COLORS['dim']}]", default="")
 
 
 def show_hestia_menu(state: MenuState, standalone: bool = False) -> bool:
@@ -4211,9 +3973,7 @@ def show_hestia_menu(state: MenuState, standalone: bool = False) -> bool:
                 hestia.list_users({})
                 state.history.add("navig hestia users", "List HestiaCP users", True)
             elif selection == "Show user details":
-                username = Prompt.ask(
-                    f"[{COLORS['action']}]Username[/{COLORS['action']}]"
-                )
+                username = Prompt.ask(f"[{COLORS['action']}]Username[/{COLORS['action']}]")
                 if username:
                     hestia.show_user({"username": username})
                     state.history.add("navig hestia user", "Show HestiaCP user", True)
@@ -4224,9 +3984,7 @@ def show_hestia_menu(state: MenuState, standalone: bool = False) -> bool:
                 domain = Prompt.ask(f"[{COLORS['action']}]Domain[/{COLORS['action']}]")
                 if domain:
                     hestia.show_domain({"domain": domain})
-                    state.history.add(
-                        "navig hestia domain", "Show HestiaCP domain", True
-                    )
+                    state.history.add("navig hestia domain", "Show HestiaCP domain", True)
             elif selection == "Show system info":
                 hestia.system_info({})
                 state.history.add("navig hestia info", "HestiaCP system info", True)
@@ -4282,32 +4040,22 @@ def show_template_menu(state: MenuState, standalone: bool = False) -> bool:
                 template.list_templates_cmd({})
                 state.history.add("navig template list", "List templates", True)
             elif selection == "Enable template":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Template name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Template name[/{COLORS['action']}]")
                 if name:
                     template.enable_template_cmd(name, {})
                     state.history.add("navig template enable", "Enable template", True)
             elif selection == "Disable template":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Template name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Template name[/{COLORS['action']}]")
                 if name:
                     template.disable_template_cmd(name, {})
-                    state.history.add(
-                        "navig template disable", "Disable template", True
-                    )
+                    state.history.add("navig template disable", "Disable template", True)
             elif selection == "Show template info":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Template name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Template name[/{COLORS['action']}]")
                 if name:
                     template.info_template_cmd(name, {})
                     state.history.add("navig template info", "Template info", True)
             elif selection == "Run template":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Template name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Template name[/{COLORS['action']}]")
                 if name:
                     template.run_template_cmd(name, {})
                     state.history.add("navig template run", "Run template", True)
@@ -4362,42 +4110,30 @@ def show_mcp_menu(state: MenuState, standalone: bool = False) -> bool:
                 return not standalone  # True for submenu, False for standalone
 
             if selection == "Search MCP directory":
-                query = Prompt.ask(
-                    f"[{COLORS['action']}]Search query[/{COLORS['action']}]"
-                )
+                query = Prompt.ask(f"[{COLORS['action']}]Search query[/{COLORS['action']}]")
                 if query:
                     mcp.search_mcp_cmd(query, {})
                     state.history.add("navig mcp search", "Search MCP directory", True)
             elif selection == "Install MCP server":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Server name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Server name[/{COLORS['action']}]")
                 if name:
                     mcp.install_mcp_cmd(name, {})
                     state.history.add("navig mcp install", "Install MCP server", True)
             elif selection == "Uninstall MCP server":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Server name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Server name[/{COLORS['action']}]")
                 if name:
                     mcp.uninstall_mcp_cmd(name, {})
-                    state.history.add(
-                        "navig mcp uninstall", "Uninstall MCP server", True
-                    )
+                    state.history.add("navig mcp uninstall", "Uninstall MCP server", True)
             elif selection == "List installed servers":
                 mcp.list_mcp_cmd({})
                 state.history.add("navig mcp list", "List MCP servers", True)
             elif selection == "Start server":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Server name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Server name[/{COLORS['action']}]")
                 if name:
                     mcp.start_mcp_cmd(name, {})
                     state.history.add("navig mcp start", "Start MCP server", True)
             elif selection == "Stop server":
-                name = Prompt.ask(
-                    f"[{COLORS['action']}]Server name[/{COLORS['action']}]"
-                )
+                name = Prompt.ask(f"[{COLORS['action']}]Server name[/{COLORS['action']}]")
                 if name:
                     mcp.stop_mcp_cmd(name, {})
                     state.history.add("navig mcp stop", "Stop MCP server", True)
@@ -4470,23 +4206,15 @@ def show_assistant_menu(state: MenuState, standalone: bool = False) -> bool:
                 state.history.add("navig assistant insights", "View insights", True)
             elif selection == "Get recommendations":
                 assistant.recommendations_cmd({})
-                state.history.add(
-                    "navig assistant recommend", "Get recommendations", True
-                )
+                state.history.add("navig assistant recommend", "Get recommendations", True)
             elif selection == "Apply recommendation":
-                rec_id = Prompt.ask(
-                    f"[{COLORS['action']}]Recommendation ID[/{COLORS['action']}]"
-                )
+                rec_id = Prompt.ask(f"[{COLORS['action']}]Recommendation ID[/{COLORS['action']}]")
                 if rec_id:
                     assistant.apply_cmd(rec_id, {})
-                    state.history.add(
-                        "navig assistant apply", "Apply recommendation", True
-                    )
+                    state.history.add("navig assistant apply", "Apply recommendation", True)
             elif selection == "Generate AI context":
                 assistant.context_cmd({}, False, None)
-                state.history.add(
-                    "navig assistant context", "Generate AI context", True
-                )
+                state.history.add("navig assistant context", "Generate AI context", True)
             elif selection == "Configure assistant":
                 assistant.config_cmd({})
                 state.history.add("navig assistant config", "Configure assistant", True)
@@ -4496,9 +4224,7 @@ def show_assistant_menu(state: MenuState, standalone: bool = False) -> bool:
                     default=False,
                 ):
                     assistant.reset_cmd({})
-                    state.history.add(
-                        "navig assistant reset", "Reset learning data", True
-                    )
+                    state.history.add("navig assistant reset", "Reset learning data", True)
 
             console.print()
             Prompt.ask(

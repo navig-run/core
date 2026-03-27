@@ -31,9 +31,7 @@ def _marker(ctx: InstallerContext) -> Path:
 
 def _token_from_ctx(ctx: InstallerContext) -> str:
     """Return token string or '' if not available."""
-    token = ctx.extra.get("telegram_bot_token") or os.environ.get(
-        "NAVIG_TELEGRAM_BOT_TOKEN", ""
-    )
+    token = ctx.extra.get("telegram_bot_token") or os.environ.get("NAVIG_TELEGRAM_BOT_TOKEN", "")
     return (token or "").strip()
 
 
@@ -97,11 +95,7 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
     env_path = ctx.config_dir / ".env"
     try:
         existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
-        lines = [
-            ln
-            for ln in existing.splitlines()
-            if not ln.startswith("TELEGRAM_BOT_TOKEN=")
-        ]
+        lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
         lines.append(f"TELEGRAM_BOT_TOKEN={token}")
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         if sys.platform != "win32":

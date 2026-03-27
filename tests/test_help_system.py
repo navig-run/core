@@ -102,9 +102,7 @@ def test_help_json_sources_key(capsys):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "topic", ["db", "host", "file", "flow", "ai", "config", "backup"]
-)
+@pytest.mark.parametrize("topic", ["db", "host", "file", "flow", "ai", "config", "backup"])
 def test_help_canonical_topics_exit_zero(topic: str, capsys):
     code, _out, _err = _invoke_cli(["help", topic], capsys)
     assert code == 0, f"navig help {topic} should exit 0"

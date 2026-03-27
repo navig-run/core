@@ -121,9 +121,7 @@ def add_server(name: str, options: dict[str, Any]):
     port = int(ch.prompt_input("SSH Port", default="22"))
     user = ch.prompt_input("SSH User", default="root")
 
-    auth_method = ch.prompt_choice(
-        "Authentication method", ["key", "password"], default="key"
-    )
+    auth_method = ch.prompt_choice("Authentication method", ["key", "password"], default="key")
 
     ssh_key = None
     ssh_password = None
@@ -169,9 +167,7 @@ def add_server(name: str, options: dict[str, Any]):
         ch.success("✓ Connection successful\n")
 
         # Run auto-discovery
-        if ch.confirm_action(
-            "Run auto-discovery to detect server configuration?", default=True
-        ):
+        if ch.confirm_action("Run auto-discovery to detect server configuration?", default=True):
             discovered = discovery.discover_all(progress=True)
         else:
             discovered = {}
@@ -183,21 +179,15 @@ def add_server(name: str, options: dict[str, Any]):
     discovered_dbs = discovered.get("databases", [])
     if discovered_dbs:
         db_default = discovered_dbs[0]
-        ch.success(
-            f"Detected {db_default['type'].upper()} on port {db_default['port']}"
-        )
-        use_discovered = ch.confirm_action(
-            "Use detected database settings?", default=True
-        )
+        ch.success(f"Detected {db_default['type'].upper()} on port {db_default['port']}")
+        use_discovered = ch.confirm_action("Use detected database settings?", default=True)
 
         if use_discovered:
             db_type = db_default["type"]
             db_port = db_default["port"]
         else:
             db_type = ch.prompt_input("Database Type", default=db_default["type"])
-            db_port = int(
-                ch.prompt_input("Remote Database Port", default=str(db_default["port"]))
-            )
+            db_port = int(ch.prompt_input("Remote Database Port", default=str(db_default["port"])))
     else:
         ch.dim("No database detected. Manual configuration required.")
         if ch.confirm_action("Configure database now?", default=True):
@@ -244,9 +234,7 @@ def add_server(name: str, options: dict[str, Any]):
         if ch.confirm_action("Use detected web root?", default=True):
             paths["web_root"] = discovered["web_root"]
         else:
-            paths["web_root"] = ch.prompt_input(
-                "Web Root Path", default=discovered["web_root"]
-            )
+            paths["web_root"] = ch.prompt_input("Web Root Path", default=discovered["web_root"])
     elif ch.confirm_action("Configure paths now?", default=False):
         paths["web_root"] = ch.prompt_input("Web Root Path", default="/var/www/html")
 
@@ -318,9 +306,7 @@ def add_server(name: str, options: dict[str, Any]):
     if metadata["php_version"]:
         ch.console.print(f"[green]PHP: {metadata['php_version']}[/green]")
     if metadata["mysql_version"]:
-        ch.console.print(
-            f"[green]Database: {db_type} {metadata['mysql_version']}[/green]"
-        )
+        ch.console.print(f"[green]Database: {db_type} {metadata['mysql_version']}[/green]")
     if paths["web_root"]:
         ch.console.print(f"[green]Web Root: {paths['web_root']}[/green]")
 
@@ -468,9 +454,7 @@ def inspect_server(options: dict[str, Any]):
     if updates["metadata"]["php_version"]:
         ch.console.print(f"[green]PHP: {updates['metadata']['php_version']}[/green]")
     if updates["metadata"]["mysql_version"]:
-        ch.console.print(
-            f"[green]Database: {updates['metadata']['mysql_version']}[/green]"
-        )
+        ch.console.print(f"[green]Database: {updates['metadata']['mysql_version']}[/green]")
     if detected_templates:
         ch.info(f"Templates: {', '.join(detected_templates.keys())}", style="cyan")
 
@@ -503,17 +487,11 @@ def server_callback(ctx: typer.Context):
 def server_list(
     ctx: typer.Context,
     vhosts: bool = typer.Option(False, "--vhosts", help="List virtual hosts"),
-    containers: bool = typer.Option(
-        False, "--containers", help="List Docker containers"
-    ),
+    containers: bool = typer.Option(False, "--containers", help="List Docker containers"),
     all: bool = typer.Option(False, "--all", "-a", help="Show all (including stopped)"),
     filter: str | None = typer.Option(None, "--filter", "-f", help="Filter by name"),
-    hestia_users: bool = typer.Option(
-        False, "--hestia-users", help="List HestiaCP users"
-    ),
-    hestia_domains: bool = typer.Option(
-        False, "--hestia-domains", help="List HestiaCP domains"
-    ),
+    hestia_users: bool = typer.Option(False, "--hestia-users", help="List HestiaCP users"),
+    hestia_domains: bool = typer.Option(False, "--hestia-domains", help="List HestiaCP domains"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
 ):
     """List server resources (vhosts, containers, etc.)."""
@@ -545,9 +523,7 @@ def server_list(
 @server_app.command("show")
 def server_show(
     ctx: typer.Context,
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Container to inspect"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Container to inspect"),
     stats: bool = typer.Option(False, "--stats", help="Show container stats"),
 ):
     """Show server details."""
@@ -583,28 +559,16 @@ def server_test(
 @server_app.command("run")
 def server_run(
     ctx: typer.Context,
-    container: str | None = typer.Option(
-        None, "--container", "-c", help="Container name"
-    ),
-    command: str | None = typer.Option(
-        None, "--command", "--cmd", help="Command to execute"
-    ),
+    container: str | None = typer.Option(None, "--container", "-c", help="Container name"),
+    command: str | None = typer.Option(None, "--command", "--cmd", help="Command to execute"),
     enable: str | None = typer.Option(None, "--enable", help="Enable site/container"),
-    disable: str | None = typer.Option(
-        None, "--disable", help="Disable site/container"
-    ),
-    restart: str | None = typer.Option(
-        None, "--restart", help="Restart service/container"
-    ),
+    disable: str | None = typer.Option(None, "--disable", help="Disable site/container"),
+    restart: str | None = typer.Option(None, "--restart", help="Restart service/container"),
     stop: str | None = typer.Option(None, "--stop", help="Stop container"),
     start: str | None = typer.Option(None, "--start", help="Start container"),
     reload: bool = typer.Option(False, "--reload", help="Reload web server"),
-    update_packages: bool = typer.Option(
-        False, "--update-packages", help="Update system packages"
-    ),
-    clean_packages: bool = typer.Option(
-        False, "--clean-packages", help="Clean package cache"
-    ),
+    update_packages: bool = typer.Option(False, "--update-packages", help="Update system packages"),
+    clean_packages: bool = typer.Option(False, "--clean-packages", help="Clean package cache"),
     cleanup_temp: bool = typer.Option(False, "--cleanup-temp", help="Clean temp files"),
     maintenance: bool = typer.Option(False, "--maintenance", help="Full maintenance"),
 ):
@@ -612,9 +576,7 @@ def server_run(
     if container and command:
         from navig.commands.docker import docker_exec
 
-        docker_exec(
-            container, command, ctx.obj, interactive=False, user=None, workdir=None
-        )
+        docker_exec(container, command, ctx.obj, interactive=False, user=None, workdir=None)
     elif enable:
         from navig.commands.webserver import enable_site
 

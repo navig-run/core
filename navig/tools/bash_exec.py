@@ -188,9 +188,7 @@ class BashExecTool(BaseTool):
             )
 
             try:
-                stdout_b, stderr_b = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout
-                )
+                stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
@@ -205,14 +203,10 @@ class BashExecTool(BaseTool):
 
             stdout = stdout_b.decode("utf-8", errors="replace")
             stderr = stderr_b.decode("utf-8", errors="replace")
-            combined = (
-                stdout + ("\n[stderr]\n" + stderr if stderr.strip() else "")
-            ).strip()
+            combined = (stdout + ("\n[stderr]\n" + stderr if stderr.strip() else "")).strip()
 
             if len(combined) > max_output:
-                combined = (
-                    combined[:max_output] + f"\n… [truncated at {max_output} chars]"
-                )
+                combined = combined[:max_output] + f"\n… [truncated at {max_output} chars]"
 
             returncode = proc.returncode or 0
             success = returncode == 0

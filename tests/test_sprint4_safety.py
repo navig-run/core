@@ -418,8 +418,7 @@ class TestAuditRoute:
         from navig.gateway.routes.audit import _tail
 
         records = [
-            {"ts": f"T{i}", "actor": "u", "action": "x", "status": "success"}
-            for i in range(20)
+            {"ts": f"T{i}", "actor": "u", "action": "x", "status": "success"} for i in range(20)
         ]
         gw = self._make_gw(tail_records=records)
         req = self._make_request(gw, query={"limit": "5"})
@@ -458,9 +457,7 @@ class TestRoutePolicyGates:
         gw = MagicMock()
         gw.config.auth_token = "tok"
         pg = MagicMock(spec=PolicyGate)
-        decision = {"allow": PolicyDecision.ALLOW, "deny": PolicyDecision.DENY}[
-            decision_value
-        ]
+        decision = {"allow": PolicyDecision.ALLOW, "deny": PolicyDecision.DENY}[decision_value]
         pg.check.return_value = PolicyResult(decision=decision, action="any")
         gw.policy_gate = pg
         gw.audit_log = MagicMock(spec=AuditLog)

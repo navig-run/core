@@ -225,9 +225,7 @@ class SoulLoader:
         """Return condensed cached content without triggering a load."""
         return self._loaded
 
-    def build_system_prompt(
-        self, soul: str, lang_instruction: str, awareness: str
-    ) -> str:
+    def build_system_prompt(self, soul: str, lang_instruction: str, awareness: str) -> str:
         """Assemble system prompt in canonical order: lang → awareness → identity → rules."""
         identity = soul if soul else _FALLBACK_IDENTITY
         parts = [p for p in (lang_instruction, awareness, identity, _CHAT_RULES) if p]

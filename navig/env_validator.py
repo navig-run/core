@@ -30,9 +30,7 @@ def validate_environment():
     if errors:
         for err in errors:
             print(f"Environment Verification Failed: {err}", file=sys.stderr)
-        raise RuntimeError(
-            "Startup aborted due to missing REQUIRED environment variables."
-        )
+        raise RuntimeError("Startup aborted due to missing REQUIRED environment variables.")
 
 
 if __name__ == "__main__":

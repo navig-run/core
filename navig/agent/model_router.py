@@ -196,9 +196,7 @@ class RoutingConfig:
                 if slot.provider == "openrouter":
                     slot.api_key = default_api_key
                 elif slot.provider == "openai":
-                    slot.api_key = (
-                        os.environ.get("OPENAI_API_KEY", "") or default_api_key
-                    )
+                    slot.api_key = os.environ.get("OPENAI_API_KEY", "") or default_api_key
 
             # GitHub Models — resolve token from vault → config → env
             if slot.provider == "github_models" and not slot.api_key:
@@ -208,9 +206,7 @@ class RoutingConfig:
                     from navig.vault import get_vault
 
                     vault = get_vault()
-                    secret = vault.get_secret(
-                        "github_models", "token", caller="model_router"
-                    )
+                    secret = vault.get_secret("github_models", "token", caller="model_router")
                     if secret:
                         gh_token = secret
                 except Exception:  # noqa: BLE001
@@ -537,9 +533,7 @@ class HybridRouter:
         if "models" in ai_cfg:
             merged["models"] = ai_cfg["models"]
 
-        cfg = RoutingConfig.from_dict(
-            merged, default_model=default_model, global_cfg=global_config
-        )
+        cfg = RoutingConfig.from_dict(merged, default_model=default_model, global_cfg=global_config)
         return cls(cfg)
 
     # ── Provider pool ──
@@ -724,9 +718,7 @@ class HybridRouter:
             mdl = (slot.model or "—")[:33].ljust(33)
             tok = str(slot.max_tokens).rjust(6)
             lines.append(f"│ {tier:<7} │ {prov} │ {mdl} │ {tok} │")
-        lines.append(
-            "└─────────┴────────────┴─────────────────────────────────┴────────┘"
-        )
+        lines.append("└─────────┴────────────┴─────────────────────────────────┴────────┘")
         return "\n".join(lines)
 
 

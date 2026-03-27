@@ -200,17 +200,11 @@ class QueryTimer:
                 return qs.to_dict() if qs else {}
             return {k: v.to_dict() for k, v in self._stats.items()}
 
-    def get_slow_queries(
-        self, threshold_ms: float | None = None
-    ) -> list[dict[str, Any]]:
+    def get_slow_queries(self, threshold_ms: float | None = None) -> list[dict[str, Any]]:
         """Return stats for queries whose p95 exceeds *threshold_ms*."""
         threshold = threshold_ms or self.slow_threshold_ms
         with self._lock:
-            return [
-                v.to_dict()
-                for v in self._stats.values()
-                if v.percentile(95) > threshold
-            ]
+            return [v.to_dict() for v in self._stats.values() if v.percentile(95) > threshold]
 
     def reset(self) -> None:
         """Clear all recorded statistics."""

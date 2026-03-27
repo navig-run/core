@@ -175,9 +175,7 @@ def _detect_daemon_status() -> dict[str, Any]:
     return info
 
 
-def _detect_child_status(
-    daemon_info: dict[str, Any], child_name: str
-) -> dict[str, Any]:
+def _detect_child_status(daemon_info: dict[str, Any], child_name: str) -> dict[str, Any]:
     """Extract a specific child status from daemon state."""
     for child in daemon_info.get("children", []):
         if child.get("name") == child_name:
@@ -359,9 +357,7 @@ def run_boot_sequence(fast: bool = False) -> None:
             bar = f"[cyan]{'█' * filled}[/cyan][dim]{'░' * (bar_w - filled)}[/dim]"
             console.print(f"\r  [yellow]{sp}[/yellow] {icon}  {label}  {bar}", end="")
             time.sleep(0.015)
-        console.print(
-            f"\r  [green]✓[/green] {icon}  {label}  [green]{'█' * bar_w}[/green]"
-        )
+        console.print(f"\r  [green]✓[/green] {icon}  {label}  [green]{'█' * bar_w}[/green]")
 
     console.print()
     console.print("  [bold green]⚡ Kraken ready[/bold green]")
@@ -539,9 +535,7 @@ def make_services_panel(op_state: dict[str, Any], cols: int = 120) -> Panel:
     hits = pool.get("hits", 0)
     rate = pool.get("hit_rate", 0)
     pool_info = (
-        f"active: {active}  hits: {hits}  rate: {rate:.0%}"
-        if hits > 0
-        else f"active: {active}"
+        f"active: {active}  hits: {hits}  rate: {rate:.0%}" if hits > 0 else f"active: {active}"
     )
     p_status = "running" if active > 0 else "stopped"
     if compact:
@@ -601,9 +595,7 @@ def make_tunnels_panel(tunnels: list[dict[str, Any]], cols: int = 120) -> Panel:
     return Panel(table, title=title, border_style="magenta")
 
 
-def make_hosts_panel(
-    config_manager, hosts_status: dict[str, Any], cols: int = 120
-) -> Panel:
+def make_hosts_panel(config_manager, hosts_status: dict[str, Any], cols: int = 120) -> Panel:
     """Remote host connectivity panel."""
     compact = cols < 90
 
@@ -641,11 +633,7 @@ def make_hosts_panel(
                     si_txt = "[yellow]○ …[/yellow]"
                     lat = ""
 
-                nm = (
-                    f"[bold green]{host_name}[/bold green]"
-                    if host_name == active
-                    else host_name
-                )
+                nm = f"[bold green]{host_name}[/bold green]" if host_name == active else host_name
                 if compact:
                     table.add_row(nm, si_txt, lat)
                 else:
@@ -732,9 +720,7 @@ def make_history_panel() -> Panel:
             st = st_map.get(op.status, "[dim]○[/dim]")
             table.add_row(t, cmd, (op.host or "-")[:8], st)
     except Exception as e:
-        return Panel(
-            f"[red]{e}[/red]", title="[bold]📋 Recent Ops[/bold]", border_style="yellow"
-        )
+        return Panel(f"[red]{e}[/red]", title="[bold]📋 Recent Ops[/bold]", border_style="yellow")
 
     return Panel(table, title="[bold]📋 Recent Ops[/bold]", border_style="yellow")
 
@@ -765,9 +751,9 @@ class DashboardState:
 
     def __init__(self):
         self.hosts_status: dict[str, dict[str, Any]] = {}
-        self.op_state: dict[str, Any] = (
-            {}
-        )  # daemon, telegram_bot, gateway, scheduler, pool, tunnels
+        self.op_state: dict[
+            str, Any
+        ] = {}  # daemon, telegram_bot, gateway, scheduler, pool, tunnels
         self.last_hosts_check: float = 0
         self.last_service_check: float = 0
         self.host_check_interval: float = 30.0
@@ -793,9 +779,7 @@ class DashboardState:
 # ═══════════════════════════════════════════════════════════════
 
 
-def check_host_connectivity(
-    host_config: dict[str, Any], timeout: int = 5
-) -> dict[str, Any]:
+def check_host_connectivity(host_config: dict[str, Any], timeout: int = 5) -> dict[str, Any]:
     """Ping-based connectivity check."""
     try:
         host = host_config.get("host", host_config.get("ip"))
@@ -848,9 +832,7 @@ def _bg_update_services(state: DashboardState):
             # Daemon + children
             daemon = _detect_daemon_status()
             state.op_state["daemon"] = daemon
-            state.op_state["telegram_bot"] = _detect_child_status(
-                daemon, "telegram-bot"
-            )
+            state.op_state["telegram_bot"] = _detect_child_status(daemon, "telegram-bot")
             state.op_state["scheduler"] = _detect_child_status(daemon, "scheduler")
 
             # Gateway
@@ -929,9 +911,7 @@ def run_dashboard(
 
         # Wide layout has left/right split
         if cols >= 90:
-            layout["hosts"].update(
-                make_hosts_panel(config_manager, state.hosts_status, cols)
-            )
+            layout["hosts"].update(make_hosts_panel(config_manager, state.hosts_status, cols))
             # Kraken only on tall terminals
             if rows >= 28:
                 layout["kraken"].update(make_kraken_panel(state.kraken_frame))
@@ -939,9 +919,7 @@ def run_dashboard(
             layout["history"].update(make_history_panel())
         else:
             # Narrow: vertical stack
-            layout["hosts"].update(
-                make_hosts_panel(config_manager, state.hosts_status, cols)
-            )
+            layout["hosts"].update(make_hosts_panel(config_manager, state.hosts_status, cols))
             layout["history"].update(make_history_panel())
 
         layout["footer"].update(make_footer(cols))
