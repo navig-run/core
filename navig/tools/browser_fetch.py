@@ -86,13 +86,36 @@ def _extract_text(html: str) -> str:
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
-    text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"&nbsp;|&#160;", " ", text)
-    text = re.sub(r"&amp;", "&", text)
-    text = re.sub(r"&lt;", "<", text)
-    text = re.sub(r"&gt;", ">", text)
+    # Use html.parser for tag stripping (text extraction only — not a security sanitizer)
+    import html as _html
+    from html.parser import HTMLParser as _HTMLParser
+
+    _SKIP_TAGS = frozenset({"script", "style", "noscript"})
+
+    class _TextExtractor(_HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self._parts: list[str] = []
+            self._skip = 0
+
+        def handle_starttag(self, tag: str, attrs: list) -> None:
+            if tag.lower() in _SKIP_TAGS:
+                self._skip += 1
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag.lower() in _SKIP_TAGS:
+                self._skip = max(0, self._skip - 1)
+
+        def handle_data(self, data: str) -> None:
+            if not self._skip:
+                self._parts.append(data)
+
+    _extractor = _TextExtractor()
+    try:
+        _extractor.feed(html)
+        text = " ".join(_extractor._parts)
+    except Exception:  # noqa: BLE001
+        text = _html.unescape(re.sub(r"<[^>]+>", " ", html))
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()

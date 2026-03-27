@@ -562,10 +562,10 @@ def cmd_whois(args: dict) -> dict:
         "hostname": ptr or None,
         "note": (
             "PTR matched Microsoft infrastructure"
-            if ptr and "microsoft.com" in ptr
+            if ptr and (ptr == "microsoft.com" or ptr.endswith(".microsoft.com"))
             else (
                 "PTR matched Azure CDN"
-                if ptr and "azure" in ptr
+                if ptr and (ptr.endswith(".azure.com") or ptr.endswith(".azure.net") or ".azure" in ptr.split("."))
                 else (
                     "No PTR record — investigate manually"
                     if not ptr

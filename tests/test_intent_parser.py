@@ -171,7 +171,7 @@ class TestPatternMatching:
         """Test SSL certificate check."""
         result = intent_parser._parse_with_patterns("check ssl for example.com")
         assert result.command == "ssl"
-        assert "example.com" in result.args.get("domain", "")
+        assert result.args.get("domain") == "example.com"
 
     def test_no_match(self, intent_parser):
         """Test that gibberish returns no command."""
@@ -205,8 +205,10 @@ class TestCommandStringGeneration:
     def test_commands_with_args(self):
         """Test commands with arguments."""
         assert get_command_string("use_host", {"host_name": "production"}) == "/use production"
-        assert "nginx" in get_command_string("docker_logs", {"container": "nginx"})
-        assert "example.com" in get_command_string("ssl", {"domain": "example.com"})
+        docker_cmd = get_command_string("docker_logs", {"container": "nginx"})
+        assert docker_cmd is not None and "nginx" in docker_cmd
+        ssl_cmd = get_command_string("ssl", {"domain": "example.com"})
+        assert ssl_cmd is not None and ssl_cmd.split()[-1] == "example.com"
 
     def test_currency_conversion(self):
         """Test currency conversion command string."""

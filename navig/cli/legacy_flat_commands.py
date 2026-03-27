@@ -83,9 +83,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         parents: bool = typer.Option(
             True, "--parents", "-p", help="Create parent directories as needed"
         ),
-        mode: str = typer.Option(
-            "755", "--mode", "-m", help="Permission mode (e.g., 755)"
-        ),
+        mode: str = typer.Option("755", "--mode", "-m", help="Permission mode (e.g., 755)"),
     ):
         """[DEPRECATED: Use 'navig file add --dir'] Create remote directory."""
         deprecation_warning("navig mkdir", "navig file add --dir")
@@ -100,9 +98,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file/directory path"),
         mode: str = typer.Argument(..., help="Permission mode (e.g., 755, 644)"),
-        recursive: bool = typer.Option(
-            False, "--recursive", "-r", help="Apply recursively"
-        ),
+        recursive: bool = typer.Option(False, "--recursive", "-r", help="Apply recursively"),
     ):
         """[DEPRECATED: Use 'navig file edit --mode'] Change permissions."""
         deprecation_warning("navig chmod", "navig file edit --mode")
@@ -116,9 +112,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file/directory path"),
         owner: str = typer.Argument(..., help="New owner (user or user:group)"),
-        recursive: bool = typer.Option(
-            False, "--recursive", "-r", help="Apply recursively"
-        ),
+        recursive: bool = typer.Option(False, "--recursive", "-r", help="Apply recursively"),
     ):
         """[DEPRECATED: Use 'navig file edit --owner'] Change ownership."""
         deprecation_warning("navig chown", "navig file edit --owner")
@@ -131,12 +125,8 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def cat_file(
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file path to read"),
-        lines: int | None = typer.Option(
-            None, "--lines", "-n", help="Number of lines to show"
-        ),
-        head: bool = typer.Option(
-            False, "--head", help="Show first N lines (use with --lines)"
-        ),
+        lines: int | None = typer.Option(None, "--lines", "-n", help="Number of lines to show"),
+        head: bool = typer.Option(False, "--head", help="Show first N lines (use with --lines)"),
         tail: bool = typer.Option(
             False, "--tail", "-t", help="Show last N lines (use with --lines)"
         ),
@@ -151,12 +141,8 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def write_file(
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote file path to write"),
-        content: str | None = typer.Option(
-            None, "--content", "-c", help="Content to write"
-        ),
-        stdin: bool = typer.Option(
-            False, "--stdin", "-s", help="Read content from stdin (pipe)"
-        ),
+        content: str | None = typer.Option(None, "--content", "-c", help="Content to write"),
+        stdin: bool = typer.Option(False, "--stdin", "-s", help="Read content from stdin (pipe)"),
         from_file: Path | None = typer.Option(
             None, "--from-file", "-f", help="Read content from local file"
         ),
@@ -190,9 +176,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote directory path"),
         all: bool = typer.Option(False, "--all", "-a", help="Show hidden files"),
-        long: bool = typer.Option(
-            True, "--long", "-l", help="Long format with details"
-        ),
+        long: bool = typer.Option(True, "--long", "-l", help="Long format with details"),
         human: bool = typer.Option(True, "--human", "-h", help="Human-readable sizes"),
     ):
         """[DEPRECATED: Use 'navig file list'] List remote directory."""
@@ -206,9 +190,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         remote: str = typer.Argument(..., help="Remote directory path"),
         depth: int = typer.Option(2, "--depth", "-d", help="Maximum depth to display"),
-        dirs_only: bool = typer.Option(
-            False, "--dirs-only", "-D", help="Show only directories"
-        ),
+        dirs_only: bool = typer.Option(False, "--dirs-only", "-D", help="Show only directories"),
     ):
         """[DEPRECATED: Use 'navig file list --tree'] Show directory tree."""
         deprecation_warning("navig tree", "navig file list --tree")
@@ -281,12 +263,8 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(
-            None, "--password", "-p", help="Database password"
-        ),
-        database: str | None = typer.Option(
-            None, "--database", "-d", help="Database name"
-        ),
+        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
+        database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -304,9 +282,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(
-            None, "--password", "-p", help="Database password"
-        ),
+        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -331,9 +307,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(
-            None, "--password", "-p", help="Database password"
-        ),
+        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -354,16 +328,12 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     def db_dump(
         ctx: typer.Context,
         database: str = typer.Argument(..., help="Database name to dump"),
-        output: Path | None = typer.Option(
-            None, "--output", "-o", help="Output file path"
-        ),
+        output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
         container: str | None = typer.Option(
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(
-            None, "--password", "-p", help="Database password"
-        ),
+        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -381,12 +351,8 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
             None, "--container", "-c", help="Docker container name"
         ),
         user: str = typer.Option("root", "--user", "-u", help="Database user"),
-        password: str | None = typer.Option(
-            None, "--password", "-p", help="Database password"
-        ),
-        database: str | None = typer.Option(
-            None, "--database", "-d", help="Database name"
-        ),
+        password: str | None = typer.Option(None, "--password", "-p", help="Database password"),
+        database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
         db_type: str | None = typer.Option(
             None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
         ),
@@ -400,15 +366,9 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("logs", hidden=True)
     def view_logs(
         ctx: typer.Context,
-        service: str = typer.Argument(
-            ..., help="Service name (nginx, php-fpm, mysql, app, etc.)"
-        ),
-        tail: bool = typer.Option(
-            False, "--tail", "-f", help="Follow logs in real-time"
-        ),
-        lines: int = typer.Option(
-            50, "--lines", "-n", help="Number of lines to display"
-        ),
+        service: str = typer.Argument(..., help="Service name (nginx, php-fpm, mysql, app, etc.)"),
+        tail: bool = typer.Option(False, "--tail", "-f", help="Follow logs in real-time"),
+        lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to display"),
     ):
         """[DEPRECATED] View logs. Use: navig log show <service>"""
         deprecation_warning("navig logs", "navig log show")
@@ -473,9 +433,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("backup-config", hidden=True)
     def backup_system_config_cmd(
         ctx: typer.Context,
-        name: str | None = typer.Option(
-            None, "--name", "-n", help="Custom backup name"
-        ),
+        name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
     ):
         """[DEPRECATED] Backup system configuration files. Use: navig backup run --config"""
         deprecation_warning("navig backup-config", "navig backup run --config")
@@ -486,9 +444,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("backup-db-all", hidden=True)
     def backup_all_databases_cmd(
         ctx: typer.Context,
-        name: str | None = typer.Option(
-            None, "--name", "-n", help="Custom backup name"
-        ),
+        name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
         compress: str = typer.Option(
             "gzip", "--compress", "-c", help="Compression: none|gzip|zstd"
         ),
@@ -502,9 +458,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("backup-hestia", hidden=True)
     def backup_hestia_cmd(
         ctx: typer.Context,
-        name: str | None = typer.Option(
-            None, "--name", "-n", help="Custom backup name"
-        ),
+        name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
     ):
         """[DEPRECATED] Backup HestiaCP configuration. Use: navig backup run --hestia"""
         deprecation_warning("navig backup-hestia", "navig backup run --hestia")
@@ -515,9 +469,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("backup-web", hidden=True)
     def backup_web_config_cmd(
         ctx: typer.Context,
-        name: str | None = typer.Option(
-            None, "--name", "-n", help="Custom backup name"
-        ),
+        name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
     ):
         """[DEPRECATED] Backup web server configurations. Use: navig backup run --web"""
         deprecation_warning("navig backup-web", "navig backup run --web")
@@ -528,9 +480,7 @@ def register_legacy_flat_commands(app: typer.Typer) -> None:
     @app.command("backup-all", hidden=True)
     def backup_all_cmd(
         ctx: typer.Context,
-        name: str | None = typer.Option(
-            None, "--name", "-n", help="Custom backup name"
-        ),
+        name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
         compress: str = typer.Option(
             "gzip", "--compress", "-c", help="Compression for databases: none|gzip|zstd"
         ),

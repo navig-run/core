@@ -142,7 +142,9 @@ def _create_receiver_socket() -> socket.socket:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)  # Linux only
     except AttributeError:
         pass  # attribute absent; skip
-    sock.bind(("", MCAST_PORT))
+    # Binding to INADDR_ANY (0.0.0.0) is required for UDP multicast reception;
+    # restricting to a single interface would prevent receiving multicast packets.
+    sock.bind(("0.0.0.0", MCAST_PORT))  # noqa: S104
     mreq = struct.pack("4sL", socket.inet_aton(MCAST_GROUP), socket.INADDR_ANY)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
     sock.setblocking(False)

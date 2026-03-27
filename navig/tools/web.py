@@ -106,9 +106,23 @@ def _decode_entities(text: str) -> str:
 
 
 def _strip_tags(text: str) -> str:
-    """Remove HTML tags and decode entities."""
-    text = re.sub(r"<[^>]+>", "", text)
-    return _decode_entities(text)
+    """Remove HTML tags and decode entities (text extraction helper, not a security sanitizer)."""
+    from html.parser import HTMLParser as _HTMLParser
+
+    class _Stripper(_HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self._parts: list[str] = []
+
+        def handle_data(self, data: str) -> None:
+            self._parts.append(data)
+
+    s = _Stripper()
+    try:
+        s.feed(text)
+        return _decode_entities(" ".join(s._parts))
+    except Exception:  # noqa: BLE001
+        return _decode_entities(re.sub(r"<[^>]+>", "", text))
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -135,11 +149,43 @@ def html_to_markdown(html_content: str) -> dict[str, str | None]:
 
     text = html_content
 
-    # Remove scripts, styles, noscript
-    text = re.sub(r"<script[\s\S]*?</script>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<style[\s\S]*?</style>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<noscript[\s\S]*?</noscript>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<!--[\s\S]*?-->", "", text)
+    # Remove scripts, styles, noscript using html.parser (text extraction, not a security filter)
+    from html.parser import HTMLParser as _HTMLParser
+
+    class _NoRenderStripper(_HTMLParser):
+        _SKIP = frozenset({"script", "style", "noscript"})
+
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=False)
+            self._parts: list[str] = []
+            self._skip = 0
+
+        def handle_starttag(self, tag: str, attrs: list) -> None:
+            if tag.lower() in self._SKIP:
+                self._skip += 1
+            else:
+                attr_str = "".join(f' {k}="{v}"' if v is not None else f" {k}" for k, v in attrs)
+                self._parts.append(f"<{tag}{attr_str}>")
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag.lower() in self._SKIP:
+                self._skip = max(0, self._skip - 1)
+            else:
+                self._parts.append(f"</{tag}>")
+
+        def handle_data(self, data: str) -> None:
+            if not self._skip:
+                self._parts.append(data)
+
+        def handle_comment(self, data: str) -> None:
+            pass  # Drop HTML comments
+
+    _nrs = _NoRenderStripper()
+    try:
+        _nrs.feed(text)
+        text = "".join(_nrs._parts)
+    except Exception:  # noqa: BLE001
+        pass  # Keep original; downstream conversion handles any remaining tags
 
     # Convert links
     def convert_link(match):

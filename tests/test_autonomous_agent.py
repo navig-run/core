@@ -208,8 +208,7 @@ def test_ai_config():
 
         api_key = config.global_config.get("openrouter_api_key")
         if api_key:
-            masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
-            print(f"[+] OpenRouter API key configured: {masked_key}")
+            print("[+] OpenRouter API key configured: ***")
 
             models = config.global_config.get("ai_model_preference", [])
             if models:
