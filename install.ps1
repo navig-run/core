@@ -25,11 +25,10 @@ for ($i = 0; $i -lt $args.Length - 1; $i++) {
     }
 }
 
-# ── Encoding ─────────────────────────────────────────────────
-$OutputEncoding           = [System.Text.Encoding]::UTF8
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
-$ErrorActionPreference    = "Stop"
+# ── Encoding (best-effort; some hosts restrict Console properties) ───────────
+try { $OutputEncoding           = [System.Text.Encoding]::UTF8 } catch {}
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+try { [Console]::InputEncoding  = [System.Text.Encoding]::UTF8 } catch {}
 
 # ── Constants ─────────────────────────────────────────────────
 $MIN_PYTHON_MAJOR     = 3
@@ -63,20 +62,21 @@ function clr { param([string]$t, [string]$fg)
 function nl { Write-Host "" }
 
 # ── Symbols ───────────────────────────────────────────────────
+# Always return [string] — PS 5.1 does not support [char] * [int] (used in hline)
 function sym { param([string]$n)
     if ($script:NavUnicode) {
         switch ($n) {
-            "ok"     { return [char]0x2713 }
-            "step"   { return [char]0x203A }
-            "err"    { return [char]0x00D7 }
+            "ok"     { return [string][char]0x2713 }  # ✓
+            "step"   { return [string][char]0x203A }  # ›
+            "err"    { return [string][char]0x00D7 }  # ×
             "warn"   { return "!" }
-            "bullet" { return [char]0x00B7 }
-            "tl"     { return [char]0x256D }
-            "tr"     { return [char]0x256E }
-            "bl"     { return [char]0x2570 }
-            "br"     { return [char]0x256F }
-            "hz"     { return [char]0x2500 }
-            "vt"     { return [char]0x2502 }
+            "bullet" { return [string][char]0x00B7 }  # ·
+            "tl"     { return [string][char]0x256D }  # ╭
+            "tr"     { return [string][char]0x256E }  # ╮
+            "bl"     { return [string][char]0x2570 }  # ╰
+            "br"     { return [string][char]0x256F }  # ╯
+            "hz"     { return [string][char]0x2500 }  # ─
+            "vt"     { return [string][char]0x2502 }  # │
         }
     } else {
         switch ($n) {
@@ -463,6 +463,7 @@ function Get-NavigVersion {
 # ── Main ─────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────
 function Main {
+    $ErrorActionPreference = "Stop"
     if ($Help) { Show-Usage; return }
 
     Initialize-Terminal
