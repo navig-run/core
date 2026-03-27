@@ -14,19 +14,29 @@
 #   NAVIG_EXTRAS              Comma-separated extras (e.g. "voice,keyring")
 #   NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for automatic bot setup
 # ─────────────────────────────────────────────────────────────
-[CmdletBinding()]
-param(
-    [string]$Version        = $env:NAVIG_VERSION,
-    [string]$InstallMethod  = $(if ($env:NAVIG_INSTALL_METHOD) { $env:NAVIG_INSTALL_METHOD } else { "pip" }),
-    [string]$Extras         = $env:NAVIG_EXTRAS,
-    [string]$TelegramToken  = $(if ($env:NAVIG_TELEGRAM_BOT_TOKEN) { $env:NAVIG_TELEGRAM_BOT_TOKEN } else { $env:TELEGRAM_BOT_TOKEN }),
-    [string]$GitDir         = "$HOME\navig-core",
-    [switch]$Dev,
-    [switch]$Production,
-    [switch]$DryRun,
-    [switch]$NoConfirm,
-    [switch]$Help
-)
+# ── Parameter Parsing (friendly for `irm | iex`) ─────────────
+$Version = $env:NAVIG_VERSION
+$InstallMethod = if ([string]::IsNullOrEmpty($env:NAVIG_INSTALL_METHOD)) { "pip" } else { $env:NAVIG_INSTALL_METHOD }
+$Extras = $env:NAVIG_EXTRAS
+$TelegramToken = if ([string]::IsNullOrEmpty($env:NAVIG_TELEGRAM_BOT_TOKEN)) { $env:TELEGRAM_BOT_TOKEN } else { $env:NAVIG_TELEGRAM_BOT_TOKEN }
+$GitDir = "$HOME\navig-core"
+$Dev = $args -contains "-Dev" -or $args -contains "/Dev"
+$Production = $args -contains "-Production" -or $args -contains "/Production"
+$DryRun = $args -contains "-DryRun" -or $args -contains "/DryRun"
+$NoConfirm = $args -contains "-NoConfirm" -or $args -contains "/NoConfirm"
+$Help = $args -contains "-Help" -or $args -contains "/Help"
+
+# Parse values with associated arguments (e.g. -Version 2.3.0)
+for ($i = 0; $i -lt $args.Length - 1; $i++) {
+    switch ($args[$i]) {
+        "-Version" { $Version = $args[$i+1] }
+        "-InstallMethod" { $InstallMethod = $args[$i+1] }
+        "-Extras" { $Extras = $args[$i+1] }
+        "-TelegramToken" { $TelegramToken = $args[$i+1] }
+        "-GitDir" { $GitDir = $args[$i+1] }
+    }
+}
+
 
 if ($PSVersionTable.PSVersion.Major -lt 5) {
     Write-Error "PowerShell 5.1 or higher is required. Download: https://aka.ms/PSWindows"

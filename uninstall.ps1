@@ -17,11 +17,19 @@
     .\uninstall.ps1 -EnvFile "C:\projects\myapp\.env"
 #>
 #Requires -Version 5.1
-[CmdletBinding()]
-param(
-    [string]$EnvFile   = ".\.env",
-    [switch]$NoConfirm
-)
+
+# ── Parameter Parsing (friendly for `irm | iex`) ─────────────────────────────
+$EnvFile = ".\.env"
+$NoConfirm = $false
+
+if ($args -contains "-NoConfirm" -or $args -contains "/NoConfirm") {
+    $NoConfirm = $true
+}
+$envIdx = [array]::IndexOf($args, "-EnvFile")
+if ($envIdx -lt 0) { $envIdx = [array]::IndexOf($args, "/EnvFile") }
+if ($envIdx -ge 0 -and $envIdx -lt $args.Length - 1) {
+    $EnvFile = $args[$envIdx + 1]
+}
 
 Set-StrictMode -Version Latest
 

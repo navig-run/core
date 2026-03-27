@@ -4,12 +4,12 @@ NAVIG AutoHotkey AI Generator
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
 class GenerationContext:
-    windows: List[Dict[str, Any]]
+    windows: list[dict[str, Any]]
     screen_width: int
     screen_height: int
 
