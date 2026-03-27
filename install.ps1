@@ -112,7 +112,7 @@ function Get-NavigShimCandidates {
         (Join-Path $HOME "AppData\Roaming\Python\Python313\Scripts\navig.exe"),
         (Join-Path $HOME "AppData\Roaming\Python\Python312\Scripts\navig.exe"),
         (Join-Path $HOME "AppData\Roaming\Python\Python311\Scripts\navig.exe"),
-        "C:\Python313\Scripts\navig.exe"
+        (Join-Path "C:\" "Python313\Scripts\navig.exe")
     )
 
     return $candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
@@ -645,8 +645,14 @@ function Install-PythonWindows {
             winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements
             if ($LASTEXITCODE -eq 0) {
                 $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-                Write-NavOk "Python installed via winget"
-                return $true
+                # Re-verify Python is actually on PATH now (winget can succeed but
+                # not update the current session PATH on first run).
+                if (-not (Find-Python)) {
+                    Write-NavStep "winget reported success but Python not yet on PATH — falling back to direct download..."
+                } else {
+                    Write-NavOk "Python installed via winget"
+                    return $true
+                }
             } else {
                 Write-NavStep "winget exited $LASTEXITCODE - falling back to direct download..."
             }
@@ -772,11 +778,12 @@ function Install-NavigPip {
         # Start-Process even when the install succeeded (PATH env variance,
         # shim-launch overhead). Do a secondary shim-existence check.
         if ($code -ne 0) {
+            $pipxHome = if ($env:PIPX_HOME) { $env:PIPX_HOME } else { Join-Path $HOME ".local\pipx" }
             $shims = @(
+                (Join-Path $pipxHome "venvs\navig\Scripts\navig.exe"),
                 (Join-Path $HOME ".local\bin\navig.exe"),
                 (Join-Path $HOME ".local\bin\navig.cmd"),
-                (Join-Path $HOME "AppData\Local\Programs\pipx\venvs\navig\Scripts\navig.exe"),
-                (Join-Path $HOME ".local\pipx\venvs\navig\Scripts\navig.exe")
+                (Join-Path $HOME "AppData\Local\Programs\pipx\venvs\navig\Scripts\navig.exe")
             )
             if ($shims | Where-Object { Test-Path $_ }) {
                 Write-NavInfo "pipx reported non-zero but navig shim found — treating as success"
@@ -825,8 +832,6 @@ function Install-NavigGit {
 
     if (Test-Path "$repoDir\.git") {
         Write-NavStep "Updating existing checkout: $repoDir"
-    } else {
-        Write-NavStep "Cloning NAVIG from: $REPO_URL"
     }
 
     if (-not (Find-Git)) {
@@ -836,7 +841,7 @@ function Install-NavigGit {
     if (-not (Test-Path $repoDir)) {
         try {
             Write-NavStep "Cloning NAVIG from: $REPO_URL"
-            & git clone $REPO_URL $repoDir 2>&1
+            & git clone "$REPO_URL" "$repoDir" 2>&1
             if ($LASTEXITCODE -ne 0) {
                 Write-NavErr "git clone failed (exit $LASTEXITCODE). Check network and credentials."
                 exit 1
@@ -882,7 +887,7 @@ function Install-NavigGit {
 
 # ── Config directory setup ────────────────────────────────────────────────
 function Initialize-NavigConfig {
-    $configDir = "$env:USERPROFILE\.navig"
+    $configDir = Join-Path $env:USERPROFILE ".navig"
     foreach ($sub in @("","workspace","logs","cache")) {
         $path = if ($sub) { Join-Path $configDir $sub } else { $configDir }
         if (-not (Test-Path $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
@@ -1127,7 +1132,7 @@ function Remove-NavigFiles {
     $binDir = Join-Path $HOME ".local\bin"
     if (Test-Path $binDir) {
         try {
-            if (@(Get-ChildItem -Path $binDir -Force).Count -eq 0) {
+            if (@(Get-ChildItem -Path $binDir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
                 Remove-Item -Path $binDir -Force -ErrorAction Stop
                 Write-NavOk "Removed empty directory: $binDir"
             }
@@ -1366,7 +1371,10 @@ function Main {
         "reinstall" {
             if ($installState.IsInstalled) {
                 Write-NavInfo "Existing NAVIG detected - performing reinstall / repair"
-                Invoke-NavigUninstall -PreserveUserData -ForReinstall | Out-Null
+                $reinstallClean = Invoke-NavigUninstall -PreserveUserData -ForReinstall
+                if (-not $reinstallClean.Success) {
+                    Write-NavInfo "Pre-reinstall cleanup reported failures (see above) — continuing with install"
+                }
                 $installState = Get-NavigInstallState
             } else {
                 Write-NavInfo "No existing NAVIG installation found - continuing with install"
@@ -1449,7 +1457,9 @@ function Main {
 }
 
 # ── Entry point ───────────────────────────────────────────────────────────
-Main
+if ($env:NAVIG_INSTALL_PS1_NO_RUN -ne "1") {
+    Main
+}
 
 # ── Developer sync (set $env:NAVIG_DEV_SYNC=1 to activate) ───────────────
 if ($env:NAVIG_DEV_SYNC -eq "1") {

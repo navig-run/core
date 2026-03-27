@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Mock navig binary for installer tests (post-install verification)
+echo "navig 0.0.1"
+exit 0

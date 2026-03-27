@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Mock pip3 binary for installer tests
+case "${1}" in
+    --version)  echo "pip 23.0 from /mock (python 3.11)"; exit 0 ;;
+    install)
+        # Accept any install args and pretend to succeed.
+        # If installing pipx, emit the usual "Successfully installed pipx" line.
+        for arg in "$@"; do
+            if [[ "$arg" == "pipx" ]]; then
+                echo "Successfully installed pipx-1.4.3"
+            fi
+        done
+        exit 0
+        ;;
+    show)   echo "Name: navig"; echo "Version: 0.0.1"; exit 0 ;;
+    uninstall) exit 0 ;;
+    *)          exit 0 ;;
+esac
