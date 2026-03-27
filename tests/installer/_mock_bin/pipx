@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Mock pipx binary for installer tests
+case "${1}" in
+    --version) echo "1.4.3"; exit 0 ;;
+    install)
+        # Create a fake navig shim so the installer's shim-existence fallback works.
+        mkdir -p "$HOME/.local/bin"
+        printf '#!/usr/bin/env bash\necho "navig 0.0.1"\n' > "$HOME/.local/bin/navig"
+        chmod +x "$HOME/.local/bin/navig"
+        echo "  installed package navig 0.0.1"
+        exit 0
+        ;;
+    ensurepath) exit 0 ;;
+    uninstall)  exit 0 ;;
+    *)          exit 0 ;;
+esac

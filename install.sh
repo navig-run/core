@@ -53,7 +53,7 @@ NO_CONFIRM="${NAVIG_NO_CONFIRM:-0}"
 DRY_RUN=0
 VERBOSE=0
 HELP=0
-DEV_MODE=0
+export DEV_MODE=0   # reserved flag for future dev-mode paths; exported for child scripts
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=10
 REPO_URL="https://github.com/navig-run/core.git"
@@ -151,7 +151,7 @@ parse_args() {
             --reinstall)    ACTION="reinstall"; shift ;;
             --version)      VERSION="$2"; shift 2 ;;
             --method)       INSTALL_METHOD="$2"; shift 2 ;;
-            --dev)          INSTALL_METHOD="git"; DEV_MODE=1; shift ;;
+            --dev)          INSTALL_METHOD="git"; export DEV_MODE=1; shift ;;
             --git-dir)      GIT_DIR="$2"; shift 2 ;;
             --extras)       EXTRAS="$2"; shift 2 ;;
             --profile)      INSTALL_PROFILE="$2"; shift 2 ;;
@@ -408,6 +408,8 @@ check_autossh() {
 
 # ── pip install helpers ───────────────────────────────────────
 ensure_pip_user_bin_on_path() {
+    # Guard: function may be called standalone; PYTHON_CMD must be set
+    [[ -z "${PYTHON_CMD:-}" ]] && return 0
     local user_base
     user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
     local bin_dir="${user_base}/bin"
@@ -418,15 +420,16 @@ ensure_pip_user_bin_on_path() {
     local path_line="export PATH=\"${bin_dir}:\$PATH\""
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         if [[ -f "$rc" ]] && ! grep -q "${bin_dir}" "$rc"; then
-            echo "" >> "$rc"
-            echo "# NAVIG CLI" >> "$rc"
-            echo "$path_line" >> "$rc"
+            { echo "" && echo "# NAVIG CLI" && echo "$path_line"; } >> "$rc" || \
+                echo -e "${WARN}!${NC} Could not write to $rc (permission denied or disk full)" >&2
         fi
     done
 }
 
 # ── pipx detection & install ──────────────────────────────────
 check_install_pipx() {
+    # Guard: PIP_CMD must be populated before this is called
+    [[ ${#PIP_CMD[@]} -eq 0 ]] && return 0
     if command -v pipx &>/dev/null; then
         echo -e "${SUCCESS}✓${NC} pipx available"
         return 0
@@ -497,7 +500,11 @@ install_navig_git() {
     fi
 
     if [[ ! -d "$repo_dir" ]]; then
-        git clone "$REPO_URL" "$repo_dir"
+        if ! git clone "$REPO_URL" "$repo_dir"; then
+            echo -e "${ERROR}Error: git clone failed for ${REPO_URL}${NC}" >&2
+            echo -e "  Check your network connection and repository access." >&2
+            exit 1
+        fi
     elif [[ "$GIT_UPDATE" == "1" ]]; then
         if [[ -z "$(git -C "$repo_dir" status --porcelain 2>/dev/null || true)" ]]; then
             git -C "$repo_dir" pull --rebase || true
@@ -506,28 +513,27 @@ install_navig_git() {
         fi
     fi
 
+    local pip_args install_mode
     if [[ "$PRODUCTION" == "1" ]]; then
-        echo -e "${WARN}→${NC} Installing NAVIG from source (production - no editable install)..."
-        # Non-editable: no __editable__ finder overhead (~20ms startup savings)
-        local pip_args=("install")
-        if [[ -n "$EXTRAS" ]]; then
-            pip_args+=("${repo_dir}[${EXTRAS}]")
-        else
-            pip_args+=("$repo_dir")
-        fi
+        install_mode="production (non-editable)"
+        pip_args=("install")
     else
-        echo -e "${WARN}→${NC} Installing NAVIG in editable mode..."
-        local pip_args=("install" "-e")
-        if [[ -n "$EXTRAS" ]]; then
-            pip_args+=("${repo_dir}[${EXTRAS}]")
-        else
-            pip_args+=("$repo_dir")
-        fi
+        install_mode="development (editable)"
+        pip_args=("install" "-e")
+    fi
+    if [[ -n "$EXTRAS" ]]; then
+        pip_args+=("${repo_dir}[${EXTRAS}]")
+    else
+        pip_args+=("$repo_dir")
     fi
 
-    "${PIP_CMD[@]}" "${pip_args[@]}"
+    echo -e "${WARN}→${NC} Installing NAVIG from source (${install_mode})..."
+    if ! "${PIP_CMD[@]}" "${pip_args[@]}"; then
+        echo -e "${ERROR}Error: pip install from source failed${NC}" >&2
+        exit 1
+    fi
 
-    echo -e "${SUCCESS}✓${NC} NAVIG installed from source"
+    echo -e "${SUCCESS}✓${NC} NAVIG installed from source (${install_mode})"
     echo -e "${INFO}i${NC} Source directory: ${INFO}${repo_dir}${NC}"
     echo -e "${INFO}i${NC} To update: ${INFO}cd ${repo_dir} && git pull && pip install -e .${NC}"
 }
@@ -598,8 +604,14 @@ uninstall_navig() {
     local preserve_data="${1:-0}"
     echo -e "${WARN}→${NC} Uninstalling NAVIG..."
 
-    # Non-blocking failure log for uninstall
+    # Disable exit-on-error for the entire uninstall scope.
+    # Restore it reliably via a trap rather than inline set -e, so a
+    # premature return or subshell exit cannot leave set -e disabled.
+    local _prev_e=0
+    [[ $- == *e* ]] && _prev_e=1
     set +e
+    # shellcheck disable=SC2064
+    trap "[[ \$_prev_e -eq 1 ]] && set -e; trap - RETURN" RETURN
     local log_file="${HOME}/.navig/logs/uninstall-fail.log"
     mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
 
@@ -624,7 +636,8 @@ uninstall_navig() {
     fi
 
     # Step C: Remove binary
-    local user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
+    local user_base
+    user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
     local bin_dir="${user_base}/bin"
     if [[ -f "${bin_dir}/navig" || -L "${bin_dir}/navig" ]]; then
         _try rm -f "${bin_dir}/navig"
@@ -635,12 +648,19 @@ uninstall_navig() {
         _try rm -rf "$GIT_DIR"
     fi
 
-    # Step E: Clean shell profiles (atomic: write to tmp first, then mv)
+    # Step E: Clean shell profiles (atomic: write to tmp first, then mv).
+    # Remove both the sentinel comment and the export PATH line that follows it.
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         if [[ -f "$rc" ]] && grep -q "# NAVIG CLI" "$rc" 2>/dev/null; then
             local rctmp
             rctmp="$(mktemp)"
-            if grep -v "# NAVIG CLI" "$rc" > "$rctmp" 2>/dev/null; then
+            # Use awk to delete the comment line and the export PATH line
+            # immediately after it (handles both as a unit).
+            if awk '
+                /# NAVIG CLI/ { skip=1; next }
+                skip && /export PATH=/ { skip=0; next }
+                { skip=0; print }
+            ' "$rc" > "$rctmp" 2>/dev/null; then
                 _try mv "$rctmp" "$rc"
             else
                 rm -f "$rctmp"
@@ -660,12 +680,12 @@ uninstall_navig() {
     fi
 
     # Step G: Remove cron jobs
-    local existing_cron="$(crontab -l 2>/dev/null || true)"
+    local existing_cron
+    existing_cron="$(crontab -l 2>/dev/null || true)"
     if [[ -n "$existing_cron" ]] && echo "$existing_cron" | grep -qi navig; then
         echo "$existing_cron" | grep -iv navig | crontab - 2>/dev/null || true
     fi
 
-    set -e
     echo -e "${SUCCESS}✓${NC} Uninstall complete."
 }
 
@@ -856,7 +876,13 @@ if [[ "${NAVIG_INSTALL_SH_NO_RUN:-0}" != "1" ]]; then
     # macOS ships with bash 3.2 — guard to avoid a syntax/runtime error.
     mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
     if (( BASH_VERSINFO[0] >= 4 )); then
-        exec > >(tee -a "${HOME}/.navig/logs/install.log") 2>&1
+        # Attempt to tee all output to the install log; if it fails (permissions,
+        # quota, read-only fs) continue without logging rather than aborting.
+        if mkdir -p "${HOME}/.navig/logs" 2>/dev/null; then
+            exec > >(tee -a "${HOME}/.navig/logs/install.log") 2>&1 || true
+        else
+            echo -e "${WARN}!${NC} Could not create log directory; install will proceed without logging." >&2
+        fi
     fi
     main
 fi
