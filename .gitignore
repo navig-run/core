@@ -337,3 +337,7 @@ navig/plugins/llm_bridge/
 navig/plugins/llm-bridge/
 `r`n# Rust`r`n**/target/
 `r`n# Local workspace`r`n.local/
+
+ #   R u s t   B u i l d   A r t i f a c t s 
+ * * / t a r g e t /  
+ 
