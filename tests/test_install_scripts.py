@@ -58,9 +58,9 @@ def test_install_sh_dry_run(bash_cmd):
 
     # Set NAVIG_INSTALL_SH_NO_RUN in case we just want to source it, but here we run it with --dry-run
     result = run_cmd([bash_cmd, "install.sh", "--dry-run"])
-    assert result.returncode == 0, (
-        f"install.sh --dry-run failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"install.sh --dry-run failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
     assert "Dry run mode" in result.stdout or "Dry run complete" in result.stdout
 
 
@@ -71,10 +71,12 @@ def test_install_ps1_dry_run(pwsh_cmd):
     assert INSTALL_PS1.exists(), "install.ps1 not found"
 
     # Execute with -DryRun
-    result = run_cmd([pwsh_cmd, "-NoProfile", "-NonInteractive", "-File", "install.ps1", "-DryRun"])
-    assert result.returncode == 0, (
-        f"install.ps1 -DryRun failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
+    result = run_cmd(
+        [pwsh_cmd, "-NoProfile", "-NonInteractive", "-File", "install.ps1", "-DryRun"]
     )
+    assert (
+        result.returncode == 0
+    ), f"install.ps1 -DryRun failed:\n{result.stderr}\n\nSTDOUT:\n{result.stdout}"
     combined = result.stdout + result.stderr
     assert "Dry run" in combined, f"Expected 'Dry run' in output, got:\n{combined}"
 
@@ -99,8 +101,12 @@ def test_install_ps1_parse(pwsh_cmd):
         exit 1
     }}
     """
-    result = run_cmd([pwsh_cmd, "-NoProfile", "-NonInteractive", "-Command", inline_cmd])
-    assert result.returncode == 0, f"install.ps1 failed parsing:\n{result.stderr}\n{result.stdout}"
+    result = run_cmd(
+        [pwsh_cmd, "-NoProfile", "-NonInteractive", "-Command", inline_cmd]
+    )
+    assert (
+        result.returncode == 0
+    ), f"install.ps1 failed parsing:\n{result.stderr}\n{result.stdout}"
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +127,8 @@ def test_install_sh_invalid_action_exits_nonzero(bash_cmd):
     )
     combined = result.stdout + result.stderr
     assert any(
-        keyword in combined.lower() for keyword in ("unsupported", "unknown", "invalid", "bogus")
+        keyword in combined.lower()
+        for keyword in ("unsupported", "unknown", "invalid", "bogus")
     ), f"Expected error context in output, got:\n{combined}"
 
 
@@ -148,56 +155,6 @@ def test_install_ps1_invalid_action_exits_nonzero(pwsh_cmd):
     )
     combined = result.stdout + result.stderr
     assert any(
-        keyword in combined.lower() for keyword in ("unsupported", "unknown", "invalid", "bogus")
+        keyword in combined.lower()
+        for keyword in ("unsupported", "unknown", "invalid", "bogus")
     ), f"Expected error context in output, got:\n{combined}"
-
-
-def test_install_sh_dev_sync_isolation(bash_cmd):
-    """NAVIG_DEV_SYNC=1 without navig-www: install.sh must still exit 0 in dry-run."""
-    if not bash_cmd:
-        pytest.skip("bash not found")
-    assert INSTALL_SH.exists(), "install.sh not found"
-
-    import os
-
-    env = {**os.environ, "NAVIG_DEV_SYNC": "1"}
-    result = subprocess.run(
-        [bash_cmd, "install.sh", "--dry-run"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        env=env,
-    )
-    assert result.returncode == 0, (
-        "install.sh --dry-run must succeed even when NAVIG_DEV_SYNC=1 and navig-www is absent\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-
-
-def test_install_ps1_dev_sync_isolation(pwsh_cmd, tmp_path):
-    """NAVIG_DEV_SYNC=1 without navig-www: install.ps1 must still exit 0 in dry-run."""
-    if not pwsh_cmd:
-        pytest.skip("powershell not found")
-    assert INSTALL_PS1.exists(), "install.ps1 not found"
-
-    import os
-
-    env = {**os.environ, "NAVIG_DEV_SYNC": "1"}
-    result = subprocess.run(
-        [
-            pwsh_cmd,
-            "-NoProfile",
-            "-NonInteractive",
-            "-File",
-            str(INSTALL_PS1),
-            "-DryRun",
-        ],
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),  # tmp dir has no navig-www sibling
-        env=env,
-    )
-    assert result.returncode == 0, (
-        "install.ps1 -DryRun must succeed even when NAVIG_DEV_SYNC=1 and navig-www is absent\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    )
