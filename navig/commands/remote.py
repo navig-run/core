@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import typer
 
@@ -16,11 +16,11 @@ from navig import console_helper as ch
 
 
 def _check_powershell_quoting_issues(
-    command: Optional[str],
+    command: str | None,
     stdin: bool,
-    file: Optional[Path],
+    file: Path | None,
     interactive: bool,
-    options: Dict[str, Any],
+    options: dict[str, Any],
 ) -> None:
     """Detect PowerShell quoting problems and provide actionable guidance.
 
@@ -90,10 +90,10 @@ def _check_powershell_quoting_issues(
 
 
 def run_remote_command(
-    command: Optional[str],
-    options: Dict[str, Any],
+    command: str | None,
+    options: dict[str, Any],
     stdin: bool = False,
-    file: Optional[Path] = None,
+    file: Path | None = None,
     interactive: bool = False,
 ):
     """Execute arbitrary shell command on remote host.
@@ -261,7 +261,7 @@ def run_remote_command(
         ch.warning(f"Command exited with code: {result.returncode}")
 
 
-def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]):
+def _execute_with_progress(remote_ops, command: str, host_config: dict[str, Any]):
     """Execute command with elapsed time indicator for long-running commands.
 
     Shows elapsed time after 3 seconds of waiting. The indicator updates
@@ -352,8 +352,8 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
 
 
 def _resolve_command(
-    command: Optional[str], stdin: bool, file: Optional[Path], interactive: bool = False
-) -> Optional[str]:
+    command: str | None, stdin: bool, file: Path | None, interactive: bool = False
+) -> str | None:
     """Resolve command from the appropriate source.
 
     Priority:
@@ -445,7 +445,7 @@ def _resolve_command(
     return command
 
 
-def _read_from_editor() -> Optional[str]:
+def _read_from_editor() -> str | None:
     """Open editor for multi-line command input.
 
     Uses $EDITOR environment variable, falls back to platform defaults.
@@ -546,7 +546,7 @@ def _encode_b64_command(command: str) -> str:
         return None
 
 
-def _try_decode_b64(text: str) -> Optional[str]:
+def _try_decode_b64(text: str) -> str | None:
     """Try to decode a string as Base64. Returns decoded string or None.
 
     Used to detect if user already passed base64-encoded command.
@@ -574,7 +574,7 @@ def _try_decode_b64(text: str) -> Optional[str]:
         return None
 
 
-def install_remote_package(package: str, options: Dict[str, Any]):
+def install_remote_package(package: str, options: dict[str, Any]):
     """Auto-detect package manager and install."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations

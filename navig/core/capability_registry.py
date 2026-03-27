@@ -25,7 +25,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Tier definition
@@ -46,9 +45,9 @@ class CapabilityTier(str, Enum):
 @dataclass
 class CapabilityEntry:
     tier: CapabilityTier
-    module: Optional[str] = None  # Python import path (None = external/scripts)
-    config_key: Optional[str] = None  # e.g. "mesh.enabled" — None = no gate needed
-    optional_dep: Optional[str] = None  # pyproject.toml optional group name, if any
+    module: str | None = None  # Python import path (None = external/scripts)
+    config_key: str | None = None  # e.g. "mesh.enabled" — None = no gate needed
+    optional_dep: str | None = None  # pyproject.toml optional group name, if any
     cli_commands: list[str] = field(
         default_factory=list
     )  # navig subcommands for this cap
@@ -253,7 +252,7 @@ REGISTRY: dict[str, CapabilityEntry] = {
 # ---------------------------------------------------------------------------
 
 
-def get_tier(capability: str) -> Optional[CapabilityTier]:
+def get_tier(capability: str) -> CapabilityTier | None:
     """Return the tier of a capability, or None if unknown."""
     entry = REGISTRY.get(capability)
     return entry.tier if entry else None
@@ -274,7 +273,7 @@ def get_labs() -> dict[str, CapabilityEntry]:
     return {k: v for k, v in REGISTRY.items() if v.tier == CapabilityTier.LABS}
 
 
-def is_enabled(capability: str, config: Optional[dict] = None) -> bool:
+def is_enabled(capability: str, config: dict | None = None) -> bool:
     """
     Return True if the capability should be active given the provided config dict.
 

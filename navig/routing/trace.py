@@ -11,7 +11,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +28,13 @@ class RouteTrace:
     # Classification
     mode: str = ""
     confidence: float = 0.0
-    reasons: List[str] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
     capability_profile: str = ""
 
     # Provider selection
     provider: str = ""
     model: str = ""
-    fallbacks_tried: List[str] = field(default_factory=list)
+    fallbacks_tried: list[str] = field(default_factory=list)
 
     # Execution
     input_tokens: int = 0
@@ -43,13 +43,13 @@ class RouteTrace:
 
     # Audit
     audit_result: str = ""  # "pass", "retry_1", "retry_2", "failed"
-    tools_used: List[str] = field(default_factory=list)
+    tools_used: list[str] = field(default_factory=list)
 
     # Context
     entrypoint: str = ""  # "forge_chat", "telegram", "cli", "mcp", "http"
     purpose_sent: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -63,7 +63,7 @@ def log_trace(trace: RouteTrace) -> None:
         logger.debug("Failed to write route trace: %s", e)
 
 
-def recent_traces(limit: int = 50) -> List[Dict[str, Any]]:
+def recent_traces(limit: int = 50) -> list[dict[str, Any]]:
     """Read the most recent N traces from the JSONL log."""
     if not TRACE_LOG_PATH.exists():
         return []

@@ -36,7 +36,8 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -57,7 +58,7 @@ class PartialResultBus:
     """
 
     def __init__(self) -> None:
-        self._subs: Dict[str, List[Callable[[dict], None]]] = {}
+        self._subs: dict[str, list[Callable[[dict], None]]] = {}
 
     def subscribe(self, task_id: str, cb: Callable[[dict], None]) -> None:
         self._subs.setdefault(task_id, []).append(cb)
@@ -84,7 +85,7 @@ class TaskDecomposer:
     MIN_CHARS_FOR_SPLIT = 200
     MAX_CHUNKS = MAX_PARALLEL_SUBTASKS
 
-    def decompose(self, task: str, peer_count: int) -> List[str]:
+    def decompose(self, task: str, peer_count: int) -> list[str]:
         """
         Return a list of subtask strings.
 
@@ -124,8 +125,8 @@ class SubtaskDispatcher:
         task_id: str,
         subtask_id: str,
         target_url: str,
-        context: Optional[dict] = None,
-    ) -> Optional[dict]:
+        context: dict | None = None,
+    ) -> dict | None:
         """
         POST subtask to peer gateway.  Returns the peer's response dict or
         None on failure (triggers local fallback in MeshCollective).
@@ -140,21 +141,23 @@ class SubtaskDispatcher:
         try:
             import aiohttp as _aio
 
-            async with _aio.ClientSession() as session:
-                async with session.post(
+            async with (
+                _aio.ClientSession() as session,
+                session.post(
                     url,
                     data=json.dumps(payload),
                     headers={"Content-Type": "application/json"},
                     timeout=_aio.ClientTimeout(total=SUBTASK_TIMEOUT_S),
-                ) as resp:
-                    if resp.status != 200:
-                        logger.warning(
-                            "[collective] Subtask dispatch failed (HTTP %d) to %s",
-                            resp.status,
-                            target_url,
-                        )
-                        return None
-                    return await resp.json()
+                ) as resp,
+            ):
+                if resp.status != 200:
+                    logger.warning(
+                        "[collective] Subtask dispatch failed (HTTP %d) to %s",
+                        resp.status,
+                        target_url,
+                    )
+                    return None
+                return await resp.json()
 
         except Exception as exc:
             logger.warning(
@@ -180,7 +183,7 @@ class LeaderAggregator:
         self._task_id = task_id
         self._expected = expected_count
         self._timeout_s = timeout_s
-        self._results: List[dict] = []
+        self._results: list[dict] = []
         self._done = asyncio.Event()
 
     def on_partial(self, result: dict) -> None:
@@ -188,7 +191,7 @@ class LeaderAggregator:
         if len(self._results) >= self._expected:
             self._done.set()
 
-    async def wait(self) -> List[dict]:
+    async def wait(self) -> list[dict]:
         try:
             await asyncio.wait_for(self._done.wait(), timeout=self._timeout_s)
         except asyncio.TimeoutError:
@@ -201,7 +204,7 @@ class LeaderAggregator:
         return list(self._results)
 
     @staticmethod
-    def assemble(results: List[dict], original_task: str) -> str:
+    def assemble(results: list[dict], original_task: str) -> str:
         """Concatenate partial results in arrival order."""
         if not results:
             return ""
@@ -253,8 +256,8 @@ class MeshCollective:
     async def run(
         self,
         task: str,
-        context: Optional[dict] = None,
-        local_fn: Optional[Callable[[str], Any]] = None,
+        context: dict | None = None,
+        local_fn: Callable[[str], Any] | None = None,
     ) -> str:
         """
         Run a task, distributing subtasks to peers if collective is enabled
@@ -324,8 +327,8 @@ class MeshCollective:
         task_id: str,
         subtask_id: str,
         peer: Any,
-        context: Optional[dict],
-        local_fn: Optional[Callable],
+        context: dict | None,
+        local_fn: Callable | None,
     ) -> dict:
         """Dispatch a single subtask; fall back to local on failure."""
         result = await self._dispatcher.dispatch(
@@ -338,7 +341,7 @@ class MeshCollective:
         return {"text": text, "subtask_id": subtask_id, "source": "local_fallback"}
 
     @staticmethod
-    async def _run_local(task: str, local_fn: Optional[Callable]) -> str:
+    async def _run_local(task: str, local_fn: Callable | None) -> str:
         if local_fn is None:
             return ""
         try:

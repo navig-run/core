@@ -7,7 +7,6 @@ Supports adding, listing, editing, deleting, testing, and cloning credentials.
 
 import json
 import sys
-from typing import Optional
 
 import typer
 
@@ -68,10 +67,10 @@ def _Table(*args, **kwargs):
 
 @cred_app.command("list")
 def list_credentials(
-    provider: Optional[str] = typer.Option(
+    provider: str | None = typer.Option(
         None, "--provider", "-p", help="Filter by provider"
     ),
-    profile: Optional[str] = typer.Option(
+    profile: str | None = typer.Option(
         None, "--profile", "-P", help="Filter by profile ID"
     ),
     show_disabled: bool = typer.Option(
@@ -290,7 +289,7 @@ def show_credential(
         _rprint(cred.data)
     else:
         # Show keys but mask values
-        masked = {k: "***" for k in cred.data.keys()}
+        masked = dict.fromkeys(cred.data.keys(), "***")
         _rprint(masked)
         _ch.info("Use --reveal to see secret values")
 
@@ -351,7 +350,7 @@ def delete_credential(
 @cred_app.command("test")
 def test_credential(
     target: str = typer.Argument(..., help="Credential ID OR Provider Name"),
-    profile: Optional[str] = typer.Option(
+    profile: str | None = typer.Option(
         None, "--profile", "-P", help="Profile (if target is provider)"
     ),
 ):
@@ -406,7 +405,7 @@ def enable_credential(credential_id: str = typer.Argument(..., help="Credential 
 def clone_credential(
     credential_id: str = typer.Argument(..., help="Source Credential ID"),
     profile: str = typer.Argument(..., help="Target Profile ID"),
-    label: Optional[str] = typer.Option(None, "--label", "-l", help="New label"),
+    label: str | None = typer.Option(None, "--label", "-l", help="New label"),
 ):
     """Clone a credential to a different profile."""
     vault = _vault_mod.get_vault()
@@ -430,7 +429,7 @@ def list_providers():
 
 @cred_app.command("audit")
 def show_audit_log(
-    credential_id: Optional[str] = typer.Argument(None, help="Optional Credential ID"),
+    credential_id: str | None = typer.Argument(None, help="Optional Credential ID"),
     limit: int = typer.Option(50, "--limit", "-n", help="Number of entries"),
 ):
     """Show audit log for credentials."""

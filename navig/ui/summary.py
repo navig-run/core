@@ -10,7 +10,6 @@ render_next_step is the signature close of every failure / degraded path.
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 from navig.ui.icons import icon
 from navig.ui.models import SummaryResult
@@ -72,7 +71,7 @@ def render_summary(
 def render_ai_response(
     text: str,
     *,
-    title: Optional[str] = None,
+    title: str | None = None,
 ) -> None:
     """Render a freeform AI response block. Never raises."""
     try:

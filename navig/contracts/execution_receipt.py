@@ -13,7 +13,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -58,11 +58,11 @@ class ExecutionReceipt:
 
     # Optional
     receipt_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    started_at: Optional[str] = None
-    duration_secs: Optional[float] = None
-    error: Optional[str] = None
-    artifacts: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    started_at: str | None = None
+    duration_secs: float | None = None
+    error: str | None = None
+    artifacts: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     recorded_at: str = field(default_factory=lambda: _now_iso())
 
     # ── Factory method ───────────────────────────────────────────────
@@ -76,12 +76,12 @@ class ExecutionReceipt:
         capability: str,
         outcome: ReceiptOutcome,
         completed_at: str,
-        started_at: Optional[str] = None,
-        duration_secs: Optional[float] = None,
-        error: Optional[str] = None,
-        artifacts: Optional[Dict[str, Any]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> "ExecutionReceipt":
+        started_at: str | None = None,
+        duration_secs: float | None = None,
+        error: str | None = None,
+        artifacts: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ExecutionReceipt:
         return cls(
             mission_id=mission_id,
             node_id=node_id,
@@ -108,7 +108,7 @@ class ExecutionReceipt:
 
     # ── Serialization ────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["outcome"] = self.outcome.value
         return d
@@ -117,13 +117,13 @@ class ExecutionReceipt:
         return json.dumps(self.to_dict(), indent=2)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ExecutionReceipt":
+    def from_dict(cls, data: dict[str, Any]) -> ExecutionReceipt:
         data = dict(data)
         data["outcome"] = ReceiptOutcome(data["outcome"])
         return cls(**data)
 
     @classmethod
-    def from_json(cls, raw: str) -> "ExecutionReceipt":
+    def from_json(cls, raw: str) -> ExecutionReceipt:
         return cls.from_dict(json.loads(raw))
 
     def __repr__(self) -> str:

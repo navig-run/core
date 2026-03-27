@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.tunnel import TunnelManager
 
 
-def get_gateway_status() -> Dict[str, Any]:
+def get_gateway_status() -> dict[str, Any]:
     """Get gateway status if running."""
     try:
         import requests
@@ -30,7 +30,7 @@ def get_gateway_status() -> Dict[str, Any]:
     return {"running": False}
 
 
-def get_status_payload(options: Dict[str, Any]) -> Dict[str, Any]:
+def get_status_payload(options: dict[str, Any]) -> dict[str, Any]:
     config_manager = get_config_manager()
 
     active_host, active_host_source = config_manager.get_active_host(return_source=True)
@@ -76,7 +76,7 @@ def format_uptime(seconds: float) -> str:
     return f"{secs}s"
 
 
-def show_status(options: Dict[str, Any]) -> None:
+def show_status(options: dict[str, Any]) -> None:
     payload = get_status_payload(options)
 
     if options.get("json"):

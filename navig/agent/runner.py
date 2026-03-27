@@ -14,7 +14,7 @@ import asyncio
 import signal
 import sys
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.agent.brain import Brain
 from navig.agent.config import AgentConfig
@@ -41,7 +41,7 @@ class Agent:
     - Soul: Personality
     """
 
-    def __init__(self, config: Optional[AgentConfig] = None):
+    def __init__(self, config: AgentConfig | None = None):
         self.config = config or AgentConfig.load()
 
         # Create nervous system first
@@ -98,8 +98,8 @@ class Agent:
 
         # State
         self._running = False
-        self._started_at: Optional[datetime] = None
-        self._main_task: Optional[asyncio.Task] = None
+        self._started_at: datetime | None = None
+        self._main_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Start the agent."""
@@ -183,7 +183,7 @@ class Agent:
                 },
             )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get agent status."""
         return {
             "running": self._running,
@@ -203,7 +203,7 @@ class Agent:
         return self._running
 
 
-async def run_agent(config: Optional[AgentConfig] = None) -> None:
+async def run_agent(config: AgentConfig | None = None) -> None:
     """
     Run the agent as a foreground process.
 

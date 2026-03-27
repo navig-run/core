@@ -6,7 +6,7 @@ Requires HestiaCP installed on the remote server.
 
 import json
 import shlex
-from typing import Any, Dict, Optional
+from typing import Any
 
 from rich.table import Table
 
@@ -14,8 +14,8 @@ from navig import console_helper as ch
 
 
 def _execute_hestia_cmd(
-    command: str, server_config: Dict, options: Dict[str, Any]
-) -> Dict:
+    command: str, server_config: dict, options: dict[str, Any]
+) -> dict:
     """Execute HestiaCP command via API or CLI.
 
     Args:
@@ -42,7 +42,7 @@ def _execute_hestia_cmd(
     }
 
 
-def list_users_cmd(options: Dict[str, Any]):
+def list_users_cmd(options: dict[str, Any]):
     """List HestiaCP users.
 
     Args:
@@ -119,7 +119,7 @@ def list_users_cmd(options: Dict[str, Any]):
         ch.error("Failed to parse HestiaCP output")
 
 
-def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
+def list_domains_cmd(user: str | None, options: dict[str, Any]):
     """List HestiaCP domains.
 
     Args:
@@ -176,7 +176,7 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
                 )
             elif options.get("plain"):
                 # Plain text output - one domain per line for scripting
-                for domain in all_domains.keys():
+                for domain in all_domains:
                     ch.raw_print(domain)
             else:
                 table = Table(title=f"HestiaCP Domains on {server_name}")
@@ -249,7 +249,7 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
         ch.error("Failed to parse domains data")
 
 
-def add_user_cmd(username: str, password: str, email: str, options: Dict[str, Any]):
+def add_user_cmd(username: str, password: str, email: str, options: dict[str, Any]):
     """Add new HestiaCP user.
 
     Args:
@@ -307,7 +307,7 @@ def add_user_cmd(username: str, password: str, email: str, options: Dict[str, An
         return False
 
 
-def delete_user_cmd(username: str, options: Dict[str, Any]):
+def delete_user_cmd(username: str, options: dict[str, Any]):
     """Delete HestiaCP user.
 
     Args:
@@ -365,7 +365,7 @@ def delete_user_cmd(username: str, options: Dict[str, Any]):
         return False
 
 
-def add_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
+def add_domain_cmd(user: str, domain: str, options: dict[str, Any]):
     """Add domain to HestiaCP user.
 
     Args:
@@ -409,7 +409,7 @@ def add_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
         return False
 
 
-def delete_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
+def delete_domain_cmd(user: str, domain: str, options: dict[str, Any]):
     """Delete domain from HestiaCP.
 
     Args:
@@ -465,7 +465,7 @@ def delete_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
         return False
 
 
-def renew_ssl_cmd(user: str, domain: str, options: Dict[str, Any]):
+def renew_ssl_cmd(user: str, domain: str, options: dict[str, Any]):
     """Renew SSL certificate for domain.
 
     Args:
@@ -509,7 +509,7 @@ def renew_ssl_cmd(user: str, domain: str, options: Dict[str, Any]):
         return False
 
 
-def rebuild_web_cmd(user: str, options: Dict[str, Any]):
+def rebuild_web_cmd(user: str, options: dict[str, Any]):
     """Rebuild web configuration for user.
 
     Args:
@@ -552,7 +552,7 @@ def rebuild_web_cmd(user: str, options: Dict[str, Any]):
         return False
 
 
-def backup_user_cmd(user: str, options: Dict[str, Any]):
+def backup_user_cmd(user: str, options: dict[str, Any]):
     """Backup HestiaCP user.
 
     Args:

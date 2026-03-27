@@ -27,7 +27,7 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from navig.tools.registry import BaseTool
@@ -42,7 +42,7 @@ logger = logging.getLogger("navig.tools.bridge")
 # =============================================================================
 
 
-def _make_handler(base_tool: "BaseTool"):
+def _make_handler(base_tool: BaseTool):
     """
     Produce an async handler function wrapping *base_tool*.run().
 
@@ -64,7 +64,7 @@ def _make_handler(base_tool: "BaseTool"):
     return _handler
 
 
-def adapt_base_tool(base_tool: "BaseTool") -> tuple:
+def adapt_base_tool(base_tool: BaseTool) -> tuple:
     """
     Convert a BaseTool into a (ToolMeta, async_handler) tuple.
 
@@ -113,8 +113,8 @@ def adapt_base_tool(base_tool: "BaseTool") -> tuple:
 
 
 def register_base_tool(
-    router_registry: "RouterRegistry",
-    base_tool: "BaseTool",
+    router_registry: RouterRegistry,
+    base_tool: BaseTool,
     overwrite: bool = False,
 ) -> bool:
     """
@@ -142,8 +142,8 @@ def register_base_tool(
 
 
 def bridge_all(
-    base_registry: "BaseRegistry",
-    router_registry: "RouterRegistry",
+    base_registry: BaseRegistry,
+    router_registry: RouterRegistry,
     overwrite: bool = False,
 ) -> int:
     """
@@ -177,9 +177,9 @@ def bridge_all(
 
 
 def try_get_handler(
-    router_registry: "RouterRegistry",
+    router_registry: RouterRegistry,
     name: str,
-) -> Optional[Any]:
+) -> Any | None:
     """
     Return the handler for *name* from *router_registry*, or ``None``.
 

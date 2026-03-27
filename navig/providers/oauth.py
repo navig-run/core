@@ -15,8 +15,9 @@ import socket
 import threading
 import time
 import webbrowser
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 try:
@@ -33,7 +34,7 @@ except ImportError:
 # ============================================================================
 
 
-def generate_pkce_pair() -> Tuple[str, str]:
+def generate_pkce_pair() -> tuple[str, str]:
     """
     Generate PKCE code_verifier and code_challenge.
 
@@ -67,9 +68,9 @@ class OAuthCredentials:
     access: str
     refresh: str
     expires: int  # Unix timestamp in milliseconds
-    account_id: Optional[str] = None
-    email: Optional[str] = None
-    client_id: Optional[str] = None
+    account_id: str | None = None
+    email: str | None = None
+    client_id: str | None = None
 
     @property
     def is_expired(self) -> bool:
@@ -78,7 +79,7 @@ class OAuthCredentials:
         buffer_ms = 5 * 60 * 1000
         return time.time() * 1000 >= self.expires - buffer_ms
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
             "access": self.access,
@@ -90,7 +91,7 @@ class OAuthCredentials:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "OAuthCredentials":
+    def from_dict(cls, data: dict[str, Any]) -> "OAuthCredentials":
         """Create from dictionary."""
         return cls(
             access=data.get("access", ""),
@@ -115,10 +116,10 @@ class OAuthProviderConfig:
     authorize_url: str
     token_url: str
     client_id: str
-    client_secret: Optional[str] = None
+    client_secret: str | None = None
     redirect_uri: str = "http://127.0.0.1:1455/auth/callback"
-    scopes: List[str] = field(default_factory=list)
-    userinfo_url: Optional[str] = None
+    scopes: list[str] = field(default_factory=list)
+    userinfo_url: str | None = None
 
     def build_authorize_url(
         self,
@@ -144,7 +145,7 @@ class OAuthProviderConfig:
 # NOTE: OAuth providers require application registration and approved client IDs.
 # OpenAI's OAuth is only available to enterprise partners, not for public use.
 # This framework is ready for providers that support OAuth (e.g., Google, Microsoft, etc.)
-OAUTH_PROVIDERS: Dict[str, OAuthProviderConfig] = {
+OAUTH_PROVIDERS: dict[str, OAuthProviderConfig] = {
     # Example structure (requires valid client registration):
     # "provider-name": OAuthProviderConfig(
     #     name="Provider Name",
@@ -255,7 +256,7 @@ class OAuthCallbackServer:
         except Exception:
             return False
 
-    def wait_for_callback(self) -> Optional[Dict[str, str]]:
+    def wait_for_callback(self) -> dict[str, str] | None:
         """Wait for the OAuth callback."""
         if self._thread:
             self._thread.join(timeout=self.timeout)
@@ -281,8 +282,8 @@ class OAuthFlowResult:
     """Result of an OAuth flow."""
 
     success: bool
-    credentials: Optional[OAuthCredentials] = None
-    error: Optional[str] = None
+    credentials: OAuthCredentials | None = None
+    error: str | None = None
 
 
 async def exchange_code_for_tokens(
@@ -415,7 +416,7 @@ async def refresh_oauth_tokens(
 
 def run_oauth_flow_interactive(
     provider_name: str,
-    on_progress: Optional[Callable[[str], None]] = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> OAuthFlowResult:
     """
     Run the OAuth flow interactively.

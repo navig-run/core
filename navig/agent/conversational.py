@@ -11,11 +11,12 @@ This module provides a conversational AI interface that:
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +37,10 @@ class ExecutionStep:
 
     action: str  # 'command', 'auto', 'workflow', 'ask', 'wait'
     description: str
-    params: Dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = field(default_factory=dict)
     status: str = "pending"
-    result: Optional[str] = None
-    error: Optional[str] = None
+    result: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -50,13 +51,13 @@ class Task:
     goal: str
     context: str = ""
     status: TaskStatus = TaskStatus.PENDING
-    plan: List[ExecutionStep] = field(default_factory=list)
+    plan: list[ExecutionStep] = field(default_factory=list)
     current_step: int = 0
     attempts: int = 0
     max_attempts: int = 3
     created_at: datetime = field(default_factory=datetime.now)
-    completed_at: Optional[datetime] = None
-    final_result: Optional[str] = None
+    completed_at: datetime | None = None
+    final_result: str | None = None
 
     def to_dict(self):
         return {
@@ -92,7 +93,7 @@ class ConversationalAgent:
           2. navig/resources/SOUL.default.md (rich multi-domain identity)
           3. navig/agent/context/SOUL.md (minimal fallback)
         """
-        soul_candidates: List[tuple] = []  # (path, source_tag)
+        soul_candidates: list[tuple] = []  # (path, source_tag)
 
         # 1. Global workspace SOUL.md  (~/.navig/workspace/SOUL.md)
         try:
@@ -114,8 +115,8 @@ class ConversationalAgent:
             (Path(__file__).parent / "context" / "SOUL.md", "context")
         )
 
-        raw_parts: List[str] = []
-        sources: List[str] = []
+        raw_parts: list[str] = []
+        sources: list[str] = []
         for p, tag in soul_candidates:
             try:
                 if p.exists():
@@ -137,7 +138,7 @@ class ConversationalAgent:
         return ConversationalAgent._condense_soul(raw_parts, has_rich_soul)
 
     @staticmethod
-    def _condense_soul(raw_parts: List[str], has_rich_soul: bool = False) -> str:
+    def _condense_soul(raw_parts: list[str], has_rich_soul: bool = False) -> str:
         """
         Distill full SOUL.md content into an efficient chat identity prompt.
         Keeps only the behavioral essentials; drops examples, tables, rituals.
@@ -244,19 +245,19 @@ For conversation, respond naturally without JSON.
 
     def __init__(
         self,
-        ai_client: Optional[Any] = None,
-        on_status_update: Optional[Callable] = None,
-        soul_content: Optional[str] = None,
+        ai_client: Any | None = None,
+        on_status_update: Callable | None = None,
+        soul_content: str | None = None,
     ):
         self.ai_client = ai_client
         self.on_status_update = on_status_update
-        self.current_task: Optional[Task] = None
-        self.conversation_history: List[Dict[str, str]] = []
-        self.context: Dict[str, Any] = {}
+        self.current_task: Task | None = None
+        self.conversation_history: list[dict[str, str]] = []
+        self.context: dict[str, Any] = {}
         self._last_user_message: str = ""
 
         # User identity (set per-request from metadata)
-        self._user_identity: Dict[str, str] = {}
+        self._user_identity: dict[str, str] = {}
 
         # Soul / identity — can be injected or auto-loaded
         if soul_content is not None:
@@ -283,7 +284,7 @@ For conversation, respond naturally without JSON.
         Contains: who is speaking, current time, system mode.
         Kept under ~150 tokens so it doesn't crowd the small model's context.
         """
-        parts: List[str] = []
+        parts: list[str] = []
 
         # Time awareness
         now = datetime.now()
@@ -335,7 +336,7 @@ For conversation, respond naturally without JSON.
         3. Identity / SOUL (compact)
         4. Behavioral rules (minimal)
         """
-        parts: List[str] = []
+        parts: list[str] = []
 
         # ── 1. Language enforcement (MUST be first) ──
         lang_block = self._build_language_instruction(user_message)
@@ -925,7 +926,7 @@ For conversation, respond naturally without JSON.
             "What would you like me to do? 😊"
         )
 
-    def _extract_plan(self, response: str) -> Optional[Dict]:
+    def _extract_plan(self, response: str) -> dict | None:
         """Extract JSON plan from response."""
         # Look for JSON in response
         json_match = re.search(r"```json\s*(\{.*?\})\s*```", response, re.DOTALL)
@@ -945,7 +946,7 @@ For conversation, respond naturally without JSON.
 
         return None
 
-    async def _execute_plan(self, plan_data: Dict) -> str:
+    async def _execute_plan(self, plan_data: dict) -> str:
         """Execute a plan autonomously until success."""
         import uuid
 

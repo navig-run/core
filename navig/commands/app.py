@@ -9,7 +9,7 @@ import platform
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 from rich.console import Console
@@ -21,7 +21,7 @@ config_manager = get_config_manager()
 console = Console()
 
 
-def list_apps(options: Dict[str, Any]) -> None:
+def list_apps(options: dict[str, Any]) -> None:
     """List all apps on the active host (or host specified via --host flag)."""
     host_name = options.get("host")
     show_all = options.get("all", False)
@@ -285,7 +285,7 @@ def list_apps(options: Dict[str, Any]) -> None:
         ch.print_table(table)
 
 
-def use_app(options: Dict[str, Any]) -> None:
+def use_app(options: dict[str, Any]) -> None:
     """
     Switch active app (global or local scope).
 
@@ -355,7 +355,7 @@ def use_app(options: Dict[str, Any]) -> None:
         ch.error("Failed to set active app", str(e))
 
 
-def current_app(options: Dict[str, Any]) -> None:
+def current_app(options: dict[str, Any]) -> None:
     """Show currently active app with source information (local vs global)."""
     active_host = config_manager.get_active_host()
     active_app, source = config_manager.get_active_app(return_source=True)
@@ -394,7 +394,7 @@ def current_app(options: Dict[str, Any]) -> None:
     )
 
 
-def add_app(options: Dict[str, Any]) -> None:
+def add_app(options: dict[str, Any]) -> None:
     """Add new app to a host configuration."""
     app_name = options.get("app_name")
     host_name = options.get("host")
@@ -540,7 +540,7 @@ def add_app(options: Dict[str, Any]) -> None:
         ch.error("Error saving app configuration", str(e))
 
 
-def remove_app(options: Dict[str, Any]) -> None:
+def remove_app(options: dict[str, Any]) -> None:
     """Remove app from a host configuration."""
     app_name = options.get("app_name")
     host_name = options.get("host")
@@ -594,7 +594,7 @@ def remove_app(options: Dict[str, Any]) -> None:
         raise
 
 
-def show_app(options: Dict[str, Any]) -> None:
+def show_app(options: dict[str, Any]) -> None:
     """Show detailed app configuration."""
     app_name = options.get("app_name")
     host_name = options.get("host")
@@ -652,7 +652,7 @@ def show_app(options: Dict[str, Any]) -> None:
         ch.dim(f"Configuration file: ~/.navig/hosts/{host_name}.yaml")
 
 
-def edit_app(options: Dict[str, Any]) -> None:
+def edit_app(options: dict[str, Any]) -> None:
     """Edit app configuration in default editor."""
 
     app_name = options.get("app_name")
@@ -737,7 +737,7 @@ def edit_app(options: Dict[str, Any]) -> None:
         ch.error("Unexpected error", str(e))
 
 
-def clone_app(options: Dict[str, Any]) -> None:
+def clone_app(options: dict[str, Any]) -> None:
     """Clone an existing app configuration."""
     source_name = options.get("source_name")
     new_name = options.get("new_name")
@@ -826,7 +826,7 @@ def clone_app(options: Dict[str, Any]) -> None:
         ch.error("Error saving cloned app configuration", str(e))
 
 
-def info_app(options: Dict[str, Any]) -> None:
+def info_app(options: dict[str, Any]) -> None:
     """Show detailed app information (webserver type, database, paths, etc.)."""
     app_name = options.get("app_name")
     host_name = options.get("host")
@@ -937,7 +937,7 @@ def info_app(options: Dict[str, Any]) -> None:
         ch.dim(f"Configuration: {host_file}")
 
 
-def search_apps(options: Dict[str, Any]) -> None:
+def search_apps(options: dict[str, Any]) -> None:
     """Search for apps across all hosts by name or configuration."""
     query = options.get("query")
     json_output = options.get("json", False)
@@ -1008,7 +1008,7 @@ def search_apps(options: Dict[str, Any]) -> None:
         ch.print_table(table)
 
 
-def migrate_apps(options: Dict[str, Any]) -> None:
+def migrate_apps(options: dict[str, Any]) -> None:
     """
     Migrate apps from host YAML (legacy embedded format) to individual files (new format).
 
@@ -1114,7 +1114,7 @@ def migrate_apps(options: Dict[str, Any]) -> None:
             ch.warning("No apps were migrated.")
 
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import typer
 
@@ -1138,7 +1138,7 @@ def app_callback(ctx: typer.Context):
 @app_app.command("list")
 def app_list(
     ctx: typer.Context,
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host to list apps from"
     ),
     all: bool = typer.Option(
@@ -1171,7 +1171,7 @@ def app_list(
 @app_app.command("use")
 def app_use(
     ctx: typer.Context,
-    app_name: Optional[str] = typer.Argument(None, help="App name to activate"),
+    app_name: str | None = typer.Argument(None, help="App name to activate"),
     local: bool = typer.Option(
         False, "--local", "-l", help="Set as local active app (current directory only)"
     ),
@@ -1209,10 +1209,8 @@ def app_current(ctx: typer.Context):
 def app_add(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to add"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to add app to"),
-    from_app: Optional[str] = typer.Option(
-        None, "--from", help="Clone from existing app"
-    ),
+    host: str | None = typer.Option(None, "--host", "-h", help="Host to add app to"),
+    from_app: str | None = typer.Option(None, "--from", help="Clone from existing app"),
 ):
     """Add new app to a host (or clone from existing)."""
     if from_app:
@@ -1236,7 +1234,7 @@ def app_add(
 def app_remove(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to remove"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host to remove app from"
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
@@ -1254,8 +1252,8 @@ def app_remove(
 @app_app.command("show")
 def app_show(
     ctx: typer.Context,
-    app_name: Optional[str] = typer.Argument(None, help="App name to show"),
-    host: Optional[str] = typer.Option(
+    app_name: str | None = typer.Argument(None, help="App name to show"),
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host containing the app"
     ),
     current: bool = typer.Option(False, "--current", help="Show currently active app"),
@@ -1282,7 +1280,7 @@ def app_show(
 def app_edit(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to edit"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host containing the app"
     ),
 ):
@@ -1300,7 +1298,7 @@ def app_clone(
     ctx: typer.Context,
     source: str = typer.Argument(..., help="Source app name to clone"),
     new_name: str = typer.Argument(..., help="New app name"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host containing the app"
     ),
 ):
@@ -1319,7 +1317,7 @@ def app_clone(
 def app_info(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to show info for"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host containing the app"
     ),
 ):
@@ -1348,7 +1346,7 @@ def app_search(
 @app_app.command("migrate")
 def app_migrate(
     ctx: typer.Context,
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host to migrate apps from"
     ),
     dry_run: bool = typer.Option(

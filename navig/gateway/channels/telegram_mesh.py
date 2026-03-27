@@ -22,7 +22,7 @@ but reply with a disabled notice.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
 
@@ -172,7 +172,7 @@ class TelegramMeshMixin:
         the target promotes itself.  This method just fires the request.
         """
         try:
-            target: Optional[str] = args.strip() or None
+            target: str | None = args.strip() or None
             payload: dict = {}
             if target:
                 payload["target"] = target
@@ -237,12 +237,14 @@ class TelegramMeshMixin:
                 r.raise_for_status()
                 return await r.json()
         else:
-            async with aiohttp.ClientSession() as s:
-                async with s.post(
+            async with (
+                aiohttp.ClientSession() as s,
+                s.post(
                     url,
                     data=json.dumps(body),
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=10),
-                ) as r:
-                    r.raise_for_status()
-                    return await r.json()
+                ) as r,
+            ):
+                r.raise_for_status()
+                return await r.json()

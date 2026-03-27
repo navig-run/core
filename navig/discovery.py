@@ -8,7 +8,7 @@ The Schema sees all. Catalogues all. Knows all.
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -46,7 +46,7 @@ class ServerDiscovery:
     - Service status and ports
     """
 
-    def __init__(self, ssh_config: Dict[str, Any], debug_logger: Optional[Any] = None):
+    def __init__(self, ssh_config: dict[str, Any], debug_logger: Any | None = None):
         """
         Initialize discovery with SSH configuration.
 
@@ -63,7 +63,7 @@ class ServerDiscovery:
 
         self.discovered_data = {}
 
-    def _build_ssh_command(self, remote_command: str) -> List[str]:
+    def _build_ssh_command(self, remote_command: str) -> list[str]:
         """Build SSH command with proper authentication."""
         cmd = ["ssh", "-p", str(self.port)]
 
@@ -80,7 +80,7 @@ class ServerDiscovery:
 
         return cmd
 
-    def _execute_ssh(self, command: str) -> Tuple[bool, str, str]:
+    def _execute_ssh(self, command: str) -> tuple[bool, str, str]:
         """
         Execute SSH command and return (success, stdout, stderr).
 
@@ -93,7 +93,7 @@ class ServerDiscovery:
         else:
             return self._execute_ssh_subprocess(command)
 
-    def _execute_ssh_paramiko(self, command: str) -> Tuple[bool, str, str]:
+    def _execute_ssh_paramiko(self, command: str) -> tuple[bool, str, str]:
         """Execute SSH command using paramiko with connection pooling."""
         import time
 
@@ -154,7 +154,7 @@ class ServerDiscovery:
 
             return (False, "", error_msg)
 
-    def _execute_ssh_subprocess(self, command: str) -> Tuple[bool, str, str]:
+    def _execute_ssh_subprocess(self, command: str) -> tuple[bool, str, str]:
         """Execute SSH command using subprocess (key auth only)."""
         import time
 
@@ -221,7 +221,7 @@ class ServerDiscovery:
         success, stdout, stderr = self._execute_ssh("echo 'NAVIG_TEST'")
         return success and "NAVIG_TEST" in stdout
 
-    def discover_os(self, progress: bool = True) -> Dict[str, str]:
+    def discover_os(self, progress: bool = True) -> dict[str, str]:
         """Detect operating system and version."""
         if progress:
             ch.step("Detecting OS...")
@@ -252,7 +252,7 @@ class ServerDiscovery:
             ch.success(f"OS: {os_info['os']}")
         return os_info
 
-    def discover_databases(self, progress: bool = True) -> Dict[str, Any]:
+    def discover_databases(self, progress: bool = True) -> dict[str, Any]:
         """Detect installed databases and their configurations."""
         if progress:
             ch.step("Detecting databases...")
@@ -282,7 +282,7 @@ class ServerDiscovery:
 
         return {"databases": databases}
 
-    def _discover_mysql(self) -> Optional[Dict[str, Any]]:
+    def _discover_mysql(self) -> dict[str, Any] | None:
         """Detect MySQL/MariaDB installation."""
         # First check if process is running
         success, stdout, _ = self._execute_ssh(
@@ -366,7 +366,7 @@ class ServerDiscovery:
 
         return mysql_info
 
-    def _discover_mysql_root_credentials(self) -> Optional[Dict[str, str]]:
+    def _discover_mysql_root_credentials(self) -> dict[str, str] | None:
         """
         Auto-detect MySQL root credentials from common configuration files.
 
@@ -424,7 +424,7 @@ class ServerDiscovery:
 
         return None
 
-    def _discover_postgresql(self) -> Optional[Dict[str, Any]]:
+    def _discover_postgresql(self) -> dict[str, Any] | None:
         """Detect PostgreSQL installation."""
         success, stdout, _ = self._execute_ssh(
             "systemctl is-active postgresql 2>/dev/null"
@@ -448,7 +448,7 @@ class ServerDiscovery:
 
         return postgres_info
 
-    def discover_web_servers(self, progress: bool = True) -> Dict[str, Any]:
+    def discover_web_servers(self, progress: bool = True) -> dict[str, Any]:
         """Detect web servers (Nginx, Apache)."""
         if progress:
             ch.step("Detecting web servers...")
@@ -474,7 +474,7 @@ class ServerDiscovery:
 
         return {"web_servers": web_servers}
 
-    def _discover_nginx(self) -> Optional[Dict[str, Any]]:
+    def _discover_nginx(self) -> dict[str, Any] | None:
         """Detect Nginx installation."""
         # First check if process is running
         success, stdout, _ = self._execute_ssh("ps aux | grep nginx | grep -v grep")
@@ -520,7 +520,7 @@ class ServerDiscovery:
 
         return nginx_info
 
-    def _discover_apache(self) -> Optional[Dict[str, Any]]:
+    def _discover_apache(self) -> dict[str, Any] | None:
         """Detect Apache installation."""
         success, stdout, _ = self._execute_ssh(
             "systemctl is-active apache2 2>/dev/null || systemctl is-active httpd 2>/dev/null"
@@ -545,7 +545,7 @@ class ServerDiscovery:
 
         return apache_info
 
-    def discover_php(self, progress: bool = True) -> Dict[str, Any]:
+    def discover_php(self, progress: bool = True) -> dict[str, Any]:
         """Detect PHP version and configuration."""
         if progress:
             ch.step("Detecting PHP...")
@@ -582,7 +582,7 @@ class ServerDiscovery:
 
     def discover_application_paths(
         self, progress: bool = True, skip_web_root: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Detect common application paths.
 
@@ -614,7 +614,7 @@ class ServerDiscovery:
                 # Handle wildcard patterns
                 if "*" in root:
                     success, stdout, _ = self._execute_ssh(
-                        f"find {root.split('*')[0]} -type d -name '{root.split('/')[-1]}' 2>/dev/null | head -5"
+                        f"find {root.split('*')[0]} -type d -name '{os.path.basename(root)}' 2>/dev/null | head -5"
                     )
                     if success and stdout:
                         paths["app_paths"].extend(stdout.split("\n"))
@@ -649,7 +649,7 @@ class ServerDiscovery:
 
         return paths
 
-    def _discover_laravel_apps(self) -> List[str]:
+    def _discover_laravel_apps(self) -> list[str]:
         """Find Laravel installations."""
         # Look for artisan files (indicator of Laravel)
         success, stdout, _ = self._execute_ssh(
@@ -665,7 +665,7 @@ class ServerDiscovery:
 
     def discover_all(
         self, progress: bool = True, skip_web_root: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run all discovery tasks and return complete server profile.
 
@@ -705,7 +705,7 @@ class ServerDiscovery:
 
         return discovered
 
-    def format_for_config(self, discovered: Dict[str, Any]) -> Dict[str, Any]:
+    def format_for_config(self, discovered: dict[str, Any]) -> dict[str, Any]:
         """
         Format discovered data for server configuration.
 
@@ -775,7 +775,7 @@ class ServerDiscovery:
 
         return config
 
-    def discover_templates(self, progress: bool = True) -> Dict[str, Dict[str, Any]]:
+    def discover_templates(self, progress: bool = True) -> dict[str, dict[str, Any]]:
         """
         Auto-detect installed templates on the server.
 
@@ -829,7 +829,7 @@ class ServerDiscovery:
 
         return detected_templates
 
-    def _detect_n8n(self) -> Dict[str, Any]:
+    def _detect_n8n(self) -> dict[str, Any]:
         """
         Detect n8n workflow automation platform.
 
@@ -908,7 +908,7 @@ class ServerDiscovery:
 
         return info
 
-    def _detect_hestiacp(self) -> Dict[str, Any]:
+    def _detect_hestiacp(self) -> dict[str, Any]:
         """
         Detect HestiaCP control panel.
 
@@ -999,7 +999,7 @@ class ServerDiscovery:
 
         return info
 
-    def _detect_gitea(self) -> Dict[str, Any]:
+    def _detect_gitea(self) -> dict[str, Any]:
         """
         Detect Gitea self-hosted Git service.
 

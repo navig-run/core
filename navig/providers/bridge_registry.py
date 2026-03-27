@@ -13,7 +13,6 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional
 
 
 @dataclass
@@ -28,7 +27,7 @@ class BridgeRegistry:
 
     def __init__(self) -> None:
         self._lock: threading.RLock = threading.RLock()
-        self._providers: Dict[str, DynamicProvider] = {}
+        self._providers: dict[str, DynamicProvider] = {}
         self._last_bootstrap_at: float = 0.0
 
     # ─── Mutation ─────────────────────────────────────────────────────────────
@@ -45,7 +44,7 @@ class BridgeRegistry:
 
     # ─── Query ────────────────────────────────────────────────────────────────
 
-    def get(self, name: str) -> Optional[DynamicProvider]:
+    def get(self, name: str) -> DynamicProvider | None:
         with self._lock:
             return self._providers.get(name)
 
@@ -53,7 +52,7 @@ class BridgeRegistry:
         with self._lock:
             return sorted(self._providers.values(), key=lambda p: p.priority)
 
-    def best(self) -> Optional[DynamicProvider]:
+    def best(self) -> DynamicProvider | None:
         """Return the highest-priority registered provider, or None.
 
         If the registry is empty, attempts a one-shot bootstrap from
@@ -116,7 +115,7 @@ class BridgeRegistry:
 
 
 # Module-level singleton
-_registry: Optional[BridgeRegistry] = None
+_registry: BridgeRegistry | None = None
 _registry_lock = threading.Lock()
 
 

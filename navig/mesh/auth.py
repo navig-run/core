@@ -36,7 +36,6 @@ import hashlib
 import hmac as _hmac
 import json
 import os
-from typing import Optional
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -49,7 +48,7 @@ _MAX_KEY_LEN = 64  # BLAKE2b key limit in bytes
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
-def load_secret(config_secret: Optional[str] = None) -> Optional[bytes]:
+def load_secret(config_secret: str | None = None) -> bytes | None:
     """Return the mesh shared secret as bytes, or ``None`` if not configured.
 
     Resolution order (first non-empty value wins):

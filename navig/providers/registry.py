@@ -14,7 +14,7 @@ Adding a new provider:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Literal
 
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
@@ -51,7 +51,7 @@ class ProviderManifest:
     env_vars: list[str] = field(default_factory=list)
     vault_keys: list[str] = field(default_factory=list)
     requires_key: bool = True
-    local_probe: Optional[str] = None
+    local_probe: str | None = None
     models: list[str] = field(default_factory=list)
     emoji: str = "🤖"
     enabled: bool = True
@@ -319,7 +319,7 @@ ALL_PROVIDERS: list[ProviderManifest] = [
 _INDEX: dict[str, ProviderManifest] = {p.id: p for p in ALL_PROVIDERS}
 
 
-def get_provider(provider_id: str) -> Optional[ProviderManifest]:
+def get_provider(provider_id: str) -> ProviderManifest | None:
     """Return the manifest for *provider_id*, or ``None`` if not registered."""
     return _INDEX.get(provider_id)
 

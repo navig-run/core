@@ -45,7 +45,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -77,7 +77,7 @@ class SyncManager:
         discovery: Any,
         *,
         broadcast_interval_s: int = DEFAULT_BROADCAST_INTERVAL_S,
-        optional_sqlite_path: Optional[Path] = None,
+        optional_sqlite_path: Path | None = None,
     ) -> None:
         self._registry = registry
         self._discovery = discovery
@@ -85,11 +85,11 @@ class SyncManager:
         self._sqlite_path = optional_sqlite_path
 
         # Persisted state dict — updated on each received or generated snapshot
-        self._state: Dict[str, Any] = {}
+        self._state: dict[str, Any] = {}
         self._state_hash: str = ""
         self._last_pull_at: float = 0.0
 
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._running = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -216,16 +216,18 @@ class SyncManager:
         try:
             import aiohttp as _aio
 
-            async with _aio.ClientSession() as session:
-                async with session.get(
+            async with (
+                _aio.ClientSession() as session,
+                session.get(
                     url, timeout=_aio.ClientTimeout(total=PULL_TIMEOUT_S)
-                ) as resp:
-                    if resp.status != 200:
-                        logger.warning(
-                            "[sync] Pull failed (HTTP %d) from %s", resp.status, url
-                        )
-                        return
-                    data = await resp.json()
+                ) as resp,
+            ):
+                if resp.status != 200:
+                    logger.warning(
+                        "[sync] Pull failed (HTTP %d) from %s", resp.status, url
+                    )
+                    return
+                data = await resp.json()
 
             incoming = data.get("data") or data
             self._apply_state(incoming)
@@ -235,7 +237,7 @@ class SyncManager:
 
     # ── State helpers ─────────────────────────────────────────────────────────
 
-    def _build_local_state(self) -> Dict[str, Any]:
+    def _build_local_state(self) -> dict[str, Any]:
         """Collect current local state for broadcast."""
         self_record = getattr(self._registry, "self_record", None)
         capabilities = list(getattr(self_record, "capabilities", []) or [])
@@ -256,13 +258,13 @@ class SyncManager:
         }
 
     @staticmethod
-    def _hash_state(state: Dict[str, Any]) -> str:
+    def _hash_state(state: dict[str, Any]) -> str:
         """Deterministic SHA-256 hash of the state (excluding timestamp)."""
         stable = {k: v for k, v in state.items() if k != "timestamp"}
         raw = json.dumps(stable, sort_keys=True).encode()
         return hashlib.sha256(raw).hexdigest()[:16]
 
-    def _apply_state(self, incoming: Dict[str, Any]) -> None:
+    def _apply_state(self, incoming: dict[str, Any]) -> None:
         """Apply a pulled state snapshot from the leader."""
         new_hash = self._hash_state(incoming)
         if new_hash == self._state_hash:
@@ -303,7 +305,7 @@ class SyncManager:
 
     # ── State accessor (for GET /mesh/sync/state endpoint) ───────────────────
 
-    def get_state_snapshot(self) -> Dict[str, Any]:
+    def get_state_snapshot(self) -> dict[str, Any]:
         """Return the current state snapshot dict (for HTTP GET endpoint)."""
         return {
             **self._state,

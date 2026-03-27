@@ -9,7 +9,6 @@ then export for analysis.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from .types import Bundle
 
@@ -20,7 +19,7 @@ _SEAL_MARKER = "SEALED"
 
 def seal_bundle(
     bundle: Bundle,
-    blackbox_dir: Optional[Path] = None,
+    blackbox_dir: Path | None = None,
 ) -> Bundle:
     """Mark a bundle (and the blackbox dir) as sealed.
 
@@ -45,7 +44,7 @@ def seal_bundle(
     return bundle
 
 
-def is_sealed(blackbox_dir: Optional[Path] = None) -> bool:
+def is_sealed(blackbox_dir: Path | None = None) -> bool:
     """Return True if the blackbox directory is currently sealed."""
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir
@@ -54,7 +53,7 @@ def is_sealed(blackbox_dir: Optional[Path] = None) -> bool:
     return (blackbox_dir / _SEAL_MARKER).exists()
 
 
-def unseal(blackbox_dir: Optional[Path] = None) -> bool:
+def unseal(blackbox_dir: Path | None = None) -> bool:
     """Remove the ``SEALED`` marker, allowing recording to resume.
 
     Returns True if the marker was present and removed.

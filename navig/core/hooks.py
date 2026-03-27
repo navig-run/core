@@ -29,14 +29,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Set, TypeVar, Union
+from typing import Any, TypeVar
 
 logger = logging.getLogger("navig.hooks")
 
 # Type definitions
-HookHandler = Callable[["HookEvent"], Union[None, Coroutine[Any, Any, None]]]
+HookHandler = Callable[["HookEvent"], None | Coroutine[Any, Any, None]]
 T = TypeVar("T")
 
 
@@ -109,11 +110,11 @@ class HookEvent:
 
     type: str
     action: str
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    messages: List[str] = field(default_factory=list)
+    messages: list[str] = field(default_factory=list)
     cancel: bool = False
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
 
     @property
     def event_key(self) -> str:
@@ -141,8 +142,8 @@ class HookRegistry:
     """
 
     def __init__(self):
-        self._handlers: Dict[str, List[tuple[int, HookHandler]]] = {}
-        self._disabled_hooks: Set[str] = set()
+        self._handlers: dict[str, list[tuple[int, HookHandler]]] = {}
+        self._disabled_hooks: set[str] = set()
 
     def register(
         self, event_key: str, handler: HookHandler, priority: int = 100
@@ -192,7 +193,7 @@ class HookRegistry:
             logger.debug(f"Unregistered hook: {event_key}")
         return removed
 
-    def clear(self, event_key: Optional[str] = None) -> None:
+    def clear(self, event_key: str | None = None) -> None:
         """
         Clear registered hooks.
 
@@ -215,17 +216,17 @@ class HookRegistry:
         """Re-enable hooks for an event key."""
         self._disabled_hooks.discard(event_key)
 
-    def get_handlers(self, event_key: str) -> List[HookHandler]:
+    def get_handlers(self, event_key: str) -> list[HookHandler]:
         """Get all handlers for an event key (in priority order)."""
         if event_key in self._disabled_hooks:
             return []
         return [h for _, h in self._handlers.get(event_key, [])]
 
-    def get_event_keys(self) -> List[str]:
+    def get_event_keys(self) -> list[str]:
         """Get all registered event keys."""
         return list(self._handlers.keys())
 
-    def handler_count(self, event_key: Optional[str] = None) -> int:
+    def handler_count(self, event_key: str | None = None) -> int:
         """Get count of registered handlers."""
         if event_key:
             return len(self._handlers.get(event_key, []))
@@ -242,8 +243,8 @@ _registry = HookRegistry()
 
 
 def register_hook(
-    event_key: str, handler: Optional[HookHandler] = None, priority: int = 100
-) -> Union[None, Callable[[HookHandler], HookHandler]]:
+    event_key: str, handler: HookHandler | None = None, priority: int = 100
+) -> None | Callable[[HookHandler], HookHandler]:
     """
     Register a hook handler for an event.
 
@@ -293,7 +294,7 @@ def unregister_hook(event_key: str, handler: HookHandler) -> bool:
     return _registry.unregister(event_key, handler)
 
 
-def clear_hooks(event_key: Optional[str] = None) -> None:
+def clear_hooks(event_key: str | None = None) -> None:
     """
     Clear registered hooks.
 
@@ -304,7 +305,7 @@ def clear_hooks(event_key: Optional[str] = None) -> None:
     _registry.clear(event_key)
 
 
-def get_registered_hooks() -> List[str]:
+def get_registered_hooks() -> list[str]:
     """Get all registered event keys."""
     return _registry.get_event_keys()
 
@@ -312,7 +313,7 @@ def get_registered_hooks() -> List[str]:
 async def trigger_hook(
     event_type: str,
     action: str = "",
-    context: Optional[Dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> HookEvent:
     """
@@ -360,7 +361,7 @@ async def trigger_hook(
 def trigger_hook_sync(
     event_type: str,
     action: str = "",
-    context: Optional[Dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> HookEvent:
     """
@@ -397,7 +398,7 @@ def trigger_hook_sync(
 def create_hook_event(
     event_type: str,
     action: str,
-    context: Optional[Dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> HookEvent:
     """
@@ -413,7 +414,7 @@ def create_hook_event(
 # =============================================================================
 
 
-def before_command(command_name: Optional[str] = None, priority: int = 100):
+def before_command(command_name: str | None = None, priority: int = 100):
     """
     Decorator to register a before-command hook.
 
@@ -433,7 +434,7 @@ def before_command(command_name: Optional[str] = None, priority: int = 100):
     return register_hook(event_key, priority=priority)
 
 
-def after_command(command_name: Optional[str] = None, priority: int = 100):
+def after_command(command_name: str | None = None, priority: int = 100):
     """Decorator to register an after-command hook."""
     event_key = (
         f"command:after_{command_name}" if command_name else "command:after_execute"
@@ -441,7 +442,7 @@ def after_command(command_name: Optional[str] = None, priority: int = 100):
     return register_hook(event_key, priority=priority)
 
 
-def on_error(event_type: Optional[str] = None, priority: int = 100):
+def on_error(event_type: str | None = None, priority: int = 100):
     """
     Decorator to register an error hook.
 
@@ -464,7 +465,7 @@ def on_error(event_type: Optional[str] = None, priority: int = 100):
 # =============================================================================
 
 
-def hook_stats() -> Dict[str, Any]:
+def hook_stats() -> dict[str, Any]:
     """Get statistics about registered hooks."""
     event_keys = _registry.get_event_keys()
     return {
@@ -474,6 +475,6 @@ def hook_stats() -> Dict[str, Any]:
     }
 
 
-def list_hook_types() -> Dict[str, str]:
+def list_hook_types() -> dict[str, str]:
     """Get all predefined hook event types and their descriptions."""
     return HOOK_EVENT_TYPES.copy()

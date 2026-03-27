@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from aiohttp import web
 
@@ -27,7 +27,7 @@ logger = logging.getLogger("navig.gateway.middleware")
 def make_rate_limit_middleware(
     window: int = 60,
     max_failures: int = 5,
-) -> Tuple[Any, Dict[str, List]]:
+) -> tuple[Any, dict[str, list]]:
     """
     Return ``(middleware, auth_state)`` where:
 
@@ -39,7 +39,7 @@ def make_rate_limit_middleware(
     The middleware blocks any IP that has accumulated *max_failures* or more
     HTTP-401 responses within the rolling *window* seconds.
     """
-    auth_state: Dict[str, List] = defaultdict(list)
+    auth_state: dict[str, list] = defaultdict(list)
 
     @web.middleware
     async def rate_limit(request: web.Request, handler: Any) -> web.Response:

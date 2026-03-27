@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # HTTP library (requests for sync, aiohttp for async)
 try:
@@ -67,8 +67,8 @@ class CacheEntry:
 
 
 # Simple in-memory cache
-_fetch_cache: Dict[str, CacheEntry] = {}
-_search_cache: Dict[str, CacheEntry] = {}
+_fetch_cache: dict[str, CacheEntry] = {}
+_search_cache: dict[str, CacheEntry] = {}
 
 
 def _cache_key(url_or_query: str, **params) -> str:
@@ -77,7 +77,7 @@ def _cache_key(url_or_query: str, **params) -> str:
     return hashlib.md5(key_data.encode()).hexdigest()
 
 
-def _get_cached(cache: Dict[str, CacheEntry], key: str) -> Optional[Any]:
+def _get_cached(cache: dict[str, CacheEntry], key: str) -> Any | None:
     """Get cached data if not expired."""
     entry = cache.get(key)
     if entry and not entry.is_expired():
@@ -88,7 +88,7 @@ def _get_cached(cache: Dict[str, CacheEntry], key: str) -> Optional[Any]:
 
 
 def _set_cached(
-    cache: Dict[str, CacheEntry], key: str, data: Any, ttl_minutes: int = 15
+    cache: dict[str, CacheEntry], key: str, data: Any, ttl_minutes: int = 15
 ):
     """Set cached data with TTL."""
     cache[key] = CacheEntry(
@@ -124,7 +124,7 @@ def _normalize_whitespace(text: str) -> str:
     return text.strip()
 
 
-def html_to_markdown(html_content: str) -> Dict[str, Optional[str]]:
+def html_to_markdown(html_content: str) -> dict[str, str | None]:
     """Convert HTML to markdown-like text.
 
     Args:
@@ -224,7 +224,7 @@ def markdown_to_text(markdown: str) -> str:
     return _normalize_whitespace(text)
 
 
-def truncate_text(text: str, max_chars: int) -> Tuple[str, bool]:
+def truncate_text(text: str, max_chars: int) -> tuple[str, bool]:
     """Truncate text to max_chars, returning (text, was_truncated)."""
     if len(text) <= max_chars:
         return text, False
@@ -242,10 +242,10 @@ class WebFetchResult:
 
     success: bool
     text: str = ""
-    title: Optional[str] = None
-    final_url: Optional[str] = None
-    status_code: Optional[int] = None
-    error: Optional[str] = None
+    title: str | None = None
+    final_url: str | None = None
+    status_code: int | None = None
+    error: str | None = None
     truncated: bool = False
     cached: bool = False
 
@@ -413,7 +413,7 @@ class SearchResult:
     title: str
     url: str
     snippet: str
-    age: Optional[str] = None
+    age: str | None = None
 
 
 @dataclass
@@ -421,10 +421,10 @@ class WebSearchResult:
     """Result from web_search operation."""
 
     success: bool
-    results: List[SearchResult] = field(default_factory=list)
+    results: list[SearchResult] = field(default_factory=list)
     query: str = ""
     provider: str = ""
-    error: Optional[str] = None
+    error: str | None = None
     cached: bool = False
 
 
@@ -578,7 +578,7 @@ def web_search(
     query: str,
     count: int = 5,
     provider: str = "auto",
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     use_cache: bool = True,
     cache_ttl_minutes: int = DEFAULT_CACHE_TTL_MINUTES,
@@ -667,9 +667,9 @@ def web_search(
 
 def search_docs(
     query: str,
-    docs_path: Optional[Path] = None,
+    docs_path: Path | None = None,
     max_results: int = 5,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Search NAVIG's local documentation.
 
     Args:
@@ -758,12 +758,12 @@ def search_docs(
 URL_PATTERN = re.compile(r'https?://[^\s<>"\')\]]+', re.IGNORECASE)
 
 
-def extract_urls(text: str) -> List[str]:
+def extract_urls(text: str) -> list[str]:
     """Extract URLs from text."""
     return URL_PATTERN.findall(text)
 
 
-def is_url_investigation_request(message: str) -> Tuple[bool, Optional[str]]:
+def is_url_investigation_request(message: str) -> tuple[bool, str | None]:
     """Check if message is asking to investigate a URL.
 
     Args:
@@ -822,7 +822,7 @@ def is_url_investigation_request(message: str) -> Tuple[bool, Optional[str]]:
 # =============================================================================
 
 
-def get_web_config(config_manager=None) -> Dict[str, Any]:
+def get_web_config(config_manager=None) -> dict[str, Any]:
     """Get web tools configuration.
 
     Returns config dict with:

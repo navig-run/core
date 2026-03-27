@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import typer
 
@@ -47,11 +47,11 @@ def _get_user_actions_file() -> Path:
     return actions_dir / "user.yaml"
 
 
-def _load_all_actions() -> list[Dict[str, Any]]:
+def _load_all_actions() -> list[dict[str, Any]]:
     """Aggregate actions from all sources; deduplicated by name (first wins)."""
     import yaml
 
-    results: list[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     def _absorb_file(yaml_file: Path) -> None:

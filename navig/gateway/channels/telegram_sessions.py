@@ -12,7 +12,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,8 @@ class SessionMessage:
     role: str  # 'user' or 'assistant'
     content: str
     timestamp: str
-    message_id: Optional[int] = None
-    reply_to: Optional[int] = None
+    message_id: int | None = None
+    reply_to: int | None = None
 
 
 @dataclass
@@ -46,19 +46,19 @@ class TelegramSession:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     last_active: str = field(default_factory=lambda: datetime.now().isoformat())
     message_count: int = 0
-    messages: List[SessionMessage] = field(default_factory=list)
+    messages: list[SessionMessage] = field(default_factory=list)
     context_summary: str = ""
-    reply_chain: List[int] = field(default_factory=list)
+    reply_chain: list[int] = field(default_factory=list)
     autoheal_enabled: bool = False
     autoheal_hive_enabled: bool = False
-    heal_history: List[dict] = field(default_factory=list)
+    heal_history: list[dict] = field(default_factory=list)
 
     def add_message(
         self,
         role: str,
         content: str,
-        message_id: Optional[int] = None,
-        reply_to: Optional[int] = None,
+        message_id: int | None = None,
+        reply_to: int | None = None,
     ):
         """Add a message to session history."""
         self.messages.append(
@@ -79,7 +79,7 @@ class TelegramSession:
             # Keep only last 50 message IDs
             self.reply_chain = self.reply_chain[-50:]
 
-    def get_context_messages(self, limit: int = 20) -> List[Dict[str, str]]:
+    def get_context_messages(self, limit: int = 20) -> list[dict[str, str]]:
         """Get recent messages for AI context."""
         recent = self.messages[-limit:]
         return [{"role": m.role, "content": m.content} for m in recent]
@@ -88,7 +88,7 @@ class TelegramSession:
         """Check if a message ID is part of this session's reply chain."""
         return message_id in self.reply_chain
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "session_key": self.session_key,
@@ -108,7 +108,7 @@ class TelegramSession:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TelegramSession":
+    def from_dict(cls, data: dict[str, Any]) -> "TelegramSession":
         """Create session from dictionary."""
         messages = [SessionMessage(**m) for m in data.get("messages", [])]
         return cls(
@@ -142,7 +142,7 @@ class SessionManager:
 
     def __init__(
         self,
-        storage_dir: Optional[Path] = None,
+        storage_dir: Path | None = None,
         max_messages: int = 100,
         session_timeout_days: int = 7,
     ):
@@ -152,7 +152,7 @@ class SessionManager:
         self.max_messages = max_messages
         self.session_timeout_days = session_timeout_days
 
-        self._sessions: Dict[str, TelegramSession] = {}
+        self._sessions: dict[str, TelegramSession] = {}
         self._load_sessions()
 
     def _get_session_key(self, chat_id: int, user_id: int, is_group: bool) -> str:
@@ -172,7 +172,7 @@ class SessionManager:
         """Load all sessions from disk."""
         for session_file in self.storage_dir.glob("*.json"):
             try:
-                with open(session_file, "r", encoding="utf-8") as f:
+                with open(session_file, encoding="utf-8") as f:
                     data = json.load(f)
                 session = TelegramSession.from_dict(data)
                 self._sessions[session.session_key] = session
@@ -212,8 +212,8 @@ class SessionManager:
         chat_id: int,
         user_id: int,
         text: str,
-        message_id: Optional[int] = None,
-        reply_to: Optional[int] = None,
+        message_id: int | None = None,
+        reply_to: int | None = None,
         is_group: bool = False,
         username: str = "",
     ) -> TelegramSession:
@@ -233,7 +233,7 @@ class SessionManager:
         chat_id: int,
         user_id: int,
         text: str,
-        message_id: Optional[int] = None,
+        message_id: int | None = None,
         is_group: bool = False,
     ) -> TelegramSession:
         """Add an assistant response to session."""
@@ -244,7 +244,7 @@ class SessionManager:
 
     def get_session(
         self, chat_id: int, user_id: int, is_group: bool = False
-    ) -> Optional[TelegramSession]:
+    ) -> TelegramSession | None:
         """Get session if it exists."""
         session_key = self._get_session_key(chat_id, user_id, is_group)
         return self._sessions.get(session_key)
@@ -270,7 +270,7 @@ class SessionManager:
         if session_file.exists():
             session_file.unlink()
 
-    def list_sessions(self) -> List[TelegramSession]:
+    def list_sessions(self) -> list[TelegramSession]:
         """List all sessions."""
         return list(self._sessions.values())
 
@@ -310,7 +310,7 @@ class MentionGate:
         self,
         bot_username: str,
         mode: str = "mention",
-        admin_users: Optional[List[int]] = None,
+        admin_users: list[int] | None = None,
     ):
         self.bot_username = bot_username.lower().lstrip("@")
         self.mode = mode
@@ -322,8 +322,8 @@ class MentionGate:
         user_id: int,
         is_group: bool,
         is_reply_to_bot: bool = False,
-        session: Optional[TelegramSession] = None,
-        reply_to_message_id: Optional[int] = None,
+        session: TelegramSession | None = None,
+        reply_to_message_id: int | None = None,
     ) -> bool:
         """
         Determine if the bot should respond to this message.
@@ -379,8 +379,8 @@ class MentionGate:
 # GLOBAL INSTANCES
 # =============================================================================
 
-_session_manager: Optional[SessionManager] = None
-_mention_gate: Optional[MentionGate] = None
+_session_manager: SessionManager | None = None
+_mention_gate: MentionGate | None = None
 
 
 def get_session_manager() -> SessionManager:

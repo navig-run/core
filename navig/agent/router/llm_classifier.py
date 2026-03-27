@@ -49,7 +49,6 @@ Import and call from the routing layer::
 import datetime
 import hashlib
 import re
-from typing import Optional
 
 from loguru import logger
 
@@ -118,7 +117,7 @@ def _evict_oldest() -> None:
     logger.debug("llm_classifier: evicted oldest cache entry key={}", oldest_key[:16])
 
 
-def _read_cache(key: str) -> Optional[RequestTier]:
+def _read_cache(key: str) -> RequestTier | None:
     """Return the cached tier for *key* if it exists and has not expired.
 
     Expired entries are left in place and cleaned up lazily (or evicted by
@@ -165,7 +164,7 @@ def _write_cache(key: str, tier: RequestTier) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_tier(raw: str) -> Optional[RequestTier]:
+def _parse_tier(raw: str) -> RequestTier | None:
     """Extract a ``RequestTier`` literal from a raw LLM response string.
 
     Matching is case-insensitive and uses word-boundary anchors so that

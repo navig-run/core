@@ -17,7 +17,7 @@ import platform
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.agent.component import Component
 from navig.agent.config import EyesConfig
@@ -39,7 +39,7 @@ class SystemMetrics:
     process_count: int = 0
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "cpu_percent": self.cpu_percent,
             "memory_percent": self.memory_percent,
@@ -65,7 +65,7 @@ class Alert:
     threshold: Any = None
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "level": self.level,
             "category": self.category,
@@ -93,24 +93,24 @@ class Eyes(Component):
     def __init__(
         self,
         config: EyesConfig,
-        nervous_system: Optional[NervousSystem] = None,
+        nervous_system: NervousSystem | None = None,
     ):
         super().__init__("eyes", nervous_system)
         self.config = config
 
         # Monitoring tasks
-        self._monitoring_task: Optional[asyncio.Task] = None
-        self._log_watcher_task: Optional[asyncio.Task] = None
-        self._file_watcher_task: Optional[asyncio.Task] = None
+        self._monitoring_task: asyncio.Task | None = None
+        self._log_watcher_task: asyncio.Task | None = None
+        self._file_watcher_task: asyncio.Task | None = None
 
         # State
-        self._last_metrics: Optional[SystemMetrics] = None
-        self._alerts: List[Alert] = []
+        self._last_metrics: SystemMetrics | None = None
+        self._alerts: list[Alert] = []
         self._max_alerts = 100
-        self._watched_files: Dict[str, float] = {}  # path -> last_mtime
+        self._watched_files: dict[str, float] = {}  # path -> last_mtime
 
         # Try to import psutil
-        self._psutil: Optional[Any] = None
+        self._psutil: Any | None = None
         try:
             import psutil
 
@@ -142,7 +142,7 @@ class Eyes(Component):
                 except asyncio.CancelledError:
                     pass  # task cancelled; expected during shutdown
 
-    async def _on_health_check(self) -> Dict[str, Any]:
+    async def _on_health_check(self) -> dict[str, Any]:
         """Health check for eyes."""
         return {
             "last_metrics": (
@@ -275,7 +275,7 @@ class Eyes(Component):
     async def _log_watcher_loop(self) -> None:
         """Watch log files for important entries."""
         # Track file positions
-        positions: Dict[str, int] = {}
+        positions: dict[str, int] = {}
 
         # Patterns to watch for
         error_patterns = ["error", "exception", "failed", "critical", "fatal"]
@@ -290,7 +290,7 @@ class Eyes(Component):
                         continue
 
                     try:
-                        with open(path, "r", errors="ignore") as f:
+                        with open(path, errors="ignore") as f:
                             # Seek to last known position
                             if str(path) in positions:
                                 f.seek(positions[str(path)])
@@ -366,15 +366,15 @@ class Eyes(Component):
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-    def get_metrics(self) -> Optional[SystemMetrics]:
+    def get_metrics(self) -> SystemMetrics | None:
         """Get latest metrics."""
         return self._last_metrics
 
-    def get_alerts(self, limit: int = 10) -> List[Alert]:
+    def get_alerts(self, limit: int = 10) -> list[Alert]:
         """Get recent alerts."""
         return self._alerts[-limit:]
 
-    def get_system_info(self) -> Dict[str, Any]:
+    def get_system_info(self) -> dict[str, Any]:
         """Get static system information."""
         info = {
             "platform": platform.system(),

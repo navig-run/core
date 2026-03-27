@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import shutil
 import sys
-from typing import List
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -17,7 +16,7 @@ name = "core_cli"
 description = "Verify navig CLI is on PATH"
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     return [
         Action(
             id="core_cli.verify",

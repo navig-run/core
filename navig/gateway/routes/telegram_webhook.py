@@ -29,12 +29,12 @@ from navig.debug_logger import get_debug_logger
 logger = get_debug_logger()
 
 
-def register(app: "web.Application", gateway: "NavigGateway") -> None:
+def register(app: web.Application, gateway: NavigGateway) -> None:
     """Register the /telegram/webhook endpoint."""
     app.router.add_post("/telegram/webhook", _webhook_handler(gateway))
 
 
-def _webhook_handler(gw: "NavigGateway"):
+def _webhook_handler(gw: NavigGateway):
     """
     POST /telegram/webhook
 
@@ -44,7 +44,7 @@ def _webhook_handler(gw: "NavigGateway"):
     Returns 200 on success (Telegram requires a fast 200 response).
     """
 
-    async def handler(request: "web.Request") -> "web.Response":
+    async def handler(request: web.Request) -> web.Response:
         # Get the Telegram channel from the gateway
         telegram_channel = None
         try:

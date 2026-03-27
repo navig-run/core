@@ -18,7 +18,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from navig.gateway.channels.telegram import TelegramChannel
@@ -50,14 +50,14 @@ class StatusRenderer:
 
     def __init__(
         self,
-        channel: "TelegramChannel",
+        channel: TelegramChannel,
         chat_id: int,
         message_id: int,
     ) -> None:
         self._channel = channel
         self._chat_id = chat_id
         self._message_id = message_id
-        self._steps: List[_Step] = []
+        self._steps: list[_Step] = []
         self._current_progress: int = 0
         self._last_edit_ts: float = 0.0
         self._start_ts: float = time.monotonic()
@@ -88,11 +88,11 @@ class StatusRenderer:
 
     async def finalize(
         self,
-        conclusion: Dict[str, Any],
+        conclusion: dict[str, Any],
         title: str = "RESULT",
         n_tools: int = 0,
         model_name: str = "",
-        keyboard: Optional[List[List[Dict]]] = None,
+        keyboard: list[list[dict]] | None = None,
     ) -> bool:
         """Render the final complete message with the conclusion block."""
         # Mark all steps done
@@ -128,7 +128,7 @@ class StatusRenderer:
         final: bool = False,
         conclusion_block: str = "",
     ) -> str:
-        lines: List[str] = []
+        lines: list[str] = []
 
         if final and conclusion_block:
             lines.append(f"{_FILLED * _BAR_WIDTH} ✅ Complete\n")
@@ -164,9 +164,7 @@ class StatusRenderer:
             await asyncio.sleep(_MIN_EDIT_INTERVAL - gap)
         await self._edit(self._build_frame())
 
-    async def _edit(
-        self, text: str, keyboard: Optional[List[List[Dict]]] = None
-    ) -> bool:
+    async def _edit(self, text: str, keyboard: list[list[dict]] | None = None) -> bool:
         try:
             res = await self._channel.edit_message(
                 self._chat_id,
@@ -189,7 +187,7 @@ class StatusRenderer:
 
 
 def _format_conclusion(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     title: str,
     footer: str,
 ) -> str:

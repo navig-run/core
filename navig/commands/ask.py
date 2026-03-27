@@ -12,7 +12,6 @@ Usage:
 """
 
 import asyncio
-from typing import Optional
 
 import typer
 
@@ -102,8 +101,8 @@ async def _chat(messages: list, model: str = "") -> str:
 @copilot_app.command("ask")
 def copilot_ask(
     question: str = typer.Argument(..., help="Natural language question"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
-    system: Optional[str] = typer.Option(
+    model: str | None = typer.Option(None, "--model", "-m", help="Model override"),
+    system: str | None = typer.Option(
         None, "--system", "-s", help="Custom system prompt"
     ),
 ):
@@ -131,7 +130,7 @@ def copilot_explain(
     lines: int = typer.Option(
         50, "--lines", "-n", help="Number of lines (for log files)"
     ),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
+    model: str | None = typer.Option(None, "--model", "-m", help="Model override"),
     remote: bool = typer.Option(
         False, "--remote", "-r", help="Read file from remote host via NAVIG"
     ),
@@ -172,7 +171,7 @@ def copilot_explain(
         elif os.path.isfile(target):
             # Read local file
             try:
-                with open(target, "r", errors="replace") as f:
+                with open(target, errors="replace") as f:
                     file_lines = f.readlines()
                 tail = file_lines[-lines:] if len(file_lines) > lines else file_lines
                 content = (
@@ -206,10 +205,10 @@ def copilot_suggest(
         "-t",
         help="Focus area: security, performance, reliability, general",
     ),
-    context: Optional[str] = typer.Option(
+    context: str | None = typer.Option(
         None, "--context", "-c", help="Additional context or file path"
     ),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
+    model: str | None = typer.Option(None, "--model", "-m", help="Model override"),
 ):
     """
     Get optimization suggestions from Copilot.
@@ -244,10 +243,10 @@ def copilot_suggest(
 @copilot_app.command("review")
 def copilot_review(
     file_path: str = typer.Argument(..., help="File path to review"),
-    focus: Optional[str] = typer.Option(
+    focus: str | None = typer.Option(
         None, "--focus", "-f", help="Focus area: bugs, security, perf, style"
     ),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
+    model: str | None = typer.Option(None, "--model", "-m", help="Model override"),
 ):
     """
     Code review a file using Copilot.
@@ -263,7 +262,7 @@ def copilot_review(
         raise typer.Exit(1)
 
     try:
-        with open(file_path, "r", errors="replace") as f:
+        with open(file_path, errors="replace") as f:
             code = f.read()
     except Exception as e:
         ch.error(f"Cannot read file: {e}")

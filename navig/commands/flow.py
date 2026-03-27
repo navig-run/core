@@ -4,7 +4,7 @@ NAVIG Flow CLI Commands
 Commands for managing and executing reusable command flows (workflows).
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import typer
 
@@ -45,7 +45,7 @@ def flow_run(
         False, "--yes", "-y", help="Skip all confirmation prompts"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    var: Optional[List[str]] = typer.Option(
+    var: list[str] | None = typer.Option(
         None, "--var", "-V", help="Variable override (name=value)"
     ),
 ):
@@ -102,36 +102,36 @@ def flow_remove(
 # Each wrapper calls the underlying Typer command with appropriate defaults.
 
 
-def list_flows_cmd(ctx: Dict[str, Any]) -> None:
+def list_flows_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for flow list command (interactive menu)."""
     flow_list()
 
 
-def show_flow_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def show_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for flow show command (interactive menu)."""
     flow_show(name)
 
 
-def run_flow_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def run_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for flow run command (interactive menu)."""
     flow_run(name, dry_run=False, yes=False, verbose=True, var=None)
 
 
-def test_flow_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def test_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for flow test command (interactive menu)."""
     flow_test(name)
 
 
-def add_flow_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def add_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for flow add command (interactive menu)."""
     flow_add(name, global_scope=False)
 
 
-def edit_flow_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def edit_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for flow edit command (interactive menu)."""
     flow_edit(name)
 
 
-def remove_flow_cmd(name: str, ctx: Dict[str, Any]) -> None:
+def remove_flow_cmd(name: str, ctx: dict[str, Any]) -> None:
     """Wrapper for flow remove command (interactive menu)."""
     flow_remove(name, force=True)  # Force=True since menu already confirms

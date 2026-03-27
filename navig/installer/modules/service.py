@@ -11,7 +11,6 @@ Included in: system_standard, system_deep profiles.
 from __future__ import annotations
 
 import sys
-from typing import List
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -55,7 +54,7 @@ def _service_installed() -> bool:
 # ── module API ────────────────────────────────────────────────────────────────
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     if not _is_supported():
         return []
     if _service_installed():

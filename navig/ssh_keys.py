@@ -6,7 +6,7 @@ Used for onboarding/wizards and to speed up repeated runs via ~/.navig/cache/ssh
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from navig.cache_store import read_json_cache, write_json_cache
 
@@ -31,7 +31,7 @@ def _looks_like_private_key(path: Path) -> bool:
 
 def discover_local_ssh_keys(
     *, no_cache: bool = False, ttl_seconds: int = 300
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Discover local SSH private keys.
 
     Returns:
@@ -43,7 +43,7 @@ def discover_local_ssh_keys(
         return cache.data
 
     ssh_dir = Path.home() / ".ssh"
-    keys: List[Dict[str, str]] = []
+    keys: list[dict[str, str]] = []
 
     # Prefer well-known key names first.
     for name in _DEFAULT_KEY_NAMES:

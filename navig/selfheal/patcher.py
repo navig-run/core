@@ -19,7 +19,6 @@ from __future__ import annotations
 import difflib
 import re
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 
@@ -107,7 +106,7 @@ def _apply_finding_to_lines(
     return patched
 
 
-def _extract_new_dep(finding: ScanFinding) -> Optional[str]:
+def _extract_new_dep(finding: ScanFinding) -> str | None:
     """Extract a new pip dependency name from *finding.suggested_fix*, or None.
 
     Args:

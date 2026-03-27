@@ -32,7 +32,7 @@ import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ─────────────────────────── schema ──────────────────────────────────────────
 
@@ -90,7 +90,7 @@ END;
 
 
 class Fact:
-    def __init__(self, row: Dict[str, Any]) -> None:
+    def __init__(self, row: dict[str, Any]) -> None:
         self.id: str = row["id"]
         self.subject: str = row["subject"]
         self.predicate: str = row["predicate"]
@@ -99,7 +99,7 @@ class Fact:
         self.source: str = row.get("source") or "unknown"
         self.created_at: datetime = datetime.fromisoformat(row["created_at"])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "subject": self.subject,
@@ -115,21 +115,21 @@ class Fact:
 
 
 class Routine:
-    def __init__(self, row: Dict[str, Any]) -> None:
+    def __init__(self, row: dict[str, Any]) -> None:
         self.id: str = row["id"]
         self.name: str = row["name"]
         self.schedule: str = row["schedule"]
-        self.description: Optional[str] = row.get("description")
-        self.task_spec: Optional[Dict[str, Any]] = (
+        self.description: str | None = row.get("description")
+        self.task_spec: dict[str, Any] | None = (
             json.loads(row["task_spec"]) if row.get("task_spec") else None
         )
-        self.last_run: Optional[datetime] = (
+        self.last_run: datetime | None = (
             datetime.fromisoformat(row["last_run"]) if row.get("last_run") else None
         )
         self.enabled: bool = bool(row.get("enabled", True))
         self.created_at: datetime = datetime.fromisoformat(row["created_at"])
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -200,9 +200,9 @@ class KnowledgeGraph:
     def recall(
         self,
         subject: str,
-        predicate: Optional[str] = None,
+        predicate: str | None = None,
         min_confidence: float = 0.0,
-    ) -> List[Fact]:
+    ) -> list[Fact]:
         """
         Retrieve facts about a subject. Optionally filter by predicate.
         Results ordered by confidence desc.
@@ -219,7 +219,7 @@ class KnowledgeGraph:
             ).fetchall()
         return [Fact(dict(r)) for r in rows]
 
-    def recall_by_object(self, object_: str) -> List[Fact]:
+    def recall_by_object(self, object_: str) -> list[Fact]:
         """Reverse lookup: find all facts with a given object value."""
         rows = self._con.execute(
             "SELECT * FROM facts WHERE object LIKE ? ORDER BY confidence DESC",
@@ -227,7 +227,7 @@ class KnowledgeGraph:
         ).fetchall()
         return [Fact(dict(r)) for r in rows]
 
-    def search_facts(self, query: str, limit: int = 20) -> List[Fact]:
+    def search_facts(self, query: str, limit: int = 20) -> list[Fact]:
         """Full-text search across subject, predicate, object."""
         if not query.strip():
             return []
@@ -253,7 +253,7 @@ class KnowledgeGraph:
         self._con.commit()
         return cur.rowcount > 0
 
-    def get_preference(self, domain: str) -> Optional[str]:
+    def get_preference(self, domain: str) -> str | None:
         """
         Get the user's preference for a given domain.
         E.g. get_preference("theme") → "dark"
@@ -268,8 +268,8 @@ class KnowledgeGraph:
         name: str,
         *,
         schedule: str,
-        description: Optional[str] = None,
-        task_spec: Optional[Dict[str, Any]] = None,
+        description: str | None = None,
+        task_spec: dict[str, Any] | None = None,
     ) -> str:
         """
         Register a named routine.
@@ -293,7 +293,7 @@ class KnowledgeGraph:
         self._con.commit()
         return routine_id
 
-    def get_routines(self, enabled_only: bool = True) -> List[Routine]:
+    def get_routines(self, enabled_only: bool = True) -> list[Routine]:
         """List all registered routines."""
         if enabled_only:
             rows = self._con.execute(
@@ -303,7 +303,7 @@ class KnowledgeGraph:
             rows = self._con.execute("SELECT * FROM routines ORDER BY name").fetchall()
         return [Routine(dict(r)) for r in rows]
 
-    def get_routine(self, routine_id: str) -> Optional[Routine]:
+    def get_routine(self, routine_id: str) -> Routine | None:
         row = self._con.execute(
             "SELECT * FROM routines WHERE id=?", (routine_id,)
         ).fetchone()
@@ -335,7 +335,7 @@ class KnowledgeGraph:
         task_description: str,
         result_summary: str,
         llm_fn=None,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         After a successful task, optionally use an LLM to extract habits.
 
@@ -390,7 +390,7 @@ class KnowledgeGraph:
 
 # ─────────────────────────── singleton ───────────────────────────────────────
 
-_kg_instance: Optional[KnowledgeGraph] = None
+_kg_instance: KnowledgeGraph | None = None
 
 
 def get_knowledge_graph() -> KnowledgeGraph:

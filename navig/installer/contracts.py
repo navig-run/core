@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 class ModuleState(Enum):
@@ -31,9 +31,9 @@ class Action:
     id: str
     description: str
     module: str
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
     reversible: bool = True
-    undo_data: Dict[str, Any] = field(default_factory=dict)
+    undo_data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -43,8 +43,8 @@ class Result:
     action_id: str
     state: ModuleState
     message: str = ""
-    error: Optional[str] = None
-    undo_data: Dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    undo_data: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -59,7 +59,7 @@ class InstallerContext:
     dry_run: bool = False
     quiet: bool = False
     config_dir: Path = field(default_factory=lambda: Path.home() / ".navig")
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -69,7 +69,7 @@ class InstallerModule(Protocol):
     name: str
     description: str
 
-    def plan(self, ctx: InstallerContext) -> List[Action]:  # pragma: no cover
+    def plan(self, ctx: InstallerContext) -> list[Action]:  # pragma: no cover
         ...
 
     def apply(

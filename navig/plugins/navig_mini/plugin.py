@@ -23,7 +23,6 @@ import json
 import os
 import subprocess
 import time
-from typing import List, Optional, Tuple
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -70,7 +69,7 @@ def _cfg() -> dict:
 
 
 # ── HTTP helpers ────────────────────────────────────────────────────────────────
-def _get(url: str, path: str, timeout: int = 5) -> Optional[dict]:
+def _get(url: str, path: str, timeout: int = 5) -> dict | None:
     try:
         resp = urlopen(f"{url.rstrip('/')}{path}", timeout=timeout)
         return json.loads(resp.read())
@@ -95,7 +94,7 @@ def _post(url: str, path: str, secret: str, payload: dict, timeout: int = 35) ->
         raise typer.Exit(1) from exc
 
 
-def _ping(url: str, timeout: int = 3) -> Optional[dict]:
+def _ping(url: str, timeout: int = 3) -> dict | None:
     """Non-raising ping — returns None on failure."""
     try:
         return json.loads(urlopen(f"{url.rstrip('/')}/ping", timeout=timeout).read())
@@ -114,7 +113,7 @@ app = typer.Typer(
 
 @app.command("status")
 def cmd_status(
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Override agent URL"),
+    url: str | None = typer.Option(None, "--url", "-u", help="Override agent URL"),
     json_out: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ):
     """[bold]Show health and system stats[/bold] of the remote agent."""
@@ -153,8 +152,8 @@ def cmd_run(
     cmd: str = typer.Argument(
         ..., help="Command to execute (must be in agent allowlist)"
     ),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
-    secret: Optional[str] = typer.Option(None, "--secret", "-s"),
+    url: str | None = typer.Option(None, "--url", "-u"),
+    secret: str | None = typer.Option(None, "--secret", "-s"),
     timeout: int = typer.Option(30, "--timeout", "-t", help="Timeout in seconds"),
     json_out: bool = typer.Option(False, "--json"),
 ):
@@ -185,14 +184,14 @@ def cmd_run(
 
 @app.command("deploy")
 def cmd_deploy(
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="NAVIG host name (default: mini.ssh_host)"
     ),
     remote_dir: str = typer.Option(
         "~/navig-mini", "--dir", "-d", help="Remote install directory"
     ),
     restart: bool = typer.Option(True, help="Restart agent after deploy"),
-    local_dir: Optional[str] = typer.Option(
+    local_dir: str | None = typer.Option(
         None, "--local", "-l", help="Local navig-mini/ path (auto-detected if omitted)"
     ),
 ):
@@ -275,7 +274,7 @@ def cmd_deploy(
 def cmd_logs(
     service: str = typer.Argument("agent", help="Log source: agent | monitor"),
     lines: int = typer.Option(50, "-n", "--lines"),
-    host: Optional[str] = typer.Option(None, "--host", "-H"),
+    host: str | None = typer.Option(None, "--host", "-H"),
     remote_dir: str = typer.Option("~/navig-mini", "--dir", "-d"),
 ):
     """[bold]Tail agent or monitor logs[/bold] from the remote device via SSH."""
@@ -304,8 +303,8 @@ def cmd_restart(
     remote_dir: str = typer.Option(
         "~/navig-mini", "--dir", "-d", help="Remote install directory"
     ),
-    host: Optional[str] = typer.Option(None, "--host", "-H"),
-    url: Optional[str] = typer.Option(None, "--url", "-u"),
+    host: str | None = typer.Option(None, "--host", "-H"),
+    url: str | None = typer.Option(None, "--url", "-u"),
 ):
     """[bold]Restart the agent daemon[/bold] (or a watched service) remotely."""
     cfg = _cfg()
@@ -409,9 +408,9 @@ def cmd_list(
 
 
 # ── Plugin dependency check (called by PluginManager) ─────────────────────────
-def check_dependencies() -> Tuple[bool, List[str]]:
+def check_dependencies() -> tuple[bool, list[str]]:
     """All imports are stdlib — no missing deps possible."""
-    missing: List[str] = []
+    missing: list[str] = []
     for mod in ("typer", "rich"):
         try:
             __import__(mod)

@@ -238,7 +238,7 @@ def hosts_add(ip: str, hostname: str, options: dict):
         return
 
     try:
-        with open(hosts_path, "a") as f:
+        with open(hosts_path, "a", encoding="utf-8") as f:
             f.write(f"\n{new_entry}")
         ch.success(f"Added hosts entry: {new_entry}")
     except PermissionError:

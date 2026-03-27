@@ -8,7 +8,7 @@ import os
 import platform
 import shlex
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -48,7 +48,7 @@ def _is_ppk_format(key_path: str) -> bool:
         if not expanded_path.exists():
             return False
 
-        with open(expanded_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(expanded_path, encoding="utf-8", errors="ignore") as f:
             first_line = f.readline().strip()
             return first_line.startswith("PuTTY-User-Key-File")
     except Exception:
@@ -92,7 +92,7 @@ def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
 
     # Check for OpenSSH format (starts with -----BEGIN)
     try:
-        with open(expanded_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(expanded_path, encoding="utf-8", errors="ignore") as f:
             content = f.read(100)
             if "-----BEGIN" in content:
                 return True, "Valid OpenSSH key format"
@@ -102,7 +102,7 @@ def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
         return False, f"Could not read key file: {e}"
 
 
-def list_hosts(options: Dict[str, Any]):
+def list_hosts(options: dict[str, Any]):
     """List all configured hosts."""
     hosts = config_manager.list_hosts()
 
@@ -257,7 +257,7 @@ def list_hosts(options: Dict[str, Any]):
         ch.print_table(table)
 
 
-def use_host(name: str, options: Dict[str, Any]):
+def use_host(name: str, options: dict[str, Any]):
     """Switch active host context (global).
 
     Sets the global active host in ~/.navig/cache/active_host.txt.
@@ -288,7 +288,7 @@ def use_host(name: str, options: Dict[str, Any]):
                 ch.dim(f"   Local active_host: {local_host} (takes precedence here)")
 
 
-def show_current_host(options: Dict[str, Any]):
+def show_current_host(options: dict[str, Any]):
     """Show currently active host with source information."""
     active, source = config_manager.get_active_host(return_source=True)
 
@@ -318,7 +318,7 @@ def show_current_host(options: Dict[str, Any]):
         ch.error("Error loading host config", str(e))
 
 
-def set_default_host(name: str, options: Dict[str, Any]):
+def set_default_host(name: str, options: dict[str, Any]):
     """Set default host."""
     if not config_manager.host_exists(name):
         ch.error(f"Host '{name}' not found")
@@ -330,7 +330,7 @@ def set_default_host(name: str, options: Dict[str, Any]):
         ch.success(f"Default host set to: {name}")
 
 
-def add_host(name: str, options: Dict[str, Any]):
+def add_host(name: str, options: dict[str, Any]):
     """Add new host configuration (interactive wizard with auto-discovery)."""
     if config_manager.host_exists(name):
         ch.error(f"Host '{name}' already exists.")
@@ -582,7 +582,7 @@ def add_host(name: str, options: Dict[str, Any]):
         ch.success(f"✓ Active host set to: {name}")
 
 
-def remove_host(name: str, options: Dict[str, Any]):
+def remove_host(name: str, options: dict[str, Any]):
     """Remove host configuration."""
     quiet = options.get("quiet", False)
 
@@ -606,7 +606,7 @@ def remove_host(name: str, options: Dict[str, Any]):
         ch.success(f"Host '{name}' removed.")
 
 
-def inspect_host(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def inspect_host(options: dict[str, Any]) -> dict[str, Any] | None:
     """
     Auto-discover host details and update configuration.
 
@@ -754,7 +754,7 @@ def inspect_host(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def edit_host(options: Dict[str, Any]) -> None:
+def edit_host(options: dict[str, Any]) -> None:
     """Open host configuration in default editor (YAML file)."""
     import os
     import subprocess
@@ -817,7 +817,7 @@ def edit_host(options: Dict[str, Any]) -> None:
         ch.error("Unexpected error", str(e))
 
 
-def clone_host(options: Dict[str, Any]) -> None:
+def clone_host(options: dict[str, Any]) -> None:
     """Clone an existing host configuration."""
     source_name = options.get("source_name")
     new_name = options.get("new_name")
@@ -888,7 +888,7 @@ def clone_host(options: Dict[str, Any]) -> None:
         ch.error("Error saving cloned host configuration", str(e))
 
 
-def test_host(options: Dict[str, Any]) -> None:
+def test_host(options: dict[str, Any]) -> None:
     """Test SSH connection to host.
 
     Raises:
@@ -1053,7 +1053,7 @@ def test_host(options: Dict[str, Any]) -> None:
         raise RuntimeError(f"Connection test failed: {str(e)}") from e
 
 
-def info_host(options: Dict[str, Any]) -> None:
+def info_host(options: dict[str, Any]) -> None:
     """Show detailed host information (IP, port, user, apps count, etc.)."""
     from rich.console import Console
 
@@ -1181,7 +1181,7 @@ def info_host(options: Dict[str, Any]) -> None:
         ch.dim(f"Configuration: {host_file}")
 
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import typer
 
@@ -1270,7 +1270,7 @@ def host_default(
 def host_add(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Host name"),
-    from_host: Optional[str] = typer.Option(
+    from_host: str | None = typer.Option(
         None, "--from", help="Clone from existing host"
     ),
 ):
@@ -1352,7 +1352,7 @@ def host_inspect(ctx: typer.Context):
 @host_app.command("test")
 def host_test(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(
+    name: str | None = typer.Argument(
         None, help="Host name to test (uses active host if not specified)"
     ),
 ):
@@ -1367,9 +1367,7 @@ def host_test(
 @host_app.command("show")
 def host_show(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(
-        None, help="Host name (uses active if omitted)"
-    ),
+    name: str | None = typer.Argument(None, help="Host name (uses active if omitted)"),
     current: bool = typer.Option(False, "--current", help="Show currently active host"),
     inspect: bool = typer.Option(False, "--inspect", help="Auto-discover host details"),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
@@ -1396,7 +1394,7 @@ def host_show(
 @host_app.command("info", hidden=True)
 def host_info(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(
+    name: str | None = typer.Argument(
         None, help="Host name to show info for (uses active host if not specified)"
     ),
 ):
@@ -1547,17 +1545,17 @@ def host_security_edit(
     firewall: bool = typer.Option(
         False, "--firewall", "-f", help="Edit firewall rules"
     ),
-    port: Optional[int] = typer.Option(None, "--port", "-p", help="Port number"),
+    port: int | None = typer.Option(None, "--port", "-p", help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", help="Protocol (tcp/udp)"),
     allow_from: str = typer.Option("any", "--from", help="IP address or subnet"),
     add: bool = typer.Option(False, "--add", help="Add a rule"),
     remove: bool = typer.Option(False, "--remove", "-r", help="Remove a rule"),
     enable: bool = typer.Option(False, "--enable", help="Enable firewall"),
     disable: bool = typer.Option(False, "--disable", help="Disable firewall"),
-    unban: Optional[str] = typer.Option(
+    unban: str | None = typer.Option(
         None, "--unban", help="Unban IP address from fail2ban"
     ),
-    jail: Optional[str] = typer.Option(
+    jail: str | None = typer.Option(
         None, "--jail", "-j", help="Jail name for fail2ban"
     ),
 ):

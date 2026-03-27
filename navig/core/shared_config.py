@@ -16,7 +16,7 @@ Usage:
 import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import yaml
 
@@ -64,8 +64,8 @@ class ConfigSingleton:
                 self.plugins_dir = self.global_config_dir / "plugins"
 
                 # Data storage
-                self._global_data: Dict[str, Any] = {}
-                self._project_data: Dict[str, Any] = {}
+                self._global_data: dict[str, Any] = {}
+                self._project_data: dict[str, Any] = {}
 
                 # Load configuration
                 self._load()
@@ -76,7 +76,7 @@ class ConfigSingleton:
         # Load global config
         if self.global_config_path.exists():
             try:
-                with open(self.global_config_path, "r", encoding="utf-8") as f:
+                with open(self.global_config_path, encoding="utf-8") as f:
                     self._global_data = yaml.safe_load(f) or {}
             except Exception:
                 self._global_data = {}
@@ -89,12 +89,12 @@ class ConfigSingleton:
         # Load project-local config
         if self.project_config_path.exists():
             try:
-                with open(self.project_config_path, "r", encoding="utf-8") as f:
+                with open(self.project_config_path, encoding="utf-8") as f:
                     self._project_data = yaml.safe_load(f) or {}
             except Exception:
                 self._project_data = {}
 
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration values."""
         return {
             "active_host": None,
@@ -130,7 +130,7 @@ class ConfigSingleton:
                 self._project_data, f, default_flow_style=False, allow_unicode=True
             )
 
-    def _get_nested(self, data: Dict[str, Any], key: str, default: Any = None) -> Any:
+    def _get_nested(self, data: dict[str, Any], key: str, default: Any = None) -> Any:
         """Get value using dot notation (e.g., 'plugins.brain.db_path')."""
         keys = key.split(".")
         value = data
@@ -143,7 +143,7 @@ class ConfigSingleton:
                 return default
         return value if value is not None else default
 
-    def _set_nested(self, data: Dict[str, Any], key: str, value: Any) -> None:
+    def _set_nested(self, data: dict[str, Any], key: str, value: Any) -> None:
         """Set value using dot notation."""
         keys = key.split(".")
         current = data
@@ -214,7 +214,7 @@ class ConfigSingleton:
     # Convenience Methods
     # =========================================================================
 
-    def get_active_host(self) -> Tuple[Optional[str], str]:
+    def get_active_host(self) -> tuple[str | None, str]:
         """
         Get active host with source indicator.
 
@@ -273,7 +273,7 @@ class ConfigSingleton:
                 cache_file = self.cache_dir / "active_host.txt"
                 cache_file.write_text(host)
 
-    def get_active_app(self) -> Tuple[Optional[str], str]:
+    def get_active_app(self) -> tuple[str | None, str]:
         """
         Get active app with source indicator.
 

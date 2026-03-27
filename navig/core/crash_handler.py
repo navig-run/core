@@ -16,7 +16,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Environment variable to force debug mode
 ENV_DEBUG_VAR = "NAVIG_DEBUG"
@@ -25,7 +25,7 @@ ENV_DEBUG_VAR = "NAVIG_DEBUG"
 class CrashHandler:
     def __init__(self):
         self._debug_mode = os.environ.get(ENV_DEBUG_VAR, "0") == "1"
-        self._log_dir: Optional[Path] = None
+        self._log_dir: Path | None = None
 
     def enable_debug(self):
         """Enable debug mode programmatically."""
@@ -80,7 +80,7 @@ class CrashHandler:
         # Exit with non-zero status
         sys.exit(1)
 
-    def _log_crash_to_file(self, exc: Exception) -> Optional[Path]:
+    def _log_crash_to_file(self, exc: Exception) -> Path | None:
         """Write crash details to a JSON log file."""
         try:
             timestamp = datetime.now().isoformat()
@@ -139,7 +139,7 @@ class CrashHandler:
         except Exception:
             pass  # Ignore cleanup errors
 
-    def _print_friendly_error(self, exc: Exception, log_path: Optional[Path]):
+    def _print_friendly_error(self, exc: Exception, log_path: Path | None):
         """Print a nice error message to stderr."""
         # Check for specific known errors to be helpful
         msg = str(exc)
@@ -181,7 +181,7 @@ class CrashHandler:
                 "     Or run 'navig crash export' to create a report for GitHub.\n\n"
             )
 
-    def get_latest_crash_report(self) -> Optional[Dict[str, Any]]:
+    def get_latest_crash_report(self) -> dict[str, Any] | None:
         """Retrieve the content of the most recent crash log."""
         try:
             log_dir = self._get_log_dir()
@@ -193,7 +193,7 @@ class CrashHandler:
                 return None
 
             latest = logs[0]
-            with open(latest, "r", encoding="utf-8") as f:
+            with open(latest, encoding="utf-8") as f:
                 return json.load(f)
 
         except Exception:

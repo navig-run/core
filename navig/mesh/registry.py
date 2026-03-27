@@ -25,7 +25,6 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
 
@@ -56,7 +55,7 @@ class NodeRecord:
     hostname: str  # machine hostname
     os: str  # "windows" | "linux" | "macos"
     gateway_url: str  # "http://10.0.0.x:8789"
-    capabilities: List[str]  # ["llm", "shell", "docker", "ssh", "gpu"]
+    capabilities: list[str]  # ["llm", "shell", "docker", "ssh", "gpu"]
     formation: str  # active formation name (may be "")
     load: float  # 0.0–1.0 composite (CPU * 0.6 + MEM * 0.4)
     version: str  # navig-core semver
@@ -132,7 +131,7 @@ class NodeRecord:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "NodeRecord":
+    def from_dict(cls, d: dict) -> NodeRecord:
         # Strip derived / internal fields before handing to the dataclass constructor
         for k in (
             "health",
@@ -201,9 +200,9 @@ class NodeRegistry:
 
     def __init__(self, storage_dir: Path):
         self._storage_dir = storage_dir
-        self._peers: Dict[str, NodeRecord] = {}  # keyed by node_id
-        self._self: Optional[NodeRecord] = None
-        self._target_node_id: Optional[str] = None  # active routing target (in-memory)
+        self._peers: dict[str, NodeRecord] = {}  # keyed by node_id
+        self._self: NodeRecord | None = None
+        self._target_node_id: str | None = None  # active routing target (in-memory)
 
         self._peers_file = storage_dir / MESH_PEERS_FILENAME
 
@@ -247,7 +246,7 @@ class NodeRegistry:
             is_self=True,
         )
 
-    def _detect_capabilities(self) -> List[str]:
+    def _detect_capabilities(self) -> list[str]:
         caps = ["llm", "shell"]
         try:
             import docker  # noqa: F401
@@ -302,17 +301,17 @@ class NodeRegistry:
         self._peers.pop(node_id, None)
         self._save_to_disk()
 
-    def get_peers(self) -> List[NodeRecord]:
+    def get_peers(self) -> list[NodeRecord]:
         """All known nodes except self, pruned of eviction-age entries."""
         self._evict_stale()
         return [r for r in self._peers.values() if not r.is_self]
 
-    def get_all(self) -> List[NodeRecord]:
+    def get_all(self) -> list[NodeRecord]:
         """All nodes including self."""
         self._evict_stale()
         return list(self._peers.values())
 
-    def get_best_peer(self, capability: Optional[str] = None) -> Optional[NodeRecord]:
+    def get_best_peer(self, capability: str | None = None) -> NodeRecord | None:
         """
         Return the single best peer by composite score. Skips circuit-open
         peers unless they are the only option.
@@ -322,10 +321,10 @@ class NodeRegistry:
 
     def get_ordered_peers(
         self,
-        capability: Optional[str] = None,
+        capability: str | None = None,
         include_degraded: bool = True,
         max_results: int = 8,
-    ) -> List[NodeRecord]:
+    ) -> list[NodeRecord]:
         """
         Return peers sorted by composite_score (lower = better).
 
@@ -440,14 +439,14 @@ class NodeRegistry:
         logger.info("[mesh.registry] Routing target cleared")
 
     @property
-    def target_node_id(self) -> Optional[str]:
+    def target_node_id(self) -> str | None:
         return self._target_node_id
 
-    def get_peer(self, node_id: str) -> Optional["NodeRecord"]:
+    def get_peer(self, node_id: str) -> NodeRecord | None:
         """Get a specific peer by exact node_id."""
         return self._peers.get(node_id)
 
-    def list_peers(self) -> List["NodeRecord"]:
+    def list_peers(self) -> list[NodeRecord]:
         """Alias for get_peers() for consistent naming."""
         return self.get_peers()
 
@@ -500,10 +499,10 @@ class NodeRegistry:
 
 # ─────────────────────────── Singleton ───────────────────────────────
 
-_registry_instance: Optional[NodeRegistry] = None
+_registry_instance: NodeRegistry | None = None
 
 
-def get_registry(storage_dir: Optional[Path] = None) -> NodeRegistry:
+def get_registry(storage_dir: Path | None = None) -> NodeRegistry:
     global _registry_instance
     if _registry_instance is None:
         if storage_dir is None:

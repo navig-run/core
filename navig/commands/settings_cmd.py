@@ -14,8 +14,6 @@ Layers (lowest → highest priority):
 
 from __future__ import annotations
 
-from typing import Optional
-
 # ── Group labels ─────────────────────────────────────────────────────────────
 
 _GROUPS = {
@@ -63,7 +61,7 @@ def _group_for(key: str) -> str:
     return "navig"
 
 
-def _source_layer_for(key: str, resolver: "SettingsResolver") -> str:  # type: ignore[name-defined]
+def _source_layer_for(key: str, resolver: SettingsResolver) -> str:  # type: ignore[name-defined]
     """Return the highest-priority layer that has a value for *key*."""
     # Walk sources from highest to lowest priority
     for name, path, exists in reversed(resolver.all_sources()):
@@ -87,8 +85,8 @@ def _source_layer_for(key: str, resolver: "SettingsResolver") -> str:  # type: i
 
 
 def run_settings(
-    key: Optional[str] = None,
-    value: Optional[str] = None,
+    key: str | None = None,
+    value: str | None = None,
     layer: str = "global",
     reset: bool = False,
     show_sources: bool = False,
@@ -186,7 +184,7 @@ def run_settings(
 
 def _display_rich(
     settings: dict,
-    resolver: "SettingsResolver",  # type: ignore[name-defined]
+    resolver: SettingsResolver,  # type: ignore[name-defined]
     show_sources: bool,
     defaults: dict,
 ) -> None:
@@ -284,7 +282,7 @@ def _coerce(raw: str, reference: object) -> object:
     return raw
 
 
-def _reset_key(key: str, layer: str, resolver: "SettingsResolver") -> None:  # type: ignore[name-defined]
+def _reset_key(key: str, layer: str, resolver: SettingsResolver) -> None:  # type: ignore[name-defined]
     """Remove *key* from the specified layer file."""
     import json
 

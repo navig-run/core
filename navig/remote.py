@@ -7,7 +7,7 @@ Execute commands through secure encrypted channels.
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Default SSH/SCP timeout in seconds.  Override via NAVIG_SSH_TIMEOUT env var.
 _SSH_TIMEOUT = int(os.environ.get("NAVIG_SSH_TIMEOUT", "30"))
@@ -26,7 +26,7 @@ class RemoteOperations:
     def execute_command(
         self,
         command: str,
-        server_config: Dict[str, Any],
+        server_config: dict[str, Any],
         capture_output: bool = True,
         trust_new_host: bool = False,
     ) -> subprocess.CompletedProcess:
@@ -108,7 +108,7 @@ class RemoteOperations:
         return result
 
     def upload_file(
-        self, local_path: Path, remote_path: str, server_config: Dict[str, Any]
+        self, local_path: Path, remote_path: str, server_config: dict[str, Any]
     ) -> bool:
         """Upload file to remote server via SCP."""
         scp_args = ["scp"]
@@ -136,7 +136,7 @@ class RemoteOperations:
         return result.returncode == 0
 
     def download_file(
-        self, remote_path: str, local_path: Path, server_config: Dict[str, Any]
+        self, remote_path: str, local_path: Path, server_config: dict[str, Any]
     ) -> bool:
         """Download file from remote server via SCP."""
         scp_args = ["scp"]

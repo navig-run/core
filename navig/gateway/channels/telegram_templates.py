@@ -16,7 +16,6 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +53,9 @@ class FormattedMessage:
     """A formatted message ready for Telegram."""
 
     text: str
-    template_id: Optional[TemplateID] = None
-    keyboard_profile: Optional[str] = None  # "action", "expand", "feedback", "none"
-    parts: Optional[List[str]] = None  # Multi-part if split
+    template_id: TemplateID | None = None
+    keyboard_profile: str | None = None  # "action", "expand", "feedback", "none"
+    parts: list[str] | None = None  # Multi-part if split
 
 
 # ────────────────────────────────────────────────────────────────
@@ -93,7 +92,7 @@ def t2_status(
     tasks_done: int = 0,
     tasks_pending: int = 0,
     next_action: str = "",
-    items: Optional[List[str]] = None,
+    items: list[str] | None = None,
     verbosity: str = "normal",
 ) -> FormattedMessage:
     """T2 — Status report — entity awareness."""
@@ -161,7 +160,7 @@ def t4_task_done(
 
 
 def t5_briefing(
-    items: List[str],
+    items: list[str],
     verbosity: str = "normal",
 ) -> FormattedMessage:
     """T5 — Summary / briefing."""
@@ -185,7 +184,7 @@ def t5_briefing(
 def t6_clarification(
     what_needed: str,
     question: str,
-    options: Optional[List[str]] = None,
+    options: list[str] | None = None,
     verbosity: str = "normal",
 ) -> FormattedMessage:
     """T6 — Clarification request — entity asking."""
@@ -280,9 +279,9 @@ def _enforce_limit(text: str, limit: int) -> str:
     return text[: limit - 1] + "…"
 
 
-def _smart_split(text: str, target_size: int) -> List[str]:
+def _smart_split(text: str, target_size: int) -> list[str]:
     """Split text into chunks at paragraph/sentence boundaries."""
-    parts: List[str] = []
+    parts: list[str] = []
     remaining = text
 
     while len(remaining) > target_size:
@@ -325,7 +324,7 @@ _ACK_RE = re.compile(
 )
 
 
-def auto_detect_template(ai_response: str) -> Optional[TemplateID]:
+def auto_detect_template(ai_response: str) -> TemplateID | None:
     """
     Heuristic: detect which template an AI response most closely matches.
     Returns None if no strong match (generic response).

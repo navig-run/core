@@ -13,21 +13,21 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.installer.contracts import Action, InstallerContext, Result
 
 
-def _manifest_path(ctx: "InstallerContext") -> Path:
+def _manifest_path(ctx: InstallerContext) -> Path:
     ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return ctx.config_dir / "history" / f"install_{ctx.profile}_{ts}.jsonl"
 
 
 def save(
-    actions: "List[Action]",
-    results: "List[Result]",
-    ctx: "InstallerContext",
+    actions: list[Action],
+    results: list[Result],
+    ctx: InstallerContext,
     manifest_path: Path | None = None,
 ) -> Path:
     """Persist action/result pairs as JSONL. Returns the manifest path."""
@@ -54,7 +54,7 @@ def save(
     return path
 
 
-def load_last(config_dir: Path, profile: str | None = None) -> List[dict]:
+def load_last(config_dir: Path, profile: str | None = None) -> list[dict]:
     """Load the most recent manifest for *profile* (or any profile)."""
     history_dir = config_dir / "history"
     if not history_dir.exists():

@@ -7,7 +7,7 @@ Subclasses DeployHistory to reuse the JSONL pattern, but writes to
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.platform.paths import cache_dir as _cache_dir
 
@@ -18,7 +18,7 @@ class UpdateHistory:
     _FILENAME = "update_history.jsonl"
     _DEFAULT_KEEP = 50
 
-    def __init__(self, cache_dir: Optional[str] = None, keep: int = _DEFAULT_KEEP):
+    def __init__(self, cache_dir: str | None = None, keep: int = _DEFAULT_KEEP):
         if cache_dir is None:
             try:
                 from navig.config import get_config_manager
@@ -36,13 +36,13 @@ class UpdateHistory:
     # Write
     # ------------------------------------------------------------------
 
-    def append(self, record: Dict[str, Any]) -> None:
+    def append(self, record: dict[str, Any]) -> None:
         """Append a single record to history, pruning to ``_keep`` entries."""
         import json
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-        existing: List[str] = []
+        existing: list[str] = []
         if self._path.exists():
             try:
                 existing = self._path.read_text(encoding="utf-8").splitlines()
@@ -62,9 +62,9 @@ class UpdateHistory:
     def read(
         self,
         limit: int = 20,
-        node_id: Optional[str] = None,
-        host: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        node_id: str | None = None,
+        host: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Return history entries, optionally filtered by node_id / host."""
         import json
 
@@ -75,7 +75,7 @@ class UpdateHistory:
         except Exception:
             return []
 
-        entries: List[Dict] = []
+        entries: list[dict] = []
         for line in reversed(lines):
             line = line.strip()
             if not line:

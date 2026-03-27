@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from navig.workspace_ownership import (
     USER_WORKSPACE_DIR,
@@ -116,7 +116,7 @@ class NavigConfig:
     local_runtime_host: str = "http://localhost:11434"
 
     # Step 4 — Packs
-    capability_packs: List[str] = field(default_factory=list)
+    capability_packs: list[str] = field(default_factory=list)
 
     # Step 5 — Shell & hooks
     shell_integration: bool = True
@@ -131,7 +131,7 @@ def _store_in_vault(
     secret_value: str,
     credential_type: str = "api_key",
     console: ConsoleType = None,
-) -> Optional[str]:
+) -> str | None:
     """
     Store a secret in the vault and return its credential ID.
 
@@ -192,7 +192,7 @@ def print_banner(console: ConsoleType) -> None:
 # ---------------------------------------------------------------------------
 
 
-def detect_environment() -> Dict[str, str]:
+def detect_environment() -> dict[str, str]:
     """Return a snapshot of the local operator environment."""
     shell = os.environ.get("SHELL") or os.environ.get("COMSPEC") or "unknown"
     return {
@@ -275,7 +275,7 @@ def check_api_key_in_env(provider: str) -> bool:
         return bool(os.environ.get(env_var))
 
 
-def build_config_dict(cfg: "NavigConfig") -> Dict[str, Any]:
+def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
     """Convert NavigConfig -> JSON-serialisable dict matching navig.json schema."""
     return {
         "meta": {
@@ -358,7 +358,7 @@ if _TEXTUAL_AVAILABLE:
         total_steps: reactive[int] = reactive(5)
 
         def render(self) -> str:  # type: ignore[override]
-            dots: List[str] = []
+            dots: list[str] = []
             for i in range(self.total_steps):
                 if i < self.current_step:
                     dots.append("[bold #10b981]●[/bold #10b981]")
@@ -387,12 +387,12 @@ if _TEXTUAL_AVAILABLE:
         }
         """
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__("", **kwargs)
             self._cfg = cfg
             self._status = "unbound"
 
-        def refresh_from(self, cfg: "NavigConfig") -> None:
+        def refresh_from(self, cfg: NavigConfig) -> None:
             self._cfg = cfg
             self.refresh()
 
@@ -718,7 +718,7 @@ if _TEXTUAL_AVAILABLE:
         }
         """
 
-        _CHECK_DEFS: List[tuple] = [
+        _CHECK_DEFS: list[tuple] = [
             (
                 "Python runtime >= 3.10",
                 check_python_version,
@@ -751,7 +751,7 @@ if _TEXTUAL_AVAILABLE:
             ),
         ]
 
-        def __init__(self, cfg: Optional["NavigConfig"] = None, **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig | None = None, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg or NavigConfig()
             self._critical_failed = False
@@ -855,7 +855,7 @@ if _TEXTUAL_AVAILABLE:
         """
         )
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
 
@@ -914,7 +914,7 @@ if _TEXTUAL_AVAILABLE:
 
         _PROVIDERS = ["openrouter", "openai", "anthropic", "groq", "ollama", "none"]
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
 
@@ -965,7 +965,7 @@ if _TEXTUAL_AVAILABLE:
         """
         )
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
 
@@ -1004,7 +1004,7 @@ if _TEXTUAL_AVAILABLE:
 
         _PACKS = [("DevOps", "devops"), ("SysOps", "sysops"), ("LifeOps", "lifeops")]
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
 
@@ -1040,7 +1040,7 @@ if _TEXTUAL_AVAILABLE:
         """
         )
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
 
@@ -1132,7 +1132,7 @@ if _TEXTUAL_AVAILABLE:
         }
         """
 
-        def __init__(self, cfg: Optional["NavigConfig"] = None, **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig | None = None, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg or NavigConfig()
             self._step = 0
@@ -1236,7 +1236,7 @@ if _TEXTUAL_AVAILABLE:
         }
         """
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
 
@@ -1302,7 +1302,7 @@ if _TEXTUAL_AVAILABLE:
         }
         """
 
-        def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
+        def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._cfg = cfg
 
@@ -1322,20 +1322,17 @@ if _TEXTUAL_AVAILABLE:
                 f"[dim]Packs    [/dim] : {packs_str}\n"
                 f"[dim]Status   [/dim] : [yellow]unbound[/yellow]"
             )
-            with Vertical(id="final-outer"):
-                with Vertical(id="final-panel"):
-                    yield Static(summary_text, id="final-summary", markup=True)
-                    yield RichLog(
-                        id="final-log", markup=True, highlight=False, wrap=False
+            with Vertical(id="final-outer"), Vertical(id="final-panel"):
+                yield Static(summary_text, id="final-summary", markup=True)
+                yield RichLog(id="final-log", markup=True, highlight=False, wrap=False)
+                with Horizontal(id="final-footer"):
+                    yield Button("Exit", variant="primary", id="btn-exit")
+                    yield Button(
+                        "Retry write",
+                        variant="warning",
+                        id="btn-retry",
+                        display=False,
                     )
-                    with Horizontal(id="final-footer"):
-                        yield Button("Exit", variant="primary", id="btn-exit")
-                        yield Button(
-                            "Retry write",
-                            variant="warning",
-                            id="btn-retry",
-                            display=False,
-                        )
 
         def on_mount(self) -> None:
             self._run_registration()
@@ -1532,7 +1529,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
 
         if non_interactive:
             console.print("[dim]Running in non-interactive mode with defaults...[/dim]")
-            config: Dict[str, Any] = {
+            config: dict[str, Any] = {
                 "meta": {
                     "version": "1.0.0",
                     "created": datetime.now().isoformat(),
@@ -1652,7 +1649,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         console.print("[dim]Re-run with --debug or check logs for details.[/dim]")
 
 
-def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
+def run_quickstart(console: ConsoleType) -> dict[str, Any]:
     """
     Run the quickstart onboarding flow.
 
@@ -1717,7 +1714,7 @@ def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
                 vault_id = _store_in_vault(
                     provider, "api_key", api_key, "api_key", console
                 )
-                profile: Dict[str, Any] = {"type": "api-key"}
+                profile: dict[str, Any] = {"type": "api-key"}
                 if vault_id:
                     profile["vault_id"] = vault_id
                     console.print(f"[green]✓ {provider} API key saved to vault[/green]")
@@ -1743,7 +1740,7 @@ def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
             console.print("\n[dim]Get your user ID from @userinfobot on Telegram[/dim]")
             user_id = Prompt.ask("Your Telegram user ID", default="")
 
-            tg_cfg: Dict[str, Any] = {
+            tg_cfg: dict[str, Any] = {
                 "enabled": True,
                 "allowed_users": [int(user_id)] if user_id.isdigit() else [],
             }
@@ -1781,7 +1778,7 @@ def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
     return config
 
 
-def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str, Any]:
+def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str, Any]:
     """
     Run the manual/advanced onboarding flow.
 
@@ -1872,7 +1869,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
                     vault_id = _store_in_vault(
                         provider_name, "api_key", api_key, "api_key", console
                     )
-                    profile_entry: Dict[str, Any] = {"type": "api-key"}
+                    profile_entry: dict[str, Any] = {"type": "api-key"}
                     if vault_id:
                         profile_entry["vault_id"] = vault_id
                         console.print(
@@ -1935,7 +1932,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
         bot_token = Prompt.ask("Telegram bot token", password=True)
         user_ids = Prompt.ask("Allowed user IDs (comma-separated)", default="")
 
-        tg_cfg_manual: Dict[str, Any] = {
+        tg_cfg_manual: dict[str, Any] = {
             "enabled": True,
             "allowed_users": [
                 int(uid.strip()) for uid in user_ids.split(",") if uid.strip().isdigit()
@@ -2310,7 +2307,7 @@ See documentation for enabling automated monitoring.
 
 
 def save_config(
-    config: Dict[str, Any], config_path: Path, console: ConsoleType = None
+    config: dict[str, Any], config_path: Path, console: ConsoleType = None
 ) -> None:
     """Save configuration to JSON file."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2324,7 +2321,7 @@ def save_config(
         console.print(f"[green]✓ Configuration saved to:[/green] {config_path}")
 
 
-def sync_to_env(config: Dict[str, Any], console: ConsoleType = None) -> None:
+def sync_to_env(config: dict[str, Any], console: ConsoleType = None) -> None:
     """Sync configuration to .env file for the Telegram bot."""
     # Find .env in current directory or NAVIG project root
     env_paths = [

@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
@@ -109,9 +109,7 @@ def _extract_text(html: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _browser_fetch(
-    url: str, on_status: Optional[StatusCallback]
-) -> tuple[str, str]:
+async def _browser_fetch(url: str, on_status: StatusCallback | None) -> tuple[str, str]:
     """Use navig BrowserController to render the page.  Returns (html, method_used)."""
     if on_status:
         await on_status("Launching browser…", "Playwright headless", 55)
@@ -155,8 +153,8 @@ class BrowserFetchTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         url: str = args.get("url", "").strip()
         if not url:

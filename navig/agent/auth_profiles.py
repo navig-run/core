@@ -40,7 +40,7 @@ import math
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -69,7 +69,7 @@ class AuthProfile:
     api_key: str
     provider: str = "openai"
     weight: int = 1  # higher weight = picked more often in round-robin
-    extra: Dict[str, Any] = field(default_factory=dict)  # provider-specific extras
+    extra: dict[str, Any] = field(default_factory=dict)  # provider-specific extras
 
 
 @dataclass
@@ -119,15 +119,15 @@ class AuthProfilePool:
     in the rotation list.  Profiles on active cooldown are skipped transparently.
     """
 
-    def __init__(self, profiles: List[AuthProfile]) -> None:
+    def __init__(self, profiles: list[AuthProfile]) -> None:
         self._lock = threading.Lock()
-        self._profiles: Dict[str, AuthProfile] = {p.name: p for p in profiles}
-        self._cooldowns: Dict[str, ProfileCooldown] = {
+        self._profiles: dict[str, AuthProfile] = {p.name: p for p in profiles}
+        self._cooldowns: dict[str, ProfileCooldown] = {
             p.name: ProfileCooldown() for p in profiles
         }
 
         # Build weighted rotation list (name → popped in order)
-        self._rotation: List[str] = []
+        self._rotation: list[str] = []
         for p in profiles:
             self._rotation.extend([p.name] * max(1, p.weight))
         self._cursor: int = 0
@@ -136,7 +136,7 @@ class AuthProfilePool:
     # Public API
     # ------------------------------------------------------------------
 
-    def next_available(self) -> Optional[AuthProfile]:
+    def next_available(self) -> AuthProfile | None:
         """
         Return the next healthy (not on cooldown) profile in rotation.
 
@@ -201,7 +201,7 @@ class AuthProfilePool:
             self._cooldowns.pop(name, None)
             self._rotation = [n for n in self._rotation if n != name]
 
-    def status(self) -> List[Dict[str, Any]]:
+    def status(self) -> list[dict[str, Any]]:
         """Return a monitoring snapshot for all profiles."""
         with self._lock:
             rows = []
@@ -230,7 +230,7 @@ class AuthProfilePool:
 # Singleton factory
 # =============================================================================
 
-_pool_instance: Optional[AuthProfilePool] = None
+_pool_instance: AuthProfilePool | None = None
 _pool_lock = threading.Lock()
 
 
@@ -249,7 +249,7 @@ def get_profile_pool() -> AuthProfilePool:
         if _pool_instance is not None:
             return _pool_instance
 
-        profiles: List[AuthProfile] = []
+        profiles: list[AuthProfile] = []
         try:
             from navig.config import get_config_manager
 

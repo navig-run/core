@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Optional
 
 from .types import VaultItem, VaultItemKind
 
@@ -66,7 +66,7 @@ class VaultStore:
     def __init__(self, vault_dir: Path) -> None:
         self.vault_dir = vault_dir
         self._db_path = vault_dir / self.DB_FILE
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
 
     # ── Connection ──────────────────────────────────────────────────────────
 
@@ -131,7 +131,7 @@ class VaultStore:
                 ),
             )
 
-    def get(self, label: str) -> Optional[VaultItem]:
+    def get(self, label: str) -> VaultItem | None:
         """Retrieve an item by label (exact match)."""
         conn = self._connect()
         row = conn.execute(
@@ -139,7 +139,7 @@ class VaultStore:
         ).fetchone()
         return self._row_to_item(row) if row else None
 
-    def get_by_id(self, item_id: str) -> Optional[VaultItem]:
+    def get_by_id(self, item_id: str) -> VaultItem | None:
         """Retrieve an item by its UUID."""
         conn = self._connect()
         row = conn.execute(
@@ -149,8 +149,8 @@ class VaultStore:
 
     def list(
         self,
-        kind: Optional[VaultItemKind] = None,
-        provider: Optional[str] = None,
+        kind: VaultItemKind | None = None,
+        provider: str | None = None,
     ) -> list[VaultItem]:
         """List items, optionally filtered by kind and/or provider."""
         conn = self._connect()

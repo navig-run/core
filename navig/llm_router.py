@@ -45,7 +45,7 @@ import logging
 import os
 import re
 import threading
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
@@ -64,7 +64,7 @@ logger = logging.getLogger("navig.llm_router")
 
 CANONICAL_MODES = {"small_talk", "big_tasks", "coding", "summarize", "research"}
 
-MODE_ALIASES: Dict[str, str] = {
+MODE_ALIASES: dict[str, str] = {
     # small_talk
     "small": "small_talk",
     "chat": "small_talk",
@@ -100,7 +100,7 @@ MODE_ALIASES: Dict[str, str] = {
 }
 
 # Providers that enforce content filtering (censored)
-CENSORED_PROVIDERS: Set[str] = {"openai", "anthropic", "deepseek", "google"}
+CENSORED_PROVIDERS: set[str] = {"openai", "anthropic", "deepseek", "google"}
 
 # ---------------------------------------------------------------------------
 # Provider Resource URLs — canonical source of truth for all external endpoints
@@ -109,7 +109,7 @@ CENSORED_PROVIDERS: Set[str] = {"openai", "anthropic", "deepseek", "google"}
 # import this constant rather than building URLs ad-hoc.
 #   from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL
 
-PROVIDER_RESOURCE_URLS: Dict[str, Dict[str, str]] = {
+PROVIDER_RESOURCE_URLS: dict[str, dict[str, str]] = {
     "openai": {
         "chat": "https://api.openai.com/v1/chat/completions",
         "transcriptions": "https://api.openai.com/v1/audio/transcriptions",
@@ -146,7 +146,7 @@ PROVIDER_RESOURCE_URLS: Dict[str, Dict[str, str]] = {
 }
 
 # Provider → env var(s) for API key resolution
-PROVIDER_ENV_KEYS: Dict[str, List[str]] = {
+PROVIDER_ENV_KEYS: dict[str, list[str]] = {
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
@@ -165,7 +165,7 @@ PROVIDER_ENV_KEYS: Dict[str, List[str]] = {
 }
 
 # Provider → base URL
-PROVIDER_BASE_URLS: Dict[str, str] = {
+PROVIDER_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com",
     "deepseek": "https://api.deepseek.com/v1",
@@ -230,8 +230,8 @@ if PYDANTIC_OK:
         """Uncensored model override configuration."""
 
         enabled: bool = True
-        local_models: Dict[str, str] = Field(default_factory=dict)
-        api_models: Dict[str, str] = Field(default_factory=dict)
+        local_models: dict[str, str] = Field(default_factory=dict)
+        api_models: dict[str, str] = Field(default_factory=dict)
 
         model_config = ConfigDict(extra="allow")
 
@@ -304,7 +304,7 @@ if PYDANTIC_OK:
 
         model_config = ConfigDict(extra="allow")
 
-        def get_mode(self, name: str) -> Optional[LLMModeConfig]:
+        def get_mode(self, name: str) -> LLMModeConfig | None:
             """Get mode config by canonical name."""
             return getattr(self, name, None)
 
@@ -313,7 +313,7 @@ if PYDANTIC_OK:
             if name in CANONICAL_MODES:
                 setattr(self, name, cfg)
 
-        def to_dict(self) -> Dict[str, Any]:
+        def to_dict(self) -> dict[str, Any]:
             """Serialize all modes."""
             return {m: getattr(self, m).model_dump() for m in CANONICAL_MODES}
 
@@ -388,7 +388,7 @@ class ResolvedLLMConfig:
         self.mode = mode
         self.api_key_env = api_key_env
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "model": self.model,
@@ -488,11 +488,11 @@ def detect_mode(user_input: str) -> str:
 # Ollama Availability Check
 # ─────────────────────────────────────────────────────────────
 
-_ollama_model_cache: Optional[Dict[str, bool]] = None
+_ollama_model_cache: dict[str, bool] | None = None
 _ollama_cache_ts: float = 0.0
 
 
-def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> Dict[str, bool]:
+def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> dict[str, bool]:
     """Query Ollama /api/tags and return {model_name: True} for installed models."""
     global _ollama_model_cache, _ollama_cache_ts
     import time
@@ -525,7 +525,7 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> Dict[str, 
     return {}
 
 
-def _resolve_api_key(provider: str) -> Optional[str]:
+def _resolve_api_key(provider: str) -> str | None:
     """Resolve API key from environment variables, vault, or config."""
     env_vars = PROVIDER_ENV_KEYS.get(provider, [])
     for var in env_vars:
@@ -579,9 +579,9 @@ class LLMModeRouter:
       - API key availability checks
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self._raw_config = config or {}
-        self._router_config: Optional[LLMRouterConfig] = None
+        self._router_config: LLMRouterConfig | None = None
         self._load_config()
 
     def _load_config(self) -> None:
@@ -639,7 +639,7 @@ class LLMModeRouter:
     def get_config(
         self,
         mode_hint: str,
-        prefer_uncensored: Optional[bool] = None,
+        prefer_uncensored: bool | None = None,
     ) -> ResolvedLLMConfig:
         """
         Resolve a mode hint into a full LLM configuration.
@@ -719,7 +719,7 @@ class LLMModeRouter:
 
     def _try_uncensored_routing(
         self, mode: str, mode_cfg: LLMModeConfig
-    ) -> Optional[ResolvedLLMConfig]:
+    ) -> ResolvedLLMConfig | None:
         """
         Attempt uncensored routing.
 
@@ -766,18 +766,18 @@ class LLMModeRouter:
 
     # ── Mode management ───────────────────────────────────
 
-    def get_all_modes(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_modes(self) -> dict[str, dict[str, Any]]:
         """Return all mode configs as dict."""
         return self.modes.to_dict()
 
     def update_mode(
         self,
         mode: str,
-        provider: Optional[str] = None,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        use_uncensored: Optional[bool] = None,
+        provider: str | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        use_uncensored: bool | None = None,
     ) -> bool:
         """Update a mode's configuration in memory."""
         mode = self.resolve_mode(mode)
@@ -797,11 +797,11 @@ class LLMModeRouter:
         self.modes.set_mode(mode, cfg)
         return True
 
-    def list_uncensored_models(self) -> Dict[str, Any]:
+    def list_uncensored_models(self) -> dict[str, Any]:
         """
         List available uncensored models (local + API) with availability status.
         """
-        result: Dict[str, Any] = {"local": [], "api": []}
+        result: dict[str, Any] = {"local": [], "api": []}
 
         # Local
         installed = _check_ollama_models()
@@ -860,7 +860,7 @@ def _get_env_var_name(provider: str) -> str:
 # Singleton
 # ─────────────────────────────────────────────────────────────
 
-_router_instance: Optional[LLMModeRouter] = None
+_router_instance: LLMModeRouter | None = None
 _router_instance_lock = threading.Lock()
 
 
@@ -887,9 +887,7 @@ def get_llm_router(force_new: bool = False) -> LLMModeRouter:
             cm = get_config_manager()
             raw = cm.global_config or {}
             # Look for llm_router or llm_modes at top level
-            if "llm_router" in raw:
-                config = raw
-            elif "llm_modes" in raw:
+            if "llm_router" in raw or "llm_modes" in raw:
                 config = raw
         except Exception as e:
             logger.debug("Could not load config for LLM router: %s", e)
@@ -904,9 +902,9 @@ def get_llm_router(force_new: bool = False) -> LLMModeRouter:
 
 
 def resolve_llm(
-    mode: Optional[str] = None,
-    user_input: Optional[str] = None,
-    prefer_uncensored: Optional[bool] = None,
+    mode: str | None = None,
+    user_input: str | None = None,
+    prefer_uncensored: bool | None = None,
 ) -> ResolvedLLMConfig:
     """
     One-call convenience: detect or resolve mode, return full config.

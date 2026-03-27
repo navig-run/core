@@ -9,7 +9,6 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from .types import (
     PROVIDER_ENV_VARS,
@@ -38,7 +37,7 @@ class AuthProfileManager:
     COOLDOWN_HOURS = 5
     MAX_COOLDOWN_HOURS = 24
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Path | None = None):
         """
         Initialize the auth profile manager.
 
@@ -50,7 +49,7 @@ class AuthProfileManager:
         self.config_dir = config_dir
         self.credentials_dir = config_dir / "credentials"
         self.store_path = self.credentials_dir / "auth-profiles.json"
-        self._store: Optional[AuthProfileStore] = None
+        self._store: AuthProfileStore | None = None
 
         # Ensure directories exist
         self.credentials_dir.mkdir(parents=True, exist_ok=True)
@@ -68,7 +67,7 @@ class AuthProfileManager:
             return AuthProfileStore()
 
         try:
-            with open(self.store_path, "r", encoding="utf-8") as f:
+            with open(self.store_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             profiles = {}
@@ -98,7 +97,7 @@ class AuthProfileManager:
             print(f"⚠️  Failed to load auth profiles: {e}")
             return AuthProfileStore()
 
-    def _parse_credential(self, data: dict) -> Optional[AuthProfileCredential]:
+    def _parse_credential(self, data: dict) -> AuthProfileCredential | None:
         """Parse a credential from JSON data."""
         cred_type = data.get("type")
         provider = data.get("provider", "")
@@ -188,7 +187,10 @@ class AuthProfileManager:
 
         # Set file permissions (Unix only)
         try:
-            os.chmod(self.store_path, 0o600)
+            try:
+                os.chmod(self.store_path, 0o600)
+            except (OSError, PermissionError):
+                pass
         except OSError:
             pass  # Windows doesn't support chmod the same way
 
@@ -196,8 +198,8 @@ class AuthProfileManager:
         self,
         provider: str,
         api_key: str,
-        profile_id: Optional[str] = None,
-        email: Optional[str] = None,
+        profile_id: str | None = None,
+        email: str | None = None,
     ) -> str:
         """
         Add an API key credential.
@@ -226,9 +228,9 @@ class AuthProfileManager:
         self,
         provider: str,
         token: str,
-        profile_id: Optional[str] = None,
-        expires: Optional[int] = None,
-        email: Optional[str] = None,
+        profile_id: str | None = None,
+        expires: int | None = None,
+        email: str | None = None,
     ) -> str:
         """Add a bearer token credential."""
         if profile_id is None:
@@ -253,7 +255,7 @@ class AuthProfileManager:
             return True
         return False
 
-    def list_profiles(self, provider: Optional[str] = None) -> List[str]:
+    def list_profiles(self, provider: str | None = None) -> list[str]:
         """
         List all profile IDs, optionally filtered by provider.
 
@@ -272,9 +274,7 @@ class AuthProfileManager:
             if cred.provider == provider
         ]
 
-    def get_api_key(
-        self, provider: str, profile_id: Optional[str] = None
-    ) -> Optional[str]:
+    def get_api_key(self, provider: str, profile_id: str | None = None) -> str | None:
         """
         Get an API key for a provider.
 
@@ -312,7 +312,7 @@ class AuthProfileManager:
         # Try environment variables
         return self._get_env_key(provider)
 
-    def _extract_key(self, cred: AuthProfileCredential) -> Optional[str]:
+    def _extract_key(self, cred: AuthProfileCredential) -> str | None:
         """Extract the key/token from a credential."""
         if isinstance(cred, ApiKeyCredential):
             return cred.key
@@ -328,7 +328,7 @@ class AuthProfileManager:
             return cred.access_token
         return None
 
-    def _get_env_key(self, provider: str) -> Optional[str]:
+    def _get_env_key(self, provider: str) -> str | None:
         """Get API key from environment variables."""
         env_vars = PROVIDER_ENV_VARS.get(provider, [])
 
@@ -415,7 +415,7 @@ class AuthProfileManager:
             self.store.usage_stats[profile_id].error_count = 0
             self.save()
 
-    def resolve_auth(self, provider: str) -> Tuple[Optional[str], str]:
+    def resolve_auth(self, provider: str) -> tuple[str | None, str]:
         """
         Resolve authentication for a provider.
 
@@ -444,12 +444,12 @@ class AuthProfileManager:
         self,
         provider: str,
         access_token: str,
-        refresh_token: Optional[str] = None,
-        expires_at: Optional[int] = None,
-        client_id: Optional[str] = None,
-        account_id: Optional[str] = None,
-        email: Optional[str] = None,
-        profile_id: Optional[str] = None,
+        refresh_token: str | None = None,
+        expires_at: int | None = None,
+        client_id: str | None = None,
+        account_id: str | None = None,
+        email: str | None = None,
+        profile_id: str | None = None,
     ) -> str:
         """
         Add OAuth credentials.
@@ -484,8 +484,8 @@ class AuthProfileManager:
     def get_oauth_credential(
         self,
         provider: str,
-        profile_id: Optional[str] = None,
-    ) -> Optional[OAuthCredential]:
+        profile_id: str | None = None,
+    ) -> OAuthCredential | None:
         """
         Get OAuth credentials for a provider.
 
@@ -513,8 +513,8 @@ class AuthProfileManager:
         self,
         profile_id: str,
         access_token: str,
-        refresh_token: Optional[str] = None,
-        expires_at: Optional[int] = None,
+        refresh_token: str | None = None,
+        expires_at: int | None = None,
     ) -> bool:
         """
         Update OAuth tokens after a refresh.

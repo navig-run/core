@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from navig.platform.paths import config_dir
 
@@ -36,7 +36,7 @@ class ConversationHistory:
         self,
         user_id: str,
         max_tokens: int = 4096,
-        summarizer: Optional[Callable[[List[Dict[str, str]]], str]] = None,
+        summarizer: Callable[[list[dict[str, str]]], str] | None = None,
     ) -> None:
         if max_tokens <= 0:
             raise ValueError(
@@ -65,7 +65,7 @@ class ConversationHistory:
         if self.token_count() > self._max_tokens:
             self._truncate()
 
-    def get_messages(self) -> List[Dict[str, str]]:
+    def get_messages(self) -> list[dict[str, str]]:
         """Return a shallow copy of the current in-memory message list."""
         return list(self._messages)
 

@@ -1,5 +1,3 @@
-from typing import Optional
-
 import typer
 
 from navig import console_helper as ch
@@ -32,12 +30,12 @@ def log_show(
     service: str = typer.Argument(
         ..., help="Service name (nginx, php-fpm, mysql, app, etc.)"
     ),
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     tail: bool = typer.Option(False, "--tail", "-f", help="Follow logs in real-time"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines"),
-    since: Optional[str] = typer.Option(
+    since: str | None = typer.Option(
         None, "--since", help="Show logs since (e.g., 10m, 1h)"
     ),
 ):

@@ -15,7 +15,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Tuple
 
 from navig.debug_logger import DebugLogger
 
@@ -48,7 +47,7 @@ class ServiceInstaller:
         python_exe = sys.executable
         return Path(python_exe).parent / "navig"
 
-    def install(self, start_now: bool = True) -> Tuple[bool, str]:
+    def install(self, start_now: bool = True) -> tuple[bool, str]:
         """
         Install NAVIG agent as a system service.
 
@@ -67,7 +66,7 @@ class ServiceInstaller:
         else:
             return False, f"Unsupported platform: {self.system}"
 
-    def uninstall(self) -> Tuple[bool, str]:
+    def uninstall(self) -> tuple[bool, str]:
         """
         Uninstall NAVIG agent service.
 
@@ -83,7 +82,7 @@ class ServiceInstaller:
         else:
             return False, f"Unsupported platform: {self.system}"
 
-    def status(self) -> Tuple[bool, str]:
+    def status(self) -> tuple[bool, str]:
         """
         Get service status.
 
@@ -103,7 +102,7 @@ class ServiceInstaller:
     # LINUX - systemd
     # =========================================================================
 
-    def _install_systemd(self, start_now: bool) -> Tuple[bool, str]:
+    def _install_systemd(self, start_now: bool) -> tuple[bool, str]:
         """Install systemd service."""
         service_name = "navig-agent"
         service_file = f"{service_name}.service"
@@ -163,7 +162,7 @@ class ServiceInstaller:
         except Exception as e:
             return False, f"Failed to install service: {e}"
 
-    def _uninstall_systemd(self) -> Tuple[bool, str]:
+    def _uninstall_systemd(self) -> tuple[bool, str]:
         """Uninstall systemd service."""
         service_name = "navig-agent"
 
@@ -202,7 +201,7 @@ class ServiceInstaller:
         except Exception as e:
             return False, f"Failed to uninstall service: {e}"
 
-    def _status_systemd(self) -> Tuple[bool, str]:
+    def _status_systemd(self) -> tuple[bool, str]:
         """Get systemd service status."""
         service_name = "navig-agent"
 
@@ -265,7 +264,7 @@ WantedBy=default.target
     # macOS - launchd
     # =========================================================================
 
-    def _install_launchd(self, start_now: bool) -> Tuple[bool, str]:
+    def _install_launchd(self, start_now: bool) -> tuple[bool, str]:
         """Install launchd service."""
         service_name = "com.navig.agent"
         plist_file = f"{service_name}.plist"
@@ -310,7 +309,7 @@ WantedBy=default.target
         except Exception as e:
             return False, f"Failed to install service: {e}"
 
-    def _uninstall_launchd(self) -> Tuple[bool, str]:
+    def _uninstall_launchd(self) -> tuple[bool, str]:
         """Uninstall launchd service."""
         service_name = "com.navig.agent"
         plist_path = self.home / "Library" / "LaunchAgents" / f"{service_name}.plist"
@@ -330,7 +329,7 @@ WantedBy=default.target
         except Exception as e:
             return False, f"Failed to uninstall service: {e}"
 
-    def _status_launchd(self) -> Tuple[bool, str]:
+    def _status_launchd(self) -> tuple[bool, str]:
         """Get launchd service status."""
         service_name = "com.navig.agent"
 
@@ -402,7 +401,7 @@ WantedBy=default.target
     # Windows - Windows Service
     # =========================================================================
 
-    def _install_windows(self, start_now: bool) -> Tuple[bool, str]:
+    def _install_windows(self, start_now: bool) -> tuple[bool, str]:
         """Install Windows service."""
         # Check if running as administrator
         try:
@@ -434,7 +433,7 @@ WantedBy=default.target
 
     def _install_windows_nssm(
         self, service_name: str, python_exe: str, start_now: bool
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Install Windows service using nssm."""
         navig_cmd = f'"{python_exe}" -m navig agent start --foreground'
 
@@ -491,7 +490,7 @@ WantedBy=default.target
 
     def _install_windows_sc(
         self, service_name: str, python_exe: str, start_now: bool
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Install Windows service using sc.exe."""
         navig_cmd = f'"{python_exe}" -m navig agent start --foreground'
 
@@ -525,7 +524,7 @@ WantedBy=default.target
                 f"Failed to install with sc.exe: {e.stderr.decode() if e.stderr else str(e)}",
             )
 
-    def _uninstall_windows(self) -> Tuple[bool, str]:
+    def _uninstall_windows(self) -> tuple[bool, str]:
         """Uninstall Windows service."""
         service_name = "NAVIGAgent"
 
@@ -566,7 +565,7 @@ WantedBy=default.target
         except Exception as e:
             return False, f"Failed to uninstall: {e}"
 
-    def _status_windows(self) -> Tuple[bool, str]:
+    def _status_windows(self) -> tuple[bool, str]:
         """Get Windows service status."""
         service_name = "NAVIGAgent"
 

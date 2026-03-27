@@ -24,7 +24,6 @@ import fnmatch
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +47,7 @@ class PolicyConfig:
     """Full policy configuration."""
 
     default: PolicyDecision = PolicyDecision.ALLOW
-    rules: List[PolicyRule] = field(default_factory=list)
+    rules: list[PolicyRule] = field(default_factory=list)
 
 
 @dataclass
@@ -57,7 +56,7 @@ class PolicyResult:
 
     decision: PolicyDecision
     action: str
-    matched_rule: Optional[str] = None  # pattern that matched, or None for default
+    matched_rule: str | None = None  # pattern that matched, or None for default
 
     @property
     def is_allowed(self) -> bool:
@@ -88,12 +87,12 @@ class PolicyGate:
     """
 
     # Built-in hardened rules that can never be overridden by user config
-    _HARD_DENY: List[str] = [
+    _HARD_DENY: list[str] = [
         "system.delete_all",
         "*.drop_all",
     ]
 
-    def __init__(self, config: Optional[PolicyConfig] = None) -> None:
+    def __init__(self, config: PolicyConfig | None = None) -> None:
         self._config = config or PolicyConfig()
 
     # ------------------------------------------------------------------
@@ -101,7 +100,7 @@ class PolicyGate:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_config(cls, raw_gateway_cfg: Optional[Dict] = None) -> "PolicyGate":
+    def from_config(cls, raw_gateway_cfg: dict | None = None) -> PolicyGate:
         """Build a PolicyGate from the ``gateway`` section of navig config."""
         if not raw_gateway_cfg:
             return cls()
@@ -117,7 +116,7 @@ class PolicyGate:
             logger.warning("Unknown policy default '%s', using 'allow'", default_str)
             default = PolicyDecision.ALLOW
 
-        rules: List[PolicyRule] = []
+        rules: list[PolicyRule] = []
         for raw_rule in policy_cfg.get("rules", []):
             pattern = raw_rule.get("pattern", "").strip()
             act_str = raw_rule.get("action", "allow").lower()
@@ -141,7 +140,7 @@ class PolicyGate:
     # Core check
     # ------------------------------------------------------------------
 
-    def check(self, action: str, actor: Optional[str] = None) -> PolicyResult:
+    def check(self, action: str, actor: str | None = None) -> PolicyResult:
         """
         Evaluate policy for the given action slug.
 
@@ -197,7 +196,7 @@ class PolicyGate:
     # Introspection
     # ------------------------------------------------------------------
 
-    def summary(self) -> Dict:
+    def summary(self) -> dict:
         """Return a human-readable policy summary."""
         return {
             "default": self._config.default.value,

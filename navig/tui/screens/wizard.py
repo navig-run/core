@@ -7,15 +7,12 @@ Esc at any step saves partial progress and opens the dashboard.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
-from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import (
     Button,
@@ -26,7 +23,6 @@ from textual.widgets import (
     RadioButton,
     RadioSet,
     Select,
-    Static,
     Switch,
 )
 
@@ -380,7 +376,7 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
 
     def __init__(
         self,
-        cfg: Optional[NavigConfig] = None,
+        cfg: NavigConfig | None = None,
         start_step: int = 0,
         **kwargs: Any,
     ) -> None:

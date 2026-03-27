@@ -20,8 +20,6 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Optional
-
 from navig.browser.controller import BrowserConfig, BrowserController
 from navig.debug_logger import get_debug_logger
 
@@ -147,7 +145,7 @@ class CDPBridge(BrowserController):
         return True
 
 
-def auto_detect_cdp_port() -> Optional[int]:
+def auto_detect_cdp_port() -> int | None:
     """Try to find a running Chrome/NaviBrowser with a CDP port open.
 
     Checks common ports: 9222, 9223, 9229.

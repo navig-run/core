@@ -29,7 +29,7 @@ import io
 import logging
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
 from navig.gateway.channels.media_engine.budget import BudgetExceeded, BudgetGuard
 from navig.gateway.channels.media_engine.media_cache import MediaCache
@@ -48,7 +48,7 @@ _RETRIES = 2
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _env(*keys: str) -> Optional[str]:
+def _env(*keys: str) -> str | None:
     try:
         from navig.vault.resolver import resolve_secret
 
@@ -61,7 +61,7 @@ def _env(*keys: str) -> Optional[str]:
         return None
 
 
-def _json_env(*keys: str) -> Optional[str]:
+def _json_env(*keys: str) -> str | None:
     try:
         from navig.vault.resolver import resolve_json_str
 
@@ -75,7 +75,7 @@ def _json_env(*keys: str) -> Optional[str]:
 
 
 async def _with_retry(coro_func, retries: int = _RETRIES):
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(retries + 1):
         try:
             return await coro_func()
@@ -154,7 +154,7 @@ def _stage_classify(file_bytes: bytes) -> dict:
     return result
 
 
-async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> Optional[str]:
+async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> str | None:
     """Describe image using GPT-4o Vision."""
     api_key = _env("OPENAI_API_KEY")
     if not api_key:
@@ -238,7 +238,7 @@ async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> Optional[str]
     return None
 
 
-def _stage_ocr(file_bytes: bytes) -> Optional[str]:
+def _stage_ocr(file_bytes: bytes) -> str | None:
     """Extract text from image via pytesseract (synchronous, free)."""
     try:
         import pytesseract  # type: ignore
@@ -252,9 +252,7 @@ def _stage_ocr(file_bytes: bytes) -> Optional[str]:
     return None
 
 
-async def _stage_serpapi(
-    file_bytes: bytes, budget: BudgetGuard
-) -> Optional[list[dict]]:
+async def _stage_serpapi(file_bytes: bytes, budget: BudgetGuard) -> list[dict] | None:
     """Reverse image search via SerpAPI Google Lens."""
     api_key = _env("SERPAPI_KEY", "SERPAPI_API_KEY")
     if not api_key:
@@ -303,9 +301,7 @@ async def _stage_serpapi(
     return None
 
 
-async def _stage_landmark(
-    file_bytes: bytes, budget: BudgetGuard
-) -> Optional[list[dict]]:
+async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> list[dict] | None:
     """Detect landmarks using Google Cloud Vision (optional)."""
     creds_raw = _json_env("GOOGLE_APPLICATION_CREDENTIALS")
     if not creds_raw:
@@ -376,10 +372,10 @@ async def _stage_landmark(
 
 def _build_image_card(
     classify: dict,
-    description: Optional[str],
-    ocr_text: Optional[str],
-    serp_matches: Optional[list[dict]],
-    landmarks: Optional[list[dict]],
+    description: str | None,
+    ocr_text: str | None,
+    serp_matches: list[dict] | None,
+    landmarks: list[dict] | None,
     duration_ms: float,
 ) -> str:
     """Return an HTML string suitable for Telegram parse_mode=HTML."""
@@ -471,8 +467,8 @@ class ImageEngine:
 
     def __init__(
         self,
-        budget: Optional[BudgetGuard] = None,
-        cache: Optional[MediaCache] = None,
+        budget: BudgetGuard | None = None,
+        cache: MediaCache | None = None,
     ) -> None:
         self._budget = budget or BudgetGuard()
         self._cache = cache or MediaCache(namespace="image")
@@ -500,9 +496,9 @@ class ImageEngine:
             result.update(classify)
 
             # Stage 2, 3, 4 — vision / OCR / reverse search (parallel)
-            description: Optional[str] = None
-            ocr_text: Optional[str] = None
-            serp_matches: Optional[list] = None
+            description: str | None = None
+            ocr_text: str | None = None
+            serp_matches: list | None = None
 
             vision_fut = asyncio.wait_for(
                 _stage_vision(file_bytes, self._budget), timeout=_TIMEOUT
@@ -534,7 +530,7 @@ class ImageEngine:
             result["serp_matches"] = serp_matches
 
             # Stage 5 — landmark (sequential, needs GPS hint or just raw file)
-            landmarks: Optional[list] = None
+            landmarks: list | None = None
             try:
                 landmarks = await asyncio.wait_for(
                     _stage_landmark(file_bytes, self._budget), timeout=_TIMEOUT

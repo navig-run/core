@@ -18,7 +18,6 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Dict, Optional
 
 # Import redaction helper from security module
 try:
@@ -30,7 +29,7 @@ except ImportError:
 
 
 # Map of subsystem names to loggers
-_LOGGERS: Dict[str, logging.Logger] = {}
+_LOGGERS: dict[str, logging.Logger] = {}
 
 # Default config
 LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
@@ -90,7 +89,7 @@ class StructuredLogger(logging.Logger):
         self.log(level, json.dumps(safe_data))
 
 
-def _configure_root_logger(log_file: Optional[Path] = None, level: int = logging.INFO):
+def _configure_root_logger(log_file: Path | None = None, level: int = logging.INFO):
     """
     Configure the root logger with handlers.
     """

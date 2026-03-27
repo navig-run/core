@@ -8,7 +8,8 @@ Uses matrix-nio via the comms.matrix module.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class MatrixChannelAdapter:
     can interact with Matrix via the standard adapter interface.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self._bot = None
         self._config = config or {}
 
@@ -55,7 +56,7 @@ class MatrixChannelAdapter:
         if self._bot and self._bot.is_running:
             await self._bot.stop()
 
-    async def send(self, target: str, message: str, **kwargs) -> Optional[str]:
+    async def send(self, target: str, message: str, **kwargs) -> str | None:
         """
         Send a text message to a Matrix room.
 
@@ -86,7 +87,7 @@ class MatrixChannelAdapter:
         """Check if the Matrix bot is running."""
         return self._bot is not None and self._bot.is_running
 
-    async def get_rooms(self) -> List[Dict[str, Any]]:
+    async def get_rooms(self) -> list[dict[str, Any]]:
         """List joined rooms via the bot."""
         self._ensure_bot()
         if not self._bot:
@@ -95,7 +96,7 @@ class MatrixChannelAdapter:
 
     async def get_room_messages(
         self, room_id: str, limit: int = 20
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent messages from a room."""
         self._ensure_bot()
         if not self._bot:

@@ -13,7 +13,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -34,10 +34,10 @@ class Session:
     """
 
     key: str
-    messages: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    messages: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     def __post_init__(self):
         if self.created_at is None:
@@ -45,7 +45,7 @@ class Session:
         if self.updated_at is None:
             self.updated_at = datetime.now()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize session to dictionary."""
         return {
             "key": self.key,
@@ -56,7 +56,7 @@ class Session:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Session":
+    def from_dict(cls, data: dict[str, Any]) -> "Session":
         """Deserialize session from dictionary."""
         created_at = None
         updated_at = None
@@ -120,7 +120,7 @@ class NavigSessionKey:
         return f"cron:{job_id}"
 
     @staticmethod
-    def parse(session_key: str) -> Dict[str, str]:
+    def parse(session_key: str) -> dict[str, str]:
         """Parse session key into components."""
         parts = session_key.split(":")
 
@@ -182,7 +182,7 @@ class SessionManager:
         self.compaction_keep_messages = compaction_keep_messages
 
         # In-memory cache
-        self.sessions: Dict[str, Session] = {}
+        self.sessions: dict[str, Session] = {}
         self.lock = asyncio.Lock()
 
         # AI client for summarization (lazy loaded)
@@ -262,7 +262,7 @@ class SessionManager:
         session_key: str,
         role: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """
         Add message to session.
@@ -331,7 +331,7 @@ class SessionManager:
 
         logger.info(f"Compacted {len(old)} messages to summary")
 
-    async def _summarize_messages(self, messages: List[Dict]) -> str:
+    async def _summarize_messages(self, messages: list[dict]) -> str:
         """Generate AI summary of messages."""
         try:
             from navig.ai import ask_ai
@@ -384,9 +384,9 @@ Summary:"""
 
     async def list_sessions(
         self,
-        channel: Optional[str] = None,
-        agent_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        channel: str | None = None,
+        agent_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         List sessions matching criteria.
 
@@ -429,7 +429,7 @@ Summary:"""
 
         return sessions
 
-    async def get_last_channel(self, agent_id: str = "default") -> Optional[str]:
+    async def get_last_channel(self, agent_id: str = "default") -> str | None:
         """Get the last used channel for an agent."""
         sessions = await self.list_sessions(agent_id=agent_id)
 

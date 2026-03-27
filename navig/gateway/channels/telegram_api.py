@@ -10,7 +10,7 @@ stays focused on orchestration while preserving the existing return contracts:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,7 @@ except ImportError:
 class TelegramApiMixin:
     """Shared Telegram Bot API request helpers."""
 
-    async def _api_call(
-        self, method: str, data: Optional[Dict] = None
-    ) -> Optional[Dict]:
+    async def _api_call(self, method: str, data: dict | None = None) -> dict | None:
         """POST a JSON request to a Telegram Bot API method.
 
         Uses the long-lived ``self._session`` connection pool for low latency.

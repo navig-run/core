@@ -20,7 +20,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.memory.key_facts import KeyFact, KeyFactStore
 
@@ -49,7 +49,7 @@ class RetrievalConfig:
     # Recency half-life in days (facts lose 50% recency score after this many days)
     recency_half_life_days: float = 30.0
     # Category boost: multiply score for these categories
-    category_boosts: Dict[str, float] = field(
+    category_boosts: dict[str, float] = field(
         default_factory=lambda: {
             "identity": 1.3,
             "preference": 1.2,
@@ -89,7 +89,7 @@ class RankedFact:
 class FactRetrievalResult:
     """Complete retrieval result with formatted output."""
 
-    facts: List[RankedFact] = field(default_factory=list)
+    facts: list[RankedFact] = field(default_factory=list)
     formatted: str = ""
     token_estimate: int = 0
     query: str = ""
@@ -117,8 +117,8 @@ class FactRetriever:
     def __init__(
         self,
         store: KeyFactStore,
-        embedding_provider: Optional[Any] = None,
-        config: Optional[RetrievalConfig] = None,
+        embedding_provider: Any | None = None,
+        config: RetrievalConfig | None = None,
     ):
         self.store = store
         self.embedding_provider = embedding_provider or store.embedding_provider
@@ -127,9 +127,9 @@ class FactRetriever:
     def retrieve(
         self,
         query: str,
-        category: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        config_override: Optional[RetrievalConfig] = None,
+        category: str | None = None,
+        max_tokens: int | None = None,
+        config_override: RetrievalConfig | None = None,
     ) -> FactRetrievalResult:
         """
         Retrieve ranked facts relevant to query.
@@ -181,7 +181,7 @@ class FactRetriever:
 
     def retrieve_all_active(
         self,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> FactRetrievalResult:
         """
         Retrieve all active facts (no query-based filtering).
@@ -223,14 +223,14 @@ class FactRetriever:
     def _gather_candidates(
         self,
         query: str,
-        category: Optional[str],
+        category: str | None,
         cfg: RetrievalConfig,
-    ) -> List[Tuple[KeyFact, float, float]]:
+    ) -> list[tuple[KeyFact, float, float]]:
         """
         Gather candidate facts via keyword + vector search.
         Returns [(fact, keyword_score, vector_score), ...]
         """
-        seen: Dict[str, Tuple[float, float]] = {}  # id -> (kw_score, vec_score)
+        seen: dict[str, tuple[float, float]] = {}  # id -> (kw_score, vec_score)
 
         # Keyword search
         try:
@@ -274,7 +274,7 @@ class FactRetriever:
                 seen[fact.id] = (0.0, 0.0)
 
         # Reconstruct full fact objects
-        candidates: List[Tuple[KeyFact, float, float]] = []
+        candidates: list[tuple[KeyFact, float, float]] = []
         for fact_id, (kw_score, vec_score) in seen.items():
             fact = self.store.get(fact_id)
             if fact and fact.is_active:
@@ -286,11 +286,11 @@ class FactRetriever:
 
     def _rank(
         self,
-        candidates: List[Tuple[KeyFact, float, float]],
+        candidates: list[tuple[KeyFact, float, float]],
         cfg: RetrievalConfig,
-    ) -> List[RankedFact]:
+    ) -> list[RankedFact]:
         """Score and rank candidates."""
-        ranked: List[RankedFact] = []
+        ranked: list[RankedFact] = []
 
         # Compute max access count for normalization
         max_access = max((f.access_count for f, _, _ in candidates), default=1) or 1
@@ -333,11 +333,11 @@ class FactRetriever:
 
     def _select_within_budget(
         self,
-        ranked: List[RankedFact],
+        ranked: list[RankedFact],
         max_tokens: int,
-    ) -> List[RankedFact]:
+    ) -> list[RankedFact]:
         """Select top-ranked facts that fit within the token budget."""
-        selected: List[RankedFact] = []
+        selected: list[RankedFact] = []
         used_tokens = 0
         overhead = 30  # Header/footer tokens (~"## Key Memories\n" etc.)
 
@@ -364,9 +364,9 @@ class FactRetriever:
 
     def _format(
         self,
-        ranked_facts: List[RankedFact],
+        ranked_facts: list[RankedFact],
         header: str = "Relevant memories about this user:",
-    ) -> Tuple[str, int]:
+    ) -> tuple[str, int]:
         """
         Format selected facts into a markdown block for LLM injection.
 

@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.deploy.models import BackupConfig, SnapshotRecord
 
@@ -30,7 +30,7 @@ class RollbackManager:
         backup_cfg: BackupConfig,
         deploy_target: str,  # e.g. /var/www/myapp
         app_name: str,
-        server_config: Dict[str, Any],
+        server_config: dict[str, Any],
         remote_ops: Any,
         cache_dir: Path,
         dry_run: bool = False,
@@ -51,7 +51,7 @@ class RollbackManager:
     # Public API
     # ------------------------------------------------------------------
 
-    def create_snapshot(self) -> Optional[SnapshotRecord]:
+    def create_snapshot(self) -> SnapshotRecord | None:
         """
         Create a timestamped remote snapshot of the current deploy target.
 
@@ -86,7 +86,7 @@ class RollbackManager:
         return record
 
     def restore_snapshot(
-        self, snapshot: Optional[SnapshotRecord] = None
+        self, snapshot: SnapshotRecord | None = None
     ) -> tuple[bool, str]:
         """
         Restore from the given snapshot (or load from last_deploy state file).
@@ -119,7 +119,7 @@ class RollbackManager:
             encoding="utf-8",
         )
 
-    def load_state(self) -> Optional[SnapshotRecord]:
+    def load_state(self) -> SnapshotRecord | None:
         """Load the last known snapshot from local state file."""
         return self._load_last_snapshot()
 
@@ -148,7 +148,7 @@ class RollbackManager:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _load_last_snapshot(self) -> Optional[SnapshotRecord]:
+    def _load_last_snapshot(self) -> SnapshotRecord | None:
         if not self._state_path.exists():
             return None
         try:

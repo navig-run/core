@@ -8,7 +8,6 @@ agent can proactively monitor and interact with.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
 
 
 @dataclass
@@ -17,9 +16,9 @@ class CalendarEvent:
     title: str
     start: datetime
     end: datetime
-    location: Optional[str] = None
-    description: Optional[str] = None
-    attendees: List[str] = None
+    location: str | None = None
+    description: str | None = None
+    attendees: list[str] = None
 
 
 @dataclass
@@ -36,7 +35,7 @@ class CalendarProvider(ABC):
     """Abstract interface for Calendar integration."""
 
     @abstractmethod
-    async def list_events(self, start: datetime, end: datetime) -> List[CalendarEvent]:
+    async def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
         """List events in range."""
         pass
 
@@ -50,12 +49,12 @@ class EmailProvider(ABC):
     """Abstract interface for Email integration."""
 
     @abstractmethod
-    async def list_unread(self, limit: int = 10) -> List[EmailMessage]:
+    async def list_unread(self, limit: int = 10) -> list[EmailMessage]:
         """Get unread messages."""
         pass
 
     @abstractmethod
-    async def draft_email(self, to: List[str], subject: str, body: str) -> str:
+    async def draft_email(self, to: list[str], subject: str, body: str) -> str:
         """Create draft email, return ID."""
         pass
 
@@ -63,7 +62,7 @@ class EmailProvider(ABC):
 class MockCalendar(CalendarProvider):
     """Mock implementation for testing."""
 
-    async def list_events(self, start: datetime, end: datetime) -> List[CalendarEvent]:
+    async def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
         # Return a fake meeting
         return [
             CalendarEvent(
@@ -83,7 +82,7 @@ class MockCalendar(CalendarProvider):
 class MockEmail(EmailProvider):
     """Mock implementation for testing."""
 
-    async def list_unread(self, limit: int = 10) -> List[EmailMessage]:
+    async def list_unread(self, limit: int = 10) -> list[EmailMessage]:
         return [
             EmailMessage(
                 id="msg-1",
@@ -94,6 +93,6 @@ class MockEmail(EmailProvider):
             )
         ]
 
-    async def draft_email(self, to: List[str], subject: str, body: str) -> str:
+    async def draft_email(self, to: list[str], subject: str, body: str) -> str:
         print(f"[MOCK] Drafted email to {to}: {subject}")
         return "mock-draft-id"

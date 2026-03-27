@@ -2,14 +2,14 @@
 
 import logging
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
 logger = logging.getLogger(__name__)
 
 
-def ask_ai(question: str, model: Optional[str], options: Dict[str, Any]):
+def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     """Ask AI about server, get context-aware answers."""
     from navig.ai import AIAssistant
     from navig.config import get_config_manager

@@ -26,9 +26,10 @@ import logging
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class QueryStats:
     min_ms: float = float("inf")
     max_ms: float = 0.0
     # Sorted samples for percentile calculation (capped at _MAX_SAMPLES)
-    _samples: List[float] = field(default_factory=list, repr=False)
+    _samples: list[float] = field(default_factory=list, repr=False)
 
     def record(self, duration_ms: float) -> None:
         self.count += 1
@@ -75,7 +76,7 @@ class QueryStats:
     def avg_ms(self) -> float:
         return self.total_ms / self.count if self.count else 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "label": self.label,
             "count": self.count,
@@ -110,7 +111,7 @@ class QueryTimer:
     ):
         self.slow_threshold_ms = slow_threshold_ms
         self.log_to_audit = log_to_audit
-        self._stats: Dict[str, QueryStats] = defaultdict(lambda: QueryStats(label=""))
+        self._stats: dict[str, QueryStats] = defaultdict(lambda: QueryStats(label=""))
         self._lock = threading.Lock()
 
     # ── Context manager ───────────────────────────────────────
@@ -186,7 +187,7 @@ class QueryTimer:
 
     # ── Stats retrieval ───────────────────────────────────────
 
-    def get_stats(self, label: Optional[str] = None) -> Dict[str, Any]:
+    def get_stats(self, label: str | None = None) -> dict[str, Any]:
         """
         Return latency statistics.
 
@@ -200,8 +201,8 @@ class QueryTimer:
             return {k: v.to_dict() for k, v in self._stats.items()}
 
     def get_slow_queries(
-        self, threshold_ms: Optional[float] = None
-    ) -> List[Dict[str, Any]]:
+        self, threshold_ms: float | None = None
+    ) -> list[dict[str, Any]]:
         """Return stats for queries whose p95 exceeds *threshold_ms*."""
         threshold = threshold_ms or self.slow_threshold_ms
         with self._lock:
@@ -219,7 +220,7 @@ class QueryTimer:
 
 # ── Module-level singleton ────────────────────────────────────
 
-_timer: Optional[QueryTimer] = None
+_timer: QueryTimer | None = None
 
 
 def get_query_timer(**kwargs) -> QueryTimer:

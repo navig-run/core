@@ -19,7 +19,6 @@ import os
 import platform
 import socket
 from pathlib import Path
-from typing import Optional
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -71,7 +70,7 @@ class CryptoEngine:
 
     def __init__(self, vault_dir: Path) -> None:
         self.vault_dir = vault_dir
-        self._salt: Optional[bytes] = None
+        self._salt: bytes | None = None
 
     # ── Salt management ──────────────────────────────────────────────────────
 
@@ -91,14 +90,17 @@ class CryptoEngine:
             self.vault_dir.mkdir(parents=True, exist_ok=True)
             salt_path.write_bytes(self._salt)
             try:
-                salt_path.chmod(0o600)
+                try:
+                    salt_path.chmod(0o600)
+                except (OSError, PermissionError):
+                    pass
             except OSError:
                 pass  # Windows — no-op
         return self._salt
 
     # ── Key derivation ────────────────────────────────────────────────────────
 
-    def derive_key(self, passphrase: Optional[bytes] = None) -> bytes:
+    def derive_key(self, passphrase: bytes | None = None) -> bytes:
         """Derive a 256-bit master key.
 
         Parameters

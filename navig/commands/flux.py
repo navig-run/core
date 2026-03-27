@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import platform
 import socket
-from typing import Optional
 
 import typer
 
@@ -211,7 +210,7 @@ def scan(
 
 @flux_app.command("target")
 def target(
-    node_id: Optional[str] = typer.Argument(None, help="Node ID or partial hostname"),
+    node_id: str | None = typer.Argument(None, help="Node ID or partial hostname"),
 ) -> None:
     """Set the active routing target. Interactive picker if no arg given."""
     data = _get("/mesh/peers")
@@ -283,7 +282,7 @@ def add_node(
 def install(
     gateway: str = typer.Option("", "--gateway", help="Source gateway URL"),
     push: bool = typer.Option(False, "--push", help="Push install over SSH"),
-    peer: Optional[str] = typer.Argument(
+    peer: str | None = typer.Argument(
         None, help="Target node_id / hostname (for --push)"
     ),
 ) -> None:

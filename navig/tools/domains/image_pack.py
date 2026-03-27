@@ -36,7 +36,7 @@ def _sync_generate(**kwargs):
     ]
 
 
-def register_tools(registry: "ToolRegistry") -> None:
+def register_tools(registry: ToolRegistry) -> None:
     from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 
     registry.register(

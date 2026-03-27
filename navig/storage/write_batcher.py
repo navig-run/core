@@ -25,7 +25,7 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class _PendingWrite:
     sql: str
     params: tuple
     is_many: bool = False
-    seq_params: Optional[List[tuple]] = None
+    seq_params: list[tuple] | None = None
 
 
 class WriteBatcher:
@@ -68,10 +68,10 @@ class WriteBatcher:
         self._lock = lock
         self._batch_size = batch_size
         self._flush_interval_s = flush_interval_ms / 1000.0
-        self._queue: List[_PendingWrite] = []
+        self._queue: list[_PendingWrite] = []
         self._queue_lock = threading.Lock()
         self._last_enqueue: float = 0.0
-        self._timer: Optional[threading.Timer] = None
+        self._timer: threading.Timer | None = None
         self._stats = {"enqueued": 0, "flushed": 0, "flush_count": 0}
 
     # ── Enqueue ───────────────────────────────────────────────
@@ -93,7 +93,7 @@ class WriteBatcher:
             else:
                 self._schedule_timer()
 
-    def enqueue_many(self, sql: str, seq_params: List[tuple]) -> None:
+    def enqueue_many(self, sql: str, seq_params: list[tuple]) -> None:
         """
         Add a batch of writes sharing the same SQL statement.
 
@@ -185,7 +185,7 @@ class WriteBatcher:
         """Number of operations currently queued."""
         return len(self._queue)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         return dict(self._stats)
 
     # ── Lifecycle ─────────────────────────────────────────────

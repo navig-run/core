@@ -17,7 +17,7 @@ import socket
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.identity.entity import NaviEntity
@@ -41,7 +41,7 @@ def safe_width() -> int:
     return min(shutil.get_terminal_size(fallback=(80, 24)).columns, 100)
 
 
-def sigil_fits(entity_sigil: List[List[str]]) -> bool:
+def sigil_fits(entity_sigil: list[list[str]]) -> bool:
     """True when terminal is wide enough to show the full 9×9 sigil."""
     needed = len(entity_sigil[0]) * 2 + 12
     return safe_width() >= needed
@@ -50,7 +50,7 @@ def sigil_fits(entity_sigil: List[List[str]]) -> bool:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _measure_ping() -> Tuple[int, str, str]:
+def _measure_ping() -> tuple[int, str, str]:
     """
     Measure latency to a configurable probe host and return (ms_int, dot_color_hex, bars_str).
 
@@ -139,7 +139,7 @@ def _glyph_style(glyph: str, primary: str, accent: str) -> str:
 # ── Main card renderer ────────────────────────────────────────────────────────
 
 
-def render_sigil_card(entity: "NaviEntity") -> None:
+def render_sigil_card(entity: NaviEntity) -> None:
     """Render the full identity card to the terminal via Rich."""
     try:
         from rich.align import Align
@@ -217,7 +217,7 @@ def render_sigil_card(entity: "NaviEntity") -> None:
 # ── Plain-text fallback (no Rich) ─────────────────────────────────────────────
 
 
-def _render_sigil_plain(entity: "NaviEntity") -> None:
+def _render_sigil_plain(entity: NaviEntity) -> None:
     from navig.identity.entity import generate_machine_name
 
     node_id = "NODE-" + entity.seed[:4].upper()

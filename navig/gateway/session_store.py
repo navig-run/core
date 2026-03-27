@@ -32,7 +32,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -90,7 +90,7 @@ class OperatorContext:
     """
 
     key: SessionKey
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
     turn_count: int = 0
@@ -115,7 +115,7 @@ class OperatorContext:
     def is_idle(self, threshold: float = _IDLE_EXPIRY_SECONDS) -> bool:
         return (time.time() - self.last_active) > threshold
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "channel_type": self.key.channel_type,
             "thread_id": self.key.thread_id,
@@ -126,7 +126,7 @@ class OperatorContext:
         }
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "OperatorContext":
+    def from_dict(cls, d: dict[str, Any]) -> OperatorContext:
         return cls(
             key=SessionKey(
                 channel_type=d.get("channel_type", "unknown"),
@@ -152,9 +152,9 @@ class SessionStore:
     across daemon restarts.
     """
 
-    def __init__(self, persist_path: Optional[Path] = None) -> None:
+    def __init__(self, persist_path: Path | None = None) -> None:
         self._lock = threading.Lock()
-        self._contexts: Dict[str, OperatorContext] = {}
+        self._contexts: dict[str, OperatorContext] = {}
         self._persist_path = persist_path
         if persist_path:
             self._load()
@@ -172,7 +172,7 @@ class SessionStore:
                 logger.debug("session_store: created context for %s", k)
             return self._contexts[k]
 
-    def get(self, key: SessionKey) -> Optional[OperatorContext]:
+    def get(self, key: SessionKey) -> OperatorContext | None:
         """Return the context for *key* or ``None`` if it doesn't exist."""
         return self._contexts.get(str(key))
 
@@ -182,7 +182,7 @@ class SessionStore:
         if ctx:
             ctx.last_active = time.time()
 
-    def update(self, key: SessionKey, updates: Dict[str, Any]) -> None:
+    def update(self, key: SessionKey, updates: dict[str, Any]) -> None:
         """Merge *updates* into the context meta for *key* (creates if absent)."""
         ctx = self.get_or_create(key)
         ctx.meta.update(updates)
@@ -196,12 +196,12 @@ class SessionStore:
             logger.debug("session_store: removed context for %s", key)
         return removed
 
-    def active_contexts(self) -> List[OperatorContext]:
+    def active_contexts(self) -> list[OperatorContext]:
         """Return all contexts that are not currently idle."""
         with self._lock:
             return [c for c in self._contexts.values() if not c.is_idle()]
 
-    def all_contexts(self) -> List[OperatorContext]:
+    def all_contexts(self) -> list[OperatorContext]:
         with self._lock:
             return list(self._contexts.values())
 
@@ -247,7 +247,7 @@ class SessionStore:
 # Singleton
 # =============================================================================
 
-_store_instance: Optional[SessionStore] = None
+_store_instance: SessionStore | None = None
 _store_lock = threading.Lock()
 
 
@@ -261,7 +261,7 @@ def get_session_store() -> SessionStore:
         if _store_instance is not None:
             return _store_instance
 
-        persist_path: Optional[Path] = None
+        persist_path: Path | None = None
         try:
             from navig.config import get_config_manager
 

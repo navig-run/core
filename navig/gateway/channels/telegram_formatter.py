@@ -27,7 +27,6 @@ import logging
 import re
 import time
 from dataclasses import asdict, dataclass
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +134,7 @@ class FormatterPrefs:
         return json.dumps(asdict(self), ensure_ascii=False)
 
     @classmethod
-    def from_json(cls, raw: str) -> "FormatterPrefs":
+    def from_json(cls, raw: str) -> FormatterPrefs:
         try:
             data = json.loads(raw)
             return cls(
@@ -167,7 +166,7 @@ class FormatterStore:
     usable even when navig-core is not fully installed.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         from navig.platform.paths import data_dir
 
         if db_path is None:
@@ -228,7 +227,7 @@ class FormatterStore:
             logger.warning("FormatterStore.save failed: %s", exc)
 
 
-_formatter_store: Optional[FormatterStore] = None
+_formatter_store: FormatterStore | None = None
 
 
 def get_formatter_store() -> FormatterStore:
@@ -271,7 +270,7 @@ class MarkdownFormatter:
       8. Restore fenced code blocks
     """
 
-    def convert(self, text: str, prefs: Optional[FormatterPrefs] = None) -> str:
+    def convert(self, text: str, prefs: FormatterPrefs | None = None) -> str:
         """Convert *text* to Telegram-formatted output."""
         if prefs is None:
             prefs = FormatterPrefs()
@@ -337,7 +336,7 @@ class MarkdownFormatter:
         return text
 
     def convert_chunked(
-        self, text: str, prefs: Optional[FormatterPrefs] = None, max_chars: int = 4096
+        self, text: str, prefs: FormatterPrefs | None = None, max_chars: int = 4096
     ) -> list[str]:
         """
         Convert and split into Telegram-safe chunks (≤ *max_chars* each).

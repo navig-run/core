@@ -301,13 +301,13 @@ def main(
         is_eager=True,
         help="Show help and exit",
     ),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None,
         "--host",
         "-h",
         help="Override active host for this command",
     ),
-    app: Optional[str] = typer.Option(
+    app: str | None = typer.Option(
         None,
         "--app",
         "-p",
@@ -521,7 +521,7 @@ def main(
 
                 _gc_file = _cm.global_config_dir / "config.yaml"
                 if _gc_file.exists():
-                    with open(_gc_file, "r", encoding="utf-8") as _f:
+                    with open(_gc_file, encoding="utf-8") as _f:
                         _debug_raw_cfg = yaml.safe_load(_f) or {}
                     debug_log_enabled = _debug_raw_cfg.get("debug_log", False)
         except Exception:
@@ -1081,7 +1081,7 @@ def update_alias(ctx: typer.Context):
 
 @app.command("chat", hidden=True)
 def chat_command(
-    query: Optional[str] = typer.Argument(None, help="Optional initial query"),
+    query: str | None = typer.Argument(None, help="Optional initial query"),
 ):
     """Start interactive AI chat (alias for running 'navig' with a query)."""
     _run_ai_chat(query, single_query=False)
@@ -1090,7 +1090,7 @@ def chat_command(
 @app.command("help")
 def help_command(
     ctx: typer.Context,
-    topic: Optional[str] = typer.Argument(
+    topic: str | None = typer.Argument(
         None,
         help="Help topic (e.g., host, db, file, backup). Omit to list topics.",
     ),
@@ -1240,7 +1240,7 @@ def help_command(
 @app.command("docs")
 def docs_command(
     ctx: typer.Context,
-    query: Optional[str] = typer.Argument(
+    query: str | None = typer.Argument(
         None,
         help="Search query for documentation (e.g., 'database connection', 'ssh tunnel').",
     ),
@@ -1909,10 +1909,10 @@ def whoami_command(
 
 @app.command("settings")
 def settings_command(
-    key: Optional[str] = typer.Argument(
+    key: str | None = typer.Argument(
         None, help="Setting key, e.g. navig.ai.provider"
     ),
-    value: Optional[str] = typer.Argument(
+    value: str | None = typer.Argument(
         None, help="New value to write (triggers write mode)"
     ),
     layer: str = typer.Option(
@@ -2002,7 +2002,7 @@ def task_run(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmations"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Detailed output"),
-    var: Optional[List[str]] = typer.Option(
+    var: list[str] | None = typer.Option(
         None, "--var", "-V", help="Variable (name=value)"
     ),
 ):
@@ -2059,7 +2059,7 @@ def task_complete(
     dry_run: bool = typer.Option(
         False, "--dry-run", "-n", help="Validate; skip all writes"
     ),
-    now_date: Optional[str] = typer.Option(
+    now_date: str | None = typer.Option(
         None, "--date", "-d", help="Override date YYYY-MM-DD"
     ),
 ) -> None:
@@ -2071,7 +2071,7 @@ def task_complete(
 
     # Locate complete-task script by walking up from cwd
     cwd = Path.cwd()
-    project_root: Optional[Path] = None
+    project_root: Path | None = None
     for parent in [cwd, *cwd.parents]:
         if (parent / ".navig").is_dir():
             project_root = parent
@@ -2164,10 +2164,10 @@ def context_show(
 @context_app.command("set")
 def context_set(
     ctx: typer.Context,
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Host to set as project default"
     ),
-    app_name: Optional[str] = typer.Option(
+    app_name: str | None = typer.Option(
         None, "--app", "-a", help="App to set as project default"
     ),
 ):
@@ -2235,7 +2235,7 @@ app.add_typer(index_app, name="index")
 @index_app.command("scan")
 def index_scan(
     ctx: typer.Context,
-    root: Optional[str] = typer.Argument(
+    root: str | None = typer.Argument(
         None, help="Project root directory (default: current directory)"
     ),
     incremental: bool = typer.Option(
@@ -2282,7 +2282,7 @@ def index_scan(
 def index_search(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="Search query"),
-    root: Optional[str] = typer.Option(
+    root: str | None = typer.Option(
         None, "--root", "-r", help="Project root directory"
     ),
     top_k: int = typer.Option(10, "--top", "-k", help="Max results to return"),
@@ -2333,7 +2333,7 @@ def index_search(
 @index_app.command("stats")
 def index_stats(
     ctx: typer.Context,
-    root: Optional[str] = typer.Option(
+    root: str | None = typer.Option(
         None, "--root", "-r", help="Project root directory"
     ),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
@@ -2368,7 +2368,7 @@ def index_stats(
 @index_app.command("drop")
 def index_drop(
     ctx: typer.Context,
-    root: Optional[str] = typer.Option(
+    root: str | None = typer.Option(
         None, "--root", "-r", help="Project root directory"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -2429,17 +2429,17 @@ def history_callback(ctx: typer.Context):
 def history_list(
     ctx: typer.Context,
     limit: int = typer.Option(20, "--limit", "-l", help="Number of entries to show"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Filter by host"),
-    type_filter: Optional[str] = typer.Option(
+    host: str | None = typer.Option(None, "--host", "-h", help="Filter by host"),
+    type_filter: str | None = typer.Option(
         None, "--type", "-t", help="Filter by operation type"
     ),
-    status: Optional[str] = typer.Option(
+    status: str | None = typer.Option(
         None, "--status", "-s", help="Filter by status (success/failed)"
     ),
-    search: Optional[str] = typer.Option(
+    search: str | None = typer.Option(
         None, "--search", "-q", help="Search in command text"
     ),
-    since: Optional[str] = typer.Option(
+    since: str | None = typer.Option(
         None, "--since", help="Time filter (e.g., 1h, 24h, 7d)"
     ),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
@@ -2501,7 +2501,7 @@ def history_replay(
     dry_run: bool = typer.Option(
         False, "--dry-run", "-n", help="Show what would be done"
     ),
-    modify: Optional[str] = typer.Option(
+    modify: str | None = typer.Option(
         None, "--modify", "-m", help="Modify command before replay"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -3022,17 +3022,17 @@ def security_edit(
     firewall: bool = typer.Option(
         False, "--firewall", "-f", help="Edit firewall rules"
     ),
-    port: Optional[int] = typer.Option(None, "--port", "-p", help="Port number"),
+    port: int | None = typer.Option(None, "--port", "-p", help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", help="Protocol (tcp/udp)"),
     allow_from: str = typer.Option("any", "--from", help="IP address or subnet"),
     add: bool = typer.Option(False, "--add", help="Add a rule"),
     remove: bool = typer.Option(False, "--remove", "-r", help="Remove a rule"),
     enable: bool = typer.Option(False, "--enable", help="Enable firewall"),
     disable: bool = typer.Option(False, "--disable", help="Disable firewall"),
-    unban: Optional[str] = typer.Option(
+    unban: str | None = typer.Option(
         None, "--unban", help="Unban IP address from fail2ban"
     ),
-    jail: Optional[str] = typer.Option(
+    jail: str | None = typer.Option(
         None, "--jail", "-j", help="Jail name for fail2ban"
     ),
 ):
@@ -3416,13 +3416,13 @@ def system_maintenance_cmd(ctx: typer.Context):
 @app.command("run")
 def run_command(
     ctx: typer.Context,
-    command: Optional[str] = typer.Argument(
+    command: str | None = typer.Argument(
         None, help="Command to execute, @- for stdin, @file for file"
     ),
     stdin: bool = typer.Option(
         False, "--stdin", "-s", help="Read command from stdin (bypasses escaping)"
     ),
-    file: Optional[Path] = typer.Option(
+    file: Path | None = typer.Option(
         None, "--file", "-f", help="Read command from file"
     ),
     b64: bool = typer.Option(
@@ -3508,9 +3508,9 @@ def run_command(
 @app.command("r", hidden=True)
 def run_command_alias(
     ctx: typer.Context,
-    command: Optional[str] = typer.Argument(None, help="Alias for: navig run"),
+    command: str | None = typer.Argument(None, help="Alias for: navig run"),
     stdin: bool = typer.Option(False, "--stdin", "-s", help="Read command from stdin"),
-    file: Optional[Path] = typer.Option(
+    file: Path | None = typer.Option(
         None, "--file", "-f", help="Read command from file"
     ),
     b64: bool = typer.Option(False, "--b64", "-b", help="Base64 encode the command"),
@@ -3589,13 +3589,13 @@ def dashboard_command(
 @app.command("suggest")
 def suggest_command(
     ctx: typer.Context,
-    context: Optional[str] = typer.Option(
+    context: str | None = typer.Option(
         None,
         "--context",
         "-c",
         help="Filter by context (docker, database, deployment, monitoring)",
     ),
-    run_idx: Optional[int] = typer.Option(
+    run_idx: int | None = typer.Option(
         None, "--run", "-r", help="Run suggestion by number"
     ),
     limit: int = typer.Option(8, "--limit", "-l", help="Number of suggestions"),
@@ -3662,13 +3662,13 @@ def trigger_callback(ctx: typer.Context):
 @trigger_app.command("list")
 def trigger_list(
     ctx: typer.Context,
-    type_filter: Optional[str] = typer.Option(
+    type_filter: str | None = typer.Option(
         None, "--type", "-t", help="Filter by trigger type"
     ),
-    status: Optional[str] = typer.Option(
+    status: str | None = typer.Option(
         None, "--status", "-s", help="Filter by status (enabled/disabled)"
     ),
-    tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
+    tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -3700,8 +3700,8 @@ def trigger_show(
 @trigger_app.command("add")
 def trigger_add(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(None, help="Trigger name"),
-    action: Optional[str] = typer.Option(
+    name: str | None = typer.Argument(None, help="Trigger name"),
+    action: str | None = typer.Option(
         None, "--action", "-a", help="Action to execute"
     ),
     trigger_type: str = typer.Option(
@@ -3826,7 +3826,7 @@ def trigger_fire(
 @trigger_app.command("history")
 def trigger_history(
     ctx: typer.Context,
-    trigger_id: Optional[str] = typer.Argument(None, help="Filter by trigger ID"),
+    trigger_id: str | None = typer.Argument(None, help="Filter by trigger ID"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max entries to show"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
@@ -3845,7 +3845,7 @@ def trigger_history(
 @trigger_app.command("clear-history")
 def trigger_clear_history(
     ctx: typer.Context,
-    trigger_id: Optional[str] = typer.Argument(
+    trigger_id: str | None = typer.Argument(
         None, help="Clear history for specific trigger only"
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
@@ -4008,7 +4008,7 @@ def insights_report(
     time_range: str = typer.Option(
         "week", "--range", "-r", help="Time range: today, week, month, all"
     ),
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None, "--output", "-o", help="Save report to file"
     ),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
@@ -4056,13 +4056,13 @@ def pack_callback(ctx: typer.Context):
 @pack_app.command("list")
 def pack_list(
     ctx: typer.Context,
-    pack_type: Optional[str] = typer.Option(
+    pack_type: str | None = typer.Option(
         None,
         "--type",
         "-t",
         help="Filter by type: workflow, runbook, checklist, template",
     ),
-    tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
+    tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
     installed: bool = typer.Option(
         False, "--installed", "-i", help="Show only installed packs"
     ),
@@ -4128,7 +4128,7 @@ def pack_uninstall(
 def pack_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Pack name to run"),
-    var: Optional[List[str]] = typer.Option(
+    var: list[str] | None = typer.Option(
         None, "--var", "-v", help="Variables (key=value)"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without executing"),
@@ -4339,7 +4339,7 @@ def install_status(ctx: typer.Context):
 def install_search(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="Search query (name, description, tags)"),
-    type_filter: Optional[str] = typer.Option(
+    type_filter: str | None = typer.Option(
         None,
         "--type",
         "-t",
@@ -4406,7 +4406,7 @@ def install_search(
 @install_app.command("browse")
 def install_browse(
     ctx: typer.Context,
-    type_filter: Optional[str] = typer.Option(
+    type_filter: str | None = typer.Option(
         None,
         "--type",
         "-t",
@@ -4570,7 +4570,7 @@ def quick_remove(
         ch.error(f"Quick action '{name}' not found.")
         return
 
-    with open(quick_file, "r", encoding="utf-8") as f:
+    with open(quick_file, encoding="utf-8") as f:
         actions = yaml.safe_load(f) or {}
 
     if name not in actions:
@@ -4675,7 +4675,7 @@ def software_callback(ctx: typer.Context):
 @software_app.command("list")
 def software_list_cmd(
     ctx: typer.Context,
-    limit: Optional[int] = typer.Option(
+    limit: int | None = typer.Option(
         None, "--limit", "-l", help="Limit number of results"
     ),
 ):
@@ -4922,7 +4922,7 @@ def web_hestia_list(
     domains: bool = typer.Option(
         False, "--domains", "-d", help="List HestiaCP domains"
     ),
-    user_filter: Optional[str] = typer.Option(
+    user_filter: str | None = typer.Option(
         None, "--user", help="Filter domains by username"
     ),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
@@ -4945,11 +4945,11 @@ def web_hestia_add(
     ctx: typer.Context,
     resource: str = typer.Argument(..., help="Resource type: user or domain"),
     name: str = typer.Argument(..., help="Username or domain name"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Password (for user)"
     ),
-    email: Optional[str] = typer.Option(None, "--email", "-e", help="Email (for user)"),
-    user: Optional[str] = typer.Option(
+    email: str | None = typer.Option(None, "--email", "-e", help="Email (for user)"),
+    user: str | None = typer.Option(
         None, "--user", "-u", help="Username (for domain)"
     ),
 ):
@@ -4978,7 +4978,7 @@ def web_hestia_remove(
     ctx: typer.Context,
     resource: str = typer.Argument(..., help="Resource type: user or domain"),
     name: str = typer.Argument(..., help="Username or domain name"),
-    user: Optional[str] = typer.Option(
+    user: str | None = typer.Option(
         None, "--user", "-u", help="Username (for domain)"
     ),
     force: bool = typer.Option(
@@ -5046,7 +5046,7 @@ def webserver_reload_cmd(ctx: typer.Context):
 def upload_file(
     ctx: typer.Context,
     local: Path = typer.Argument(..., help="Local file/directory path"),
-    remote: Optional[str] = typer.Argument(
+    remote: str | None = typer.Argument(
         None,
         help="Remote path (smart detection if omitted)",
     ),
@@ -5062,7 +5062,7 @@ def upload_file(
 def download_file(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file/directory path"),
-    local: Optional[Path] = typer.Argument(
+    local: Path | None = typer.Argument(
         None,
         help="Local path (smart detection if omitted)",
     ),
@@ -5162,7 +5162,7 @@ def change_owner(
 def cat_file(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path to read"),
-    lines: Optional[int] = typer.Option(
+    lines: int | None = typer.Option(
         None, "--lines", "-n", help="Number of lines to show"
     ),
     head: bool = typer.Option(
@@ -5183,22 +5183,22 @@ def cat_file(
 def write_file(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path to write"),
-    content: Optional[str] = typer.Option(
+    content: str | None = typer.Option(
         None, "--content", "-c", help="Content to write"
     ),
     stdin: bool = typer.Option(
         False, "--stdin", "-s", help="Read content from stdin (pipe)"
     ),
-    from_file: Optional[Path] = typer.Option(
+    from_file: Path | None = typer.Option(
         None, "--from-file", "-f", help="Read content from local file"
     ),
     append: bool = typer.Option(
         False, "--append", "-a", help="Append to file instead of overwrite"
     ),
-    mode: Optional[str] = typer.Option(
+    mode: str | None = typer.Option(
         None, "--mode", "-m", help="Set file permissions after writing"
     ),
-    owner: Optional[str] = typer.Option(
+    owner: str | None = typer.Option(
         None, "--owner", "-o", help="Set file owner after writing"
     ),
 ):
@@ -5334,17 +5334,17 @@ def db_containers(ctx: typer.Context):
 def db_query(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="SQL query to execute"),
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    database: Optional[str] = typer.Option(
+    database: str | None = typer.Option(
         None, "--database", "-d", help="Database name"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
 ):
@@ -5358,14 +5358,14 @@ def db_query(
 @app.command("db-databases", hidden=True)
 def db_databases(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
     plain: bool = typer.Option(
@@ -5384,14 +5384,14 @@ def db_databases(
 def db_show_tables(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name"),
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
     plain: bool = typer.Option(
@@ -5410,17 +5410,17 @@ def db_show_tables(
 def db_dump(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name to dump"),
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file path"
     ),
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
 ):
@@ -5434,17 +5434,17 @@ def db_dump(
 @app.command("db-shell", hidden=True)
 def db_shell(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    database: Optional[str] = typer.Option(
+    database: str | None = typer.Option(
         None, "--database", "-d", help="Database name"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
 ):
@@ -5523,7 +5523,7 @@ def ai_callback(ctx: typer.Context):
 def ai_ask(
     ctx: typer.Context,
     question: str = typer.Argument(..., help="Natural language question"),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None,
         "--model",
         "-m",
@@ -5576,7 +5576,7 @@ def ai_show(
     clipboard: bool = typer.Option(
         False, "--clipboard", help="Copy context to clipboard"
     ),
-    file: Optional[str] = typer.Option(None, "--file", help="Save context to file"),
+    file: str | None = typer.Option(None, "--file", help="Save context to file"),
 ):
     """Show AI assistant information (canonical command)."""
     if status:
@@ -5625,7 +5625,7 @@ def ai_edit(ctx: typer.Context):
 @ai_app.command("models")
 def ai_models(
     ctx: typer.Context,
-    provider: Optional[str] = typer.Option(
+    provider: str | None = typer.Option(
         None, "--provider", "-p", help="Filter by provider (e.g., openai, airllm)"
     ),
 ):
@@ -5709,13 +5709,13 @@ def ai_models(
 @ai_app.command("providers")
 def ai_providers(
     ctx: typer.Context,
-    add: Optional[str] = typer.Option(
+    add: str | None = typer.Option(
         None, "--add", "-a", help="Add API key for provider (e.g., openai, anthropic)"
     ),
-    remove: Optional[str] = typer.Option(
+    remove: str | None = typer.Option(
         None, "--remove", "-r", help="Remove API key for provider"
     ),
-    test: Optional[str] = typer.Option(
+    test: str | None = typer.Option(
         None, "--test", "-t", help="Test provider connection"
     ),
 ):
@@ -5857,13 +5857,13 @@ def ai_airllm(
     configure: bool = typer.Option(
         False, "--configure", "-c", help="Configure AirLLM settings"
     ),
-    model_path: Optional[str] = typer.Option(
+    model_path: str | None = typer.Option(
         None, "--model-path", "-p", help="HuggingFace model ID or local path"
     ),
-    max_vram: Optional[float] = typer.Option(
+    max_vram: float | None = typer.Option(
         None, "--max-vram", help="Maximum VRAM in GB"
     ),
-    compression: Optional[str] = typer.Option(
+    compression: str | None = typer.Option(
         None, "--compression", help="Compression mode: 4bit, 8bit, or none"
     ),
     test: bool = typer.Option(
@@ -6442,7 +6442,7 @@ def memory_set(
 def ai_legacy(
     ctx: typer.Context,
     question: str = typer.Argument(..., help="Natural language question"),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None, "--model", "-m", help="Override default AI model"
     ),
 ):
@@ -6501,7 +6501,7 @@ def assistant_context(
     clipboard: bool = typer.Option(
         False, "--clipboard", help="Copy context to clipboard"
     ),
-    file: Optional[str] = typer.Option(None, "--file", help="Save context to file"),
+    file: str | None = typer.Option(None, "--file", help="Save context to file"),
 ):
     """[DEPRECATED: Use 'navig ai show --context']"""
     deprecation_warning("navig assistant context", "navig ai show --context")
@@ -6568,7 +6568,7 @@ def hestia_list_users(
 @hestia_app.command("domains")
 def hestia_list_domains(
     ctx: typer.Context,
-    user: Optional[str] = typer.Option(None, "--user", "-u", help="Filter by username"),
+    user: str | None = typer.Option(None, "--user", "-u", help="Filter by username"),
     plain: bool = typer.Option(
         False, "--plain", help="Output plain text (one domain per line) for scripting"
     ),
@@ -6763,7 +6763,7 @@ def template_validate(ctx: typer.Context):
 def template_edit(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to edit"),
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
 ):
@@ -6833,8 +6833,8 @@ def addon_info(
 def addon_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to run"),
-    command: Optional[str] = typer.Argument(None, help="Template command to execute"),
-    args: Optional[List[str]] = typer.Argument(
+    command: str | None = typer.Argument(None, help="Template command to execute"),
+    args: list[str] | None = typer.Argument(
         None, help="Arguments for the template command"
     ),
     dry_run: bool = typer.Option(
@@ -6879,7 +6879,7 @@ app.add_typer(server_template_app, name="server-template")
 @server_template_app.command("list")
 def server_template_list(
     ctx: typer.Context,
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
     enabled_only: bool = typer.Option(
@@ -6902,7 +6902,7 @@ def server_template_list(
 def server_template_show(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to show"),
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
 ):
@@ -6917,7 +6917,7 @@ def server_template_show(
 def server_template_enable(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to enable"),
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
 ):
@@ -6932,7 +6932,7 @@ def server_template_enable(
 def server_template_disable(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to disable"),
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
 ):
@@ -6951,7 +6951,7 @@ def server_template_set(
         ..., help="Dot-separated config path (e.g., 'paths.web_root')"
     ),
     value: str = typer.Argument(..., help="Value to set (JSON-parseable)"),
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
 ):
@@ -6966,7 +6966,7 @@ def server_template_set(
 def server_template_sync(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to sync"),
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
     force: bool = typer.Option(
@@ -6985,7 +6985,7 @@ def server_template_sync(
 def server_template_init(
     ctx: typer.Context,
     template_name: str = typer.Argument(..., help="Template name to initialize"),
-    server: Optional[str] = typer.Option(
+    server: str | None = typer.Option(
         None, "--server", "-s", help="Server name (uses active if omitted)"
     ),
     enable: bool = typer.Option(
@@ -7296,7 +7296,7 @@ def config_migrate_legacy(
 @config_app.command("test")
 def config_test(
     ctx: typer.Context,
-    host: Optional[str] = typer.Argument(
+    host: str | None = typer.Argument(
         None, help="Host name to validate (validates all if not specified)"
     ),
     scope: str = typer.Option(
@@ -7329,7 +7329,7 @@ def config_test(
 @config_app.command("validate")
 def config_validate(
     ctx: typer.Context,
-    host: Optional[str] = typer.Argument(
+    host: str | None = typer.Argument(
         None, help="Host name to validate (validates all if not specified)"
     ),
     scope: str = typer.Option(
@@ -7485,7 +7485,7 @@ def config_get_legacy(
 @config_app.command("edit")
 def config_edit(
     ctx: typer.Context,
-    target: Optional[str] = typer.Argument(None, help="Host name or host:app to edit"),
+    target: str | None = typer.Argument(None, help="Host name or host:app to edit"),
 ):
     """Open configuration in default editor."""
     from navig.commands.config import edit_config
@@ -7496,7 +7496,7 @@ def config_edit(
 @config_app.command("backup")
 def config_backup_cmd(
     ctx: typer.Context,
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file path (auto-generated if not provided)"
     ),
     format: str = typer.Option(
@@ -7510,7 +7510,7 @@ def config_backup_cmd(
     encrypt: bool = typer.Option(
         False, "--encrypt", "-e", help="Encrypt the output with a password"
     ),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Encryption password (prompted if not provided)"
     ),
 ):
@@ -7565,7 +7565,7 @@ def backup_callback(ctx: typer.Context):
 @backup_app.command("export")
 def backup_export(
     ctx: typer.Context,
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file path (auto-generated if not provided)"
     ),
     format: str = typer.Option(
@@ -7579,7 +7579,7 @@ def backup_export(
     encrypt: bool = typer.Option(
         False, "--encrypt", "-e", help="Encrypt the output with a password"
     ),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Encryption password (prompted if not provided)"
     ),
 ):
@@ -7619,7 +7619,7 @@ def backup_import(
         "--merge/--replace",
         help="Merge with existing config (default) or replace",
     ),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Decryption password (prompted if needed)"
     ),
 ):
@@ -7650,8 +7650,8 @@ def backup_import(
 @backup_app.command("show")
 def backup_show(
     ctx: typer.Context,
-    file: Optional[Path] = typer.Argument(None, help="Backup file to inspect"),
-    password: Optional[str] = typer.Option(
+    file: Path | None = typer.Argument(None, help="Backup file to inspect"),
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Decryption password if encrypted"
     ),
     plain: bool = typer.Option(
@@ -7692,13 +7692,13 @@ def backup_run(
     ),
     web: bool = typer.Option(False, "--web", help="Backup web server configuration"),
     all: bool = typer.Option(False, "--all", help="Run comprehensive backup"),
-    restore: Optional[str] = typer.Option(
+    restore: str | None = typer.Option(
         None, "--restore", help="Restore from a comprehensive backup by name"
     ),
-    component: Optional[str] = typer.Option(
+    component: str | None = typer.Option(
         None, "--component", help="Specific component to restore"
     ),
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
     compress: str = typer.Option(
         "gzip",
         "--compress",
@@ -7742,7 +7742,7 @@ def backup_run(
 def backup_restore(
     ctx: typer.Context,
     backup_name: str = typer.Argument(..., help="Backup name to restore from"),
-    component: Optional[str] = typer.Option(
+    component: str | None = typer.Option(
         None, "--component", "-c", help="Specific component to restore"
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
@@ -7777,7 +7777,7 @@ def backup_list(
 def backup_inspect(
     ctx: typer.Context,
     file: Path = typer.Argument(..., help="Backup file to inspect"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Decryption password if encrypted"
     ),
 ):
@@ -7834,7 +7834,7 @@ def backup_delete(
 @backup_app.command("config")
 def backup_config_cmd(
     ctx: typer.Context,
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file path (auto-generated if not provided)"
     ),
     format: str = typer.Option(
@@ -7848,7 +7848,7 @@ def backup_config_cmd(
     encrypt: bool = typer.Option(
         False, "--encrypt", "-e", help="Encrypt the output with a password"
     ),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Encryption password (prompted if not provided)"
     ),
 ):
@@ -7933,7 +7933,7 @@ def flow_run(
         False, "--yes", "-y", help="Skip all confirmation prompts"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    var: Optional[List[str]] = typer.Option(
+    var: list[str] | None = typer.Option(
         None, "--var", "-V", help="Variable override (name=value)"
     ),
 ):
@@ -7988,7 +7988,7 @@ def skills_callback(ctx: typer.Context):
 @skills_app.command("list")
 def skills_list(
     ctx: typer.Context,
-    skills_dir: Optional[Path] = typer.Option(
+    skills_dir: Path | None = typer.Option(
         None,
         "--dir",
         help="Optional skills directory override",
@@ -8010,7 +8010,7 @@ def skills_list(
 @skills_app.command("tree")
 def skills_tree(
     ctx: typer.Context,
-    skills_dir: Optional[Path] = typer.Option(
+    skills_dir: Path | None = typer.Option(
         None,
         "--dir",
         help="Optional skills directory override",
@@ -8036,7 +8036,7 @@ def skills_show(
         ...,
         help="Skill name (e.g., 'docker-manage', 'git-basics', 'official/docker-ops')",
     ),
-    skills_dir: Optional[Path] = typer.Option(
+    skills_dir: Path | None = typer.Option(
         None,
         "--dir",
         help="Optional skills directory override",
@@ -8062,10 +8062,10 @@ def skills_run(
         ...,
         help="Skill spec: <skill-name>:<command> or <skill-name> (runs entrypoint)",
     ),
-    args: Optional[List[str]] = typer.Argument(
+    args: list[str] | None = typer.Argument(
         None, help="Arguments passed to the skill command"
     ),
-    skills_dir: Optional[Path] = typer.Option(
+    skills_dir: Path | None = typer.Option(
         None,
         "--dir",
         help="Optional skills directory override",
@@ -8255,10 +8255,10 @@ def scaffold_apply(
     target_dir: str = typer.Option(
         ".", "--target-dir", "-d", help="Target directory (local or remote)"
     ),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-h", help="Remote host to deploy to (defaults to local)"
     ),
-    set_var: Optional[List[str]] = typer.Option(
+    set_var: list[str] | None = typer.Option(
         None, "--set", help="Set variable like key=value"
     ),
     dry_run: bool = typer.Option(
@@ -8341,8 +8341,8 @@ def flow_template_remove(
 def flow_template_run(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to deploy"),
-    command: Optional[str] = typer.Argument(None, help="Template command to run"),
-    args: Optional[List[str]] = typer.Argument(
+    command: str | None = typer.Argument(None, help="Template command to run"),
+    args: list[str] | None = typer.Argument(
         None, help="Arguments for the template command"
     ),
     dry_run: bool = typer.Option(
@@ -8407,7 +8407,7 @@ def workflow_run(
         False, "--yes", "-y", help="Skip all confirmation prompts"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    var: Optional[List[str]] = typer.Option(
+    var: list[str] | None = typer.Option(
         None, "--var", "-V", help="Variable override (name=value)"
     ),
 ):
@@ -8672,7 +8672,7 @@ def _load_gateway_cli_defaults() -> tuple[int, str]:
     return gateway_cli_defaults()
 
 
-def _gateway_request_headers() -> Dict[str, str]:
+def _gateway_request_headers() -> dict[str, str]:
     """Return auth headers for gateway API calls when configured."""
     from navig.gateway.client import gateway_request_headers
 
@@ -8703,13 +8703,13 @@ def gateway_callback(ctx: typer.Context):
 
 @gateway_app.command("start")
 def gateway_start(
-    port: Optional[int] = typer.Option(
+    port: int | None = typer.Option(
         None,
         "--port",
         "-p",
         help="Port (default: gateway.port from config, fallback 8789)",
     ),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None,
         "--host",
         help="Bind address (default: gateway.host from config, fallback 0.0.0.0)",
@@ -8990,7 +8990,7 @@ def bot_start(
     gateway: bool = typer.Option(
         False, "--gateway", "-g", help="Start with gateway (session persistence)"
     ),
-    port: Optional[int] = typer.Option(
+    port: int | None = typer.Option(
         None,
         "--port",
         "-p",
@@ -9189,7 +9189,7 @@ def quick_start(
     gateway: bool = typer.Option(
         True, "--gateway/--no-gateway", "-g/-G", help="Start gateway"
     ),
-    port: Optional[int] = typer.Option(
+    port: int | None = typer.Option(
         None,
         "--port",
         "-p",
@@ -9897,7 +9897,7 @@ def browser_open(
 
 @browser_app.command("screenshot")
 def browser_screenshot(
-    path: Optional[str] = typer.Option(None, "--path", "-p", help="Save path"),
+    path: str | None = typer.Option(None, "--path", "-p", help="Save path"),
     full_page: bool = typer.Option(False, "--full", "-f", help="Capture full page"),
 ):
     """Capture browser screenshot."""
@@ -10019,7 +10019,7 @@ def queue_callback(ctx: typer.Context):
 
 @queue_app.command("list")
 def queue_list(
-    status: Optional[str] = typer.Option(
+    status: str | None = typer.Option(
         None, "--status", "-s", help="Filter by status"
     ),
     limit: int = typer.Option(20, "--limit", "-n", help="Max tasks to show"),
@@ -10070,7 +10070,7 @@ def queue_list(
 def queue_add(
     name: str = typer.Argument(..., help="Task name"),
     handler: str = typer.Argument(..., help="Handler to execute"),
-    params: Optional[str] = typer.Option(None, "--params", "-p", help="JSON params"),
+    params: str | None = typer.Option(None, "--params", "-p", help="JSON params"),
     priority: int = typer.Option(50, "--priority", help="Priority (lower = higher)"),
 ):
     """Add a task to the queue."""
@@ -11227,7 +11227,7 @@ def config_migrate(
 
     try:
         # Load raw config to avoid auto-migration on load
-        with open(global_config_file, "r", encoding="utf-8") as f:
+        with open(global_config_file, encoding="utf-8") as f:
             raw_config = yaml.safe_load(f) or {}
 
         migrated, modified = migrate_config(raw_config)
@@ -11343,7 +11343,7 @@ def config_set_legacy(
             ch.error("No global configuration found.")
             raise typer.Exit(1)
 
-        with open(global_config_file, "r", encoding="utf-8") as f:
+        with open(global_config_file, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
 
         # Update nested key
@@ -11702,7 +11702,7 @@ def email_setup(
 
         config = {}
         if config_file.exists():
-            with open(config_file, "r", encoding="utf-8") as f:
+            with open(config_file, encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
 
         existing_email = config.get("email")
@@ -12069,7 +12069,7 @@ def restore_db(
 @app.command("backup-config", hidden=True)
 def backup_system_config_cmd(
     ctx: typer.Context,
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
 ):
     """[DEPRECATED] Backup system configuration files. Use: navig backup run --config"""
     deprecation_warning("navig backup-config", "navig backup run --config")
@@ -12081,7 +12081,7 @@ def backup_system_config_cmd(
 @app.command("backup-db-all", hidden=True)
 def backup_all_databases_cmd(
     ctx: typer.Context,
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
     compress: str = typer.Option(
         "gzip", "--compress", "-c", help="Compression: none|gzip|zstd"
     ),
@@ -12096,7 +12096,7 @@ def backup_all_databases_cmd(
 @app.command("backup-hestia", hidden=True)
 def backup_hestia_cmd(
     ctx: typer.Context,
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
 ):
     """[DEPRECATED] Backup HestiaCP configuration. Use: navig backup run --hestia"""
     deprecation_warning("navig backup-hestia", "navig backup run --hestia")
@@ -12108,7 +12108,7 @@ def backup_hestia_cmd(
 @app.command("backup-web", hidden=True)
 def backup_web_config_cmd(
     ctx: typer.Context,
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
 ):
     """[DEPRECATED] Backup web server configurations. Use: navig backup run --web"""
     deprecation_warning("navig backup-web", "navig backup run --web")
@@ -12120,7 +12120,7 @@ def backup_web_config_cmd(
 @app.command("backup-all", hidden=True)
 def backup_all_cmd(
     ctx: typer.Context,
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Custom backup name"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
     compress: str = typer.Option(
         "gzip", "--compress", "-c", help="Compression for databases: none|gzip|zstd"
     ),
@@ -12145,7 +12145,7 @@ def list_backups_cmd(ctx: typer.Context):
 def restore_backup_cmd(
     ctx: typer.Context,
     backup_name: str = typer.Argument(..., help="Backup name to restore from"),
-    component: Optional[str] = typer.Option(
+    component: str | None = typer.Option(
         None, "--component", "-c", help="Specific component to restore"
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
@@ -12178,7 +12178,7 @@ def update_cmd(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would happen, no changes."
     ),
-    channel: Optional[str] = typer.Option(
+    channel: str | None = typer.Option(
         None, "--channel", help="Update channel: stable or beta.", hidden=True
     ),
 ) -> None:

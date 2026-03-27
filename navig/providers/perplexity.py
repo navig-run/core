@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import httpx
@@ -71,9 +71,9 @@ class PerplexitySearchResult:
     """A search result from Perplexity API."""
 
     content: str
-    citations: List[str]
+    citations: list[str]
     model: str
-    usage: Optional[Dict[str, int]] = None
+    usage: dict[str, int] | None = None
 
 
 class PerplexityClient(BaseProviderClient):
@@ -88,8 +88,8 @@ class PerplexityClient(BaseProviderClient):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         model: str = DEFAULT_PERPLEXITY_MODEL,
         timeout: float = 60.0,
     ):
@@ -124,7 +124,7 @@ class PerplexityClient(BaseProviderClient):
             env_key="PERPLEXITY_API_KEY",
         )
 
-    def _resolve_api_key(self) -> Optional[str]:
+    def _resolve_api_key(self) -> str | None:
         """Resolve API key from environment."""
         # Try Perplexity key first
         key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
@@ -162,7 +162,7 @@ class PerplexityClient(BaseProviderClient):
     def base_url(self) -> str:
         return self._base_url
 
-    def _build_headers(self) -> Dict[str, str]:
+    def _build_headers(self) -> dict[str, str]:
         """Build request headers."""
         headers = {
             "Content-Type": "application/json",
@@ -195,8 +195,8 @@ class PerplexityClient(BaseProviderClient):
     async def search(
         self,
         query: str,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
         max_tokens: int = 4096,
     ) -> PerplexitySearchResult:
         """
@@ -280,7 +280,7 @@ class PerplexityClient(BaseProviderClient):
         if self.is_openrouter and not model_id.startswith("perplexity/"):
             model_id = f"perplexity/{model_id}"
 
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "model": model_id,
             "messages": [
                 {"role": m.role, "content": m.content} for m in request.messages
@@ -351,7 +351,7 @@ class PerplexityClient(BaseProviderClient):
 
 
 def create_perplexity_client(
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     model: str = DEFAULT_PERPLEXITY_MODEL,
     timeout: float = 60.0,
 ) -> PerplexityClient:
@@ -371,9 +371,9 @@ def create_perplexity_client(
 
 async def perplexity_search(
     query: str,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     model: str = DEFAULT_PERPLEXITY_MODEL,
-    system_prompt: Optional[str] = None,
+    system_prompt: str | None = None,
 ) -> PerplexitySearchResult:
     """
     Perform a one-shot Perplexity search.

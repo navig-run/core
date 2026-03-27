@@ -11,7 +11,6 @@ No OAuth required - works with any standard ICS feed.
 
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
 
 from navig.agent.proactive.providers import CalendarEvent, CalendarProvider
 
@@ -30,8 +29,8 @@ class ICSCalendarProvider(CalendarProvider):
 
     def __init__(
         self,
-        url: Optional[str] = None,
-        path: Optional[Path] = None,
+        url: str | None = None,
+        path: Path | None = None,
         cache_minutes: int = 5,
     ):
         """
@@ -48,10 +47,10 @@ class ICSCalendarProvider(CalendarProvider):
         self.url = url
         self.path = Path(path).expanduser() if path else None
         self.cache_minutes = cache_minutes
-        self._cache: Optional[List[CalendarEvent]] = None
-        self._cache_time: Optional[datetime] = None
+        self._cache: list[CalendarEvent] | None = None
+        self._cache_time: datetime | None = None
 
-    async def list_events(self, start: datetime, end: datetime) -> List[CalendarEvent]:
+    async def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
         """
         Fetch events from ICS source within the given time range.
         """
@@ -92,7 +91,7 @@ class ICSCalendarProvider(CalendarProvider):
             "ICS provider is read-only. Use Google Calendar or CalDAV for write access."
         )
 
-    async def _fetch_ics(self) -> Optional[str]:
+    async def _fetch_ics(self) -> str | None:
         """Fetch ICS data from URL or file."""
         if self.url:
             try:
@@ -111,7 +110,7 @@ class ICSCalendarProvider(CalendarProvider):
 
         return None
 
-    def _parse_vevent(self, component) -> Optional[CalendarEvent]:
+    def _parse_vevent(self, component) -> CalendarEvent | None:
         """Parse an iCalendar VEVENT component."""
         try:
             evt_start = component.get("dtstart")
@@ -147,7 +146,7 @@ class ICSCalendarProvider(CalendarProvider):
         # It's a date, convert to datetime at midnight
         return datetime.combine(dt, datetime.min.time())
 
-    def _parse_attendees(self, component) -> List[str]:
+    def _parse_attendees(self, component) -> list[str]:
         """Extract attendee emails from VEVENT."""
         attendees = []
         for attendee in component.get("attendee", []):
@@ -157,8 +156,8 @@ class ICSCalendarProvider(CalendarProvider):
         return attendees
 
     def _filter_events(
-        self, events: List[CalendarEvent], start: datetime, end: datetime
-    ) -> List[CalendarEvent]:
+        self, events: list[CalendarEvent], start: datetime, end: datetime
+    ) -> list[CalendarEvent]:
         """Filter events to those within the time range."""
         return [e for e in events if e.start >= start and e.start <= end]
 
@@ -183,7 +182,7 @@ class CalDAVProvider(CalendarProvider):
         self.username = username
         self.password = password
 
-    async def list_events(self, start: datetime, end: datetime) -> List[CalendarEvent]:
+    async def list_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
         """List events from CalDAV server."""
         try:
             import caldav
@@ -264,7 +263,7 @@ class CalDAVProvider(CalendarProvider):
         created = calendar.save_event(ical.to_ical().decode("utf-8"))
         return str(created.id) if created else ""
 
-    def _parse_vevent(self, component) -> Optional[CalendarEvent]:
+    def _parse_vevent(self, component) -> CalendarEvent | None:
         """Parse VEVENT (shared with ICSCalendarProvider)."""
         try:
             evt_start = component.get("dtstart")

@@ -28,7 +28,7 @@ Usage
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger("navig.tools.output_validator")
 
@@ -46,10 +46,10 @@ class OutputValidationError(ValueError):
 
 def validate_output(
     output: Any,
-    schema: Dict[str, Any],
+    schema: dict[str, Any],
     *,
     strict: bool = False,
-) -> Tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Validate *output* against a JSON Schema *schema*.
 
@@ -72,7 +72,7 @@ def validate_output(
     return ok, msg
 
 
-def _validate(output: Any, schema: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+def _validate(output: Any, schema: dict[str, Any]) -> tuple[bool, str | None]:
     """Internal — try jsonschema first, fall back to naive check."""
     # 1. Try jsonschema
     try:
@@ -93,7 +93,7 @@ def _validate(output: Any, schema: Dict[str, Any]) -> Tuple[bool, Optional[str]]
     return _naive_check(output, schema)
 
 
-def _naive_check(output: Any, schema: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+def _naive_check(output: Any, schema: dict[str, Any]) -> tuple[bool, str | None]:
     """
     Minimal type + required-field check when jsonschema is not installed.
 

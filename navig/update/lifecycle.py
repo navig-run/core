@@ -11,7 +11,8 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from navig.update.checker import VersionChecker
 from navig.update.history import UpdateHistory
@@ -28,11 +29,11 @@ class UpdateEngine:
 
     def __init__(
         self,
-        targets: List[UpdateTarget],
+        targets: list[UpdateTarget],
         source: _BaseSource,
         remote_ops: Any = None,
-        cache_dir: Optional[str] = None,
-        config: Optional[Dict] = None,
+        cache_dir: str | None = None,
+        config: dict | None = None,
     ):
         self._targets = targets
         self._source = source
@@ -50,7 +51,7 @@ class UpdateEngine:
         self._remote_ops = remote_ops
 
         # Shared latest-version cache so we only hit the source once
-        self._version_cache: Dict[str, str] = {}
+        self._version_cache: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Phase 1: plan
@@ -59,10 +60,10 @@ class UpdateEngine:
     def plan(self, force: bool = False) -> UpdatePlan:
         """Check all targets and produce an UpdatePlan."""
         checker = VersionChecker(self._source, self._remote_ops, self._version_cache)
-        version_infos: Dict[str, VersionInfo] = {}
-        to_update: List[UpdateTarget] = []
-        up_to_date: List[UpdateTarget] = []
-        unreachable: List[UpdateTarget] = []
+        version_infos: dict[str, VersionInfo] = {}
+        to_update: list[UpdateTarget] = []
+        up_to_date: list[UpdateTarget] = []
+        unreachable: list[UpdateTarget] = []
 
         for t in self._targets:
             if t.is_local:
@@ -97,13 +98,13 @@ class UpdateEngine:
         skip_backup: bool = False,
         auto_rollback: bool = True,
         channel: str = "stable",
-        on_progress: Optional[ProgressCallback] = None,
+        on_progress: ProgressCallback | None = None,
     ) -> UpdateResult:
         """Execute updates. Returns an UpdateResult."""
         t_global = time.monotonic()
         p = self.plan(force=force)
 
-        node_results: List[NodeResult] = []
+        node_results: list[NodeResult] = []
 
         # Nodes that are unreachable
         for t in p.unreachable:
@@ -172,11 +173,11 @@ class UpdateEngine:
     def _run_one(
         self,
         target: UpdateTarget,
-        vi: Optional[VersionInfo],
+        vi: VersionInfo | None,
         skip_backup: bool,
         auto_rollback: bool,
         channel: str,
-        on_progress: Optional[ProgressCallback],
+        on_progress: ProgressCallback | None,
     ) -> NodeResult:
         t0 = time.monotonic()
         old_version = vi.current if vi else "unknown"
@@ -348,7 +349,7 @@ class UpdateEngine:
 
     @staticmethod
     def _emit(
-        cb: Optional[ProgressCallback],
+        cb: ProgressCallback | None,
         node_id: str,
         step: str,
         status: str,

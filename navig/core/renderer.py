@@ -16,7 +16,6 @@ import os
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Plain-mode gate (resolved once at import time)
@@ -161,7 +160,7 @@ def progress_bar(
 def renderBlock(
     block_type: BlockType,
     title: str,
-    body: Optional[str] = None,
+    body: str | None = None,
 ) -> None:
     """Print a labelled block to stdout.
 
@@ -259,7 +258,7 @@ def sessionOpen(host: str, command: str) -> None:
     print()
 
 
-def sessionClose(summary: Optional[str] = None) -> None:
+def sessionClose(summary: str | None = None) -> None:
     """Print the session footer.
 
     Args:

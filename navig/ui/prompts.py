@@ -8,13 +8,12 @@ navig.ui.prompts — Keymap footer and action approval prompt.
 from __future__ import annotations
 
 import sys
-from typing import Dict, Optional
 
 from navig.ui.theme import console
 
 
 def render_keymap_footer(
-    keymap: Dict[str, str],
+    keymap: dict[str, str],
     *,
     separator: str = "  ",
 ) -> None:
@@ -38,7 +37,7 @@ def render_action_approval(
     command: str,
     *,
     prompt: str = "Proceed?",
-    hint: Optional[str] = None,
+    hint: str | None = None,
 ) -> bool:
     """Show approval prompt and return True if user confirms. Never raises on display.
 

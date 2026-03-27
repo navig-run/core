@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Feature defaults — safe-by-default philosophy
-MATRIX_FEATURE_DEFAULTS: Dict[str, bool] = {
+MATRIX_FEATURE_DEFAULTS: dict[str, bool] = {
     "messaging": True,  # send / read / tail commands
     "room_management": True,  # create / join / leave / invite rooms
     "admin_ops": False,  # user management, server admin (dangerous)
@@ -24,7 +24,7 @@ MATRIX_FEATURE_DEFAULTS: Dict[str, bool] = {
     "e2ee": False,  # end-to-end encryption (Phase 3)
 }
 
-FEATURE_DESCRIPTIONS: Dict[str, str] = {
+FEATURE_DESCRIPTIONS: dict[str, str] = {
     "messaging": "Send/read/tail messages",
     "room_management": "Create/join/leave/invite rooms",
     "admin_ops": "User management, server admin",
@@ -35,7 +35,7 @@ FEATURE_DESCRIPTIONS: Dict[str, str] = {
 }
 
 
-def _get_matrix_features_config() -> Dict[str, Any]:
+def _get_matrix_features_config() -> dict[str, Any]:
     """Load the features block from config, falling back to defaults."""
     try:
         from navig.core.config import get_global_config
@@ -67,7 +67,7 @@ def is_feature_enabled(feature: str) -> bool:
     return features.get(feature, MATRIX_FEATURE_DEFAULTS.get(feature, False))
 
 
-def get_all_features() -> Dict[str, bool]:
+def get_all_features() -> dict[str, bool]:
     """Return a dict of all features with their resolved on/off state."""
     features = _get_matrix_features_config()
     result = {}

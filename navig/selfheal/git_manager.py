@@ -19,7 +19,7 @@ import secrets
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -44,7 +44,7 @@ _GIT_TIMEOUT = 120  # seconds — generous for slow connections
 
 def _run_git(
     *args: str,
-    cwd: Optional[Path] = None,
+    cwd: Path | None = None,
     ignore_errors: bool = False,
     timeout: int = _GIT_TIMEOUT,
 ) -> str:
@@ -111,7 +111,7 @@ def _github_request(
     method: str,
     path: str,
     token: str,
-    json: Optional[dict[str, Any]] = None,
+    json: dict[str, Any] | None = None,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
     """Execute a GitHub REST API request.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -27,30 +27,30 @@ class UserProfile:
     """
 
     telegram_id: int
-    username: Optional[str] = None  # Telegram @handle
-    display_name: Optional[str] = None
+    username: str | None = None  # Telegram @handle
+    display_name: str | None = None
 
     # TON identity
-    ton_wallet_address: Optional[str] = None
+    ton_wallet_address: str | None = None
     ton_verified: bool = False
 
     # Social links
-    socials: List[SocialLink] = field(default_factory=list)
+    socials: list[SocialLink] = field(default_factory=list)
 
     # Preferences
     preferred_channel: str = "telegram"  # "telegram" | "matrix" | "both"
-    matrix_user_id: Optional[str] = None  # @user:homeserver.tld
+    matrix_user_id: str | None = None  # @user:homeserver.tld
     language: str = "en"
-    timezone: Optional[str] = None
+    timezone: str | None = None
 
     # Metadata
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # ---- Serialisation helpers -----------------------------------------
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "telegram_id": self.telegram_id,
             "username": self.username,
@@ -70,7 +70,7 @@ class UserProfile:
         }
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "UserProfile":
+    def from_dict(cls, d: dict[str, Any]) -> UserProfile:
         socials = [
             SocialLink(
                 platform=s["platform"],

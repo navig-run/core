@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Optional
 
 from navig.gateway.notifications import (
     ChannelNotifier,
@@ -61,7 +60,7 @@ class MatrixNotifier(ChannelNotifier):
         bot,
         room_id: str,
         *,
-        priority_room_id: Optional[str] = None,
+        priority_room_id: str | None = None,
         batch_window_sec: int = 60,
     ):
         self.bot = bot
@@ -70,9 +69,9 @@ class MatrixNotifier(ChannelNotifier):
         self._batch_window_sec = batch_window_sec
 
         self._running = False
-        self._batch_buffer: List[Notification] = []
+        self._batch_buffer: list[Notification] = []
         self._batch_lock = asyncio.Lock()
-        self._flush_task: Optional[asyncio.Task] = None
+        self._flush_task: asyncio.Task | None = None
 
     # ── ChannelNotifier interface ──
 

@@ -32,9 +32,10 @@ import pstats
 import sys
 import threading
 import time
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger("navig.perf.profiler")
 
@@ -110,7 +111,7 @@ def _extract_and_store(profiler: cProfile.Profile, elapsed_ms: float) -> None:
         stats.print_stats(TOP_FUNCTIONS)
 
         # Parse the stats into structured dicts
-        hot_functions: List[Dict[str, Any]] = []
+        hot_functions: list[dict[str, Any]] = []
         profiler.create_stats()
         for (filename, lineno, funcname), (cc, nc, tt, ct, _) in profiler.stats.items():  # type: ignore[union-attr]
             hot_functions.append(
@@ -169,9 +170,9 @@ def _safe_argv() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def load_recent_samples(days: int = 7) -> List[Dict[str, Any]]:
+def load_recent_samples(days: int = 7) -> list[dict[str, Any]]:
     """Load all profile samples from the last *days* days."""
-    samples: List[Dict[str, Any]] = []
+    samples: list[dict[str, Any]] = []
     today = date.today()
     for i in range(days):
         from datetime import timedelta
@@ -192,8 +193,8 @@ def load_recent_samples(days: int = 7) -> List[Dict[str, Any]]:
 
 
 def detect_regressions(
-    samples: Optional[List[Dict[str, Any]]] = None
-) -> List[Dict[str, Any]]:
+    samples: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     """
     Detect performance regressions in the last 7 days of profile data.
 
@@ -207,12 +208,12 @@ def detect_regressions(
         return []
 
     # Group by command
-    by_cmd: Dict[str, List[Dict[str, Any]]] = {}
+    by_cmd: dict[str, list[dict[str, Any]]] = {}
     for s in samples:
         cmd = s.get("cmd", "")
         by_cmd.setdefault(cmd, []).append(s)
 
-    regressions: List[Dict[str, Any]] = []
+    regressions: list[dict[str, Any]] = []
     for cmd, entries in by_cmd.items():
         if len(entries) < 2:
             continue
@@ -243,7 +244,7 @@ def detect_regressions(
     return sorted(regressions, key=lambda r: r["delta_pct"], reverse=True)
 
 
-def suggest_optimizations(samples: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+def suggest_optimizations(samples: list[dict[str, Any]] | None = None) -> list[str]:
     """
     Return human-readable optimization suggestions based on profile data.
     Used by `navig evolve optimize`.
@@ -257,8 +258,8 @@ def suggest_optimizations(samples: Optional[List[Dict[str, Any]]] = None) -> Lis
         ]
 
     # Aggregate cumtime by function across all samples
-    fn_cumtime: Dict[str, float] = {}
-    fn_calls: Dict[str, int] = {}
+    fn_cumtime: dict[str, float] = {}
+    fn_calls: dict[str, int] = {}
     for sample in samples:
         for fn_info in sample.get("top_fns", []):
             key = f"{fn_info.get('file', '')}:{fn_info.get('fn', '')}"
@@ -268,7 +269,7 @@ def suggest_optimizations(samples: Optional[List[Dict[str, Any]]] = None) -> Lis
     # Top 5 hottest functions
     top5 = sorted(fn_cumtime.items(), key=lambda x: x[1], reverse=True)[:5]
 
-    suggestions: List[str] = []
+    suggestions: list[str] = []
     for fn_key, total_ms in top5:
         avg_ms = total_ms / max(fn_calls.get(fn_key, 1), 1)
         suggestions.append(

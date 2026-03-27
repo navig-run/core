@@ -7,7 +7,7 @@ Uses PowerShell and winget for package management.
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from navig.adapters.os.base import OSAdapter, PackageInfo
 
@@ -36,7 +36,7 @@ class WindowsAdapter(OSAdapter):
         """List installed packages using winget."""
         return "winget list --disable-interactivity"
 
-    def parse_package_list(self, output: str) -> List[PackageInfo]:
+    def parse_package_list(self, output: str) -> list[PackageInfo]:
         """Parse winget list output."""
         packages = []
         lines = output.strip().split("\n")
@@ -115,7 +115,7 @@ class WindowsAdapter(OSAdapter):
     def get_system_info_command(self) -> str:
         return "systeminfo"
 
-    def parse_system_info(self, output: str) -> Dict[str, Any]:
+    def parse_system_info(self, output: str) -> dict[str, Any]:
         """Parse Windows systeminfo output."""
         info = {}
         for line in output.strip().split("\n"):

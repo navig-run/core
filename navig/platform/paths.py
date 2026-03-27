@@ -18,11 +18,11 @@ doing ad-hoc `sys.platform == 'win32'` checks.
 import os
 import platform
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 # ── OS Detection (cached) ────────────────────────────────────
 
-_DETECTED_OS: Optional[str] = None
+_DETECTED_OS: str | None = None
 
 
 def current_os() -> str:
@@ -42,7 +42,7 @@ def current_os() -> str:
     elif system == "linux":
         # Check for WSL
         try:
-            with open("/proc/version", "r") as f:
+            with open("/proc/version") as f:
                 if "microsoft" in f.read().lower():
                     _DETECTED_OS = "wsl"
                 else:
@@ -336,7 +336,7 @@ def shell_name() -> str:
     return "sh"
 
 
-def shell_rc_path() -> Optional[Path]:
+def shell_rc_path() -> Path | None:
     """Path to the shell's RC file for PATH modifications."""
     if is_windows():
         return None  # Windows uses registry/environment variables
@@ -385,7 +385,7 @@ def _is_system_service() -> bool:
 # ── Platform info bundle ──────────────────────────────────────
 
 
-def platform_info() -> Dict[str, Any]:
+def platform_info() -> dict[str, Any]:
     """
     Full platform information bundle.
     Useful for diagnostics, logging, and `navig status`.
@@ -410,7 +410,7 @@ def platform_info() -> Dict[str, Any]:
 
     if is_linux() or is_wsl():
         try:
-            with open("/etc/os-release", "r") as f:
+            with open("/etc/os-release") as f:
                 for line in f:
                     if line.startswith("PRETTY_NAME="):
                         info["distro"] = line.split("=", 1)[1].strip().strip('"')
@@ -433,14 +433,14 @@ def ensure_dirs() -> None:
 # ── Dependency checks ────────────────────────────────────────
 
 
-def check_docker() -> Dict[str, Any]:
+def check_docker() -> dict[str, Any]:
     """
     Check Docker availability and version.
     Returns dict with 'available', 'version', 'compose', 'compose_version'.
     """
     import subprocess as _sp
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "available": False,
         "version": None,
         "compose": False,

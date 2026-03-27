@@ -12,7 +12,6 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -48,7 +47,7 @@ def _desktop_shortcut_exists() -> bool:
 # ── module API ────────────────────────────────────────────────────────────────
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     if sys.platform != "win32":
         return []
     if _desktop_shortcut_exists():

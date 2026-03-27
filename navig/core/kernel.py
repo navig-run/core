@@ -1,7 +1,6 @@
 import glob
 import os
 import re
-from typing import Dict, List, Optional
 
 import yaml
 
@@ -12,9 +11,9 @@ from .plugin_manager import PluginManager
 class NavigKernel:
     def __init__(self, root_path: str):
         self.root_path = root_path
-        self.skills: Dict[str, SkillManifest] = {}
-        self.commands: Dict[str, NavigCommand] = {}
-        self.packs: Dict[str, NavigPack] = {}
+        self.skills: dict[str, SkillManifest] = {}
+        self.commands: dict[str, NavigCommand] = {}
+        self.packs: dict[str, NavigPack] = {}
         self.plugin_manager = PluginManager(os.path.join(root_path, "plugins"))
 
     def bootstrap(self):
@@ -40,7 +39,7 @@ class NavigKernel:
 
     def _parse_skill_file(self, filepath: str):
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 content = f.read()
 
             match = re.search(r"^---\n(.*?)\n---", content, re.DOTALL)
@@ -77,7 +76,7 @@ class NavigKernel:
 
     def _parse_pack_file(self, filepath: str):
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 content = yaml.safe_load(f)
 
             # Helper to map 'steps' properly if they are strings (simple commands) or dicts
@@ -117,7 +116,7 @@ class NavigKernel:
 
             print(f"   ✅ (Mock) Executed: {step.command}")
 
-    def resolve_intent(self, query: str) -> Optional[object]:
+    def resolve_intent(self, query: str) -> object | None:
         # Returns NavigCommand or NavigPack
         query_lower = query.lower()
         query_tokens = set(query_lower.split())
@@ -181,7 +180,7 @@ class NavigKernel:
             return best_match
         return None
 
-    def execute_command(self, cmd_name: str, args: List[str] = None):
+    def execute_command(self, cmd_name: str, args: list[str] = None):
         cmd = self.commands.get(cmd_name)
         if not cmd:
             print(f"❌ Command {cmd_name} not found.")

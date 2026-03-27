@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 
 @dataclass
@@ -23,6 +23,6 @@ class StatusEvent:
     task_id: str
     message: str
     timestamp: datetime
-    step_index: Optional[int] = None
-    total_steps: Optional[int] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    step_index: int | None = None
+    total_steps: int | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)

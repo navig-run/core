@@ -25,10 +25,11 @@ Integration:
 
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.agent.proactive.user_state import OperatorState, TimeOfDay, UserStateTracker
 from navig.debug_logger import get_debug_logger
@@ -66,9 +67,9 @@ class EngagementConfig:
     celebration_cooldown_hours: float = 24.0
 
     # Time windows
-    greeting_hours: Tuple[int, int] = (7, 10)  # 7AM-10AM
-    wrapup_hours: Tuple[int, int] = (17, 20)  # 5PM-8PM
-    quiet_hours: Tuple[int, int] = (23, 7)  # 11PM-7AM: no proactive
+    greeting_hours: tuple[int, int] = (7, 10)  # 7AM-10AM
+    wrapup_hours: tuple[int, int] = (17, 20)  # 5PM-8PM
+    quiet_hours: tuple[int, int] = (23, 7)  # 11PM-7AM: no proactive
 
     # Probability tuning (0.0 = never, 1.0 = always when eligible)
     checkin_probability: float = 0.3
@@ -90,7 +91,7 @@ class EngagementResult:
     action: EngagementAction
     message: str
     priority: int = 5  # 1-10, higher = more important
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     suppress: bool = False  # If True, was generated but suppressed
 
 
@@ -109,18 +110,18 @@ class EngagementCoordinator:
 
     def __init__(
         self,
-        state_tracker: Optional[UserStateTracker] = None,
-        config: Optional[EngagementConfig] = None,
+        state_tracker: UserStateTracker | None = None,
+        config: EngagementConfig | None = None,
     ):
         self.state = state_tracker or UserStateTracker()
         self.config = config or EngagementConfig()
 
         # Track daily sends to enforce max_proactive_per_day
-        self._daily_sends: List[float] = []
-        self._daily_reset_date: Optional[str] = None
+        self._daily_sends: list[float] = []
+        self._daily_reset_date: str | None = None
 
         # Callbacks for delivering proactive messages
-        self._delivery_callbacks: List[Callable[[EngagementResult], None]] = []
+        self._delivery_callbacks: list[Callable[[EngagementResult], None]] = []
 
         # Capability promoter (lazy-loaded to avoid circular imports)
         self._capability_promoter = None
@@ -129,7 +130,7 @@ class EngagementCoordinator:
         """Register a callback that will be called when a proactive message is ready."""
         self._delivery_callbacks.append(callback)
 
-    def engagement_tick(self) -> Optional[EngagementResult]:
+    def engagement_tick(self) -> EngagementResult | None:
         """
         Main evaluation loop — called on each heartbeat tick.
 
@@ -162,7 +163,7 @@ class EngagementCoordinator:
             return None
 
         # Evaluate all candidate actions
-        candidates: List[EngagementResult] = []
+        candidates: list[EngagementResult] = []
 
         # 1. Greeting (highest priority for returning users)
         greeting = self._evaluate_greeting(operator_state, time_of_day)
@@ -221,7 +222,7 @@ class EngagementCoordinator:
 
     def _evaluate_greeting(
         self, state: OperatorState, tod: TimeOfDay
-    ) -> Optional[EngagementResult]:
+    ) -> EngagementResult | None:
         """
         Evaluate whether to send a greeting.
 
@@ -263,7 +264,7 @@ class EngagementCoordinator:
 
     def _evaluate_wrapup(
         self, state: OperatorState, tod: TimeOfDay
-    ) -> Optional[EngagementResult]:
+    ) -> EngagementResult | None:
         """Evaluate whether to offer an evening wrap-up."""
         hour = datetime.now().hour
         start, end = self.config.wrapup_hours
@@ -282,7 +283,7 @@ class EngagementCoordinator:
                 )
         return None
 
-    def _evaluate_checkin(self, state: OperatorState) -> Optional[EngagementResult]:
+    def _evaluate_checkin(self, state: OperatorState) -> EngagementResult | None:
         """Evaluate whether to do a periodic check-in."""
         hours_since = self.state.hours_since("checkin")
         if hours_since is None or hours_since >= self.config.checkin_cooldown_hours:
@@ -298,7 +299,7 @@ class EngagementCoordinator:
 
     def _evaluate_capability_promo(
         self, state: OperatorState
-    ) -> Optional[EngagementResult]:
+    ) -> EngagementResult | None:
         """Evaluate whether to promote an underused feature."""
         hours_since = self.state.hours_since("capability_promo")
         if (
@@ -322,9 +323,7 @@ class EngagementCoordinator:
                             )
         return None
 
-    def _evaluate_contextual_tip(
-        self, state: OperatorState
-    ) -> Optional[EngagementResult]:
+    def _evaluate_contextual_tip(self, state: OperatorState) -> EngagementResult | None:
         """Evaluate whether to offer a contextual usage tip."""
         hours_since = self.state.hours_since("capability_promo")  # same cooldown
         if (
@@ -348,7 +347,7 @@ class EngagementCoordinator:
                         )
         return None
 
-    def _evaluate_idle_nudge(self, state: OperatorState) -> Optional[EngagementResult]:
+    def _evaluate_idle_nudge(self, state: OperatorState) -> EngagementResult | None:
         """Evaluate whether to gently nudge an idle user."""
         if state == OperatorState.IDLE:
             hours_idle = self.state.hours_since("last_interaction")
@@ -368,9 +367,7 @@ class EngagementCoordinator:
                         )
         return None
 
-    def _evaluate_feedback_ask(
-        self, state: OperatorState
-    ) -> Optional[EngagementResult]:
+    def _evaluate_feedback_ask(self, state: OperatorState) -> EngagementResult | None:
         """Evaluate whether to ask for self-improvement feedback."""
         hours_since = self.state.hours_since("feedback_ask")
         if (
@@ -454,7 +451,7 @@ class EngagementCoordinator:
             ]
         )
 
-    def _build_contextual_tip(self, command: str, count: int) -> Optional[str]:
+    def _build_contextual_tip(self, command: str, count: int) -> str | None:
         """Build a contextual usage tip based on command patterns."""
         tips = {
             "db": f"You've used `db` {count} times. Did you know you can pipe queries with `--plain` for scripting?",

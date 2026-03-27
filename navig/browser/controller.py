@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -39,14 +39,14 @@ class BrowserConfig:
     timeout_ms: int = 30000
     viewport_width: int = 1280
     viewport_height: int = 720
-    user_data_dir: Optional[str] = None
+    user_data_dir: str | None = None
     screenshot_dir: str = "~/.navig/screenshots"
-    proxy: Optional[str] = None
+    proxy: str | None = None
     ignore_https_errors: bool = False
 
     # Security
-    allowed_domains: List[str] = field(default_factory=list)  # Empty = allow all
-    blocked_domains: List[str] = field(default_factory=list)
+    allowed_domains: list[str] = field(default_factory=list)  # Empty = allow all
+    blocked_domains: list[str] = field(default_factory=list)
 
     @classmethod
     def from_config(cls, config: dict) -> "BrowserConfig":
@@ -90,7 +90,7 @@ class BrowserController:
         await controller.stop()
     """
 
-    def __init__(self, config: Optional[BrowserConfig] = None):
+    def __init__(self, config: BrowserConfig | None = None):
         self.config = config or BrowserConfig()
 
         self._playwright = None
@@ -206,7 +206,7 @@ class BrowserController:
 
     async def navigate(
         self, url: str, wait_until: str = "domcontentloaded"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Navigate to URL.
 
@@ -266,9 +266,9 @@ class BrowserController:
 
     async def screenshot(
         self,
-        name: Optional[str] = None,
+        name: str | None = None,
         full_page: bool = False,
-        selector: Optional[str] = None,
+        selector: str | None = None,
     ) -> str:
         """
         Take screenshot of current page.
@@ -542,7 +542,7 @@ class BrowserController:
         await self._ensure_started()
         return await self._page.content()
 
-    async def get_text(self, selector: Optional[str] = None) -> str:
+    async def get_text(self, selector: str | None = None) -> str:
         """Get text content of page or element."""
         await self._ensure_started()
 
@@ -554,7 +554,7 @@ class BrowserController:
 
         return await self._page.text_content("body") or ""
 
-    async def get_attribute(self, selector: str, attribute: str) -> Optional[str]:
+    async def get_attribute(self, selector: str, attribute: str) -> str | None:
         """Get element attribute value."""
         await self._ensure_started()
 
@@ -574,7 +574,7 @@ class BrowserController:
         return await self._page.evaluate(script)
 
     async def wait_for_selector(
-        self, selector: str, timeout: Optional[int] = None, state: str = "visible"
+        self, selector: str, timeout: int | None = None, state: str = "visible"
     ) -> bool:
         """
         Wait for element to appear.
@@ -595,7 +595,7 @@ class BrowserController:
         except Exception:
             return False
 
-    async def wait_for_navigation(self, timeout: Optional[int] = None) -> bool:
+    async def wait_for_navigation(self, timeout: int | None = None) -> bool:
         """Wait for navigation to complete."""
         await self._ensure_started()
 
@@ -629,9 +629,7 @@ class BrowserController:
         await self._page.hover(selector)
         return True
 
-    async def scroll(
-        self, selector: Optional[str] = None, x: int = 0, y: int = 0
-    ) -> bool:
+    async def scroll(self, selector: str | None = None, x: int = 0, y: int = 0) -> bool:
         """Scroll page or element."""
         await self._ensure_started()
 
@@ -644,12 +642,12 @@ class BrowserController:
 
         return True
 
-    async def get_cookies(self) -> List[Dict[str, Any]]:
+    async def get_cookies(self) -> list[dict[str, Any]]:
         """Get all cookies."""
         await self._ensure_started()
         return await self._context.cookies()
 
-    async def set_cookies(self, cookies: List[Dict[str, Any]]):
+    async def set_cookies(self, cookies: list[dict[str, Any]]):
         """Set cookies."""
         await self._ensure_started()
         await self._context.add_cookies(cookies)
@@ -687,7 +685,7 @@ class BrowserController:
         await self._ensure_started()
         return await self._page.title()
 
-    async def pdf(self, path: Optional[str] = None) -> str:
+    async def pdf(self, path: str | None = None) -> str:
         """
         Save page as PDF (only works in headless mode).
 
@@ -707,7 +705,7 @@ class BrowserController:
         await self._page.pdf(path=path)
         return path
 
-    async def query_selector_all(self, selector: str) -> List[Dict[str, Any]]:
+    async def query_selector_all(self, selector: str) -> list[dict[str, Any]]:
         """
         Query all matching elements and return their basic info.
 

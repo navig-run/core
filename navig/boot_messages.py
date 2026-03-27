@@ -20,7 +20,6 @@ Usage::
 from __future__ import annotations
 
 import random
-from typing import Optional
 
 __all__ = ["NAVIG_BOOT_MESSAGES", "get_boot_message"]
 
@@ -40,9 +39,9 @@ NAVIG_BOOT_MESSAGES: list[str] = [
 
 def get_boot_message(
     *,
-    location: Optional[str] = None,
-    uptime: Optional[int] = None,
-    signal_strength: Optional[int] = None,
+    location: str | None = None,
+    uptime: int | None = None,
+    signal_strength: int | None = None,
 ) -> str:
     """Return a randomised NAVIG boot message.
 

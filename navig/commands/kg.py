@@ -12,8 +12,6 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 from navig.lazy_loader import lazy_import
@@ -81,7 +79,7 @@ def kg_remember(
 @kg_app.command("recall")
 def kg_recall(
     subject: str = typer.Argument(..., help="Subject entity to recall facts about"),
-    predicate: Optional[str] = typer.Option(
+    predicate: str | None = typer.Option(
         None, "--predicate", "-p", help="Filter by predicate"
     ),
     min_confidence: float = typer.Option(0.0, "--min-confidence"),

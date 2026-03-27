@@ -8,7 +8,7 @@ for CLI output — icon, color, severity, etc.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Literal, Optional
+from typing import Literal
 
 # ── Type aliases ────────────────────────────────────────────────────────────
 RenderMode = Literal["rich", "safe"]
@@ -26,7 +26,7 @@ class StatusChip:
     icon: str  # Unicode icon (rich mode)
     icon_safe: str  # ASCII fallback (safe mode)
     label: str
-    value: Optional[str] = None
+    value: str | None = None
     color: Color = "white"
 
 
@@ -37,7 +37,7 @@ class Metric:
     label: str
     value: str
     bar_fill: float  # 0.0–1.0
-    sparkline: Optional[str] = None
+    sparkline: str | None = None
     color: Color = "cyan"
 
 
@@ -67,7 +67,7 @@ class ActionItem:
 
     index: int
     description: str
-    estimated_value: Optional[str] = None
+    estimated_value: str | None = None
     risk: Literal["low", "medium", "high"] = "low"
 
 
@@ -84,7 +84,7 @@ class DiffPreview:
     """Grouped diff preview section."""
 
     title: str
-    lines: List[DiffLine] = field(default_factory=list)
+    lines: list[DiffLine] = field(default_factory=list)
 
 
 @dataclass
@@ -94,4 +94,4 @@ class SummaryResult:
     root_cause: str
     recommendation: str
     confidence: int  # 0–100
-    action_prompt: Optional[str] = None
+    action_prompt: str | None = None

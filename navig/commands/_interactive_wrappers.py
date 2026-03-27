@@ -5,7 +5,8 @@ These wrappers are intentionally thin and should not contain business logic.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 def run_menu_wrapper(command: Callable[..., Any], *args: Any, **kwargs: Any) -> None:

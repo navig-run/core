@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -59,7 +59,7 @@ class FailureClass(str, Enum):
 
 
 # Human-readable badge for each class
-_CLASS_BADGE: Dict[FailureClass, str] = {
+_CLASS_BADGE: dict[FailureClass, str] = {
     FailureClass.SSH_AUTH_FAIL: "🔐 SSH_AUTH_FAIL",
     FailureClass.SSH_HOSTKEY_UNKNOWN: "🔑 SSH_HOSTKEY_UNKNOWN",
     FailureClass.SSH_TRANSPORT_FAIL: "📡 SSH_TRANSPORT_FAIL",
@@ -70,7 +70,7 @@ _CLASS_BADGE: Dict[FailureClass, str] = {
 }
 
 # One-liner cause explanation shown to user in any mode
-_CLASS_EXPLANATION: Dict[FailureClass, str] = {
+_CLASS_EXPLANATION: dict[FailureClass, str] = {
     FailureClass.SSH_AUTH_FAIL: (
         "The server rejected your SSH credentials. "
         "Either the public key is not in `authorized_keys`, or password auth is disabled."
@@ -117,7 +117,7 @@ class FailureContext:
     failure_class: FailureClass
     stderr: str  # raw stderr / error text from the failed operation
     exit_code: int
-    host: Optional[str]  # extracted from cmd if parseable, else None
+    host: str | None  # extracted from cmd if parseable, else None
     attempt_count: int = 0  # number of fix attempts already made this session
 
 
@@ -130,7 +130,7 @@ class HealEvent:
     status: str  # "resolved" | "partial" | "failed"
     cmd: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp,
             "failure_class": self.failure_class,
@@ -234,7 +234,7 @@ _HOST_PATTERN = re.compile(
 _HOST_ALT = re.compile(r"""(?:run|docker|db|file|web|backup)\s+(?:--host|-h)\s+(\S+)""")
 
 
-def _extract_host(cmd: str) -> Optional[str]:
+def _extract_host(cmd: str) -> str | None:
     """Best-effort extraction of the target host from a navig command string."""
     m = _HOST_PATTERN.search(cmd) or _HOST_ALT.search(cmd)
     return m.group(2) if m else None
@@ -246,7 +246,7 @@ def _exit_code_from_response(response: str) -> int:
     return int(m.group(1)) if m else 0
 
 
-def detect_failure_in_response(response: str, cmd: str) -> Optional[FailureContext]:
+def detect_failure_in_response(response: str, cmd: str) -> FailureContext | None:
     """Scan the output of on_message() for SSH / connection error signatures.
 
     Args:
@@ -306,8 +306,8 @@ class AutoHealMixin:
     """
 
     # These are populated on first use; defined here for linter satisfaction
-    _active_heals: Dict[str, asyncio.Task]
-    _pending_heal_ctx: Dict[int, FailureContext]
+    _active_heals: dict[str, asyncio.Task]
+    _pending_heal_ctx: dict[int, FailureContext]
 
     def _init_autoheal_state(self) -> None:
         """Call from TelegramChannel.__init__ after super().__init__()."""
@@ -382,7 +382,7 @@ class AutoHealMixin:
         """Render current settings and last 5 heal events."""
         autoheal_on = False
         hive_on = False
-        history: List[Dict[str, Any]] = []
+        history: list[dict[str, Any]] = []
 
         if sm:
             session = sm.get_or_create_session(chat_id, user_id, False)
@@ -462,7 +462,7 @@ class AutoHealMixin:
     async def _autofix_with_report(
         self,
         ctx: FailureContext,
-        progress_msg_id: Optional[int],
+        progress_msg_id: int | None,
     ) -> None:
         """Run fix, edit the progress message with result, optionally retry."""
         try:
@@ -750,7 +750,7 @@ class AutoHealMixin:
             ctx.chat_id, text, keyboard=keyboard, parse_mode="Markdown"
         )
 
-    def _build_heal_keyboard(self, ctx: FailureContext) -> List[List[Dict[str, str]]]:
+    def _build_heal_keyboard(self, ctx: FailureContext) -> list[list[dict[str, str]]]:
         """Build the 3-button heal keyboard using the CallbackStore pattern."""
         from navig.gateway.channels.telegram_keyboards import (
             CallbackEntry,
@@ -853,7 +853,7 @@ class AutoHealMixin:
         self,
         ctx: FailureContext,
         result: HealResult,
-        progress_msg_id: Optional[int],
+        progress_msg_id: int | None,
     ) -> None:
         """Edit the in-progress message with the final result, then retry if resolved."""
         if result.status == "resolved":
@@ -908,7 +908,7 @@ class AutoHealMixin:
     #  Private helpers                                                     #
     # ------------------------------------------------------------------ #
 
-    async def _send_progress_message(self, chat_id: int, text: str) -> Optional[int]:
+    async def _send_progress_message(self, chat_id: int, text: str) -> int | None:
         """Send a message and return its message_id for later editing."""
         try:
             result = await self._api_call(
@@ -924,7 +924,7 @@ class AutoHealMixin:
         return None
 
     async def _edit_or_send(
-        self, chat_id: int, message_id: Optional[int], text: str
+        self, chat_id: int, message_id: int | None, text: str
     ) -> None:
         """Edit an existing message or send a new one as fallback."""
         if message_id:

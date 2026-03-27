@@ -27,9 +27,10 @@ Usage::
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.tools.hooks")
 
@@ -65,12 +66,12 @@ class ToolExecutionEvent:
 
     event: ToolEvent
     tool: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
     status: str = ""
     output: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     elapsed_ms: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # Type alias for a hook callback
@@ -91,7 +92,7 @@ class HookRegistry:
     """
 
     def __init__(self) -> None:
-        self._hooks: Dict[ToolEvent, List[HookCallback]] = {e: [] for e in ToolEvent}
+        self._hooks: dict[ToolEvent, list[HookCallback]] = {e: [] for e in ToolEvent}
 
     # -- Registration ---------------------------------------------------------
 
@@ -146,8 +147,8 @@ class HookRegistry:
             "elapsed_ms",
             "metadata",
         }
-        ev_kwargs: Dict[str, Any] = {"event": event}
-        extra: Dict[str, Any] = {}
+        ev_kwargs: dict[str, Any] = {"event": event}
+        extra: dict[str, Any] = {}
 
         for k, v in kwargs.items():
             if k in known_fields:
@@ -174,13 +175,13 @@ class HookRegistry:
 
     # -- Introspection --------------------------------------------------------
 
-    def hook_count(self, event: Optional[ToolEvent] = None) -> int:
+    def hook_count(self, event: ToolEvent | None = None) -> int:
         """Return number of registered hooks (optionally filtered by event)."""
         if event is not None:
             return len(self._hooks[event])
         return sum(len(v) for v in self._hooks.values())
 
-    def clear(self, event: Optional[ToolEvent] = None) -> None:
+    def clear(self, event: ToolEvent | None = None) -> None:
         """Remove all hooks (optionally scoped to *event*)."""
         if event is not None:
             self._hooks[event].clear()
@@ -193,7 +194,7 @@ class HookRegistry:
 # Global singleton
 # =============================================================================
 
-_hook_registry: Optional[HookRegistry] = None
+_hook_registry: HookRegistry | None = None
 
 
 def get_hook_registry() -> HookRegistry:

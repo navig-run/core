@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
@@ -41,8 +41,8 @@ class SearchTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         query: str = args.get("query", "")
         if not query:
@@ -93,9 +93,9 @@ class SearchTool(BaseTool):
             return ToolResult(name=self.name, success=False, error=str(exc))
 
 
-def _parse_ddg_html(html: str) -> List[Dict[str, str]]:
+def _parse_ddg_html(html: str) -> list[dict[str, str]]:
     """Extract title, url, snippet from DDG HTML results page."""
-    results: List[Dict[str, str]] = []
+    results: list[dict[str, str]] = []
 
     # Match result blocks
     blocks = re.findall(

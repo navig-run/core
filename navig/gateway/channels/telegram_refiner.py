@@ -32,7 +32,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +63,11 @@ class ClarifySession:
     questions: list[str]  # 3 clarifying questions from LLM
     answers: dict[str, str]  # {str(q_index): answer}
     current_q: int  # 0-based question index
-    refined_text: Optional[str]
+    refined_text: str | None
     session_key: str
     chat_id: int
     user_id: int
-    message_id: Optional[int]  # message containing current question
+    message_id: int | None  # message containing current question
     created_at: float = field(default_factory=time.time)
 
     # ── Serialisation ──
@@ -77,7 +77,7 @@ class ClarifySession:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ClarifySession":
+    def from_dict(cls, data: dict[str, Any]) -> ClarifySession:
         allowed = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in data.items() if k in allowed})
 
@@ -85,13 +85,13 @@ class ClarifySession:
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
     @classmethod
-    def deserialise(cls, s: str) -> "ClarifySession":
+    def deserialise(cls, s: str) -> ClarifySession:
         return cls.from_dict(json.loads(s))
 
     # ── Helpers ──
 
     @property
-    def current_question(self) -> Optional[str]:
+    def current_question(self) -> str | None:
         if 0 <= self.current_q < len(self.questions):
             return self.questions[self.current_q]
         return None

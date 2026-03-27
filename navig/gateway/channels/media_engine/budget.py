@@ -20,7 +20,6 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from navig.platform.paths import media_budget_path
 
@@ -60,7 +59,7 @@ class BudgetGuard:
     def __init__(
         self,
         monthly_limit_usd: float = 5.0,
-        budget_file: Optional[Path] = None,
+        budget_file: Path | None = None,
     ) -> None:
         self._limit = monthly_limit_usd
         if budget_file is None:
@@ -99,7 +98,7 @@ class BudgetGuard:
         """Return remaining USD budget for the current month."""
         return max(0.0, self._limit - self.used())
 
-    def charge(self, service: str, amount: Optional[float] = None) -> None:
+    def charge(self, service: str, amount: float | None = None) -> None:
         """Add *amount* to this month's spend, or use DEFAULT_COSTS[service].
 
         Raises ``BudgetExceeded`` *before* adding if the charge would push the
@@ -120,7 +119,7 @@ class BudgetGuard:
         data[key] = round(current + cost, 6)
         self._save(data)
 
-    def can_afford(self, service: str, amount: Optional[float] = None) -> bool:
+    def can_afford(self, service: str, amount: float | None = None) -> bool:
         """Return True if charging *service* would NOT exceed the monthly budget."""
         cost = amount if amount is not None else DEFAULT_COSTS.get(service, 0.001)
         if self._limit <= 0 or cost <= 0.0:

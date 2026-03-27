@@ -2,9 +2,10 @@
 
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -26,10 +27,10 @@ class WebhookEvent:
     id: str
     source: str
     event_type: str
-    payload: Dict[str, Any]
-    headers: Dict[str, str]
+    payload: dict[str, Any]
+    headers: dict[str, str]
     received_at: datetime
-    signature_valid: Optional[bool] = None
+    signature_valid: bool | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -49,13 +50,13 @@ class WebhookSourceConfig:
 
     name: str
     enabled: bool = True
-    secret: Optional[str] = None
-    signature_header: Optional[str] = None
+    secret: str | None = None
+    signature_header: str | None = None
     signature_algo: str = "sha256"
-    events: Optional[List[str]] = None  # Allowed events (None = all)
+    events: list[str] | None = None  # Allowed events (None = all)
     verify_signature: bool = True
 
-    def get_signature_config(self) -> Optional[SignatureConfig]:
+    def get_signature_config(self) -> SignatureConfig | None:
         """Get signature config for this source."""
         if not self.verify_signature or not self.signature_header:
             return None
@@ -94,14 +95,14 @@ class WebhookReceiver:
         self.path_prefix = self.webhook_config.get("path_prefix", "/webhook")
 
         # Load source configs
-        self._sources: Dict[str, WebhookSourceConfig] = {}
+        self._sources: dict[str, WebhookSourceConfig] = {}
         self._load_sources()
 
         # Event handlers
-        self._handlers: List[Callable] = []
+        self._handlers: list[Callable] = []
 
         # Event history (for debugging)
-        self._recent_events: List[WebhookEvent] = []
+        self._recent_events: list[WebhookEvent] = []
         self._max_history = 100
 
     def _load_sources(self):
@@ -372,7 +373,7 @@ class WebhookReceiver:
 
     def get_recent_events(
         self, limit: int = 20, source: str = None
-    ) -> List[WebhookEvent]:
+    ) -> list[WebhookEvent]:
         """Get recent events, optionally filtered by source."""
         events = self._recent_events[-limit:]
         if source:

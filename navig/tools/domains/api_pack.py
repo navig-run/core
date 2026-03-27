@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.tools.api_schema import ApiSource, ApiToolResult
 
@@ -32,11 +32,11 @@ logger = logging.getLogger("navig.tools.packs.api_pack")
 
 def _api_get_json(
     url: str,
-    headers: Optional[Dict[str, str]] = None,
-    params: Optional[Dict[str, str]] = None,
+    headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
     timeout: int = 30,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generic HTTP GET → JSON API tool.
 
@@ -79,11 +79,11 @@ def _api_get_json(
 
 def _api_post_json(
     url: str,
-    body: Optional[Dict[str, Any]] = None,
-    headers: Optional[Dict[str, str]] = None,
+    body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
     timeout: int = 30,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generic HTTP POST with JSON body → JSON response."""
     import urllib.error
     import urllib.request
@@ -123,7 +123,7 @@ def _trading_fetch_ohlc(
     limit: int = 100,
     exchange: str = "auto",
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Fetch OHLCV candle data for a trading pair.
 
@@ -147,7 +147,7 @@ def _trading_fetch_ohlc(
     ).to_dict()
 
 
-def _trading_portfolio(exchange: str = "auto", **kwargs) -> Dict[str, Any]:
+def _trading_portfolio(exchange: str = "auto", **kwargs) -> dict[str, Any]:
     """Fetch portfolio/balance summary from an exchange."""
     return ApiToolResult(
         status="ok",
@@ -168,7 +168,7 @@ def _trading_portfolio(exchange: str = "auto", **kwargs) -> Dict[str, Any]:
 def _infra_node_status(
     host: str = "current",
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get system metrics (CPU, memory, disk, uptime) for a host.
 
@@ -212,7 +212,7 @@ def _infra_node_status(
     ).to_dict()
 
 
-def _infra_inventory(scope: str = "all", **kwargs) -> Dict[str, Any]:
+def _infra_inventory(scope: str = "all", **kwargs) -> dict[str, Any]:
     """List configured servers/hosts from navig host inventory."""
     try:
         from navig.config import get_config_manager
@@ -238,7 +238,7 @@ def _infra_inventory(scope: str = "all", **kwargs) -> Dict[str, Any]:
 _API_DOMAIN = "api"  # Added as new ToolDomain below
 
 
-def register_tools(registry: "ToolRegistry") -> None:
+def register_tools(registry: ToolRegistry) -> None:
     """Register all JSON API tools with the ToolRouter registry."""
     from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 

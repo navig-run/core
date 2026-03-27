@@ -23,7 +23,6 @@ from __future__ import annotations
 import os
 import socket
 from dataclasses import dataclass, field
-from typing import Optional
 
 from loguru import logger
 
@@ -59,7 +58,7 @@ class ProviderVerificationResult:
     factory_ok: bool = True
     config_ok: bool = True
     key_detected: bool = True
-    local_probe_ok: Optional[bool] = None
+    local_probe_ok: bool | None = None
     issues: list[str] = field(default_factory=list)
 
     @property
@@ -194,7 +193,7 @@ def verify_provider(manifest: ProviderManifest) -> ProviderVerificationResult:
             )
 
     # 5. Local probe (only for providers that declare one)
-    local_probe_ok: Optional[bool] = None
+    local_probe_ok: bool | None = None
     if manifest.local_probe:
         local_probe_ok = _check_probe(manifest.local_probe)
         if not local_probe_ok and manifest.tier == "local":

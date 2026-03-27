@@ -1,9 +1,10 @@
 """Task worker for executing queued tasks."""
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -60,7 +61,7 @@ class TaskWorker:
     def __init__(
         self,
         queue: TaskQueue,
-        config: Optional[WorkerConfig] = None,
+        config: WorkerConfig | None = None,
     ):
         """
         Initialize task worker.
@@ -72,11 +73,11 @@ class TaskWorker:
         self.queue = queue
         self.config = config or WorkerConfig()
 
-        self._handlers: Dict[str, Callable] = {}
+        self._handlers: dict[str, Callable] = {}
         self._running = False
-        self._tasks: Dict[str, asyncio.Task] = {}  # task_id -> asyncio.Task
+        self._tasks: dict[str, asyncio.Task] = {}  # task_id -> asyncio.Task
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent)
-        self._worker_task: Optional[asyncio.Task] = None
+        self._worker_task: asyncio.Task | None = None
         self._stats = {
             "started_at": None,
             "tasks_completed": 0,
@@ -279,7 +280,7 @@ class TaskWorker:
             task.error = str(e)
             raise
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get worker statistics."""
         return {
             "running": self._running,

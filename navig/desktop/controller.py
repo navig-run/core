@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from navig.debug_logger import get_debug_logger
 
@@ -88,7 +87,7 @@ class DesktopController:
         controller.hotkey('ctrl', 'c')
     """
 
-    def __init__(self, config: Optional[DesktopConfig] = None):
+    def __init__(self, config: DesktopConfig | None = None):
         self.config = config or DesktopConfig()
         self._initialized = False
 
@@ -111,8 +110,8 @@ class DesktopController:
 
     def screenshot(
         self,
-        region: Optional[Tuple[int, int, int, int]] = None,
-        name: Optional[str] = None,
+        region: tuple[int, int, int, int] | None = None,
+        name: str | None = None,
     ) -> str:
         """
         Take screenshot of screen or region.
@@ -276,8 +275,8 @@ class DesktopController:
     def scroll(
         self,
         clicks: int,
-        x: Optional[int] = None,
-        y: Optional[int] = None,
+        x: int | None = None,
+        y: int | None = None,
     ) -> bool:
         """
         Scroll mouse wheel.
@@ -290,12 +289,12 @@ class DesktopController:
         _pyautogui.scroll(clicks, x=x, y=y)
         return True
 
-    def get_screen_size(self) -> Tuple[int, int]:
+    def get_screen_size(self) -> tuple[int, int]:
         """Get screen dimensions (width, height)."""
         self._ensure_initialized()
         return _pyautogui.size()
 
-    def get_mouse_position(self) -> Tuple[int, int]:
+    def get_mouse_position(self) -> tuple[int, int]:
         """Get current mouse position (x, y)."""
         self._ensure_initialized()
         return _pyautogui.position()
@@ -305,7 +304,7 @@ class DesktopController:
         image_path: str,
         confidence: float = 0.9,
         grayscale: bool = False,
-    ) -> Optional[Tuple[int, int, int, int]]:
+    ) -> tuple[int, int, int, int] | None:
         """
         Find image on screen.
 
@@ -338,7 +337,7 @@ class DesktopController:
         self,
         image_path: str,
         confidence: float = 0.9,
-    ) -> List[Tuple[int, int, int, int]]:
+    ) -> list[tuple[int, int, int, int]]:
         """Find all occurrences of image on screen."""
         self._ensure_initialized()
 
@@ -379,7 +378,7 @@ class DesktopController:
         timeout: float = 10.0,
         confidence: float = 0.9,
         interval: float = 0.5,
-    ) -> Optional[Tuple[int, int, int, int]]:
+    ) -> tuple[int, int, int, int] | None:
         """
         Wait for image to appear on screen.
 
@@ -403,7 +402,7 @@ class DesktopController:
 
         return None
 
-    def get_pixel_color(self, x: int, y: int) -> Tuple[int, int, int]:
+    def get_pixel_color(self, x: int, y: int) -> tuple[int, int, int]:
         """Get RGB color of pixel at coordinates."""
         self._ensure_initialized()
         return _pyautogui.pixel(x, y)
@@ -412,7 +411,7 @@ class DesktopController:
         self,
         x: int,
         y: int,
-        expected_rgb: Tuple[int, int, int],
+        expected_rgb: tuple[int, int, int],
         tolerance: int = 0,
     ) -> bool:
         """Check if pixel matches expected color."""
@@ -430,9 +429,7 @@ class DesktopController:
         result = _pyautogui.confirm(text=text, title=title)
         return result == "OK"
 
-    def prompt(
-        self, text: str, title: str = "NAVIG", default: str = ""
-    ) -> Optional[str]:
+    def prompt(self, text: str, title: str = "NAVIG", default: str = "") -> str | None:
         """Show text input dialog. Returns None if cancelled."""
         self._ensure_initialized()
         return _pyautogui.prompt(text=text, title=title, default=default)

@@ -13,7 +13,7 @@ import json
 import shlex
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -22,7 +22,7 @@ from navig import console_helper as ch
 # ============================================================================
 
 
-def _detect_db_type(discovery, container: Optional[str] = None) -> Optional[str]:
+def _detect_db_type(discovery, container: str | None = None) -> str | None:
     """
     Detect database type (mysql, mariadb, postgresql).
 
@@ -57,7 +57,7 @@ def _detect_db_type(discovery, container: Optional[str] = None) -> Optional[str]
     return None
 
 
-def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
+def _list_docker_db_containers(discovery) -> list[dict[str, str]]:
     """
     List Docker containers running database services.
 
@@ -106,10 +106,10 @@ def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
 def _get_db_credentials_from_config(
     config_manager,
     host_name: str,
-    user: Optional[str] = None,
-    password: Optional[str] = None,
-    db_type: Optional[str] = None,
-) -> Tuple[str, Optional[str], Optional[str]]:
+    user: str | None = None,
+    password: str | None = None,
+    db_type: str | None = None,
+) -> tuple[str, str | None, str | None]:
     """
     Get database credentials from app or host configuration.
 
@@ -200,9 +200,9 @@ def _build_db_command(
     db_type: str,
     query: str,
     user: str = "root",
-    password: Optional[str] = None,
-    database: Optional[str] = None,
-    container: Optional[str] = None,
+    password: str | None = None,
+    database: str | None = None,
+    container: str | None = None,
 ) -> str:
     """
     Build database command string for execution.
@@ -265,10 +265,10 @@ def _execute_db_query(
     query: str,
     db_type: str,
     user: str = "root",
-    password: Optional[str] = None,
-    database: Optional[str] = None,
-    container: Optional[str] = None,
-) -> Tuple[bool, str, str]:
+    password: str | None = None,
+    database: str | None = None,
+    container: str | None = None,
+) -> tuple[bool, str, str]:
     """Execute a database query via SSH."""
     cmd = _build_db_command(db_type, query, user, password, database, container)
     return discovery._execute_ssh(cmd)
@@ -279,7 +279,7 @@ def _execute_db_query(
 # ============================================================================
 
 
-def db_containers_cmd(options: Dict[str, Any]):
+def db_containers_cmd(options: dict[str, Any]):
     """
     List Docker containers running database services.
 
@@ -350,12 +350,12 @@ def db_containers_cmd(options: Dict[str, Any]):
 
 def db_query_cmd(
     query: str,
-    container: Optional[str],
+    container: str | None,
     user: str,
-    password: Optional[str],
-    database: Optional[str],
-    db_type: Optional[str],
-    options: Dict[str, Any],
+    password: str | None,
+    database: str | None,
+    db_type: str | None,
+    options: dict[str, Any],
 ):
     """
     Execute SQL query on remote database (Docker or native).
@@ -529,11 +529,11 @@ def db_query_cmd(
 
 
 def db_list_cmd(
-    container: Optional[str],
+    container: str | None,
     user: str,
-    password: Optional[str],
-    db_type: Optional[str],
-    options: Dict[str, Any],
+    password: str | None,
+    db_type: str | None,
+    options: dict[str, Any],
 ):
     """
     List all databases.
@@ -679,11 +679,11 @@ def db_list_cmd(
 
 def db_tables_cmd(
     database: str,
-    container: Optional[str],
+    container: str | None,
     user: str,
-    password: Optional[str],
-    db_type: Optional[str],
-    options: Dict[str, Any],
+    password: str | None,
+    db_type: str | None,
+    options: dict[str, Any],
 ):
     """
     List tables in a database.
@@ -817,12 +817,12 @@ def db_tables_cmd(
 
 def db_dump_cmd(
     database: str,
-    output: Optional[Path],
-    container: Optional[str],
+    output: Path | None,
+    container: str | None,
     user: str,
-    password: Optional[str],
-    db_type: Optional[str],
-    options: Dict[str, Any],
+    password: str | None,
+    db_type: str | None,
+    options: dict[str, Any],
 ):
     """
     Dump/backup a database.
@@ -928,12 +928,12 @@ def db_dump_cmd(
 
 
 def db_shell_cmd(
-    container: Optional[str],
+    container: str | None,
     user: str,
-    password: Optional[str],
-    database: Optional[str],
-    db_type: Optional[str],
-    options: Dict[str, Any],
+    password: str | None,
+    database: str | None,
+    db_type: str | None,
+    options: dict[str, Any],
 ):
     """
     Open interactive database shell.
@@ -1034,7 +1034,7 @@ def db_shell_cmd(
 
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import typer
 
@@ -1058,15 +1058,15 @@ def db_callback(ctx: typer.Context):
 @db_app.command("show")
 def db_show(
     ctx: typer.Context,
-    database: Optional[str] = typer.Argument(None, help="Database name"),
-    container: Optional[str] = typer.Option(
+    database: str | None = typer.Argument(None, help="Database name"),
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
     tables: bool = typer.Option(False, "--tables", help="Show tables in database"),
@@ -1086,11 +1086,7 @@ def db_show(
         from navig.commands.database_advanced import list_users_cmd
 
         list_users_cmd(ctx.obj)
-    elif tables and database:
-        from navig.commands.db import db_tables_cmd
-
-        db_tables_cmd(database, container, user, password, db_type, ctx.obj)
-    elif database:
+    elif tables and database or database:
         from navig.commands.db import db_tables_cmd
 
         db_tables_cmd(database, container, user, password, db_type, ctx.obj)
@@ -1103,23 +1099,19 @@ def db_show(
 @db_app.command("run")
 def db_run(
     ctx: typer.Context,
-    query: Optional[str] = typer.Argument(None, help="SQL query to execute"),
-    container: Optional[str] = typer.Option(
+    query: str | None = typer.Argument(None, help="SQL query to execute"),
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    database: Optional[str] = typer.Option(
-        None, "--database", "-d", help="Database name"
-    ),
-    db_type: Optional[str] = typer.Option(
+    database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
-    file: Optional[Path] = typer.Option(
-        None, "--file", "-f", help="SQL file to execute"
-    ),
+    file: Path | None = typer.Option(None, "--file", "-f", help="SQL file to execute"),
     shell: bool = typer.Option(False, "--shell", "-s", help="Open interactive shell"),
 ):
     """Run SQL query/file or open shell (canonical command)."""
@@ -1179,17 +1171,15 @@ def _is_base64_encoded(s: str) -> bool:
 def db_query_new(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="SQL query to execute (auto-detects base64)"),
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    database: Optional[str] = typer.Option(
-        None, "--database", "-d", help="Database name"
-    ),
-    db_type: Optional[str] = typer.Option(
+    database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
     plain: bool = typer.Option(
@@ -1251,14 +1241,14 @@ def db_file_new(
 @db_app.command("list")
 def db_list_new(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
     plain: bool = typer.Option(
@@ -1279,14 +1269,14 @@ def db_list_new(
 def db_tables_new(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name"),
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
     plain: bool = typer.Option(
@@ -1304,17 +1294,15 @@ def db_tables_new(
 def db_dump_new(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name to dump"),
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output file path"
-    ),
-    container: Optional[str] = typer.Option(
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    db_type: Optional[str] = typer.Option(
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
 ):
@@ -1338,17 +1326,15 @@ def db_restore_new(
 @db_app.command("shell", hidden=True)
 def db_shell_new(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(
+    container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    database: Optional[str] = typer.Option(
-        None, "--database", "-d", help="Database name"
-    ),
-    db_type: Optional[str] = typer.Option(
+    database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
+    db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
 ):

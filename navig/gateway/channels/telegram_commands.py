@@ -841,16 +841,14 @@ class TelegramCommandsMixin:
             try:
                 import aiohttp
 
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        "http://127.0.0.1:11434/api/tags", timeout=2
-                    ) as r:
-                        data = await r.json()
-                        live = [
-                            m["name"] for m in data.get("models", []) if m.get("name")
-                        ]
-                        if live:
-                            models = live
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.get("http://127.0.0.1:11434/api/tags", timeout=2) as r,
+                ):
+                    data = await r.json()
+                    live = [m["name"] for m in data.get("models", []) if m.get("name")]
+                    if live:
+                        models = live
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
             if not models:

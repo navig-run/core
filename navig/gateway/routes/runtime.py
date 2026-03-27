@@ -50,7 +50,7 @@ except ImportError as _exc:
 logger = get_debug_logger()
 
 
-def register(app: "web.Application", gateway: "NavigGateway") -> None:
+def register(app: web.Application, gateway: NavigGateway) -> None:
     """Register all /runtime/* routes on the aiohttp Application."""
     # Node routes
     app.router.add_get("/runtime/nodes", _list_nodes(gateway))
@@ -80,8 +80,8 @@ def register(app: "web.Application", gateway: "NavigGateway") -> None:
 # ─────────────────────────── Node handlers ───────────────────────────
 
 
-def _list_nodes(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _list_nodes(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -94,8 +94,8 @@ def _list_nodes(gw: "NavigGateway"):
     return h
 
 
-def _register_node(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _register_node(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -131,8 +131,8 @@ def _register_node(gw: "NavigGateway"):
     return h
 
 
-def _get_node(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _get_node(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -150,8 +150,8 @@ def _get_node(gw: "NavigGateway"):
     return h
 
 
-def _get_trust(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _get_trust(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -172,8 +172,8 @@ def _get_trust(gw: "NavigGateway"):
 # ─────────────────────────── Mission handlers ────────────────────────
 
 
-def _list_missions(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _list_missions(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -195,8 +195,8 @@ def _list_missions(gw: "NavigGateway"):
     return h
 
 
-def _create_mission(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _create_mission(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -232,8 +232,8 @@ def _create_mission(gw: "NavigGateway"):
     return h
 
 
-def _get_mission(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _get_mission(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -251,13 +251,13 @@ def _get_mission(gw: "NavigGateway"):
     return h
 
 
-def _advance_mission(gw: "NavigGateway"):
+def _advance_mission(gw: NavigGateway):
     """
     POST /runtime/missions/{id}/advance
     Body: { "action": "start" | "succeed" | "fail" | "cancel" | "timeout" | "retry" }
     """
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -302,13 +302,13 @@ def _advance_mission(gw: "NavigGateway"):
     return h
 
 
-def _complete_mission(gw: "NavigGateway"):
+def _complete_mission(gw: NavigGateway):
     """
     POST /runtime/missions/{id}/complete
     Body: { "outcome": "success"|"failure"|"partial", "output": {...}, "error": "..." }
     """
 
-    async def h(r: "web.Request") -> "web.Response":
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -355,8 +355,8 @@ def _complete_mission(gw: "NavigGateway"):
 # ─────────────────────────── Receipt handlers ────────────────────────
 
 
-def _list_receipts(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _list_receipts(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -380,8 +380,8 @@ def _list_receipts(gw: "NavigGateway"):
     return h
 
 
-def _get_receipt(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _get_receipt(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth
@@ -402,8 +402,8 @@ def _get_receipt(gw: "NavigGateway"):
 # ─────────────────────────── Stats handler ───────────────────────────
 
 
-def _store_stats(gw: "NavigGateway"):
-    async def h(r: "web.Request") -> "web.Response":
+def _store_stats(gw: NavigGateway):
+    async def h(r: web.Request) -> web.Response:
         auth = require_bearer_auth(r, gw)
         if auth is not None:
             return auth

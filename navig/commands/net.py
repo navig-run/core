@@ -9,10 +9,9 @@ CLI surface:
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Annotated
 
 import typer
-from typing_extensions import Annotated
 
 net_app = typer.Typer(
     name="net",
@@ -46,7 +45,7 @@ def _backend():
 @net_app.command("speedtest")
 def speedtest_cmd(
     iperf3_server: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--iperf3-server",
             "-s",

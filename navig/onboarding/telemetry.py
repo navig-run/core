@@ -37,7 +37,6 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Public endpoint — can be overridden for self-hosted deployments
 TELEMETRY_URL: str = os.environ.get(
@@ -68,7 +67,7 @@ _CONSENT_LINES = """
 """
 
 
-def _machine_id() -> Optional[str]:
+def _machine_id() -> str | None:
     """
     Extract a stable, opaque machine identifier without transmitting it.
 

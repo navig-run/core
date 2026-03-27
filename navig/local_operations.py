@@ -8,7 +8,7 @@ abstracting the underlying OS differences.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.adapters.os import OSAdapter, get_os_adapter
 from navig.adapters.os.base import PackageInfo, SecurityCheck
@@ -26,7 +26,7 @@ class LocalSystemInfo:
     home_directory: Path
     config_directory: Path
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "hostname": self.hostname,
             "os_name": self.os_name,
@@ -45,15 +45,15 @@ class LocalOperations:
     OSAdapter (for OS-specific commands) to provide a unified API.
     """
 
-    def __init__(self, working_directory: Optional[Path] = None):
+    def __init__(self, working_directory: Path | None = None):
         """
         Initialize LocalOperations.
 
         Args:
             working_directory: Optional working directory for command execution
         """
-        self._connection: Optional[LocalConnection] = None
-        self._os_adapter: Optional[OSAdapter] = None
+        self._connection: LocalConnection | None = None
+        self._os_adapter: OSAdapter | None = None
         self._working_directory = working_directory
 
     @property
@@ -99,7 +99,7 @@ class LocalOperations:
 
     # ==================== Package Management ====================
 
-    def list_packages(self) -> List[PackageInfo]:
+    def list_packages(self) -> list[PackageInfo]:
         """
         List all installed packages.
 
@@ -214,7 +214,7 @@ class LocalOperations:
         cmd = self.os_adapter.get_running_services_command()
         return self.connection.run(cmd)
 
-    def run_security_audit(self) -> List[SecurityCheck]:
+    def run_security_audit(self) -> list[SecurityCheck]:
         """
         Run a basic security audit.
 
@@ -321,9 +321,7 @@ class LocalOperations:
 
     # ==================== Raw Command Execution ====================
 
-    def run_command(
-        self, command: str, timeout: Optional[float] = None
-    ) -> CommandResult:
+    def run_command(self, command: str, timeout: float | None = None) -> CommandResult:
         """
         Execute a raw command on the local machine.
 
@@ -344,7 +342,7 @@ class LocalOperations:
 
 
 # Convenience function
-def get_local_ops(working_directory: Optional[Path] = None) -> LocalOperations:
+def get_local_ops(working_directory: Path | None = None) -> LocalOperations:
     """
     Get a LocalOperations instance.
 

@@ -26,7 +26,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from navig.platform.paths import cache_dir
 
@@ -42,7 +42,7 @@ class MediaCache:
         self,
         namespace: str = "media",
         ttl_seconds: int = _TTL_SECONDS,
-        cache_root: Optional[Path] = None,
+        cache_root: Path | None = None,
     ) -> None:
         if cache_root is None:
             cache_root = cache_dir()
@@ -59,7 +59,7 @@ class MediaCache:
 
     # ── Cache operations ──────────────────────────────────────────────────────
 
-    def get(self, key: str) -> Optional[dict[str, Any]]:
+    def get(self, key: str) -> dict[str, Any] | None:
         """Return cached result dict, or None if missing / expired."""
         path = self._dir / f"{key}.json"
         if not path.exists():

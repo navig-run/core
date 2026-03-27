@@ -7,7 +7,7 @@ Helps AI understand system state, recent failures, and suggest fixes.
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -21,7 +21,7 @@ class ErrorLog:
         category: str,
         command: str,
         error: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
     ):
         """Initialize error log entry.
 
@@ -38,7 +38,7 @@ class ErrorLog:
         self.error = error
         self.context = context
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "timestamp": self.timestamp.isoformat(),
@@ -49,7 +49,7 @@ class ErrorLog:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ErrorLog":
+    def from_dict(cls, data: dict[str, Any]) -> "ErrorLog":
         """Create from dictionary."""
         return cls(
             timestamp=datetime.fromisoformat(data["timestamp"]),
@@ -65,7 +65,7 @@ class AIContextManager:
 
     MAX_ERROR_LOGS = 100  # Keep last 100 errors
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Path | None = None):
         """Initialize AI context manager.
 
         Args:
@@ -78,7 +78,7 @@ class AIContextManager:
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
         self.error_log_file = self.config_dir / "error_log.json"
-        self.error_logs: List[ErrorLog] = []
+        self.error_logs: list[ErrorLog] = []
 
         self._load_error_logs()
 
@@ -89,7 +89,7 @@ class AIContextManager:
             return
 
         try:
-            with open(self.error_log_file, "r") as f:
+            with open(self.error_log_file) as f:
                 data = json.load(f)
 
             self.error_logs = [ErrorLog.from_dict(entry) for entry in data]
@@ -108,7 +108,7 @@ class AIContextManager:
         try:
             data = [log.to_dict() for log in self.error_logs]
 
-            with open(self.error_log_file, "w") as f:
+            with open(self.error_log_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
 
         except Exception as e:
@@ -119,7 +119,7 @@ class AIContextManager:
         category: str,
         command: str,
         error: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ):
         """Log an error for AI context.
 
@@ -149,8 +149,8 @@ class AIContextManager:
         self._save_error_logs()
 
     def get_recent_errors(
-        self, hours: int = 24, category: Optional[str] = None, limit: int = 50
-    ) -> List[ErrorLog]:
+        self, hours: int = 24, category: str | None = None, limit: int = 50
+    ) -> list[ErrorLog]:
         """Get recent errors for AI context.
 
         Args:
@@ -176,7 +176,7 @@ class AIContextManager:
         # Limit results
         return recent[:limit]
 
-    def get_error_summary(self, hours: int = 24) -> Dict[str, Any]:
+    def get_error_summary(self, hours: int = 24) -> dict[str, Any]:
         """Get error summary for AI context.
 
         Args:
@@ -230,7 +230,7 @@ class AIContextManager:
             "recent_errors": [log.to_dict() for log in recent[:10]],
         }
 
-    def get_command_suggestions(self, failed_command: str, error: str) -> List[str]:
+    def get_command_suggestions(self, failed_command: str, error: str) -> list[str]:
         """Suggest fixes based on failed command and error.
 
         Args:
@@ -400,7 +400,7 @@ def get_ai_context_manager() -> AIContextManager:
 
 
 def log_error(
-    category: str, command: str, error: str, context: Optional[Dict[str, Any]] = None
+    category: str, command: str, error: str, context: dict[str, Any] | None = None
 ):
     """Convenience function to log error.
 

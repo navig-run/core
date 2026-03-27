@@ -28,7 +28,6 @@ Usage
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 __all__ = [
     "wrap_external",
@@ -97,7 +96,7 @@ def is_externally_wrapped(content: str) -> bool:
     return bool(_OPEN_RE.match(content.lstrip()))
 
 
-def extract_source(content: str) -> Optional[str]:
+def extract_source(content: str) -> str | None:
     """
     Extract the source label from a wrapped string.
 

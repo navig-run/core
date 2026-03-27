@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import typer
 from rich import print as rprint
@@ -23,7 +23,7 @@ def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _default_config_roots(scope: Optional[str]) -> List[Tuple[str, Path]]:
+def _default_config_roots(scope: str | None) -> list[tuple[str, Path]]:
     """Return config roots to validate.
 
     Defaults to project scope when a .navig/ exists in the current directory,
@@ -39,7 +39,7 @@ def _default_config_roots(scope: Optional[str]) -> List[Tuple[str, Path]]:
     if normalized in {"global", "home", "~/.navig"}:
         return [("global", global_root)] if global_root.exists() else []
     if normalized in {"both", "all"}:
-        roots: List[Tuple[str, Path]] = []
+        roots: list[tuple[str, Path]] = []
         if global_root.exists():
             roots.append(("global", global_root))
         if project_root.exists():
@@ -58,7 +58,7 @@ def _file_stem(path: Path) -> str:
     return path.name.rsplit(".", 1)[0]
 
 
-def _line_for(doc, path_items: Tuple[Any, ...]) -> int:
+def _line_for(doc, path_items: tuple[Any, ...]) -> int:
     # Prefer exact path, otherwise fall back to parent paths.
     p = tuple(path_items)
     if p in doc.line_map:
@@ -73,11 +73,11 @@ def _line_for(doc, path_items: Tuple[Any, ...]) -> int:
 
 
 def _validate_host_data(
-    host_file: Path, data: Dict[str, Any], doc, strict: bool
-) -> List[Dict[str, Any]]:
-    errors: List[Dict[str, Any]] = []
+    host_file: Path, data: dict[str, Any], doc, strict: bool
+) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
 
-    def issue(severity: str, message: str, key_path: Tuple[Any, ...] = ()):
+    def issue(severity: str, message: str, key_path: tuple[Any, ...] = ()):
         errors.append(
             {
                 "severity": severity,
@@ -88,10 +88,10 @@ def _validate_host_data(
             }
         )
 
-    def err(message: str, key_path: Tuple[Any, ...] = ()):
+    def err(message: str, key_path: tuple[Any, ...] = ()):
         issue("error", message, key_path)
 
-    def warn(message: str, key_path: Tuple[Any, ...] = ()):
+    def warn(message: str, key_path: tuple[Any, ...] = ()):
         issue("warning", message, key_path)
 
     if not isinstance(data, dict):
@@ -131,11 +131,11 @@ def _validate_host_data(
 
 
 def _validate_app_data(
-    app_file: Path, data: Dict[str, Any], doc, known_hosts: set[str], strict: bool
-) -> List[Dict[str, Any]]:
-    errors: List[Dict[str, Any]] = []
+    app_file: Path, data: dict[str, Any], doc, known_hosts: set[str], strict: bool
+) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
 
-    def issue(severity: str, message: str, key_path: Tuple[Any, ...] = ()):
+    def issue(severity: str, message: str, key_path: tuple[Any, ...] = ()):
         errors.append(
             {
                 "severity": severity,
@@ -146,10 +146,10 @@ def _validate_app_data(
             }
         )
 
-    def err(message: str, key_path: Tuple[Any, ...] = ()):
+    def err(message: str, key_path: tuple[Any, ...] = ()):
         issue("error", message, key_path)
 
-    def warn(message: str, key_path: Tuple[Any, ...] = ()):
+    def warn(message: str, key_path: tuple[Any, ...] = ()):
         issue("warning", message, key_path)
 
     if not isinstance(data, dict):
@@ -296,10 +296,10 @@ def migrate(
 
 
 def validate(
-    host: Optional[str] = typer.Argument(
+    host: str | None = typer.Argument(
         None, help="Host name to validate (validates all if not specified)"
     ),
-    options: Optional[Dict[str, Any]] = None,
+    options: dict[str, Any] | None = None,
 ):
     """
     Validate configuration files.
@@ -333,15 +333,15 @@ def validate(
         ch.dim("    navig init")
         raise typer.Exit(1)
 
-    issues: List[Dict[str, Any]] = []
-    results: List[Dict[str, Any]] = []
+    issues: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     for scope, root in roots:
         hosts_dir = root / "hosts"
         apps_dir = root / "apps"
         config_file = root / "config.yaml"
 
-        scope_result: Dict[str, Any] = {
+        scope_result: dict[str, Any] = {
             "scope": scope,
             "root": str(root),
             "hosts_checked": 0,
@@ -511,7 +511,7 @@ def validate(
 def install_schemas(
     scope: str,
     write_vscode_settings: bool,
-    options: Optional[Dict[str, Any]] = None,
+    options: dict[str, Any] | None = None,
 ):
     """Install JSON Schemas for YAML config files (VS Code YAML extension)."""
     options = options or {}
@@ -543,7 +543,7 @@ def install_schemas(
     settings_path = Path.cwd() / ".vscode" / "settings.json"
     if write_vscode_settings:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings: Dict[str, Any] = {}
+        settings: dict[str, Any] = {}
         if settings_path.exists():
             try:
                 settings = json.loads(settings_path.read_text(encoding="utf-8"))

@@ -10,7 +10,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
@@ -40,7 +40,7 @@ class CommandResult:
             parts.append(self.stderr)
         return "\n".join(parts)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "stdout": self.stdout,
@@ -61,7 +61,7 @@ class ConnectionAdapter(ABC):
 
     @abstractmethod
     def run(
-        self, command: str, capture_output: bool = True, timeout: Optional[float] = None
+        self, command: str, capture_output: bool = True, timeout: float | None = None
     ) -> CommandResult:
         """
         Execute a command on the target system.
@@ -142,7 +142,7 @@ class LocalConnection(ConnectionAdapter):
     providing the same interface as SSH connections for remote hosts.
     """
 
-    def __init__(self, os_type: Optional[str] = None):
+    def __init__(self, os_type: str | None = None):
         """
         Initialize local connection.
 
@@ -164,7 +164,7 @@ class LocalConnection(ConnectionAdapter):
                 self._os_type = "linux"
 
     def run(
-        self, command: str, capture_output: bool = True, timeout: Optional[float] = None
+        self, command: str, capture_output: bool = True, timeout: float | None = None
     ) -> CommandResult:
         """
         Execute command locally via subprocess.
@@ -234,7 +234,7 @@ class LocalConnection(ConnectionAdapter):
             remote_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(local_path, remote_path)
             return True
-        except (OSError, IOError, PermissionError):
+        except (OSError, PermissionError):
             return False
 
     def download(self, remote_path: Path, local_path: Path) -> bool:
@@ -252,7 +252,7 @@ class LocalConnection(ConnectionAdapter):
             local_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(remote_path, local_path)
             return True
-        except (OSError, IOError, PermissionError):
+        except (OSError, PermissionError):
             return False
 
     def detect_os(self) -> str:
@@ -272,7 +272,7 @@ class SSHConnection(ConnectionAdapter):
     This preserves existing behavior while providing unified interface.
     """
 
-    def __init__(self, host_config: Dict[str, Any]):
+    def __init__(self, host_config: dict[str, Any]):
         """
         Initialize SSH connection.
 
@@ -284,7 +284,7 @@ class SSHConnection(ConnectionAdapter):
                 - ssh_key: Path to SSH key (optional)
         """
         self.host_config = host_config
-        self._cached_os: Optional[str] = None
+        self._cached_os: str | None = None
 
     def _build_ssh_args(self) -> list:
         """Build base SSH command arguments."""
@@ -302,7 +302,7 @@ class SSHConnection(ConnectionAdapter):
         return ssh_args
 
     def run(
-        self, command: str, capture_output: bool = True, timeout: Optional[float] = None
+        self, command: str, capture_output: bool = True, timeout: float | None = None
     ) -> CommandResult:
         """
         Execute command on remote host via SSH.
@@ -446,7 +446,7 @@ class SSHConnection(ConnectionAdapter):
         pass
 
 
-def get_connection(host_config: Dict[str, Any]) -> ConnectionAdapter:
+def get_connection(host_config: dict[str, Any]) -> ConnectionAdapter:
     """
     Factory function to get appropriate connection adapter.
 

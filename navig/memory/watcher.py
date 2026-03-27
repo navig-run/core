@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional, Set
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.memory.manager import MemoryManager
@@ -50,10 +51,10 @@ class MemoryWatcher:
 
     def __init__(
         self,
-        manager: "MemoryManager",
+        manager: MemoryManager,
         debounce_seconds: float = 1.5,
         poll_interval: float = 1.0,
-        on_indexed: Optional[Callable[[int, int], None]] = None,
+        on_indexed: Callable[[int, int], None] | None = None,
     ):
         """
         Initialize file watcher.
@@ -70,12 +71,12 @@ class MemoryWatcher:
         self.on_indexed = on_indexed
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
         # State tracking
         self._file_mtimes: dict[str, float] = {}
-        self._pending_changes: Set[str] = set()
+        self._pending_changes: set[str] = set()
         self._last_change_time: float = 0
         self._lock = threading.Lock()
 
@@ -257,7 +258,7 @@ class WatcherContext:
 
     def __init__(
         self,
-        manager: "MemoryManager",
+        manager: MemoryManager,
         **kwargs,
     ):
         self.watcher = MemoryWatcher(manager, **kwargs)
@@ -275,10 +276,10 @@ class WatcherContext:
 
 
 def _create_watchdog_watcher(
-    manager: "MemoryManager",
+    manager: MemoryManager,
     debounce_seconds: float = 1.5,
-    on_indexed: Optional[Callable[[int, int], None]] = None,
-) -> Optional["WatchdogWatcher"]:
+    on_indexed: Callable[[int, int], None] | None = None,
+) -> WatchdogWatcher | None:
     """
     Create a watchdog-based watcher if available.
 
@@ -302,9 +303,9 @@ class WatchdogWatcher:
 
     def __init__(
         self,
-        manager: "MemoryManager",
+        manager: MemoryManager,
         debounce_seconds: float = 1.5,
-        on_indexed: Optional[Callable[[int, int], None]] = None,
+        on_indexed: Callable[[int, int], None] | None = None,
     ):
         from watchdog.observers import Observer
 
@@ -347,19 +348,19 @@ class _WatchdogHandler:
 
     def __init__(
         self,
-        manager: "MemoryManager",
+        manager: MemoryManager,
         debounce_seconds: float,
-        on_indexed: Optional[Callable[[int, int], None]],
+        on_indexed: Callable[[int, int], None] | None,
     ):
 
         self.manager = manager
         self.debounce_seconds = debounce_seconds
         self.on_indexed = on_indexed
 
-        self._pending: Set[str] = set()
+        self._pending: set[str] = set()
         self._last_change: float = 0
         self._lock = threading.Lock()
-        self._timer: Optional[threading.Timer] = None
+        self._timer: threading.Timer | None = None
 
     def dispatch(self, event) -> None:
         """Handle any file system event."""

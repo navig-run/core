@@ -28,7 +28,7 @@ import io
 import logging
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
 from navig.gateway.channels.media_engine.budget import BudgetExceeded, BudgetGuard
 from navig.gateway.channels.media_engine.media_cache import MediaCache
@@ -47,7 +47,7 @@ _RETRIES = 2
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _env(*keys: str) -> Optional[str]:
+def _env(*keys: str) -> str | None:
     try:
         from navig.vault.resolver import resolve_secret
 
@@ -66,7 +66,7 @@ async def _fetch_json(
     *,
     timeout: float = _TIMEOUT,
     **kwargs: Any,
-) -> Optional[dict]:
+) -> dict | None:
     """Thin async httpx wrapper — returns None on any failure."""
     try:
         import httpx  # lazy import
@@ -82,7 +82,7 @@ async def _fetch_json(
 
 async def _with_retry(coro_func, retries: int = _RETRIES):
     """Retry async callable up to *retries* times on exception."""
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(retries + 1):
         try:
             return await coro_func()
@@ -136,7 +136,7 @@ def _stage_metadata(file_bytes: bytes) -> dict:
     return result
 
 
-async def _stage_audd(file_bytes: bytes, budget: BudgetGuard) -> Optional[dict]:
+async def _stage_audd(file_bytes: bytes, budget: BudgetGuard) -> dict | None:
     """Fingerprint audio using the AudD API."""
     api_key = _env("AUDD_API_KEY")
     if not api_key:
@@ -173,7 +173,7 @@ async def _stage_audd(file_bytes: bytes, budget: BudgetGuard) -> Optional[dict]:
     return None
 
 
-async def _stage_whisper(file_bytes: bytes, budget: BudgetGuard) -> Optional[str]:
+async def _stage_whisper(file_bytes: bytes, budget: BudgetGuard) -> str | None:
     """Transcribe audio using OpenAI Whisper API."""
     api_key = _env("OPENAI_API_KEY")
     if not api_key:
@@ -209,9 +209,7 @@ async def _stage_whisper(file_bytes: bytes, budget: BudgetGuard) -> Optional[str
     return None
 
 
-async def _stage_spotify(
-    artist: str, title: str, budget: BudgetGuard
-) -> Optional[dict]:
+async def _stage_spotify(artist: str, title: str, budget: BudgetGuard) -> dict | None:
     """Enrich with Spotify track info (no charge, public API with client creds)."""
     client_id = _env("SPOTIFY_CLIENT_ID")
     client_secret = _env("SPOTIFY_CLIENT_SECRET")
@@ -258,7 +256,7 @@ async def _stage_spotify(
     return None
 
 
-async def _stage_lastfm(artist: str, title: str, budget: BudgetGuard) -> Optional[dict]:
+async def _stage_lastfm(artist: str, title: str, budget: BudgetGuard) -> dict | None:
     """Enrich via Last.fm API (free, no charge)."""
     api_key = _env("LASTFM_API_KEY")
     if not api_key or not artist:
@@ -299,10 +297,10 @@ async def _stage_lastfm(artist: str, title: str, budget: BudgetGuard) -> Optiona
 
 def _build_audio_card(
     metadata: dict,
-    audd: Optional[dict],
-    transcript: Optional[str],
-    spotify: Optional[dict],
-    lastfm: Optional[dict],
+    audd: dict | None,
+    transcript: str | None,
+    spotify: dict | None,
+    lastfm: dict | None,
     duration_ms: float,
 ) -> str:
     """Return an HTML string suitable for Telegram parse_mode=HTML."""
@@ -388,8 +386,8 @@ class AudioEngine:
 
     def __init__(
         self,
-        budget: Optional[BudgetGuard] = None,
-        cache: Optional[MediaCache] = None,
+        budget: BudgetGuard | None = None,
+        cache: MediaCache | None = None,
     ) -> None:
         self._budget = budget or BudgetGuard()
         self._cache = cache or MediaCache(namespace="audio")
@@ -434,7 +432,7 @@ class AudioEngine:
             artist = (audd or {}).get("artist") or result.get("artist") or ""
 
             # Stage 3 — Whisper (only if no track ID + file small enough)
-            transcript: Optional[str] = None
+            transcript: str | None = None
             if not audd and len(file_bytes) < 25 * 1024 * 1024:
                 try:
                     transcript = await asyncio.wait_for(
@@ -445,8 +443,8 @@ class AudioEngine:
             result["transcript"] = transcript
 
             # Stage 4 — Spotify + Last.fm (parallel, free/cheap)
-            spotify: Optional[dict] = None
-            lastfm: Optional[dict] = None
+            spotify: dict | None = None
+            lastfm: dict | None = None
             if title or artist:
                 try:
                     spotify, lastfm = await asyncio.wait_for(

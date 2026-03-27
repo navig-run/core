@@ -9,13 +9,13 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger("navig.settings")
 
 # ── Default navig.* settings ──────────────────────────────────
 
-DEFAULTS: Dict[str, Any] = {
+DEFAULTS: dict[str, Any] = {
     "navig.ai.provider": "openai",
     "navig.ai.model": "gpt-4o-mini",
     "navig.ai.temperature": 0.4,
@@ -61,7 +61,7 @@ def _layers_dir() -> Path:
 # ── Deep merge ────────────────────────────────────────────────
 
 
-def _deep_merge(base: Dict, override: Dict) -> Dict:
+def _deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge *override* into a copy of *base*."""
     result = copy.deepcopy(base)
     for k, v in override.items():
@@ -75,9 +75,9 @@ def _deep_merge(base: Dict, override: Dict) -> Dict:
 # ── Flat key helpers ──────────────────────────────────────────
 
 
-def _flatten(d: Dict, prefix: str = "") -> Dict[str, Any]:
+def _flatten(d: dict, prefix: str = "") -> dict[str, Any]:
     """Flatten nested dict to dot-separated keys."""
-    out: Dict[str, Any] = {}
+    out: dict[str, Any] = {}
     for k, v in d.items():
         full_key = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict):
@@ -87,9 +87,9 @@ def _flatten(d: Dict, prefix: str = "") -> Dict[str, Any]:
     return out
 
 
-def _unflatten(flat: Dict[str, Any]) -> Dict:
+def _unflatten(flat: dict[str, Any]) -> dict:
     """Build nested dict from dot-separated keys."""
-    result: Dict = {}
+    result: dict = {}
     for key, value in flat.items():
         parts = key.split(".")
         node = result
@@ -122,16 +122,16 @@ class SettingsResolver:
 
     def __init__(
         self,
-        project_root: Optional[Path] = None,
-        layer: Optional[str] = None,
+        project_root: Path | None = None,
+        layer: str | None = None,
         resolve_secrets: bool = True,
     ) -> None:
         self.project_root = project_root or _detect_project_root()
         self.layer = layer
         self._resolve_secrets = resolve_secrets
-        self._cache: Optional[Dict[str, Any]] = None
+        self._cache: dict[str, Any] | None = None
 
-    def resolve(self, refresh: bool = False) -> Dict[str, Any]:
+    def resolve(self, refresh: bool = False) -> dict[str, Any]:
         """
         Return the fully merged flat settings dict.
 
@@ -165,7 +165,7 @@ class SettingsResolver:
         file_path = self._layer_path(layer)
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        existing: Dict = {}
+        existing: dict = {}
         if file_path.is_file():
             try:
                 existing = json.loads(file_path.read_text(encoding="utf-8"))
@@ -184,7 +184,7 @@ class SettingsResolver:
         )
         self._cache = None  # invalidate cache
 
-    def all_sources(self) -> List[Tuple[str, Path, bool]]:
+    def all_sources(self) -> list[tuple[str, Path, bool]]:
         """
         Return list of (layer_name, path, exists) for each settings file
         in resolution order (lowest priority first).
@@ -212,7 +212,7 @@ class SettingsResolver:
 
     # ── Internal ──────────────────────────────────────────
 
-    def _build(self) -> Dict[str, Any]:
+    def _build(self) -> dict[str, Any]:
         merged = copy.deepcopy(DEFAULTS)
 
         for _name, path, exists in self.all_sources():
@@ -230,9 +230,9 @@ class SettingsResolver:
 
         return merged
 
-    def _expand_secrets(self, flat: Dict[str, Any]) -> Dict[str, Any]:
+    def _expand_secrets(self, flat: dict[str, Any]) -> dict[str, Any]:
         """Replace ${BLACKBOX:key} references with vault values."""
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for k, v in flat.items():
             if isinstance(v, str) and _SECRET_RE.search(v):
                 v = _SECRET_RE.sub(lambda m: self._vault_get(m.group(1)), v)
@@ -263,7 +263,7 @@ class SettingsResolver:
 
 # ── Module-level convenience API ──────────────────────────────
 
-_default_resolver: Optional[SettingsResolver] = None
+_default_resolver: SettingsResolver | None = None
 
 
 def _get_resolver() -> SettingsResolver:
@@ -278,7 +278,7 @@ def get(key: str, default: Any = None) -> Any:
     return _get_resolver().get(key, default)
 
 
-def get_all() -> Dict[str, Any]:
+def get_all() -> dict[str, Any]:
     """Return all resolved settings as a flat dict."""
     return _get_resolver().resolve()
 
@@ -294,7 +294,7 @@ def set_setting(key: str, value: Any, layer: str = "project") -> None:
 # ── Project root detection ────────────────────────────────────
 
 
-def _detect_project_root() -> Optional[Path]:
+def _detect_project_root() -> Path | None:
     """Walk up from cwd looking for a .navig/ directory."""
     cwd = Path.cwd()
     for parent in [cwd, *cwd.parents]:

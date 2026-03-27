@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -65,8 +65,8 @@ class Insight:
     title: str
     description: str
     severity: Severity = Severity.INFO
-    data: Dict[str, Any] = field(default_factory=dict)
-    recommendations: List[str] = field(default_factory=list)
+    data: dict[str, Any] = field(default_factory=dict)
+    recommendations: list[str] = field(default_factory=list)
     timestamp: str = ""
 
     def __post_init__(self):
@@ -97,7 +97,7 @@ class CommandStats:
     success_rate: float
     avg_duration_ms: int
     last_used: str
-    hosts_used: List[str]
+    hosts_used: list[str]
 
 
 @dataclass
@@ -108,7 +108,7 @@ class TimePattern:
     day_of_week: int
     count: int
     success_rate: float
-    most_common_commands: List[str]
+    most_common_commands: list[str]
 
 
 @dataclass
@@ -121,11 +121,11 @@ class AnalyticsReport:
     unique_hosts: int
     unique_commands: int
     overall_success_rate: float
-    insights: List[Insight]
-    host_scores: List[HostScore]
-    top_commands: List[CommandStats]
-    time_patterns: List[TimePattern]
-    recommendations: List[str]
+    insights: list[Insight]
+    host_scores: list[HostScore]
+    top_commands: list[CommandStats]
+    time_patterns: list[TimePattern]
+    recommendations: list[str]
 
 
 # ============================================================================
@@ -155,12 +155,12 @@ class InsightsEngine:
         self.history_file = self.history_dir / "operations.jsonl"
 
         # Cache for loaded operations
-        self._operations: List[Dict[str, Any]] = []
+        self._operations: list[dict[str, Any]] = []
         self._loaded = False
 
     def _load_history(
         self, time_range: TimeRange = TimeRange.ALL
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Load operations from history file."""
         operations = []
 
@@ -178,7 +178,7 @@ class InsightsEngine:
             cutoff = now - timedelta(days=30)
 
         try:
-            with open(self.history_file, "r", encoding="utf-8") as f:
+            with open(self.history_file, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
                         try:
@@ -206,7 +206,7 @@ class InsightsEngine:
     # ANALYSIS METHODS
     # ========================================================================
 
-    def get_usage_stats(self, time_range: TimeRange = TimeRange.WEEK) -> Dict[str, Any]:
+    def get_usage_stats(self, time_range: TimeRange = TimeRange.WEEK) -> dict[str, Any]:
         """Get overall usage statistics."""
         ops = self._load_history(time_range)
 
@@ -237,12 +237,12 @@ class InsightsEngine:
 
     def get_top_commands(
         self, limit: int = 10, time_range: TimeRange = TimeRange.WEEK
-    ) -> List[CommandStats]:
+    ) -> list[CommandStats]:
         """Get most frequently used commands."""
         ops = self._load_history(time_range)
 
         # Group by command
-        command_data: Dict[str, Dict] = defaultdict(
+        command_data: dict[str, dict] = defaultdict(
             lambda: {
                 "count": 0,
                 "success": 0,
@@ -299,12 +299,12 @@ class InsightsEngine:
 
     def get_host_scores(
         self, time_range: TimeRange = TimeRange.WEEK
-    ) -> List[HostScore]:
+    ) -> list[HostScore]:
         """Calculate health scores for each host."""
         ops = self._load_history(time_range)
 
         # Group by host
-        host_data: Dict[str, Dict] = defaultdict(
+        host_data: dict[str, dict] = defaultdict(
             lambda: {
                 "success": 0,
                 "failed": 0,
@@ -391,12 +391,12 @@ class InsightsEngine:
 
     def get_time_patterns(
         self, time_range: TimeRange = TimeRange.WEEK
-    ) -> List[TimePattern]:
+    ) -> list[TimePattern]:
         """Analyze time-based usage patterns."""
         ops = self._load_history(time_range)
 
         # Group by hour
-        hour_data: Dict[int, Dict] = defaultdict(
+        hour_data: dict[int, dict] = defaultdict(
             lambda: {"count": 0, "success": 0, "commands": []}
         )
 
@@ -438,7 +438,7 @@ class InsightsEngine:
 
         return patterns
 
-    def detect_anomalies(self, time_range: TimeRange = TimeRange.WEEK) -> List[Insight]:
+    def detect_anomalies(self, time_range: TimeRange = TimeRange.WEEK) -> list[Insight]:
         """Detect unusual patterns or anomalies."""
         ops = self._load_history(time_range)
         anomalies = []
@@ -538,13 +538,13 @@ class InsightsEngine:
 
     def get_error_analysis(
         self, time_range: TimeRange = TimeRange.WEEK
-    ) -> List[Insight]:
+    ) -> list[Insight]:
         """Analyze error patterns."""
         ops = self._load_history(time_range)
         insights = []
 
         # Group errors by type
-        error_types: Dict[str, List[Dict]] = defaultdict(list)
+        error_types: dict[str, list[dict]] = defaultdict(list)
         for op in ops:
             if op.get("status") != "success":
                 error = op.get("error", "Unknown error")
@@ -607,7 +607,7 @@ class InsightsEngine:
 
     def generate_recommendations(
         self, time_range: TimeRange = TimeRange.WEEK
-    ) -> List[str]:
+    ) -> list[str]:
         """Generate personalized recommendations."""
         ops = self._load_history(time_range)
         recommendations = []
@@ -1051,7 +1051,7 @@ def show_recommendations(
 
 def generate_report(
     time_range: str = "week",
-    output_file: Optional[str] = None,
+    output_file: str | None = None,
     json_out: bool = False,
 ):
     """Generate a full analytics report."""

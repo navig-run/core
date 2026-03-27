@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.update.models import VersionInfo
 from navig.update.sources import SourceError, _BaseSource
@@ -21,7 +21,7 @@ class VersionChecker:
         self,
         source: _BaseSource,
         remote_ops: Any = None,
-        cache: Optional[Dict[str, str]] = None,  # shared {source_label: latest_version}
+        cache: dict[str, str] | None = None,  # shared {source_label: latest_version}
     ):
         self._source = source
         self._remote_ops = remote_ops
@@ -56,7 +56,7 @@ class VersionChecker:
             error=None if latest else "Could not determine latest version",
         )
 
-    def check_ssh(self, node_id: str, server_config: Dict) -> VersionInfo:
+    def check_ssh(self, node_id: str, server_config: dict) -> VersionInfo:
         """Check version on a remote SSH node."""
         if self._remote_ops is None:
             from navig.remote import RemoteOperations
@@ -65,7 +65,7 @@ class VersionChecker:
 
         current = "unknown"
         install_type = "unknown"
-        error: Optional[str] = None
+        error: str | None = None
 
         try:
             # Try JSON output first (navig >= 2.3)
@@ -104,7 +104,7 @@ class VersionChecker:
             error=error,
         )
 
-    def latest_from_source(self) -> Optional[str]:
+    def latest_from_source(self) -> str | None:
         """Return latest version as a string, None on failure."""
         return self._latest_cached()
 
@@ -112,7 +112,7 @@ class VersionChecker:
     # Internal
     # ------------------------------------------------------------------
 
-    def _latest_cached(self) -> Optional[str]:
+    def _latest_cached(self) -> str | None:
         key = self._source.label
         if key not in self._cache:
             try:

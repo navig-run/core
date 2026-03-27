@@ -23,7 +23,6 @@ import asyncio
 import platform
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 # =============================================================================
 # Sound catalog — maps names to bundled asset files
@@ -51,7 +50,7 @@ class NotificationSound(str, Enum):
 ASSETS_DIR = Path(__file__).parent / "assets"
 
 
-def _resolve_asset(name: str) -> Optional[Path]:
+def _resolve_asset(name: str) -> Path | None:
     """Resolve an asset name to a full path."""
     # Try enum lookup first
     try:

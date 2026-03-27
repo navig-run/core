@@ -20,7 +20,7 @@ import math
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger("navig.agents.inbox_router")
 
@@ -28,7 +28,7 @@ logger = logging.getLogger("navig.agents.inbox_router")
 
 CONTENT_TYPES = ("task_roadmap", "brief", "wiki_knowledge", "memory_log", "other")
 
-TARGET_FOLDERS: Dict[str, Optional[str]] = {
+TARGET_FOLDERS: dict[str, str | None] = {
     "task_roadmap": ".navig/plans",
     "brief": ".navig/plans/briefs",
     "wiki_knowledge": ".navig/wiki",
@@ -130,7 +130,7 @@ _MEMORY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_HINT_PATTERNS: Dict[str, re.Pattern] = {
+_HINT_PATTERNS: dict[str, re.Pattern] = {
     "task_roadmap": re.compile(
         r"(?:roadmap|plan|todo|task|sprint|phase)", re.IGNORECASE
     ),
@@ -151,7 +151,7 @@ _HINT_PATTERNS: Dict[str, re.Pattern] = {
 # Much more accurate than keyword regex because it captures term-frequency
 # distributions rather than binary keyword presence.
 
-_EXEMPLARS: Dict[str, List[str]] = {
+_EXEMPLARS: dict[str, list[str]] = {
     "task_roadmap": [
         "Roadmap and project plan with milestones and deliverables. Phase 1 setup "
         "infrastructure. Phase 2 implement core features. Sprint backlog items with "
@@ -205,16 +205,68 @@ _EXEMPLARS: Dict[str, List[str]] = {
 }
 
 _STOP_WORDS = frozenset(
-    "the and for are but not you all can had her was one our out has have been some "
-    "them than its over also that with this from they will each make like into just "
-    "more when very what which their there about would these other could after should "
-    "being where does then did".split()
+    [
+        "the",
+        "and",
+        "for",
+        "are",
+        "but",
+        "not",
+        "you",
+        "all",
+        "can",
+        "had",
+        "her",
+        "was",
+        "one",
+        "our",
+        "out",
+        "has",
+        "have",
+        "been",
+        "some",
+        "them",
+        "than",
+        "its",
+        "over",
+        "also",
+        "that",
+        "with",
+        "this",
+        "from",
+        "they",
+        "will",
+        "each",
+        "make",
+        "like",
+        "into",
+        "just",
+        "more",
+        "when",
+        "very",
+        "what",
+        "which",
+        "their",
+        "there",
+        "about",
+        "would",
+        "these",
+        "other",
+        "could",
+        "after",
+        "should",
+        "being",
+        "where",
+        "does",
+        "then",
+        "did",
+    ]
 )
 
 _TOKEN_RE = re.compile(r"[a-z0-9]{3,}")
 
 
-def _tokenize(text: str) -> List[str]:
+def _tokenize(text: str) -> list[str]:
     """Tokenize text into lowercased terms, stripping markdown/URLs."""
     text = re.sub(r"```[\s\S]*?```", " ", text)
     text = re.sub(r"`[^`]+`", " ", text)
@@ -222,9 +274,9 @@ def _tokenize(text: str) -> List[str]:
     return [t for t in _TOKEN_RE.findall(text.lower()) if t not in _STOP_WORDS]
 
 
-def _term_frequency(tokens: List[str]) -> Dict[str, float]:
+def _term_frequency(tokens: list[str]) -> dict[str, float]:
     """Augmented term frequency (0.5 + 0.5 * f/max_f)."""
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for t in tokens:
         counts[t] = counts.get(t, 0) + 1
     max_f = max(counts.values()) if counts else 1
@@ -232,23 +284,23 @@ def _term_frequency(tokens: List[str]) -> Dict[str, float]:
 
 
 # Lazy-initialised cache for IDF and category vectors
-_tfidf_cache: Optional[Dict[str, Any]] = None
+_tfidf_cache: dict[str, Any] | None = None
 
 
-def _get_tfidf_data() -> Dict[str, Any]:
+def _get_tfidf_data() -> dict[str, Any]:
     global _tfidf_cache
     if _tfidf_cache is not None:
         return _tfidf_cache
 
     # Build corpus from exemplars
-    docs: List[Dict[str, Any]] = []
+    docs: list[dict[str, Any]] = []
     for cat, texts in _EXEMPLARS.items():
         for text in texts:
             docs.append({"category": cat, "tokens": _tokenize(text)})
 
     # IDF across all exemplar documents
     doc_count = len(docs)
-    doc_freq: Dict[str, int] = {}
+    doc_freq: dict[str, int] = {}
     for doc in docs:
         for term in set(doc["tokens"]):
             doc_freq[term] = doc_freq.get(term, 0) + 1
@@ -257,10 +309,10 @@ def _get_tfidf_data() -> Dict[str, Any]:
     }
 
     # Aggregate TF-IDF vector per category (mean of exemplars)
-    cat_vectors: Dict[str, Dict[str, float]] = {}
+    cat_vectors: dict[str, dict[str, float]] = {}
     for cat in _EXEMPLARS:
         cat_docs = [d for d in docs if d["category"] == cat]
-        agg: Dict[str, float] = {}
+        agg: dict[str, float] = {}
         for doc in cat_docs:
             tf = _term_frequency(doc["tokens"])
             for term, tf_val in tf.items():
@@ -272,7 +324,7 @@ def _get_tfidf_data() -> Dict[str, Any]:
     return _tfidf_cache
 
 
-def _cosine_similarity(a: Dict[str, float], b: Dict[str, float]) -> float:
+def _cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float:
     dot = sum(a[t] * b[t] for t in a if t in b)
     norm_a = math.sqrt(sum(v * v for v in a.values()))
     norm_b = math.sqrt(sum(v * v for v in b.values()))
@@ -280,7 +332,7 @@ def _cosine_similarity(a: Dict[str, float], b: Dict[str, float]) -> float:
     return dot / denom if denom > 0 else 0.0
 
 
-def heuristic_classify(content: str, filename: str = "") -> Tuple[str, float]:
+def heuristic_classify(content: str, filename: str = "") -> tuple[str, float]:
     """
     TF-IDF + cosine similarity classifier.
 
@@ -289,8 +341,8 @@ def heuristic_classify(content: str, filename: str = "") -> Tuple[str, float]:
     Returns (content_type, confidence) where confidence is 0.0–1.0.
     """
     data = _get_tfidf_data()
-    idf: Dict[str, float] = data["idf"]
-    cat_vectors: Dict[str, Dict[str, float]] = data["cat_vectors"]
+    idf: dict[str, float] = data["idf"]
+    cat_vectors: dict[str, dict[str, float]] = data["cat_vectors"]
 
     # Build TF-IDF vector for input document
     tokens = _tokenize(content + " " + filename)
@@ -298,7 +350,7 @@ def heuristic_classify(content: str, filename: str = "") -> Tuple[str, float]:
     doc_vec = {t: tv * idf.get(t, 1.0) for t, tv in tf.items()}
 
     # Cosine similarity against each category
-    sims: Dict[str, float] = {}
+    sims: dict[str, float] = {}
     for cat, cv in cat_vectors.items():
         sims[cat] = _cosine_similarity(doc_vec, cv)
 
@@ -317,7 +369,7 @@ def heuristic_classify(content: str, filename: str = "") -> Tuple[str, float]:
 
     # Filename hint boost
     fname_lower = filename.lower()
-    filename_hints: List[str] = []
+    filename_hints: list[str] = []
     for ctype, pattern in _HINT_PATTERNS.items():
         if pattern.search(fname_lower):
             filename_hints.append(ctype)
@@ -414,9 +466,9 @@ def make_target_filename(title: str, content_type: str, target_folder: Path) -> 
 # ── Workspace Metadata ─────────────────────────────────────
 
 
-def collect_workspace_metadata(project_root: Path) -> Dict[str, Any]:
+def collect_workspace_metadata(project_root: Path) -> dict[str, Any]:
     """Scan .navig/ directories for existing docs to inform classification."""
-    meta: Dict[str, List[str]] = {
+    meta: dict[str, list[str]] = {
         "existing_plans": [],
         "existing_briefs": [],
         "existing_wiki": [],
@@ -450,7 +502,7 @@ def collect_workspace_metadata(project_root: Path) -> Dict[str, Any]:
     return meta
 
 
-def list_inbox_files(project_root: Path) -> List[Path]:
+def list_inbox_files(project_root: Path) -> list[Path]:
     """List all .md files in .navig/plans/inbox/."""
     inbox_dir = project_root / ".navig" / "plans" / "inbox"
     if not inbox_dir.exists():
@@ -483,15 +535,15 @@ class InboxRouterAgent:
         self.project_root = project_root
         self.use_llm = use_llm
         self.backend = backend
-        self._metadata: Optional[Dict[str, Any]] = None
+        self._metadata: dict[str, Any] | None = None
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         if self._metadata is None:
             self._metadata = collect_workspace_metadata(self.project_root)
         return self._metadata
 
-    def process_single(self, file_path: Path, dry_run: bool = False) -> Dict[str, Any]:
+    def process_single(self, file_path: Path, dry_run: bool = False) -> dict[str, Any]:
         """Process a single inbox file. Returns a plan dict."""
         if not file_path.exists():
             return {"error": f"File not found: {file_path}", "file": str(file_path)}
@@ -514,8 +566,8 @@ class InboxRouterAgent:
         return plan
 
     def process_batch(
-        self, files: Optional[List[Path]] = None, dry_run: bool = False
-    ) -> List[Dict[str, Any]]:
+        self, files: list[Path] | None = None, dry_run: bool = False
+    ) -> list[dict[str, Any]]:
         """Process all inbox files (or a specific list)."""
         if files is None:
             files = list_inbox_files(self.project_root)
@@ -527,8 +579,8 @@ class InboxRouterAgent:
         return [self.process_single(f, dry_run=dry_run) for f in files]
 
     def _process_via_llm(
-        self, content: str, filename: str, metadata: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, content: str, filename: str, metadata: dict[str, Any]
+    ) -> dict[str, Any]:
         """Classify via LLM with strict JSON contract."""
         from navig.llm_generate import llm_generate
 
@@ -564,7 +616,7 @@ class InboxRouterAgent:
 
         return plan
 
-    def _parse_llm_response(self, raw: str) -> Dict[str, Any]:
+    def _parse_llm_response(self, raw: str) -> dict[str, Any]:
         """Parse LLM JSON response, stripping code fences if present."""
         text = raw.strip()
         if text.startswith("```"):
@@ -576,7 +628,7 @@ class InboxRouterAgent:
             text = "\n".join(lines)
         return json.loads(text)
 
-    def _process_heuristic(self, content: str, filename: str) -> Dict[str, Any]:
+    def _process_heuristic(self, content: str, filename: str) -> dict[str, Any]:
         """Fast heuristic classification without LLM."""
         content_type, confidence = heuristic_classify(content, filename)
         title = extract_title(content, filename)
@@ -616,10 +668,10 @@ class InboxRouterAgent:
 
 def execute_plan(
     project_root: Path,
-    plan: Dict[str, Any],
+    plan: dict[str, Any],
     dry_run: bool = False,
     move_source: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Execute a classification plan — write transformed file, move source.
 

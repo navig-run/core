@@ -85,7 +85,7 @@ def play_boot_animation(
 
     console = Console(highlight=False, width=term_cols)
 
-    def _build(f: int) -> "Text":
+    def _build(f: int) -> Text:
         """Render frame f to a Rich Text object."""
         # cells: (row, col) -> (char, style)
         cells: dict[tuple[int, int], tuple[str, str]] = {}

@@ -11,9 +11,9 @@ An empty string means no settings panel is available (read-only info).
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # StatusBadge
@@ -54,7 +54,7 @@ class StatusBadge:
 # ---------------------------------------------------------------------------
 
 
-def _load_navig_json() -> Optional[Dict[str, Any]]:
+def _load_navig_json() -> dict[str, Any] | None:
     from navig.tui.config_model import DEFAULT_CONFIG_FILE
 
     try:

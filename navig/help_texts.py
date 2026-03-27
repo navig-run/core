@@ -60,7 +60,6 @@ STANDARDIZATION RULES
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -69,7 +68,7 @@ class CommandHelp:
 
     short_help: str  # One-line summary (shown in parent --help)
     description: str  # Full description (shown in command --help header)
-    epilog: Optional[str] = None  # Examples/notes (shown at bottom after options)
+    epilog: str | None = None  # Examples/notes (shown at bottom after options)
 
 
 @dataclass(frozen=True)
@@ -1128,7 +1127,7 @@ OPT_FORCE = OptionHelp(text="force operation without confirmation")
 # =============================================================================
 
 
-def get_group_help(group_name: str) -> Dict[str, str]:
+def get_group_help(group_name: str) -> dict[str, str]:
     """Get help text for a command group in HELP_REGISTRY format."""
     groups = {
         "host": HOST,

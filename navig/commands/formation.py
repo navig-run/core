@@ -6,7 +6,6 @@ Manage profile-based agent formations.
 
 import json as json_module
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -174,7 +173,7 @@ def formation_show(
 @formation_app.command("init")
 def formation_init(
     profile: str = typer.Argument(..., help="Formation ID or alias to activate"),
-    workspace: Optional[Path] = typer.Option(
+    workspace: Path | None = typer.Option(
         None, "--workspace", "-w", help="Workspace directory (defaults to cwd)"
     ),
 ):

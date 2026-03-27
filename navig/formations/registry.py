@@ -6,7 +6,6 @@ Loads formations once at gateway startup to prevent redundant per-request disk s
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional
 
 from navig.formations.loader import discover_formations, get_active_formation
 from navig.formations.types import Formation
@@ -20,8 +19,8 @@ class FormationRegistry:
     _instance = None
 
     def __init__(self):
-        self._active_formation: Optional[Formation] = None
-        self._formation_map: Dict[str, Path] = {}
+        self._active_formation: Formation | None = None
+        self._formation_map: dict[str, Path] = {}
         self._initialized: bool = False
 
     @classmethod
@@ -30,7 +29,7 @@ class FormationRegistry:
             cls._instance = cls()
         return cls._instance
 
-    def initialize(self, workspace_dir: Optional[Path] = None) -> None:
+    def initialize(self, workspace_dir: Path | None = None) -> None:
         """Scan and load formations from disk once."""
         if self._initialized:
             return
@@ -54,15 +53,15 @@ class FormationRegistry:
 
         self._initialized = True
 
-    def get_active(self) -> Optional[Formation]:
+    def get_active(self) -> Formation | None:
         """Get the cached active formation."""
         return self._active_formation
 
-    def get_formation_map(self) -> Dict[str, Path]:
+    def get_formation_map(self) -> dict[str, Path]:
         """Get the cached map of discovered formations."""
         return self._formation_map
 
-    def reload(self, workspace_dir: Optional[Path] = None) -> None:
+    def reload(self, workspace_dir: Path | None = None) -> None:
         """Force a reload of formations from disk."""
         self._initialized = False
         self.initialize(workspace_dir)

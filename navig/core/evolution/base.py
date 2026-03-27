@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -8,7 +8,7 @@ class EvolutionResult:
     success: bool
     artifact: Any = None
     error: str = ""
-    history: List[str] = None
+    history: list[str] = None
     attempts: int = 0
 
 
@@ -68,7 +68,7 @@ class BaseEvolver(ABC):
             False, error=current_error, attempts=self.max_retries, history=self.history
         )
 
-    def _check_cache(self, goal: str) -> Optional[Any]:
+    def _check_cache(self, goal: str) -> Any | None:
         """Override to check existing libraries."""
         return None
 
@@ -80,7 +80,7 @@ class BaseEvolver(ABC):
         pass
 
     @abstractmethod
-    def _validate(self, artifact: Any, context: Any) -> Optional[str]:
+    def _validate(self, artifact: Any, context: Any) -> str | None:
         """Return error string if invalid, None if valid."""
         pass
 

@@ -8,13 +8,12 @@ Renders a horizontal strip of colored status chips, e.g.:
 from __future__ import annotations
 
 import sys
-from typing import List
 
 from navig.ui.models import StatusChip
 from navig.ui.theme import COLOR_STYLE, SAFE_MODE, console
 
 
-def render_status_header(chips: List[StatusChip], *, sep: str = "  ·  ") -> None:
+def render_status_header(chips: list[StatusChip], *, sep: str = "  ·  ") -> None:
     """Print a compact chip row to stdout. Never raises."""
     try:
         parts: list[str] = []

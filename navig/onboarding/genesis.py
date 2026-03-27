@@ -23,7 +23,6 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 # ── optional heavy deps ────────────────────────────────────────────────────
 try:
@@ -95,7 +94,7 @@ class GenesisData:
     name: str
     bornAt: str
     engineVersion: str
-    avatarPath: Optional[str]
+    avatarPath: str | None
     avatarSeed: str
     qrTarget: str
 
@@ -204,7 +203,7 @@ def _export_avatar_png(
     node_id: str,
     qr_target: str,
     avatar_seed: str,
-) -> Optional[Path]:
+) -> Path | None:
     """
     Export 512×512 avatar PNG.  Requires qrcode[pil] + Pillow.
     On failure: returns None — never aborts onboarding.
@@ -274,7 +273,7 @@ def _accent_from_seed(seed: str) -> tuple[int, int, int]:
 
 
 def _draw_label(
-    draw: "ImageDraw.ImageDraw",
+    draw: ImageDraw.ImageDraw,
     text: str,
     canvas_width: int,
     y: int,
@@ -283,10 +282,10 @@ def _draw_label(
     """Draw node ID centered below QR in monospace."""
     try:
         font = ImageFont.truetype("DejaVuSansMono.ttf", 22)
-    except (IOError, OSError):
+    except OSError:
         try:
             font = ImageFont.truetype("Courier New.ttf", 22)
-        except (IOError, OSError):
+        except OSError:
             font = ImageFont.load_default()
 
     bbox = draw.textbbox((0, 0), text, font=font)

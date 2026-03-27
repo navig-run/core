@@ -28,9 +28,10 @@ import asyncio
 import logging
 import time
 import uuid
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class TaskHandle:
     task_id: str
     lane: str
     _future: asyncio.Future = field(repr=False)
-    _async_task: Optional[asyncio.Task] = field(default=None, repr=False)
+    _async_task: asyncio.Task | None = field(default=None, repr=False)
     _state: TaskState = field(default=TaskState.PENDING, repr=False)
     _enqueued_at: float = field(default_factory=time.monotonic, repr=False)
 
@@ -127,13 +128,13 @@ class TaskHandle:
 class _LaneState:
     lane: str
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
-    worker_task: Optional[asyncio.Task] = None
-    active_handles: Set[str] = field(default_factory=set)
+    worker_task: asyncio.Task | None = None
+    active_handles: set[str] = field(default_factory=set)
 
     async def _worker(self) -> None:  # pragma: no cover
         """Drain the queue serially until None sentinel is received."""
         while True:
-            entry: Optional[tuple] = await self.queue.get()
+            entry: tuple | None = await self.queue.get()
             if entry is None:  # shutdown sentinel
                 self.queue.task_done()
                 break
@@ -189,9 +190,9 @@ class CommandQueue:
             raise ValueError("max_workers_per_lane must be >= 1")
         self._max_workers = max_workers_per_lane
         self._default_timeout = default_timeout
-        self._lanes: Dict[str, _LaneState] = {}
+        self._lanes: dict[str, _LaneState] = {}
         self._shutdown = False
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -214,8 +215,8 @@ class CommandQueue:
         lane: str,
         coro: Awaitable[Any],
         *,
-        timeout: Optional[float] = None,
-        task_id: Optional[str] = None,
+        timeout: float | None = None,
+        task_id: str | None = None,
     ) -> TaskHandle:
         """Submit *coro* to *lane* and return a :class:`TaskHandle`.
 
@@ -269,7 +270,7 @@ class CommandQueue:
         cancelled = 0
 
         # Drain the queue and cancel queued items
-        pending: List[tuple] = []
+        pending: list[tuple] = []
         while not ls.queue.empty():
             try:
                 entry = ls.queue.get_nowait()
@@ -300,7 +301,7 @@ class CommandQueue:
         logger.debug("CommandQueue.clear_lane: lane=%s cancelled=%d", lane, cancelled)
         return cancelled
 
-    async def drain(self, lane: Optional[str] = None, *, timeout: float = 30.0) -> None:
+    async def drain(self, lane: str | None = None, *, timeout: float = 30.0) -> None:
         """Wait for *lane* (or all lanes) to finish processing.
 
         Raises asyncio.TimeoutError if not drained within *timeout* seconds.
@@ -330,7 +331,7 @@ class CommandQueue:
     # Introspection
     # ------------------------------------------------------------------
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """Return a snapshot of all lanes and their depths."""
         return {
             lane: {
@@ -342,7 +343,7 @@ class CommandQueue:
         }
 
     @property
-    def lane_names(self) -> List[str]:
+    def lane_names(self) -> list[str]:
         return list(self._lanes.keys())
 
     def __repr__(self) -> str:  # pragma: no cover

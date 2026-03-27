@@ -11,7 +11,7 @@ from navig.platform.paths import audio_configs_dir
 _STORE_DIR = audio_configs_dir()
 
 # In-memory cache: user_id → AudioConfig
-_cache: dict[int, "AudioConfig"] = {}
+_cache: dict[int, AudioConfig] = {}
 
 
 @dataclass

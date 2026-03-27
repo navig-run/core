@@ -20,7 +20,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
 
 NAVIG_HOME = Path.home() / ".navig"
 LOG_DIR = NAVIG_HOME / "logs"
@@ -80,7 +79,7 @@ def is_admin() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
+def nssm_install(start_now: bool = True) -> tuple[bool, str]:
     """Install the daemon as a Windows service via NSSM."""
     _ensure_dirs()
     cmd = _daemon_command(windowless=True)
@@ -160,7 +159,7 @@ def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
         return False, f"NSSM install failed: {err}"
 
 
-def nssm_uninstall() -> Tuple[bool, str]:
+def nssm_uninstall() -> tuple[bool, str]:
     try:
         subprocess.run(["nssm", "stop", SERVICE_NAME], capture_output=True)
         subprocess.run(
@@ -172,7 +171,7 @@ def nssm_uninstall() -> Tuple[bool, str]:
         return False, f"NSSM uninstall failed: {err}"
 
 
-def nssm_status() -> Tuple[bool, str]:
+def nssm_status() -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["nssm", "status", SERVICE_NAME], capture_output=True, text=True
@@ -235,7 +234,7 @@ def _schtasks_xml() -> str:
 </Task>"""
 
 
-def task_scheduler_install(start_now: bool = True) -> Tuple[bool, str]:
+def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
     """Install via Windows Task Scheduler (no admin needed)."""
     _ensure_dirs()
     xml_path = DAEMON_DIR / "navig-task.xml"
@@ -260,7 +259,7 @@ def task_scheduler_install(start_now: bool = True) -> Tuple[bool, str]:
         return False, f"Task Scheduler failed: {err}"
 
 
-def task_scheduler_uninstall() -> Tuple[bool, str]:
+def task_scheduler_uninstall() -> tuple[bool, str]:
     try:
         subprocess.run(
             ["schtasks", "/end", "/tn", TASK_NAME],
@@ -277,7 +276,7 @@ def task_scheduler_uninstall() -> Tuple[bool, str]:
         return False, f"Task Scheduler uninstall failed: {err}"
 
 
-def task_scheduler_status() -> Tuple[bool, str]:
+def task_scheduler_status() -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST", "/v"],
@@ -346,7 +345,7 @@ WantedBy="""
     return unit
 
 
-def systemd_install(start_now: bool = True) -> Tuple[bool, str]:
+def systemd_install(start_now: bool = True) -> tuple[bool, str]:
     """Install the daemon as a systemd service."""
     _ensure_dirs()
 
@@ -416,7 +415,7 @@ def systemd_install(start_now: bool = True) -> Tuple[bool, str]:
         )
 
 
-def systemd_uninstall() -> Tuple[bool, str]:
+def systemd_uninstall() -> tuple[bool, str]:
     """Remove the systemd service."""
     try:
         # Try system-wide first, then user
@@ -447,7 +446,7 @@ def systemd_uninstall() -> Tuple[bool, str]:
         return False, f"systemd uninstall failed: {e}"
 
 
-def systemd_status() -> Tuple[bool, str]:
+def systemd_status() -> tuple[bool, str]:
     """Check systemd service status."""
     try:
         # Try system-wide first
@@ -501,7 +500,7 @@ def detect_best_method() -> str:
     return "task"
 
 
-def install(method: Optional[str] = None, start_now: bool = True) -> Tuple[bool, str]:
+def install(method: str | None = None, start_now: bool = True) -> tuple[bool, str]:
     """Install NAVIG daemon as a persistent service."""
     method = method or detect_best_method()
     if method == "nssm":
@@ -534,7 +533,7 @@ def install(method: Optional[str] = None, start_now: bool = True) -> Tuple[bool,
         return False, f"Unknown method: {method}. Use 'nssm', 'task', or 'systemd'"
 
 
-def uninstall(method: Optional[str] = None) -> Tuple[bool, str]:
+def uninstall(method: str | None = None) -> tuple[bool, str]:
     """Remove NAVIG daemon service."""
     method = method or detect_best_method()
     if method == "nssm":
@@ -546,7 +545,7 @@ def uninstall(method: Optional[str] = None) -> Tuple[bool, str]:
     return False, f"Unknown method: {method}"
 
 
-def status(method: Optional[str] = None) -> Tuple[bool, str]:
+def status(method: str | None = None) -> tuple[bool, str]:
     """Check NAVIG daemon service status."""
     # Try both methods
     from navig.daemon.supervisor import NavigDaemon

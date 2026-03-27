@@ -1,7 +1,7 @@
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -101,7 +101,7 @@ steps:
 
         return response  # Fallback if no block
 
-    def _validate(self, artifact: str, context: Any) -> Optional[str]:
+    def _validate(self, artifact: str, context: Any) -> str | None:
         """Validate YAML structure."""
         try:
             data = yaml.safe_load(artifact)

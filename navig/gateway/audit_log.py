@@ -40,7 +40,7 @@ import logging
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class AuditLog:
     log file.  The file and parent directories are created on first write.
     """
 
-    def __init__(self, path: Optional[Path] = None) -> None:
+    def __init__(self, path: Path | None = None) -> None:
         self._path = Path(path) if path else _DEFAULT_PATH
         self._lock = threading.Lock()
 
@@ -71,10 +71,10 @@ class AuditLog:
         action: str,
         policy: str = "allow",
         status: str = "success",
-        raw_input: Optional[str] = None,
-        raw_output: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        raw_input: str | None = None,
+        raw_output: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Append one audit record.
 
@@ -99,13 +99,13 @@ class AuditLog:
         self._write(record)
         return record
 
-    def tail(self, n: int = 50) -> list[Dict[str, Any]]:
+    def tail(self, n: int = 50) -> list[dict[str, Any]]:
         """Return the last *n* records from the log file."""
         if not self._path.exists():
             return []
         lines: list[str] = []
         try:
-            with open(self._path, "r", encoding="utf-8") as fh:
+            with open(self._path, encoding="utf-8") as fh:
                 lines = fh.readlines()
         except OSError as exc:
             logger.warning("AuditLog read error: %s", exc)
@@ -132,11 +132,11 @@ class AuditLog:
         action: str,
         policy: str,
         status: str,
-        raw_input: Optional[str],
-        raw_output: Optional[str],
-        metadata: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        record: Dict[str, Any] = {
+        raw_input: str | None,
+        raw_output: str | None,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        record: dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             "actor": actor,
             "action": action,
@@ -158,12 +158,11 @@ class AuditLog:
 
         return record
 
-    def _write(self, record: Dict[str, Any]) -> None:
+    def _write(self, record: dict[str, Any]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with self._lock:
-                with open(self._path, "a", encoding="utf-8") as fh:
-                    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            with self._lock, open(self._path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
         except OSError as exc:
             logger.error("AuditLog write failed: %s", exc)
 

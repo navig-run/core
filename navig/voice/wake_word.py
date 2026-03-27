@@ -32,8 +32,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any
 
 import numpy as np
 
@@ -80,7 +81,7 @@ class WakeWordConfig:
     fail_on_mic_unavailable: bool = False
 
     # Optional: navig-echo bridge URL for HTTP wake notification.
-    echo_bridge_url: Optional[str] = None
+    echo_bridge_url: str | None = None
 
     # HTTP timeout for echo bridge call (seconds).
     echo_bridge_timeout: float = 1.0
@@ -98,7 +99,7 @@ class WakeWordDetection:
     keyword: str
     score: float
     timestamp: float = field(default_factory=time.time)
-    model: Optional[str] = None
+    model: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -124,23 +125,23 @@ class WakeWordEngine:
 
     def __init__(
         self,
-        config: Optional[WakeWordConfig] = None,
-        on_detected: Optional[OnDetectedCallback] = None,
-        session_manager: Optional[Any] = None,  # VoiceSessionManager
+        config: WakeWordConfig | None = None,
+        on_detected: OnDetectedCallback | None = None,
+        session_manager: Any | None = None,  # VoiceSessionManager
     ):
         self.config = config or WakeWordConfig()
         self._on_detected = on_detected
         self._session_mgr = session_manager
 
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._task: Optional[asyncio.Task] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._task: asyncio.Task | None = None
         self._stop_event: asyncio.Event = asyncio.Event()
         self._last_trigger: float = 0.0
         self._running = False
 
         # Lazily loaded components
-        self._oww_model: Optional[Any] = None
-        self._vad_model: Optional[Any] = None
+        self._oww_model: Any | None = None
+        self._vad_model: Any | None = None
         self._mic_available: bool = True
 
     # ------------------------------------------------------------------ #
@@ -459,11 +460,11 @@ class WakeWordEngine:
 # Module-level factory
 # ---------------------------------------------------------------------------
 
-_engine: Optional[WakeWordEngine] = None
+_engine: WakeWordEngine | None = None
 
 
 def get_wake_word_engine(
-    config: Optional[WakeWordConfig] = None,
+    config: WakeWordConfig | None = None,
     **kwargs,
 ) -> WakeWordEngine:
     """Return (or create) the global WakeWordEngine singleton."""

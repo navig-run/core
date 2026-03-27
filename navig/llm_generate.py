@@ -22,20 +22,20 @@ import asyncio
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("navig.llm_generate")
 
 
 def llm_generate(
-    messages: List[Dict[str, str]],
-    mode: Optional[str] = None,
-    user_input: Optional[str] = None,
-    prefer_uncensored: Optional[bool] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
-    model_override: Optional[str] = None,
-    provider_override: Optional[str] = None,
+    messages: list[dict[str, str]],
+    mode: str | None = None,
+    user_input: str | None = None,
+    prefer_uncensored: bool | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    model_override: str | None = None,
+    provider_override: str | None = None,
     stream: bool = False,
     timeout: float = 120.0,
 ) -> str:
@@ -111,21 +111,21 @@ def llm_generate(
 
 
 def run_llm(
-    messages: List[Dict[str, str]],
-    mode: Optional[str] = None,
-    user_input: Optional[str] = None,
-    prefer_uncensored: Optional[bool] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
-    model_override: Optional[str] = None,
-    provider_override: Optional[str] = None,
+    messages: list[dict[str, str]],
+    mode: str | None = None,
+    user_input: str | None = None,
+    prefer_uncensored: bool | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    model_override: str | None = None,
+    provider_override: str | None = None,
     stream: bool = False,
     timeout: float = 120.0,
-    fallback_models: Optional[List[str]] = None,
-    caller_info: Optional[Dict[str, Any]] = None,
-    session_id: Optional[str] = None,
+    fallback_models: list[str] | None = None,
+    caller_info: dict[str, Any] | None = None,
+    session_id: str | None = None,
     enable_tools: bool = False,
-) -> "LLMResult":
+) -> LLMResult:
     """
     Typed LLM orchestrator — routes through all 4 stages and returns LLMResult.
 
@@ -242,10 +242,10 @@ def run_llm(
 
 
 def _call_and_wrap(
-    messages: List[Dict[str, str]],
-    selection: "ModelSelection",
+    messages: list[dict[str, str]],
+    selection: ModelSelection,
     timeout: float,
-) -> "LLMResult":
+) -> LLMResult:
     """Dispatch a single LLM call and wrap the response in LLMResult."""
     from navig.llm_routing_types import LLMResult
 
@@ -280,11 +280,11 @@ def _call_and_wrap(
 
 
 def _call_with_fallback(
-    messages: List[Dict[str, str]],
-    selection: "ModelSelection",
-    fallback_models: List[str],
+    messages: list[dict[str, str]],
+    selection: ModelSelection,
+    fallback_models: list[str],
     timeout: float,
-) -> "LLMResult":
+) -> LLMResult:
     """Dispatch with FallbackManager if available, else manual retry chain."""
     from navig.llm_routing_types import LLMResult
 
@@ -354,7 +354,7 @@ def _call_with_fallback(
 # ─────────────────────────────────────────────────────────────
 
 
-def _maybe_execute_tools(result: "LLMResult") -> "LLMResult":
+def _maybe_execute_tools(result: LLMResult) -> LLMResult:
     """
     Parse LLM output for tool calls and execute via ToolRouter.
 
@@ -414,7 +414,7 @@ def _maybe_execute_tools(result: "LLMResult") -> "LLMResult":
     return result
 
 
-def _load_tools_safety_policy() -> Dict[str, Any]:
+def _load_tools_safety_policy() -> dict[str, Any]:
     """
     Load safety policy from GlobalConfig.tools section.
 
@@ -446,9 +446,9 @@ def _load_tools_safety_policy() -> Dict[str, Any]:
 
 def _build_pipeline_context(
     user_input: str,
-    caller_info: Optional[Dict[str, Any]] = None,
-    session_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    caller_info: dict[str, Any] | None = None,
+    session_id: str | None = None,
+) -> dict[str, Any]:
     """
     Safely invoke ContextBuilder.  Returns EMPTY_CONTEXT on any failure.
 
@@ -469,7 +469,7 @@ def _build_pipeline_context(
         }
 
 
-def _extract_user_text(messages: List[Dict[str, str]]) -> str:
+def _extract_user_text(messages: list[dict[str, str]]) -> str:
     """Extract the last user message content from the messages list."""
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -478,9 +478,9 @@ def _extract_user_text(messages: List[Dict[str, str]]) -> str:
 
 
 def _enrich_messages_with_context(
-    messages: List[Dict[str, str]],
-    context: Dict[str, Any],
-) -> List[Dict[str, str]]:
+    messages: list[dict[str, str]],
+    context: dict[str, Any],
+) -> list[dict[str, str]]:
     """
     Inject context into the message list as a system-level context preamble.
 
@@ -488,7 +488,7 @@ def _enrich_messages_with_context(
     The context is prepended as an additional system message so that
     the model can reference conversation history, KB snippets, etc.
     """
-    parts: List[str] = []
+    parts: list[str] = []
 
     # Conversation history
     history = context.get("conversation_history", [])
@@ -526,7 +526,7 @@ def _enrich_messages_with_context(
         return messages
 
     context_text = "\n\n---\n\n".join(parts)
-    context_msg: Dict[str, str] = {
+    context_msg: dict[str, str] = {
         "role": "system",
         "content": f"# Context\n\n{context_text}",
     }
@@ -553,7 +553,7 @@ def _has_llm_modes_config() -> bool:
         return False
 
 
-def _parse_model_spec(spec: str, provider_override: Optional[str] = None) -> tuple:
+def _parse_model_spec(spec: str, provider_override: str | None = None) -> tuple:
     """Parse 'provider:model' or just 'model' spec."""
     if provider_override:
         return provider_override, spec
@@ -594,11 +594,11 @@ def _safe_run_async(func):
 def _call_provider(
     provider: str,
     model: str,
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     temperature: float = 0.7,
     max_tokens: int = 4096,
     timeout: float = 120.0,
-    base_url: Optional[str] = None,
+    base_url: str | None = None,
 ) -> str:
     """Call an LLM provider using the providers system."""
     try:
@@ -629,11 +629,11 @@ def _call_provider(
 def _call_via_providers_system(
     provider: str,
     model: str,
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     temperature: float,
     max_tokens: int,
     timeout: float,
-    base_url: Optional[str],
+    base_url: str | None,
 ) -> str:
     """Use the existing navig.providers system for the call."""
     from navig.providers import (
@@ -688,11 +688,11 @@ def _call_via_providers_system(
 def _call_direct_openai_compat(
     provider: str,
     model: str,
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     temperature: float,
     max_tokens: int,
     timeout: float,
-    base_url: Optional[str],
+    base_url: str | None,
 ) -> str:
     """Direct HTTP call for OpenAI-compatible APIs (fallback)."""
     import httpx
@@ -724,8 +724,8 @@ def _call_direct_openai_compat(
 
 
 def _call_legacy(
-    messages: List[Dict[str, str]],
-    model_override: Optional[str] = None,
+    messages: list[dict[str, str]],
+    model_override: str | None = None,
     timeout: float = 120.0,
 ) -> str:
     """Legacy path using existing AIAssistant / direct OpenRouter."""

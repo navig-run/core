@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional
 
 from navig.memory.key_facts import VALID_CATEGORIES, KeyFact, KeyFactStore
 
@@ -32,7 +32,7 @@ logger = logging.getLogger("navig.memory.fact_extractor")
 class ExtractionResult:
     """Facts extracted from a single conversation turn."""
 
-    facts: List[KeyFact] = field(default_factory=list)
+    facts: list[KeyFact] = field(default_factory=list)
     source_turn: str = ""
     method: str = "rule"  # "rule" | "llm" | "hybrid"
     raw_llm_response: str = ""
@@ -184,7 +184,7 @@ def extract_rules(
     Patterns are pre-compiled at module load — no re-compilation per call.
     Problem-solution patterns scan user and assistant text separately.
     """
-    facts: List[KeyFact] = []
+    facts: list[KeyFact] = []
     seen_contents: set = set()
 
     for compiled_pat, category in ALL_PATTERNS:
@@ -254,7 +254,7 @@ def _normalize_fact_text(raw: str, category: str, context: str) -> str:
     return text
 
 
-def _auto_tags(content: str, category: str) -> List[str]:
+def _auto_tags(content: str, category: str) -> list[str]:
     """Generate tags from content keywords."""
     tags = [category]
     # Common tech keywords
@@ -334,7 +334,7 @@ async def extract_llm(
     llm_call: Callable,
     source_conversation_id: str = "",
     source_platform: str = "core",
-    model: Optional[str] = None,
+    model: str | None = None,
 ) -> ExtractionResult:
     """
     LLM-based fact extraction.
@@ -378,7 +378,7 @@ def _parse_llm_facts(
     raw: str,
     source_conversation_id: str,
     source_platform: str,
-) -> List[KeyFact]:
+) -> list[KeyFact]:
     """Parse the LLM's JSON response into KeyFact objects."""
     # Extract JSON array from response (LLM might wrap it in markdown fences)
     raw = raw.strip()
@@ -396,7 +396,7 @@ def _parse_llm_facts(
     if not isinstance(items, list):
         return []
 
-    facts: List[KeyFact] = []
+    facts: list[KeyFact] = []
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -447,8 +447,8 @@ class FactExtractor:
 
     def __init__(
         self,
-        store: Optional[KeyFactStore] = None,
-        llm_call: Optional[Callable] = None,
+        store: KeyFactStore | None = None,
+        llm_call: Callable | None = None,
         mode: str = "hybrid",  # "rule" | "llm" | "hybrid"
         min_user_length: int = 20,  # Skip very short messages
         max_facts_per_turn: int = 5,

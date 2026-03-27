@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any
 
 from navig.deploy.models import HealthConfig
 
@@ -29,7 +29,7 @@ class HealthChecker:
     def __init__(
         self,
         config: HealthConfig,
-        server_config: Dict[str, Any],
+        server_config: dict[str, Any],
         remote_ops: Any,
         dry_run: bool = False,
     ):

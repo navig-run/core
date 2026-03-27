@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Iterator, Optional
 
 from navig.store.base import BaseStore
 
@@ -53,7 +53,7 @@ class Message:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Message":
+    def from_dict(cls, data: dict) -> Message:
         """Create from dictionary."""
         return cls(
             id=data["id"],
@@ -204,8 +204,8 @@ class ConversationStore(BaseStore):
         self,
         session_key: str,
         limit: int = 100,
-        before: Optional[datetime] = None,
-        roles: Optional[list[str]] = None,
+        before: datetime | None = None,
+        roles: list[str] | None = None,
     ) -> list[Message]:
         """
         Get message history for a session.
@@ -245,7 +245,7 @@ class ConversationStore(BaseStore):
 
         return messages
 
-    def get_session(self, session_key: str) -> Optional[SessionInfo]:
+    def get_session(self, session_key: str) -> SessionInfo | None:
         """Get session info."""
         conn = self._get_conn()
 
@@ -275,7 +275,7 @@ class ConversationStore(BaseStore):
     def list_sessions(
         self,
         limit: int = 50,
-        active_after: Optional[datetime] = None,
+        active_after: datetime | None = None,
     ) -> list[SessionInfo]:
         """List all sessions."""
         conn = self._get_conn()
@@ -405,7 +405,7 @@ class ConversationStore(BaseStore):
     def search_content(
         self,
         query: str,
-        session_key: Optional[str] = None,
+        session_key: str | None = None,
         limit: int = 20,
     ) -> list[Message]:
         """

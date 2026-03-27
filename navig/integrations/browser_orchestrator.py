@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 
@@ -46,11 +46,11 @@ _TIMEOUT = 120  # seconds per task run
 
 
 async def run_browser_task(
-    task_spec: Dict[str, Any],
+    task_spec: dict[str, Any],
     *,
     max_hitl_retries: int = 3,
     on_progress=None,  # optional async callback(event: str, data: dict)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Execute a browser task via the Go daemon, handling HitL interrupts.
 
@@ -140,7 +140,7 @@ async def run_browser_task(
     return result
 
 
-def _inject_2fa_steps(task_spec: Dict[str, Any], code: str) -> None:
+def _inject_2fa_steps(task_spec: dict[str, Any], code: str) -> None:
     """
     Best-effort 2FA code injection: add a fill step for common 2FA selectors
     before the existing steps list. The existing steps stay intact so the

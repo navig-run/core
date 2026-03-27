@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional, Set
 
 logger = logging.getLogger("navig.inbox.watcher")
 
@@ -42,7 +42,7 @@ def _global_inbox_dir() -> Path:
         return Path.home() / ".navig" / "inbox"
 
 
-def _project_inbox_dir(project_root: Optional[Path] = None) -> Path:
+def _project_inbox_dir(project_root: Path | None = None) -> Path:
     root = project_root or Path.cwd()
     return root / ".navig" / "wiki" / "inbox"
 
@@ -53,7 +53,7 @@ def _project_inbox_dir(project_root: Optional[Path] = None) -> Path:
 class _WatchfilesBackend:
     """Watcher using watchfiles library (async-friendly)."""
 
-    def __init__(self, dirs: List[Path], callback: FileCB) -> None:
+    def __init__(self, dirs: list[Path], callback: FileCB) -> None:
         self._dirs = [d for d in dirs if d.is_dir()]
         self._callback = callback
         self._stop_event = threading.Event()
@@ -85,12 +85,12 @@ class _PollingBackend:
     """Fallback polling watcher when watchfiles is unavailable."""
 
     def __init__(
-        self, dirs: List[Path], callback: FileCB, interval: float = 3.0
+        self, dirs: list[Path], callback: FileCB, interval: float = 3.0
     ) -> None:
         self._dirs = dirs
         self._callback = callback
         self._interval = interval
-        self._seen: Set[str] = set()
+        self._seen: set[str] = set()
         self._stop = threading.Event()
 
     def _scan(self) -> None:
@@ -149,13 +149,13 @@ class InboxWatcher:
     def __init__(
         self,
         callback: FileCB,
-        project_root: Optional[Path] = None,
-        extra_dirs: Optional[List[Path]] = None,
+        project_root: Path | None = None,
+        extra_dirs: list[Path] | None = None,
         poll_interval: float = 3.0,
     ) -> None:
         self._callback = callback
 
-        self._dirs: List[Path] = [_global_inbox_dir()]
+        self._dirs: list[Path] = [_global_inbox_dir()]
         if project_root:
             self._dirs.append(_project_inbox_dir(project_root))
         if extra_dirs:
@@ -166,8 +166,8 @@ class InboxWatcher:
             d.mkdir(parents=True, exist_ok=True)
 
         self._poll_interval = poll_interval
-        self._backend: Optional[_WatchfilesBackend | _PollingBackend] = None
-        self._thread: Optional[threading.Thread] = None
+        self._backend: _WatchfilesBackend | _PollingBackend | None = None
+        self._thread: threading.Thread | None = None
 
     def start(self, *, daemon: bool = True) -> None:
         """Start the watcher in a background thread."""
@@ -197,10 +197,10 @@ class InboxWatcher:
             self._thread = None
 
     @property
-    def watched_dirs(self) -> List[Path]:
+    def watched_dirs(self) -> list[Path]:
         return list(self._dirs)
 
-    def __enter__(self) -> "InboxWatcher":
+    def __enter__(self) -> InboxWatcher:
         self.start()
         return self
 

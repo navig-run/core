@@ -26,7 +26,8 @@ from __future__ import annotations
 
 import hashlib
 import time
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -50,7 +51,7 @@ class DeduplicationFilter:
     def __init__(self, window_seconds: int = DEFAULT_WINDOW_S) -> None:
         self._window_s = window_seconds
         # key → timestamp of first observation
-        self._seen: Dict[str, float] = {}
+        self._seen: dict[str, float] = {}
 
     @staticmethod
     def _key(message_id: int, chat_id: int) -> str:
@@ -103,13 +104,13 @@ class HandoffQueue:
 
     # Type alias for a queued item
     # (raw_update_dict, enqueue_timestamp, ttl_deadline)
-    _Item = Tuple[Any, float, float]
+    _Item = tuple[Any, float, float]
 
     def __init__(self, default_ttl_s: int = DEFAULT_HANDOFF_TTL_S) -> None:
         self._default_ttl_s = default_ttl_s
-        self._queue: List[HandoffQueue._Item] = []
+        self._queue: list[HandoffQueue._Item] = []
 
-    def put(self, message: Any, ttl_seconds: Optional[int] = None) -> None:
+    def put(self, message: Any, ttl_seconds: int | None = None) -> None:
         """Enqueue a message with a TTL deadline."""
         ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl_s
         now = time.monotonic()
@@ -128,7 +129,7 @@ class HandoffQueue:
     async def drain_to_leader(
         self,
         send_fn: Callable[[Any], Awaitable[None]],
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Deliver all queued messages to the new leader via send_fn.
 

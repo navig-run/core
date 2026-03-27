@@ -15,7 +15,7 @@ Users must explicitly approve every submission — no silent auto-PRs.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -111,7 +111,7 @@ def _get_install_path(repo_path: Path) -> Path:
 
 @contribute_app.command("scan")
 def scan_cmd(
-    path: Optional[Path] = typer.Option(
+    path: Path | None = typer.Option(
         None,
         "--path",
         "-p",
@@ -226,7 +226,7 @@ def scan_cmd(
     _console.print(f"[bold]Branch:[/bold] {branch}")
 
     alias: str = cfg_typed.alias
-    version: Optional[str] = None
+    version: str | None = None
     try:
         from navig import __version__ as _v  # noqa: PLC0415
 

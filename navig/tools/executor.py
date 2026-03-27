@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import time
-from typing import Any, AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable
+from typing import Any
 
 from navig.tools.interfaces import (
     ExecutionEvent,

@@ -1,10 +1,11 @@
 """File system watcher for reactive automation."""
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -39,10 +40,10 @@ class WatchConfig:
     """File watch configuration."""
 
     path: str
-    patterns: List[str] = field(default_factory=list)  # e.g., ["*.py", "*.json"]
-    ignore_patterns: List[str] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)  # e.g., ["*.py", "*.json"]
+    ignore_patterns: list[str] = field(default_factory=list)
     recursive: bool = True
-    events: List[str] = field(
+    events: list[str] = field(
         default_factory=lambda: ["created", "modified", "deleted", "moved"]
     )
     debounce_seconds: float = 0.5  # Debounce rapid changes
@@ -54,7 +55,7 @@ class FileEvent:
 
     event_type: str  # created, modified, deleted, moved
     src_path: str
-    dest_path: Optional[str] = None  # For moved events
+    dest_path: str | None = None  # For moved events
     is_directory: bool = False
     timestamp: datetime = field(default_factory=datetime.now)
 
@@ -74,9 +75,9 @@ class _NavigFileHandler:
     def __init__(
         self,
         callback: Callable,
-        patterns: List[str] = None,
-        ignore_patterns: List[str] = None,
-        events: List[str] = None,
+        patterns: list[str] = None,
+        ignore_patterns: list[str] = None,
+        events: list[str] = None,
         debounce_seconds: float = 0.5,
     ):
         self.callback = callback
@@ -86,7 +87,7 @@ class _NavigFileHandler:
         self.debounce_seconds = debounce_seconds
 
         self._loop = None
-        self._last_events: Dict[str, float] = {}  # path -> timestamp for debouncing
+        self._last_events: dict[str, float] = {}  # path -> timestamp for debouncing
 
     def set_loop(self, loop):
         """Set the event loop for async callbacks."""
@@ -207,8 +208,8 @@ class FileWatcher:
     """
 
     def __init__(self):
-        self._observers: Dict[str, Any] = {}  # path -> observer
-        self._handlers: Dict[str, _NavigFileHandler] = {}  # path -> handler
+        self._observers: dict[str, Any] = {}  # path -> observer
+        self._handlers: dict[str, _NavigFileHandler] = {}  # path -> handler
         self._started = False
 
     @property
@@ -217,7 +218,7 @@ class FileWatcher:
         return self._started
 
     @property
-    def watched_paths(self) -> List[str]:
+    def watched_paths(self) -> list[str]:
         """Get list of watched paths."""
         return list(self._observers.keys())
 
@@ -225,9 +226,9 @@ class FileWatcher:
         self,
         path: str,
         callback: Callable[[FileEvent], Any],
-        patterns: List[str] = None,
-        ignore_patterns: List[str] = None,
-        events: List[str] = None,
+        patterns: list[str] = None,
+        ignore_patterns: list[str] = None,
+        events: list[str] = None,
         recursive: bool = True,
         debounce_seconds: float = 0.5,
     ):
@@ -333,7 +334,7 @@ class FileWatcher:
 
         logger.info("FileWatcher stopped")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get watcher status."""
         return {
             "running": self._started,

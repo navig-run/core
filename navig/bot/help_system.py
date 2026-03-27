@@ -8,7 +8,7 @@ Provides:
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -19,11 +19,11 @@ class CommandInfo:
     short_desc: str
     description: str
     syntax: str
-    examples: List[str]
+    examples: list[str]
     category: str
     permissions: str = "Everyone"
-    aliases: List[str] = field(default_factory=list)
-    related: List[str] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
+    related: list[str] = field(default_factory=list)
 
 
 # Command categories with display info
@@ -66,7 +66,7 @@ CATEGORIES = {
 }
 
 
-def get_all_commands() -> Dict[str, CommandInfo]:
+def get_all_commands() -> dict[str, CommandInfo]:
     """Get all available commands with their documentation."""
     return {
         # Core Commands
@@ -629,7 +629,7 @@ def get_all_commands() -> Dict[str, CommandInfo]:
     }
 
 
-def get_commands_by_category() -> Dict[str, Dict[str, Any]]:
+def get_commands_by_category() -> dict[str, dict[str, Any]]:
     """
     Get commands grouped by category.
 
@@ -656,13 +656,13 @@ def get_commands_by_category() -> Dict[str, Dict[str, Any]]:
     return grouped
 
 
-def get_command(command_id: str) -> Optional[CommandInfo]:
+def get_command(command_id: str) -> CommandInfo | None:
     """Get a single command's documentation."""
     commands = get_all_commands()
     return commands.get(command_id)
 
 
-def search_commands(query: str) -> List[CommandInfo]:
+def search_commands(query: str) -> list[CommandInfo]:
     """Search commands by text in name, description, or examples."""
     query_lower = query.lower()
     results = []

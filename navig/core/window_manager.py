@@ -7,7 +7,6 @@ Handles higher-level window management, layout saving/restoring, and dashboard d
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import List
 
 from navig.console_helper import error, info, warning
 
@@ -59,7 +58,7 @@ class WindowManager:
             return
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 layout_data = json.load(f)
         except Exception as e:
             error(f"Failed to load layout: {e}")
@@ -118,6 +117,6 @@ class WindowManager:
             else:
                 warning(f"Window not found for restore: {target_title}")
 
-    def list_layouts(self) -> List[str]:
+    def list_layouts(self) -> list[str]:
         """List available layouts."""
         return [f.stem for f in self.layout_dir.glob("*.json")]

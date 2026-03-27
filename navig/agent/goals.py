@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import DebugLogger
 
@@ -45,16 +45,16 @@ class Subtask:
 
     id: str
     description: str
-    command: Optional[str] = None
-    dependencies: List[str] = field(default_factory=list)
+    command: str | None = None
+    dependencies: list[str] = field(default_factory=list)
     state: SubtaskState = SubtaskState.PENDING
     created_at: datetime = field(default_factory=datetime.now)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
-    result: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None
+    result: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "description": self.description,
@@ -71,7 +71,7 @@ class Subtask:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Subtask:
+    def from_dict(cls, data: dict[str, Any]) -> Subtask:
         return cls(
             id=data["id"],
             description=data["description"],
@@ -101,14 +101,14 @@ class Goal:
     id: str
     description: str
     state: GoalState = GoalState.PENDING
-    subtasks: List[Subtask] = field(default_factory=list)
+    subtasks: list[Subtask] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     progress: float = 0.0  # 0.0 to 1.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "description": self.description,
@@ -124,7 +124,7 @@ class Goal:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Goal:
+    def from_dict(cls, data: dict[str, Any]) -> Goal:
         return cls(
             id=data["id"],
             description=data["description"],
@@ -163,13 +163,13 @@ class GoalPlanner:
     Manages goal decomposition, dependency tracking, and execution.
     """
 
-    def __init__(self, storage_dir: Optional[Path] = None):
+    def __init__(self, storage_dir: Path | None = None):
         self.storage_dir = storage_dir or Path.home() / ".navig" / "workspace"
         self.goals_file = self.storage_dir / "goals.json"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger = DebugLogger()
-        self._goals: Dict[str, Goal] = {}
+        self._goals: dict[str, Goal] = {}
         self._load_goals()
 
     def _load_goals(self) -> None:
@@ -178,7 +178,7 @@ class GoalPlanner:
             return
 
         try:
-            with open(self.goals_file, "r", encoding="utf-8") as f:
+            with open(self.goals_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             for goal_data in data.get("goals", []):
@@ -210,9 +210,7 @@ class GoalPlanner:
         except Exception as e:
             self.logger.log_operation("goals", {"action": "save", "error": str(e)})
 
-    def add_goal(
-        self, description: str, metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    def add_goal(self, description: str, metadata: dict[str, Any] | None = None) -> str:
         """
         Add a new goal.
 
@@ -234,11 +232,11 @@ class GoalPlanner:
         )
         return goal_id
 
-    def get_goal(self, goal_id: str) -> Optional[Goal]:
+    def get_goal(self, goal_id: str) -> Goal | None:
         """Get a goal by ID."""
         return self._goals.get(goal_id)
 
-    def list_goals(self, state: Optional[GoalState] = None) -> List[Goal]:
+    def list_goals(self, state: GoalState | None = None) -> list[Goal]:
         """
         List goals, optionally filtered by state.
 
@@ -257,7 +255,7 @@ class GoalPlanner:
         goals.sort(key=lambda g: g.created_at, reverse=True)
         return goals
 
-    def decompose_goal(self, goal_id: str, subtasks: List[Dict[str, Any]]) -> bool:
+    def decompose_goal(self, goal_id: str, subtasks: list[dict[str, Any]]) -> bool:
         """
         Decompose a goal into subtasks.
 
@@ -319,7 +317,7 @@ class GoalPlanner:
         return True
 
     def complete_subtask(
-        self, goal_id: str, subtask_id: str, result: Optional[str] = None
+        self, goal_id: str, subtask_id: str, result: str | None = None
     ) -> bool:
         """
         Mark a subtask as completed.
@@ -425,7 +423,7 @@ class GoalPlanner:
         self.logger.log_operation("goals", {"action": "cancel", "id": goal_id})
         return True
 
-    def get_next_subtask(self, goal_id: str) -> Optional[Subtask]:
+    def get_next_subtask(self, goal_id: str) -> Subtask | None:
         """
         Get the next executable subtask for a goal.
 

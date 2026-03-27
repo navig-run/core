@@ -15,9 +15,7 @@ system_deep     – system_standard + tray (Windows) + persona assets
 
 from __future__ import annotations
 
-from typing import Dict, List
-
-PROFILE_MODULES: Dict[str, List[str]] = {
+PROFILE_MODULES: dict[str, list[str]] = {
     "node": [
         "config_paths",
         "core_cli",
@@ -65,4 +63,4 @@ PROFILE_MODULES: Dict[str, List[str]] = {
 }
 
 DEFAULT_PROFILE: str = "operator"
-VALID_PROFILES: List[str] = list(PROFILE_MODULES)
+VALID_PROFILES: list[str] = list(PROFILE_MODULES)

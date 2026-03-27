@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
@@ -40,8 +40,8 @@ class WebFetchTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         url: str = args.get("url", "")
         if not url:

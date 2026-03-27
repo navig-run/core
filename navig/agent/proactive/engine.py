@@ -9,7 +9,6 @@ Inspired by proactive assistance loop patterns.
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional
 
 from navig import console_helper as ch
 from navig.agent.proactive.providers import (
@@ -33,8 +32,8 @@ class ProactiveEngine:
     """
 
     def __init__(self):
-        self.calendar: Optional[CalendarProvider] = MockCalendar()
-        self.email: Optional[EmailProvider] = MockEmail()
+        self.calendar: CalendarProvider | None = MockCalendar()
+        self.email: EmailProvider | None = MockEmail()
         self.email_providers: dict = {}  # label -> EmailProvider (multi-account)
         self.running = False
 
@@ -44,9 +43,9 @@ class ProactiveEngine:
         self.trigger_manager = TriggerManager()
 
         # State tracking
-        self.last_check: Optional[datetime] = None
+        self.last_check: datetime | None = None
         self.last_check_status: str = "never"  # never, success, error
-        self.last_error: Optional[str] = None
+        self.last_error: str | None = None
         self.is_checking: bool = False
         self.provider_status: dict = {"calendar": "mock", "email": "mock"}
 
@@ -81,7 +80,7 @@ class ProactiveEngine:
         self.running = False
         ch.info("[Proactive] Engine stopped.")
 
-    async def run_checks(self, event: Optional[HookEvent]):
+    async def run_checks(self, event: HookEvent | None):
         """Run all proactive checks."""
         if self.is_checking:
             return
@@ -248,7 +247,7 @@ class ProactiveEngine:
         return self._engagement
 
     def record_user_message(
-        self, message_type: str = "chat", command: Optional[str] = None
+        self, message_type: str = "chat", command: str | None = None
     ):
         """
         Record a user interaction for engagement tracking.

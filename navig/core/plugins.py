@@ -41,11 +41,12 @@ import importlib.util
 import inspect
 import sys
 from abc import ABC
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any
 
 # =============================================================================
 # Types
@@ -87,23 +88,23 @@ class PluginMetadata:
 
     # Classification
     type: PluginType = PluginType.EXTENSION
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
     # Requirements
     navig_version: str = ">=2.0.0"
     python_version: str = ">=3.9"
-    dependencies: List[str] = field(default_factory=list)
-    optional_dependencies: List[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    optional_dependencies: list[str] = field(default_factory=list)
 
     # Configuration
-    config_schema: Optional[Dict[str, Any]] = None
-    default_config: Dict[str, Any] = field(default_factory=dict)
+    config_schema: dict[str, Any] | None = None
+    default_config: dict[str, Any] = field(default_factory=dict)
 
     # Lifecycle
     auto_enable: bool = True
     priority: int = 100  # Lower = loads first
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "name": self.name,
@@ -122,19 +123,19 @@ class PluginInfo:
 
     metadata: PluginMetadata
     state: PluginState = PluginState.DISCOVERED
-    error: Optional[str] = None
+    error: str | None = None
 
     # Source info
-    source_path: Optional[Path] = None
-    module_name: Optional[str] = None
+    source_path: Path | None = None
+    module_name: str | None = None
 
     # Runtime
-    instance: Optional["Plugin"] = None
-    loaded_at: Optional[datetime] = None
-    enabled_at: Optional[datetime] = None
+    instance: Plugin | None = None
+    loaded_at: datetime | None = None
+    enabled_at: datetime | None = None
 
     # Config
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -154,7 +155,7 @@ class PluginInfo:
             PluginState.DISABLED,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             **self.metadata.to_dict(),
@@ -182,19 +183,19 @@ class Plugin(ABC):
     metadata: PluginMetadata
 
     def __init__(self):
-        self._registry: Optional["PluginRegistry"] = None
-        self._config: Dict[str, Any] = {}
-        self._hooks: List[str] = []  # Registered hook IDs for cleanup
+        self._registry: PluginRegistry | None = None
+        self._config: dict[str, Any] = {}
+        self._hooks: list[str] = []  # Registered hook IDs for cleanup
 
     @property
     def name(self) -> str:
         return self.metadata.name
 
     @property
-    def config(self) -> Dict[str, Any]:
+    def config(self) -> dict[str, Any]:
         return self._config
 
-    def configure(self, config: Dict[str, Any]) -> None:
+    def configure(self, config: dict[str, Any]) -> None:
         """
         Configure the plugin.
 
@@ -283,7 +284,7 @@ class Plugin(ABC):
 
 def plugin(
     name: str, version: str, description: str = "", **kwargs
-) -> Callable[[Type[Plugin]], Type[Plugin]]:
+) -> Callable[[type[Plugin]], type[Plugin]]:
     """
     Decorator to define plugin metadata.
 
@@ -293,7 +294,7 @@ def plugin(
             pass
     """
 
-    def decorator(cls: Type[Plugin]) -> Type[Plugin]:
+    def decorator(cls: type[Plugin]) -> type[Plugin]:
         cls.metadata = PluginMetadata(
             name=name, version=version, description=description, **kwargs
         )
@@ -315,9 +316,9 @@ class PluginRegistry:
     """
 
     def __init__(self):
-        self._plugins: Dict[str, PluginInfo] = {}
-        self._load_order: List[str] = []
-        self._plugin_dirs: List[Path] = []
+        self._plugins: dict[str, PluginInfo] = {}
+        self._load_order: list[str] = []
+        self._plugin_dirs: list[Path] = []
         self._initialized = False
 
     def initialize(self) -> None:
@@ -341,7 +342,7 @@ class PluginRegistry:
     # Discovery
     # =========================================================================
 
-    def discover_plugins(self) -> List[PluginInfo]:
+    def discover_plugins(self) -> list[PluginInfo]:
         """
         Discover plugins from all configured directories.
 
@@ -375,7 +376,7 @@ class PluginRegistry:
 
         return discovered
 
-    def _discover_plugin_package(self, path: Path) -> Optional[PluginInfo]:
+    def _discover_plugin_package(self, path: Path) -> PluginInfo | None:
         """Discover a plugin from a package directory."""
         try:
             # Load the module
@@ -416,7 +417,7 @@ class PluginRegistry:
 
         return None
 
-    def _discover_plugin_file(self, path: Path) -> Optional[PluginInfo]:
+    def _discover_plugin_file(self, path: Path) -> PluginInfo | None:
         """Discover a plugin from a single file."""
         try:
             module_name = f"navig_plugins.{path.stem}"
@@ -458,7 +459,7 @@ class PluginRegistry:
     # =========================================================================
 
     def load_plugin(
-        self, name: str, config: Optional[Dict[str, Any]] = None
+        self, name: str, config: dict[str, Any] | None = None
     ) -> PluginInfo:
         """
         Load a discovered plugin.
@@ -619,9 +620,7 @@ class PluginRegistry:
     # Batch Operations
     # =========================================================================
 
-    def load_all(
-        self, config: Optional[Dict[str, Dict]] = None
-    ) -> Dict[str, PluginInfo]:
+    def load_all(self, config: dict[str, dict] | None = None) -> dict[str, PluginInfo]:
         """Load all discovered plugins."""
         results = {}
 
@@ -639,7 +638,7 @@ class PluginRegistry:
 
         return results
 
-    def enable_all(self) -> Dict[str, PluginInfo]:
+    def enable_all(self) -> dict[str, PluginInfo]:
         """Enable all loaded plugins that have auto_enable=True."""
         results = {}
 
@@ -653,7 +652,7 @@ class PluginRegistry:
 
         return results
 
-    def disable_all(self) -> Dict[str, PluginInfo]:
+    def disable_all(self) -> dict[str, PluginInfo]:
         """Disable all enabled plugins (in reverse load order)."""
         results = {}
 
@@ -673,15 +672,15 @@ class PluginRegistry:
     # Query
     # =========================================================================
 
-    def get_plugin(self, name: str) -> Optional[PluginInfo]:
+    def get_plugin(self, name: str) -> PluginInfo | None:
         """Get plugin info by name."""
         return self._plugins.get(name)
 
     def list_plugins(
         self,
-        state: Optional[PluginState] = None,
-        plugin_type: Optional[PluginType] = None,
-    ) -> List[PluginInfo]:
+        state: PluginState | None = None,
+        plugin_type: PluginType | None = None,
+    ) -> list[PluginInfo]:
         """List plugins with optional filtering."""
         plugins = list(self._plugins.values())
 
@@ -693,11 +692,11 @@ class PluginRegistry:
 
         return plugins
 
-    def get_enabled_plugins(self) -> List[PluginInfo]:
+    def get_enabled_plugins(self) -> list[PluginInfo]:
         """Get all enabled plugins."""
         return self.list_plugins(state=PluginState.ENABLED)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get registry status summary."""
         states = {}
         for info in self._plugins.values():
@@ -715,7 +714,7 @@ class PluginRegistry:
     # Helpers
     # =========================================================================
 
-    def _trigger_hook(self, event: str, data: Dict[str, Any]) -> None:
+    def _trigger_hook(self, event: str, data: dict[str, Any]) -> None:
         """Trigger a hook event if hooks system is available."""
         try:
             from navig.core.hooks import trigger_hook_sync
@@ -729,7 +728,7 @@ class PluginRegistry:
 # Global Registry
 # =============================================================================
 
-_registry: Optional[PluginRegistry] = None
+_registry: PluginRegistry | None = None
 
 
 def get_plugin_registry() -> PluginRegistry:
@@ -741,16 +740,16 @@ def get_plugin_registry() -> PluginRegistry:
     return _registry
 
 
-def discover_plugins() -> List[PluginInfo]:
+def discover_plugins() -> list[PluginInfo]:
     """Discover all plugins."""
     return get_plugin_registry().discover_plugins()
 
 
-def get_plugin(name: str) -> Optional[PluginInfo]:
+def get_plugin(name: str) -> PluginInfo | None:
     """Get a plugin by name."""
     return get_plugin_registry().get_plugin(name)
 
 
-def list_plugins() -> List[PluginInfo]:
+def list_plugins() -> list[PluginInfo]:
     """List all plugins."""
     return get_plugin_registry().list_plugins()

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.workspace_ownership import USER_WORKSPACE_DIR
 
@@ -32,7 +32,7 @@ logger = logging.getLogger("navig.memory.context_builder")
 # Default configuration constants
 # ---------------------------------------------------------------------------
 
-_DEFAULTS: Dict[str, Any] = {
+_DEFAULTS: dict[str, Any] = {
     "enabled": True,
     "conversation_history_limit": 10,
     "include_key_facts": True,
@@ -71,7 +71,7 @@ class _EmptyContextDict(dict):
 # AUDIT self-check: Correct implementation? yes - preserves both old/new empty-context contracts.
 # AUDIT self-check: Break callers? no - key visibility is additive for legacy checks.
 # AUDIT self-check: Simpler alternative? yes - a tiny compatibility dict avoids broader refactors.
-EMPTY_CONTEXT: Dict[str, Any] = _EmptyContextDict(
+EMPTY_CONTEXT: dict[str, Any] = _EmptyContextDict(
     {
         "conversation_history": [],
         "workspace_notes": [],
@@ -114,7 +114,7 @@ def _retrieve_key_facts(user_input: str, max_tokens: int = 600) -> str:
         return ""
 
 
-def _get_recent_messages(session_id: str, limit: int) -> List[Dict[str, Any]]:
+def _get_recent_messages(session_id: str, limit: int) -> list[dict[str, Any]]:
     """
     Adapter: ConversationStore.get_history(session_key, limit) -> list[dict].
 
@@ -148,7 +148,7 @@ def _get_recent_messages(session_id: str, limit: int) -> List[Dict[str, Any]]:
         return []
 
 
-def _search_knowledge(query: str, top_k: int) -> List[Dict[str, Any]]:
+def _search_knowledge(query: str, top_k: int) -> list[dict[str, Any]]:
     """
     Adapter: KnowledgeBase.search / RAGPipeline.retrieve -> list[dict].
 
@@ -220,7 +220,7 @@ def _load_api_snapshots(
     max_age_minutes: int = 60,
     max_entries: int = 5,
     workspace: str = "default",
-) -> tuple[List[Dict[str, Any]], List[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """
     Adapter: Load recent API snapshots and detect stale data sources.
 
@@ -235,8 +235,8 @@ def _load_api_snapshots(
         policies = load_snapshot_policies()
         stored_tools = [t for t, p in policies.items() if p.store]
 
-        snap_dicts: List[Dict[str, Any]] = []
-        stale: List[str] = []
+        snap_dicts: list[dict[str, Any]] = []
+        stale: list[str] = []
 
         for tool_name in stored_tools:
             entries = load_snapshots(
@@ -264,10 +264,10 @@ def _load_api_snapshots(
         return [], []
 
 
-def _parse_rag_knowledge(context: str, top_k: int) -> List[Dict[str, Any]]:
+def _parse_rag_knowledge(context: str, top_k: int) -> list[dict[str, Any]]:
     """Extract structured snippets from RAGPipeline markdown context."""
-    snippets: List[Dict[str, Any]] = []
-    current: Dict[str, Any] = {}
+    snippets: list[dict[str, Any]] = []
+    current: dict[str, Any] = {}
 
     for line in context.splitlines():
         if line.startswith("### "):
@@ -296,7 +296,7 @@ def _search_project_index(
     project_root: Path,
     top_k: int = 10,
     max_chars: int = 12_000,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Adapter: ProjectIndexer.search -> list[dict].
 
@@ -335,10 +335,10 @@ def _search_project_index(
 
 
 def _read_workspace_notes(
-    project_root: Optional[Path] = None,
+    project_root: Path | None = None,
     include_memory_logs: bool = False,
     max_chars: int = 2000,
-) -> List[str]:
+) -> list[str]:
     """
     Read .navig/plans/CURRENT_PHASE.md and optionally .navig/memory/*.md.
 
@@ -352,7 +352,7 @@ def _read_workspace_notes(
     if not navig_dir.is_dir():
         return []
 
-    notes: List[str] = []
+    notes: list[str] = []
     remaining = max_chars
 
     # 1. CURRENT_PHASE.md (always if include_workspace_notes is on)
@@ -389,7 +389,7 @@ def _read_workspace_notes(
     return notes
 
 
-def _collect_metadata(project_root: Optional[Path] = None) -> Dict[str, Any]:
+def _collect_metadata(project_root: Path | None = None) -> dict[str, Any]:
     """
     Assemble metadata dict: user profile excerpt, active host/app.
 
@@ -398,7 +398,7 @@ def _collect_metadata(project_root: Optional[Path] = None) -> Dict[str, Any]:
         - config_manager.get_active_host()
         - config_manager.get_active_app()
     """
-    meta: Dict[str, Any] = {}
+    meta: dict[str, Any] = {}
 
     # User profile snippet
     if project_root is None:
@@ -454,8 +454,8 @@ class ContextBuilder:
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
-        project_root: Optional[Path] = None,
+        config: dict[str, Any] | None = None,
+        project_root: Path | None = None,
     ):
         """
         Args:
@@ -467,7 +467,7 @@ class ContextBuilder:
         if config is None:
             config = self._load_from_config_yaml()
 
-        self._cfg: Dict[str, Any] = {**_DEFAULTS, **(config or {})}
+        self._cfg: dict[str, Any] = {**_DEFAULTS, **(config or {})}
         self.project_root: Path = project_root or Path.cwd()
 
     # -- public API ---------------------------------------------------------
@@ -475,9 +475,9 @@ class ContextBuilder:
     def build_context(
         self,
         user_input: str,
-        caller_info: Optional[Dict[str, Any]] = None,
-        session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        caller_info: dict[str, Any] | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Build the full context dict for the LLM pipeline.
 
@@ -496,7 +496,7 @@ class ContextBuilder:
             return dict(EMPTY_CONTEXT)
 
         caller_info = caller_info or {}
-        ctx: Dict[str, Any] = {
+        ctx: dict[str, Any] = {
             "conversation_history": [],
             "key_facts": "",
             "workspace_notes": [],
@@ -608,7 +608,7 @@ class ContextBuilder:
             return 0
 
     @staticmethod
-    def _enforce_cap(ctx: Dict[str, Any], max_chars: int) -> Dict[str, Any]:
+    def _enforce_cap(ctx: dict[str, Any], max_chars: int) -> dict[str, Any]:
         """Truncate sections if total serialized size exceeds cap."""
         total = 0
         try:
@@ -649,7 +649,7 @@ class ContextBuilder:
         return ctx
 
     @staticmethod
-    def _load_from_config_yaml() -> Dict[str, Any]:
+    def _load_from_config_yaml() -> dict[str, Any]:
         """Attempt to read ``context_builder`` section from NAVIG config."""
         try:
             from navig.config import get_config_manager
@@ -665,12 +665,12 @@ class ContextBuilder:
 # Module-level convenience
 # ---------------------------------------------------------------------------
 
-_builder_instance: Optional[ContextBuilder] = None
+_builder_instance: ContextBuilder | None = None
 
 
 def get_context_builder(
-    config: Optional[Dict[str, Any]] = None,
-    project_root: Optional[Path] = None,
+    config: dict[str, Any] | None = None,
+    project_root: Path | None = None,
 ) -> ContextBuilder:
     """Get or create the module-level ContextBuilder singleton."""
     global _builder_instance
@@ -681,9 +681,9 @@ def get_context_builder(
 
 def build_context(
     user_input: str,
-    caller_info: Optional[Dict[str, Any]] = None,
-    session_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    caller_info: dict[str, Any] | None = None,
+    session_id: str | None = None,
+) -> dict[str, Any]:
     """
     One-call convenience that mirrors ``ContextBuilder.build_context``.
 

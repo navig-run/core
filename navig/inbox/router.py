@@ -19,13 +19,12 @@ import shutil
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional
 
 from navig.inbox.classifier import ClassifyResult
 
 # ── Category → default destination mapping ───────────────────
 
-_CATEGORY_DEST: Dict[str, str] = {
+_CATEGORY_DEST: dict[str, str] = {
     "wiki/knowledge": ".navig/wiki/knowledge/inbox",
     "wiki/technical": ".navig/wiki/technical/inbox",
     "hub/tasks": ".navig/wiki/hub/tasks",
@@ -56,11 +55,11 @@ class ConflictStrategy(str, Enum):
 @dataclass
 class RouteResult:
     source: str
-    destination: Optional[str]
+    destination: str | None
     mode: str
     status: str  # "routed" | "skipped" | "ignored" | "error"
-    result_path: Optional[str] = None
-    error: Optional[str] = None
+    result_path: str | None = None
+    error: str | None = None
     category: str = ""
     confidence: float = 0.0
 
@@ -90,11 +89,11 @@ class InboxRouter:
 
     def __init__(
         self,
-        project_root: Optional[Path] = None,
+        project_root: Path | None = None,
         mode: RouteMode = RouteMode.COPY,
         conflict: ConflictStrategy = ConflictStrategy.RENAME,
         min_confidence: float = 0.30,
-        dest_override: Optional[Dict[str, str]] = None,
+        dest_override: dict[str, str] | None = None,
     ) -> None:
         self.project_root = project_root or Path.cwd()
         self.mode = mode

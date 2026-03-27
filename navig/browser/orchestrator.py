@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.browser.prompts import CORTEX_A11Y_PROMPT, CORTEX_VISION_PROMPT
 from navig.llm_generate import run_llm
@@ -43,16 +43,16 @@ class CortexOrchestrator:
         """
         self.goal = goal
         self.driver = driver
-        self.history: List[Dict[str, Any]] = []
+        self.history: list[dict[str, Any]] = []
         # ref_map is rebuilt each step; stored here so cortex.py can use click_by_ref
-        self._ref_map: Dict[int, dict] = {}
+        self._ref_map: dict[int, dict] = {}
 
     async def decide_next_action(
         self,
         url: str,
-        last_step_result: Optional[Dict[str, Any]] = None,
+        last_step_result: dict[str, Any] | None = None,
         force_vision: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Capture current page state, route to the correct LLM mode,
         and return the next action as a parsed dict.
@@ -77,7 +77,7 @@ class CortexOrchestrator:
         logger.info("[Cortex] mode=%s a11y_nodes=%d url=%s", mode, a11y_node_count, url)
 
         # Capture screenshot only if vision mode
-        screenshot_b64: Optional[str] = None
+        screenshot_b64: str | None = None
         if use_vision:
             try:
                 screenshot_b64 = await self.driver.screenshot_base64(quality=50)
@@ -85,7 +85,7 @@ class CortexOrchestrator:
                 logger.warning("[Cortex] screenshot failed: %s", exc)
 
         # ── 2. Build context for LLM ──────────────────────────────────────────
-        state_ctx: Dict[str, Any] = {
+        state_ctx: dict[str, Any] = {
             "goal": self.goal,
             "url": url,
             "mode": mode,
@@ -169,7 +169,7 @@ class CortexOrchestrator:
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
-    async def _capture_state(self) -> Tuple[str, dict, list]:
+    async def _capture_state(self) -> tuple[str, dict, list]:
         """Capture a11y snapshot + interactive elements in parallel."""
         a11y_task = asyncio.create_task(self.driver.get_a11y_snapshot_with_refs())
         elems_task = asyncio.create_task(self.driver.get_interactive_elements_fast())
@@ -197,7 +197,7 @@ class CortexOrchestrator:
         ]
 
     def _build_vision_messages(
-        self, ctx: dict, a11y_text: str, screenshot_b64: Optional[str]
+        self, ctx: dict, a11y_text: str, screenshot_b64: str | None
     ) -> list:
         text_part = {
             "type": "text",
@@ -220,11 +220,11 @@ class CortexOrchestrator:
             {"role": "user", "content": content},
         ]
 
-    def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
+    def _extract_json(self, text: str) -> dict[str, Any] | None:
         """Robustly extract JSON from an LLM response."""
         text = text.strip()
 
-        def _parse(t: str) -> Optional[dict]:
+        def _parse(t: str) -> dict | None:
             try:
                 obj = json.loads(t)
                 if isinstance(obj, list) and obj:

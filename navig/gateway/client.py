@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict
-
 
 def gateway_cli_defaults() -> tuple[int, str]:
     """Return gateway port/host from config with stable CLI fallbacks."""
@@ -26,7 +24,7 @@ def gateway_base_url() -> str:
     return f"http://localhost:{port}"
 
 
-def gateway_request_headers() -> Dict[str, str]:
+def gateway_request_headers() -> dict[str, str]:
     """Return auth headers for gateway admin requests when configured."""
     try:
         from navig.config import get_config_manager

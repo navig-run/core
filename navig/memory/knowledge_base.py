@@ -17,7 +17,6 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from navig.memory.embeddings import EmbeddingProvider
 
@@ -40,13 +39,13 @@ class KnowledgeEntry:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     key: str = ""  # Unique key for deduplication
     content: str = ""
-    summary: Optional[str] = None
+    summary: str | None = None
     tags: list[str] = field(default_factory=list)
     source: str = ""  # Where this knowledge came from
     created_at: datetime = field(default_factory=datetime.utcnow)
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     metadata: dict = field(default_factory=dict)
-    embedding: Optional[list[float]] = None
+    embedding: list[float] | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""
@@ -64,7 +63,7 @@ class KnowledgeEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "KnowledgeEntry":
+    def from_dict(cls, data: dict) -> KnowledgeEntry:
         """Create from dictionary."""
         return cls(
             id=data["id"],
@@ -133,7 +132,7 @@ class KnowledgeBase:
     def __init__(
         self,
         db_path: Path,
-        embedding_provider: Optional[EmbeddingProvider] = None,
+        embedding_provider: EmbeddingProvider | None = None,
         auto_expire: bool = True,
     ):
         self.db_path = db_path
@@ -262,7 +261,7 @@ class KnowledgeBase:
         _debug_log(f"Upserted knowledge entry: {entry.key}")
         return entry
 
-    def get(self, key: str) -> Optional[KnowledgeEntry]:
+    def get(self, key: str) -> KnowledgeEntry | None:
         """Get entry by key."""
         conn = self._get_conn()
 
@@ -281,7 +280,7 @@ class KnowledgeBase:
 
         return entry
 
-    def get_by_id(self, id: str) -> Optional[KnowledgeEntry]:
+    def get_by_id(self, id: str) -> KnowledgeEntry | None:
         """Get entry by ID."""
         conn = self._get_conn()
 
@@ -358,7 +357,7 @@ class KnowledgeBase:
         query: str,
         limit: int = 10,
         min_similarity: float = 0.5,
-        tags: Optional[list[str]] = None,
+        tags: list[str] | None = None,
     ) -> list[tuple[KnowledgeEntry, float]]:
         """
         Semantic search across knowledge base.
@@ -425,7 +424,7 @@ class KnowledgeBase:
         self,
         query: str,
         limit: int = 10,
-        tags: Optional[list[str]] = None,
+        tags: list[str] | None = None,
     ) -> list[KnowledgeEntry]:
         """
         Full-text search (fallback when no embeddings).

@@ -66,7 +66,10 @@ def ensure_navig_directory() -> Path:
 
         # Set permissions on Unix-like systems
         if not _IS_WINDOWS:
-            os.chmod(navig_dir, 0o755)
+            try:
+                os.chmod(navig_dir, 0o755)
+            except (OSError, PermissionError):
+                pass
 
         # Create subdirectories
         subdirs = ["ai_context", "baselines"]
@@ -75,7 +78,10 @@ def ensure_navig_directory() -> Path:
             subdir_path.mkdir(parents=True, exist_ok=True)
 
             if not _IS_WINDOWS:
-                os.chmod(subdir_path, 0o755)
+                try:
+                    os.chmod(subdir_path, 0o755)
+                except (OSError, PermissionError):
+                    pass
 
         # Initialize JSON files if they don't exist
         _initialize_json_files(navig_dir)
@@ -115,11 +121,14 @@ def _initialize_json_files(navig_dir: Path):
                     file_path.write_text(default_content)
                 else:
                     # JSON file
-                    with open(file_path, "w") as f:
+                    with open(file_path, "w", encoding="utf-8") as f:
                         json.dump(default_content, f, indent=2)
 
                 if not _IS_WINDOWS:
-                    os.chmod(file_path, 0o644)
+                    try:
+                        os.chmod(file_path, 0o644)
+                    except (OSError, PermissionError):
+                        pass
 
             except Exception as e:
                 ch.dim(f"Could not initialize {filename}: {e}")

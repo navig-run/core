@@ -37,7 +37,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL  # noqa: F401
 
@@ -81,7 +80,7 @@ class TTSConfig:
 
     # Provider
     provider: TTSProvider = TTSProvider.EDGE
-    fallback_providers: List[TTSProvider] = field(
+    fallback_providers: list[TTSProvider] = field(
         default_factory=lambda: [TTSProvider.EDGE]
     )
 
@@ -120,7 +119,7 @@ class TTSConfig:
 
     # Caching
     cache_enabled: bool = True
-    cache_dir: Optional[Path] = None
+    cache_dir: Path | None = None
 
     # Timeout
     timeout_seconds: int = 30
@@ -140,14 +139,14 @@ class TTSResult:
     """Result from TTS synthesis."""
 
     success: bool
-    audio_path: Optional[Path] = None
-    audio_data: Optional[bytes] = None
+    audio_path: Path | None = None
+    audio_data: bytes | None = None
 
     # Metadata
-    provider: Optional[TTSProvider] = None
-    voice: Optional[str] = None
-    duration_ms: Optional[int] = None
-    latency_ms: Optional[int] = None
+    provider: TTSProvider | None = None
+    voice: str | None = None
+    duration_ms: int | None = None
+    latency_ms: int | None = None
 
     # Audio properties
     format: str = "mp3"
@@ -155,7 +154,7 @@ class TTSResult:
     voice_compatible: bool = False  # True if suitable for voice messages
 
     # Error info
-    error: Optional[str] = None
+    error: str | None = None
 
     def __bool__(self) -> bool:
         return self.success
@@ -173,9 +172,9 @@ class TTS:
     Supports OpenAI, ElevenLabs, and Edge TTS with automatic fallback.
     """
 
-    def __init__(self, config: Optional[TTSConfig] = None):
+    def __init__(self, config: TTSConfig | None = None):
         self.config = config or TTSConfig()
-        self._cache: Dict[str, Path] = {}
+        self._cache: dict[str, Path] = {}
 
     # =========================================================================
     # Main API
@@ -184,9 +183,9 @@ class TTS:
     async def synthesize(
         self,
         text: str,
-        provider: Optional[TTSProvider] = None,
-        voice: Optional[str] = None,
-        output_path: Optional[Path] = None,
+        provider: TTSProvider | None = None,
+        voice: str | None = None,
+        output_path: Path | None = None,
         **kwargs,
     ) -> TTSResult:
         """
@@ -259,7 +258,7 @@ class TTS:
             success=False, error=f"All providers failed. Last error: {last_error}"
         )
 
-    async def speak(self, text: str, **kwargs) -> Optional[Path]:
+    async def speak(self, text: str, **kwargs) -> Path | None:
         """
         Convenience method - synthesize and return path.
 
@@ -276,8 +275,8 @@ class TTS:
         self,
         text: str,
         provider: TTSProvider,
-        voice: Optional[str],
-        output_path: Optional[Path],
+        voice: str | None,
+        output_path: Path | None,
         **kwargs,
     ) -> TTSResult:
         """Dispatch to provider-specific implementation."""
@@ -297,7 +296,7 @@ class TTS:
             return TTSResult(success=False, error=f"Unknown provider: {provider}")
 
     async def _synthesize_openai(
-        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
+        self, text: str, voice: str | None, output_path: Path | None, **kwargs
     ) -> TTSResult:
         """Synthesize using OpenAI TTS API."""
         try:
@@ -326,38 +325,40 @@ class TTS:
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     url,
                     headers=headers,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return TTSResult(
-                            success=False,
-                            error=f"OpenAI API error {response.status}: {error_text}",
-                        )
-
-                    audio_data = await response.read()
-
-                    # Save to file
-                    if output_path is None:
-                        output_path = self._get_temp_path("openai", ".mp3")
-
-                    output_path.write_bytes(audio_data)
-
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
                     return TTSResult(
-                        success=True,
-                        audio_path=output_path,
-                        audio_data=audio_data,
-                        provider=TTSProvider.OPENAI,
-                        voice=voice,
-                        format="mp3",
-                        sample_rate=24000,
-                        voice_compatible=True,  # OpenAI MP3 works for voice messages
+                        success=False,
+                        error=f"OpenAI API error {response.status}: {error_text}",
                     )
+
+                audio_data = await response.read()
+
+                # Save to file
+                if output_path is None:
+                    output_path = self._get_temp_path("openai", ".mp3")
+
+                output_path.write_bytes(audio_data)
+
+                return TTSResult(
+                    success=True,
+                    audio_path=output_path,
+                    audio_data=audio_data,
+                    provider=TTSProvider.OPENAI,
+                    voice=voice,
+                    format="mp3",
+                    sample_rate=24000,
+                    voice_compatible=True,  # OpenAI MP3 works for voice messages
+                )
 
         except asyncio.TimeoutError:
             return TTSResult(success=False, error="OpenAI TTS timeout")
@@ -365,7 +366,7 @@ class TTS:
             return TTSResult(success=False, error=f"OpenAI TTS error: {e}")
 
     async def _synthesize_elevenlabs(
-        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
+        self, text: str, voice: str | None, output_path: Path | None, **kwargs
     ) -> TTSResult:
         """Synthesize using ElevenLabs API."""
         try:
@@ -395,37 +396,39 @@ class TTS:
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     url,
                     headers=headers,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return TTSResult(
-                            success=False,
-                            error=f"ElevenLabs API error {response.status}: {error_text}",
-                        )
-
-                    audio_data = await response.read()
-
-                    if output_path is None:
-                        output_path = self._get_temp_path("elevenlabs", ".mp3")
-
-                    output_path.write_bytes(audio_data)
-
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
                     return TTSResult(
-                        success=True,
-                        audio_path=output_path,
-                        audio_data=audio_data,
-                        provider=TTSProvider.ELEVENLABS,
-                        voice=voice_id,
-                        format="mp3",
-                        sample_rate=44100,
-                        voice_compatible=True,
+                        success=False,
+                        error=f"ElevenLabs API error {response.status}: {error_text}",
                     )
+
+                audio_data = await response.read()
+
+                if output_path is None:
+                    output_path = self._get_temp_path("elevenlabs", ".mp3")
+
+                output_path.write_bytes(audio_data)
+
+                return TTSResult(
+                    success=True,
+                    audio_path=output_path,
+                    audio_data=audio_data,
+                    provider=TTSProvider.ELEVENLABS,
+                    voice=voice_id,
+                    format="mp3",
+                    sample_rate=44100,
+                    voice_compatible=True,
+                )
 
         except asyncio.TimeoutError:
             return TTSResult(success=False, error="ElevenLabs TTS timeout")
@@ -433,7 +436,7 @@ class TTS:
             return TTSResult(success=False, error=f"ElevenLabs TTS error: {e}")
 
     async def _synthesize_edge(
-        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
+        self, text: str, voice: str | None, output_path: Path | None, **kwargs
     ) -> TTSResult:
         """Synthesize using Edge TTS (free, no API key)."""
         try:
@@ -473,7 +476,7 @@ class TTS:
             return TTSResult(success=False, error=f"Edge TTS error: {e}")
 
     async def _synthesize_google_cloud(
-        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
+        self, text: str, voice: str | None, output_path: Path | None, **kwargs
     ) -> TTSResult:
         """Synthesize using Google Cloud Text-to-Speech API."""
         try:
@@ -504,47 +507,49 @@ class TTS:
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     url,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return TTSResult(
-                            success=False,
-                            error=f"Google Cloud TTS error {response.status}: {error_text}",
-                        )
-
-                    import base64
-
-                    data = await response.json()
-                    audio_content = data.get("audioContent", "")
-                    audio_data = base64.b64decode(audio_content)
-
-                    if output_path is None:
-                        output_path = self._get_temp_path("google", ".mp3")
-
-                    output_path.write_bytes(audio_data)
-
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
                     return TTSResult(
-                        success=True,
-                        audio_path=output_path,
-                        audio_data=audio_data,
-                        provider=TTSProvider.GOOGLE_CLOUD,
-                        voice=voice_name,
-                        format="mp3",
-                        sample_rate=24000,
-                        voice_compatible=True,
+                        success=False,
+                        error=f"Google Cloud TTS error {response.status}: {error_text}",
                     )
+
+                import base64
+
+                data = await response.json()
+                audio_content = data.get("audioContent", "")
+                audio_data = base64.b64decode(audio_content)
+
+                if output_path is None:
+                    output_path = self._get_temp_path("google", ".mp3")
+
+                output_path.write_bytes(audio_data)
+
+                return TTSResult(
+                    success=True,
+                    audio_path=output_path,
+                    audio_data=audio_data,
+                    provider=TTSProvider.GOOGLE_CLOUD,
+                    voice=voice_name,
+                    format="mp3",
+                    sample_rate=24000,
+                    voice_compatible=True,
+                )
         except asyncio.TimeoutError:
             return TTSResult(success=False, error="Google Cloud TTS timeout")
         except Exception as e:
             return TTSResult(success=False, error=f"Google Cloud TTS error: {e}")
 
     async def _synthesize_deepgram(
-        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
+        self, text: str, voice: str | None, output_path: Path | None, **kwargs
     ) -> TTSResult:
         """Synthesize using Deepgram Aura TTS API."""
         try:
@@ -566,37 +571,39 @@ class TTS:
         payload = {"text": text}
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     url,
                     headers=headers,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return TTSResult(
-                            success=False,
-                            error=f"Deepgram TTS error {response.status}: {error_text}",
-                        )
-
-                    audio_data = await response.read()
-
-                    if output_path is None:
-                        output_path = self._get_temp_path("deepgram", ".mp3")
-
-                    output_path.write_bytes(audio_data)
-
+                ) as response,
+            ):
+                if response.status != 200:
+                    error_text = await response.text()
                     return TTSResult(
-                        success=True,
-                        audio_path=output_path,
-                        audio_data=audio_data,
-                        provider=TTSProvider.DEEPGRAM,
-                        voice=model,
-                        format="mp3",
-                        sample_rate=24000,
-                        voice_compatible=True,
+                        success=False,
+                        error=f"Deepgram TTS error {response.status}: {error_text}",
                     )
+
+                audio_data = await response.read()
+
+                if output_path is None:
+                    output_path = self._get_temp_path("deepgram", ".mp3")
+
+                output_path.write_bytes(audio_data)
+
+                return TTSResult(
+                    success=True,
+                    audio_path=output_path,
+                    audio_data=audio_data,
+                    provider=TTSProvider.DEEPGRAM,
+                    voice=model,
+                    format="mp3",
+                    sample_rate=24000,
+                    voice_compatible=True,
+                )
         except asyncio.TimeoutError:
             return TTSResult(success=False, error="Deepgram TTS timeout")
         except Exception as e:
@@ -618,7 +625,7 @@ class TTS:
         return text
 
     def _get_cache_key(
-        self, text: str, provider: Optional[TTSProvider], voice: Optional[str]
+        self, text: str, provider: TTSProvider | None, voice: str | None
     ) -> str:
         """Generate cache key for text+provider+voice combo."""
         prov = provider or self.config.provider
@@ -626,7 +633,7 @@ class TTS:
         key_data = f"{prov.value}:{v}:{text}"
         return hashlib.sha256(key_data.encode()).hexdigest()[:16]
 
-    def _get_cached(self, key: str) -> Optional[Path]:
+    def _get_cached(self, key: str) -> Path | None:
         """Check cache for existing audio."""
         if key in self._cache:
             path = self._cache[key]
@@ -662,8 +669,8 @@ class TTS:
     # =========================================================================
 
     async def list_voices(
-        self, provider: Optional[TTSProvider] = None
-    ) -> List[Dict[str, str]]:
+        self, provider: TTSProvider | None = None
+    ) -> list[dict[str, str]]:
         """
         List available voices for a provider.
 
@@ -708,7 +715,7 @@ class TTS:
 # Module-level convenience
 # =============================================================================
 
-_default_tts: Optional[TTS] = None
+_default_tts: TTS | None = None
 
 
 def get_tts() -> TTS:
@@ -719,7 +726,7 @@ def get_tts() -> TTS:
     return _default_tts
 
 
-async def speak(text: str, **kwargs) -> Optional[Path]:
+async def speak(text: str, **kwargs) -> Path | None:
     """Synthesize speech and return audio path."""
     return await get_tts().speak(text, **kwargs)
 
@@ -729,6 +736,6 @@ async def synthesize(text: str, **kwargs) -> TTSResult:
     return await get_tts().synthesize(text, **kwargs)
 
 
-def speak_sync(text: str, **kwargs) -> Optional[Path]:
+def speak_sync(text: str, **kwargs) -> Path | None:
     """Synchronous wrapper for speak()."""
     return asyncio.run(speak(text, **kwargs))

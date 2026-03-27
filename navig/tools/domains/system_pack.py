@@ -40,7 +40,7 @@ def _file_read(path: str, max_lines: int = 200, **kwargs):
     }
 
 
-def register_tools(registry: "ToolRegistry") -> None:
+def register_tools(registry: ToolRegistry) -> None:
     from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 
     registry.register(

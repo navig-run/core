@@ -1,7 +1,7 @@
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class StepState(str, Enum):
@@ -36,7 +36,7 @@ class TaskStep:
     key: str
     label: str
     state: StepState = StepState.PENDING
-    detail: Optional[str] = None
+    detail: str | None = None
 
 
 @dataclass
@@ -47,7 +47,7 @@ class TaskView:
     done: bool = False
     running: bool = True
     percent: int = 0
-    message_id: Optional[int] = None
+    message_id: int | None = None
     _last_edit: float = field(default=0.0, repr=False, compare=False)
 
     def recompute_percent(self) -> None:
@@ -57,9 +57,7 @@ class TaskView:
         total = sum(STATE_WEIGHT[s.state] for s in self.steps)
         self.percent = min(100, int((total / len(self.steps)) * 100))
 
-    def set_step(
-        self, key: str, state: StepState, detail: Optional[str] = None
-    ) -> None:
+    def set_step(self, key: str, state: StepState, detail: str | None = None) -> None:
         for step in self.steps:
             if step.key == key:
                 step.state = state
@@ -69,7 +67,7 @@ class TaskView:
         raise KeyError(f"Step key not found: {key!r}")
 
     @property
-    def active_step(self) -> Optional[TaskStep]:
+    def active_step(self) -> TaskStep | None:
         return next((s for s in self.steps if s.state == StepState.ACTIVE), None)
 
     @property
@@ -121,7 +119,7 @@ def render(view: TaskView) -> str:
     return render_big(view) if view.expanded else render_compact(view)
 
 
-def build_keyboard(view: TaskView) -> Dict[str, Any]:
+def build_keyboard(view: TaskView) -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
@@ -143,7 +141,7 @@ def build_keyboard(view: TaskView) -> Dict[str, Any]:
 
 
 def make_task(
-    steps: List[tuple[str, str]], title: str = "🤖 Working on it..."
+    steps: list[tuple[str, str]], title: str = "🤖 Working on it..."
 ) -> TaskView:
     return TaskView(
         title=title,
@@ -151,7 +149,7 @@ def make_task(
     )
 
 
-async def send_task_card(channel: Any, chat_id: int, view: TaskView) -> Optional[int]:
+async def send_task_card(channel: Any, chat_id: int, view: TaskView) -> int | None:
     """Send initial status card via NAVIG Telegram channel"""
     await channel._api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
     res = await channel.send_message(

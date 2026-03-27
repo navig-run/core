@@ -11,8 +11,6 @@ Provides a rich /start menu with drill-down category buttons:
   Main -> Core -> actions
 """
 
-from typing import Dict, Optional
-
 
 def build_main_menu(user_name: str = "") -> dict:
     """Build the main /start menu."""
@@ -43,13 +41,13 @@ def build_main_menu(user_name: str = "") -> dict:
     return {"text": text, "buttons": buttons}
 
 
-def build_section(section_id: str) -> Optional[dict]:
+def build_section(section_id: str) -> dict | None:
     """Build a submenu for a given section ID."""
     sections = _get_all_sections()
     return sections.get(section_id)
 
 
-def _get_all_sections() -> Dict[str, dict]:
+def _get_all_sections() -> dict[str, dict]:
     """Return all menu sections."""
     return {
         # --- Core ---
@@ -341,7 +339,7 @@ def _get_all_sections() -> Dict[str, dict]:
 # ---- Action -> CLI command mapping ----
 # Maps callback_data (without 'act:' prefix) to command info
 
-ACTION_COMMANDS: Dict[str, dict] = {
+ACTION_COMMANDS: dict[str, dict] = {
     # Core
     "status": {"cmd": "/status", "type": "slash"},
     "ping": {"cmd": "/ping", "type": "slash"},
@@ -649,6 +647,6 @@ ACTION_COMMANDS: Dict[str, dict] = {
 }
 
 
-def get_action_info(action_id: str) -> Optional[dict]:
+def get_action_info(action_id: str) -> dict | None:
     """Get the action info for a callback action ID."""
     return ACTION_COMMANDS.get(action_id)

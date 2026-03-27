@@ -10,7 +10,6 @@ Included in: architect, system_standard, system_deep profiles.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -28,7 +27,7 @@ def _mcp_config_path(ctx: InstallerContext) -> Path:
 # ── module API ────────────────────────────────────────────────────────────────
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     if _mcp_config_path(ctx).exists():
         return []
     return [

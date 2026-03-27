@@ -9,10 +9,11 @@ Based on periodic heartbeat pattern:
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -56,8 +57,8 @@ class HeartbeatResult:
     duration_seconds: float
     timestamp: datetime
     suppressed: bool = False  # True if HEARTBEAT_OK
-    error: Optional[str] = None
-    issues_found: List[str] = None
+    error: str | None = None
+    issues_found: list[str] = None
 
     def __post_init__(self):
         if self.issues_found is None:
@@ -80,26 +81,24 @@ class HeartbeatRunner:
     5. Returns detailed issues if problems found
     """
 
-    def __init__(
-        self, gateway: "NavigGateway", config: Optional[HeartbeatConfig] = None
-    ):
+    def __init__(self, gateway: "NavigGateway", config: HeartbeatConfig | None = None):
         self.gateway = gateway
         self.config = config or HeartbeatConfig()
 
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
         # Track heartbeat history
-        self._history: List[HeartbeatResult] = []
+        self._history: list[HeartbeatResult] = []
         self._max_history = 100
 
         # Last heartbeat time
-        self._last_heartbeat: Optional[datetime] = None
-        self._next_heartbeat: Optional[datetime] = None
+        self._last_heartbeat: datetime | None = None
+        self._next_heartbeat: datetime | None = None
 
         # Callbacks
-        self._on_issue_callbacks: List[Callable] = []
-        self._on_complete_callbacks: List[Callable] = []
+        self._on_issue_callbacks: list[Callable] = []
+        self._on_complete_callbacks: list[Callable] = []
 
     @property
     def running(self) -> bool:
@@ -305,7 +304,7 @@ Begin the health check now. Be thorough but efficient.
 
         return response
 
-    def _parse_issues(self, response: str) -> List[str]:
+    def _parse_issues(self, response: str) -> list[str]:
         """Parse issues from heartbeat response."""
         issues = []
 
@@ -439,7 +438,7 @@ Begin the health check now. Be thorough but efficient.
             channel=channel, recipient=recipient, message=message
         )
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get heartbeat status."""
         return {
             "running": self._running,
@@ -457,7 +456,7 @@ Begin the health check now. Be thorough but efficient.
             "last_suppressed": self._history[-1].suppressed if self._history else None,
         }
 
-    def get_history(self, limit: int = 10) -> List[Dict]:
+    def get_history(self, limit: int = 10) -> list[dict]:
         """Get recent heartbeat history."""
         return [
             {

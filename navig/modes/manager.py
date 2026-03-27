@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 _BUILTIN_YAML = Path(__file__).parent / "builtin.yaml"
 _DEFAULT_MODE = "builder"
@@ -31,7 +31,7 @@ _DEFAULT_MODE = "builder"
 class ModeProfile:
     """Parsed representation of one mode entry from builtin.yaml."""
 
-    def __init__(self, name: str, data: Dict[str, Any]) -> None:
+    def __init__(self, name: str, data: dict[str, Any]) -> None:
         self.name = name
         self.label: str = data.get("label", name.upper())
         self.icon: str = data.get("icon", "◆")
@@ -52,10 +52,10 @@ class ModeProfile:
 # Mode registry (loaded once)
 # ---------------------------------------------------------------------------
 
-_registry: Optional[Dict[str, ModeProfile]] = None
+_registry: dict[str, ModeProfile] | None = None
 
 
-def _load_registry() -> Dict[str, ModeProfile]:
+def _load_registry() -> dict[str, ModeProfile]:
     global _registry
     if _registry is not None:
         return _registry
@@ -86,11 +86,11 @@ def _load_registry() -> Dict[str, ModeProfile]:
     return _registry
 
 
-def all_modes() -> Dict[str, ModeProfile]:
+def all_modes() -> dict[str, ModeProfile]:
     return _load_registry()
 
 
-def get_mode(name: str) -> Optional[ModeProfile]:
+def get_mode(name: str) -> ModeProfile | None:
     return _load_registry().get(name)
 
 
@@ -143,7 +143,7 @@ def set_active_mode(name: str) -> None:
         _write_mode_key_fallback(cfg, name)
         return
 
-    data: Dict[str, Any] = {}
+    data: dict[str, Any] = {}
     if cfg.exists():
         with open(cfg, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}

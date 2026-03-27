@@ -6,9 +6,10 @@ import json
 import shlex
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -21,7 +22,7 @@ class SkillCommand:
     syntax: str
     description: str
     risk: str = "safe"
-    confirmation_msg: Optional[str] = None
+    confirmation_msg: str | None = None
 
 
 @dataclass(frozen=True)
@@ -36,11 +37,11 @@ class SkillInfo:
     user_invocable: bool = True
     commands: tuple = ()  # tuple[SkillCommand, ...]
     examples: tuple = ()  # tuple[dict, ...]
-    entrypoint: Optional[str] = None  # e.g. "index.js", "main.py"
-    raw_frontmatter: Dict[str, Any] = field(default_factory=dict)
+    entrypoint: str | None = None  # e.g. "index.js", "main.py"
+    raw_frontmatter: dict[str, Any] = field(default_factory=dict)
 
 
-def _resolve_skills_dirs(explicit_dir: Optional[str]) -> List[Path]:
+def _resolve_skills_dirs(explicit_dir: str | None) -> list[Path]:
     if explicit_dir:
         candidate = Path(explicit_dir).expanduser().resolve()
         if candidate.exists():
@@ -55,7 +56,7 @@ def _resolve_skills_dirs(explicit_dir: Optional[str]) -> List[Path]:
         base_dir.parent.parent.parent / "skills",  # legacy fallback
     ]
 
-    unique: List[Path] = []
+    unique: list[Path] = []
     seen = set()
     for candidate in candidates:
         if not candidate.exists():
@@ -69,7 +70,7 @@ def _resolve_skills_dirs(explicit_dir: Optional[str]) -> List[Path]:
     return unique
 
 
-def _load_frontmatter(skill_file: Path) -> Dict[str, Any]:
+def _load_frontmatter(skill_file: Path) -> dict[str, Any]:
     content = skill_file.read_text(encoding="utf-8")
     if not content.startswith("---"):
         return {}
@@ -86,8 +87,8 @@ def _load_frontmatter(skill_file: Path) -> Dict[str, Any]:
         return {}
 
 
-def _collect_skills(skills_dirs: Iterable[Path]) -> List[SkillInfo]:
-    skills: List[SkillInfo] = []
+def _collect_skills(skills_dirs: Iterable[Path]) -> list[SkillInfo]:
+    skills: list[SkillInfo] = []
     seen_files = set()
 
     for skills_dir in skills_dirs:
@@ -106,7 +107,7 @@ def _collect_skills(skills_dirs: Iterable[Path]) -> List[SkillInfo]:
 
             # Parse navig-commands
             raw_cmds = frontmatter.get("navig-commands", [])
-            parsed_commands: List[SkillCommand] = []
+            parsed_commands: list[SkillCommand] = []
             for c in raw_cmds:
                 if isinstance(c, dict):
                     parsed_commands.append(
@@ -172,7 +173,7 @@ def _collect_skills(skills_dirs: Iterable[Path]) -> List[SkillInfo]:
     return skills
 
 
-def list_skills_cmd(options: Dict[str, Any]) -> List[SkillInfo]:
+def list_skills_cmd(options: dict[str, Any]) -> list[SkillInfo]:
     skills_dirs = _resolve_skills_dirs(options.get("skills_dir"))
     if not skills_dirs:
         ch.error("Skills directory not found.")
@@ -224,8 +225,8 @@ def list_skills_cmd(options: Dict[str, Any]) -> List[SkillInfo]:
     return skills
 
 
-def _build_tree(skills: Iterable[SkillInfo]) -> Dict[str, List[str]]:
-    tree: Dict[str, List[str]] = {}
+def _build_tree(skills: Iterable[SkillInfo]) -> dict[str, list[str]]:
+    tree: dict[str, list[str]] = {}
     for skill in skills:
         tree.setdefault(skill.category, []).append(skill.name)
 
@@ -235,7 +236,7 @@ def _build_tree(skills: Iterable[SkillInfo]) -> Dict[str, List[str]]:
     return dict(sorted(tree.items()))
 
 
-def tree_skills_cmd(options: Dict[str, Any]) -> Dict[str, List[str]]:
+def tree_skills_cmd(options: dict[str, Any]) -> dict[str, list[str]]:
     skills_dirs = _resolve_skills_dirs(options.get("skills_dir"))
     if not skills_dirs:
         ch.error("Skills directory not found.")
@@ -279,7 +280,7 @@ def tree_skills_cmd(options: Dict[str, Any]) -> Dict[str, List[str]]:
 # ============================================================================
 
 
-def _find_skill(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
+def _find_skill(name: str, options: dict[str, Any]) -> SkillInfo | None:
     """Find a skill by name (case-insensitive, partial match)."""
     skills_dirs = _resolve_skills_dirs(options.get("skills_dir"))
     if not skills_dirs:
@@ -306,7 +307,7 @@ def _find_skill(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
     return None
 
 
-def show_skill_cmd(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
+def show_skill_cmd(name: str, options: dict[str, Any]) -> SkillInfo | None:
     """Show detailed information about a skill."""
     skill = _find_skill(name, options)
 
@@ -406,7 +407,7 @@ def show_skill_cmd(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
 # ============================================================================
 
 
-def run_skill_cmd(spec: str, extra_args: List[str], options: Dict[str, Any]) -> int:
+def run_skill_cmd(spec: str, extra_args: list[str], options: dict[str, Any]) -> int:
     """
     Run a skill command.
 
@@ -523,11 +524,11 @@ def run_skill_cmd(spec: str, extra_args: List[str], options: Dict[str, Any]) -> 
 
     # Case 4: No entrypoint, no command — show info
     ch.warning(f"Skill '{skill.name}' has no entrypoint or runnable commands.")
-    ch.dim("  Use 'navig skills show {0}' for details.".format(skill.name))
+    ch.dim(f"  Use 'navig skills show {skill.name}' for details.")
     return 1
 
 
-def _invoke_navig(cli_args: str, options: Dict[str, Any]) -> int:
+def _invoke_navig(cli_args: str, options: dict[str, Any]) -> int:
     """Invoke a navig subcommand by re-entering the CLI."""
     import shlex as _shlex
 

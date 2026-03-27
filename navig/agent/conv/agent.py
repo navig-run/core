@@ -7,8 +7,9 @@ import inspect
 import json
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Protocol

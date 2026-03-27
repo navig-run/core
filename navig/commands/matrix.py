@@ -17,7 +17,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -93,7 +93,7 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
-async def _get_bot(config: Optional[dict] = None):
+async def _get_bot(config: dict | None = None):
     """Get or create a NavigMatrixBot instance."""
     from navig.comms.matrix import NavigMatrixBot, get_matrix_bot
 
@@ -955,7 +955,7 @@ matrix_app.add_typer(inbox_bridge_app, name="inbox")
 @require_feature("notifications")
 def inbox_list(
     status: Annotated[
-        Optional[str], typer.Option("--status", "-s", help="Filter: unread|read")
+        str | None, typer.Option("--status", "-s", help="Filter: unread|read")
     ] = None,
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max messages")] = 30,
     json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
@@ -1011,7 +1011,7 @@ def inbox_unread():
 @require_feature("notifications")
 def inbox_mark_read(
     filename: Annotated[
-        Optional[str], typer.Argument(help="Specific file, or omit for all")
+        str | None, typer.Argument(help="Specific file, or omit for all")
     ] = None,
 ):
     """Mark messages as read (one or all)."""
@@ -1105,9 +1105,9 @@ matrix_app.add_typer(file_app, name="file")
 def file_upload(
     path: Annotated[str, typer.Argument(help="Local file to upload")],
     room: Annotated[
-        Optional[str], typer.Option("--room", "-r", help="Target room ID")
+        str | None, typer.Option("--room", "-r", help="Target room ID")
     ] = None,
-    name: Annotated[Optional[str], typer.Option("--name", help="Display name")] = None,
+    name: Annotated[str | None, typer.Option("--name", help="Display name")] = None,
 ):
     """Upload a file to a Matrix room."""
     from pathlib import Path as _P
@@ -1227,7 +1227,7 @@ def e2ee_status():
 @require_feature("e2ee")
 def e2ee_devices(
     user_id: Annotated[
-        Optional[str], typer.Argument(help="User ID (omit for own devices)")
+        str | None, typer.Argument(help="User ID (omit for own devices)")
     ] = None,
 ):
     """List devices and their trust state."""
@@ -1550,7 +1550,7 @@ def store_stats():
 @store_app.command("rooms")
 def store_rooms(
     purpose: Annotated[
-        Optional[str], typer.Option("--purpose", "-p", help="Filter by purpose")
+        str | None, typer.Option("--purpose", "-p", help="Filter by purpose")
     ] = None,
 ):
     """List rooms in the persistent store."""
@@ -1664,7 +1664,7 @@ def store_prune(
 
 @store_app.command("bridges")
 def store_bridges(
-    room_id: Annotated[Optional[str], typer.Argument(help="Room ID (optional)")] = None,
+    room_id: Annotated[str | None, typer.Argument(help="Room ID (optional)")] = None,
 ):
     """List bridge configurations in the store."""
     import os

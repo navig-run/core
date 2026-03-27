@@ -12,7 +12,6 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 __all__ = ["MigrationReport", "migrate_from_legacy", "check_legacy_exists"]
 
@@ -43,13 +42,13 @@ class MigrationReport:
         )
 
 
-def check_legacy_exists(legacy_path: Optional[Path] = None) -> bool:
+def check_legacy_exists(legacy_path: Path | None = None) -> bool:
     """Return True if the legacy credentials DB exists."""
     return (legacy_path or _LEGACY_DB).exists()
 
 
 def migrate_from_legacy(
-    legacy_path: Optional[Path] = None,
+    legacy_path: Path | None = None,
     dry_run: bool = False,
 ) -> MigrationReport:
     """Migrate credentials from the old Fernet-based vault to the new AES-GCM vault.

@@ -11,7 +11,7 @@ AI-powered error analysis and solution suggestions:
 import json
 import re
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
@@ -33,7 +33,7 @@ class Solution:
         self.risk_level = risk_level  # low, medium, high
         self.requires_confirmation = requires_confirmation
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "description": self.description,
@@ -44,7 +44,7 @@ class Solution:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Solution":
+    def from_dict(cls, data: dict[str, Any]) -> "Solution":
         """Create from dictionary."""
         return cls(
             description=data["description"],
@@ -76,8 +76,8 @@ class ErrorResolution:
         command: str,
         exit_code: int,
         error_message: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> List[Solution]:
+        context: dict[str, Any] | None = None,
+    ) -> list[Solution]:
         """
         Analyze error and suggest solutions.
 
@@ -139,7 +139,7 @@ class ErrorResolution:
         exit_code: int,
         error_message: str,
         category: str,
-        context: Optional[Dict[str, Any]],
+        context: dict[str, Any] | None,
     ):
         """Log error with enhanced categorization."""
         error_log_file = self.ai_context_dir / "error_log.json"
@@ -147,7 +147,7 @@ class ErrorResolution:
         try:
             # Load existing log
             if error_log_file.exists():
-                with open(error_log_file, "r") as f:
+                with open(error_log_file) as f:
                     error_log = json.load(f)
             else:
                 error_log = []
@@ -172,13 +172,13 @@ class ErrorResolution:
                 error_log = error_log[-1000:]
 
             # Save
-            with open(error_log_file, "w") as f:
+            with open(error_log_file, "w", encoding="utf-8") as f:
                 json.dump(error_log, f, indent=2)
 
         except Exception as e:
             ch.dim(f"Could not log error: {e}")
 
-    def _find_solutions(self, error_message: str, category: str) -> List[Solution]:
+    def _find_solutions(self, error_message: str, category: str) -> list[Solution]:
         """Find solutions from solution database."""
         solutions_file = self.ai_context_dir / "solutions.json"
 
@@ -186,7 +186,7 @@ class ErrorResolution:
             if not solutions_file.exists():
                 return []
 
-            with open(solutions_file, "r") as f:
+            with open(solutions_file) as f:
                 solutions_db = json.load(f)
 
             matched_solutions = []
@@ -209,8 +209,8 @@ class ErrorResolution:
             return []
 
     def _get_ai_solutions(
-        self, command: str, error_message: str, context: Optional[Dict[str, Any]]
-    ) -> List[Solution]:
+        self, command: str, error_message: str, context: dict[str, Any] | None
+    ) -> list[Solution]:
         """Get AI-powered solution suggestions."""
         # This would integrate with the AI assistant
         # For now, return empty list
@@ -237,7 +237,7 @@ class ErrorResolution:
         try:
             # Load solutions database
             if solutions_file.exists():
-                with open(solutions_file, "r") as f:
+                with open(solutions_file) as f:
                     solutions_db = json.load(f)
             else:
                 solutions_db = []
@@ -290,7 +290,7 @@ class ErrorResolution:
                 solutions_db.append(new_entry)
 
             # Save
-            with open(solutions_file, "w") as f:
+            with open(solutions_file, "w", encoding="utf-8") as f:
                 json.dump(solutions_db, f, indent=2)
 
             # Log audit
@@ -306,7 +306,7 @@ class ErrorResolution:
         except Exception as e:
             ch.dim(f"Could not record solution feedback: {e}")
 
-    def display_solutions(self, solutions: List[Solution], dry_run: bool = False):
+    def display_solutions(self, solutions: list[Solution], dry_run: bool = False):
         """
         Display solutions to user with formatting.
 
@@ -346,7 +346,7 @@ class ErrorResolution:
             "After applying, run 'navig assistant feedback' to help improve suggestions"
         )
 
-    def get_error_statistics(self, hours: int = 24) -> Dict[str, Any]:
+    def get_error_statistics(self, hours: int = 24) -> dict[str, Any]:
         """
         Get error statistics for the specified time period.
 
@@ -362,7 +362,7 @@ class ErrorResolution:
             if not error_log_file.exists():
                 return {"total_errors": 0}
 
-            with open(error_log_file, "r") as f:
+            with open(error_log_file) as f:
                 error_log = json.load(f)
 
             # Filter by time

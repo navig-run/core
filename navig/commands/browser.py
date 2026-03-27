@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 
 from navig.gateway.client import gateway_base_url, gateway_request_headers
@@ -83,7 +81,7 @@ def browser_open(
 
 @browser_app.command("screenshot")
 def browser_screenshot(
-    path: Optional[str] = typer.Option(None, "--path", "-p", help="Save path"),
+    path: str | None = typer.Option(None, "--path", "-p", help="Save path"),
     full_page: bool = typer.Option(False, "--full", "-f", help="Capture full page"),
 ) -> None:
     """Capture a browser screenshot."""

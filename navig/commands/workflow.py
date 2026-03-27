@@ -15,7 +15,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from rich.table import Table
@@ -38,7 +38,7 @@ class WorkflowStep:
     continue_on_error: bool = False
     skip_on_error: bool = False  # Skip this step if previous failed
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert step to dictionary for serialization."""
         data = {"name": self.name, "command": self.command}
         if self.description:
@@ -58,12 +58,12 @@ class Workflow:
 
     name: str
     description: str = ""
-    variables: Dict[str, Any] = field(default_factory=dict)
-    steps: List[WorkflowStep] = field(default_factory=list)
+    variables: dict[str, Any] = field(default_factory=dict)
+    steps: list[WorkflowStep] = field(default_factory=list)
     author: str = ""
     version: str = "1.0"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert workflow to dictionary for serialization."""
         return {
             "name": self.name,
@@ -93,10 +93,10 @@ class WorkflowManager:
         self.locations = self._get_workflow_locations()
 
         # Cached workflows
-        self._workflows: Dict[str, Workflow] = {}
-        self._workflow_paths: Dict[str, Path] = {}
+        self._workflows: dict[str, Workflow] = {}
+        self._workflow_paths: dict[str, Path] = {}
 
-    def _get_workflow_locations(self) -> List[Path]:
+    def _get_workflow_locations(self) -> list[Path]:
         """Get all workflow directories in priority order."""
         locations = []
 
@@ -118,7 +118,7 @@ class WorkflowManager:
 
         return locations
 
-    def discover_workflows(self) -> Dict[str, Path]:
+    def discover_workflows(self) -> dict[str, Path]:
         """
         Discover all available workflows.
 
@@ -155,7 +155,7 @@ class WorkflowManager:
         else:
             return "global"
 
-    def load_workflow(self, name: str) -> Optional[Workflow]:
+    def load_workflow(self, name: str) -> Workflow | None:
         """
         Load and parse a workflow by name.
 
@@ -174,10 +174,10 @@ class WorkflowManager:
         path = self._workflow_paths[name]
         return self._parse_workflow_file(path)
 
-    def _parse_workflow_file(self, path: Path) -> Optional[Workflow]:
+    def _parse_workflow_file(self, path: Path) -> Workflow | None:
         """Parse a YAML workflow file into a Workflow object."""
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             if not data:
@@ -211,7 +211,7 @@ class WorkflowManager:
             ch.error(f"Error loading workflow {path}: {e}")
             return None
 
-    def validate_workflow(self, workflow: Workflow) -> List[str]:
+    def validate_workflow(self, workflow: Workflow) -> list[str]:
         """
         Validate a workflow for common issues.
 
@@ -240,7 +240,7 @@ class WorkflowManager:
         return errors
 
     def substitute_variables(
-        self, text: str, variables: Dict[str, Any], extra_vars: Dict[str, Any] = None
+        self, text: str, variables: dict[str, Any], extra_vars: dict[str, Any] = None
     ) -> str:
         """
         Substitute ${variable} placeholders with actual values.
@@ -264,8 +264,8 @@ class WorkflowManager:
         return re.sub(r"\$\{(\w+)\}", replace_var, text)
 
     def prompt_for_variables(
-        self, workflow: Workflow, provided_vars: Dict[str, str] = None
-    ) -> Dict[str, str]:
+        self, workflow: Workflow, provided_vars: dict[str, str] = None
+    ) -> dict[str, str]:
         """
         Interactively prompt for missing variables.
 
@@ -299,7 +299,7 @@ class WorkflowManager:
     def execute_workflow(
         self,
         workflow: Workflow,
-        variables: Dict[str, str] = None,
+        variables: dict[str, str] = None,
         dry_run: bool = False,
         skip_prompts: bool = False,
         verbose: bool = False,
@@ -449,7 +449,7 @@ class WorkflowManager:
             ch.error(f"Command execution error: {e}")
             return False
 
-    def create_workflow(self, name: str, global_scope: bool = False) -> Optional[Path]:
+    def create_workflow(self, name: str, global_scope: bool = False) -> Path | None:
         """
         Create a new workflow from template.
 
@@ -632,7 +632,7 @@ def run_workflow(
     dry_run: bool = False,
     yes: bool = False,
     verbose: bool = False,
-    var: List[str] = None,
+    var: list[str] = None,
 ):
     """Execute a workflow."""
     manager = WorkflowManager()

@@ -646,7 +646,10 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             ]
             lines.append(f"TELEGRAM_BOT_TOKEN={token}")
             env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            env_path.chmod(0o600)
+            try:
+                env_path.chmod(0o600)
+            except (OSError, PermissionError):
+                pass
             writes.append(".env")
         except Exception:  # noqa: BLE001
             pass
@@ -779,7 +782,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
 # ── Phase 1 bootstrap steps (added in v2) ─────────────────────────────────────
 
 
-def _step_sigil_genesis(navig_dir: Path, genesis: "GenesisData") -> OnboardingStep:
+def _step_sigil_genesis(navig_dir: Path, genesis: GenesisData) -> OnboardingStep:
     """Initialise the node's cryptographic sigil identity."""
     marker = navig_dir / "state" / ".sigil_initialized"
 

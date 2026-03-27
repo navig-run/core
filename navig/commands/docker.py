@@ -4,15 +4,15 @@ These commands provide convenient shortcuts for common Docker operations,
 eliminating the need for complex shell escaping and multi-command sequences.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig import console_helper as ch
 
 
 def docker_ps(
-    options: Dict[str, Any],
+    options: dict[str, Any],
     all: bool = False,
-    filter: Optional[str] = None,
+    filter: str | None = None,
     format: str = "table",
 ):
     """List Docker containers on remote host.
@@ -64,10 +64,10 @@ def docker_ps(
 
 def docker_logs(
     container: str,
-    options: Dict[str, Any],
-    tail: Optional[int] = None,
+    options: dict[str, Any],
+    tail: int | None = None,
     follow: bool = False,
-    since: Optional[str] = None,
+    since: str | None = None,
 ):
     """View Docker container logs.
 
@@ -123,10 +123,10 @@ def docker_logs(
 def docker_exec(
     container: str,
     command: str,
-    options: Dict[str, Any],
+    options: dict[str, Any],
     interactive: bool = False,
-    user: Optional[str] = None,
-    workdir: Optional[str] = None,
+    user: str | None = None,
+    workdir: str | None = None,
 ):
     """Execute command in Docker container.
 
@@ -178,9 +178,9 @@ def docker_exec(
 
 def docker_compose(
     action: str,
-    options: Dict[str, Any],
-    path: Optional[str] = None,
-    services: Optional[List[str]] = None,
+    options: dict[str, Any],
+    path: str | None = None,
+    services: list[str] | None = None,
     detach: bool = True,
     build: bool = False,
     pull: bool = False,
@@ -279,8 +279,8 @@ def docker_compose(
 
 def docker_inspect(
     container: str,
-    options: Dict[str, Any],
-    format: Optional[str] = None,
+    options: dict[str, Any],
+    format: str | None = None,
 ):
     """Inspect Docker container.
 
@@ -315,7 +315,7 @@ def docker_inspect(
 
 def docker_restart(
     container: str,
-    options: Dict[str, Any],
+    options: dict[str, Any],
     timeout: int = 10,
 ):
     """Restart Docker container.
@@ -363,7 +363,7 @@ def docker_restart(
         ch.error(f"Failed to restart container: {container}")
 
 
-def docker_stop(container: str, options: Dict[str, Any], timeout: int = 10):
+def docker_stop(container: str, options: dict[str, Any], timeout: int = 10):
     """Stop Docker container."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -398,7 +398,7 @@ def docker_stop(container: str, options: Dict[str, Any], timeout: int = 10):
         ch.error(f"Failed to stop container: {container}")
 
 
-def docker_start(container: str, options: Dict[str, Any]):
+def docker_start(container: str, options: dict[str, Any]):
     """Start Docker container."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -422,7 +422,7 @@ def docker_start(container: str, options: Dict[str, Any]):
 
 
 def docker_stats(
-    options: Dict[str, Any], container: Optional[str] = None, no_stream: bool = True
+    options: dict[str, Any], container: str | None = None, no_stream: bool = True
 ):
     """Show Docker container resource usage statistics."""
     from navig.config import get_config_manager
@@ -455,7 +455,6 @@ def docker_stats(
 # _EXTERNAL_CMD_MAP (“navig.commands.docker”, “docker_app”).  This means the
 # 175-line docker block in cli/__init__.py is no longer parsed on every cold
 # start — only when the user actually runs `navig docker …`.
-from typing import Optional as _Opt  # avoid shadowing top-level Optional
 
 import typer as _t
 
@@ -480,7 +479,7 @@ def _docker_ps_cmd(
     all: bool = _t.Option(
         False, "--all", "-a", help="Show all containers (including stopped)"
     ),
-    filter: _Opt[str] = _t.Option(
+    filter: str | None = _t.Option(
         None, "--filter", "-f", help="Filter by name (grep pattern)"
     ),
     format: str = _t.Option(
@@ -503,9 +502,9 @@ def _docker_ps_cmd(
 def _docker_logs_cmd(
     ctx: _t.Context,
     container: str = _t.Argument(..., help="Container name or ID"),
-    tail: _Opt[int] = _t.Option(None, "--tail", "-n", help="Number of lines to show"),
+    tail: int | None = _t.Option(None, "--tail", "-n", help="Number of lines to show"),
     follow: bool = _t.Option(False, "--follow", "-f", help="Follow log output"),
-    since: _Opt[str] = _t.Option(
+    since: str | None = _t.Option(
         None, "--since", help="Show logs since (e.g., 10m, 1h)"
     ),
 ):
@@ -530,8 +529,8 @@ def _docker_exec_cmd(
     interactive: bool = _t.Option(
         False, "--interactive", "-i", help="Interactive mode with TTY"
     ),
-    user: _Opt[str] = _t.Option(None, "--user", "-u", help="Run as specific user"),
-    workdir: _Opt[str] = _t.Option(None, "--workdir", "-w", help="Working directory"),
+    user: str | None = _t.Option(None, "--user", "-u", help="Run as specific user"),
+    workdir: str | None = _t.Option(None, "--workdir", "-w", help="Working directory"),
 ):
     """
     Execute command in Docker container.
@@ -553,10 +552,10 @@ def _docker_compose_cmd(
     action: str = _t.Argument(
         ..., help="Action: up, down, restart, stop, start, pull, build, logs, ps"
     ),
-    path: _Opt[str] = _t.Option(
+    path: str | None = _t.Option(
         None, "--path", "-p", help="Path to docker-compose.yml directory"
     ),
-    services: _Opt[str] = _t.Option(
+    services: str | None = _t.Option(
         None, "--services", "-s", help="Comma-separated list of services"
     ),
     detach: bool = _t.Option(
@@ -621,7 +620,7 @@ def _docker_start_cmd(
 @docker_app.command("stats")
 def _docker_stats_cmd(
     ctx: _t.Context,
-    container: _Opt[str] = _t.Argument(None, help="Container name (all if omitted)"),
+    container: str | None = _t.Argument(None, help="Container name (all if omitted)"),
     stream: bool = _t.Option(False, "--stream", "-s", help="Stream stats continuously"),
 ):
     """Show container resource usage statistics."""
@@ -632,7 +631,7 @@ def _docker_stats_cmd(
 def _docker_inspect_cmd(
     ctx: _t.Context,
     container: str = _t.Argument(..., help="Container name or ID"),
-    format: _Opt[str] = _t.Option(None, "--format", "-f", help="Go template format"),
+    format: str | None = _t.Option(None, "--format", "-f", help="Go template format"),
 ):
     """
     Inspect Docker container.

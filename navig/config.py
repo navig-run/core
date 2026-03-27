@@ -14,7 +14,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any
 
 import yaml
 
@@ -66,7 +66,7 @@ class ConfigManager:
         └── navig.log                   # Application logs
     """
 
-    def __init__(self, config_dir: Optional[Path] = None, verbose: bool = False):
+    def __init__(self, config_dir: Path | None = None, verbose: bool = False):
         """
         Initialize ConfigManager with hierarchical configuration support.
 
@@ -85,10 +85,10 @@ class ConfigManager:
         self._paths_resolved = False
 
         # In-memory caches initialized here since they don't depend on paths directly
-        self._host_config_cache: Dict[str, Dict[str, Any]] = {}
-        self._app_config_cache: Dict[str, Dict[str, Any]] = {}
-        self._hosts_list_cache: Optional[Tuple[list, Tuple[float, int]]] = None
-        self._apps_list_cache: Dict[str, Tuple[list, float]] = {}
+        self._host_config_cache: dict[str, dict[str, Any]] = {}
+        self._app_config_cache: dict[str, dict[str, Any]] = {}
+        self._hosts_list_cache: tuple[list, tuple[float, int]] | None = None
+        self._apps_list_cache: dict[str, tuple[list, float]] = {}
 
         # global_config is loaded lazily on first access (see @property below)
         self._global_config = None
@@ -187,7 +187,7 @@ class ConfigManager:
         self._global_config = value
         self._global_config_loaded = True
 
-    def _find_app_root(self) -> Optional[Path]:
+    def _find_app_root(self) -> Path | None:
         """
         Find app root by searching upward for .navig/ directory.
 
@@ -572,7 +572,7 @@ Context provided with each query:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-    def _load_global_config(self, validate: bool = True) -> Dict[str, Any]:
+    def _load_global_config(self, validate: bool = True) -> dict[str, Any]:
         """
         Load or create global configuration (always from ~/.navig/config.yaml).
 
@@ -635,7 +635,7 @@ Context provided with each query:
 
         except ImportError:
             # Fallback if loader/migration module issues
-            with open(global_config_file, "r", encoding="utf-8") as f:  # P1-3
+            with open(global_config_file, encoding="utf-8") as f:  # P1-3
                 config = yaml.safe_load(f) or {}
             return config
         except yaml.YAMLError as yaml_err:
@@ -673,7 +673,7 @@ Context provided with each query:
                     pass  # best-effort; failure is non-critical
             return {}
 
-    def _create_default_global_config(self) -> Dict[str, Any]:
+    def _create_default_global_config(self) -> dict[str, Any]:
         """Create default global configuration."""
         from navig.core.migrations import CURRENT_VERSION
 
@@ -710,7 +710,7 @@ Context provided with each query:
         self._save_global_config(default_config)
         return default_config
 
-    def _save_global_config(self, config: Dict[str, Any]):
+    def _save_global_config(self, config: dict[str, Any]):
         """Save global configuration to file (always to ~/.navig/config.yaml)."""
         global_config_file = self.global_config_dir / "config.yaml"
         self.global_config_dir.mkdir(parents=True, exist_ok=True)
@@ -731,11 +731,11 @@ Context provided with each query:
         except Exception:
             pass  # Cache update failure is non-fatal
 
-    def get_global_config(self) -> Dict[str, Any]:
+    def get_global_config(self) -> dict[str, Any]:
         """Get global configuration."""
         return self.global_config
 
-    def update_global_config(self, updates: Dict[str, Any]):
+    def update_global_config(self, updates: dict[str, Any]):
         """Update global configuration."""
         self.global_config.update(updates)
         self._save_global_config(self.global_config)
@@ -764,7 +764,7 @@ Context provided with each query:
         local_config_file = Path.cwd() / ".navig" / "config.yaml"
         if local_config_file.exists():
             try:
-                with open(local_config_file, "r", encoding="utf-8") as f:
+                with open(local_config_file, encoding="utf-8") as f:
                     local_config = yaml.safe_load(f) or {}
                     execution = local_config.get("execution", {})
                     if "mode" in execution:
@@ -810,7 +810,7 @@ Context provided with each query:
         local_config_file = Path.cwd() / ".navig" / "config.yaml"
         if local_config_file.exists():
             try:
-                with open(local_config_file, "r", encoding="utf-8") as f:
+                with open(local_config_file, encoding="utf-8") as f:
                     local_config = yaml.safe_load(f) or {}
                     execution = local_config.get("execution", {})
                     if "confirmation_level" in execution:
@@ -843,7 +843,7 @@ Context provided with each query:
         self.global_config["execution"]["confirmation_level"] = level
         self._save_global_config(self.global_config)
 
-    def get_execution_settings(self) -> Dict[str, str]:
+    def get_execution_settings(self) -> dict[str, str]:
         """
         Get all execution settings.
 
@@ -856,7 +856,7 @@ Context provided with each query:
             "confirmation_level": execution.get("confirmation_level", "standard"),
         }
 
-    def get_active_server(self) -> Optional[str]:
+    def get_active_server(self) -> str | None:
         """
         Get currently active server name.
 
@@ -892,7 +892,7 @@ Context provided with each query:
         """
         return self.list_hosts()
 
-    def load_server_config(self, name: str) -> Dict[str, Any]:
+    def load_server_config(self, name: str) -> dict[str, Any]:
         """
         Load server configuration.
 
@@ -900,7 +900,7 @@ Context provided with each query:
         """
         return self.load_host_config(name)
 
-    def save_server_config(self, name: str, config: Dict[str, Any]):
+    def save_server_config(self, name: str, config: dict[str, Any]):
         """
         Save server configuration.
 
@@ -922,12 +922,12 @@ Context provided with each query:
         host: str,
         port: int,
         user: str,
-        ssh_key: Optional[str] = None,
-        ssh_password: Optional[str] = None,
-        database: Optional[Dict[str, Any]] = None,
-        paths: Optional[Dict[str, str]] = None,
-        services: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        ssh_key: str | None = None,
+        ssh_password: str | None = None,
+        database: dict[str, Any] | None = None,
+        paths: dict[str, str] | None = None,
+        services: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """Create a new server configuration."""
         config = {
             "name": name,
@@ -978,7 +978,7 @@ Context provided with each query:
             self._create_default_ai_prompt()
         return self.ai_prompt_file.read_text()
 
-    def update_server_metadata(self, name: str, metadata: Dict[str, Any]):
+    def update_server_metadata(self, name: str, metadata: dict[str, Any]):
         """Update server metadata (from inspection)."""
         config = self.load_server_config(name)
         if "metadata" not in config:
@@ -987,7 +987,7 @@ Context provided with each query:
         config["metadata"]["last_inspected"] = datetime.now().isoformat()
         self.save_server_config(name, config)
 
-    def update_host_metadata(self, name: str, metadata: Dict[str, Any]):
+    def update_host_metadata(self, name: str, metadata: dict[str, Any]):
         """Update host metadata (from inspection)."""
         config = self.load_host_config(name)
         if "metadata" not in config:
@@ -1000,7 +1000,7 @@ Context provided with each query:
     # Helpers for local .navig/config.yaml
     # =========================================================================
 
-    def get_local_config(self, directory: Optional[Path] = None) -> Dict[str, Any]:
+    def get_local_config(self, directory: Path | None = None) -> dict[str, Any]:
         """
         Read the project-local configuration (.navig/config.yaml).
         Returns an empty dict if it doesn't exist or is invalid.
@@ -1010,14 +1010,14 @@ Context provided with each query:
         if not local_config_file.exists():
             return {}
         try:
-            with open(local_config_file, "r", encoding="utf-8") as f:
+            with open(local_config_file, encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         except Exception as e:
             logger.warning("Failed to read local config %s: %s", local_config_file, e)
             return {}
 
     def set_local_config(
-        self, data: Dict[str, Any], directory: Optional[Path] = None
+        self, data: dict[str, Any], directory: Path | None = None
     ) -> None:
         """
         Write the project-local configuration (.navig/config.yaml).
@@ -1040,7 +1040,7 @@ Context provided with each query:
 
     def get_active_host(
         self, return_source: bool = False
-    ) -> Union[Optional[str], Tuple[Optional[str], str]]:
+    ) -> str | None | tuple[str | None, str]:
         """
         Get currently active host name with hierarchical resolution.
 
@@ -1104,7 +1104,7 @@ Context provided with each query:
 
     def get_active_app(
         self, return_source: bool = False
-    ) -> Union[Optional[str], Tuple[Optional[str], str]]:
+    ) -> str | None | tuple[str | None, str]:
         """
         Get currently active app name with hierarchical resolution.
 
@@ -1188,7 +1188,7 @@ Context provided with each query:
                 local_apps = []
                 for app_file in local_apps_dir.glob("*.yaml"):
                     try:
-                        with open(app_file, "r") as f:
+                        with open(app_file) as f:
                             app_data = yaml.safe_load(f) or {}
                         if app_data.get("host") == host_name:
                             local_apps.append(app_file.stem)
@@ -1281,7 +1281,7 @@ Context provided with each query:
         else:
             self.active_app_file.write_text(app_name, encoding="utf-8")
 
-    def set_active_app_local(self, app_name: str, directory: Optional[Path] = None):
+    def set_active_app_local(self, app_name: str, directory: Path | None = None):
         """
         Set active app for a specific directory (local scope).
 
@@ -1334,7 +1334,7 @@ Context provided with each query:
         local_config["active_app"] = app_name
         self.set_local_config(local_config, target_dir)
 
-    def clear_active_app_local(self, directory: Optional[Path] = None):
+    def clear_active_app_local(self, directory: Path | None = None):
         """
         Clear local active app setting.
 
@@ -1517,7 +1517,7 @@ Context provided with each query:
                             if ".backup." not in yaml_file.name:
                                 # Check if this is actually a host config (not an app config)
                                 try:
-                                    with open(yaml_file, "r", encoding="utf-8") as f:
+                                    with open(yaml_file, encoding="utf-8") as f:
                                         config_data = yaml.safe_load(f) or {}
                                     host_value = config_data.get("host", "")
                                     # It's a legacy host if:
@@ -1571,7 +1571,7 @@ Context provided with each query:
             if apps_dir.exists():
                 for app_file in apps_dir.glob("*.yaml"):
                     try:
-                        with open(app_file, "r") as f:
+                        with open(app_file) as f:
                             app_data = yaml.safe_load(f) or {}
                         # Only include if this app belongs to the specified host
                         if app_data.get("host") == host_name:
@@ -1615,7 +1615,7 @@ Context provided with each query:
 
     def load_host_config(
         self, host_name: str, use_cache: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Load host configuration with hierarchical support.
 
@@ -1653,7 +1653,7 @@ Context provided with each query:
                 if load_config:
                     config = load_config(host_file, schema_type="host", strict=False)
                 else:
-                    with open(host_file, "r", encoding="utf-8") as f:
+                    with open(host_file, encoding="utf-8") as f:
                         config = yaml.safe_load(f)
 
                 # Expand user paths (config_loader doesn't do ~/ expansion)
@@ -1676,7 +1676,7 @@ Context provided with each query:
                 if load_config:
                     config = load_config(legacy_file, schema_type="host", strict=False)
                 else:
-                    with open(legacy_file, "r", encoding="utf-8") as f:
+                    with open(legacy_file, encoding="utf-8") as f:
                         config = yaml.safe_load(f)
 
                 # Expand user paths
@@ -1697,7 +1697,7 @@ Context provided with each query:
 
         raise FileNotFoundError(f"Host configuration not found: {host_name}")
 
-    def load_app_config(self, host_name: str, app_name: str) -> Dict[str, Any]:
+    def load_app_config(self, host_name: str, app_name: str) -> dict[str, Any]:
         """
         Load app configuration (supports both individual files and embedded format).
 
@@ -1764,7 +1764,7 @@ Context provided with each query:
             # We don't enforce webserver.type for legacy format (backward compat)
             return host_config
 
-    def save_host_config(self, host_name: str, config: Dict[str, Any]):
+    def save_host_config(self, host_name: str, config: dict[str, Any]):
         """
         Save host configuration.
 
@@ -1809,7 +1809,7 @@ Context provided with each query:
         self,
         host_name: str,
         app_name: str,
-        app_config: Dict[str, Any],
+        app_config: dict[str, Any],
         use_individual_file: bool = True,
     ):
         """
@@ -1912,7 +1912,7 @@ Context provided with each query:
             if app_file.exists():
                 # Verify this app belongs to the specified host
                 try:
-                    with open(app_file, "r") as f:
+                    with open(app_file) as f:
                         app_data = yaml.safe_load(f) or {}
                     if app_data.get("host") == host_name:
                         app_file.unlink()
@@ -1949,9 +1949,7 @@ Context provided with each query:
     # NEW: Individual App File Support (v2.1 Architecture)
     # ============================================================================
 
-    def get_app_file_path(
-        self, app_name: str, navig_dir: Optional[Path] = None
-    ) -> Path:
+    def get_app_file_path(self, app_name: str, navig_dir: Path | None = None) -> Path:
         """
         Get path to individual app file (.navig/apps/<name>.yaml).
 
@@ -1969,8 +1967,8 @@ Context provided with each query:
         return navig_dir / "apps" / f"{app_name}.yaml"
 
     def load_app_from_file(
-        self, app_name: str, navig_dir: Optional[Path] = None
-    ) -> Optional[Dict[str, Any]]:
+        self, app_name: str, navig_dir: Path | None = None
+    ) -> dict[str, Any] | None:
         """
         Load app configuration from individual file (.navig/apps/<name>.yaml).
 
@@ -1987,7 +1985,7 @@ Context provided with each query:
             return None
 
         try:
-            with open(app_file, "r") as f:
+            with open(app_file) as f:
                 app_config = yaml.safe_load(f) or {}
 
             # Validate required fields
@@ -2009,8 +2007,8 @@ Context provided with each query:
     def save_app_to_file(
         self,
         app_name: str,
-        app_config: Dict[str, Any],
-        navig_dir: Optional[Path] = None,
+        app_config: dict[str, Any],
+        navig_dir: Path | None = None,
     ):
         """
         Save app configuration to individual file (.navig/apps/<name>.yaml).
@@ -2049,7 +2047,7 @@ Context provided with each query:
         app_config["metadata"]["updated"] = datetime.now().isoformat()
 
         # Save to file
-        with open(app_file, "w") as f:
+        with open(app_file, "w", encoding="utf-8") as f:
             yaml.dump(app_config, f, default_flow_style=False, sort_keys=False)
 
         if self.verbose:
@@ -2058,7 +2056,7 @@ Context provided with each query:
             location = "app" if navig_dir == self.app_config_dir else "global"
             ch.dim(f"✓ Saved app '{app_name}' to {location} config (individual file)")
 
-    def list_apps_from_files(self, navig_dir: Optional[Path] = None) -> list:
+    def list_apps_from_files(self, navig_dir: Path | None = None) -> list:
         """
         List all apps from .navig/apps/ directory (individual files).
 
@@ -2083,7 +2081,7 @@ Context provided with each query:
 
             # Validate it's a valid app file (has 'host' field)
             try:
-                with open(app_file, "r") as f:
+                with open(app_file) as f:
                     app_data = yaml.safe_load(f) or {}
                 if "host" in app_data:
                     apps.append(app_name)
@@ -2096,9 +2094,9 @@ Context provided with each query:
     def migrate_apps_to_files(
         self,
         host_name: str,
-        navig_dir: Optional[Path] = None,
+        navig_dir: Path | None = None,
         remove_from_host: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Migrate apps from host YAML (legacy embedded format) to individual files (new format).
 
@@ -2173,13 +2171,13 @@ Context provided with each query:
 # Singleton Pattern for Performance Optimization
 # =============================================================================
 
-_config_manager_instance: Optional[ConfigManager] = None
-_config_manager_config_dir: Optional[Path] = None
+_config_manager_instance: ConfigManager | None = None
+_config_manager_config_dir: Path | None = None
 _config_manager_force_new: bool = False
 
 
 def get_config_manager(
-    config_dir: Optional[Path] = None, verbose: bool = False, force_new: bool = False
+    config_dir: Path | None = None, verbose: bool = False, force_new: bool = False
 ) -> ConfigManager:
     """
     Get a singleton ConfigManager instance for improved performance.

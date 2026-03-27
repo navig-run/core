@@ -16,7 +16,6 @@ Commands:
 
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 
@@ -283,10 +282,10 @@ def ahk_doctor():
 @ahk_app.command("run")
 def ahk_run(
     script_path: str = typer.Argument(..., help="Path to .ahk script file"),
-    args: Optional[str] = typer.Option(
+    args: str | None = typer.Option(
         None, "--args", "-a", help="Comma-separated arguments"
     ),
-    timeout: Optional[float] = typer.Option(
+    timeout: float | None = typer.Option(
         None, "--timeout", "-t", help="Execution timeout in seconds"
     ),
 ):
@@ -331,7 +330,7 @@ def ahk_run(
 @ahk_app.command("exec")
 def ahk_exec(
     code: str = typer.Argument(..., help="AHK code to execute"),
-    timeout: Optional[float] = typer.Option(
+    timeout: float | None = typer.Option(
         None, "--timeout", "-t", help="Execution timeout"
     ),
 ):
@@ -574,8 +573,8 @@ def ahk_move(
     selector: str = typer.Argument(..., help="Window selector"),
     x: int = typer.Argument(..., help="New X position"),
     y: int = typer.Argument(..., help="New Y position"),
-    width: Optional[int] = typer.Option(None, "--width", "-w", help="New width"),
-    height: Optional[int] = typer.Option(None, "--height", "-h", help="New height"),
+    width: int | None = typer.Option(None, "--width", "-w", help="New width"),
+    height: int | None = typer.Option(None, "--height", "-h", help="New height"),
 ):
     """
     Move and optionally resize window.
@@ -700,7 +699,7 @@ def ahk_activate(
 @ahk_app.command("windows")
 def ahk_windows(
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
-    filter_text: Optional[str] = typer.Option(
+    filter_text: str | None = typer.Option(
         None, "--filter", "-f", help="Filter by title"
     ),
 ):
@@ -779,7 +778,7 @@ def ahk_windows(
 @ahk_app.command("clipboard")
 def ahk_clipboard(
     get: bool = typer.Option(False, "--get", "-g", help="Get clipboard content"),
-    set_value: Optional[str] = typer.Option(
+    set_value: str | None = typer.Option(
         None, "--set", "-s", help="Set clipboard content"
     ),
 ):
@@ -1199,7 +1198,7 @@ def ahk_dashboard(
 
 @ahk_app.command("clipboard")
 def ahk_clipboard(
-    text: Optional[str] = typer.Argument(
+    text: str | None = typer.Argument(
         None, help="Text to copy (if omitted, prints clipboard)"
     ),
 ):
@@ -1223,10 +1222,8 @@ def ahk_clipboard(
 
 @ahk_app.command("screenshot")
 def ahk_screenshot(
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output file path"
-    ),
-    region: Optional[str] = typer.Option(None, "--region", help="Region x,y,w,h"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
+    region: str | None = typer.Option(None, "--region", help="Region x,y,w,h"),
 ):
     """Take a screenshot."""
     from navig.desktop.controller import DesktopController
@@ -1252,10 +1249,10 @@ def ahk_screenshot(
 
 @ahk_app.command("ocr")
 def ahk_ocr(
-    image: Optional[Path] = typer.Option(
+    image: Path | None = typer.Option(
         None, "--image", help="Image file (default: screenshot)"
     ),
-    region: Optional[str] = typer.Option(None, "--region", help="Region x,y,w,h"),
+    region: str | None = typer.Option(None, "--region", help="Region x,y,w,h"),
 ):
     """Extract text from screen or image (requires pytesseract)."""
     try:
@@ -1547,7 +1544,7 @@ def ahk_evolve(
 
 @ahk_app.command("processes")
 def ahk_processes(
-    filter_name: Optional[str] = typer.Option(
+    filter_name: str | None = typer.Option(
         None, "--filter", help="Filter by process name"
     ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -1846,7 +1843,7 @@ def ahk_notify(
 
 @ahk_app.command("volume")
 def ahk_volume(
-    level: Optional[int] = typer.Argument(
+    level: int | None = typer.Argument(
         None, help="Volume level 0-100 (omit to show current)"
     ),
 ):
@@ -1913,7 +1910,7 @@ ahk_app.add_typer(workflow_app, name="workflow")
 @workflow_app.command("run")
 def workflow_run(
     name: str = typer.Argument(..., help="Name of workflow to run"),
-    vars: List[str] = typer.Option(
+    vars: list[str] = typer.Option(
         None, "--var", "-v", help="Variables in key=value format"
     ),
 ):

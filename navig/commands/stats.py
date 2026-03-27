@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json as _json_mod
 import os
-from typing import Optional
 
 import typer
 from rich import box
@@ -64,7 +63,7 @@ def _fetch_stats(url: str, timeout: float = 6.0) -> dict:
 
 @stats_app.callback(invoke_without_command=True)
 def stats(
-    url: Optional[str] = typer.Option(
+    url: str | None = typer.Option(
         None,
         "--url",
         "-u",

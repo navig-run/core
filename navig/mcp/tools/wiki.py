@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 
 def register(server: Any) -> None:
@@ -61,7 +61,7 @@ def register(server: Any) -> None:
     )
 
 
-def _tool_search_wiki(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _tool_search_wiki(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     """Search wiki pages."""
     from navig.commands.wiki import get_wiki_path, search_wiki
 
@@ -76,7 +76,7 @@ def _tool_search_wiki(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]
     return results[:limit]
 
 
-def _tool_list_wiki_pages(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _tool_list_wiki_pages(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     """List wiki pages."""
     from navig.commands.wiki import get_wiki_path, list_wiki_pages
 
@@ -102,7 +102,7 @@ def _tool_list_wiki_pages(server: Any, args: Dict[str, Any]) -> List[Dict[str, A
     ]
 
 
-def _tool_read_wiki_page(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_read_wiki_page(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Read a wiki page."""
     from navig.commands.wiki import get_wiki_path, resolve_wiki_link
 

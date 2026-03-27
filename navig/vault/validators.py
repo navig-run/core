@@ -6,7 +6,6 @@ Each validator makes a minimal API call to verify the credential works.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Type
 
 from .types import Credential, TestResult
 
@@ -478,7 +477,7 @@ class GitHubModelsValidator(CredentialValidator):
 
 
 # Validator registry
-VALIDATORS: Dict[str, Type[CredentialValidator]] = {
+VALIDATORS: dict[str, type[CredentialValidator]] = {
     # AI Providers
     "openai": OpenAIValidator,
     "anthropic": AnthropicValidator,

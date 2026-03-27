@@ -864,7 +864,7 @@ class TelegramVoiceMixin:
         chat_id: int,
         file_id: str,
         is_voice: bool = False,
-        task_view: "Any" = None,
+        task_view: Any = None,
     ) -> str | None:
         """Download a Telegram audio file and run STT with correct MIME type.
 
@@ -913,24 +913,23 @@ class TelegramVoiceMixin:
                 task_view.recompute_percent()
                 await update_task_card(self, chat_id, task_view)
 
-            async with aiohttp.ClientSession() as sess:
-                async with sess.get(dl_url) as resp:
-                    if resp.status != 200:
-                        if task_view:
-                            task_view.set_step(
-                                "download",
-                                StepState.FAILED,
-                                f"Download HTTP {resp.status}",
-                            )
-                            await update_task_card(self, chat_id, task_view, force=True)
-                        logger.warning(
-                            "_transcribe_audio_file: download %s -> %s",
-                            dl_url,
-                            resp.status,
+            async with aiohttp.ClientSession() as sess, sess.get(dl_url) as resp:
+                if resp.status != 200:
+                    if task_view:
+                        task_view.set_step(
+                            "download",
+                            StepState.FAILED,
+                            f"Download HTTP {resp.status}",
                         )
-                        return None
-                    with open(tmp_path, "wb") as fh:
-                        fh.write(await resp.read())
+                        await update_task_card(self, chat_id, task_view, force=True)
+                    logger.warning(
+                        "_transcribe_audio_file: download %s -> %s",
+                        dl_url,
+                        resp.status,
+                    )
+                    return None
+                with open(tmp_path, "wb") as fh:
+                    fh.write(await resp.read())
 
             if task_view:
                 task_view.set_step("download", StepState.DONE)

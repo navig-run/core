@@ -17,7 +17,7 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import typer
 import yaml
@@ -140,8 +140,8 @@ def ensure_wiki_initialized(wiki_path: Path) -> bool:
 
 
 def create_folder_structure(
-    base_path: Path, structure: Dict, indent: int = 0
-) -> List[str]:
+    base_path: Path, structure: dict, indent: int = 0
+) -> list[str]:
     """
     Recursively create folder structure.
 
@@ -237,18 +237,18 @@ def init_wiki(wiki_path: Path, force: bool = False) -> bool:
     return True
 
 
-def get_wiki_config(wiki_path: Path) -> Dict[str, Any]:
+def get_wiki_config(wiki_path: Path) -> dict[str, Any]:
     """Load wiki configuration."""
     config_file = wiki_path / ".meta" / "config.yaml"
     if config_file.exists():
-        with open(config_file, "r", encoding="utf-8") as f:
+        with open(config_file, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     return {}
 
 
 def list_wiki_pages(
-    wiki_path: Path, folder: Optional[str] = None, recursive: bool = True
-) -> List[Dict[str, Any]]:
+    wiki_path: Path, folder: str | None = None, recursive: bool = True
+) -> list[dict[str, Any]]:
     """
     List all wiki pages.
 
@@ -302,7 +302,7 @@ def list_wiki_pages(
 
 def search_wiki(
     wiki_path: Path, query: str, case_sensitive: bool = False
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Full-text search across wiki pages.
 
@@ -344,7 +344,7 @@ def search_wiki(
     return sorted(results, key=lambda x: x["matches"], reverse=True)
 
 
-def resolve_wiki_link(wiki_path: Path, link: str) -> Optional[Path]:
+def resolve_wiki_link(wiki_path: Path, link: str) -> Path | None:
     """
     Resolve a [[wiki-link]] to actual file path.
 
@@ -377,7 +377,7 @@ def resolve_wiki_link(wiki_path: Path, link: str) -> Optional[Path]:
     return None
 
 
-def find_broken_links(wiki_path: Path) -> List[Dict[str, Any]]:
+def find_broken_links(wiki_path: Path) -> list[dict[str, Any]]:
     """Find all broken wiki links."""
     broken = []
     link_pattern = re.compile(r"\[\[([^\]]+)\]\]")
@@ -553,7 +553,7 @@ def categorize_content(content: str, filename: str) -> str:
 
 def process_inbox_item(
     wiki_path: Path, filename: str, auto_move: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Process a single inbox item.
 
@@ -710,7 +710,7 @@ def cmd_init(
 
 @wiki_app.command("list")
 def cmd_list(
-    folder: Optional[str] = typer.Argument(
+    folder: str | None = typer.Argument(
         None, help="Folder to list (e.g., 'knowledge', 'technical')"
     ),
     all_pages: bool = typer.Option(
@@ -804,7 +804,7 @@ def cmd_show(
 @wiki_app.command("add")
 def cmd_add(
     file: Path = typer.Argument(..., help="File to add to wiki"),
-    folder: Optional[str] = typer.Option(
+    folder: str | None = typer.Option(
         None, "--folder", "-f", help="Destination folder (e.g., 'knowledge/concepts')"
     ),
     inbox: bool = typer.Option(
@@ -849,7 +849,7 @@ def cmd_add(
 @wiki_app.command("edit")
 def cmd_edit(
     page: str = typer.Argument(..., help="Page name or path to edit"),
-    editor: Optional[str] = typer.Option(
+    editor: str | None = typer.Option(
         None, "--editor", "-e", help="Editor to use (default: $EDITOR)"
     ),
 ):
@@ -1012,7 +1012,7 @@ def inbox_list(ctx: typer.Context):
 
 @inbox_app.command("process")
 def inbox_process(
-    filename: Optional[str] = typer.Argument(None, help="Specific file to process"),
+    filename: str | None = typer.Argument(None, help="Specific file to process"),
     auto_move: bool = typer.Option(
         False, "--auto", "-a", help="Automatically move files to suggested folders"
     ),
@@ -1141,9 +1141,7 @@ def cmd_publish(
     include_private: bool = typer.Option(
         False, "--all", "-a", help="Include private content"
     ),
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output directory"
-    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output directory"),
 ):
     """Publish public wiki content."""
     config = ConfigManager()
@@ -1344,8 +1342,8 @@ def rag_rebuild():
 @rag_app.command("add")
 def rag_add(
     content: str = typer.Argument(..., help="Content to add (text or file path)"),
-    title: Optional[str] = typer.Option(None, "--title", "-t", help="Document title"),
-    path: Optional[str] = typer.Option(
+    title: str | None = typer.Option(None, "--title", "-t", help="Document title"),
+    path: str | None = typer.Option(
         None, "--path", "-p", help="Wiki path for the document"
     ),
 ):

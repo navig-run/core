@@ -7,7 +7,6 @@ List, view, and manage calendar events from configured providers.
 import asyncio
 import json
 from datetime import datetime, timedelta
-from typing import Optional
 
 import typer
 
@@ -142,7 +141,7 @@ def add_event(
     title: str = typer.Argument(..., help="Event title"),
     start: str = typer.Option(None, "--start", "-s", help="Start time (ISO format)"),
     duration: int = typer.Option(60, "--duration", "-d", help="Duration in minutes"),
-    location: Optional[str] = typer.Option(None, "--location", "-l", help="Location"),
+    location: str | None = typer.Option(None, "--location", "-l", help="Location"),
 ):
     """
     Add a new calendar event.

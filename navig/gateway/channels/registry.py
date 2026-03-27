@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # =============================================================================
 # Types
@@ -98,23 +98,23 @@ class ChannelMeta:
     id: ChannelId
     label: str
     description: str
-    docs_url: Optional[str] = None
+    docs_url: str | None = None
     icon: str = "💬"
 
     # Capabilities
-    capabilities: List[ChannelCapability] = field(default_factory=list)
+    capabilities: list[ChannelCapability] = field(default_factory=list)
 
     # Status
     status: ChannelStatus = ChannelStatus.UNAVAILABLE
-    status_message: Optional[str] = None
+    status_message: str | None = None
 
     # Config requirements
-    required_config: List[str] = field(default_factory=list)
-    optional_config: List[str] = field(default_factory=list)
+    required_config: list[str] = field(default_factory=list)
+    optional_config: list[str] = field(default_factory=list)
 
     # Module info
-    module_path: Optional[str] = None
-    adapter_class: Optional[str] = None
+    module_path: str | None = None
+    adapter_class: str | None = None
 
     def is_available(self) -> bool:
         """Check if channel is available for use."""
@@ -128,7 +128,7 @@ class ChannelMeta:
         """Check if channel has a specific capability."""
         return cap in self.capabilities
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "id": self.id.value,
@@ -161,7 +161,7 @@ CHANNEL_ORDER = [
 ]
 
 # Channel aliases for flexible lookup
-CHANNEL_ALIASES: Dict[str, ChannelId] = {
+CHANNEL_ALIASES: dict[str, ChannelId] = {
     "tg": ChannelId.TELEGRAM,
     "mx": ChannelId.MATRIX,
     "wa": ChannelId.WHATSAPP,
@@ -171,7 +171,7 @@ CHANNEL_ALIASES: Dict[str, ChannelId] = {
 }
 
 # Default channel metadata
-DEFAULT_CHANNEL_META: Dict[ChannelId, ChannelMeta] = {
+DEFAULT_CHANNEL_META: dict[ChannelId, ChannelMeta] = {
     ChannelId.MATRIX: ChannelMeta(
         id=ChannelId.MATRIX,
         label="Matrix",
@@ -362,8 +362,8 @@ class ChannelRegistry:
     """
 
     def __init__(self):
-        self._channels: Dict[ChannelId, ChannelMeta] = {}
-        self._adapters: Dict[ChannelId, Any] = {}
+        self._channels: dict[ChannelId, ChannelMeta] = {}
+        self._adapters: dict[ChannelId, Any] = {}
         self._initialized = False
 
     def initialize(self) -> None:
@@ -394,7 +394,7 @@ class ChannelRegistry:
                     meta.status = ChannelStatus.UNAVAILABLE
                     meta.status_message = f"Module not available: {e}"
 
-    def get_channel(self, channel_id: Union[str, ChannelId]) -> Optional[ChannelMeta]:
+    def get_channel(self, channel_id: str | ChannelId) -> ChannelMeta | None:
         """
         Get channel metadata by ID or alias.
 
@@ -415,7 +415,7 @@ class ChannelRegistry:
 
         return self._channels.get(channel_id)
 
-    def normalize_channel_id(self, raw: str) -> Optional[ChannelId]:
+    def normalize_channel_id(self, raw: str) -> ChannelId | None:
         """
         Normalize a channel name/alias to ChannelId.
 
@@ -439,7 +439,7 @@ class ChannelRegistry:
 
         return None
 
-    def list_channels(self, available_only: bool = False) -> List[ChannelMeta]:
+    def list_channels(self, available_only: bool = False) -> list[ChannelMeta]:
         """
         List all registered channels.
 
@@ -461,11 +461,11 @@ class ChannelRegistry:
 
         return channels
 
-    def list_available_channels(self) -> List[ChannelMeta]:
+    def list_available_channels(self) -> list[ChannelMeta]:
         """List only available channels."""
         return self.list_channels(available_only=True)
 
-    def get_adapter(self, channel_id: Union[str, ChannelId]) -> Optional[Any]:
+    def get_adapter(self, channel_id: str | ChannelId) -> Any | None:
         """
         Get or load channel adapter.
 
@@ -502,9 +502,7 @@ class ChannelRegistry:
             meta.status_message = str(e)
             return None
 
-    def register_channel(
-        self, meta: ChannelMeta, adapter: Optional[Any] = None
-    ) -> None:
+    def register_channel(self, meta: ChannelMeta, adapter: Any | None = None) -> None:
         """
         Register a custom channel.
 
@@ -516,7 +514,7 @@ class ChannelRegistry:
         if adapter:
             self._adapters[meta.id] = adapter
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Get summary of all channel statuses."""
         if not self._initialized:
             self.initialize()
@@ -547,7 +545,7 @@ class ChannelRegistry:
 # Global Registry Instance
 # =============================================================================
 
-_registry: Optional[ChannelRegistry] = None
+_registry: ChannelRegistry | None = None
 
 
 def get_channel_registry() -> ChannelRegistry:
@@ -559,16 +557,16 @@ def get_channel_registry() -> ChannelRegistry:
     return _registry
 
 
-def list_channels(available_only: bool = False) -> List[ChannelMeta]:
+def list_channels(available_only: bool = False) -> list[ChannelMeta]:
     """List registered channels."""
     return get_channel_registry().list_channels(available_only)
 
 
-def get_channel(channel_id: str) -> Optional[ChannelMeta]:
+def get_channel(channel_id: str) -> ChannelMeta | None:
     """Get channel by ID or alias."""
     return get_channel_registry().get_channel(channel_id)
 
 
-def normalize_channel(raw: str) -> Optional[ChannelId]:
+def normalize_channel(raw: str) -> ChannelId | None:
     """Normalize channel name to ID."""
     return get_channel_registry().normalize_channel_id(raw)

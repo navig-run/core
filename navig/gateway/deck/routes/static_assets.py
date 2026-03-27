@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 try:
     from aiohttp import web
@@ -12,7 +11,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def _find_deck_static_dir(override: Optional[str] = None) -> Optional[Path]:
+def _find_deck_static_dir(override: str | None = None) -> Path | None:
     if override:
         p = Path(override).expanduser()
         if p.is_dir() and (p / "index.html").exists():

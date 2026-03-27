@@ -4,7 +4,7 @@ Server Template CLI Commands
 Commands for managing per-server template configurations.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -14,7 +14,7 @@ config_manager = get_config_manager()
 template_manager = ServerTemplateManager(config_manager)
 
 
-def list_server_templates_cmd(options: Dict[str, Any]):
+def list_server_templates_cmd(options: dict[str, Any]):
     """List template configurations for a server."""
     server = options.get("server") or config_manager.get_active_server()
 
@@ -73,7 +73,7 @@ def list_server_templates_cmd(options: Dict[str, Any]):
     ch.print_table(table)
 
 
-def show_template_config_cmd(template_name: str, options: Dict[str, Any]):
+def show_template_config_cmd(template_name: str, options: dict[str, Any]):
     """Show merged configuration for a server template."""
     server = options.get("server") or config_manager.get_active_server()
 
@@ -133,7 +133,7 @@ def show_template_config_cmd(template_name: str, options: Dict[str, Any]):
         )
 
 
-def enable_server_template_cmd(template_name: str, options: Dict[str, Any]):
+def enable_server_template_cmd(template_name: str, options: dict[str, Any]):
     """Enable an template for a server."""
     server = options.get("server") or config_manager.get_active_server()
 
@@ -152,7 +152,7 @@ def enable_server_template_cmd(template_name: str, options: Dict[str, Any]):
         ch.dim("Check if template is initialized: navig server template list")
 
 
-def disable_server_template_cmd(template_name: str, options: Dict[str, Any]):
+def disable_server_template_cmd(template_name: str, options: dict[str, Any]):
     """Disable an template for a server."""
     server = options.get("server") or config_manager.get_active_server()
 
@@ -170,7 +170,7 @@ def disable_server_template_cmd(template_name: str, options: Dict[str, Any]):
 
 
 def set_template_value_cmd(
-    template_name: str, key_path: str, value: str, options: Dict[str, Any]
+    template_name: str, key_path: str, value: str, options: dict[str, Any]
 ):
     """Set a custom value for a server template configuration."""
     server = options.get("server") or config_manager.get_active_server()
@@ -206,7 +206,7 @@ def set_template_value_cmd(
         )
 
 
-def sync_template_cmd(template_name: str, options: Dict[str, Any]):
+def sync_template_cmd(template_name: str, options: dict[str, Any]):
     """Sync template configuration from template."""
     server = options.get("server") or config_manager.get_active_server()
 
@@ -246,7 +246,7 @@ def sync_template_cmd(template_name: str, options: Dict[str, Any]):
             ch.dim("All custom settings were reset to template defaults")
 
 
-def init_template_cmd(template_name: str, options: Dict[str, Any]):
+def init_template_cmd(template_name: str, options: dict[str, Any]):
     """Manually initialize an template for a server."""
     server = options.get("server") or config_manager.get_active_server()
 

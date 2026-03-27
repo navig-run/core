@@ -16,10 +16,11 @@ Performance impact:
 
 import importlib
 import sys
-from typing import Any, Callable, Dict, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 # Cache for already-imported lazy modules
-_lazy_cache: Dict[str, Any] = {}
+_lazy_cache: dict[str, Any] = {}
 
 T = TypeVar("T")
 
@@ -149,7 +150,7 @@ def lazy_class(module_name: str, class_name: str) -> type:
     class LazyClass:
         """Proxy class for lazy loading."""
 
-        _real_class: Optional[type] = None
+        _real_class: type | None = None
 
         def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls._real_class is None:

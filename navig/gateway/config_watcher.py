@@ -8,9 +8,10 @@ Watches for changes to:
 """
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set
+from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
 
@@ -25,8 +26,8 @@ class FileWatcher:
 
     def __init__(self, path: Path):
         self.path = path
-        self.last_modified: Optional[float] = None
-        self.last_hash: Optional[str] = None
+        self.last_modified: float | None = None
+        self.last_hash: str | None = None
 
         # Initialize if file exists
         if path.exists():
@@ -71,13 +72,13 @@ class ConfigWatcher:
         self.poll_interval = poll_interval
 
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
         # File watchers
-        self._watchers: Dict[str, FileWatcher] = {}
+        self._watchers: dict[str, FileWatcher] = {}
 
         # Callbacks by file type
-        self._callbacks: Dict[str, List[Callable]] = {
+        self._callbacks: dict[str, list[Callable]] = {
             "config": [],
             "workspace": [],
             "agents": [],
@@ -167,7 +168,7 @@ class ConfigWatcher:
     async def _check_changes(self) -> None:
         """Check all watched files for changes."""
         config_changed = False
-        workspace_changed: Set[str] = set()
+        workspace_changed: set[str] = set()
 
         for name, watcher in self._watchers.items():
             if watcher.has_changed():

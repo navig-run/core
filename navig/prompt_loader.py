@@ -1,9 +1,9 @@
-﻿from functools import lru_cache
+﻿from functools import cache
 
 from navig.platform.paths import builtin_store_dir
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_prompt(slug: str) -> str:
     """
     Load a markdown prompt from the builtin store by its slug,

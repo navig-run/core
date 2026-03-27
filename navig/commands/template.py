@@ -4,14 +4,14 @@ import os
 import re
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.template_manager import TemplateManager
 
 
-def list_templates_cmd(options: Dict[str, Any]):
+def list_templates_cmd(options: dict[str, Any]):
     """List all available templates."""
     templates_payload = None
     try:
@@ -154,7 +154,7 @@ def list_templates_cmd(options: Dict[str, Any]):
     ch.print_table(table)
 
 
-def enable_template_cmd(name: str, options: Dict[str, Any]):
+def enable_template_cmd(name: str, options: dict[str, Any]):
     """Enable an template."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
@@ -166,7 +166,7 @@ def enable_template_cmd(name: str, options: Dict[str, Any]):
     template_manager.enable_template(name)
 
 
-def disable_template_cmd(name: str, options: Dict[str, Any]):
+def disable_template_cmd(name: str, options: dict[str, Any]):
     """Disable an template."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
@@ -178,7 +178,7 @@ def disable_template_cmd(name: str, options: Dict[str, Any]):
     template_manager.disable_template(name)
 
 
-def toggle_template_cmd(name: str, options: Dict[str, Any]):
+def toggle_template_cmd(name: str, options: dict[str, Any]):
     """Toggle template enabled/disabled state."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
@@ -193,7 +193,7 @@ def toggle_template_cmd(name: str, options: Dict[str, Any]):
     template_manager.toggle_template(name)
 
 
-def show_template_cmd(name: str, options: Dict[str, Any]):
+def show_template_cmd(name: str, options: dict[str, Any]):
     """Show detailed information about an template."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
@@ -251,8 +251,8 @@ def show_template_cmd(name: str, options: Dict[str, Any]):
 
 def _render_template_commands(
     template_name: str,
-    commands: List[Dict[str, str]],
-    options: Dict[str, Any],
+    commands: list[dict[str, str]],
+    options: dict[str, Any],
 ) -> None:
     if not commands:
         ch.warning(f"No commands defined for template '{template_name}'")
@@ -307,7 +307,7 @@ def _render_template_commands(
 _PLACEHOLDER_PATTERN = re.compile(r"\b(USER|email|password|EMAIL|PASSWORD)\b")
 
 
-def _apply_command_args(command: str, args: List[str]) -> Tuple[str, List[str]]:
+def _apply_command_args(command: str, args: list[str]) -> tuple[str, list[str]]:
     if not args:
         return command, []
 
@@ -333,10 +333,10 @@ def _apply_command_args(command: str, args: List[str]) -> Tuple[str, List[str]]:
 
 def deploy_template_cmd(
     name: str,
-    command_name: Optional[str] = None,
-    command_args: Optional[List[str]] = None,
+    command_name: str | None = None,
+    command_args: list[str] | None = None,
     dry_run: bool = False,
-    ctx_obj: Optional[Dict[str, Any]] = None,
+    ctx_obj: dict[str, Any] | None = None,
 ) -> None:
     """Execute a template command via the remote runner."""
     options = dict(ctx_obj or {})
@@ -387,7 +387,7 @@ def deploy_template_cmd(
 
 
 def deploy_template_overview_cmd(
-    name: str, dry_run: bool = False, ctx_obj: Dict[str, Any] = None
+    name: str, dry_run: bool = False, ctx_obj: dict[str, Any] = None
 ):
     """Deploy/run a template (enable and surface available commands)."""
     if ctx_obj is None:
@@ -510,7 +510,7 @@ def deploy_template_overview_cmd(
     ch.dim("Use 'navig run' or relevant service commands to execute template actions.")
 
 
-def validate_templates_cmd(options: Dict[str, Any]):
+def validate_templates_cmd(options: dict[str, Any]):
     """Validate all template configurations."""
     template_manager = TemplateManager()
     template_manager.discover_templates()
@@ -548,7 +548,7 @@ def validate_templates_cmd(options: Dict[str, Any]):
     ch.print_table(table)
 
 
-def edit_template_cmd(name: str, options: Dict[str, Any]):
+def edit_template_cmd(name: str, options: dict[str, Any]):
     """
     Edit host-specific template override file.
 
@@ -670,26 +670,26 @@ def _generate_template_skeleton(template) -> str:
 # ============================================================================
 
 
-def addon_list_deprecated(options: Dict[str, Any]):
+def addon_list_deprecated(options: dict[str, Any]):
     """Alias for 'navig template list'."""
     list_templates_cmd(options)
 
 
-def addon_enable_deprecated(name: str, options: Dict[str, Any]):
+def addon_enable_deprecated(name: str, options: dict[str, Any]):
     """Alias for 'navig template enable'."""
     enable_template_cmd(name, options)
 
 
-def addon_disable_deprecated(name: str, options: Dict[str, Any]):
+def addon_disable_deprecated(name: str, options: dict[str, Any]):
     """Alias for 'navig template disable'."""
     disable_template_cmd(name, options)
 
 
-def addon_info_deprecated(name: str, options: Dict[str, Any]):
+def addon_info_deprecated(name: str, options: dict[str, Any]):
     """Alias for 'navig template info'."""
     show_template_cmd(name, options)
 
 
-def addon_run_deprecated(name: str, options: Dict[str, Any], dry_run: bool = False):
+def addon_run_deprecated(name: str, options: dict[str, Any], dry_run: bool = False):
     """Alias for 'navig flow template run'."""
     deploy_template_overview_cmd(name, dry_run=dry_run, ctx_obj=options)

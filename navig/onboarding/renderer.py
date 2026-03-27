@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 import re
 import sys
-from typing import Optional
 
 from .engine import EngineState, StepRecord
 
@@ -147,7 +146,7 @@ def _label(step_id: str, fallback: str) -> str:
     return _STEP_LABELS.get(step_id, fallback[:_LABEL_W])
 
 
-def _format_detail(step_id: str, output: dict, error: Optional[str] = None) -> str:
+def _format_detail(step_id: str, output: dict, error: str | None = None) -> str:
     """Return a compact one-liner describing what a step did."""
     from pathlib import Path as _P
 
@@ -334,7 +333,7 @@ _GAP_COMMANDS: dict[str, tuple[str, str]] = {
 _PHASE2_STEP_IDS = list(_GAP_COMMANDS.keys())
 
 
-def _detect_config_gaps(navig_dir: "Path") -> list[str]:
+def _detect_config_gaps(navig_dir: Path) -> list[str]:
     """
     Read the onboarding artifact and return step IDs from Phase 2 that are
     not yet completed.  Returns an empty list when the file does not exist.
@@ -366,9 +365,9 @@ def _detect_config_gaps(navig_dir: "Path") -> list[str]:
 def render_completion_summary(
     state: EngineState,
     total_ms: int,
-    avatar_path: Optional[str] = None,
+    avatar_path: str | None = None,
     host_count: int = 0,
-    navig_dir: Optional[str] = None,
+    navig_dir: str | None = None,
     is_reset: bool = False,
 ) -> str:
     """

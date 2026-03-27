@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 
 def _debug_log(message: str) -> None:
@@ -102,10 +102,10 @@ class RAGPipeline:
 
     def __init__(
         self,
-        conversation_store: Optional["ConversationStore"] = None,
-        knowledge_base: Optional["KnowledgeBase"] = None,
-        embedding_provider: Optional["EmbeddingProvider"] = None,
-        config: Optional[RAGConfig] = None,
+        conversation_store: ConversationStore | None = None,
+        knowledge_base: KnowledgeBase | None = None,
+        embedding_provider: EmbeddingProvider | None = None,
+        config: RAGConfig | None = None,
     ):
         self.conversation_store = conversation_store
         self.knowledge_base = knowledge_base
@@ -115,9 +115,9 @@ class RAGPipeline:
     def retrieve(
         self,
         query: str,
-        session_key: Optional[str] = None,
-        include_files: Optional[list[Path]] = None,
-        tags: Optional[list[str]] = None,
+        session_key: str | None = None,
+        include_files: list[Path] | None = None,
+        tags: list[str] | None = None,
     ) -> RetrievalResult:
         """
         Retrieve relevant context for a query.
@@ -190,7 +190,7 @@ class RAGPipeline:
         else:
             return self._format_history_json(messages)
 
-    def _format_history_chat(self, messages: list["Message"]) -> str:
+    def _format_history_chat(self, messages: list[Message]) -> str:
         """Format history as chat transcript."""
         lines = ["## Conversation History"]
 
@@ -201,7 +201,7 @@ class RAGPipeline:
 
         return "\n".join(lines)
 
-    def _format_history_markdown(self, messages: list["Message"]) -> str:
+    def _format_history_markdown(self, messages: list[Message]) -> str:
         """Format history as markdown."""
         lines = ["## Conversation History"]
 
@@ -213,7 +213,7 @@ class RAGPipeline:
 
         return "\n".join(lines)
 
-    def _format_history_json(self, messages: list["Message"]) -> str:
+    def _format_history_json(self, messages: list[Message]) -> str:
         """Format history as JSON."""
         import json
 
@@ -231,7 +231,7 @@ class RAGPipeline:
     def _get_knowledge_context(
         self,
         query: str,
-        tags: Optional[list[str]] = None,
+        tags: list[str] | None = None,
     ) -> str:
         """Get relevant knowledge entries."""
         if not self.knowledge_base:
@@ -325,10 +325,10 @@ class RAGPipeline:
     def build_prompt(
         self,
         query: str,
-        session_key: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        include_files: Optional[list[Path]] = None,
-        tags: Optional[list[str]] = None,
+        session_key: str | None = None,
+        system_prompt: str | None = None,
+        include_files: list[Path] | None = None,
+        tags: list[str] | None = None,
     ) -> str:
         """
         Build a complete prompt with context.

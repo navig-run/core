@@ -14,7 +14,7 @@ import copy
 import math
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.memory.embeddings import EmbeddingProvider
@@ -42,13 +42,13 @@ def _get_memory_dir() -> Path:
 
 
 # Module-level singleton
-_manager_instance: Optional["MemoryManager"] = None
+_manager_instance: MemoryManager | None = None
 
 
 def get_memory_manager(
-    memory_dir: Optional[Path] = None,
+    memory_dir: Path | None = None,
     use_embeddings: bool = True,
-) -> "MemoryManager":
+) -> MemoryManager:
     """
     Get or create the singleton memory manager.
 
@@ -70,7 +70,7 @@ def get_memory_manager(
     return _manager_instance
 
 
-def reload_memory_manager() -> "MemoryManager":
+def reload_memory_manager() -> MemoryManager:
     """Force reload of the memory manager."""
     global _manager_instance
 
@@ -102,7 +102,7 @@ class MemoryManager:
 
     def __init__(
         self,
-        memory_dir: Optional[Path] = None,
+        memory_dir: Path | None = None,
         use_embeddings: bool = True,
         embedding_model: str = "all-MiniLM-L6-v2",
     ):
@@ -122,22 +122,22 @@ class MemoryManager:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize components lazily
-        self._storage: Optional["MemoryStorage"] = None
-        self._embedding_provider: Optional["EmbeddingProvider"] = None
-        self._indexer: Optional["MemoryIndexer"] = None
-        self._search: Optional["HybridSearch"] = None
+        self._storage: MemoryStorage | None = None
+        self._embedding_provider: EmbeddingProvider | None = None
+        self._indexer: MemoryIndexer | None = None
+        self._search: HybridSearch | None = None
 
         # Predictive context cache
-        self._prewarm_cache: Dict[str, "SearchResponse"] = {}
+        self._prewarm_cache: dict[str, SearchResponse] = {}
 
         # mtime cache: file_path → (mtime_float, cached_age_days_at_capture)
         # Avoids repeated stat() syscalls for the same files within a session.
-        self._mtime_cache: Dict[str, float] = {}
+        self._mtime_cache: dict[str, float] = {}
 
         _debug_log(f"MemoryManager initialized: {self.memory_dir}")
 
     @property
-    def storage(self) -> "MemoryStorage":
+    def storage(self) -> MemoryStorage:
         """Get or create storage instance."""
         if self._storage is None:
             from navig.memory.storage import MemoryStorage
@@ -148,7 +148,7 @@ class MemoryManager:
         return self._storage
 
     @property
-    def embedding_provider(self) -> Optional["EmbeddingProvider"]:
+    def embedding_provider(self) -> EmbeddingProvider | None:
         """Get or create embedding provider."""
         if self._embedding_provider is None and self.use_embeddings:
             try:
@@ -165,7 +165,7 @@ class MemoryManager:
         return self._embedding_provider
 
     @property
-    def indexer(self) -> "MemoryIndexer":
+    def indexer(self) -> MemoryIndexer:
         """Get or create indexer instance."""
         if self._indexer is None:
             from navig.memory.indexer import MemoryIndexer
@@ -178,7 +178,7 @@ class MemoryManager:
         return self._indexer
 
     @property
-    def search_engine(self) -> "HybridSearch":
+    def search_engine(self) -> HybridSearch:
         """Get or create search engine."""
         if self._search is None:
             from navig.memory.search import HybridSearch
@@ -196,8 +196,8 @@ class MemoryManager:
         self,
         force: bool = False,
         embed: bool = True,
-        progress_callback: Optional[callable] = None,
-    ) -> "IndexResult":
+        progress_callback: callable | None = None,
+    ) -> IndexResult:
         """
         Index all files in the memory directory.
 
@@ -227,8 +227,8 @@ class MemoryManager:
         self,
         force: bool = False,
         embed: bool = True,
-        progress_callback: Optional[callable] = None,
-    ) -> "IndexResult":
+        progress_callback: callable | None = None,
+    ) -> IndexResult:
         """
         Non-blocking async wrapper that pushes indexing into a TaskGroup/ThreadPoolExecutor
         to completely avoid stalling the primary agent context thread.
@@ -247,7 +247,7 @@ class MemoryManager:
         self,
         file_path: Path,
         embed: bool = True,
-    ) -> "IndexResult":
+    ) -> IndexResult:
         """
         Index a single file.
 
@@ -270,8 +270,8 @@ class MemoryManager:
         self,
         query: str,
         limit: int = 10,
-        file_filter: Optional[str] = None,
-    ) -> "SearchResponse":
+        file_filter: str | None = None,
+    ) -> SearchResponse:
         """
         Search the memory bank.
 
@@ -309,7 +309,7 @@ class MemoryManager:
         self,
         chunk_id: str,
         limit: int = 5,
-    ) -> "SearchResponse":
+    ) -> SearchResponse:
         """
         Find chunks similar to a given chunk.
 
@@ -383,7 +383,7 @@ class MemoryManager:
         query: str,
         max_tokens: int = 2000,
         limit: int = 5,
-    ) -> tuple[str, List["SearchResult"]]:
+    ) -> tuple[str, list[SearchResult]]:
         """
         Get context and source list for AI prompts.
 
@@ -405,9 +405,9 @@ class MemoryManager:
 
     def _apply_decay(
         self,
-        results: List["SearchResult"],
+        results: list[SearchResult],
         lambda_: float = 0.05,
-    ) -> List["SearchResult"]:
+    ) -> list[SearchResult]:
         """
         Re-rank search results using a recency decay multiplier.
 
@@ -444,11 +444,11 @@ class MemoryManager:
 
     def check_and_summarize(
         self,
-        messages: List[dict],
+        messages: list[dict],
         llm_fn,
         threshold: int = 20,
         keep_recent: int = 5,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """
         Rolling summary compression: when the message list exceeds ``threshold``,
         summarize the oldest chunk via LLM and replace with a single system
@@ -492,7 +492,7 @@ class MemoryManager:
         )
         return compressed
 
-    def _summarize_via_llm(self, messages: List[dict], llm_fn) -> str:
+    def _summarize_via_llm(self, messages: list[dict], llm_fn) -> str:
         """
         Summarize a list of messages into a concise narrative.
 
@@ -576,7 +576,7 @@ class MemoryManager:
         deleted = self.storage.delete_file(file_path)
         return deleted > 0
 
-    def list_files(self) -> List[dict]:
+    def list_files(self) -> list[dict]:
         """
         List all indexed files.
 

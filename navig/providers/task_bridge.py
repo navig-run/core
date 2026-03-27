@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional
 
 # ============================================================================
 # Data types
@@ -27,7 +26,7 @@ class ProviderResult:
     provider: str
     success: bool
     output: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ============================================================================
@@ -62,12 +61,12 @@ class TaskBridge:
 
     THRESHOLD = 0.1  # Minimum confidence to attempt a provider
 
-    def __init__(self, providers: List[BaseTaskProvider]) -> None:
+    def __init__(self, providers: list[BaseTaskProvider]) -> None:
         self._providers = providers
 
-    def route(self, instruction: str) -> List[ProviderResult]:
+    def route(self, instruction: str) -> list[ProviderResult]:
         """Route instruction to all providers that can handle it."""
-        results: List[ProviderResult] = []
+        results: list[ProviderResult] = []
         for provider in self._providers:
             try:
                 score = provider.can_handle(instruction)
@@ -104,7 +103,7 @@ class TaskBridge:
 # ============================================================================
 
 
-def _keyword_score(instruction: str, keywords: List[str]) -> float:
+def _keyword_score(instruction: str, keywords: list[str]) -> float:
     """Simple keyword-based confidence scorer."""
     lowered = instruction.lower()
     hits = sum(1 for kw in keywords if kw in lowered)
@@ -269,7 +268,7 @@ class RemoteProvider(BaseTaskProvider):
 # ============================================================================
 
 
-def build_default_providers() -> List[BaseTaskProvider]:
+def build_default_providers() -> list[BaseTaskProvider]:
     """Return the default set of task providers."""
     return [
         EmailProvider(),

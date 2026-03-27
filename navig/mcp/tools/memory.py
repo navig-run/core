@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 
 def register(server: Any) -> None:
@@ -96,7 +96,7 @@ def register(server: Any) -> None:
     )
 
 
-def _tool_memory_remember(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Store a key fact via KeyFactStore.upsert()."""
     import logging as _logging
 
@@ -122,7 +122,7 @@ def _tool_memory_remember(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": str(exc), "isError": True}
 
 
-def _tool_memory_forget(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_memory_forget(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Soft-delete a key fact via KeyFactStore.soft_delete()."""
     import logging as _logging
 
@@ -148,7 +148,7 @@ def _tool_memory_forget(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": str(exc), "fact_id": args.get("fact_id"), "isError": True}
 
 
-def _tool_memory_retrieve(server: Any, args: Dict[str, Any]) -> Any:
+def _tool_memory_retrieve(server: Any, args: dict[str, Any]) -> Any:
     """Search key facts via FactRetriever.retrieve()."""
     import logging as _logging
 
@@ -182,7 +182,7 @@ def _tool_memory_retrieve(server: Any, args: Dict[str, Any]) -> Any:
         return {"error": str(exc), "facts": [], "isError": True}
 
 
-def _tool_memory_stats(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_memory_stats(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Return store statistics via KeyFactStore.get_stats()."""
     import logging as _logging
 
@@ -197,7 +197,7 @@ def _tool_memory_stats(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": str(exc), "isError": True}
 
 
-def _tool_memory_update(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_memory_update(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Update an existing fact's content in-place (soft-delete + re-insert)."""
     import logging as _logging
 

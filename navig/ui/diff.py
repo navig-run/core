@@ -11,7 +11,6 @@ Only rendered when debug context is active or explicitly requested.
 from __future__ import annotations
 
 import sys
-from typing import List
 
 from navig.ui.models import DiffLine, DiffPreview
 from navig.ui.theme import console
@@ -56,11 +55,11 @@ def render_diff_preview(
             pass  # best-effort; failure is non-critical
 
 
-def diff_lines_from_text(before: str, after: str) -> List[DiffLine]:
+def diff_lines_from_text(before: str, after: str) -> list[DiffLine]:
     """Generate DiffLine list from two multiline strings."""
     import difflib
 
-    lines: List[DiffLine] = []
+    lines: list[DiffLine] = []
     before_lines = before.splitlines()
     after_lines = after.splitlines()
     for group in difflib.unified_diff(before_lines, after_lines, lineterm=""):

@@ -21,7 +21,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def _utc_now() -> datetime:
@@ -84,11 +84,11 @@ class BotStatsStore:
 
     SCHEMA_VERSION = 1
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or _bot_db_path()
         self._local = threading.local()
         self._lock = threading.Lock()
-        self._cache: Dict[str, Dict[str, Any]] = {}  # In-memory cache
+        self._cache: dict[str, dict[str, Any]] = {}  # In-memory cache
 
         self._init_schema()
 
@@ -187,7 +187,7 @@ class BotStatsStore:
         chat_id: int,
         duration_ms: int,
         success: bool,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ):
         """Log a command execution."""
         conn = self._get_conn()
@@ -239,7 +239,7 @@ class BotStatsStore:
 
             conn.commit()
 
-    def get_stats_summary(self) -> Dict[str, Any]:
+    def get_stats_summary(self) -> dict[str, Any]:
         """Get summary statistics."""
         conn = self._get_conn()
 
@@ -293,7 +293,7 @@ class BotStatsStore:
             "active_reminders": active_reminders,
         }
 
-    def get_command_stats(self) -> List[CommandStat]:
+    def get_command_stats(self) -> list[CommandStat]:
         """Get statistics for all commands."""
         conn = self._get_conn()
         rows = conn.execute(
@@ -351,7 +351,7 @@ class BotStatsStore:
                 created_at=now,
             )
 
-    def get_due_reminders(self) -> List[Reminder]:
+    def get_due_reminders(self) -> list[Reminder]:
         """Get all reminders that are due."""
         conn = self._get_conn()
         now = _utc_now().isoformat()
@@ -378,7 +378,7 @@ class BotStatsStore:
             for r in rows
         ]
 
-    def get_user_reminders(self, user_id: int) -> List[Reminder]:
+    def get_user_reminders(self, user_id: int) -> list[Reminder]:
         """Get all active reminders for a user."""
         conn = self._get_conn()
 
@@ -426,7 +426,7 @@ class BotStatsStore:
 
     # ===== AI State =====
 
-    def get_ai_state(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def get_ai_state(self, user_id: int) -> dict[str, Any] | None:
         """Get AI conversation state for a user."""
         conn = self._get_conn()
         row = conn.execute(
@@ -450,8 +450,8 @@ class BotStatsStore:
         user_id: int,
         chat_id: int,
         mode: str,
-        persona: Optional[str] = None,
-        context: Optional[Dict] = None,
+        persona: str | None = None,
+        context: dict | None = None,
     ):
         """Set or update AI conversation state."""
         conn = self._get_conn()
@@ -487,7 +487,7 @@ class BotStatsStore:
 
     # ===== Caching =====
 
-    def cache_get(self, key: str) -> Optional[Any]:
+    def cache_get(self, key: str) -> Any | None:
         """Get a cached value if not expired."""
         # Check in-memory cache first
         if key in self._cache:
@@ -590,7 +590,7 @@ class BotStatsStore:
             conn.commit()
             return cursor.lastrowid
 
-    def get_user_notes(self, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_user_notes(self, user_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Get user's notes, most recent first."""
         conn = self._get_conn()
 
@@ -621,7 +621,7 @@ class BotStatsStore:
 
 
 # Global instance
-_store: Optional[BotStatsStore] = None
+_store: BotStatsStore | None = None
 
 
 def get_bot_store() -> BotStatsStore:

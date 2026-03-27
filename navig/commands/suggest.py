@@ -12,7 +12,7 @@ import re
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
@@ -86,7 +86,7 @@ def get_time_period() -> str:
     return "workday"  # default
 
 
-def detect_project_context() -> List[str]:
+def detect_project_context() -> list[str]:
     """Detect project context from current directory."""
     contexts = []
     cwd = Path.cwd()
@@ -114,7 +114,7 @@ def detect_project_context() -> List[str]:
     return contexts or ["monitoring"]  # default to monitoring
 
 
-def get_frequent_commands(limit: int = 10) -> List[Tuple[str, int]]:
+def get_frequent_commands(limit: int = 10) -> list[tuple[str, int]]:
     """Get most frequently used commands from history."""
     try:
         from navig.operation_recorder import get_operation_recorder
@@ -140,7 +140,7 @@ def get_frequent_commands(limit: int = 10) -> List[Tuple[str, int]]:
         return []
 
 
-def get_recent_commands(limit: int = 5) -> List[str]:
+def get_recent_commands(limit: int = 5) -> list[str]:
     """Get most recent commands from history."""
     try:
         from navig.operation_recorder import get_operation_recorder
@@ -152,7 +152,7 @@ def get_recent_commands(limit: int = 5) -> List[str]:
         return []
 
 
-def get_command_sequences() -> Dict[str, List[str]]:
+def get_command_sequences() -> dict[str, list[str]]:
     """Analyze what commands typically follow other commands."""
     try:
         from navig.operation_recorder import get_operation_recorder
@@ -183,10 +183,10 @@ def get_command_sequences() -> Dict[str, List[str]]:
 
 
 def generate_suggestions(
-    context_filter: Optional[str] = None,
+    context_filter: str | None = None,
     limit: int = 8,
     include_patterns: bool = True,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Generate intelligent command suggestions.
 
     Args:
@@ -272,11 +272,11 @@ def generate_suggestions(
 
 
 def show_suggestions(
-    context: Optional[str] = None,
+    context: str | None = None,
     limit: int = 8,
     plain: bool = False,
     json_out: bool = False,
-    opts: Optional[Dict[str, Any]] = None,
+    opts: dict[str, Any] | None = None,
 ) -> None:
     """Display intelligent command suggestions.
 
@@ -425,7 +425,7 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
     if quick_file.exists():
         import yaml
 
-        with open(quick_file, "r") as f:
+        with open(quick_file) as f:
             actions = yaml.safe_load(f) or {}
 
     # Add new action
@@ -438,14 +438,14 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
     # Save
     import yaml
 
-    with open(quick_file, "w") as f:
+    with open(quick_file, "w", encoding="utf-8") as f:
         yaml.safe_dump(actions, f, default_flow_style=False)
 
     console.print(f"[green]Added quick action:[/green] {name} -> {command}")
     return True
 
 
-def list_quick_actions() -> List[Dict[str, Any]]:
+def list_quick_actions() -> list[dict[str, Any]]:
     """List all quick actions."""
     from navig.config import get_config_manager
 
@@ -458,7 +458,7 @@ def list_quick_actions() -> List[Dict[str, Any]]:
 
     import yaml
 
-    with open(quick_file, "r") as f:
+    with open(quick_file) as f:
         actions = yaml.safe_load(f) or {}
 
     return [{"name": name, **data} for name, data in actions.items()]

@@ -17,7 +17,8 @@ Usage (via ToolRouter)::
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Dict, Optional
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 from navig.tools.proc import ProcessOptions, run_process, shell_argv
 
@@ -37,11 +38,11 @@ _OUTPUT_CAP = 50_000
 
 async def _run_shell(
     command: str,
-    cwd: Optional[str] = None,
+    cwd: str | None = None,
     timeout_seconds: float = 60.0,
-    env_extra: Optional[Dict[str, str]] = None,
-    on_event: Optional[Callable[[str, str], Coroutine]] = None,
-) -> Dict[str, Any]:
+    env_extra: dict[str, str] | None = None,
+    on_event: Callable[[str, str], Coroutine] | None = None,
+) -> dict[str, Any]:
     """
     Async shell execution via ``proc.run_process``.
 
@@ -76,11 +77,11 @@ async def _run_shell(
 
 def bash_exec_handler(
     command: str,
-    cwd: Optional[str] = None,
+    cwd: str | None = None,
     timeout_seconds: float = 60.0,
-    env_extra: Optional[Dict[str, str]] = None,
+    env_extra: dict[str, str] | None = None,
     **_: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Sync wrapper around _run_shell for use in the ToolRouter sync path.
     """
@@ -108,11 +109,11 @@ def bash_exec_handler(
 
 async def bash_exec_async_handler(
     command: str,
-    cwd: Optional[str] = None,
+    cwd: str | None = None,
     timeout_seconds: float = 60.0,
-    env_extra: Optional[Dict[str, str]] = None,
+    env_extra: dict[str, str] | None = None,
     **_: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Async variant — used by the ToolRouter async_execute path so the
     coroutine is properly awaited without spinning a new event loop.
@@ -130,7 +131,7 @@ async def bash_exec_async_handler(
 # =============================================================================
 
 
-def register_tools(registry: "ToolRegistry") -> None:
+def register_tools(registry: ToolRegistry) -> None:
     """Register bash_exec with the ToolRegistry."""
     from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 

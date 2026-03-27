@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -7,8 +7,8 @@ class CommandParameter(BaseModel):
     type: str
     description: str
     required: bool = False
-    default: Optional[Any] = None
-    options: Optional[List[str]] = None
+    default: Any | None = None
+    options: list[str] | None = None
 
 
 class NavigCommand(BaseModel):
@@ -17,9 +17,9 @@ class NavigCommand(BaseModel):
     description: str
     risk: str = "safe"  # safe, moderate, destructive
     confirmation_required: bool = False
-    confirmation_msg: Optional[str] = None
-    parameters: Optional[Dict[str, CommandParameter]] = None
-    source_skill: Optional[str] = None
+    confirmation_msg: str | None = None
+    parameters: dict[str, CommandParameter] | None = None
+    source_skill: str | None = None
 
 
 class SkillExample(BaseModel):
@@ -32,14 +32,14 @@ class SkillManifest(BaseModel):
     name: str
     description: str
     version: str = "0.0.1"
-    author: Optional[str] = None
-    category: Optional[str] = "uncategorized"
+    author: str | None = None
+    category: str | None = "uncategorized"
     risk_level: str = Field(alias="risk-level", default="safe")
     user_invocable: bool = Field(alias="user-invocable", default=True)
-    requires: List[str] = []
-    tags: List[str] = []
-    navig_commands: List[NavigCommand] = Field(alias="navig-commands", default=[])
-    examples: List[SkillExample] = []
+    requires: list[str] = []
+    tags: list[str] = []
+    navig_commands: list[NavigCommand] = Field(alias="navig-commands", default=[])
+    examples: list[SkillExample] = []
 
     class Config:
         populate_by_name = True
@@ -47,7 +47,7 @@ class SkillManifest(BaseModel):
 
 class PackStep(BaseModel):
     name: str = "unnamed-step"
-    description: Optional[str] = None
+    description: str | None = None
     command: str
     continue_on_error: bool = False
 
@@ -56,10 +56,10 @@ class NavigPack(BaseModel):
     name: str
     description: str
     version: str = "1.0.0"
-    author: Optional[str] = "unknown"
+    author: str | None = "unknown"
     type: str = "runbook"  # runbook, checklist, workflow
-    tags: List[str] = []
-    steps: List[PackStep] = []
+    tags: list[str] = []
+    steps: list[PackStep] = []
 
     class Config:
         populate_by_name = True

@@ -5,7 +5,7 @@ CLI commands for the proactive AI assistant system.
 """
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pyperclip
 
@@ -15,7 +15,7 @@ from navig.proactive_assistant import ProactiveAssistant
 from navig.remote import RemoteOperations
 
 
-def status_cmd(ctx_obj: Dict[str, Any]):
+def status_cmd(ctx_obj: dict[str, Any]):
     """Display assistant health and statistics."""
     config = get_config_manager()
     assistant = ProactiveAssistant(config)
@@ -35,7 +35,7 @@ def status_cmd(ctx_obj: Dict[str, Any]):
     # Command history
     history_file = assistant.ai_context_dir / "command_history.json"
     if history_file.exists():
-        with open(history_file, "r") as f:
+        with open(history_file) as f:
             history = json.load(f)
         ch.dim(f"  Commands Logged: {len(history)}")
 
@@ -52,7 +52,7 @@ def status_cmd(ctx_obj: Dict[str, Any]):
     # Active issues
     issues_file = assistant.ai_context_dir / "detected_issues.json"
     if issues_file.exists():
-        with open(issues_file, "r") as f:
+        with open(issues_file) as f:
             issues = json.load(f)
         active_issues = [i for i in issues if i.get("status") == "active"]
         ch.dim(f"  Active Issues: {len(active_issues)}")
@@ -60,7 +60,7 @@ def status_cmd(ctx_obj: Dict[str, Any]):
     ch.success("\n✓ Assistant is operational")
 
 
-def analyze_cmd(ctx_obj: Dict[str, Any]):
+def analyze_cmd(ctx_obj: dict[str, Any]):
     """Manually trigger comprehensive system analysis."""
     # void: manual analysis. because sometimes you need to see it yourself.
     config = get_config_manager()
@@ -117,7 +117,7 @@ def analyze_cmd(ctx_obj: Dict[str, Any]):
         try:
             issues_file = assistant.ai_context_dir / "detected_issues.json"
             if issues_file.exists():
-                with open(issues_file, "r") as f:
+                with open(issues_file) as f:
                     issues = json.load(f)
                 active_issues = [i for i in issues if i.get("status") == "active"]
 
@@ -139,7 +139,7 @@ def analyze_cmd(ctx_obj: Dict[str, Any]):
 
 
 def context_cmd(
-    ctx_obj: Dict[str, Any], clipboard: bool = False, file_path: Optional[str] = None
+    ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str | None = None
 ):
     """Generate AI copilot context summary."""
     config = get_config_manager()
@@ -182,7 +182,7 @@ def context_cmd(
                 print(context_json)
         elif file_path:
             try:
-                with open(file_path, "w") as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(context_json)
                 ch.success(f"✓ Context saved to {file_path}")
             except Exception as e:
@@ -199,7 +199,7 @@ def context_cmd(
         ch.error(f"Unexpected error: {e}")
 
 
-def reset_cmd(ctx_obj: Dict[str, Any]):
+def reset_cmd(ctx_obj: dict[str, Any]):
     """Clear all learning data and reset to defaults."""
     # void: sometimes you need to forget. start fresh. erase the past.
     config = get_config_manager()
@@ -232,7 +232,7 @@ def reset_cmd(ctx_obj: Dict[str, Any]):
         for filename in files_to_clear:
             file_path = assistant.ai_context_dir / filename
             if file_path.exists():
-                with open(file_path, "w") as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     json.dump([], f)
 
         # Clear baselines directory
@@ -247,7 +247,7 @@ def reset_cmd(ctx_obj: Dict[str, Any]):
         ch.error(f"Reset failed: {e}")
 
 
-def config_cmd(ctx_obj: Dict[str, Any]):
+def config_cmd(ctx_obj: dict[str, Any]):
     """Interactive configuration wizard for assistant settings."""
     ch.header("⚙️  Assistant Configuration")
     ch.info("\nCurrent configuration is stored in ~/.navig/config.yaml")

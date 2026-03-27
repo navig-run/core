@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 
 def register(server: Any) -> None:
@@ -125,7 +125,7 @@ def register(server: Any) -> None:
     )
 
 
-def _tool_list_databases(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _tool_list_databases(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     """List database connections."""
     databases = server._config.get_databases()
     return [
@@ -134,7 +134,7 @@ def _tool_list_databases(server: Any, args: Dict[str, Any]) -> List[Dict[str, An
     ]
 
 
-def _tool_get_context(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_get_context(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Get full NAVIG context."""
     from navig.ai_context import get_ai_context_manager
     from navig.mcp.tools.inventory import _tool_list_apps, _tool_list_hosts
@@ -155,7 +155,7 @@ def _tool_get_context(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     return context
 
 
-def _tool_run_command(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_run_command(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Execute a NAVIG CLI command."""
     import subprocess
 
@@ -210,7 +210,7 @@ def _tool_run_command(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def _tool_web_fetch(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_web_fetch(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Fetch a URL and extract readable content."""
     try:
         from navig.tools.web import get_web_config, web_fetch
@@ -253,7 +253,7 @@ def _tool_web_fetch(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": f"Fetch failed: {str(e)}"}
 
 
-def _tool_web_search(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_web_search(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Search the web for information."""
     try:
         from navig.tools.web import get_web_config, web_search
@@ -297,7 +297,7 @@ def _tool_web_search(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": f"Search failed: {str(e)}"}
 
 
-def _tool_search_docs(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+def _tool_search_docs(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Search NAVIG's local documentation."""
     try:
         from pathlib import Path

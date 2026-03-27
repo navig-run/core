@@ -14,10 +14,11 @@ import hashlib
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any
 
 
 def _debug_log(message: str) -> None:
@@ -41,8 +42,8 @@ class MemoryChunk:
     line_start: int  # Starting line number (1-based)
     line_end: int  # Ending line number (1-based)
     token_count: int  # Estimated tokens
-    embedding: Optional[List[float]] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    embedding: list[float] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
     def to_dict(self) -> dict:
@@ -59,7 +60,7 @@ class MemoryChunk:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "MemoryChunk":
+    def from_dict(cls, data: dict) -> MemoryChunk:
         return cls(
             id=data["id"],
             file_path=data["file_path"],
@@ -99,7 +100,7 @@ class FileMetadata:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "FileMetadata":
+    def from_dict(cls, data: dict) -> FileMetadata:
         return cls(
             file_path=data["file_path"],
             file_hash=data["file_hash"],
@@ -140,7 +141,7 @@ class MemoryStorage:
         self._local = threading.local()
         self._lock = threading.Lock()
         self._embedding_dim = embedding_dimensions
-        self._vec: Optional["VectorIndex"] = None  # lazy init per connection
+        self._vec: VectorIndex | None = None  # lazy init per connection
 
         # Ensure directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,14 +284,14 @@ class MemoryStorage:
             )
             conn.commit()
 
-    def get_file_metadata(self, file_path: str) -> Optional[FileMetadata]:
+    def get_file_metadata(self, file_path: str) -> FileMetadata | None:
         """Get file metadata by path."""
         conn = self._get_conn()
         cursor = conn.execute("SELECT * FROM files WHERE file_path = ?", (file_path,))
         row = cursor.fetchone()
         return FileMetadata.from_dict(dict(row)) if row else None
 
-    def get_all_files(self) -> List[FileMetadata]:
+    def get_all_files(self) -> list[FileMetadata]:
         """Get all indexed files."""
         conn = self._get_conn()
         cursor = conn.execute("SELECT * FROM files ORDER BY indexed_at DESC")
@@ -319,7 +320,7 @@ class MemoryStorage:
 
     # ---------- Chunk Operations ----------
 
-    def upsert_chunks(self, chunks: List[MemoryChunk]) -> int:
+    def upsert_chunks(self, chunks: list[MemoryChunk]) -> int:
         """Insert or update multiple chunks."""
         if not chunks:
             return 0
@@ -349,14 +350,14 @@ class MemoryStorage:
 
         return len(chunks)
 
-    def get_chunk(self, chunk_id: str) -> Optional[MemoryChunk]:
+    def get_chunk(self, chunk_id: str) -> MemoryChunk | None:
         """Get a chunk by ID."""
         conn = self._get_conn()
         cursor = conn.execute("SELECT * FROM chunks WHERE id = ?", (chunk_id,))
         row = cursor.fetchone()
         return MemoryChunk.from_dict(dict(row)) if row else None
 
-    def get_chunks_for_file(self, file_path: str) -> List[MemoryChunk]:
+    def get_chunks_for_file(self, file_path: str) -> list[MemoryChunk]:
         """Get all chunks for a file."""
         conn = self._get_conn()
         cursor = conn.execute(
@@ -371,19 +372,19 @@ class MemoryStorage:
         for row in cursor:
             yield MemoryChunk.from_dict(dict(row))
 
-    def get_all_chunks_with_embeddings(self) -> List[MemoryChunk]:
+    def get_all_chunks_with_embeddings(self) -> list[MemoryChunk]:
         """Get all chunks that have embeddings."""
         conn = self._get_conn()
         cursor = conn.execute("SELECT * FROM chunks WHERE embedding IS NOT NULL")
         return [MemoryChunk.from_dict(dict(row)) for row in cursor.fetchall()]
 
-    def get_chunks_without_embeddings(self) -> List[MemoryChunk]:
+    def get_chunks_without_embeddings(self) -> list[MemoryChunk]:
         """Get chunks that need embedding generation."""
         conn = self._get_conn()
         cursor = conn.execute("SELECT * FROM chunks WHERE embedding IS NULL")
         return [MemoryChunk.from_dict(dict(row)) for row in cursor.fetchall()]
 
-    def update_chunk_embedding(self, chunk_id: str, embedding: List[float]) -> None:
+    def update_chunk_embedding(self, chunk_id: str, embedding: list[float]) -> None:
         """Update the embedding for a specific chunk."""
         conn = self._get_conn()
 
@@ -420,8 +421,8 @@ class MemoryStorage:
         self,
         query: str,
         limit: int = 10,
-        file_filter: Optional[str] = None,
-    ) -> List[tuple[MemoryChunk, float]]:
+        file_filter: str | None = None,
+    ) -> list[tuple[MemoryChunk, float]]:
         """
         Search using FTS5 with BM25 ranking.
 
@@ -476,7 +477,7 @@ class MemoryStorage:
         self,
         query: str,
         limit: int = 10,
-    ) -> List[tuple[MemoryChunk, float]]:
+    ) -> list[tuple[MemoryChunk, float]]:
         """
         Simple keyword search - splits query into words and matches any.
         More forgiving than strict FTS5 syntax.
@@ -500,7 +501,7 @@ class MemoryStorage:
         self,
         query: str,
         limit: int = 10,
-    ) -> List[tuple[MemoryChunk, float]]:
+    ) -> list[tuple[MemoryChunk, float]]:
         """Fallback LIKE-based search."""
         conn = self._get_conn()
 
@@ -523,7 +524,7 @@ class MemoryStorage:
         self,
         content_hash: str,
         model_name: str,
-    ) -> Optional[List[float]]:
+    ) -> list[float] | None:
         """Get cached embedding for content hash."""
         conn = self._get_conn()
         cursor = conn.execute(
@@ -536,7 +537,7 @@ class MemoryStorage:
     def cache_embedding(
         self,
         content_hash: str,
-        embedding: List[float],
+        embedding: list[float],
         model_name: str,
     ) -> None:
         """Cache an embedding for future use."""
@@ -544,7 +545,7 @@ class MemoryStorage:
 
     def upsert_embedding_cache(
         self,
-        entries: List[Tuple[str, List[float], str]],
+        entries: list[tuple[str, list[float], str]],
     ) -> int:
         """
         Batch update embedding cache.
@@ -579,7 +580,7 @@ class MemoryStorage:
 
     def update_chunk_embeddings(
         self,
-        updates: List[Tuple[str, List[float]]],
+        updates: list[tuple[str, list[float]]],
     ) -> int:
         """
         Batch update chunk embeddings.
@@ -638,14 +639,14 @@ class MemoryStorage:
             )
             conn.commit()
 
-    def get_metadata(self, key: str) -> Optional[Any]:
+    def get_metadata(self, key: str) -> Any | None:
         """Get a metadata value."""
         conn = self._get_conn()
         cursor = conn.execute("SELECT value FROM metadata WHERE key = ?", (key,))
         row = cursor.fetchone()
         return json.loads(row["value"]) if row else None
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get storage statistics."""
         conn = self._get_conn()
 
@@ -679,7 +680,7 @@ class MemoryStorage:
         conn = self._get_conn()
         conn.execute("VACUUM")
 
-    def clear_all(self) -> Dict[str, int]:
+    def clear_all(self) -> dict[str, int]:
         """Clear all data and return counts."""
         conn = self._get_conn()
 
@@ -738,9 +739,9 @@ class MemoryStorage:
 
     def vector_search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         limit: int = 10,
-    ) -> List[Tuple["MemoryChunk", float]]:
+    ) -> list[tuple[MemoryChunk, float]]:
         """
         ANN vector search using sqlite-vec.
 
@@ -758,7 +759,7 @@ class MemoryStorage:
             return []
 
         conn = self._get_conn()
-        results: List[Tuple[MemoryChunk, float]] = []
+        results: list[tuple[MemoryChunk, float]] = []
         for chunk_id, distance in hits:
             row = conn.execute(
                 "SELECT * FROM chunks WHERE id = ?", (chunk_id,)
@@ -770,11 +771,11 @@ class MemoryStorage:
     def hybrid_search(
         self,
         query: str,
-        query_embedding: List[float],
+        query_embedding: list[float],
         *,
         limit: int = 10,
         alpha: float = 0.3,
-    ) -> List[Tuple["MemoryChunk", float]]:
+    ) -> list[tuple[MemoryChunk, float]]:
         """
         Combined FTS5 BM25 + vector reranking.
 
@@ -792,11 +793,11 @@ class MemoryStorage:
 
         # Vector candidates
         vec_hits = vec.search(query_embedding, limit=limit * 3)
-        vec_map: Dict[str, float] = {cid: dist for cid, dist in vec_hits}
+        vec_map: dict[str, float] = {cid: dist for cid, dist in vec_hits}
 
         # Normalise BM25 scores (0..1)
         max_bm25 = max((s for _, s in fts_results), default=1.0) or 1.0
-        scored: Dict[str, Tuple[MemoryChunk, float]] = {}
+        scored: dict[str, tuple[MemoryChunk, float]] = {}
 
         for chunk, bm25 in fts_results:
             norm_bm25 = bm25 / max_bm25

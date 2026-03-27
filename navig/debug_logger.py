@@ -17,7 +17,7 @@ import sys
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class DebugLogger:
@@ -122,7 +122,7 @@ class DebugLogger:
 
     def __init__(
         self,
-        log_path: Optional[Path] = None,
+        log_path: Path | None = None,
         max_size_mb: int = 10,
         max_files: int = 5,
         truncate_output_kb: int = 10,
@@ -143,8 +143,8 @@ class DebugLogger:
         self.max_size_bytes = max_size_mb * 1024 * 1024
         self.max_files = max_files
         self.truncate_output_bytes = truncate_output_kb * 1024
-        self.logger: Optional[logging.Logger] = None
-        self._command_start_time: Optional[datetime] = None
+        self.logger: logging.Logger | None = None
+        self._command_start_time: datetime | None = None
 
         self._setup_logger()
 
@@ -226,7 +226,7 @@ class DebugLogger:
         if self.logger:
             self.logger.debug(message)
 
-    def log_command_start(self, command: str, args: Dict[str, Any]):
+    def log_command_start(self, command: str, args: dict[str, Any]):
         """
         Log the start of a CLI command.
 
@@ -375,7 +375,7 @@ class DebugLogger:
         self._log("\n".join(lines))
 
     def log_operation(
-        self, operation: str, details: Dict[str, Any], success: bool = True
+        self, operation: str, details: dict[str, Any], success: bool = True
     ):
         """
         Log a general operation (file transfer, database query, etc.).
@@ -407,7 +407,7 @@ class DebugLogger:
 
 
 # Global logger instance
-_global_logger: Optional[DebugLogger] = None
+_global_logger: DebugLogger | None = None
 
 
 def get_debug_logger() -> logging.Logger:

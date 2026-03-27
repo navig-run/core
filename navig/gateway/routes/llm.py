@@ -79,7 +79,7 @@ def _messages_after(after_id: str) -> list:
     return result
 
 
-def register(app: "web.Application", gateway: "NavigGateway") -> None:
+def register(app: web.Application, gateway: NavigGateway) -> None:
     """Register LLM endpoints."""
     app.router.add_post("/llm/chat", _chat(gateway))
     app.router.add_post("/llm/re-detect", _re_detect(gateway))
@@ -90,7 +90,7 @@ def register(app: "web.Application", gateway: "NavigGateway") -> None:
     app.router.add_get("/sync", _sync())
 
 
-def _chat(gw: "NavigGateway"):
+def _chat(gw: NavigGateway):
     """
     POST /llm/chat
 
@@ -111,7 +111,7 @@ def _chat(gw: "NavigGateway"):
         workspaceContext   (str)   Pre-built workspace context blob.
     """
 
-    async def handler(request: "web.Request") -> "web.Response":
+    async def handler(request: web.Request) -> web.Response:
         start_ms = time.monotonic()
 
         auth = require_bearer_auth(request, gw)
@@ -210,7 +210,7 @@ def _chat(gw: "NavigGateway"):
     return handler
 
 
-def _re_detect(gw: "NavigGateway"):
+def _re_detect(gw: NavigGateway):
     """
     POST /llm/re-detect
 
@@ -221,7 +221,7 @@ def _re_detect(gw: "NavigGateway"):
     Returns the old and new provider names.
     """
 
-    async def handler(request: "web.Request") -> "web.Response":
+    async def handler(request: web.Request) -> web.Response:
         auth = require_bearer_auth(request, gw)
         if auth is not None:
             return auth
@@ -254,7 +254,7 @@ def _re_detect(gw: "NavigGateway"):
 def _register_provider():
     """POST /llm/providers/register — register a dynamic LLM provider."""
 
-    async def handler(request: "web.Request") -> "web.Response":
+    async def handler(request: web.Request) -> web.Response:
         try:
             from navig.providers.bridge_registry import get_bridge_registry
 
@@ -290,7 +290,7 @@ def _register_provider():
 def _unregister_provider():
     """POST /llm/providers/unregister — unregister a dynamic LLM provider."""
 
-    async def handler(request: "web.Request") -> "web.Response":
+    async def handler(request: web.Request) -> web.Response:
         try:
             from navig.providers.bridge_registry import get_bridge_registry
 
@@ -313,7 +313,7 @@ def _unregister_provider():
 def _list_providers():
     """GET /llm/providers — list all dynamically registered providers."""
 
-    async def handler(request: "web.Request") -> "web.Response":
+    async def handler(request: web.Request) -> web.Response:
         from navig.providers.bridge_registry import get_bridge_registry
 
         providers = get_bridge_registry().all()
@@ -344,7 +344,7 @@ def _sync():
         { ok: true, data: { missed_messages: [{ msgId, role, content, timestamp }] } }
     """
 
-    async def handler(request: "web.Request") -> "web.Response":
+    async def handler(request: web.Request) -> web.Response:
         after_id = request.rel_url.query.get("after", "").strip()
         if not after_id:
             return json_error_response(

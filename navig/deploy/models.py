@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ============================================================================
 # LIFECYCLE PHASES
@@ -52,32 +52,32 @@ class PhaseResult:
 class PushConfig:
     source: str  # Local path (relative to project root)
     target: str  # Remote absolute path
-    excludes: List[str] = field(default_factory=list)
+    excludes: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ApplyConfig:
-    commands: List[str] = field(default_factory=list)
+    commands: list[str] = field(default_factory=list)
 
 
 @dataclass
 class RestartConfig:
     adapter: str = "systemd"  # systemd | docker-compose | pm2 | command
-    service: Optional[str] = None
+    service: str | None = None
     compose_file: str = "docker-compose.yml"
-    command: Optional[str] = None  # for adapter=command
+    command: str | None = None  # for adapter=command
 
 
 @dataclass
 class HealthConfig:
-    url: Optional[str] = None
+    url: str | None = None
     method: str = "GET"
     expected_status: int = 200
     retries: int = 5
     interval_seconds: int = 5
     timeout_seconds: int = 30
     # Optional arbitrary command that runs on remote instead of curl
-    command: Optional[str] = None
+    command: str | None = None
 
 
 @dataclass
@@ -105,11 +105,11 @@ class DeployConfig:
     backup: BackupConfig = field(default_factory=BackupConfig)
 
     # Target resolution (can override active context)
-    host: Optional[str] = None
-    app: Optional[str] = None
+    host: str | None = None
+    app: str | None = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DeployConfig":
+    def from_dict(cls, data: dict[str, Any]) -> DeployConfig:
         """Parse a deploy.yaml dict into a DeployConfig."""
         raw_push = data.get("push", {})
         raw_apply = data.get("apply", {})
@@ -159,7 +159,7 @@ class DeployConfig:
             app=data.get("app"),
         )
 
-    def merge_global_defaults(self, defaults: Dict[str, Any]) -> None:
+    def merge_global_defaults(self, defaults: dict[str, Any]) -> None:
         """Apply global config defaults where project config left defaults."""
         d = defaults.get("deploy", {})
         excludes = d.get("default_push_excludes", [])
@@ -208,13 +208,13 @@ class DeployResult:
     host: str
     app: str
     started_at: datetime
-    finished_at: Optional[datetime] = None
-    phases: List[PhaseResult] = field(default_factory=list)
-    snapshot: Optional[SnapshotRecord] = None
+    finished_at: datetime | None = None
+    phases: list[PhaseResult] = field(default_factory=list)
+    snapshot: SnapshotRecord | None = None
     rolled_back: bool = False
     dry_run: bool = False
-    git_ref: Optional[str] = None
-    error: Optional[str] = None
+    git_ref: str | None = None
+    error: str | None = None
 
     @property
     def elapsed(self) -> float:
@@ -222,13 +222,13 @@ class DeployResult:
             return (self.finished_at - self.started_at).total_seconds()
         return 0.0
 
-    def phase(self, name: DeployPhase) -> Optional[PhaseResult]:
+    def phase(self, name: DeployPhase) -> PhaseResult | None:
         for p in self.phases:
             if p.phase == name:
                 return p
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
             "host": self.host,

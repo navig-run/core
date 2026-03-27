@@ -35,11 +35,11 @@ class PluginInfo:
     source: str  # 'builtin', 'user', 'project'
     loaded: bool = False
     enabled: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     version: str = "1.0.0"
     description: str = ""
-    dependencies: List[str] = field(default_factory=list)
-    missing_deps: List[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    missing_deps: list[str] = field(default_factory=list)
 
 
 class PluginManager:
@@ -66,10 +66,10 @@ class PluginManager:
             Path.cwd() / ".navig" / "plugins",  # Project: .navig/plugins/
         ]
 
-        self._plugins: Dict[str, PluginInfo] = {}
-        self._loaded_apps: Dict[str, Any] = {}  # name -> typer.Typer
+        self._plugins: dict[str, PluginInfo] = {}
+        self._loaded_apps: dict[str, Any] = {}  # name -> typer.Typer
 
-    def discover_plugins(self) -> Dict[str, PluginInfo]:
+    def discover_plugins(self) -> dict[str, PluginInfo]:
         """
         Scan all plugin directories and discover available plugins.
 
@@ -91,7 +91,7 @@ class PluginManager:
             try:
                 import json
 
-                with open(cache_file, "r", encoding="utf-8") as f:
+                with open(cache_file, encoding="utf-8") as f:
                     cached_data = json.load(f)
                 if cached_data.get("mtime") == current_mtime:
                     for name, data in cached_data.get("plugins", {}).items():
@@ -181,7 +181,7 @@ class PluginManager:
             try:
                 import yaml
 
-                with open(metadata_file, "r", encoding="utf-8") as f:
+                with open(metadata_file, encoding="utf-8") as f:
                     metadata = yaml.safe_load(f) or {}
                 info.version = metadata.get("version", "1.0.0")
                 info.description = metadata.get("description", "")
@@ -212,10 +212,10 @@ class PluginManager:
 
         return info
 
-    def _extract_plugin_source_metadata(self, plugin_file: Path) -> Dict[str, str]:
+    def _extract_plugin_source_metadata(self, plugin_file: Path) -> dict[str, str]:
         """Read simple string metadata from ``plugin.py`` without importing it."""
 
-        metadata: Dict[str, str] = {}
+        metadata: dict[str, str] = {}
 
         try:
             tree = ast.parse(plugin_file.read_text(encoding="utf-8"))
@@ -223,7 +223,7 @@ class PluginManager:
             return metadata
 
         for node in tree.body:
-            target_name: Optional[str] = None
+            target_name: str | None = None
             value_node = None
 
             if (
@@ -253,7 +253,7 @@ class PluginManager:
 
         return metadata
 
-    def load_plugin(self, name: str) -> Tuple[bool, Optional[str]]:
+    def load_plugin(self, name: str) -> tuple[bool, str | None]:
         """
         Load a single plugin.
 
@@ -328,7 +328,7 @@ class PluginManager:
 
     def load_all_plugins(
         self, silent: bool = False
-    ) -> Tuple[List[str], List[Dict[str, str]]]:
+    ) -> tuple[list[str], list[dict[str, str]]]:
         """
         Load all discovered plugins.
 
@@ -365,11 +365,11 @@ class PluginManager:
 
         return (loaded, failed)
 
-    def get_loaded_apps(self) -> Dict[str, Any]:
+    def get_loaded_apps(self) -> dict[str, Any]:
         """Get all loaded plugin Typer apps."""
         return self._loaded_apps
 
-    def get_plugin_info(self, name: str) -> Optional[PluginInfo]:
+    def get_plugin_info(self, name: str) -> PluginInfo | None:
         """Get info about a specific plugin."""
         info = self._plugins.get(name)
         if info is not None:
@@ -381,13 +381,13 @@ class PluginManager:
 
         return None
 
-    def list_plugins(self) -> Dict[str, PluginInfo]:
+    def list_plugins(self) -> dict[str, PluginInfo]:
         """Get all discovered plugins."""
         return self._plugins
 
 
 # Singleton instance
-_plugin_manager: Optional[PluginManager] = None
+_plugin_manager: PluginManager | None = None
 
 
 def get_plugin_manager() -> PluginManager:

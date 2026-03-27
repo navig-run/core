@@ -5,8 +5,9 @@ Implements exponential backoff, timeout handling, and graceful degradation.
 
 import random
 import time
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any
 
 from navig import console_helper as ch
 from navig.ai_context import log_error
@@ -22,7 +23,7 @@ class RetryConfig:
         max_delay: float = 30.0,
         exponential_base: float = 2.0,
         jitter: bool = True,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ):
         """Initialize retry configuration.
 
@@ -159,7 +160,7 @@ class RetryableOperation:
 
 
 def with_retry(
-    config: Optional[RetryConfig] = None,
+    config: RetryConfig | None = None,
     error_category: str = "general",
     command_name: str = "unknown",
 ):

@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -21,7 +20,7 @@ def speak_command(
         None, "--provider", "-p", help="TTS Provider (openai, elevenlabs, edge)"
     ),
     voice: str = typer.Option(None, "--voice", "-v", help="Voice ID/Name"),
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file path (.mp3)"
     ),
     play: bool = typer.Option(True, "--play/--no-play", help="Play audio immediately"),

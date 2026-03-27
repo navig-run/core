@@ -13,9 +13,10 @@ Provides integration with Telegram Bot API for:
 import asyncio
 import logging
 import random
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any
 
 # Lazy imports
 aiohttp = None
@@ -114,10 +115,10 @@ class TelegramMessage:
     text: str
     message_id: int
     is_group: bool = False
-    reply_to_message_id: Optional[int] = None
+    reply_to_message_id: int | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_metadata(self) -> Dict[str, Any]:
+    def to_metadata(self) -> dict[str, Any]:
         return {
             "chat_id": self.chat_id,
             "user_id": self.user_id,
@@ -143,16 +144,16 @@ class TelegramChannel:
     def __init__(
         self,
         bot_token: str,
-        allowed_users: Optional[List[int]] = None,
-        allowed_groups: Optional[List[int]] = None,
-        on_message: Optional[Callable] = None,
-        on_approval_response: Optional[
-            Callable[[int, bool, Optional[str]], Awaitable[tuple[bool, str]]]
-        ] = None,
+        allowed_users: list[int] | None = None,
+        allowed_groups: list[int] | None = None,
+        on_message: Callable | None = None,
+        on_approval_response: (
+            Callable[[int, bool, str | None], Awaitable[tuple[bool, str]]] | None
+        ) = None,
         enable_notifications: bool = True,
         require_auth: bool = True,
-        webhook_url: Optional[str] = None,
-        webhook_secret: Optional[str] = None,
+        webhook_url: str | None = None,
+        webhook_secret: str | None = None,
     ):
         self.bot_token = bot_token
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
@@ -166,20 +167,20 @@ class TelegramChannel:
         self.webhook_secret = webhook_secret
 
         self._running = False
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
         self._last_update_id = 0
-        self._poll_task: Optional[asyncio.Task] = None
+        self._poll_task: asyncio.Task | None = None
         self._notifier = None
         self._use_webhook = bool(webhook_url)
 
         # Per-user model tier preference: {user_id: "small"|"big"|"coder_big"|""}
-        self._user_model_prefs: Dict[int, str] = {}
+        self._user_model_prefs: dict[int, str] = {}
         # Users who have enabled debug mode via /trace debug on
         self._debug_users: set = set()
 
         # Inline keyboard system
-        self._kb_builder: Optional["ResponseKeyboardBuilder"] = None
-        self._cb_handler: Optional["CallbackHandler"] = None
+        self._kb_builder: ResponseKeyboardBuilder | None = None
+        self._cb_handler: CallbackHandler | None = None
         if HAS_KEYBOARDS:
             self._kb_builder = ResponseKeyboardBuilder()
             self._cb_handler = CallbackHandler(self)
@@ -312,9 +313,7 @@ class TelegramChannel:
         if self._session:
             await self._session.close()
 
-    async def _api_call(
-        self, method: str, data: Optional[Dict] = None
-    ) -> Optional[Dict]:
+    async def _api_call(self, method: str, data: dict | None = None) -> dict | None:
         """Make an API call to Telegram."""
         if not self._session:
             return None
@@ -361,7 +360,7 @@ class TelegramChannel:
 
     async def _setup_webhook(self):
         """Register the webhook URL with Telegram and delete any pending updates."""
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "url": self.webhook_url,
             "allowed_updates": ["message", "callback_query"],
             "drop_pending_updates": True,
@@ -378,7 +377,7 @@ class TelegramChannel:
             self._poll_task = asyncio.create_task(self._poll_updates())
 
     async def handle_webhook_update(
-        self, update: Dict, secret_header: str = ""
+        self, update: dict, secret_header: str = ""
     ) -> bool:
         """
         Process a webhook update pushed by Telegram.
@@ -406,7 +405,7 @@ class TelegramChannel:
             logger.error(f"Webhook update processing error: {e}")
             return False
 
-    async def _process_update(self, update: Dict):
+    async def _process_update(self, update: dict):
         """Process a single update from Telegram."""
         # ── Handle callback queries (inline button presses) ──
         callback_query = update.get("callback_query")
@@ -1202,8 +1201,8 @@ class TelegramChannel:
         self,
         chat_id: int,
         is_group: bool,
-        voice_data: Optional[Dict],
-    ) -> tuple[Optional[str], str]:
+        voice_data: dict | None,
+    ) -> tuple[str | None, str]:
         """Download a Telegram voice message, transcribe via STT (Deepgram/Whisper),
         echo the transcript to the chat, and return (transcript, detected_lang).
         Returns (None, "") on failure — a friendly error has already been sent.
@@ -1274,8 +1273,8 @@ class TelegramChannel:
             )
             return None, ""
 
-        tmp_path: Optional[str] = None
-        _recording_task: Optional[asyncio.Task] = None
+        tmp_path: str | None = None
+        _recording_task: asyncio.Task | None = None
         try:
             # Signal immediately that we're processing audio — closest Bot API
             # equivalent to a read receipt for voice messages.
@@ -1447,7 +1446,7 @@ class TelegramChannel:
                 logger.warning("TTS synthesis failed (non-fatal): %s", tts_result.error)
                 return
 
-            audio_data: Optional[bytes] = tts_result.audio_data
+            audio_data: bytes | None = tts_result.audio_data
             if (
                 audio_data is None
                 and tts_result.audio_path
@@ -1502,7 +1501,7 @@ class TelegramChannel:
         original_text: str = "",
         user_id: int = 0,
         is_group: bool = False,
-        extra_krow: Optional[list] = None,
+        extra_krow: list | None = None,
     ) -> None:
         """Send a response with template limits, optional keyboard, and voice reply."""
         # Strip internal LLM reasoning tags before any further processing
@@ -2070,7 +2069,7 @@ class TelegramChannel:
             trace_file = _os.path.expanduser("~/.navig/msg_trace.jsonl")
             if _os.path.exists(trace_file):
                 try:
-                    with open(trace_file, "r", encoding="utf-8") as _f:
+                    with open(trace_file, encoding="utf-8") as _f:
                         for raw in _f.readlines()[-8:]:
                             try:
                                 entry = _json.loads(raw)
@@ -2176,7 +2175,7 @@ class TelegramChannel:
             if not _os.path.exists(_log_path):
                 continue
             try:
-                with open(_log_path, "r", encoding="utf-8", errors="replace") as fh:
+                with open(_log_path, encoding="utf-8", errors="replace") as fh:
                     _tail = fh.readlines()[-50:]
                 _kw = (
                     "warning",
@@ -2492,7 +2491,7 @@ class TelegramChannel:
         "/netstat": 'run "ss -s"',
     }
 
-    def _match_cli_command(self, text: str) -> Optional[str]:
+    def _match_cli_command(self, text: str) -> str | None:
         """Match a slash command to a navig CLI string. Returns None if no match."""
         parts = text.strip().split(None, 1)
         if not parts:
@@ -2515,7 +2514,7 @@ class TelegramChannel:
         self,
         chat_id: int,
         user_id: int,
-        metadata: Dict,
+        metadata: dict,
         navig_cmd: str,
     ):
         """Execute a navig CLI command with typing indicator and send output."""
@@ -2547,7 +2546,7 @@ class TelegramChannel:
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
 
-    async def _handle_briefing(self, chat_id: int, user_id: int, metadata: Dict):
+    async def _handle_briefing(self, chat_id: int, user_id: int, metadata: dict):
         """Real-data system briefing — no AI, no invented teams/sprints."""
         import json as _json
         import os as _os
@@ -2665,7 +2664,7 @@ class TelegramChannel:
             trace_file = _os.path.expanduser("~/.navig/msg_trace.jsonl")
             if _os.path.exists(trace_file):
                 try:
-                    with open(trace_file, "r", encoding="utf-8") as _tf:
+                    with open(trace_file, encoding="utf-8") as _tf:
                         for raw in _tf.readlines()[-20:]:
                             try:
                                 e = _json.loads(raw)
@@ -2930,7 +2929,7 @@ class TelegramChannel:
             )
             logger.info("Registered Deck menu button: %s", deck_url)
 
-    def _get_deck_url(self) -> Optional[str]:
+    def _get_deck_url(self) -> str | None:
         """Resolve the Deck WebApp URL from config."""
         try:
             import os
@@ -2956,10 +2955,10 @@ class TelegramChannel:
         self,
         chat_id: int,
         text: str,
-        parse_mode: Optional[str] = "Markdown",
-        reply_to_message_id: Optional[int] = None,
-        keyboard: Optional[List[List[Dict]]] = None,
-    ) -> Optional[Dict]:
+        parse_mode: str | None = "Markdown",
+        reply_to_message_id: int | None = None,
+        keyboard: list[list[dict]] | None = None,
+    ) -> dict | None:
         """Send a message to a chat."""
         data = {
             "chat_id": chat_id,
@@ -2990,10 +2989,10 @@ class TelegramChannel:
         message_id: int,
         text: str,
         parse_mode: str = "Markdown",
-        keyboard: Optional[list] = None,
-    ) -> Optional[Dict]:
+        keyboard: list | None = None,
+    ) -> dict | None:
         """Edit an existing message."""
-        payload: Dict = {
+        payload: dict = {
             "chat_id": chat_id,
             "message_id": message_id,
             "text": text,
@@ -3040,8 +3039,8 @@ class TelegramChannel:
         self,
         chat_id: int,
         audio_data: bytes,
-        reply_to_message_id: Optional[int] = None,
-    ) -> Optional[Dict]:
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
         """Send a voice message using multipart/form-data (sendVoice Bot API)."""
         if not self._session or not aiohttp:
             return None
@@ -3068,9 +3067,7 @@ class TelegramChannel:
             return None
 
 
-def create_telegram_channel(
-    gateway, config: Dict[str, Any]
-) -> Optional[TelegramChannel]:
+def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel | None:
     """
     Create a Telegram channel from config.
 
@@ -3095,7 +3092,7 @@ def create_telegram_channel(
     async def handle_approval_response(
         user_id: int,
         approved: bool,
-        request_id: Optional[str] = None,
+        request_id: str | None = None,
     ) -> tuple[bool, str]:
         manager = getattr(gateway, "approval_manager", None)
         if not manager:
@@ -3103,7 +3100,7 @@ def create_telegram_channel(
 
         resolved_id = (request_id or "").strip()
         if not resolved_id:
-            pending: List[Dict[str, Any]] = []
+            pending: list[dict[str, Any]] = []
             try:
                 if hasattr(manager, "get_pending"):
                     pending = (

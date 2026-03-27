@@ -12,7 +12,7 @@ import logging
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
@@ -36,8 +36,8 @@ class CodeExecSandboxTool(BaseTool):
 
     async def run(
         self,
-        args: Dict[str, Any],
-        on_status: Optional[StatusCallback] = None,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         code: str = args.get("code", "")
         if not code:

@@ -33,7 +33,6 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger("navig.memory.project_indexer")
 
@@ -75,7 +74,7 @@ class ProjectIndexConfig:
 
 CONTENT_TYPES = ("code", "config", "docs", "wiki", "plans", "memory")
 
-_CODE_EXTS: Set[str] = {
+_CODE_EXTS: set[str] = {
     ".ts",
     ".tsx",
     ".js",
@@ -121,7 +120,7 @@ _CODE_EXTS: Set[str] = {
     ".proto",
 }
 
-_CONFIG_EXTS: Set[str] = {
+_CONFIG_EXTS: set[str] = {
     ".json",
     ".yaml",
     ".yml",
@@ -131,16 +130,16 @@ _CONFIG_EXTS: Set[str] = {
     ".env",
 }
 
-_DOCS_EXTS: Set[str] = {
+_DOCS_EXTS: set[str] = {
     ".md",
     ".mdx",
     ".txt",
     ".rst",
 }
 
-_INDEXABLE_EXTS: Set[str] = _CODE_EXTS | _CONFIG_EXTS | _DOCS_EXTS
+_INDEXABLE_EXTS: set[str] = _CODE_EXTS | _CONFIG_EXTS | _DOCS_EXTS
 
-_INDEXABLE_FILENAMES: Set[str] = {
+_INDEXABLE_FILENAMES: set[str] = {
     "dockerfile",
     "makefile",
     "cmakelists.txt",
@@ -198,7 +197,7 @@ def content_type_priority(ct: str) -> float:
 # Ignore rules (.navigignore / .gitignore)
 # ============================================================================
 
-DEFAULT_EXCLUDES: List[str] = [
+DEFAULT_EXCLUDES: list[str] = [
     ".git",
     "node_modules",
     ".next",
@@ -247,7 +246,7 @@ DEFAULT_EXCLUDES: List[str] = [
 ]
 
 
-def _load_ignore_rules(project_root: Path) -> List[str]:
+def _load_ignore_rules(project_root: Path) -> list[str]:
     """Load .navigignore then .gitignore patterns."""
     patterns = list(DEFAULT_EXCLUDES)
     for name in (".navigignore", ".gitignore"):
@@ -266,7 +265,7 @@ def _load_ignore_rules(project_root: Path) -> List[str]:
 
 
 def _is_ignored(
-    rel_path: str, ignore_patterns: List[str], is_dir: bool = False
+    rel_path: str, ignore_patterns: list[str], is_dir: bool = False
 ) -> bool:
     """Check if a relative path matches any ignore pattern."""
     parts = rel_path.replace("\\", "/").split("/")
@@ -311,7 +310,7 @@ class Chunk:
     content_hash: str
 
 
-def _extract_section_title(lines: List[str], content_type: str) -> str:
+def _extract_section_title(lines: list[str], content_type: str) -> str:
     """Extract a meaningful section title from chunk lines."""
     for line in lines[:5]:
         stripped = line.strip()
@@ -334,7 +333,7 @@ def chunk_file(
     rel_path: str,
     content: str,
     config: ProjectIndexConfig,
-) -> List[Chunk]:
+) -> list[Chunk]:
     """Split file content into overlapping chunks."""
     ct = classify_content_type(rel_path)
 
@@ -349,7 +348,7 @@ def chunk_file(
     if not lines:
         return []
 
-    chunks: List[Chunk] = []
+    chunks: list[Chunk] = []
     step = max(1, chunk_size - overlap)
     i = 0
 
@@ -428,7 +427,7 @@ class ProjectIndexer:
     def __init__(
         self,
         project_root: Path,
-        config: Optional[ProjectIndexConfig] = None,
+        config: ProjectIndexConfig | None = None,
     ):
         self.project_root = project_root.resolve()
         self.config = config or ProjectIndexConfig()
@@ -439,9 +438,9 @@ class ProjectIndexer:
         navig_dir.mkdir(parents=True, exist_ok=True)
         self._db_path = navig_dir / self.DB_NAME
 
-        self._conn: Optional[sqlite3.Connection] = None
-        self._file_hashes: Dict[str, str] = {}  # rel_path -> content_hash
-        self._last_scan_duration: Optional[float] = None
+        self._conn: sqlite3.Connection | None = None
+        self._file_hashes: dict[str, str] = {}  # rel_path -> content_hash
+        self._last_scan_duration: float | None = None
 
         self._ensure_db()
 
@@ -500,9 +499,9 @@ class ProjectIndexer:
     # Discovery
     # ----------------------------------------------------------------
 
-    def _discover_files(self) -> List[Tuple[str, float]]:
+    def _discover_files(self) -> list[tuple[str, float]]:
         """Walk the project tree and return (rel_path, mtime) tuples."""
-        files: List[Tuple[str, float]] = []
+        files: list[tuple[str, float]] = []
         max_files = self.config.max_files
 
         for dirpath, dirnames, filenames in os.walk(self.project_root):
@@ -554,7 +553,7 @@ class ProjectIndexer:
     # Full scan
     # ----------------------------------------------------------------
 
-    def scan(self) -> Dict[str, int]:
+    def scan(self) -> dict[str, int]:
         """
         Full scan: discover files, read, chunk, and index.
 
@@ -667,7 +666,7 @@ class ProjectIndexer:
     # Incremental update
     # ----------------------------------------------------------------
 
-    def update_incremental(self) -> Dict[str, int]:
+    def update_incremental(self) -> dict[str, int]:
         """
         Rescan only changed/new files (mtime + hash check).
 
@@ -771,10 +770,10 @@ class ProjectIndexer:
     def search(
         self,
         query: str,
-        top_k: Optional[int] = None,
-        max_chars: Optional[int] = None,
-        content_type_filter: Optional[str] = None,
-    ) -> List[ProjectSearchResult]:
+        top_k: int | None = None,
+        max_chars: int | None = None,
+        content_type_filter: str | None = None,
+    ) -> list[ProjectSearchResult]:
         """
         BM25 search over the project index.
 
@@ -834,8 +833,8 @@ class ProjectIndexer:
             return []
 
         # Apply content-type boosting + per-file cap
-        results: List[ProjectSearchResult] = []
-        file_counts: Dict[str, int] = {}
+        results: list[ProjectSearchResult] = []
+        file_counts: dict[str, int] = {}
         total_chars = 0
 
         for row in rows:
@@ -895,7 +894,7 @@ class ProjectIndexer:
         self,
         query: str,
         max_chars: int = 8_000,
-        content_type_filter: Optional[str] = None,
+        content_type_filter: str | None = None,
         top_k: int = 8,
     ) -> str:
         """
@@ -924,7 +923,7 @@ class ProjectIndexer:
     # Stats
     # ----------------------------------------------------------------
 
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> dict[str, int]:
         """Return index statistics."""
         conn = self._get_conn()
 
@@ -965,10 +964,10 @@ class ProjectIndexer:
         if not rows:
             return "(no files indexed)"
 
-        lines: List[str] = [f"Project: {self.project_root.name} ({len(rows)} files)"]
+        lines: list[str] = [f"Project: {self.project_root.name} ({len(rows)} files)"]
 
         # Group by top-level directory
-        groups: Dict[str, List[str]] = {}
+        groups: dict[str, list[str]] = {}
         for path, ct in rows:
             parts = path.replace("\\", "/").split("/")
             key = parts[0] if len(parts) > 1 else "."

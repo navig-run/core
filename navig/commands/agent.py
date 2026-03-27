@@ -6,7 +6,6 @@ Commands for managing the autonomous agent mode.
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -199,7 +198,7 @@ def agent_start(
         "-f/-b",
         help="Run in foreground or background",
     ),
-    config: Optional[Path] = typer.Option(
+    config: Path | None = typer.Option(
         None, "--config", "-c", help="Path to configuration file"
     ),
 ):
@@ -371,10 +370,10 @@ def agent_status(
 def agent_config_cmd(
     edit: bool = typer.Option(False, "--edit", "-e", help="Open config in editor"),
     show: bool = typer.Option(False, "--show", "-s", help="Show current config"),
-    set_key: Optional[str] = typer.Option(
+    set_key: str | None = typer.Option(
         None, "--set", help="Set config key (dot notation)"
     ),
-    value: Optional[str] = typer.Option(None, "--value", "-v", help="Value for --set"),
+    value: str | None = typer.Option(None, "--value", "-v", help="Value for --set"),
 ):
     """
     Manage agent configuration.
@@ -432,7 +431,7 @@ def agent_config_cmd(
 
         current[keys[-1]] = value
 
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
         ch.success(f"Set {set_key} = {value}")
@@ -463,7 +462,7 @@ def agent_config_cmd(
 def agent_logs(
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
-    level: Optional[str] = typer.Option(None, "--level", "-l", help="Filter by level"),
+    level: str | None = typer.Option(None, "--level", "-l", help="Filter by level"),
 ):
     """
     View agent logs.
@@ -517,7 +516,7 @@ def agent_logs(
 @agent_app.command("personality")
 def agent_personality(
     action: str = typer.Argument("list", help="Action: list, show, set, create"),
-    name: Optional[str] = typer.Argument(None, help="Personality name"),
+    name: str | None = typer.Argument(None, help="Personality name"),
 ):
     """
     Manage personality profiles.
@@ -592,7 +591,7 @@ def agent_personality(
 
         data.setdefault("agent", {}).setdefault("personality", {})["profile"] = name
 
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
         ch.success(f"Personality set to: {name}")
@@ -625,7 +624,7 @@ def agent_personality(
             "verbosity": "normal",
         }
 
-        with open(profile_path, "w") as f:
+        with open(profile_path, "w", encoding="utf-8") as f:
             yaml.dump(template, f, default_flow_style=False, sort_keys=False)
 
         ch.success(f"Created personality: {profile_path}")
@@ -1045,8 +1044,8 @@ def telegram_setup():
 
 @agent_app.command("remediation")
 def agent_remediation(
-    action: Optional[str] = typer.Argument(None, help="Action: list, status, clear"),
-    action_id: Optional[str] = typer.Option(
+    action: str | None = typer.Argument(None, help="Action: list, status, clear"),
+    action_id: str | None = typer.Option(
         None, "--id", help="Action ID to check status"
     ),
 ):
@@ -1198,7 +1197,7 @@ def agent_learn(
             if not log_file.exists():
                 continue
 
-            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+            with open(log_file, encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     # Parse timestamp if present
                     try:
@@ -1357,10 +1356,8 @@ def agent_service(
 @agent_app.command("goal")
 def agent_goal(
     action: str = typer.Argument(..., help="Action: add, list, status, cancel"),
-    goal_id: Optional[str] = typer.Option(
-        None, "--id", help="Goal ID for status/cancel"
-    ),
-    description: Optional[str] = typer.Option(
+    goal_id: str | None = typer.Option(None, "--id", help="Goal ID for status/cancel"),
+    description: str | None = typer.Option(
         None, "--desc", help="Goal description for add"
     ),
 ):
@@ -1685,29 +1682,29 @@ NAVIG stands for "No Admin Visible In Graveyard" — I keep your systems alive a
 # These functions provide a consistent interface for the interactive menu system.
 # Each wrapper calls the underlying Typer command with appropriate defaults.
 
-from typing import Any, Dict
+from typing import Any
 
 
-def status_cmd(ctx: Dict[str, Any]) -> None:
+def status_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for agent status command (interactive menu)."""
     agent_status(plain=False)
 
 
-def start_cmd(ctx: Dict[str, Any]) -> None:
+def start_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for agent start command (interactive menu)."""
     agent_start(foreground=True, config=None)
 
 
-def stop_cmd(ctx: Dict[str, Any]) -> None:
+def stop_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for agent stop command (interactive menu)."""
     agent_stop()
 
 
-def config_cmd(ctx: Dict[str, Any]) -> None:
+def config_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for agent config command (interactive menu)."""
     agent_config_cmd(key=None, value=None, edit=False)
 
 
-def logs_cmd(ctx: Dict[str, Any]) -> None:
+def logs_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for agent logs command (interactive menu)."""
     agent_logs(follow=False, lines=50, level=None)

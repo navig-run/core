@@ -21,7 +21,7 @@ def _json_parse(text: str, **kwargs):
         return {"error": f"Invalid JSON: {e}"}
 
 
-def register_tools(registry: "ToolRegistry") -> None:
+def register_tools(registry: ToolRegistry) -> None:
     from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta
 
     registry.register(

@@ -16,8 +16,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import aiohttp
@@ -49,11 +50,11 @@ class WhatsAppChannelConfig:
 
     def __init__(
         self,
-        bridge_url: Optional[str] = None,
-        bridge_ws_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        allowed_numbers: Optional[List[str]] = None,
-        allowed_groups: Optional[List[str]] = None,
+        bridge_url: str | None = None,
+        bridge_ws_url: str | None = None,
+        api_key: str | None = None,
+        allowed_numbers: list[str] | None = None,
+        allowed_groups: list[str] | None = None,
         respond_to_groups: bool = True,
         respond_to_dms: bool = True,
         mention_required_in_groups: bool = True,
@@ -85,7 +86,7 @@ class WhatsAppChannelConfig:
         self.mention_required_in_groups = mention_required_in_groups
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WhatsAppChannelConfig":
+    def from_dict(cls, data: dict[str, Any]) -> WhatsAppChannelConfig:
         """Create config from dictionary."""
         return cls(
             bridge_url=data.get("bridge_url"),
@@ -109,11 +110,11 @@ class WhatsAppMessage:
         content: str,
         timestamp: datetime,
         is_group: bool = False,
-        group_id: Optional[str] = None,
-        group_name: Optional[str] = None,
-        sender_name: Optional[str] = None,
+        group_id: str | None = None,
+        group_name: str | None = None,
+        sender_name: str | None = None,
         is_mentioned: bool = False,
-        quoted_message: Optional[str] = None,
+        quoted_message: str | None = None,
     ):
         self.message_id = message_id
         self.from_number = from_number
@@ -127,7 +128,7 @@ class WhatsAppMessage:
         self.quoted_message = quoted_message
 
     @classmethod
-    def from_bridge_payload(cls, data: Dict[str, Any]) -> "WhatsAppMessage":
+    def from_bridge_payload(cls, data: dict[str, Any]) -> WhatsAppMessage:
         """Create from bridge webhook payload."""
         return cls(
             message_id=data.get("id", ""),
@@ -160,7 +161,7 @@ class WhatsAppChannel:
     def __init__(
         self,
         config: WhatsAppChannelConfig,
-        message_handler: Callable[[str, str, str, Dict[str, Any]], asyncio.Future],
+        message_handler: Callable[[str, str, str, dict[str, Any]], asyncio.Future],
     ):
         """
         Initialize WhatsApp channel.
@@ -179,12 +180,12 @@ class WhatsAppChannel:
         self.config = config
         self.message_handler = message_handler
 
-        self._session: Optional[aiohttp.ClientSession] = None
-        self._ws: Optional[Any] = None  # WebSocket connection
+        self._session: aiohttp.ClientSession | None = None
+        self._ws: Any | None = None  # WebSocket connection
         self._running = False
         self._reconnect_delay = 5
         self._max_reconnect_delay = 60
-        self._bot_number: Optional[str] = None
+        self._bot_number: str | None = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create HTTP session."""
@@ -308,7 +309,7 @@ class WhatsAppChannel:
 
         return True
 
-    def _build_metadata(self, message: WhatsAppMessage) -> Dict[str, Any]:
+    def _build_metadata(self, message: WhatsAppMessage) -> dict[str, Any]:
         """Build metadata from WhatsApp message."""
         metadata = {
             "message_id": message.message_id,
@@ -426,7 +427,7 @@ class WhatsAppChannel:
         """Check if channel is running."""
         return self._running
 
-    async def get_qr_code(self) -> Optional[str]:
+    async def get_qr_code(self) -> str | None:
         """
         Get QR code for WhatsApp authentication.
 
@@ -448,7 +449,7 @@ class WhatsAppChannel:
 
         return None
 
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> dict[str, Any]:
         """
         Get WhatsApp connection status.
 
@@ -476,8 +477,8 @@ def is_whatsapp_available() -> bool:
 
 
 def create_whatsapp_channel(
-    config: Optional[WhatsAppChannelConfig] = None,
-    message_handler: Optional[Callable] = None,
+    config: WhatsAppChannelConfig | None = None,
+    message_handler: Callable | None = None,
 ) -> WhatsAppChannel:
     """
     Create a WhatsApp channel adapter.

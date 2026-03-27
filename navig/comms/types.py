@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 # ---- Channel selection --------------------------------------------------
 
@@ -25,21 +25,21 @@ class NotificationTarget:
     resolves the concrete IDs from the identity store.
     """
 
-    telegram_chat_id: Optional[int] = None
-    matrix_room_id: Optional[str] = None
-    user_id: Optional[str] = None  # opaque identity key for "auto"
-    extra: Dict[str, Any] = field(default_factory=dict)
+    telegram_chat_id: int | None = None
+    matrix_room_id: str | None = None
+    user_id: str | None = None  # opaque identity key for "auto"
+    extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def telegram(cls, chat_id: int) -> "NotificationTarget":
+    def telegram(cls, chat_id: int) -> NotificationTarget:
         return cls(telegram_chat_id=chat_id)
 
     @classmethod
-    def matrix(cls, room_id: str) -> "NotificationTarget":
+    def matrix(cls, room_id: str) -> NotificationTarget:
         return cls(matrix_room_id=room_id)
 
     @classmethod
-    def auto(cls, user_id: str) -> "NotificationTarget":
+    def auto(cls, user_id: str) -> NotificationTarget:
         return cls(user_id=user_id)
 
 
@@ -62,7 +62,7 @@ class NotificationOptions:
     ttl_seconds: int = 0  # 0 = forever
     retry_count: int = 2  # max retries on transient failure
     parse_mode: str = "Markdown"  # Telegram parse mode
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ---- Delivery result ----------------------------------------------------
@@ -75,18 +75,16 @@ class DeliveryResult:
     ok: bool
     channel: str  # which channel actually delivered
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    message_id: Optional[str] = None
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    message_id: str | None = None
+    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def success(
-        cls, channel: str, message_id: Optional[str] = None
-    ) -> "DeliveryResult":
+    def success(cls, channel: str, message_id: str | None = None) -> DeliveryResult:
         return cls(ok=True, channel=channel, message_id=message_id)
 
     @classmethod
-    def failure(cls, channel: str, error: str) -> "DeliveryResult":
+    def failure(cls, channel: str, error: str) -> DeliveryResult:
         return cls(ok=False, channel=channel, error=error)
 
 
@@ -97,7 +95,7 @@ class DeliveryResult:
 class FanoutResult:
     """Aggregated results when sending to multiple channels."""
 
-    results: List[DeliveryResult] = field(default_factory=list)
+    results: list[DeliveryResult] = field(default_factory=list)
 
     @property
     def all_ok(self) -> bool:

@@ -30,10 +30,11 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, Set, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 logger = logging.getLogger("navig.event_bridge")
@@ -72,12 +73,12 @@ class EventEnvelope:
     source: str  # originating component, e.g. "heart", "cron_service"
     severity: Severity
     timestamp: datetime
-    data: Dict[str, Any]
+    data: dict[str, Any]
     origin: str  # "nervous_system" | "system_event_queue" | "direct"
 
     # ---- serialisation helpers ------------------------------------------
 
-    def to_jsonrpc_notification(self) -> Dict[str, Any]:
+    def to_jsonrpc_notification(self) -> dict[str, Any]:
         """Serialise as a JSON-RPC 2.0 notification (no id)."""
         return {
             "jsonrpc": "2.0",
@@ -93,7 +94,7 @@ class EventEnvelope:
             },
         }
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "topic": self.topic,
@@ -119,18 +120,18 @@ class SubscriptionFilter:
     Topic patterns support simple globs: ``agent.*`` matches ``agent.heartbeat``.
     """
 
-    topics: Set[str] = field(default_factory=set)
-    severities: Set[Severity] = field(default_factory=set)
-    sources: Set[str] = field(default_factory=set)
+    topics: set[str] = field(default_factory=set)
+    severities: set[Severity] = field(default_factory=set)
+    sources: set[str] = field(default_factory=set)
 
     # pre-compiled regexes (built lazily)
-    _topic_patterns: Optional[List[re.Pattern]] = field(
+    _topic_patterns: list[re.Pattern] | None = field(
         default=None, init=False, repr=False, compare=False
     )
 
-    def _compile_topics(self) -> List[re.Pattern]:
+    def _compile_topics(self) -> list[re.Pattern]:
         if self._topic_patterns is None:
-            patterns: List[re.Pattern] = []
+            patterns: list[re.Pattern] = []
             for t in self.topics:
                 # Convert simple glob to regex: "agent.*" → "^agent\..*$"
                 regex = "^" + re.escape(t).replace(r"\*", ".*") + "$"
@@ -156,7 +157,7 @@ class SubscriptionFilter:
 
         return True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "topics": sorted(self.topics),
             "severities": sorted(s.value for s in self.severities),
@@ -164,7 +165,7 @@ class SubscriptionFilter:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SubscriptionFilter":
+    def from_dict(cls, data: dict[str, Any]) -> SubscriptionFilter:
         return cls(
             topics=set(data.get("topics", [])),
             severities={Severity(s) for s in data.get("severities", [])},
@@ -172,7 +173,7 @@ class SubscriptionFilter:
         )
 
     @classmethod
-    def accept_all(cls) -> "SubscriptionFilter":
+    def accept_all(cls) -> SubscriptionFilter:
         """Factory: filter that accepts every event."""
         return cls()
 
@@ -205,7 +206,7 @@ _PRIORITY_TO_SEVERITY = {
 _SYS_PRIORITY_TO_SEVERITY = _PRIORITY_TO_SEVERITY  # same enum names
 
 # NervousSystem EventType name → topic prefix mapping
-_EVENT_TYPE_TOPIC_MAP: Dict[str, str] = {
+_EVENT_TYPE_TOPIC_MAP: dict[str, str] = {
     # Lifecycle
     "AGENT_STARTING": "agent.starting",
     "AGENT_STARTED": "agent.started",
@@ -261,7 +262,7 @@ _EVENT_TYPE_TOPIC_MAP: Dict[str, str] = {
 }
 
 # Severity hints derived from EventType name
-_EVENT_TYPE_SEVERITY_HINTS: Dict[str, Severity] = {
+_EVENT_TYPE_SEVERITY_HINTS: dict[str, Severity] = {
     "COMPONENT_ERROR": Severity.ERROR,
     "COMPONENT_DEGRADED": Severity.WARNING,
     "ALERT_TRIGGERED": Severity.WARNING,
@@ -298,7 +299,7 @@ class EventBridge:
         max_payload_bytes: int = 131_072,
         broadcast_timeout: float = 0.25,
         enable_ipc_offload: bool = False,
-        ipc_socket_path: Optional[str] = None,
+        ipc_socket_path: str | None = None,
     ):
         self.debounce_seconds = debounce_seconds
         self.max_payload_bytes = max_payload_bytes
@@ -313,14 +314,14 @@ class EventBridge:
         )
 
         # Client registry: ws → filter
-        self._clients: Dict[int, tuple[WebSocketLike, SubscriptionFilter]] = {}
+        self._clients: dict[int, tuple[WebSocketLike, SubscriptionFilter]] = {}
 
         # Recent envelopes (for debounce + dedup)
-        self._recent: Dict[str, float] = {}  # topic → last_emit_time
+        self._recent: dict[str, float] = {}  # topic → last_emit_time
         self._dedup_window: float = 0.3  # seconds
 
         # History ring buffer
-        self._history: List[EventEnvelope] = []
+        self._history: list[EventEnvelope] = []
         self._max_history: int = 500
 
         # Attached sources
@@ -337,8 +338,8 @@ class EventBridge:
         }
 
         # Listeners to remove on detach
-        self._ns_handler: Optional[Callable] = None
-        self._eq_handler: Optional[Callable] = None
+        self._ns_handler: Callable | None = None
+        self._eq_handler: Callable | None = None
 
         # References to attached sources
         self._nervous_system: Any = None
@@ -407,7 +408,7 @@ class EventBridge:
     def register_client(
         self,
         ws: WebSocketLike,
-        subscription: Optional[SubscriptionFilter] = None,
+        subscription: SubscriptionFilter | None = None,
     ) -> None:
         """Register a WebSocket client with an optional subscription filter."""
         filt = subscription or SubscriptionFilter.accept_all()
@@ -496,7 +497,7 @@ class EventBridge:
 
         # Broadcast to matching clients
         sent = 0
-        dead: List[int] = []
+        dead: list[int] = []
 
         for key, (ws, filt) in list(self._clients.items()):
             if not filt.matches(envelope):
@@ -522,7 +523,7 @@ class EventBridge:
         self,
         topic: str,
         source: str,
-        data: Optional[Dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
         severity: Severity = Severity.INFO,
     ) -> int:
         """Push an event directly (not from NervousSystem or SystemEventQueue)."""
@@ -622,11 +623,11 @@ class EventBridge:
     def get_history(
         self,
         *,
-        topic: Optional[str] = None,
-        severity: Optional[Severity] = None,
-        source: Optional[str] = None,
+        topic: str | None = None,
+        severity: Severity | None = None,
+        source: str | None = None,
         limit: int = 50,
-    ) -> List[EventEnvelope]:
+    ) -> list[EventEnvelope]:
         """Query bridge event history with optional filters."""
         events = self._history
 
@@ -642,7 +643,7 @@ class EventBridge:
 
         return events[-limit:]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Return bridge statistics."""
         return {
             **self._stats,

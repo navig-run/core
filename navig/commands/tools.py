@@ -16,7 +16,6 @@ Usage
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import typer
 
@@ -35,7 +34,7 @@ def _get_registry():
 
 @tools_app.command("list")
 def tools_list(
-    domain: Optional[str] = typer.Option(
+    domain: str | None = typer.Option(
         None,
         "--domain",
         "-d",
@@ -141,7 +140,7 @@ def tools_list(
 
 @tools_app.command("schema")
 def tools_schema(
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         "-o",

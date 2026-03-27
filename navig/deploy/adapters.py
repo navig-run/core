@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +25,14 @@ class ServiceAdapter(abc.ABC):
     name: str = ""
 
     def __init__(
-        self, server_config: Dict[str, Any], remote_ops: Any, dry_run: bool = False
+        self, server_config: dict[str, Any], remote_ops: Any, dry_run: bool = False
     ):
         self._cfg = server_config
         self._remote = remote_ops
         self._dry_run = dry_run
 
     @abc.abstractmethod
-    def restart_commands(self) -> List[str]:
+    def restart_commands(self) -> list[str]:
         """Return a list of shell commands that will restart the service."""
 
     def restart(self) -> tuple[bool, str]:
@@ -71,7 +71,7 @@ class SystemdAdapter(ServiceAdapter):
         super().__init__(**kwargs)
         self._service = service
 
-    def restart_commands(self) -> List[str]:
+    def restart_commands(self) -> list[str]:
         return [f"systemctl restart {self._service}"]
 
 
@@ -87,7 +87,7 @@ class DockerComposeAdapter(ServiceAdapter):
         self._app_root = app_root
         self._compose_file = compose_file
 
-    def restart_commands(self) -> List[str]:
+    def restart_commands(self) -> list[str]:
         return [
             f"cd {self._app_root} && docker compose -f {self._compose_file} up -d --remove-orphans"
         ]
@@ -102,7 +102,7 @@ class Pm2Adapter(ServiceAdapter):
         super().__init__(**kwargs)
         self._service = service
 
-    def restart_commands(self) -> List[str]:
+    def restart_commands(self) -> list[str]:
         return [f"pm2 restart {self._service} --update-env"]
 
 
@@ -115,7 +115,7 @@ class CommandAdapter(ServiceAdapter):
         super().__init__(**kwargs)
         self._command = command
 
-    def restart_commands(self) -> List[str]:
+    def restart_commands(self) -> list[str]:
         return [self._command]
 
 
@@ -123,7 +123,7 @@ class CommandAdapter(ServiceAdapter):
 # REGISTRY + FACTORY
 # ============================================================================
 
-_ADAPTERS: Dict[str, type] = {
+_ADAPTERS: dict[str, type] = {
     "systemd": SystemdAdapter,
     "docker-compose": DockerComposeAdapter,
     "pm2": Pm2Adapter,
@@ -132,7 +132,7 @@ _ADAPTERS: Dict[str, type] = {
 
 
 def build_adapter(
-    restart_cfg: Any, server_config: Dict[str, Any], remote_ops: Any, dry_run: bool
+    restart_cfg: Any, server_config: dict[str, Any], remote_ops: Any, dry_run: bool
 ) -> ServiceAdapter:
     """
     Construct the correct adapter from a RestartConfig.

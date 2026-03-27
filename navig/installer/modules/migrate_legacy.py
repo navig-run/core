@@ -11,15 +11,13 @@ Two migrations are attempted (both non-fatal if they fail):
 
 from __future__ import annotations
 
-from typing import List
-
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
 name = "migrate_legacy"
 description = "Migrate legacy config paths to ~/.navig"
 
 
-def plan(ctx: InstallerContext) -> List[Action]:
+def plan(ctx: InstallerContext) -> list[Action]:
     return [
         Action(
             id="migrate_legacy.run",
@@ -31,8 +29,8 @@ def plan(ctx: InstallerContext) -> List[Action]:
 
 
 def apply(action: Action, ctx: InstallerContext) -> Result:
-    messages: List[str] = []
-    skipped: List[str] = []
+    messages: list[str] = []
+    skipped: list[str] = []
 
     # --- Windows nested platformdirs layout ---
     try:

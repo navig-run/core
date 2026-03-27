@@ -8,10 +8,11 @@ import json
 import logging
 import random
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from navig.agent.conv.localization import LocalizationStore
 from navig.agent.conv.status_event import StatusEvent
@@ -395,7 +396,7 @@ class TaskExecutor:
 
     async def execute_multi_step_action(
         self,
-        action: "MultiStepAction",
+        action: MultiStepAction,
     ) -> str:
         """
         Execute a MultiStepAction — a chain of ToolCallActions produced by the

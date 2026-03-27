@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -153,7 +152,7 @@ def prompts_get(
 @prompts_app.command("set")
 def prompts_set(
     slug: str = typer.Argument(..., help="Prompt slug (filename without .md)."),
-    content: Optional[str] = typer.Option(
+    content: str | None = typer.Option(
         None, "--content", "-c", help="Prompt text. Reads from stdin if omitted."
     ),
     global_scope: bool = typer.Option(

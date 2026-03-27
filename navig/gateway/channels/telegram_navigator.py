@@ -31,8 +31,9 @@ import re
 import textwrap
 import time
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,7 @@ class CardSession:
     current: int
     chat_id: int
     user_id: int
-    message_id: Optional[int]
+    message_id: int | None
     topic: str
     session_key: str  # CallbackStore key prefix "nav:<uuid>"
     created_at: float = field(default_factory=time.time)
@@ -137,14 +138,14 @@ class CardSession:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CardSession":
+    def from_dict(cls, data: dict[str, Any]) -> CardSession:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
     def serialise(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
     @classmethod
-    def deserialise(cls, s: str) -> "CardSession":
+    def deserialise(cls, s: str) -> CardSession:
         return cls.from_dict(json.loads(s))
 
 
@@ -249,7 +250,7 @@ class CardNavigator:
         user_id: int,
         topic: str,
         llm_text: str,
-        send_fn: Optional[SendFn] = None,
+        send_fn: SendFn | None = None,
     ) -> CardSession:
         """
         Split *llm_text* into cards and send the first card to *chat_id*.
@@ -319,7 +320,7 @@ class CardNavigator:
 
     async def _send_card(
         self, send_fn: SendFn, session: CardSession, idx: int
-    ) -> Optional[int]:
+    ) -> int | None:
         keyboard = build_nav_keyboard(session, idx)
         text = _format_card(session, idx)
         try:
@@ -363,7 +364,7 @@ async def handle_card_callback(
     if hasattr(callback_query, "data"):
         cb_data = callback_query.data or ""
     chat_id: int = 0
-    message_id: Optional[int] = None
+    message_id: int | None = None
 
     msg = getattr(callback_query, "message", None)
     if msg:

@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from navig.memory.paths import KEY_FACTS_DB_PATH
 
@@ -75,18 +75,18 @@ class KeyFact:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     content: str = ""
     category: str = "context"  # preference, decision, context, identity, technical
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     confidence: float = 0.8
     source_conversation_id: str = ""
     source_platform: str = "core"
     created_at: str = field(default_factory=_utcnow)
     updated_at: str = field(default_factory=_utcnow)
-    superseded_by: Optional[str] = None
+    superseded_by: str | None = None
     deleted: bool = False
     access_count: int = 0
-    last_accessed: Optional[str] = None
-    embedding: Optional[List[float]] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    last_accessed: str | None = None
+    embedding: list[float] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def token_count(self) -> int:
@@ -96,7 +96,7 @@ class KeyFact:
     def is_active(self) -> bool:
         return not self.deleted and self.superseded_by is None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "content": self.content,
@@ -116,7 +116,7 @@ class KeyFact:
         }
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "KeyFact":
+    def from_row(cls, row: sqlite3.Row) -> KeyFact:
         return cls(
             id=row["id"],
             content=row["content"],
@@ -178,8 +178,8 @@ class KeyFactStore:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
-        embedding_provider: Optional[Any] = None,
+        db_path: Path | None = None,
+        embedding_provider: Any | None = None,
     ):
         self.db_path = db_path or KEY_FACTS_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -323,7 +323,7 @@ class KeyFactStore:
 
         return fact
 
-    def get(self, fact_id: str) -> Optional[KeyFact]:
+    def get(self, fact_id: str) -> KeyFact | None:
         """Get a single fact by ID."""
         row = (
             self._conn()
@@ -335,12 +335,12 @@ class KeyFactStore:
     def get_active(
         self,
         limit: int = 100,
-        category: Optional[str] = None,
+        category: str | None = None,
         min_confidence: float = 0.0,
-    ) -> List[KeyFact]:
+    ) -> list[KeyFact]:
         """Get all active (non-deleted, non-superseded) facts."""
         query = "SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL"
-        params: List[Any] = []
+        params: list[Any] = []
 
         if category:
             query += " AND category = ?"
@@ -357,7 +357,7 @@ class KeyFactStore:
 
     def search_keyword(
         self, query: str, limit: int = 20
-    ) -> List[Tuple[KeyFact, float]]:
+    ) -> list[tuple[KeyFact, float]]:
         """
         Keyword search via FTS5.  Returns (fact, rank) pairs.
         Falls back to LIKE if FTS5 is unavailable.
@@ -399,10 +399,10 @@ class KeyFactStore:
 
     def search_vector(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         limit: int = 20,
         min_similarity: float = 0.3,
-    ) -> List[Tuple[KeyFact, float]]:
+    ) -> list[tuple[KeyFact, float]]:
         """
         Vector similarity search using stored embeddings.
         Cosine similarity computed in Python (no sqlite-vec dependency needed for small stores).
@@ -421,7 +421,7 @@ class KeyFactStore:
         if not rows:
             return []
 
-        results: List[Tuple[KeyFact, float]] = []
+        results: list[tuple[KeyFact, float]] = []
         for row in rows:
             fact = KeyFact.from_row(row)
             if fact.embedding:
@@ -462,7 +462,7 @@ class KeyFactStore:
             self._conn().commit()
         return self.upsert(new_fact)
 
-    def update_content(self, fact_id: str, new_content: str) -> Optional[KeyFact]:
+    def update_content(self, fact_id: str, new_content: str) -> KeyFact | None:
         """Update an existing fact's content in-place."""
         fact = self.get(fact_id)
         if not fact:
@@ -480,7 +480,7 @@ class KeyFactStore:
             self._conn().commit()
         return fact
 
-    def record_access(self, fact_ids: List[str]) -> None:
+    def record_access(self, fact_ids: list[str]) -> None:
         """Bump access_count and last_accessed for retrieved facts."""
         if not fact_ids:
             return
@@ -508,7 +508,7 @@ class KeyFactStore:
             conn.commit()
             return cursor.rowcount
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Return store statistics."""
         conn = self._conn()
         total = conn.execute("SELECT COUNT(*) FROM key_facts").fetchone()[0]
@@ -542,7 +542,7 @@ class KeyFactStore:
 
     # ── Private helpers ───────────────────────────────────────
 
-    def _find_duplicate(self, content: str) -> Optional[KeyFact]:
+    def _find_duplicate(self, content: str) -> KeyFact | None:
         """Find an active fact with very similar content (exact or near-match)."""
         # Exact match first
         row = (
@@ -616,7 +616,7 @@ class KeyFactStore:
             logger.debug("FTS update failed: %s", exc)
 
     @staticmethod
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
         if len(a) != len(b):
             return 0.0
         dot = sum(x * y for x, y in zip(a, b))
@@ -627,7 +627,7 @@ class KeyFactStore:
         return dot / (mag_a * mag_b)
 
     @staticmethod
-    def _jaccard(a: List[str], b: List[str]) -> float:
+    def _jaccard(a: list[str], b: list[str]) -> float:
         sa, sb = set(a), set(b)
         union = sa | sb
         if not union:
@@ -637,13 +637,13 @@ class KeyFactStore:
 
 # ── Module-level singleton ────────────────────────────────────
 
-_store_instance: Optional[KeyFactStore] = None
+_store_instance: KeyFactStore | None = None
 _store_lock = threading.Lock()
 
 
 def get_key_fact_store(
-    db_path: Optional[Path] = None,
-    embedding_provider: Optional[Any] = None,
+    db_path: Path | None = None,
+    embedding_provider: Any | None = None,
 ) -> KeyFactStore:
     """Get or create the singleton KeyFactStore."""
     global _store_instance

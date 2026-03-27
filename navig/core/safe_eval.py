@@ -1,6 +1,6 @@
 import ast
 import operator
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Supported operators
 calc_operators = {
@@ -29,7 +29,7 @@ calc_operators = {
 }
 
 
-def safe_eval(expr: str, variables: Optional[Dict[str, Any]] = None) -> Any:
+def safe_eval(expr: str, variables: dict[str, Any] | None = None) -> Any:
     """
     Safely evaluate a simple Python expression.
 
@@ -52,7 +52,7 @@ def safe_eval(expr: str, variables: Optional[Dict[str, Any]] = None) -> Any:
         raise ValueError(f"Evaluation failed: {e}") from e
 
 
-def _eval_node(node: ast.AST, variables: Dict[str, Any]) -> Any:
+def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
     # Literals
     if isinstance(node, ast.Constant):  # Python 3.8+
         return node.value

@@ -10,7 +10,6 @@ Usage::
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 import typer
 
@@ -60,7 +59,7 @@ def run(
 def scale_cmd(
     service: str = typer.Argument(..., help="Service name to scale"),
     replicas: int = typer.Argument(..., help="Target replica count"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host (default: production-01)"
     ),
 ) -> None:

@@ -9,7 +9,7 @@ Handles:
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.session_manager import NavigSessionKey
@@ -39,8 +39,8 @@ class ChannelRouter:
         self.config_manager = gateway.config_manager
 
         # Cache for agent bindings
-        self._bindings_cache: Optional[Dict] = None
-        self._bindings_cache_time: Optional[datetime] = None
+        self._bindings_cache: dict | None = None
+        self._bindings_cache_time: datetime | None = None
 
         # Engagement tracker (lazy-loaded)
         self._engagement_tracker = None
@@ -65,7 +65,7 @@ class ChannelRouter:
         return self._bindings_cache
 
     def _resolve_agent(
-        self, channel: str, user_id: str, metadata: Dict[str, Any]
+        self, channel: str, user_id: str, metadata: dict[str, Any]
     ) -> str:
         """
         Resolve which agent should handle this message.
@@ -96,7 +96,7 @@ class ChannelRouter:
         channel: str,
         user_id: str,
         message: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Route a message to the appropriate agent.
@@ -155,7 +155,7 @@ class ChannelRouter:
         return response
 
     async def _handle_message(
-        self, agent_id: str, session_key: str, message: str, metadata: Dict[str, Any]
+        self, agent_id: str, session_key: str, message: str, metadata: dict[str, Any]
     ) -> str:
         """Handle message with NAVIG-aware processing and natural language understanding."""
         msg_lower = message.lower().strip()
@@ -305,7 +305,7 @@ class ChannelRouter:
             pass  # best-effort; failure is non-critical
 
     async def _execute_navig_command(
-        self, message: str, metadata: Dict[str, Any]
+        self, message: str, metadata: dict[str, Any]
     ) -> str:
         """Execute a direct NAVIG CLI command."""
 
@@ -351,8 +351,8 @@ class ChannelRouter:
             return f"❌ Error: {e}"
 
     async def _check_quick_commands(
-        self, message: str, metadata: Dict[str, Any]
-    ) -> Optional[str]:
+        self, message: str, metadata: dict[str, Any]
+    ) -> str | None:
         """Check for quick commands that don't need full AI."""
         msg_lower = message.lower().strip()
 

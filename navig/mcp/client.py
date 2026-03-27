@@ -1,7 +1,7 @@
 """MCP Client for connecting to external MCP servers."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -24,12 +24,12 @@ class MCPClientConfig:
     """Configuration for an MCP client connection."""
 
     id: str
-    command: Optional[str] = None
-    args: List[str] = field(default_factory=list)
-    env: Dict[str, str] = field(default_factory=dict)
+    command: str | None = None
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
     transport: str = "stdio"  # "stdio" or "sse"
-    url: Optional[str] = None  # For SSE transport
-    cwd: Optional[str] = None  # Working directory
+    url: str | None = None  # For SSE transport
+    cwd: str | None = None  # Working directory
     auto_connect: bool = True
     enabled: bool = True
 
@@ -85,14 +85,14 @@ class MCPClient:
         self.config = config
         self.id = config.id
 
-        self._transport: Optional[MCPTransport] = None
+        self._transport: MCPTransport | None = None
         self._request_id = 0
-        self._tools: Dict[str, MCPTool] = {}
-        self._resources: Dict[str, MCPResource] = {}
-        self._prompts: Dict[str, MCPPrompt] = {}
-        self._capabilities: Optional[MCPCapabilities] = None
+        self._tools: dict[str, MCPTool] = {}
+        self._resources: dict[str, MCPResource] = {}
+        self._prompts: dict[str, MCPPrompt] = {}
+        self._capabilities: MCPCapabilities | None = None
         self._initialized = False
-        self._server_info: Dict[str, Any] = {}
+        self._server_info: dict[str, Any] = {}
 
     @property
     def is_connected(self) -> bool:
@@ -104,22 +104,22 @@ class MCPClient:
         )
 
     @property
-    def tools(self) -> List[MCPTool]:
+    def tools(self) -> list[MCPTool]:
         """Get list of available tools."""
         return list(self._tools.values())
 
     @property
-    def resources(self) -> List[MCPResource]:
+    def resources(self) -> list[MCPResource]:
         """Get list of available resources."""
         return list(self._resources.values())
 
     @property
-    def prompts(self) -> List[MCPPrompt]:
+    def prompts(self) -> list[MCPPrompt]:
         """Get list of available prompts."""
         return list(self._prompts.values())
 
     @property
-    def capabilities(self) -> Optional[MCPCapabilities]:
+    def capabilities(self) -> MCPCapabilities | None:
         """Get server capabilities."""
         return self._capabilities
 
@@ -189,7 +189,7 @@ class MCPClient:
 
         logger.info(f"MCP client {self.id} disconnected")
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any] = None) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any] = None) -> Any:
         """
         Call a tool on the connected server.
 
@@ -252,7 +252,7 @@ class MCPClient:
 
         return response.result
 
-    async def get_prompt(self, name: str, arguments: Dict[str, str] = None) -> Any:
+    async def get_prompt(self, name: str, arguments: dict[str, str] = None) -> Any:
         """
         Get a prompt from the connected server.
 
@@ -363,7 +363,7 @@ class MCPClient:
             self._prompts[prompt.name] = prompt
 
     async def _send_request(
-        self, method: MCPMethod, params: Dict[str, Any]
+        self, method: MCPMethod, params: dict[str, Any]
     ) -> JSONRPCResponse:
         """Send request and wait for response."""
         self._request_id += 1
@@ -377,7 +377,7 @@ class MCPClient:
         response_data = await self._transport.send(request.to_json())
         return JSONRPCResponse.from_json(response_data)
 
-    async def _send_notification(self, method: MCPMethod, params: Dict[str, Any]):
+    async def _send_notification(self, method: MCPMethod, params: dict[str, Any]):
         """Send notification (no response expected)."""
         request = JSONRPCRequest(
             method=method.value,

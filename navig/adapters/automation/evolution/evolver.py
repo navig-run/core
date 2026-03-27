@@ -3,7 +3,6 @@ AHK Script Evolver
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 from rich.panel import Panel
 
@@ -16,10 +15,10 @@ from navig.console_helper import console, error, info, success, warning
 @dataclass
 class EvolutionResult:
     success: bool
-    script_id: Optional[str] = None
+    script_id: str | None = None
     final_script: str = ""
     attempts: int = 0
-    history: List[str] = None
+    history: list[str] = None
 
 
 class Evolver:

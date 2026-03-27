@@ -14,7 +14,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -46,7 +46,7 @@ class BrainConfig:
     reasoning_enabled: bool = True
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BrainConfig":
+    def from_dict(cls, data: dict[str, Any]) -> BrainConfig:
         return cls(
             model=data.get("model", cls.model),
             temperature=data.get("temperature", cls.temperature),
@@ -63,11 +63,11 @@ class EyesConfig:
     disk_threshold: int = 85  # percent
     memory_threshold: int = 90
     cpu_threshold: int = 80
-    log_paths: List[str] = field(default_factory=list)
-    watch_paths: List[str] = field(default_factory=list)
+    log_paths: list[str] = field(default_factory=list)
+    watch_paths: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EyesConfig":
+    def from_dict(cls, data: dict[str, Any]) -> EyesConfig:
         return cls(
             monitoring_interval=data.get(
                 "monitoring_interval", cls.monitoring_interval
@@ -85,12 +85,12 @@ class TelegramConfig:
     """Telegram integration configuration."""
 
     enabled: bool = False
-    bot_token: Optional[str] = None
-    allowed_users: List[int] = field(default_factory=list)
-    admin_users: List[int] = field(default_factory=list)
+    bot_token: str | None = None
+    allowed_users: list[int] = field(default_factory=list)
+    admin_users: list[int] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TelegramConfig":
+    def from_dict(cls, data: dict[str, Any]) -> TelegramConfig:
         return cls(
             enabled=data.get("enabled", False),
             bot_token=data.get("bot_token"),
@@ -108,7 +108,7 @@ class MCPConfig:
     host: str = "127.0.0.1"
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MCPConfig":
+    def from_dict(cls, data: dict[str, Any]) -> MCPConfig:
         return cls(
             enabled=data.get("enabled", True),
             port=data.get("port", cls.port),
@@ -123,11 +123,11 @@ class WebhooksConfig:
     enabled: bool = False
     port: int = 9000
     host: str = "127.0.0.1"
-    secret: Optional[str] = None
-    endpoints: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    secret: str | None = None
+    endpoints: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WebhooksConfig":
+    def from_dict(cls, data: dict[str, Any]) -> WebhooksConfig:
         return cls(
             enabled=data.get("enabled", False),
             port=data.get("port", cls.port),
@@ -147,15 +147,15 @@ class EmailAccountConfig:
     password: str = ""  # App password (use env var substitution: ${VAR})
     label: str = ""  # Friendly label: personal, work, etc.
     category: str = ""  # Category for filtering
-    imap_host: Optional[str] = None  # Only for generic IMAP
-    smtp_host: Optional[str] = None
+    imap_host: str | None = None  # Only for generic IMAP
+    smtp_host: str | None = None
     imap_port: int = 993
     smtp_port: int = 465
     check_interval: int = 60  # seconds between checks
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
-        d: Dict[str, Any] = {
+        d: dict[str, Any] = {
             "enabled": self.enabled,
             "provider": self.provider,
             "address": self.address,
@@ -175,7 +175,7 @@ class EmailAccountConfig:
         return d
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EmailAccountConfig":
+    def from_dict(cls, data: dict[str, Any]) -> EmailAccountConfig:
         return cls(
             enabled=data.get("enabled", True),
             provider=data.get("provider", "gmail"),
@@ -198,12 +198,12 @@ class EarsConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
     webhooks: WebhooksConfig = field(default_factory=WebhooksConfig)
-    email_accounts: List[EmailAccountConfig] = field(default_factory=list)
+    email_accounts: list[EmailAccountConfig] = field(default_factory=list)
     api_enabled: bool = True
     api_port: int = 8790
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EarsConfig":
+    def from_dict(cls, data: dict[str, Any]) -> EarsConfig:
         email_list = data.get("email_accounts", [])
         accounts = [EmailAccountConfig.from_dict(a) for a in email_list]
         return cls(
@@ -221,7 +221,7 @@ class HandsConfig:
     """Hands (execution) configuration."""
 
     command_timeout: int = 300  # seconds
-    require_confirmation: List[str] = field(
+    require_confirmation: list[str] = field(
         default_factory=lambda: [
             "restart",
             "delete",
@@ -240,7 +240,7 @@ class HandsConfig:
     max_concurrent_commands: int = 5
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "HandsConfig":
+    def from_dict(cls, data: dict[str, Any]) -> HandsConfig:
         return cls(
             command_timeout=data.get("command_timeout", cls.command_timeout),
             require_confirmation=data.get(
@@ -264,7 +264,7 @@ class HeartConfig:
     health_check_interval: int = 60
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "HeartConfig":
+    def from_dict(cls, data: dict[str, Any]) -> HeartConfig:
         return cls(
             heartbeat_interval=data.get("heartbeat_interval", cls.heartbeat_interval),
             component_restart_delay=data.get(
@@ -291,7 +291,7 @@ class MemoryConfig:
     enable_embeddings: bool = False
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MemoryConfig":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryConfig:
         storage = data.get("storage", str(cls().storage_path))
         return cls(
             storage_path=Path(storage).expanduser(),
@@ -310,14 +310,14 @@ class PersonalityConfig:
     name: str = "NAVIG"
     profile: str = "friendly"  # professional, friendly, witty, paranoid
     system_prompt: str = ""
-    behavioral_rules: List[str] = field(default_factory=list)
-    emotional_responses: Dict[str, str] = field(default_factory=dict)
+    behavioral_rules: list[str] = field(default_factory=list)
+    emotional_responses: dict[str, str] = field(default_factory=dict)
     proactive: bool = True
     emoji_enabled: bool = True
     verbosity: str = "normal"  # minimal, normal, verbose
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PersonalityConfig":
+    def from_dict(cls, data: dict[str, Any]) -> PersonalityConfig:
         return cls(
             name=data.get("name", cls.name),
             profile=data.get("profile", cls.profile),
@@ -330,7 +330,7 @@ class PersonalityConfig:
         )
 
     @classmethod
-    def load_profile(cls, profile_name: str, profiles_dir: Path) -> "PersonalityConfig":
+    def load_profile(cls, profile_name: str, profiles_dir: Path) -> PersonalityConfig:
         """Load a personality profile from file."""
         profile_path = profiles_dir / f"{profile_name}.yaml"
 
@@ -375,7 +375,7 @@ class AgentConfig:
     max_memory_mb: int = 512
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentConfig":
+    def from_dict(cls, data: dict[str, Any]) -> AgentConfig:
         """Create config from dictionary (with env var substitution)."""
         data = _substitute_env_vars(data)
         agent_data = data.get("agent", data)
@@ -398,7 +398,7 @@ class AgentConfig:
         )
 
     @classmethod
-    def load(cls, config_path: Optional[Path] = None) -> "AgentConfig":
+    def load(cls, config_path: Path | None = None) -> AgentConfig:
         """Load configuration from ConfigManager."""
         from navig.config import get_config_manager
 
@@ -408,7 +408,7 @@ class AgentConfig:
 
         return cls.from_dict(agent_data)
 
-    def save(self, config_path: Optional[Path] = None) -> None:
+    def save(self, config_path: Path | None = None) -> None:
         """Save configuration to ConfigManager."""
         from navig.config import get_config_manager
 
@@ -416,7 +416,7 @@ class AgentConfig:
         data = self.to_dict()
         manager.update_global_config({"agent": data})
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "enabled": self.enabled,

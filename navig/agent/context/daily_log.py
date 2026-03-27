@@ -36,7 +36,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # =============================================================================
 # Configuration
@@ -101,12 +101,12 @@ class DailyLog:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         retention_days: int = DEFAULT_RETENTION_DAYS,
     ):
         self.db_path = db_path or get_daily_log_path()
         self.retention_days = retention_days
-        self._session_id: Optional[str] = None
+        self._session_id: str | None = None
         self._initialized = False
 
     def _ensure_initialized(self) -> None:
@@ -137,7 +137,7 @@ class DailyLog:
             self._session_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         return self._session_id
 
-    def start_session(self, session_id: Optional[str] = None) -> str:
+    def start_session(self, session_id: str | None = None) -> str:
         """Start a new logging session."""
         self._session_id = session_id or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         return self._session_id
@@ -150,10 +150,10 @@ class DailyLog:
         self,
         role: str,
         content: str,
-        channel: Optional[str] = None,
-        server: Optional[str] = None,
-        command: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        channel: str | None = None,
+        server: str | None = None,
+        command: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         """
         Add an interaction entry to the log.
@@ -224,7 +224,7 @@ class DailyLog:
 
     def get_recent_entries(
         self, hours: int = 24, limit: int = MAX_SUMMARY_ENTRIES
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get recent interaction entries.
 
@@ -252,11 +252,11 @@ class DailyLog:
 
         return [dict(row) for row in rows]
 
-    def get_today_entries(self) -> List[Dict[str, Any]]:
+    def get_today_entries(self) -> list[dict[str, Any]]:
         """Get all entries from today."""
         return self.get_entries_for_date(datetime.utcnow().strftime("%Y-%m-%d"))
 
-    def get_entries_for_date(self, date: str) -> List[Dict[str, Any]]:
+    def get_entries_for_date(self, date: str) -> list[dict[str, Any]]:
         """Get entries for a specific date (YYYY-MM-DD)."""
         self._ensure_initialized()
 
@@ -273,8 +273,8 @@ class DailyLog:
         return [dict(row) for row in rows]
 
     def get_session_entries(
-        self, session_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, session_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """Get entries for a specific session."""
         self._ensure_initialized()
 
@@ -308,7 +308,7 @@ class DailyLog:
             return ""
 
         # Group by session
-        sessions: Dict[str, List[Dict]] = {}
+        sessions: dict[str, list[dict]] = {}
         for entry in entries:
             sid = entry.get("session_id", "unknown")
             if sid not in sessions:
@@ -357,7 +357,7 @@ class DailyLog:
     # Daily Summaries
     # =========================================================================
 
-    def generate_daily_summary(self, date: Optional[str] = None) -> str:
+    def generate_daily_summary(self, date: str | None = None) -> str:
         """
         Generate a summary for a specific date.
 
@@ -395,7 +395,7 @@ class DailyLog:
 
         return "\n".join(lines)
 
-    def save_daily_summary(self, date: Optional[str] = None) -> None:
+    def save_daily_summary(self, date: str | None = None) -> None:
         """Save a daily summary to the database."""
         self._ensure_initialized()
 
@@ -444,7 +444,7 @@ class DailyLog:
 
         return deleted
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get log statistics."""
         self._ensure_initialized()
 
@@ -477,7 +477,7 @@ class DailyLog:
 # Module-level convenience
 # =============================================================================
 
-_default_log: Optional[DailyLog] = None
+_default_log: DailyLog | None = None
 
 
 def get_daily_log() -> DailyLog:

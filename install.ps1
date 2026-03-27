@@ -1,4 +1,3 @@
-#Requires -Version 5.1
 # ─────────────────────────────────────────────────────────────
 # NAVIG Installer — Windows (PowerShell 5.1+)
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
@@ -448,41 +447,9 @@ function Invoke-WithSpinner {
 
 # ── Banner ─────────────────────────────────────────────────────────────────
 function Show-Banner {
-    $art = @(
-        " _   _    _   __   ___ ____  "
-        "| \ | |  / \ |\ \ / /|_ _/ ___|"
-        "|  \| | / _ \| \ V /  | || |  _"
-        "| |\  |/ ___ \  | |   | || |_| |"
-        "|_| \_/_/   \_\ |_|  |___\____|"
-    )
-    $tagline = "Born in the terminal. Lives in the cloud."
-    $inner   = 74
-    $border  = "-" * $inner
-    $blank   = " " * $inner
-
     Write-Host ""
-    Write-Host "  +-$border-+" -ForegroundColor Cyan
-    Write-Host "  | $blank |" -ForegroundColor Cyan
-
-    foreach ($line in $art) {
-        $padded = ("    " + $line).PadRight($inner)
-        Write-Host "  |" -NoNewline -ForegroundColor Cyan
-        Write-Host $padded -NoNewline -ForegroundColor White
-        Write-Host "|" -ForegroundColor Cyan
-    }
-
-    Write-Host "  | $blank |" -ForegroundColor Cyan
-
-    $tlen  = $tagline.Length
-    $lpad  = [int](($inner - $tlen) / 2)
-    $rpad  = $inner - $tlen - $lpad
-    $tline = (" " * $lpad) + $tagline + (" " * $rpad)
-    Write-Host "  |" -NoNewline -ForegroundColor Cyan
-    Write-Host $tline -NoNewline -ForegroundColor DarkGray
-    Write-Host "|" -ForegroundColor Cyan
-
-    Write-Host "  | $blank |" -ForegroundColor Cyan
-    Write-Host "  +-$border-+" -ForegroundColor Cyan
+    Write-Host "  NAVIG " -NoNewline -ForegroundColor Cyan
+    Write-Host "— Born in the terminal. Lives in the cloud." -ForegroundColor DarkGray
     Write-Host ""
 }
 
@@ -699,6 +666,32 @@ function Test-SSH {
 }
 
 # ── Install via pip (with live spinner) ───────────────────────────────────
+function Find-Pipx {
+    if (Get-Command pipx -ErrorAction SilentlyContinue) { return $true }
+    return $false
+}
+
+function Install-Pipx {
+    param([string]$PipCmd)
+    Write-NavStep "Installing pipx for isolated installation..."
+    $pipParts = $PipCmd -split ' '
+    $exe      = $pipParts[0]
+    $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
+    $fullArgs = $baseArgs + @("install", "--user", "pipx")
+
+    $code = Invoke-WithSpinner -Label "Installing pipx" -Exe $exe -ArgList $fullArgs
+    if ($code -ne 0) {
+        Write-NavHint "pipx installation failed, falling back to pip --user"
+        return $false
+    }
+
+    try {
+        & pipx ensurepath 2>$null
+    } catch {}
+
+    return $true
+}
+
 function Install-NavigPip {
     param([string]$PipCmd)
 
@@ -706,15 +699,30 @@ function Install-NavigPip {
     if ($Version) { $installSpec = "navig==$Version" }
     if ($Extras)  { $installSpec = "navig[$Extras]"; if ($Version) { $installSpec = "navig[$Extras]==$Version" } }
 
-    $pipParts = $PipCmd -split ' '
-    $exe      = $pipParts[0]
-    $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
-    $fullArgs = $baseArgs + @("install","--upgrade",$installSpec)
+    $usePipx = Find-Pipx
+    if (-not $usePipx) {
+        $usePipx = Install-Pipx -PipCmd $PipCmd
+    }
 
-    $code = Invoke-WithSpinner -Label "Installing NAVIG  ($installSpec)" -Exe $exe -ArgList $fullArgs
-    if ($code -ne 0) {
-        Write-NavHint "Manual fallback:  pip install $installSpec"
-        exit 1
+    if ($usePipx) {
+        $exe = "pipx"
+        $fullArgs = @("install", $installSpec, "--force")
+        $code = Invoke-WithSpinner -Label "Installing NAVIG via pipx ($installSpec)" -Exe $exe -ArgList $fullArgs
+        if ($code -ne 0) {
+            Write-NavHint "Manual fallback:  pipx install $installSpec"
+            exit 1
+        }
+    } else {
+        $pipParts = $PipCmd -split ' '
+        $exe      = $pipParts[0]
+        $baseArgs = if ($pipParts.Length -gt 1) { $pipParts[1..($pipParts.Length-1)] } else { @() }
+        $fullArgs = $baseArgs + @("install","--user","--upgrade",$installSpec)
+
+        $code = Invoke-WithSpinner -Label "Installing NAVIG via pip ($installSpec)" -Exe $exe -ArgList $fullArgs
+        if ($code -ne 0) {
+            Write-NavHint "Manual fallback:  pip install --user $installSpec"
+            exit 1
+        }
     }
 }
 

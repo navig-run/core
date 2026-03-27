@@ -36,7 +36,6 @@ import logging
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Set
 
 logger = logging.getLogger("navig.integrations.telegram_voice_bot")
 
@@ -53,7 +52,7 @@ class VoiceBotConfig:
     token_vault_label: str = "telegram/bot-token"
 
     # Optional set of numeric chat IDs to whitelist. Empty = allow all.
-    allowed_chat_ids: Set[int] = field(default_factory=set)
+    allowed_chat_ids: set[int] = field(default_factory=set)
 
     # STT provider preference
     stt_provider: str = "deepgram"  # "deepgram" | "whisper_api" | "whisper_local"
@@ -61,7 +60,7 @@ class VoiceBotConfig:
 
     # TTS provider preference
     tts_provider: str = "edge"  # "edge" | "openai" | "elevenlabs" | "deepgram"
-    tts_voice: Optional[str] = None
+    tts_voice: str | None = None
 
     # Language for STT / TTS
     language: str = "en"
@@ -70,17 +69,17 @@ class VoiceBotConfig:
     max_voice_duration_seconds: int = 120
 
     # Path where temporary audio files are stored during processing
-    audio_temp_dir: Optional[Path] = None
+    audio_temp_dir: Path | None = None
 
     # Whether to send "typing" / "record_audio" action while processing
     send_chat_action: bool = True
 
     # Webhook settings (only used in run_webhook mode)
-    webhook_url: Optional[str] = None
-    webhook_secret_token: Optional[str] = None
+    webhook_url: str | None = None
+    webhook_secret_token: str | None = None
 
     # navig-echo bridge URL (to notify of voice events)
-    echo_bridge_url: Optional[str] = None
+    echo_bridge_url: str | None = None
 
     # LLM system prompt
     system_prompt: str = (
@@ -108,10 +107,10 @@ class TelegramVoiceBot:
       - Callback queries for inline keyboard buttons
     """
 
-    def __init__(self, config: Optional[VoiceBotConfig] = None):
+    def __init__(self, config: VoiceBotConfig | None = None):
         self.config = config or VoiceBotConfig()
-        self._token: Optional[str] = None
-        self._app: Optional[object] = None  # telegram.ext.Application
+        self._token: str | None = None
+        self._app: object | None = None  # telegram.ext.Application
 
     # ------------------------------------------------------------------ #
     # Startup — fail-fast vault check
@@ -198,7 +197,7 @@ class TelegramVoiceBot:
         self,
         listen: str = "0.0.0.0",
         port: int = 8443,
-        url_path: Optional[str] = None,
+        url_path: str | None = None,
     ) -> None:
         """Start the bot in webhook mode (production)."""
         self._token = self._load_token()
@@ -541,7 +540,7 @@ class TelegramVoiceBot:
 
     async def _transcribe(
         self, audio_path: Path, *, is_voice: bool = True
-    ) -> Optional[str]:
+    ) -> str | None:
         """Transcribe an audio file using vault-keyed STT providers."""
         from navig.voice.stt import STT, STTConfig, STTProvider
 
@@ -570,7 +569,7 @@ class TelegramVoiceBot:
         )
         return None
 
-    async def _call_llm(self, text: str) -> Optional[str]:
+    async def _call_llm(self, text: str) -> str | None:
         """Route text through navig-core's UnifiedRouter."""
         try:
             from navig.routing.router import RouteRequest, get_router
@@ -587,7 +586,7 @@ class TelegramVoiceBot:
             logger.error("LLM routing error: %s", exc)
             return None
 
-    async def _call_tts(self, text: str) -> Optional[str]:
+    async def _call_tts(self, text: str) -> str | None:
         """Synthesise speech. Returns the local audio file path or None."""
         try:
             from navig.voice.tts import TTS, TTSConfig, TTSProvider
@@ -644,10 +643,10 @@ class TelegramVoiceBot:
 # Module-level singleton + convenience runner
 # ---------------------------------------------------------------------------
 
-_bot: Optional[TelegramVoiceBot] = None
+_bot: TelegramVoiceBot | None = None
 
 
-def get_voice_bot(config: Optional[VoiceBotConfig] = None) -> TelegramVoiceBot:
+def get_voice_bot(config: VoiceBotConfig | None = None) -> TelegramVoiceBot:
     """Return (or create) the global TelegramVoiceBot singleton."""
     global _bot
     if _bot is None:
@@ -655,7 +654,7 @@ def get_voice_bot(config: Optional[VoiceBotConfig] = None) -> TelegramVoiceBot:
     return _bot
 
 
-async def run_bot_polling(config: Optional[VoiceBotConfig] = None) -> None:
+async def run_bot_polling(config: VoiceBotConfig | None = None) -> None:
     """Convenience: start the bot in polling mode and run until cancelled."""
     bot = TelegramVoiceBot(config=config)
     await bot.run_polling()

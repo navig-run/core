@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hmac
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from aiohttp import web
@@ -21,7 +21,7 @@ def _get_web():
         ) from exc
 
 
-def envelope_ok(data: Optional[Any] = None) -> Dict[str, Any]:
+def envelope_ok(data: Any | None = None) -> dict[str, Any]:
     return {"ok": True, "data": data, "error": None}
 
 
@@ -29,9 +29,9 @@ def envelope_error(
     message: str,
     *,
     code: str,
-    details: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "ok": False,
         "data": None,
         "error": message,
@@ -42,7 +42,7 @@ def envelope_error(
     return payload
 
 
-def json_ok(data: Optional[Any] = None, *, status: int = 200) -> "web.Response":
+def json_ok(data: Any | None = None, *, status: int = 200) -> web.Response:
     return _get_web().json_response(envelope_ok(data), status=status)
 
 
@@ -51,18 +51,18 @@ def json_error_response(
     *,
     status: int,
     code: str,
-    details: Optional[Dict[str, Any]] = None,
-) -> "web.Response":
+    details: dict[str, Any] | None = None,
+) -> web.Response:
     return _get_web().json_response(
         envelope_error(message, code=code, details=details), status=status
     )
 
 
 def require_bearer_auth(
-    request: "web.Request",
+    request: web.Request,
     gateway: Any,
     allow_anonymous: bool = False,
-) -> "Optional[web.Response]":
+) -> web.Response | None:
     """Return 401 response when gateway auth token is configured but not provided/valid.
 
     Args:

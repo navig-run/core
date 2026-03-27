@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.agent.component import Component, ComponentState, HealthStatus
 from navig.agent.config import AgentConfig, HeartConfig
@@ -44,42 +44,42 @@ class Heart(Component):
         self,
         config: HeartConfig,
         nervous_system: NervousSystem,
-        agent_config: Optional[AgentConfig] = None,
+        agent_config: AgentConfig | None = None,
     ):
         super().__init__("heart", nervous_system)
         self.config = config
         self.agent_config = agent_config or AgentConfig()
 
         # Component registry
-        self._components: Dict[str, Component] = {}
+        self._components: dict[str, Component] = {}
 
         # Remediation engine for auto-healing
         self._remediation = RemediationEngine()
 
         # Goal planner — autonomous goal execution
-        self._goal_planner: Optional[GoalPlanner] = None
+        self._goal_planner: GoalPlanner | None = None
 
         # Background tasks
-        self._heartbeat_task: Optional[asyncio.Task] = None
-        self._health_check_task: Optional[asyncio.Task] = None
-        self._goal_processing_task: Optional[asyncio.Task] = None
+        self._heartbeat_task: asyncio.Task | None = None
+        self._health_check_task: asyncio.Task | None = None
+        self._goal_processing_task: asyncio.Task | None = None
 
         # Metrics
         self._beat_count = 0
-        self._last_beat: Optional[datetime] = None
-        self._start_time: Optional[datetime] = None
+        self._last_beat: datetime | None = None
+        self._start_time: datetime | None = None
 
     def register_component(self, name: str, component: Component) -> None:
         """Register a component for lifecycle management."""
         self._components[name] = component
         component.set_nervous_system(self.nervous_system)
 
-    def get_component(self, name: str) -> Optional[Component]:
+    def get_component(self, name: str) -> Component | None:
         """Get a registered component by name."""
         return self._components.get(name)
 
     @property
-    def goal_planner(self) -> Optional[GoalPlanner]:
+    def goal_planner(self) -> GoalPlanner | None:
         """Access the goal planner (None if not initialized)."""
         return self._goal_planner
 
@@ -203,7 +203,7 @@ class Heart(Component):
         # Emit stopped event
         await self.emit(EventType.AGENT_STOPPED, {})
 
-    async def _on_health_check(self) -> Dict[str, Any]:
+    async def _on_health_check(self) -> dict[str, Any]:
         """Check heart health."""
         return {
             "beat_count": self._beat_count,
@@ -334,8 +334,8 @@ class Heart(Component):
                 await asyncio.sleep(self.config.health_check_interval)
 
                 # Check all components
-                results: Dict[str, HealthStatus] = {}
-                failed: List[str] = []
+                results: dict[str, HealthStatus] = {}
+                failed: list[str] = []
 
                 for name, component in self._components.items():
                     health = await component.health_check()
@@ -423,7 +423,7 @@ class Heart(Component):
             )
             return False
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get comprehensive agent status."""
         return {
             "heart": super().get_status(),
@@ -439,7 +439,7 @@ class Heart(Component):
             },
         }
 
-    def get_component_states(self) -> Dict[str, str]:
+    def get_component_states(self) -> dict[str, str]:
         """Get state of all components."""
         return {
             name: component.state.name for name, component in self._components.items()

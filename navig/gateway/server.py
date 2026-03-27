@@ -18,7 +18,7 @@ import signal
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 try:
     import aiohttp
@@ -66,7 +66,7 @@ logger = get_debug_logger()
 class GatewayConfig:
     """Gateway configuration with defaults."""
 
-    def __init__(self, raw_config: Dict[str, Any] = None):
+    def __init__(self, raw_config: dict[str, Any] = None):
         raw_config = raw_config or {}
         gateway_cfg = raw_config.get("gateway", {})
 
@@ -102,7 +102,7 @@ class NavigGateway:
     - System event processing
     """
 
-    def __init__(self, config: Optional[GatewayConfig] = None):
+    def __init__(self, config: GatewayConfig | None = None):
         """
         Initialize the gateway.
 
@@ -138,23 +138,23 @@ class NavigGateway:
         self.event_queue = self.system_events  # Alias for compatibility
 
         # Config watcher (hot reload) - initialized in start()
-        self.config_watcher: Optional[ConfigWatcher] = None
+        self.config_watcher: ConfigWatcher | None = None
 
         # State
         self.running = False
-        self.start_time: Optional[datetime] = None
-        self._app: Optional[web.Application] = None
-        self._runner: Optional[web.AppRunner] = None
+        self.start_time: datetime | None = None
+        self._app: web.Application | None = None
+        self._runner: web.AppRunner | None = None
 
         # Components initialized later
         self.heartbeat_runner = None
         self.cron_service = None
-        self.channels: Dict[str, Any] = {}
+        self.channels: dict[str, Any] = {}
 
         # Queue for pending messages
         # Bounded queue — prevents OOM on message floods (P1-2)
         self._message_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-        self._queue_task: Optional[asyncio.Task] = None
+        self._queue_task: asyncio.Task | None = None
 
         # New autonomous modules (lazy initialized)
         self.approval_manager = None
@@ -165,11 +165,11 @@ class NavigGateway:
         self.task_worker = None
 
         # Rate limiter auth state — populated by middleware factory in _start_http_server
-        self._auth_attempts: Dict[str, list] = {}
+        self._auth_attempts: dict[str, list] = {}
 
         # ── Safety & Audit ─────────────────────────────────────────────────
         raw_cfg = self.config_manager.global_config or {}
-        raw_gateway_cfg: Dict[str, Any] = (
+        raw_gateway_cfg: dict[str, Any] = (
             raw_cfg.get("gateway", {}) if isinstance(raw_cfg, dict) else {}
         )
         self.policy_gate = PolicyGate.from_config(raw_gateway_cfg)
@@ -413,7 +413,7 @@ class NavigGateway:
         self.cron_service = CronService(self, storage_path, cron_config)
         await self.cron_service.start()
 
-    async def _on_config_reload(self, new_config: Dict[str, Any]):
+    async def _on_config_reload(self, new_config: dict[str, Any]):
         """Handle config file changes (hot reload)."""
         logger.info("Config changed, reloading...")
 
@@ -445,7 +445,7 @@ class NavigGateway:
             except Exception:
                 logger.exception("Error processing message from queue")  # P1-5
 
-    async def _process_message(self, message: Dict[str, Any]):
+    async def _process_message(self, message: dict[str, Any]):
         """Process a single message (with 60 s timeout — P1-1)."""
         try:
             response = await asyncio.wait_for(
@@ -506,7 +506,7 @@ class NavigGateway:
         action: str,
         actor: str,
         raw_input: str = "",
-    ) -> "Optional[web.Response]":
+    ) -> web.Response | None:
         """
         Run PolicyGate + CooldownTracker for a privileged action.
 
@@ -842,7 +842,7 @@ class NavigGateway:
         session_key: str,
         message: str,
         is_heartbeat: bool = False,
-        model: Optional[str] = None,
+        model: str | None = None,
         **kwargs,
     ) -> str:
         """
@@ -882,10 +882,10 @@ class NavigGateway:
     async def _build_agent_context(
         self,
         agent_id: str,
-        session: "Session",
+        session: Session,
         is_heartbeat: bool,
         message: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build agent context from workspace files."""
         workspace_dir = self.storage_dir / "workspace"
         workspace_candidates = [USER_WORKSPACE_DIR, workspace_dir]
@@ -959,9 +959,9 @@ class NavigGateway:
 
     async def _call_ai(
         self,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         message: str,
-        model: Optional[str] = None,
+        model: str | None = None,
         **kwargs,
     ) -> str:
         """Call AI with context and message."""
@@ -992,7 +992,7 @@ class NavigGateway:
             logger.error(f"AI call failed: {e}")
             return f"Error: {e}"
 
-    def _build_system_prompt(self, context: Dict[str, Any]) -> str:
+    def _build_system_prompt(self, context: dict[str, Any]) -> str:
         """Build system prompt from context files."""
         parts = []
 
@@ -1048,7 +1048,7 @@ class NavigGateway:
         else:
             logger.warning(f"No handler for channel: {channel}")
 
-    async def deliver_message(self, channel: str, to: Optional[str], content: str):
+    async def deliver_message(self, channel: str, to: str | None, content: str):
         """Deliver message to a specific channel/recipient."""
         handler = self.channels.get(channel)
         if handler:
@@ -1167,7 +1167,7 @@ class NavigGateway:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-    async def _handle_shutdown(self, request) -> "web.Response":
+    async def _handle_shutdown(self, request) -> web.Response:
         """Handle POST /shutdown — custom method that avoids aiohttp-specific r.remote."""
         import asyncio as _asyncio
 
@@ -1193,7 +1193,7 @@ class NavigGateway:
         _asyncio.create_task(_delayed())
         return resp
 
-    async def _handle_approval_request(self, request) -> "web.Response":
+    async def _handle_approval_request(self, request) -> web.Response:
         """Route an approval request (API variant: uses 'action' field)."""
         from aiohttp import web
 
@@ -1213,7 +1213,7 @@ class NavigGateway:
 
         await _ws_dispatch(ws, data, self)
 
-    async def _handle_proactive_status(self, request) -> "web.Response":
+    async def _handle_proactive_status(self, request) -> web.Response:
         """Return proactive engine status using the server module engine getter."""
         from aiohttp import web
 
@@ -1231,7 +1231,7 @@ class NavigGateway:
             }
         )
 
-    async def _handle_proactive_start(self, request) -> "web.Response":
+    async def _handle_proactive_start(self, request) -> web.Response:
         """Start proactive engine using the server module engine getter."""
         from aiohttp import web
 
@@ -1241,7 +1241,7 @@ class NavigGateway:
             return web.json_response({"success": True, "status": "started"})
         return web.json_response({"success": True, "status": "already_running"})
 
-    async def _handle_proactive_stop(self, request) -> "web.Response":
+    async def _handle_proactive_stop(self, request) -> web.Response:
         """Stop proactive engine using the server module engine getter."""
         from aiohttp import web
 
@@ -1251,7 +1251,7 @@ class NavigGateway:
             return web.json_response({"success": True, "status": "stopped"})
         return web.json_response({"success": True, "status": "not_running"})
 
-    async def _handle_proactive_check(self, request) -> "web.Response":
+    async def _handle_proactive_check(self, request) -> web.Response:
         """Trigger a proactive check using the server module engine getter."""
         from aiohttp import web
 
@@ -1261,7 +1261,7 @@ class NavigGateway:
         asyncio.create_task(engine.run_checks(None))
         return web.json_response({"success": True, "status": "triggered"})
 
-    async def _handle_engagement_status(self, request) -> "web.Response":
+    async def _handle_engagement_status(self, request) -> web.Response:
         """Return engagement coordinator status."""
         from aiohttp import web
 
@@ -1289,7 +1289,7 @@ class NavigGateway:
             }
         )
 
-    async def _handle_engagement_tick(self, request) -> "web.Response":
+    async def _handle_engagement_tick(self, request) -> web.Response:
         """Run one engagement tick and deliver a message if appropriate."""
         from aiohttp import web
 

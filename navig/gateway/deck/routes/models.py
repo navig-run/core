@@ -150,23 +150,25 @@ async def handle_deck_models_available(request: "web.Request") -> "web.Response"
     try:
         import aiohttp as _aiohttp
 
-        async with _aiohttp.ClientSession() as session:
-            async with session.get(
+        async with (
+            _aiohttp.ClientSession() as session,
+            session.get(
                 "http://localhost:11434/api/tags",
                 timeout=_aiohttp.ClientTimeout(total=5),
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    for m in data.get("models", []):
-                        size_mb = m.get("size", 0) // 1024 // 1024
-                        available.append(
-                            {
-                                "provider": "ollama",
-                                "model": m.get("name", ""),
-                                "size_mb": size_mb,
-                                "family": m.get("details", {}).get("family", ""),
-                            }
-                        )
+            ) as resp,
+        ):
+            if resp.status == 200:
+                data = await resp.json()
+                for m in data.get("models", []):
+                    size_mb = m.get("size", 0) // 1024 // 1024
+                    available.append(
+                        {
+                            "provider": "ollama",
+                            "model": m.get("name", ""),
+                            "size_mb": size_mb,
+                            "family": m.get("details", {}).get("family", ""),
+                        }
+                    )
     except Exception as e:
         logger.debug("Ollama query failed: %s", e)
 

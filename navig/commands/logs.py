@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 import time
-from typing import List, Optional, Tuple
 
 import typer
 
@@ -26,7 +25,7 @@ app = typer.Typer(
 # ---------------------------------------------------------------------------
 
 #: Mapping from log-level keyword → (label, ANSI colour attr name)
-_SEVERITY_MAP: dict[str, Tuple[str, str]] = {
+_SEVERITY_MAP: dict[str, tuple[str, str]] = {
     "EMERG": ("EMERG", "RED"),
     "ALERT": ("ALERT", "RED"),
     "CRIT": ("CRIT", "RED"),
@@ -79,7 +78,7 @@ def _render_log_line(line: str) -> str:
     return highlighted
 
 
-def _fetch_logs(service: str, tail: int, host: str) -> List[str]:
+def _fetch_logs(service: str, tail: int, host: str) -> list[str]:
     """Fetch log lines for *service* from *host*.
 
     .. note::
@@ -154,7 +153,7 @@ def run(
 def logs_cmd(
     service: str = typer.Argument(..., help="Service whose logs to tail"),
     tail: int = typer.Option(20, "--tail", "-n", help="Number of lines to show"),
-    host: Optional[str] = typer.Option(
+    host: str | None = typer.Option(
         None, "--host", "-H", help="Target host (default: production-01)"
     ),
 ) -> None:
