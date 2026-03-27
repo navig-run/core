@@ -275,9 +275,9 @@ def resolve_gateway() -> StatusBadge:
 def resolve_mesh() -> StatusBadge:
     """Check mesh node topology (read-only, no settings panel)."""
     try:
-        from navig.mesh.registry import NodeRegistry  # type: ignore[import]
+        from navig.mesh.registry import get_registry  # type: ignore[import]
 
-        registry = NodeRegistry()
+        registry = get_registry()
         nodes = registry.list_nodes() if hasattr(registry, "list_nodes") else []
         node_count = len(nodes) if nodes else 0
 
@@ -306,9 +306,11 @@ def resolve_mesh() -> StatusBadge:
 def resolve_scheduler() -> StatusBadge:
     """Check cron scheduler state."""
     try:
+        from pathlib import Path
+
         from navig.scheduler.cron_service import CronService  # type: ignore[import]
 
-        svc = CronService()
+        svc = CronService(gateway=None, storage_path=Path.home() / ".navig")
         jobs = svc.list_jobs() if hasattr(svc, "list_jobs") else []
         count = len(jobs) if jobs else 0
 

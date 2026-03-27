@@ -102,6 +102,7 @@ class PerplexityClient(BaseProviderClient):
             model: Model to use (sonar, sonar-pro, sonar-reasoning)
             timeout: Request timeout
         """
+        super().__init__()
         # Resolve API key from env if not provided
         self.api_key = api_key or self._resolve_api_key()
         self.model = model

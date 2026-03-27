@@ -62,7 +62,7 @@ def _resolve_asset(name: str) -> Path | None:
         pass  # malformed value; skip
 
     # Try by enum name (case-insensitive)
-    for s in NotificationSound:
+    for s in list(NotificationSound):
         if s.name.lower() == name.lower():
             path = ASSETS_DIR / s.value
             if path.exists():

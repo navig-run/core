@@ -43,9 +43,10 @@ class UpdateEngine:
 
         if remote_ops is None:
             try:
+                from navig.config import ConfigManager
                 from navig.remote import RemoteOperations
 
-                remote_ops = RemoteOperations()
+                remote_ops = RemoteOperations(ConfigManager())
             except Exception:
                 remote_ops = None
         self._remote_ops = remote_ops
