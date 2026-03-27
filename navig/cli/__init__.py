@@ -1909,9 +1909,7 @@ def whoami_command(
 
 @app.command("settings")
 def settings_command(
-    key: str | None = typer.Argument(
-        None, help="Setting key, e.g. navig.ai.provider"
-    ),
+    key: str | None = typer.Argument(None, help="Setting key, e.g. navig.ai.provider"),
     value: str | None = typer.Argument(
         None, help="New value to write (triggers write mode)"
     ),
@@ -3701,9 +3699,7 @@ def trigger_show(
 def trigger_add(
     ctx: typer.Context,
     name: str | None = typer.Argument(None, help="Trigger name"),
-    action: str | None = typer.Option(
-        None, "--action", "-a", help="Action to execute"
-    ),
+    action: str | None = typer.Option(None, "--action", "-a", help="Action to execute"),
     trigger_type: str = typer.Option(
         "manual",
         "--type",
@@ -4949,9 +4945,7 @@ def web_hestia_add(
         None, "--password", "-p", help="Password (for user)"
     ),
     email: str | None = typer.Option(None, "--email", "-e", help="Email (for user)"),
-    user: str | None = typer.Option(
-        None, "--user", "-u", help="Username (for domain)"
-    ),
+    user: str | None = typer.Option(None, "--user", "-u", help="Username (for domain)"),
 ):
     """Add HestiaCP user or domain."""
     if resource == "user":
@@ -4978,9 +4972,7 @@ def web_hestia_remove(
     ctx: typer.Context,
     resource: str = typer.Argument(..., help="Resource type: user or domain"),
     name: str = typer.Argument(..., help="Username or domain name"),
-    user: str | None = typer.Option(
-        None, "--user", "-u", help="Username (for domain)"
-    ),
+    user: str | None = typer.Option(None, "--user", "-u", help="Username (for domain)"),
     force: bool = typer.Option(
         False, "--force", "-f", help="Force deletion without confirmation"
     ),
@@ -5341,9 +5333,7 @@ def db_query(
     password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    database: str | None = typer.Option(
-        None, "--database", "-d", help="Database name"
-    ),
+    database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
@@ -5410,9 +5400,7 @@ def db_show_tables(
 def db_dump(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name to dump"),
-    output: Path | None = typer.Option(
-        None, "--output", "-o", help="Output file path"
-    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
     container: str | None = typer.Option(
         None, "--container", "-c", help="Docker container name"
     ),
@@ -5441,9 +5429,7 @@ def db_shell(
     password: str | None = typer.Option(
         None, "--password", "-p", help="Database password"
     ),
-    database: str | None = typer.Option(
-        None, "--database", "-d", help="Database name"
-    ),
+    database: str | None = typer.Option(None, "--database", "-d", help="Database name"),
     db_type: str | None = typer.Option(
         None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
     ),
@@ -10019,9 +10005,7 @@ def queue_callback(ctx: typer.Context):
 
 @queue_app.command("list")
 def queue_list(
-    status: str | None = typer.Option(
-        None, "--status", "-s", help="Filter by status"
-    ),
+    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max tasks to show"),
 ):
     """List queued tasks."""

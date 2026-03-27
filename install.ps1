@@ -447,9 +447,27 @@ function Invoke-WithSpinner {
 
 # ── Banner ─────────────────────────────────────────────────────────────────
 function Show-Banner {
+    $taglines = @(
+        "Your servers are in good hands now.",
+        "No admin visible in graveyard? Perfect.",
+        "SSH tunnels, remote ops — all in one CLI.",
+        "Because server management shouldn't feel like surgery.",
+        "ctrl+c to exit. But why would you?",
+        "Keeping uptime personal since 2024.",
+        "One CLI to rule them all.",
+        "Servers don't sleep, and neither does NAVIG.",
+        "Remote ops, local comfort.",
+        "Born in the terminal. Lives in the cloud.",
+        "Your devops sidekick. No cape required.",
+        "Deploy, manage, survive. Repeat.",
+        "Less SSH, more SHH — it just works.",
+        "The quiet guardian of your infrastructure.",
+        "Admin by day, daemon by night."
+    )
+    $tagline = $taglines[(Get-Random -Maximum $taglines.Length)]
     Write-Host ""
     Write-Host "  NAVIG " -NoNewline -ForegroundColor Cyan
-    Write-Host "— Born in the terminal. Lives in the cloud." -ForegroundColor DarkGray
+    Write-Host "— $tagline" -ForegroundColor DarkGray
     Write-Host ""
 }
 
@@ -925,23 +943,19 @@ function Remove-NavigFiles {
 
     if ($pipSpec) {
         try {
-            & $pipSpec.Exe @($pipSpec.Args + @("show", "navig")) 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                & $pipSpec.Exe @($pipSpec.Args + @("uninstall", "-y", "navig")) 2>&1 | Out-Null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-NavOk "Removed pip package: navig"
-                } else {
-                    Add-UninstallFailure -Step "pip uninstall navig" -Message "pip exited with code $LASTEXITCODE"
-                }
-            } else {
-                Write-NavInfo "pip package not present: navig"
-            }
-        } catch {
-            Add-UninstallFailure -Step "pip uninstall navig" -Message $_.Exception.Message
-        }
+            & $pipSpec.Exe @($pipSpec.Args + @("uninstall", "-y", "navig")) 2>&1 | Out-Null
+            Write-NavOk "Removed pip package: navig (if present)"
+        } catch {}
     } else {
-        Write-NavInfo "pip not available — removing remaining NAVIG files directly"
+        Write-NavInfo "pip not available — skipping pip uninstall"
     }
+
+    try {
+        if (Get-Command pipx -ErrorAction SilentlyContinue) {
+            & pipx uninstall navig 2>&1 | Out-Null
+            Write-NavOk "Removed pipx package: navig (if present)"
+        }
+    } catch {}
 
     $fileTargets = @(
         $INSTALL_MARKER_PATH,
