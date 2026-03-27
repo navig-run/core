@@ -64,7 +64,6 @@ TAGLINES=(
     "No admin visible in graveyard? Perfect."
     "SSH tunnels, remote ops - all in one CLI."
     "Because server management shouldn't feel like surgery."
-    "ctrl+c to exit. But why would you?"
     "Keeping uptime personal since 2024."
     "One CLI to rule them all."
     "Servers don't sleep, and neither does NAVIG."
