@@ -41,7 +41,7 @@ func matchInputToVault(inp *InputInfo, v *vault.Vault, analysis *PageAnalysis) s
 			if inp.Type == "password" || containsAny(combined, "password", "pass", "pwd", "secret") {
 				return acc.Password
 			}
-			if containsAny(combined, "username", "login", "user", "email", "account") {
+			if containsAny(combined, "username", "login", "user", "email", "account", "identity", "handle") {
 				return acc.Username
 			}
 		}
