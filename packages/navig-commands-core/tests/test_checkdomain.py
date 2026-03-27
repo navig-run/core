@@ -2,14 +2,16 @@
 tests/test_checkdomain.py - Unit tests for the checkdomain command handler.
 Run with: py -3 -m pytest tests/ -q
 """
+
 from __future__ import annotations
 
 import asyncio
+import pathlib
+import sys
 import unittest
-from unittest.mock import MagicMock, patch
 import urllib.error
+from unittest.mock import MagicMock, patch
 
-import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "commands"))
 from checkdomain import handle
 
@@ -45,7 +47,10 @@ class TestCheckdomain(unittest.IsolatedAsyncioTestCase):
 
     async def test_network_error(self):
         import urllib.error
-        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("timeout")):
+
+        with patch(
+            "urllib.request.urlopen", side_effect=urllib.error.URLError("timeout")
+        ):
             result = await handle({"domain": "example.com"})
         assert result["status"] == "error"
 

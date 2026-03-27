@@ -62,6 +62,7 @@ class MCPProtocolHandler:
         self.tools = {}
         self._tool_handlers = {}
         from navig.mcp.tools import register_all_tools
+
         register_all_tools(self)
 
     def _setup_navig_resources(self):
@@ -71,105 +72,105 @@ class MCPProtocolHandler:
                 "uri": "navig://config/hosts",
                 "name": "NAVIG Hosts Configuration",
                 "description": "All configured SSH hosts",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://config/apps": {
                 "uri": "navig://config/apps",
                 "name": "NAVIG Apps Configuration",
                 "description": "All configured applications",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://wiki": {
                 "uri": "navig://wiki",
                 "name": "NAVIG Wiki",
                 "description": "Project knowledge base",
-                "mimeType": "text/markdown"
+                "mimeType": "text/markdown",
             },
             "navig://context": {
                 "uri": "navig://context",
                 "name": "NAVIG Context",
                 "description": "Current system state and recent errors",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://agent/status": {
                 "uri": "navig://agent/status",
                 "name": "NAVIG Agent Status",
                 "description": "Agent runtime status and configuration",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://agent/goals": {
                 "uri": "navig://agent/goals",
                 "name": "NAVIG Agent Goals",
                 "description": "Autonomous goal list and progress",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://agent/remediation": {
                 "uri": "navig://agent/remediation",
                 "name": "NAVIG Agent Remediation",
                 "description": "Remediation actions and recent remediation logs",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://agent/learning": {
                 "uri": "navig://agent/learning",
                 "name": "NAVIG Agent Learning Report",
                 "description": "Latest error pattern analysis report",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://agent/service": {
                 "uri": "navig://agent/service",
                 "name": "NAVIG Agent Service Status",
                 "description": "Service installer/status integration",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "agent://status": {
                 "uri": "agent://status",
                 "name": "Agent Status",
                 "description": "Alias for NAVIG agent runtime status",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "agent://goals": {
                 "uri": "agent://goals",
                 "name": "Agent Goals",
                 "description": "Alias for agent goals",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "agent://remediation": {
                 "uri": "agent://remediation",
                 "name": "Agent Remediation",
                 "description": "Alias for remediation actions",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "agent://learning/patterns": {
                 "uri": "agent://learning/patterns",
                 "name": "Agent Learning Patterns",
                 "description": "Alias for learning report",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "agent://service": {
                 "uri": "agent://service",
                 "name": "Agent Service",
                 "description": "Alias for service status",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             # ── Runtime Contracts ──────────────────────────────────────
             "navig://runtime/nodes": {
                 "uri": "navig://runtime/nodes",
                 "name": "NAVIG Runtime Nodes",
                 "description": "All registered Node identities",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://runtime/missions": {
                 "uri": "navig://runtime/missions",
                 "name": "NAVIG Runtime Missions",
                 "description": "Recent Missions with lifecycle state",
-                "mimeType": "application/json"
+                "mimeType": "application/json",
             },
             "navig://runtime/receipts": {
                 "uri": "navig://runtime/receipts",
                 "name": "NAVIG Execution Receipts",
                 "description": "Audit trail of completed Mission executions",
-                "mimeType": "application/json"
-            }
+                "mimeType": "application/json",
+            },
         }
 
     # =========================================================================
@@ -180,15 +181,8 @@ class MCPProtocolHandler:
         """Handle MCP initialize request."""
         return {
             "protocolVersion": "2024-11-05",
-            "capabilities": {
-                "tools": {},
-                "resources": {},
-                "prompts": {}
-            },
-            "serverInfo": {
-                "name": "navig-mcp-server",
-                "version": "1.0.0"
-            }
+            "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
+            "serverInfo": {"name": "navig-mcp-server", "version": "1.0.0"},
         }
 
     def _handle_initialized(self, params: Dict[str, Any]) -> None:
@@ -201,9 +195,7 @@ class MCPProtocolHandler:
 
     def _handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return list of available tools."""
-        return {
-            "tools": list(self.tools.values())
-        }
+        return {"tools": list(self.tools.values())}
 
     def _handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a tool call."""
@@ -213,25 +205,25 @@ class MCPProtocolHandler:
         if tool_name not in self.tools:
             return {
                 "isError": True,
-                "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}]
+                "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
             }
 
         try:
             result = self._execute_tool(tool_name, arguments)
             return {
-                "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]
+                "content": [
+                    {"type": "text", "text": json.dumps(result, indent=2, default=str)}
+                ]
             }
         except Exception as e:
             return {
                 "isError": True,
-                "content": [{"type": "text", "text": f"Tool error: {str(e)}"}]
+                "content": [{"type": "text", "text": f"Tool error: {str(e)}"}],
             }
 
     def _handle_resources_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return list of available resources."""
-        return {
-            "resources": list(self.resources.values())
-        }
+        return {"resources": list(self.resources.values())}
 
     def _handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Read a resource."""
@@ -240,22 +232,24 @@ class MCPProtocolHandler:
         if uri not in self.resources:
             return {
                 "isError": True,
-                "content": [{"type": "text", "text": f"Unknown resource: {uri}"}]
+                "content": [{"type": "text", "text": f"Unknown resource: {uri}"}],
             }
 
         try:
             content = self._read_resource(uri)
             return {
-                "contents": [{
-                    "uri": uri,
-                    "mimeType": self.resources[uri].get("mimeType", "text/plain"),
-                    "text": content
-                }]
+                "contents": [
+                    {
+                        "uri": uri,
+                        "mimeType": self.resources[uri].get("mimeType", "text/plain"),
+                        "text": content,
+                    }
+                ]
             }
         except Exception as e:
             return {
                 "isError": True,
-                "content": [{"type": "text", "text": f"Resource error: {str(e)}"}]
+                "content": [{"type": "text", "text": f"Resource error: {str(e)}"}],
             }
 
     def _handle_prompts_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -293,30 +287,51 @@ class MCPProtocolHandler:
         elif uri == "navig://context":
             return json.dumps(self._execute_tool("navig_get_context", {}), indent=2)
         elif uri in ("navig://agent/status", "agent://status"):
-            return json.dumps(self._execute_tool("navig_agent_status_get", {}), indent=2)
+            return json.dumps(
+                self._execute_tool("navig_agent_status_get", {}), indent=2
+            )
         elif uri in ("navig://agent/goals", "agent://goals"):
-            return json.dumps(self._execute_tool("navig_agent_goal_list", {"limit": 100}), indent=2)
+            return json.dumps(
+                self._execute_tool("navig_agent_goal_list", {"limit": 100}), indent=2
+            )
         elif uri in ("navig://agent/remediation", "agent://remediation"):
-            return json.dumps(self._execute_tool("navig_agent_remediation_list", {"limit": 100}), indent=2)
+            return json.dumps(
+                self._execute_tool("navig_agent_remediation_list", {"limit": 100}),
+                indent=2,
+            )
         elif uri in ("navig://agent/learning", "agent://learning/patterns"):
             report_path = Path.home() / ".navig" / "workspace" / "error-patterns.json"
             if report_path.exists():
                 return report_path.read_text(encoding="utf-8", errors="replace")
-            return json.dumps(self._execute_tool("navig_agent_learning_run", {"days": 7, "export": False}), indent=2)
+            return json.dumps(
+                self._execute_tool(
+                    "navig_agent_learning_run", {"days": 7, "export": False}
+                ),
+                indent=2,
+            )
         elif uri in ("navig://agent/service", "agent://service"):
-            return json.dumps(self._execute_tool("navig_agent_service_status", {}), indent=2)
+            return json.dumps(
+                self._execute_tool("navig_agent_service_status", {}), indent=2
+            )
         elif uri == "navig://runtime/nodes":
             from navig.contracts.store import get_runtime_store
+
             store = get_runtime_store()
             return json.dumps([n.to_dict() for n in store.list_nodes()], indent=2)
         elif uri == "navig://runtime/missions":
             from navig.contracts.store import get_runtime_store
+
             store = get_runtime_store()
-            return json.dumps([m.to_dict() for m in store.list_missions(limit=50)], indent=2)
+            return json.dumps(
+                [m.to_dict() for m in store.list_missions(limit=50)], indent=2
+            )
         elif uri == "navig://runtime/receipts":
             from navig.contracts.store import get_runtime_store
+
             store = get_runtime_store()
-            return json.dumps([r.to_dict() for r in store.list_receipts(limit=50)], indent=2)
+            return json.dumps(
+                [r.to_dict() for r in store.list_receipts(limit=50)], indent=2
+            )
         else:
             raise ValueError(f"Unknown resource: {uri}")
 
@@ -335,31 +350,21 @@ class MCPProtocolHandler:
                 return {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "error": {
-                        "code": -32601,
-                        "message": f"Method not found: {method}"
-                    }
+                    "error": {"code": -32601, "message": f"Method not found: {method}"},
                 }
             return None
 
         try:
             result = self._handlers[method](params)
             if msg_id is not None:
-                return {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": result
-                }
+                return {"jsonrpc": "2.0", "id": msg_id, "result": result}
             return None
         except Exception as e:
             if msg_id is not None:
                 return {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "error": {
-                        "code": -32603,
-                        "message": str(e)
-                    }
+                    "error": {"code": -32603, "message": str(e)},
                 }
             return None
 
@@ -390,9 +395,11 @@ class MCPProtocolHandler:
         self._running = False
 
 
-def start_mcp_server(mode: str = "stdio", port: int = 3001, token: Optional[str] = None):
+def start_mcp_server(
+    mode: str = "stdio", port: int = 3001, token: Optional[str] = None
+):
     """Start the NAVIG MCP server.
-    
+
     Args:
         mode: Server mode - 'stdio' for stdin/stdout, 'websocket' for WS
         port: Port for WebSocket mode (default 3001)
@@ -408,13 +415,15 @@ def start_mcp_server(mode: str = "stdio", port: int = 3001, token: Optional[str]
         raise ValueError(f"Unknown mode: {mode}. Use 'stdio' or 'websocket'.")
 
 
-def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optional[str] = None):
+def _run_websocket_server(
+    handler: MCPProtocolHandler, port: int, token: Optional[str] = None
+):
     """Start a WebSocket MCP server with optional token auth.
-    
+
     The server speaks JSON-RPC 2.0 over WebSocket frames.
     Each frame is one JSON-RPC request/response.
     Notifications (no 'id') are fire-and-forget.
-    
+
     Auth: if token is set, clients must send it as the first message
     or via the ``Authorization`` header (``Bearer <token>``).
     """
@@ -433,6 +442,7 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
 
     # --- Event Bridge integration (push pipeline) ---
     from navig.event_bridge import EventBridge, SubscriptionFilter
+
     event_bridge = EventBridge(debounce_seconds=1.0)
 
     notification_sources = {
@@ -514,7 +524,10 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
                         "params": params,
                     }
                     payload = json.dumps(payload_obj, default=str)
-                    if len(payload.encode("utf-8", errors="replace")) > max_notification_bytes:
+                    if (
+                        len(payload.encode("utf-8", errors="replace"))
+                        > max_notification_bytes
+                    ):
                         payload = json.dumps(
                             {
                                 "jsonrpc": "2.0",
@@ -534,12 +547,14 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
                     state["last_seen_digest"] is not None
                     and state["last_seen_digest"] != state["last_emitted_digest"]
                     and state["last_seen_at"] is not None
-                    and (now - state["last_seen_at"]).total_seconds() >= debounce_seconds
+                    and (now - state["last_seen_at"]).total_seconds()
+                    >= debounce_seconds
                     and state["last_payload"] is not None
                 ):
                     await _broadcast_notification(state["last_payload"])
                     # Also push through EventBridge for filtered delivery
                     from navig.event_bridge import Severity
+
                     await event_bridge.push_direct(
                         topic=topic,
                         source="mcp.resource_poll",
@@ -566,15 +581,26 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
                         authenticated_clients.add(client_id)
                         authenticated_websockets.add(websocket)
                         event_bridge.register_client(websocket)
-                        ack = json.dumps({"jsonrpc": "2.0", "result": {"authenticated": True}, "id": 0})
+                        ack = json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "result": {"authenticated": True},
+                                "id": 0,
+                            }
+                        )
                         await websocket.send(ack)
                         continue
                     else:
-                        err = json.dumps({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32000, "message": "Authentication required"},
-                            "id": None,
-                        })
+                        err = json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "error": {
+                                    "code": -32000,
+                                    "message": "Authentication required",
+                                },
+                                "id": None,
+                            }
+                        )
                         await websocket.send(err)
                         await websocket.close(4001, "Authentication failed")
                         return
@@ -583,11 +609,13 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: Optiona
                 try:
                     message = json.loads(raw)
                 except json.JSONDecodeError:
-                    err = json.dumps({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32700, "message": "Parse error"},
-                        "id": None,
-                    })
+                    err = json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "error": {"code": -32700, "message": "Parse error"},
+                            "id": None,
+                        }
+                    )
                     await websocket.send(err)
                     continue
 
@@ -667,7 +695,7 @@ def generate_vscode_mcp_config() -> Dict[str, Any]:
             "navig": {
                 "command": python_path,
                 "args": ["-m", "navig.mcp_server"],
-                "env": {}
+                "env": {},
             }
         }
     }
@@ -684,7 +712,7 @@ def generate_claude_mcp_config() -> Dict[str, Any]:
             "navig": {
                 "command": python_path,
                 "args": ["-m", "navig.mcp_server"],
-                "env": {}
+                "env": {},
             }
         }
     }
@@ -700,20 +728,29 @@ from navig.memory.paths import KEY_FACTS_DB_PATH as _KEY_FACTS_DB_PATH
 def _memory_store():
     """Return a fresh KeyFactStore backed by the canonical DB path."""
     from navig.memory.key_facts import KeyFactStore
+
     return KeyFactStore(db_path=_KEY_FACTS_DB_PATH)
 
 
-async def memory_retrieve(query: str, limit: int = 10, token_budget: int = 2000) -> dict:
+async def memory_retrieve(
+    query: str, limit: int = 10, token_budget: int = 2000
+) -> dict:
     """Retrieve ranked key facts matching query within token budget."""
     from navig.memory.fact_retriever import FactRetriever
+
     retriever = FactRetriever(_memory_store())
     facts = retriever.retrieve(query=query, limit=limit, token_budget=token_budget)
-    return {"facts": [f.model_dump() if hasattr(f, "model_dump") else vars(f) for f in facts]}
+    return {
+        "facts": [
+            f.model_dump() if hasattr(f, "model_dump") else vars(f) for f in facts
+        ]
+    }
 
 
 async def memory_remember(text: str, source: str = "mcp") -> dict:
     """Extract and persist key facts from text."""
     from navig.memory.fact_extractor import FactExtractor
+
     store = _memory_store()
     extractor = FactExtractor(store)
     added = extractor.extract_and_store(text=text, source=source)
@@ -742,9 +779,15 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="NAVIG MCP Server")
-    parser.add_argument("--websocket", action="store_true", help="Run in WebSocket mode")
-    parser.add_argument("--port", type=int, default=3001, help="WebSocket port (default 3001)")
-    parser.add_argument("--token", type=str, default=None, help="Auth token (auto-generated if omitted)")
+    parser.add_argument(
+        "--websocket", action="store_true", help="Run in WebSocket mode"
+    )
+    parser.add_argument(
+        "--port", type=int, default=3001, help="WebSocket port (default 3001)"
+    )
+    parser.add_argument(
+        "--token", type=str, default=None, help="Auth token (auto-generated if omitted)"
+    )
     args = parser.parse_args()
 
     mode = "websocket" if args.websocket or args.port != 3001 else "stdio"

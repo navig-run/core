@@ -48,6 +48,7 @@ _SECRET_RE = re.compile(r"\$\{BLACKBOX:([^}]+)\}")
 def _global_settings_dir() -> Path:
     try:
         from navig.platform.paths import navig_config_dir
+
         return navig_config_dir()
     except Exception:
         return Path.home() / ".navig"
@@ -58,6 +59,7 @@ def _layers_dir() -> Path:
 
 
 # ── Deep merge ────────────────────────────────────────────────
+
 
 def _deep_merge(base: Dict, override: Dict) -> Dict:
     """Recursively merge *override* into a copy of *base*."""
@@ -71,6 +73,7 @@ def _deep_merge(base: Dict, override: Dict) -> Dict:
 
 
 # ── Flat key helpers ──────────────────────────────────────────
+
 
 def _flatten(d: Dict, prefix: str = "") -> Dict[str, Any]:
     """Flatten nested dict to dot-separated keys."""
@@ -97,6 +100,7 @@ def _unflatten(flat: Dict[str, Any]) -> Dict:
 
 
 # ── Resolver ──────────────────────────────────────────────────
+
 
 class SettingsResolver:
     """
@@ -186,17 +190,23 @@ class SettingsResolver:
         in resolution order (lowest priority first).
         """
         sources = [
-            ("global",  _global_settings_dir() / "settings.json", False),
+            ("global", _global_settings_dir() / "settings.json", False),
         ]
         if self.layer:
-            sources.append((
-                f"layer:{self.layer}",
-                _layers_dir() / self.layer / "settings.json",
-                False,
-            ))
+            sources.append(
+                (
+                    f"layer:{self.layer}",
+                    _layers_dir() / self.layer / "settings.json",
+                    False,
+                )
+            )
         if self.project_root:
-            sources.append(("project", self.project_root / ".navig" / "settings.json", False))
-            sources.append(("local",   self.project_root / ".navig" / "settings.local.json", False))
+            sources.append(
+                ("project", self.project_root / ".navig" / "settings.json", False)
+            )
+            sources.append(
+                ("local", self.project_root / ".navig" / "settings.local.json", False)
+            )
 
         return [(name, path, path.is_file()) for name, path, _ in sources]
 
@@ -233,6 +243,7 @@ class SettingsResolver:
     def _vault_get(key: str) -> str:
         try:
             from navig.vault.manager import VaultManager
+
             manager = VaultManager()
             secret = manager.get(key)
             return secret if secret is not None else f"${{BLACKBOX:{key}}}"
@@ -281,6 +292,7 @@ def set_setting(key: str, value: Any, layer: str = "project") -> None:
 
 
 # ── Project root detection ────────────────────────────────────
+
 
 def _detect_project_root() -> Optional[Path]:
     """Walk up from cwd looking for a .navig/ directory."""

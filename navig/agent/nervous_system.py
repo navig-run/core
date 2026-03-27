@@ -108,12 +108,12 @@ class Event:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'id': self.id,
-            'type': self.type.name,
-            'source': self.source,
-            'data': self.data,
-            'priority': self.priority.name,
-            'timestamp': self.timestamp.isoformat(),
+            "id": self.id,
+            "type": self.type.name,
+            "source": self.source,
+            "data": self.data,
+            "priority": self.priority.name,
+            "timestamp": self.timestamp.isoformat(),
         }
 
     def __repr__(self) -> str:
@@ -127,7 +127,7 @@ EventHandler = Callable[[Event], Any]
 class NervousSystem:
     """
     Central event coordination system.
-    
+
     The nervous system connects all components and allows them to
     communicate through events. Components can:
     - Subscribe to specific event types
@@ -196,7 +196,7 @@ class NervousSystem:
         # Store in history
         self._event_history.append(event)
         if len(self._event_history) > self._max_history:
-            self._event_history = self._event_history[-self._max_history:]
+            self._event_history = self._event_history[-self._max_history :]
 
         if self._paused:
             await self._pending_events.put(event)
@@ -220,6 +220,7 @@ class NervousSystem:
 
         # Call handlers concurrently
         if handlers:
+
             async def safe_call(handler: EventHandler) -> None:
                 try:
                     result = handler(event)
@@ -228,13 +229,13 @@ class NervousSystem:
                 except Exception as e:
                     # Log but don't crash
                     import logging
-                    logging.getLogger('navig.agent.nervous_system').error(
+
+                    logging.getLogger("navig.agent.nervous_system").error(
                         f"Error in event handler: {e}", exc_info=True
                     )
 
             await asyncio.gather(
-                *[safe_call(h) for h in handlers],
-                return_exceptions=True
+                *[safe_call(h) for h in handlers], return_exceptions=True
             )
 
     def pause(self) -> None:
@@ -284,13 +285,13 @@ class NervousSystem:
             source_counts[event.source] = source_counts.get(event.source, 0) + 1
 
         return {
-            'total_events': len(self._event_history),
-            'handler_count': sum(len(h) for h in self._handlers.values()),
-            'global_handlers': len(self._global_handlers),
-            'paused': self._paused,
-            'pending_events': self._pending_events.qsize(),
-            'events_by_type': type_counts,
-            'events_by_source': source_counts,
+            "total_events": len(self._event_history),
+            "handler_count": sum(len(h) for h in self._handlers.values()),
+            "global_handlers": len(self._global_handlers),
+            "paused": self._paused,
+            "pending_events": self._pending_events.qsize(),
+            "events_by_type": type_counts,
+            "events_by_source": source_counts,
         }
 
     def list_subscriptions(self) -> Dict[str, int]:
@@ -304,7 +305,7 @@ class NervousSystem:
 class EventEmitter:
     """
     Mixin class for components that emit events.
-    
+
     Provides convenient methods for emitting common event types.
     """
 
@@ -331,21 +332,20 @@ class EventEmitter:
         return None
 
     async def emit_info(self, message: str, **data: Any) -> Optional[Event]:
-        return await self.emit(
-            EventType.SYSTEM_INFO,
-            data={'message': message, **data}
-        )
+        return await self.emit(EventType.SYSTEM_INFO, data={"message": message, **data})
 
     async def emit_warning(self, message: str, **data: Any) -> Optional[Event]:
         return await self.emit(
             EventType.SYSTEM_WARNING,
-            data={'message': message, **data},
-            priority=EventPriority.HIGH
+            data={"message": message, **data},
+            priority=EventPriority.HIGH,
         )
 
-    async def emit_error(self, message: str, error: Optional[Exception] = None, **data: Any) -> Optional[Event]:
+    async def emit_error(
+        self, message: str, error: Optional[Exception] = None, **data: Any
+    ) -> Optional[Event]:
         return await self.emit(
             EventType.SYSTEM_ERROR,
-            data={'message': message, 'error': str(error) if error else None, **data},
-            priority=EventPriority.CRITICAL
+            data={"message": message, "error": str(error) if error else None, **data},
+            priority=EventPriority.CRITICAL,
         )

@@ -23,6 +23,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:  # noqa: BLE001
@@ -73,16 +74,16 @@ class SearchResult:
 
     def to_dict(self) -> dict:
         return {
-            'chunk_id': self.chunk_id,
-            'file_path': self.file_path,
-            'content': self.content,
-            'line_start': self.line_start,
-            'line_end': self.line_end,
-            'combined_score': round(self.combined_score, 4),
-            'vector_score': round(self.vector_score, 4),
-            'keyword_score': round(self.keyword_score, 4),
-            'snippet': self.snippet,
-            'highlights': self.highlights,
+            "chunk_id": self.chunk_id,
+            "file_path": self.file_path,
+            "content": self.content,
+            "line_start": self.line_start,
+            "line_end": self.line_end,
+            "combined_score": round(self.combined_score, 4),
+            "vector_score": round(self.vector_score, 4),
+            "keyword_score": round(self.keyword_score, 4),
+            "snippet": self.snippet,
+            "highlights": self.highlights,
         }
 
     def citation(self) -> str:
@@ -109,21 +110,21 @@ class SearchResponse:
 
     def to_dict(self) -> dict:
         return {
-            'query': self.query,
-            'results': [r.to_dict() for r in self.results],
-            'total_matches': self.total_matches,
-            'search_time_ms': round(self.search_time_ms, 2),
-            'vector_candidates': self.vector_candidates,
-            'keyword_candidates': self.keyword_candidates,
+            "query": self.query,
+            "results": [r.to_dict() for r in self.results],
+            "total_matches": self.total_matches,
+            "search_time_ms": round(self.search_time_ms, 2),
+            "vector_candidates": self.vector_candidates,
+            "keyword_candidates": self.keyword_candidates,
         }
 
     def as_context(self, max_tokens: int = 2000) -> str:
         """
         Format results as context for AI prompts.
-        
+
         Args:
             max_tokens: Approximate token limit
-            
+
         Returns:
             Formatted context string with citations
         """
@@ -153,24 +154,24 @@ class SearchResponse:
 class HybridSearch:
     """
     Hybrid search combining vector similarity and BM25 keyword matching.
-    
+
     The combination formula:
         score = (vector_weight * vector_score) + (keyword_weight * keyword_score)
-    
+
     Default weights: 70% vector, 30% keyword (following best practices)
-    
+
     Usage:
         search = HybridSearch(storage, embedding_provider)
         response = search.search("docker compose networking")
-        
+
         # Get formatted context
         context = response.as_context(max_tokens=2000)
     """
 
     def __init__(
         self,
-        storage: 'MemoryStorage',
-        embedding_provider: Optional['EmbeddingProvider'] = None,
+        storage: "MemoryStorage",
+        embedding_provider: Optional["EmbeddingProvider"] = None,
         config: Optional[SearchConfig] = None,
     ):
         self.storage = storage
@@ -187,18 +188,19 @@ class HybridSearch:
     ) -> SearchResponse:
         """
         Perform hybrid search.
-        
+
         Args:
             query: Search query
             limit: Maximum results
             file_filter: Optional file path pattern (supports wildcards)
             vector_only: Only use vector search
             keyword_only: Only use keyword search
-            
+
         Returns:
             SearchResponse with ranked results
         """
         import time
+
         start_time = time.time()
 
         limit = limit or self.config.default_limit
@@ -206,7 +208,7 @@ class HybridSearch:
         # Get results from both methods
         vector_results: Dict[str, float] = {}
         keyword_results: Dict[str, float] = {}
-        chunks: Dict[str, 'MemoryChunk'] = {}
+        chunks: Dict[str, "MemoryChunk"] = {}
 
         # Vector search
         if not keyword_only and self.embedding_provider:
@@ -250,21 +252,21 @@ class HybridSearch:
                 combined = k_score_normalized
             else:
                 combined = (
-                    self.config.vector_weight * v_score +
-                    self.config.keyword_weight * k_score_normalized
+                    self.config.vector_weight * v_score
+                    + self.config.keyword_weight * k_score_normalized
                 )
 
             combined_scores[chunk_id] = {
-                'combined': combined,
-                'vector': v_score,
-                'keyword': k_score_normalized,
+                "combined": combined,
+                "vector": v_score,
+                "keyword": k_score_normalized,
             }
 
         # Sort by combined score and filter
         sorted_ids = sorted(
             combined_scores.keys(),
-            key=lambda x: combined_scores[x]['combined'],
-            reverse=True
+            key=lambda x: combined_scores[x]["combined"],
+            reverse=True,
         )
 
         # Build results
@@ -272,7 +274,7 @@ class HybridSearch:
         for chunk_id in sorted_ids[:limit]:
             scores = combined_scores[chunk_id]
 
-            if scores['combined'] < self.config.min_score:
+            if scores["combined"] < self.config.min_score:
                 continue
 
             chunk = chunks[chunk_id]
@@ -287,9 +289,9 @@ class HybridSearch:
                 content=chunk.content,
                 line_start=chunk.line_start,
                 line_end=chunk.line_end,
-                combined_score=scores['combined'],
-                vector_score=scores['vector'],
-                keyword_score=scores['keyword'],
+                combined_score=scores["combined"],
+                vector_score=scores["vector"],
+                keyword_score=scores["keyword"],
                 snippet=snippet,
                 highlights=highlights,
             )
@@ -319,7 +321,7 @@ class HybridSearch:
         query: str,
         limit: int,
         file_filter: Optional[str] = None,
-    ) -> List[tuple['MemoryChunk', float]]:
+    ) -> List[tuple["MemoryChunk", float]]:
         """Perform vector similarity search."""
         if not self.embedding_provider:
             return []
@@ -332,7 +334,7 @@ class HybridSearch:
 
         # Apply file filter if specified
         if file_filter:
-            pattern = file_filter.replace('*', '.*')
+            pattern = file_filter.replace("*", ".*")
             chunks = [c for c in chunks if re.match(pattern, c.file_path)]
 
         # Compute similarities
@@ -340,8 +342,7 @@ class HybridSearch:
         for chunk in chunks:
             if chunk.embedding:
                 similarity = self.embedding_provider.similarity(
-                    query_embedding,
-                    chunk.embedding
+                    query_embedding, chunk.embedding
                 )
 
                 if similarity >= self.config.min_vector_similarity:
@@ -357,7 +358,7 @@ class HybridSearch:
         query: str,
         limit: int,
         file_filter: Optional[str] = None,
-    ) -> List[tuple['MemoryChunk', float]]:
+    ) -> List[tuple["MemoryChunk", float]]:
         """Perform BM25 keyword search."""
         return self.storage.search_fts_simple(query, limit)
 
@@ -388,7 +389,7 @@ class HybridSearch:
         if end < len(content):
             snippet = snippet + "..."
 
-        return snippet.replace('\n', ' ').strip()
+        return snippet.replace("\n", " ").strip()
 
     def _extract_highlights(self, content: str, query: str) -> List[str]:
         """Extract matching phrases from content."""
@@ -396,7 +397,7 @@ class HybridSearch:
         query_words = set(query.lower().split())
 
         # Find sentences containing query words
-        sentences = re.split(r'[.!?\n]+', content)
+        sentences = re.split(r"[.!?\n]+", content)
 
         for sentence in sentences:
             sentence = sentence.strip()
@@ -424,15 +425,16 @@ class HybridSearch:
     ) -> SearchResponse:
         """
         Find chunks similar to a given chunk.
-        
+
         Args:
             chunk_id: ID of the source chunk
             limit: Maximum results
-            
+
         Returns:
             SearchResponse with similar chunks
         """
         import time
+
         start_time = time.time()
 
         # Get the source chunk
@@ -459,8 +461,7 @@ class HybridSearch:
 
             if chunk.embedding:
                 similarity = self.embedding_provider.similarity(
-                    source_chunk.embedding,
-                    chunk.embedding
+                    source_chunk.embedding, chunk.embedding
                 )
 
                 if similarity >= self.config.min_vector_similarity:
@@ -492,11 +493,11 @@ class HybridSearch:
     def suggest_queries(self, partial: str, limit: int = 5) -> List[str]:
         """
         Suggest query completions based on indexed content.
-        
+
         Args:
             partial: Partial query string
             limit: Maximum suggestions
-            
+
         Returns:
             List of suggested queries
         """
@@ -516,8 +517,8 @@ class HybridSearch:
             for i, word in enumerate(words):
                 if partial_lower in word.lower():
                     # Get context (word + next 2 words)
-                    phrase_words = words[i:i+3]
-                    phrase = ' '.join(phrase_words).strip('.,;:!?')
+                    phrase_words = words[i : i + 3]
+                    phrase = " ".join(phrase_words).strip(".,;:!?")
                     if phrase:
                         suggestions.add(phrase)
 

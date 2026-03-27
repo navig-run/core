@@ -1,4 +1,5 @@
 """Tests for navig.mesh.sync_manager — SyncManager."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def _make_registry(*, is_leader: bool = True, leader: object = None) -> MagicMock:
     reg = MagicMock()
@@ -31,6 +32,7 @@ def _make_discovery() -> MagicMock:
 
 def _make_sm(*, is_leader: bool = True, interval: int = 1) -> "SyncManager":  # type: ignore[name-defined]
     from navig.mesh.sync_manager import SyncManager
+
     registry = _make_registry(is_leader=is_leader)
     discovery = _make_discovery()
     return SyncManager(registry, discovery, broadcast_interval_s=interval)
@@ -38,14 +40,16 @@ def _make_sm(*, is_leader: bool = True, interval: int = 1) -> "SyncManager":  # 
 
 # ── Import ─────────────────────────────────────────────────────────────────────
 
+
 def test_import():
     from navig.mesh import sync_manager  # noqa: F401
     from navig.mesh.sync_manager import (
-        SyncManager,
         DEFAULT_BROADCAST_INTERVAL_S,
         PULL_DEBOUNCE_S,
         PULL_TIMEOUT_S,
+        SyncManager,
     )
+
     assert DEFAULT_BROADCAST_INTERVAL_S == 10
     assert PULL_DEBOUNCE_S > 0
     assert PULL_TIMEOUT_S > 0
@@ -53,8 +57,10 @@ def test_import():
 
 # ── Init ───────────────────────────────────────────────────────────────────────
 
+
 def test_init_defaults():
     from navig.mesh.sync_manager import SyncManager
+
     reg = _make_registry()
     disc = _make_discovery()
     sm = SyncManager(reg, disc)
@@ -66,6 +72,7 @@ def test_init_defaults():
 
 def test_init_custom_interval():
     from navig.mesh.sync_manager import SyncManager
+
     reg = _make_registry()
     disc = _make_discovery()
     sm = SyncManager(reg, disc, broadcast_interval_s=30)
@@ -73,6 +80,7 @@ def test_init_custom_interval():
 
 
 # ── Start / Stop ───────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_start_creates_task():
@@ -105,10 +113,17 @@ async def test_start_sets_initial_state():
 
 # ── _build_local_state ─────────────────────────────────────────────────────────
 
+
 def test_build_local_state_has_required_keys():
     sm = _make_sm()
     state = sm._build_local_state()
-    for key in ("node_id", "hostname", "capabilities", "heartbeat_interval_s", "timestamp"):
+    for key in (
+        "node_id",
+        "hostname",
+        "capabilities",
+        "heartbeat_interval_s",
+        "timestamp",
+    ):
         assert key in state, f"Missing key: {key}"
 
 
@@ -120,8 +135,10 @@ def test_build_local_state_node_id():
 
 # ── _hash_state ────────────────────────────────────────────────────────────────
 
+
 def test_hash_state_deterministic():
     from navig.mesh.sync_manager import SyncManager
+
     state = {"node_id": "x", "capabilities": ["llm"], "timestamp": 12345.0}
     h1 = SyncManager._hash_state(state)
     # Different timestamp, same stable keys → same hash
@@ -133,6 +150,7 @@ def test_hash_state_deterministic():
 
 def test_hash_state_changes_on_content():
     from navig.mesh.sync_manager import SyncManager
+
     state_a = {"node_id": "a", "capabilities": ["llm"]}
     state_b = {"node_id": "b", "capabilities": ["llm"]}
     assert SyncManager._hash_state(state_a) != SyncManager._hash_state(state_b)
@@ -140,11 +158,13 @@ def test_hash_state_changes_on_content():
 
 def test_hash_state_length():
     from navig.mesh.sync_manager import SyncManager
+
     h = SyncManager._hash_state({"x": 1})
     assert len(h) == 16
 
 
 # ── get_state_snapshot ─────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_state_snapshot_keys():
@@ -167,6 +187,7 @@ async def test_get_state_snapshot_standby_flag():
 
 
 # ── _leader_tick ───────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_leader_tick_calls_send_election_packet():
@@ -195,6 +216,7 @@ async def test_leader_tick_updates_state_reference():
 
 
 # ── _standby_tick ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_standby_tick_no_leader_is_noop():
@@ -231,6 +253,7 @@ async def test_standby_tick_stale_triggers_pull():
 
 
 # ── on_sync_packet ─────────────────────────────────────────────────────────────
+
 
 def test_on_sync_packet_empty_hash_ignored():
     sm = _make_sm()

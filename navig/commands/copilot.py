@@ -30,6 +30,7 @@ copilot_app = typer.Typer(
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
+
 def _run(coro):
     """Run an async function from sync Typer context."""
     try:
@@ -38,6 +39,7 @@ def _run(coro):
         loop = None
     if loop and loop.is_running():
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return pool.submit(asyncio.run, coro).result()
     return asyncio.run(coro)
@@ -59,11 +61,13 @@ async def _get_bridge_provider():
 def _read_bridge_config():
     """Read MCP Bridge URL and token from config / env."""
     import os
+
     url = os.getenv("NAVIG_BRIDGE_MCP_URL", "")
     token = os.getenv("NAVIG_BRIDGE_LLM_TOKEN", "")
     if not url:
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager().global_config or {}
             bridge = cfg.get("bridge", {})
             url = bridge.get("mcp_url") or ""
@@ -81,7 +85,9 @@ async def _chat(messages: list, model: str = "") -> str:
         ch.info("  Check that:")
         ch.info("    1. VS Code is running with the Bridge extension active")
         ch.info("    2. The SSH tunnel is up (systemctl status bridge-tunnel)")
-        ch.info("    3. bridge.mcp_url / bridge.token in ~/.navig/config.yaml are correct")
+        ch.info(
+            "    3. bridge.mcp_url / bridge.token in ~/.navig/config.yaml are correct"
+        )
         raise typer.Exit(1)
     try:
         resp = await provider.chat(model=model, messages=messages, max_tokens=4096)
@@ -92,11 +98,14 @@ async def _chat(messages: list, model: str = "") -> str:
 
 # ── Commands ────────────────────────────────────────────────────────
 
+
 @copilot_app.command("ask")
 def copilot_ask(
     question: str = typer.Argument(..., help="Natural language question"),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
-    system: Optional[str] = typer.Option(None, "--system", "-s", help="Custom system prompt"),
+    system: Optional[str] = typer.Option(
+        None, "--system", "-s", help="Custom system prompt"
+    ),
 ):
     """
     Ask Copilot a question and get a response.
@@ -116,10 +125,16 @@ def copilot_ask(
 
 @copilot_app.command("explain")
 def copilot_explain(
-    target: str = typer.Argument(..., help="File path, error message, or code snippet to explain"),
-    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines (for log files)"),
+    target: str = typer.Argument(
+        ..., help="File path, error message, or code snippet to explain"
+    ),
+    lines: int = typer.Option(
+        50, "--lines", "-n", help="Number of lines (for log files)"
+    ),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
-    remote: bool = typer.Option(False, "--remote", "-r", help="Read file from remote host via NAVIG"),
+    remote: bool = typer.Option(
+        False, "--remote", "-r", help="Read file from remote host via NAVIG"
+    ),
 ):
     """
     Explain a log file, error, or code snippet using Copilot.
@@ -138,10 +153,13 @@ def copilot_explain(
         if remote:
             # Read from remote via NAVIG
             import subprocess
+
             try:
                 result = subprocess.run(
                     ["navig", "file", "show", target, "--tail", "--lines", str(lines)],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                 )
                 if result.returncode == 0 and result.stdout.strip():
                     content = f"File: {target} (last {lines} lines)\n```\n{result.stdout.strip()}\n```"
@@ -157,17 +175,22 @@ def copilot_explain(
                 with open(target, "r", errors="replace") as f:
                     file_lines = f.readlines()
                 tail = file_lines[-lines:] if len(file_lines) > lines else file_lines
-                content = f"File: {target} (last {lines} lines)\n```\n{''.join(tail)}```"
+                content = (
+                    f"File: {target} (last {lines} lines)\n```\n{''.join(tail)}```"
+                )
             except Exception as e:
                 ch.warning(f"Could not read file: {e}")
                 content = target
 
     messages = [
-        {"role": "system", "content": (
-            "You are a senior systems engineer. Analyze the following content. "
-            "Identify errors, warnings, and issues. Explain root causes clearly "
-            "and suggest concrete fixes. Be concise but thorough."
-        )},
+        {
+            "role": "system",
+            "content": (
+                "You are a senior systems engineer. Analyze the following content. "
+                "Identify errors, warnings, and issues. Explain root causes clearly "
+                "and suggest concrete fixes. Be concise but thorough."
+            ),
+        },
         {"role": "user", "content": content},
     ]
 
@@ -177,8 +200,15 @@ def copilot_explain(
 
 @copilot_app.command("suggest")
 def copilot_suggest(
-    topic: str = typer.Option("general", "--topic", "-t", help="Focus area: security, performance, reliability, general"),
-    context: Optional[str] = typer.Option(None, "--context", "-c", help="Additional context or file path"),
+    topic: str = typer.Option(
+        "general",
+        "--topic",
+        "-t",
+        help="Focus area: security, performance, reliability, general",
+    ),
+    context: Optional[str] = typer.Option(
+        None, "--context", "-c", help="Additional context or file path"
+    ),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
 ):
     """
@@ -197,10 +227,13 @@ def copilot_suggest(
         prompt += f"\n\nContext: {context}"
 
     messages = [
-        {"role": "system", "content": (
-            "You are a senior DevOps engineer reviewing infrastructure. "
-            "Give specific, actionable suggestions — not generic advice."
-        )},
+        {
+            "role": "system",
+            "content": (
+                "You are a senior DevOps engineer reviewing infrastructure. "
+                "Give specific, actionable suggestions — not generic advice."
+            ),
+        },
         {"role": "user", "content": prompt},
     ]
 
@@ -211,7 +244,9 @@ def copilot_suggest(
 @copilot_app.command("review")
 def copilot_review(
     file_path: str = typer.Argument(..., help="File path to review"),
-    focus: Optional[str] = typer.Option(None, "--focus", "-f", help="Focus area: bugs, security, perf, style"),
+    focus: Optional[str] = typer.Option(
+        None, "--focus", "-f", help="Focus area: bugs, security, perf, style"
+    ),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override"),
 ):
     """
@@ -242,12 +277,18 @@ def copilot_review(
     focus_text = f" Focus particularly on {focus}." if focus else ""
 
     messages = [
-        {"role": "system", "content": (
-            "You are a senior code reviewer. Review the following file for "
-            f"bugs, security issues, performance problems, and style.{focus_text} "
-            "Be specific — reference line numbers and provide fixes."
-        )},
-        {"role": "user", "content": f"Review this file ({file_path}):\n\n```\n{code}\n```"},
+        {
+            "role": "system",
+            "content": (
+                "You are a senior code reviewer. Review the following file for "
+                f"bugs, security issues, performance problems, and style.{focus_text} "
+                "Be specific — reference line numbers and provide fixes."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Review this file ({file_path}):\n\n```\n{code}\n```",
+        },
     ]
 
     result = _run(_chat(messages, model=model or ""))
@@ -259,9 +300,11 @@ def copilot_review(
 def _register_sessions_subapp():
     try:
         from navig.commands.sessions import sessions_app
+
         copilot_app.add_typer(sessions_app, name="sessions")
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
+
 
 _register_sessions_subapp()
 
@@ -283,12 +326,18 @@ def copilot_status(
 
     async def _check():
         from navig.agent.llm_providers import McpBridgeProvider
+
         provider = McpBridgeProvider(base_url=url, api_key=token)
         t0 = time.monotonic()
         available = await provider.is_available()
         latency = int((time.monotonic() - t0) * 1000)
 
-        info = {"available": available, "url": url, "latency_ms": latency, "auth": bool(token)}
+        info = {
+            "available": available,
+            "url": url,
+            "latency_ms": latency,
+            "auth": bool(token),
+        }
         await provider.close()
         return info
 
@@ -296,6 +345,7 @@ def copilot_status(
 
     if json_output:
         import json
+
         print(json.dumps(info, indent=2))
     else:
         if info["available"]:

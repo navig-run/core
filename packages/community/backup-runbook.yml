@@ -15,27 +15,27 @@ steps:
     description: "Switch to target host"
     command: "navig host use production"
     expected: "Switched to: production"
-  
+
   - step: 2
     description: "Check current disk space"
     command: "navig exec df -h"
     notes: "Ensure sufficient space for backup file"
-  
+
   - step: 3
     description: "Create database backup with verification"
     command: "navig db backup --verify"
     notes: "Backup will be compressed and checksummed"
-  
+
   - step: 4
     description: "List recent backups"
     command: "navig db backup list"
     expected: "New backup should appear in list with checksum"
-  
+
   - step: 5
     description: "Verify backup integrity"
     command: "navig db backup verify --latest"
     expected: "Checksum verification should pass"
-  
+
   - step: 6
     description: "Test backup restoration (optional)"
     command: "navig db restore --latest --dry-run"

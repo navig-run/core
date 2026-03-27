@@ -17,13 +17,13 @@ Usage:
         ChannelId,
         ChannelMeta,
     )
-    
+
     registry = get_channel_registry()
-    
+
     # List available channels
     for channel in registry.list_channels():
         print(f"{channel.label}: {channel.status}")
-    
+
     # Get specific channel
     telegram = registry.get_channel("telegram")
     if telegram.is_available():
@@ -40,8 +40,10 @@ from typing import Any, Dict, List, Optional, Union
 # Types
 # =============================================================================
 
+
 class ChannelId(str, Enum):
     """Supported messaging channel IDs."""
+
     TELEGRAM = "telegram"
     MATRIX = "matrix"
     WHATSAPP = "whatsapp"
@@ -56,39 +58,43 @@ class ChannelId(str, Enum):
 
 class ChannelStatus(str, Enum):
     """Channel status states."""
-    AVAILABLE = "available"      # Ready to use
+
+    AVAILABLE = "available"  # Ready to use
     UNAVAILABLE = "unavailable"  # Dependencies missing
-    CONFIGURED = "configured"    # Has valid config
-    CONNECTED = "connected"      # Actively connected
+    CONFIGURED = "configured"  # Has valid config
+    CONNECTED = "connected"  # Actively connected
     DISCONNECTED = "disconnected"  # Was connected, now disconnected
-    ERROR = "error"              # Error state
+    ERROR = "error"  # Error state
 
 
 class ChannelCapability(str, Enum):
     """Channel capabilities."""
-    TEXT = "text"              # Text messages
-    VOICE = "voice"            # Voice messages
-    IMAGES = "images"          # Image attachments
-    FILES = "files"            # File attachments
-    REACTIONS = "reactions"    # Message reactions
-    THREADS = "threads"        # Threaded replies
-    BUTTONS = "buttons"        # Interactive buttons
-    GROUPS = "groups"          # Group chats
-    DMS = "dms"                # Direct messages
-    WEBHOOKS = "webhooks"      # Webhook support
-    TYPING = "typing"          # Typing indicators
-    E2EE = "e2ee"              # End-to-end encryption
-    MENTIONS = "mentions"      # User mentions
-    MEDIA = "media"            # Rich media (audio, video)
+
+    TEXT = "text"  # Text messages
+    VOICE = "voice"  # Voice messages
+    IMAGES = "images"  # Image attachments
+    FILES = "files"  # File attachments
+    REACTIONS = "reactions"  # Message reactions
+    THREADS = "threads"  # Threaded replies
+    BUTTONS = "buttons"  # Interactive buttons
+    GROUPS = "groups"  # Group chats
+    DMS = "dms"  # Direct messages
+    WEBHOOKS = "webhooks"  # Webhook support
+    TYPING = "typing"  # Typing indicators
+    E2EE = "e2ee"  # End-to-end encryption
+    MENTIONS = "mentions"  # User mentions
+    MEDIA = "media"  # Rich media (audio, video)
 
 
 # =============================================================================
 # Channel Metadata
 # =============================================================================
 
+
 @dataclass
 class ChannelMeta:
     """Metadata for a messaging channel."""
+
     id: ChannelId
     label: str
     description: str
@@ -347,10 +353,11 @@ DEFAULT_CHANNEL_META: Dict[ChannelId, ChannelMeta] = {
 # Channel Registry
 # =============================================================================
 
+
 class ChannelRegistry:
     """
     Registry for messaging channel adapters.
-    
+
     Manages channel discovery, metadata, and adapter loading.
     """
 
@@ -390,10 +397,10 @@ class ChannelRegistry:
     def get_channel(self, channel_id: Union[str, ChannelId]) -> Optional[ChannelMeta]:
         """
         Get channel metadata by ID or alias.
-        
+
         Args:
             channel_id: Channel ID or alias string
-            
+
         Returns:
             ChannelMeta or None if not found
         """
@@ -411,10 +418,10 @@ class ChannelRegistry:
     def normalize_channel_id(self, raw: str) -> Optional[ChannelId]:
         """
         Normalize a channel name/alias to ChannelId.
-        
+
         Args:
             raw: Raw channel name or alias
-            
+
         Returns:
             Normalized ChannelId or None if invalid
         """
@@ -435,10 +442,10 @@ class ChannelRegistry:
     def list_channels(self, available_only: bool = False) -> List[ChannelMeta]:
         """
         List all registered channels.
-        
+
         Args:
             available_only: If True, only return available channels
-            
+
         Returns:
             List of ChannelMeta in display order
         """
@@ -461,10 +468,10 @@ class ChannelRegistry:
     def get_adapter(self, channel_id: Union[str, ChannelId]) -> Optional[Any]:
         """
         Get or load channel adapter.
-        
+
         Args:
             channel_id: Channel ID
-            
+
         Returns:
             Adapter instance or None
         """
@@ -484,6 +491,7 @@ class ChannelRegistry:
 
         try:
             import importlib
+
             module = importlib.import_module(meta.module_path)
             adapter_cls = getattr(module, meta.adapter_class)
             adapter = adapter_cls()
@@ -495,13 +503,11 @@ class ChannelRegistry:
             return None
 
     def register_channel(
-        self,
-        meta: ChannelMeta,
-        adapter: Optional[Any] = None
+        self, meta: ChannelMeta, adapter: Optional[Any] = None
     ) -> None:
         """
         Register a custom channel.
-        
+
         Args:
             meta: Channel metadata
             adapter: Optional pre-created adapter instance
@@ -516,23 +522,23 @@ class ChannelRegistry:
             self.initialize()
 
         summary = {
-            'total': len(self._channels),
-            'available': 0,
-            'configured': 0,
-            'connected': 0,
-            'channels': [],
+            "total": len(self._channels),
+            "available": 0,
+            "configured": 0,
+            "connected": 0,
+            "channels": [],
         }
 
         for channel in self.list_channels():
             info = channel.to_dict()
-            summary['channels'].append(info)
+            summary["channels"].append(info)
 
             if channel.status == ChannelStatus.AVAILABLE:
-                summary['available'] += 1
+                summary["available"] += 1
             elif channel.status == ChannelStatus.CONFIGURED:
-                summary['configured'] += 1
+                summary["configured"] += 1
             elif channel.status == ChannelStatus.CONNECTED:
-                summary['connected'] += 1
+                summary["connected"] += 1
 
         return summary
 

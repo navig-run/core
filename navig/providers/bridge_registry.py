@@ -7,6 +7,7 @@ take priority over statically configured providers.
 
 Thread-safe; uses a simple RLock around the in-memory dict.
 """
+
 from __future__ import annotations
 
 import threading
@@ -18,8 +19,8 @@ from typing import Dict, Optional
 @dataclass
 class DynamicProvider:
     name: str
-    url: str          # OpenAI-compatible base URL, e.g. http://127.0.0.1:11435/v1
-    priority: int = 0 # Lower number = higher priority; 0 beats everything
+    url: str  # OpenAI-compatible base URL, e.g. http://127.0.0.1:11435/v1
+    priority: int = 0  # Lower number = higher priority; 0 beats everything
 
 
 class BridgeRegistry:
@@ -88,6 +89,7 @@ class BridgeRegistry:
         # Disk I/O outside the lock
         try:
             from navig.providers.bridge_grid_reader import read_bridge_grid
+
             grid = read_bridge_grid()
             if not grid or not grid.get("bridge_port"):
                 return False
@@ -100,6 +102,7 @@ class BridgeRegistry:
 
             self.register(name, url, priority=0)
             import logging
+
             logging.getLogger(__name__).info(
                 "[Bridge] Auto-registered '%s' at %s from bridge-grid.json", name, url
             )
@@ -131,6 +134,3 @@ def reset_bridge_registry() -> None:
     global _registry
     with _registry_lock:
         _registry = None
-
-
-

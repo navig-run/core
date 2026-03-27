@@ -1,14 +1,16 @@
 """Tests for LLMModeRouter — alias resolution, detect_mode, and routing."""
 
-import pytest
 from unittest.mock import patch
 
+import pytest
 
 # ── Alias Resolution ─────────────────────────────────────
+
 
 class TestAliasResolution:
     def test_canonical_names(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         assert r.resolve_mode("small_talk") == "small_talk"
         assert r.resolve_mode("big_tasks") == "big_tasks"
@@ -18,42 +20,57 @@ class TestAliasResolution:
 
     def test_small_talk_aliases(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         for alias in ("small", "chat", "casual", "talk", "hi", "hello"):
-            assert r.resolve_mode(alias) == "small_talk", f"{alias} should map to small_talk"
+            assert (
+                r.resolve_mode(alias) == "small_talk"
+            ), f"{alias} should map to small_talk"
 
     def test_big_tasks_aliases(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         for alias in ("big", "complex", "plan", "reason", "think"):
-            assert r.resolve_mode(alias) == "big_tasks", f"{alias} should map to big_tasks"
+            assert (
+                r.resolve_mode(alias) == "big_tasks"
+            ), f"{alias} should map to big_tasks"
 
     def test_coding_aliases(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         for alias in ("code", "dev", "debug", "program", "script"):
             assert r.resolve_mode(alias) == "coding", f"{alias} should map to coding"
 
     def test_summarize_aliases(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         for alias in ("sum", "summary", "tl;dr", "tldr", "digest"):
-            assert r.resolve_mode(alias) == "summarize", f"{alias} should map to summarize"
+            assert (
+                r.resolve_mode(alias) == "summarize"
+            ), f"{alias} should map to summarize"
 
     def test_research_aliases(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         for alias in ("research", "analysis", "compare", "sources", "analyze", "study"):
-            assert r.resolve_mode(alias) == "research", f"{alias} should map to research"
+            assert (
+                r.resolve_mode(alias) == "research"
+            ), f"{alias} should map to research"
 
     def test_unknown_defaults_to_big_tasks(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         assert r.resolve_mode("unknown_thing") == "big_tasks"
         assert r.resolve_mode("") == "big_tasks"
 
     def test_case_insensitive(self):
         from navig.llm_router import LLMModeRouter
+
         r = LLMModeRouter({})
         assert r.resolve_mode("CHAT") == "small_talk"
         assert r.resolve_mode("Code") == "coding"
@@ -61,9 +78,11 @@ class TestAliasResolution:
 
 # ── Mode Detection ───────────────────────────────────────
 
+
 class TestDetectMode:
     def test_code_snippets(self):
         from navig.llm_router import detect_mode
+
         assert detect_mode("```python\nprint('hello')\n```") == "coding"
         assert detect_mode("def calculate_total(items):") == "coding"
         assert detect_mode("Write a script to process CSV files") == "coding"
@@ -72,6 +91,7 @@ class TestDetectMode:
 
     def test_greetings_small_talk(self):
         from navig.llm_router import detect_mode
+
         assert detect_mode("hey") == "small_talk"
         assert detect_mode("Hi there!") == "small_talk"
         assert detect_mode("Hello, how are you?") == "small_talk"
@@ -79,6 +99,7 @@ class TestDetectMode:
 
     def test_casual_small_talk(self):
         from navig.llm_router import detect_mode
+
         assert detect_mode("thanks") == "small_talk"
         assert detect_mode("ok") == "small_talk"
         assert detect_mode("cool") == "small_talk"
@@ -86,12 +107,14 @@ class TestDetectMode:
 
     def test_summarize_keywords(self):
         from navig.llm_router import detect_mode
+
         assert detect_mode("summarize this document for me") == "summarize"
         assert detect_mode("tl;dr of the meeting notes") == "summarize"
         assert detect_mode("give me a brief overview of this") == "summarize"
 
     def test_research_keywords(self):
         from navig.llm_router import detect_mode
+
         assert detect_mode("research the latest AI trends") == "research"
         assert detect_mode("analyze this data set and compare") == "research"
         assert detect_mode("what are the differences between X and Y") == "research"
@@ -99,22 +122,32 @@ class TestDetectMode:
 
     def test_ambiguous_defaults_to_big_tasks(self):
         from navig.llm_router import detect_mode
-        assert detect_mode("I need you to create a comprehensive plan for the project migration including all dependencies and timeline") == "big_tasks"
+
+        assert (
+            detect_mode(
+                "I need you to create a comprehensive plan for the project migration including all dependencies and timeline"
+            )
+            == "big_tasks"
+        )
 
     def test_short_question_small_talk(self):
         from navig.llm_router import detect_mode
+
         assert detect_mode("what time is it?") == "small_talk"
 
     def test_empty_input(self):
         from navig.llm_router import detect_mode
+
         assert detect_mode("") == "small_talk"
 
 
 # ── Uncensored Routing ───────────────────────────────────
 
+
 class TestUncensoredRouting:
     def _make_router(self):
         from navig.llm_router import LLMModeRouter
+
         config = {
             "llm_modes": {
                 "small_talk": {
@@ -177,7 +210,8 @@ class TestUncensoredRouting:
 
     def test_resolution_reason_always_populated(self):
         """Every resolution has a non-empty resolution_reason."""
-        from navig.llm_router import LLMModeRouter, CANONICAL_MODES
+        from navig.llm_router import CANONICAL_MODES, LLMModeRouter
+
         router = LLMModeRouter({})
         for mode in CANONICAL_MODES:
             resolved = router.get_config(mode)
@@ -186,11 +220,15 @@ class TestUncensoredRouting:
 
 # ── ResolvedLLMConfig ────────────────────────────────────
 
+
 class TestResolvedLLMConfig:
     def test_to_dict(self):
         from navig.llm_router import ResolvedLLMConfig
+
         cfg = ResolvedLLMConfig(
-            provider="openai", model="gpt-4o", mode="big_tasks",
+            provider="openai",
+            model="gpt-4o",
+            mode="big_tasks",
             resolution_reason="test",
         )
         d = cfg.to_dict()
@@ -200,6 +238,9 @@ class TestResolvedLLMConfig:
 
     def test_repr(self):
         from navig.llm_router import ResolvedLLMConfig
-        cfg = ResolvedLLMConfig(provider="ollama", model="dolphin:8b", mode="small_talk")
+
+        cfg = ResolvedLLMConfig(
+            provider="ollama", model="dolphin:8b", mode="small_talk"
+        )
         assert "ollama" in repr(cfg)
         assert "dolphin" in repr(cfg)

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 class OperationType(str, Enum):
     """Categories of operations for filtering and undo logic."""
+
     FILE_CREATE = "file_create"
     FILE_DELETE = "file_delete"
     FILE_MODIFY = "file_modify"
@@ -42,6 +43,7 @@ class OperationType(str, Enum):
 
 class OperationStatus(str, Enum):
     """Outcome status of an operation."""
+
     SUCCESS = "success"
     FAILED = "failed"
     PARTIAL = "partial"  # Some parts succeeded
@@ -53,12 +55,13 @@ class OperationStatus(str, Enum):
 class OperationRecord:
     """
     Complete record of a CLI operation.
-    
+
     Stores enough information to:
     - Replay the command
     - Undo reversible operations
     - Audit who did what when
     """
+
     # Unique identifier
     id: str = ""
 
@@ -96,25 +99,25 @@ class OperationRecord:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         d = asdict(self)
-        d['operation_type'] = self.operation_type.value
-        d['status'] = self.status.value
+        d["operation_type"] = self.operation_type.value
+        d["status"] = self.status.value
         return d
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'OperationRecord':
+    def from_dict(cls, data: Dict[str, Any]) -> "OperationRecord":
         """Create from dictionary."""
-        data['operation_type'] = OperationType(data.get('operation_type', 'other'))
-        data['status'] = OperationStatus(data.get('status', 'pending'))
+        data["operation_type"] = OperationType(data.get("operation_type", "other"))
+        data["status"] = OperationStatus(data.get("status", "pending"))
         return cls(**data)
 
 
 class OperationRecorder:
     """
     Records CLI operations for replay, undo, and auditing.
-    
+
     Storage format: JSON Lines (one JSON object per line)
     Location: ~/.navig/history/operations.jsonl
-    
+
     Features:
     - Append-only for reliability
     - Automatic rotation (configurable max entries)
@@ -131,13 +134,14 @@ class OperationRecorder:
     ):
         """
         Initialize the operation recorder.
-        
+
         Args:
             history_dir: Directory for history files. Defaults to ~/.navig/history/
             max_entries: Maximum entries before rotation
         """
         if history_dir is None:
             from navig.config import get_config_manager
+
             config = get_config_manager()
             history_dir = config.base_dir / "history"
 
@@ -176,13 +180,13 @@ class OperationRecorder:
             return
 
         try:
-            with open(self.history_file, 'r', encoding='utf-8') as f:
+            with open(self.history_file, "r", encoding="utf-8") as f:
                 for line_num, line in enumerate(f):
                     if not line.strip():
                         continue
                     try:
                         data = json.loads(line)
-                        op_id = data.get('id')
+                        op_id = data.get("id")
                         if op_id:
                             self._operation_ids.append(op_id)
                             self._operations_by_id[op_id] = line_num
@@ -196,10 +200,10 @@ class OperationRecorder:
     def record(self, record: OperationRecord) -> str:
         """
         Record an operation.
-        
+
         Args:
             record: The operation record to store
-            
+
         Returns:
             The operation ID
         """
@@ -213,8 +217,8 @@ class OperationRecorder:
 
         # Write to file
         try:
-            with open(self.history_file, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record.to_dict()) + '\n')
+            with open(self.history_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record.to_dict()) + "\n")
 
             # Update index
             self._load_index()
@@ -227,6 +231,7 @@ class OperationRecorder:
 
         except (IOError, OSError) as e:
             from navig import console_helper as ch
+
             ch.dim(f"Could not record operation: {e}")
 
         return record.id
@@ -243,9 +248,9 @@ class OperationRecorder:
     ) -> OperationRecord:
         """
         Create a new operation record at the start of a command.
-        
+
         Call complete_operation() when the operation finishes.
-        
+
         Returns:
             The operation record (call complete_operation() when done)
         """
@@ -276,7 +281,7 @@ class OperationRecorder:
     ) -> str:
         """
         Complete and record an operation.
-        
+
         Args:
             record: The operation record started with start_operation()
             success: Whether the operation succeeded
@@ -285,7 +290,7 @@ class OperationRecorder:
             exit_code: Exit code
             duration_ms: Execution duration in milliseconds
             undo_data: Data needed to undo this operation
-            
+
         Returns:
             The operation ID
         """
@@ -301,11 +306,16 @@ class OperationRecorder:
         # Dual-write: also log to audit.db (best-effort)
         try:
             from navig.store.audit import get_audit_store
+
             get_audit_store().log_event(
                 action=f"{record.operation_type.value}",
                 actor="user",
                 target=record.host or record.app,
-                details={"command": record.command, "exit_code": exit_code, "error": error[:500] if error else ""},
+                details={
+                    "command": record.command,
+                    "exit_code": exit_code,
+                    "error": error[:500] if error else "",
+                },
                 channel="cli",
                 host=record.host,
                 status="success" if success else "failed",
@@ -321,11 +331,11 @@ class OperationRecorder:
         if not output:
             return output
 
-        output_bytes = output.encode('utf-8', errors='replace')
+        output_bytes = output.encode("utf-8", errors="replace")
         if len(output_bytes) <= max_bytes:
             return output
 
-        truncated = output_bytes[:max_bytes].decode('utf-8', errors='replace')
+        truncated = output_bytes[:max_bytes].decode("utf-8", errors="replace")
         return f"{truncated}\n... [TRUNCATED - {len(output_bytes)} bytes total]"
 
     def _rotate(self):
@@ -339,12 +349,12 @@ class OperationRecorder:
             recent_entries = entries[-keep_count:]
 
             # Write back
-            backup_file = self.history_file.with_suffix('.jsonl.bak')
+            backup_file = self.history_file.with_suffix(".jsonl.bak")
             self.history_file.rename(backup_file)
 
-            with open(self.history_file, 'w', encoding='utf-8') as f:
+            with open(self.history_file, "w", encoding="utf-8") as f:
                 for entry in recent_entries:
-                    f.write(json.dumps(entry.to_dict()) + '\n')
+                    f.write(json.dumps(entry.to_dict()) + "\n")
 
             # Update index
             self._index_loaded = False
@@ -355,6 +365,7 @@ class OperationRecorder:
 
         except (IOError, OSError) as e:
             from navig import console_helper as ch
+
             ch.warning(f"Could not rotate history: {e}")
 
     def get_operation(self, op_id: str) -> Optional[OperationRecord]:
@@ -367,7 +378,7 @@ class OperationRecorder:
         line_num = self._operations_by_id[op_id]
 
         try:
-            with open(self.history_file, 'r', encoding='utf-8') as f:
+            with open(self.history_file, "r", encoding="utf-8") as f:
                 for i, line in enumerate(f):
                     if i == line_num and line.strip():
                         return OperationRecord.from_dict(json.loads(line))
@@ -389,7 +400,7 @@ class OperationRecorder:
     ):
         """
         Iterate over operations with filtering.
-        
+
         Args:
             limit: Maximum number of results
             offset: Number of results to skip
@@ -399,7 +410,7 @@ class OperationRecorder:
             since: Filter by timestamp (ISO format)
             search: Search in command text
             reverse: If True, most recent first
-            
+
         Yields:
             OperationRecord objects matching filters
         """
@@ -408,7 +419,7 @@ class OperationRecorder:
 
         try:
             # Read all lines
-            with open(self.history_file, 'r', encoding='utf-8') as f:
+            with open(self.history_file, "r", encoding="utf-8") as f:
                 lines = [line for line in f if line.strip()]
 
             if reverse:
@@ -455,20 +466,22 @@ class OperationRecorder:
         """Get the last N operations."""
         return list(self.iter_operations(limit=n, reverse=True))
 
-    def get_by_command(self, command_pattern: str, limit: int = 10) -> List[OperationRecord]:
+    def get_by_command(
+        self, command_pattern: str, limit: int = 10
+    ) -> List[OperationRecord]:
         """Find operations matching a command pattern."""
         return list(self.iter_operations(limit=limit, search=command_pattern))
 
     def export_json(self, output_file: Path, **filters) -> int:
         """
         Export operations to JSON file.
-        
+
         Returns:
             Number of operations exported
         """
         operations = list(self.iter_operations(limit=100000, **filters))
 
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump([op.to_dict() for op in operations], f, indent=2)
 
         return len(operations)
@@ -476,7 +489,7 @@ class OperationRecorder:
     def export_csv(self, output_file: Path, **filters) -> int:
         """
         Export operations to CSV file.
-        
+
         Returns:
             Number of operations exported
         """
@@ -487,29 +500,39 @@ class OperationRecorder:
         if not operations:
             return 0
 
-        fieldnames = ['timestamp', 'command', 'operation_type', 'host', 'status', 'duration_ms', 'exit_code']
+        fieldnames = [
+            "timestamp",
+            "command",
+            "operation_type",
+            "host",
+            "status",
+            "duration_ms",
+            "exit_code",
+        ]
 
-        with open(output_file, 'w', encoding='utf-8', newline='') as f:
+        with open(output_file, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
 
             for op in operations:
-                writer.writerow({
-                    'timestamp': op.timestamp,
-                    'command': op.command,
-                    'operation_type': op.operation_type.value,
-                    'host': op.host or '',
-                    'status': op.status.value,
-                    'duration_ms': op.duration_ms,
-                    'exit_code': op.exit_code,
-                })
+                writer.writerow(
+                    {
+                        "timestamp": op.timestamp,
+                        "command": op.command,
+                        "operation_type": op.operation_type.value,
+                        "host": op.host or "",
+                        "status": op.status.value,
+                        "duration_ms": op.duration_ms,
+                        "exit_code": op.exit_code,
+                    }
+                )
 
         return len(operations)
 
     def clear_history(self) -> int:
         """
         Clear all history.
-        
+
         Returns:
             Number of operations cleared
         """
@@ -545,16 +568,17 @@ def get_operation_recorder() -> OperationRecorder:
 # OPERATION RECORDING CONTEXT MANAGER
 # ============================================================================
 
+
 class RecordedOperation:
     """
     Context manager for recording CLI operations.
-    
+
     Usage:
         with RecordedOperation("navig host list", op_type=OperationType.LOCAL_COMMAND) as rec:
             # do work
             rec.output = "success output"
             rec.success = True
-            
+
         # Or with auto-detected success:
         with RecordedOperation("navig db query", host="myhost") as rec:
             result = run_query()
@@ -592,8 +616,9 @@ class RecordedOperation:
         self._record: Optional[OperationRecord] = None
         self._recorder = get_operation_recorder()
 
-    def __enter__(self) -> 'RecordedOperation':
+    def __enter__(self) -> "RecordedOperation":
         import time
+
         self._start_time = time.time()
         self._record = self._recorder.start_operation(
             command=self.command,
@@ -644,7 +669,7 @@ def record_operation(
 ):
     """
     Decorator for recording CLI command execution.
-    
+
     Usage:
         @record_operation("navig host list", op_type=OperationType.LOCAL_COMMAND)
         def host_list():
@@ -658,7 +683,9 @@ def record_operation(
             # Build command string from function name and args
             full_command = command
             if kwargs:
-                full_command += " " + " ".join(f"--{k}={v}" for k, v in kwargs.items() if v is not None)
+                full_command += " " + " ".join(
+                    f"--{k}={v}" for k, v in kwargs.items() if v is not None
+                )
 
             with RecordedOperation(
                 command=full_command,
@@ -679,6 +706,7 @@ def record_operation(
                     raise
 
         return wrapper
+
     return decorator
 
 
@@ -693,7 +721,7 @@ def quick_record(
 ):
     """
     Quick one-liner to record an operation after the fact.
-    
+
     Usage:
         quick_record("navig host list", success=True, output="Listed 5 hosts")
     """

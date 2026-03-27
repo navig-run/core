@@ -4,6 +4,7 @@ Crash reports are written to ~/.navig/blackbox/crashes/ as JSON files.
 ``install_crash_handler()`` installs a global ``sys.excepthook`` so any
 unhandled exception is automatically captured before the process exits.
 """
+
 from __future__ import annotations
 
 import json
@@ -22,16 +23,16 @@ __all__ = ["CrashReport", "record_crash", "install_crash_handler", "list_crashes
 class CrashReport:
     """A single crash record."""
 
-    timestamp:        str
-    signal_name:      str
-    exception_type:   str
-    exception_msg:    str
-    traceback_str:    str
-    daemon_pid:       int
-    memory_mb:        float
-    navig_version:    str
-    recent_commands:  list[str] = field(default_factory=list)
-    context:          dict[str, Any] = field(default_factory=dict)
+    timestamp: str
+    signal_name: str
+    exception_type: str
+    exception_msg: str
+    traceback_str: str
+    daemon_pid: int
+    memory_mb: float
+    navig_version: str
+    recent_commands: list[str] = field(default_factory=list)
+    context: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -62,6 +63,7 @@ def record_crash(
     """
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir
+
         blackbox_dir = _bbdir()
 
     crash_dir = blackbox_dir / "crashes"
@@ -72,15 +74,20 @@ def record_crash(
         exc_type, exc_val, exc_tb = sys.exc_info()
     else:
         exc_type = type(exc)
-        exc_val  = exc
-        exc_tb   = exc.__traceback__
+        exc_val = exc
+        exc_tb = exc.__traceback__
 
-    tb_str = "".join(traceback.format_exception(exc_type, exc_val, exc_tb)) if exc_type else ""
+    tb_str = (
+        "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
+        if exc_type
+        else ""
+    )
 
     # Memory usage
     mem_mb = 0.0
     try:
         import psutil  # noqa: PLC0415
+
         mem_mb = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -96,8 +103,11 @@ def record_crash(
     try:
         from .recorder import get_recorder
         from .types import EventType
+
         events = get_recorder().read_events(limit=10, event_type=EventType.COMMAND)
-        recent = [e.payload.get("command", "") for e in events if e.payload.get("command")]
+        recent = [
+            e.payload.get("command", "") for e in events if e.payload.get("command")
+        ]
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
@@ -141,12 +151,14 @@ def install_crash_handler(blackbox_dir: Optional[Path] = None) -> None:
     # POSIX signal for daemon use
     try:
         import signal
+
         def _sigterm(signum, frame):  # noqa: ANN001
             record_crash(
                 signal_name=f"SIG{signum}",
                 context={"signum": signum},
                 blackbox_dir=blackbox_dir,
             )
+
         signal.signal(signal.SIGTERM, _sigterm)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -156,6 +168,7 @@ def list_crashes(blackbox_dir: Optional[Path] = None) -> list[CrashReport]:
     """Return all crash reports sorted newest first."""
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir
+
         blackbox_dir = _bbdir()
 
     crash_dir = blackbox_dir / "crashes"

@@ -1,17 +1,19 @@
 """
 Tests for navig.engine.pipeline — ToolPipeline composable chaining.
 """
+
 import asyncio
-import pytest
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from navig.engine.pipeline import PipelineStep, ToolPipeline
+import pytest
 
+from navig.engine.pipeline import PipelineStep, ToolPipeline
 
 # ---------------------------------------------------------------------------
 # Minimal mock registry
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _MockResult:
@@ -39,7 +41,9 @@ class _MockRegistry:
         on_status: Optional[Callable] = None,
     ) -> _MockResult:
         if name not in self._mapping:
-            return _MockResult(name=name, success=False, output=None, error="tool not found")
+            return _MockResult(
+                name=name, success=False, output=None, error="tool not found"
+            )
         v = self._mapping[name]
         if callable(v):
             result = v(args)
@@ -53,6 +57,7 @@ class _MockRegistry:
 # ---------------------------------------------------------------------------
 # Basic chaining
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_single_step_pipeline():
@@ -70,10 +75,12 @@ async def test_two_step_pipeline_passes_output():
     def upper(args):
         return args.get("text", "").upper()
 
-    reg = _MockRegistry({
-        "step1": "hello world",
-        "step2": upper,
-    })
+    reg = _MockRegistry(
+        {
+            "step1": "hello world",
+            "step2": upper,
+        }
+    )
 
     pipe = ToolPipeline(reg)
     pipe.add(PipelineStep("step1", output_key="text"))
@@ -100,12 +107,15 @@ async def test_pipeline_with_initial_input():
 # Abort on required failure
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_required_failure_aborts_pipeline():
-    reg = _MockRegistry({
-        "fail": _MockResult(name="fail", success=False, output=None, error="oops"),
-        "after": "should not run",
-    })
+    reg = _MockRegistry(
+        {
+            "fail": _MockResult(name="fail", success=False, output=None, error="oops"),
+            "after": "should not run",
+        }
+    )
 
     pipe = ToolPipeline(reg)
     pipe.add(PipelineStep("fail", required=True))
@@ -119,10 +129,14 @@ async def test_required_failure_aborts_pipeline():
 
 @pytest.mark.asyncio
 async def test_optional_failure_continues_pipeline():
-    reg = _MockRegistry({
-        "fail": _MockResult(name="fail", success=False, output=None, error="skip me"),
-        "after": "continued",
-    })
+    reg = _MockRegistry(
+        {
+            "fail": _MockResult(
+                name="fail", success=False, output=None, error="skip me"
+            ),
+            "after": "continued",
+        }
+    )
 
     pipe = ToolPipeline(reg)
     pipe.add(PipelineStep("fail", required=False))
@@ -138,6 +152,7 @@ async def test_optional_failure_continues_pipeline():
 # Transform
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_transform_applied_before_injection():
     def double(v):
@@ -146,10 +161,12 @@ async def test_transform_applied_before_injection():
     def use_n(args):
         return args.get("n", 0) + 1
 
-    reg = _MockRegistry({
-        "produce": 5,
-        "consume": use_n,
-    })
+    reg = _MockRegistry(
+        {
+            "produce": 5,
+            "consume": use_n,
+        }
+    )
 
     pipe = ToolPipeline(reg)
     pipe.add(PipelineStep("produce", output_key="n"))
@@ -163,6 +180,7 @@ async def test_transform_applied_before_injection():
 # ---------------------------------------------------------------------------
 # on_step callback
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_on_step_callback_fires():
@@ -180,6 +198,7 @@ async def test_on_step_callback_fires():
 # Context / initial_context seeding
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_initial_context_available_as_args():
     def use_ctx(args):
@@ -195,6 +214,7 @@ async def test_initial_context_available_as_args():
 # ---------------------------------------------------------------------------
 # Unknown tool
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_unknown_tool_reports_failure():

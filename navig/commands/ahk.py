@@ -39,12 +39,13 @@ def _get_adapter():
     """Lazy import AHKAdapter."""
     global _ahk_adapter
     if _ahk_adapter is None:
-        if sys.platform != 'win32':
+        if sys.platform != "win32":
             ch.error("AutoHotkey is only available on Windows")
             return None
 
         try:
             from navig.adapters.automation.ahk import AHKAdapter
+
             _ahk_adapter = AHKAdapter()
         except ImportError as e:
             ch.error(f"Failed to load AHK adapter: {e}")
@@ -57,12 +58,14 @@ def _get_adapter():
 
 @ahk_app.command("install")
 def ahk_install(
-    portable: bool = typer.Option(False, "--portable", "-p", help="Install portable version"),
+    portable: bool = typer.Option(
+        False, "--portable", "-p", help="Install portable version"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Force reinstall/redetect"),
 ):
     """
     Detect or install AutoHotkey v2.
-    
+
     Examples:
         navig ahk install
         navig ahk install --portable
@@ -72,7 +75,7 @@ def ahk_install(
 
     console = Console()
 
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         ch.error("AutoHotkey is only available on Windows")
         raise typer.Exit(1)
 
@@ -96,11 +99,13 @@ def ahk_install(
         ch.warning("Portable installation not yet implemented")
         ch.info("Please download manually from: https://www.autohotkey.com/v2/")
     else:
-        console.print(Panel(
-            adapter.get_install_instructions(),
-            title="AutoHotkey v2 Installation",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel(
+                adapter.get_install_instructions(),
+                title="AutoHotkey v2 Installation",
+                border_style="cyan",
+            )
+        )
 
 
 @ahk_app.command("status")
@@ -110,7 +115,7 @@ def ahk_status(
 ):
     """
     Show AutoHotkey status and capabilities.
-    
+
     Examples:
         navig ahk status
         navig ahk status --json
@@ -121,11 +126,12 @@ def ahk_status(
 
     console = Console()
 
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         ch.error("AutoHotkey is only available on Windows")
         if json_output:
             import json
-            console.print(json.dumps({'available': False, 'reason': 'Not Windows'}))
+
+            console.print(json.dumps({"available": False, "reason": "Not Windows"}))
         raise typer.Exit(1)
 
     adapter = _get_adapter()
@@ -141,6 +147,7 @@ def ahk_status(
 
     if json_output:
         import json
+
         console.print(json.dumps(status.to_dict(), indent=2))
         return
 
@@ -154,7 +161,10 @@ def ahk_status(
 
         table.add_row("Status", "[green]✓ Available[/green]")
         table.add_row("Version", status.version or "Unknown")
-        table.add_row("Executable", str(status.executable_path) if status.executable_path else "Unknown")
+        table.add_row(
+            "Executable",
+            str(status.executable_path) if status.executable_path else "Unknown",
+        )
         table.add_row("Detection Method", status.detection_method or "Unknown")
 
         console.print(table)
@@ -162,20 +172,22 @@ def ahk_status(
         # Show capabilities
         console.print("\n[cyan]Available Commands:[/cyan]")
         console.print("  navig ahk click <x> <y>          - Click at coordinates")
-        console.print("  navig ahk type \"<text>\"          - Type text")
+        console.print('  navig ahk type "<text>"          - Type text')
         console.print("  navig ahk open <app>             - Open application/URL")
         console.print("  navig ahk close <window>         - Close window")
         console.print("  navig ahk move <window> <x> <y>  - Move window")
         console.print("  navig ahk windows                - List all windows")
         console.print("  navig ahk run <script.ahk>       - Run AHK script")
-        console.print("  navig ahk exec \"<code>\"          - Execute inline code")
+        console.print('  navig ahk exec "<code>"          - Execute inline code')
     else:
-        console.print(Panel(
-            "[red]AutoHotkey v2 is not installed[/red]\n\n"
-            "Run [cyan]navig ahk install[/cyan] for installation instructions.",
-            title="🔧 AutoHotkey v2 Status",
-            border_style="red"
-        ))
+        console.print(
+            Panel(
+                "[red]AutoHotkey v2 is not installed[/red]\n\n"
+                "Run [cyan]navig ahk install[/cyan] for installation instructions.",
+                title="🔧 AutoHotkey v2 Status",
+                border_style="red",
+            )
+        )
 
     console.print()
 
@@ -184,7 +196,7 @@ def ahk_status(
 def ahk_doctor():
     """
     Diagnose AutoHotkey integration issues.
-    
+
     Example:
         navig ahk doctor
     """
@@ -193,7 +205,7 @@ def ahk_doctor():
 
     console = Console()
 
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         ch.error("AutoHotkey is only available on Windows")
         raise typer.Exit(1)
 
@@ -208,6 +220,7 @@ def ahk_doctor():
     adapter = None
     try:
         from navig.adapters.automation.ahk import AHKAdapter
+
         checks.append(("Adapter Import", "Success", "✓ Pass", "green"))
         adapter = AHKAdapter()
     except Exception as e:
@@ -217,9 +230,20 @@ def ahk_doctor():
         # Check 3: Detection
         status = adapter.get_status()
         if status.detected:
-            checks.append(("AHKv2 Detection", status.detection_method, "✓ Pass", "green"))
-            checks.append(("AHKv2 Version", status.version or "Unknown", "✓ Pass", "green"))
-            checks.append(("Executable Path", (status.executable_path or "Unknown")[:40], "✓ Pass", "green"))
+            checks.append(
+                ("AHKv2 Detection", status.detection_method, "✓ Pass", "green")
+            )
+            checks.append(
+                ("AHKv2 Version", status.version or "Unknown", "✓ Pass", "green")
+            )
+            checks.append(
+                (
+                    "Executable Path",
+                    (status.executable_path or "Unknown")[:40],
+                    "✓ Pass",
+                    "green",
+                )
+            )
         else:
             checks.append(("AHKv2 Detection", "Not found", "✗ Fail", "red"))
 
@@ -229,7 +253,9 @@ def ahk_doctor():
             if test_result.success:
                 checks.append(("Test Execution", "Success", "✓ Pass", "green"))
             else:
-                checks.append(("Test Execution", test_result.stderr[:30], "✗ Fail", "red"))
+                checks.append(
+                    ("Test Execution", test_result.stderr[:30], "✗ Fail", "red")
+                )
 
         # Check 5: Directories
         script_dir = adapter._script_dir
@@ -257,12 +283,16 @@ def ahk_doctor():
 @ahk_app.command("run")
 def ahk_run(
     script_path: str = typer.Argument(..., help="Path to .ahk script file"),
-    args: Optional[str] = typer.Option(None, "--args", "-a", help="Comma-separated arguments"),
-    timeout: Optional[float] = typer.Option(None, "--timeout", "-t", help="Execution timeout in seconds"),
+    args: Optional[str] = typer.Option(
+        None, "--args", "-a", help="Comma-separated arguments"
+    ),
+    timeout: Optional[float] = typer.Option(
+        None, "--timeout", "-t", help="Execution timeout in seconds"
+    ),
 ):
     """
     Execute an AHK script file.
-    
+
     Examples:
         navig ahk run my_script.ahk
         navig ahk run automation.ahk --args "arg1,arg2" --timeout 30
@@ -283,7 +313,7 @@ def ahk_run(
 
     ch.info(f"Running {path.name}...")
 
-    args_list = args.split(',') if args else None
+    args_list = args.split(",") if args else None
 
     result = adapter.execute_file(path, args=args_list, timeout=timeout)
 
@@ -301,11 +331,13 @@ def ahk_run(
 @ahk_app.command("exec")
 def ahk_exec(
     code: str = typer.Argument(..., help="AHK code to execute"),
-    timeout: Optional[float] = typer.Option(None, "--timeout", "-t", help="Execution timeout"),
+    timeout: Optional[float] = typer.Option(
+        None, "--timeout", "-t", help="Execution timeout"
+    ),
 ):
     """
     Execute inline AHK code.
-    
+
     Examples:
         navig ahk exec "MsgBox('Hello')"
         navig ahk exec "Click 100, 100"
@@ -339,12 +371,14 @@ def ahk_exec(
 def ahk_click(
     x: int = typer.Argument(..., help="X coordinate"),
     y: int = typer.Argument(..., help="Y coordinate"),
-    button: str = typer.Option("left", "--button", "-b", help="Mouse button (left/right/middle)"),
+    button: str = typer.Option(
+        "left", "--button", "-b", help="Mouse button (left/right/middle)"
+    ),
     clicks: int = typer.Option(1, "--clicks", "-c", help="Number of clicks"),
 ):
     """
     Click at screen coordinates.
-    
+
     Examples:
         navig ahk click 100 200
         navig ahk click 500 300 --button right
@@ -371,7 +405,7 @@ def ahk_type(
 ):
     """
     Type text using keyboard.
-    
+
     Examples:
         navig ahk type "Hello World"
         navig ahk type "slow text" --delay 50
@@ -396,13 +430,13 @@ def ahk_send(
 ):
     """
     Send key sequence.
-    
+
     Key Modifiers:
         ^ = Ctrl
         ! = Alt
         + = Shift
         # = Win
-    
+
     Examples:
         navig ahk send "^c"         # Ctrl+C
         navig ahk send "^v"         # Ctrl+V
@@ -421,7 +455,6 @@ def ahk_send(
     else:
         ch.error(f"Send failed: {result.stderr}")
         raise typer.Exit(1)
-
 
 
 @ahk_app.command("resize")
@@ -488,7 +521,7 @@ def ahk_open(
 ):
     """
     Open application or URL.
-    
+
     Examples:
         navig ahk open notepad
         navig ahk open "C:/Program Files/App/app.exe"
@@ -510,11 +543,13 @@ def ahk_open(
 
 @ahk_app.command("close")
 def ahk_close(
-    selector: str = typer.Argument(..., help="Window title, ahk_exe, ahk_class, or ahk_id"),
+    selector: str = typer.Argument(
+        ..., help="Window title, ahk_exe, ahk_class, or ahk_id"
+    ),
 ):
     """
     Close window by selector.
-    
+
     Examples:
         navig ahk close "Notepad"
         navig ahk close "ahk_exe notepad.exe"
@@ -544,7 +579,7 @@ def ahk_move(
 ):
     """
     Move and optionally resize window.
-    
+
     Examples:
         navig ahk move "Notepad" 100 100
         navig ahk move "Notepad" 0 0 --width 800 --height 600
@@ -605,7 +640,10 @@ def ahk_minimize(
 @ahk_app.command("snap")
 def ahk_snap(
     selector: str = typer.Argument(..., help="Window selector"),
-    position: str = typer.Argument(..., help="Position: left, right, top, bottom, top-left, top-right, bottom-left, bottom-right, center"),
+    position: str = typer.Argument(
+        ...,
+        help="Position: left, right, top, bottom, top-left, top-right, bottom-left, bottom-right, center",
+    ),
 ):
     """Snap window to screen edge/corner."""
     adapter = _get_adapter()
@@ -662,11 +700,13 @@ def ahk_activate(
 @ahk_app.command("windows")
 def ahk_windows(
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
-    filter_text: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter by title"),
+    filter_text: Optional[str] = typer.Option(
+        None, "--filter", "-f", help="Filter by title"
+    ),
 ):
     """
     List all visible windows.
-    
+
     Examples:
         navig ahk windows
         navig ahk windows --filter Chrome
@@ -695,6 +735,7 @@ def ahk_windows(
 
     if json_output:
         import json
+
         console.print(json.dumps([w.to_dict() for w in windows], indent=2))
         return
 
@@ -709,18 +750,22 @@ def ahk_windows(
 
     for w in windows:
         state = "📍 Normal"
-        if hasattr(w, 'is_minimized') and w.is_minimized:
+        if hasattr(w, "is_minimized") and w.is_minimized:
             state = "⬇️ Min"
-        elif hasattr(w, 'is_maximized') and w.is_maximized:
+        elif hasattr(w, "is_maximized") and w.is_maximized:
             state = "⬆️ Max"
 
         table.add_row(
             w.title[:40] if len(w.title) > 40 else w.title,
-            (w.class_name[:15] if len(w.class_name) > 15 else w.class_name) if hasattr(w, 'class_name') else "",
-            str(w.pid) if hasattr(w, 'pid') else "",
-            f"{w.x}, {w.y}" if hasattr(w, 'x') else "",
-            f"{w.width}x{w.height}" if hasattr(w, 'width') else "",
-            state
+            (
+                (w.class_name[:15] if len(w.class_name) > 15 else w.class_name)
+                if hasattr(w, "class_name")
+                else ""
+            ),
+            str(w.pid) if hasattr(w, "pid") else "",
+            f"{w.x}, {w.y}" if hasattr(w, "x") else "",
+            f"{w.width}x{w.height}" if hasattr(w, "width") else "",
+            state,
         )
 
     console.print()
@@ -734,11 +779,13 @@ def ahk_windows(
 @ahk_app.command("clipboard")
 def ahk_clipboard(
     get: bool = typer.Option(False, "--get", "-g", help="Get clipboard content"),
-    set_value: Optional[str] = typer.Option(None, "--set", "-s", help="Set clipboard content"),
+    set_value: Optional[str] = typer.Option(
+        None, "--set", "-s", help="Set clipboard content"
+    ),
 ):
     """
     Clipboard operations.
-    
+
     Examples:
         navig ahk clipboard --get
         navig ahk clipboard --set "Hello World"
@@ -781,12 +828,14 @@ def ahk_clipboard(
 @ahk_app.command("automate")
 def ahk_automate(
     goal: str = typer.Argument(..., help="Natural language goal description"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show script without executing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Show script without executing"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip safety confirmation"),
 ):
     """
     AI-powered automation - generate and execute script for goal.
-    
+
     Examples:
         navig ahk automate "tile all my windows"
         navig ahk automate "open notepad and type hello" --dry-run
@@ -809,8 +858,15 @@ def ahk_automate(
     screen_size = adapter.get_screen_size()
 
     context = {
-        'windows': [{'title': w.title, 'class': getattr(w, 'class_name', ''), 'pid': getattr(w, 'pid', 0)} for w in windows[:10]],
-        'screen_size': screen_size,
+        "windows": [
+            {
+                "title": w.title,
+                "class": getattr(w, "class_name", ""),
+                "pid": getattr(w, "pid", 0),
+            }
+            for w in windows[:10]
+        ],
+        "screen_size": screen_size,
     }
 
     # Try to use AI to generate script
@@ -820,7 +876,7 @@ def ahk_automate(
         generator = AHKAIGenerator()
 
         gen_context = GenerationContext(
-            windows=[{'title': w.title} for w in windows[:10]],
+            windows=[{"title": w.title} for w in windows[:10]],
             screen_width=screen_size[0] if screen_size else 1920,
             screen_height=screen_size[1] if screen_size else 1080,
         )
@@ -863,24 +919,27 @@ def ahk_automate(
         ch.error(f"Automation failed: {e}")
         raise typer.Exit(1) from e
 
+
 # ==================== Evolution ====================
 
 
 @ahk_app.command("evolve")
 def ahk_evolve(
     goal: str = typer.Argument(..., help="Goal to evolve a script for"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show evolution without executing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Show evolution without executing"
+    ),
     retries: int = typer.Option(3, "--retries", "-r", help="Max evolution attempts"),
 ):
     """
     Auto-Evolve: Generate, test, and refine an AHK script.
-    
+
     This runs a feedback loop:
     1. Generate script
     2. Execute
     3. If fail, analyze error and regenerate
     4. Save successful scripts to library
-    
+
     Examples:
         navig ahk evolve "open notepad and type hello"
         navig ahk evolve "maximize all windows" --retries 5
@@ -930,8 +989,10 @@ def layout_save(
 ):
     """Save current window positions and sizes."""
     from navig.core.window_manager import WindowManager
+
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     wm = WindowManager(adapter)
     wm.save_layout(name)
@@ -943,8 +1004,10 @@ def layout_restore(
 ):
     """Restore a saved window layout."""
     from navig.core.window_manager import WindowManager
+
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     wm = WindowManager(adapter)
     wm.restore_layout(name)
@@ -959,7 +1022,8 @@ def layout_list():
 
     console = Console()
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     wm = WindowManager(adapter)
     layouts = wm.list_layouts()
@@ -1002,14 +1066,11 @@ def library_list(
 
     for s in scripts:
         goal_display = s.goal[:50] + "..." if len(s.goal) > 50 else s.goal
-        last_used_display = s.last_used[:16].replace("T", " ") if s.last_used else "Never"
-
-        table.add_row(
-            s.id,
-            goal_display,
-            str(s.success_count),
-            last_used_display
+        last_used_display = (
+            s.last_used[:16].replace("T", " ") if s.last_used else "Never"
         )
+
+        table.add_row(s.id, goal_display, str(s.success_count), last_used_display)
 
     console.print(table)
     console.print()
@@ -1034,7 +1095,9 @@ def library_show(
 
     if not entry:
         # Try finding by goal substring
-        matches = [s for s in library.list_scripts() if script_id.lower() in s.goal.lower()]
+        matches = [
+            s for s in library.list_scripts() if script_id.lower() in s.goal.lower()
+        ]
         if matches:
             entry = matches[0]
             if len(matches) > 1:
@@ -1045,7 +1108,9 @@ def library_show(
         raise typer.Exit(1)
 
     console.print(f"\n[bold cyan]Goal:[/bold cyan] {entry.goal}")
-    console.print(f"[dim]ID: {entry.id} | Successes: {entry.success_count} | Last Used: {entry.last_used}[/dim]\n")
+    console.print(
+        f"[dim]ID: {entry.id} | Successes: {entry.success_count} | Last Used: {entry.last_used}[/dim]\n"
+    )
 
     syntax = Syntax(entry.script, "autohotkey", theme="monokai", line_numbers=True)
     console.print(Panel(syntax, title=f"{entry.id}.ahk", border_style="cyan"))
@@ -1054,7 +1119,9 @@ def library_show(
 
 @ahk_app.command("dashboard")
 def ahk_dashboard(
-    refresh: float = typer.Option(1.0, "--refresh", "-r", help="Refresh rate in seconds"),
+    refresh: float = typer.Option(
+        1.0, "--refresh", "-r", help="Refresh rate in seconds"
+    ),
 ):
     """
     Live window manager dashboard.
@@ -1080,7 +1147,11 @@ def ahk_dashboard(
     wm = WindowManager(adapter)
 
     def generate_view():
-        table = Table(title=f"Windows Dashboard ({datetime.now().strftime('%H:%M:%S')})", expand=True, box=None)
+        table = Table(
+            title=f"Windows Dashboard ({datetime.now().strftime('%H:%M:%S')})",
+            expand=True,
+            box=None,
+        )
         table.add_column("PID", style="dim", width=8)
         table.add_column("Title", style="white bold")
         table.add_column("Process", style="cyan")
@@ -1094,21 +1165,21 @@ def ahk_dashboard(
             windows.sort(key=lambda w: w.title.lower())
 
             for w in windows:
-                if not w.title or w.title == "Program Manager": continue
+                if not w.title or w.title == "Program Manager":
+                    continue
 
                 state = []
-                if w.is_maximized: state.append("MAX")
-                elif w.is_minimized: state.append("MIN")
-                else: state.append("NRM")
+                if w.is_maximized:
+                    state.append("MAX")
+                elif w.is_minimized:
+                    state.append("MIN")
+                else:
+                    state.append("NRM")
 
                 geom = f"{w.x},{w.y} {w.width}x{w.height}"
 
                 table.add_row(
-                    str(w.pid),
-                    w.title[:50],
-                    w.process_name[:20],
-                    geom,
-                    ",".join(state)
+                    str(w.pid), w.title[:50], w.process_name[:20], geom, ",".join(state)
                 )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -1128,7 +1199,9 @@ def ahk_dashboard(
 
 @ahk_app.command("clipboard")
 def ahk_clipboard(
-    text: Optional[str] = typer.Argument(None, help="Text to copy (if omitted, prints clipboard)"),
+    text: Optional[str] = typer.Argument(
+        None, help="Text to copy (if omitted, prints clipboard)"
+    ),
 ):
     """Get or set clipboard content."""
     adapter = _get_adapter()
@@ -1150,7 +1223,9 @@ def ahk_clipboard(
 
 @ahk_app.command("screenshot")
 def ahk_screenshot(
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file path"
+    ),
     region: Optional[str] = typer.Option(None, "--region", help="Region x,y,w,h"),
 ):
     """Take a screenshot."""
@@ -1161,7 +1236,7 @@ def ahk_screenshot(
     reg_tuple = None
     if region:
         try:
-            reg_tuple = tuple(map(int, region.split(',')))
+            reg_tuple = tuple(map(int, region.split(",")))
         except ValueError as _exc:
             ch.error("Invalid region format. Use x,y,w,h")
             raise typer.Exit(1) from _exc
@@ -1177,7 +1252,9 @@ def ahk_screenshot(
 
 @ahk_app.command("ocr")
 def ahk_ocr(
-    image: Optional[Path] = typer.Option(None, "--image", help="Image file (default: screenshot)"),
+    image: Optional[Path] = typer.Option(
+        None, "--image", help="Image file (default: screenshot)"
+    ),
     region: Optional[str] = typer.Option(None, "--region", help="Region x,y,w,h"),
 ):
     """Extract text from screen or image (requires pytesseract)."""
@@ -1198,29 +1275,30 @@ def ahk_ocr(
 
         if region:
             try:
-                x, y, w, h = map(int, region.split(','))
-                img = img.crop((x, y, x+w, y+h))
+                x, y, w, h = map(int, region.split(","))
+                img = img.crop((x, y, x + w, y + h))
             except ValueError as _exc:
                 ch.error("Invalid region format. Use x,y,w,h")
                 raise typer.Exit(1) from _exc
     else:
         # Screenshot
         from navig.desktop.controller import DesktopController
+
         dc = DesktopController()
         reg_tuple = None
         if region:
-             try:
-                 reg_tuple = tuple(map(int, region.split(',')))
-             except ValueError as _exc:
-                 ch.error("Invalid region format. Use x,y,w,h")
-                 raise typer.Exit(1) from _exc
+            try:
+                reg_tuple = tuple(map(int, region.split(",")))
+            except ValueError as _exc:
+                ch.error("Invalid region format. Use x,y,w,h")
+                raise typer.Exit(1) from _exc
 
         try:
             path = dc.screenshot(region=reg_tuple)
             img = Image.open(path)
         except Exception as e:
-             ch.error(f"Screenshot failed: {e}")
-             raise typer.Exit(1) from e
+            ch.error(f"Screenshot failed: {e}")
+            raise typer.Exit(1) from e
 
     try:
         text = pytesseract.image_to_string(img)
@@ -1234,7 +1312,9 @@ def ahk_ocr(
 def ahk_listen(
     hotkey: str = typer.Argument(..., help="AHK Hotkey (e.g. ^!t)"),
     command: str = typer.Argument(..., help="Command to run"),
-    start: bool = typer.Option(False, "--start", "-s", help="Start/Restart listener immediately"),
+    start: bool = typer.Option(
+        False, "--start", "-s", help="Start/Restart listener immediately"
+    ),
 ):
     """
     Register a global hotkey to run a command.
@@ -1246,8 +1326,10 @@ def ahk_listen(
 
     # Initialize header if new file or empty
     if not listener_path.exists() or listener_path.stat().st_size == 0:
-        with open(listener_path, 'w', encoding='utf-8') as f:
-            f.write("#Requires AutoHotkey v2.0\n#SingleInstance Force\nPersistent\n\n; NAVIG AutoHotkey Listener\n\n")
+        with open(listener_path, "w", encoding="utf-8") as f:
+            f.write(
+                "#Requires AutoHotkey v2.0\n#SingleInstance Force\nPersistent\n\n; NAVIG AutoHotkey Listener\n\n"
+            )
 
     # Escape quotes for AHK v2 string
     safe_cmd = command.replace('"', '`"')
@@ -1255,11 +1337,11 @@ def ahk_listen(
 
     # Check for duplicate hotkey (simple check)
     if listener_path.exists():
-        content = listener_path.read_text(encoding='utf-8')
+        content = listener_path.read_text(encoding="utf-8")
         if f"{hotkey}::" in content:
             ch.warning(f"Hotkey {hotkey} already exists. Appending anyway.")
 
-    with open(listener_path, 'a', encoding='utf-8') as f:
+    with open(listener_path, "a", encoding="utf-8") as f:
         f.write(entry)
 
     ch.success(f"Registered hotkey: {hotkey} -> {command}")
@@ -1279,7 +1361,8 @@ def ahk_listener_start():
         raise typer.Exit(1)
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     # #SingleInstance Force in script handles replacement
     pid = adapter.run_detached(listener_path)
@@ -1299,11 +1382,13 @@ def ahk_listener_edit():
         listener_path.touch()
 
     import os
-    if sys.platform == 'win32':
+
+    if sys.platform == "win32":
         os.startfile(listener_path)
     else:
         import subprocess
-        subprocess.call(('open', str(listener_path)))
+
+        subprocess.call(("open", str(listener_path)))
 
 
 # ==================== AI-Powered Automation ====================
@@ -1312,12 +1397,16 @@ def ahk_listener_edit():
 @ahk_app.command("generate")
 def ahk_generate(
     goal: str = typer.Argument(..., help="Goal in natural language"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show generated script without executing"),
-    save: bool = typer.Option(False, "--save", "-s", help="Save to library if successful"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show generated script without executing"
+    ),
+    save: bool = typer.Option(
+        False, "--save", "-s", help="Save to library if successful"
+    ),
 ):
     """
     Generate AHK script from natural language using AI.
-    
+
     Examples:
         navig ahk generate "open notepad and type hello"
         navig ahk generate "minimize all windows" --dry-run
@@ -1346,9 +1435,9 @@ def ahk_generate(
     screen_size = adapter.get_screen_size()
 
     context = GenerationContext(
-        windows=[{'title': w.title, 'pid': w.pid} for w in windows[:15]],
+        windows=[{"title": w.title, "pid": w.pid} for w in windows[:15]],
         screen_width=screen_size[0],
-        screen_height=screen_size[1]
+        screen_height=screen_size[1],
     )
 
     # Generate
@@ -1375,6 +1464,7 @@ def ahk_generate(
 
         if save:
             from navig.adapters.automation.evolution.library import ScriptLibrary
+
             library = ScriptLibrary()
             script_id = library.save_script(goal, result.script)
             ch.success(f"💾 Saved to library as: {script_id}")
@@ -1386,15 +1476,19 @@ def ahk_generate(
 @ahk_app.command("evolve")
 def ahk_evolve(
     goal: str = typer.Argument(..., help="Goal in natural language"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show generated script without executing"),
-    max_retries: int = typer.Option(3, "--retries", "-r", help="Max evolution attempts"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show generated script without executing"
+    ),
+    max_retries: int = typer.Option(
+        3, "--retries", "-r", help="Max evolution attempts"
+    ),
 ):
     """
     Auto-generate, test, and evolve AHK scripts until they work.
-    
+
     This command uses AI to iteratively improve scripts based on execution feedback.
     Scripts that succeed are automatically saved to the library.
-    
+
     Examples:
         navig ahk evolve "open chrome and go to google.com"
         navig ahk evolve "arrange windows side by side" --retries 5
@@ -1428,7 +1522,10 @@ def ahk_evolve(
 
         if dry_run:
             from rich.syntax import Syntax
-            syntax = Syntax(result.final_script, "autohotkey", theme="monokai", line_numbers=True)
+
+            syntax = Syntax(
+                result.final_script, "autohotkey", theme="monokai", line_numbers=True
+            )
             console.print(Panel(syntax, title="🎯 Final Script", border_style="green"))
     else:
         ch.error(f"✗ Evolution failed after {result.attempts} attempts")
@@ -1436,7 +1533,10 @@ def ahk_evolve(
         if result.final_script:
             ch.warning("Last attempted script:")
             from rich.syntax import Syntax
-            syntax = Syntax(result.final_script, "autohotkey", theme="monokai", line_numbers=True)
+
+            syntax = Syntax(
+                result.final_script, "autohotkey", theme="monokai", line_numbers=True
+            )
             console.print(Panel(syntax, title="⚠️ Failed Script", border_style="red"))
 
         raise typer.Exit(1)
@@ -1447,7 +1547,9 @@ def ahk_evolve(
 
 @ahk_app.command("processes")
 def ahk_processes(
-    filter_name: Optional[str] = typer.Option(None, "--filter", help="Filter by process name"),
+    filter_name: Optional[str] = typer.Option(
+        None, "--filter", help="Filter by process name"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all running processes."""
@@ -1457,12 +1559,15 @@ def ahk_processes(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     processes = adapter.get_processes()
 
     if filter_name:
-        processes = [p for p in processes if filter_name.lower() in p.get('name', '').lower()]
+        processes = [
+            p for p in processes if filter_name.lower() in p.get("name", "").lower()
+        ]
 
     if json_output:
         print(json.dumps(processes, indent=2))
@@ -1474,13 +1579,9 @@ def ahk_processes(
     table.add_column("Name", style="green")
     table.add_column("Memory (MB)", style="yellow")
 
-    for proc in sorted(processes, key=lambda x: x.get('memory', 0), reverse=True)[:50]:
-        mem_mb = proc.get('memory', 0) / (1024 * 1024)
-        table.add_row(
-            str(proc.get('pid', '')),
-            proc.get('name', ''),
-            f"{mem_mb:.1f}"
-        )
+    for proc in sorted(processes, key=lambda x: x.get("memory", 0), reverse=True)[:50]:
+        mem_mb = proc.get("memory", 0) / (1024 * 1024)
+        table.add_row(str(proc.get("pid", "")), proc.get("name", ""), f"{mem_mb:.1f}")
 
     console.print(table)
 
@@ -1492,7 +1593,8 @@ def ahk_kill(
 ):
     """Kill a process by name or PID."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     if not force:
         ch.warning(f"About to kill process: {identifier}")
@@ -1515,7 +1617,8 @@ def ahk_start(
 ):
     """Start a new process."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.start_process(executable, args, wait)
     if result.success:
@@ -1538,7 +1641,8 @@ def ahk_monitors(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     monitors = adapter.get_monitors()
 
@@ -1558,15 +1662,9 @@ def ahk_monitors(
         resolution = f"{mon['width']}x{mon['height']}"
         position = f"({mon['left']}, {mon['top']})"
         work_area = f"{mon['work_width']}x{mon['work_height']}"
-        primary = "✓" if mon['primary'] else ""
+        primary = "✓" if mon["primary"] else ""
 
-        table.add_row(
-            str(mon['index']),
-            resolution,
-            position,
-            work_area,
-            primary
-        )
+        table.add_row(str(mon["index"]), resolution, position, work_area, primary)
 
     console.print(table)
 
@@ -1578,7 +1676,8 @@ def ahk_move_to_monitor(
 ):
     """Move window to specific monitor."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.move_window_to_monitor(window, monitor)
     if result.success:
@@ -1597,7 +1696,8 @@ def ahk_transparency(
 ):
     """Set window transparency."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.set_window_transparency(window, opacity)
     if result.success:
@@ -1618,7 +1718,8 @@ def ahk_window_state(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     state = adapter.get_window_state(window)
 
@@ -1628,7 +1729,7 @@ def ahk_window_state(
 
     console = Console()
 
-    if not state.get('exists'):
+    if not state.get("exists"):
         ch.error(f"Window not found: {window}")
         return
 
@@ -1653,7 +1754,8 @@ def ahk_active_window(
     from rich.panel import Panel
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     window = adapter.get_active_window()
 
@@ -1689,7 +1791,8 @@ def ahk_find(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     windows = adapter.find_windows(title, class_name)
 
@@ -1711,10 +1814,7 @@ def ahk_find(
 
     for win in windows:
         table.add_row(
-            win.title[:50],
-            win.class_name,
-            str(win.pid),
-            f"{win.width}x{win.height}"
+            win.title[:50], win.class_name, str(win.pid), f"{win.width}x{win.height}"
         )
 
     console.print(table)
@@ -1731,7 +1831,8 @@ def ahk_notify(
 ):
     """Show Windows notification."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.show_notification(title, message, duration)
     if result.success:
@@ -1745,11 +1846,14 @@ def ahk_notify(
 
 @ahk_app.command("volume")
 def ahk_volume(
-    level: Optional[int] = typer.Argument(None, help="Volume level 0-100 (omit to show current)"),
+    level: Optional[int] = typer.Argument(
+        None, help="Volume level 0-100 (omit to show current)"
+    ),
 ):
     """Get or set system volume."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     if level is None:
         # Get current volume
@@ -1770,7 +1874,8 @@ def ahk_mute(
 ):
     """Mute or unmute system audio."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.mute(not unmute)
     if result.success:
@@ -1784,7 +1889,8 @@ def ahk_mute(
 def ahk_is_muted():
     """Check if system audio is muted."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     muted = adapter.is_muted()
     if muted:
@@ -1807,7 +1913,9 @@ ahk_app.add_typer(workflow_app, name="workflow")
 @workflow_app.command("run")
 def workflow_run(
     name: str = typer.Argument(..., help="Name of workflow to run"),
-    vars: List[str] = typer.Option(None, "--var", "-v", help="Variables in key=value format"),
+    vars: List[str] = typer.Option(
+        None, "--var", "-v", help="Variables in key=value format"
+    ),
 ):
     """Run a cross-platform workflow."""
     from navig.core.automation_engine import WorkflowEngine

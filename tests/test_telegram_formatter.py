@@ -11,22 +11,23 @@ Covers:
   - Code fence passthrough (no transformation inside fences)
   - convert_chunked splits correctly
 """
+
 from __future__ import annotations
 
 import pytest
 
 from navig.gateway.channels.telegram_formatter import (
-    FormatterPrefs,
-    MarkdownFormatter,
     NUMBERED_STYLE_EMOJI,
     NUMBERED_STYLE_PLAIN,
     NUMBERED_STYLE_ROMAN,
+    FormatterPrefs,
+    MarkdownFormatter,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def fmt():
@@ -41,6 +42,7 @@ def prefs():
 # ---------------------------------------------------------------------------
 # Heading tests
 # ---------------------------------------------------------------------------
+
 
 def test_h1_uppercased(fmt, prefs):
     out = fmt.convert("# Hello World", prefs)
@@ -76,6 +78,7 @@ def test_h4_does_not_match_h3_pattern(fmt, prefs):
 # Horizontal rule
 # ---------------------------------------------------------------------------
 
+
 def test_hr_dashes(fmt, prefs):
     out = fmt.convert("---", prefs)
     assert "─" in out
@@ -91,6 +94,7 @@ def test_hr_asterisks(fmt, prefs):
 # Blockquote
 # ---------------------------------------------------------------------------
 
+
 def test_blockquote(fmt, prefs):
     out = fmt.convert("> A wise saying", prefs)
     assert out.strip() == "❝ A wise saying"
@@ -99,6 +103,7 @@ def test_blockquote(fmt, prefs):
 # ---------------------------------------------------------------------------
 # Bold / italic
 # ---------------------------------------------------------------------------
+
 
 def test_bold_converts(fmt, prefs):
     out = fmt.convert("This is **important** text.", prefs)
@@ -115,6 +120,7 @@ def test_italic_underscore_passthrough(fmt, prefs):
 # ---------------------------------------------------------------------------
 # Numbered lists
 # ---------------------------------------------------------------------------
+
 
 def test_numbered_list_emoji(fmt, prefs):
     prefs.numbered_style = NUMBERED_STYLE_EMOJI
@@ -143,6 +149,7 @@ def test_numbered_list_roman(fmt, prefs):
 # Bullet lists
 # ---------------------------------------------------------------------------
 
+
 def test_bullet_dash(fmt, prefs):
     out = fmt.convert("- item one\n- item two", prefs)
     assert "• item one" in out
@@ -159,10 +166,11 @@ def test_bullet_asterisk(fmt, prefs):
 # Code fence passthrough
 # ---------------------------------------------------------------------------
 
+
 def test_code_fence_not_transformed(fmt, prefs):
     code = "```python\n# This is a comment\n**not bold**\n- not a bullet\n```"
     out = fmt.convert(code, prefs)
-    assert "**not bold**" in out    # must be preserved as-is
+    assert "**not bold**" in out  # must be preserved as-is
     assert "- not a bullet" in out  # must NOT be converted to bullet
 
 
@@ -176,6 +184,7 @@ def test_code_fence_heading_inside_not_transformed(fmt, prefs):
 # ---------------------------------------------------------------------------
 # convert_chunked
 # ---------------------------------------------------------------------------
+
 
 def test_convert_chunked_short_text_single_chunk(fmt, prefs):
     chunks = fmt.convert_chunked("# Hello\n\n- item", prefs, max_chars=4096)
@@ -196,8 +205,11 @@ def test_convert_chunked_splits_long_text(fmt, prefs):
 # FormatterPrefs JSON round-trip
 # ---------------------------------------------------------------------------
 
+
 def test_prefs_json_roundtrip():
-    prefs = FormatterPrefs(h1_symbol="🔶", bullet_style="▸", numbered_style=NUMBERED_STYLE_ROMAN)
+    prefs = FormatterPrefs(
+        h1_symbol="🔶", bullet_style="▸", numbered_style=NUMBERED_STYLE_ROMAN
+    )
     restored = FormatterPrefs.from_json(prefs.to_json())
     assert restored.h1_symbol == "🔶"
     assert restored.bullet_style == "▸"

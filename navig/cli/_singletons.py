@@ -1,4 +1,5 @@
 """Thread-safe lazy singleton helpers for NAVIG CLI."""
+
 from __future__ import annotations
 
 import threading
@@ -27,6 +28,7 @@ def _get_config_manager():
         with _config_manager_lock:
             if _config_manager is None:
                 from navig.config import get_config_manager
+
                 _config_manager = get_config_manager(force_new=_NO_CACHE)
     return _config_manager
 
@@ -38,6 +40,7 @@ def _get_tunnel_manager():
         with _lazy_lock:
             if _TunnelManager is None:
                 from navig.tunnel import TunnelManager
+
                 _TunnelManager = TunnelManager
     return _TunnelManager
 
@@ -49,6 +52,7 @@ def _get_remote_operations():
         with _lazy_lock:
             if _RemoteOperations is None:
                 from navig.remote import RemoteOperations
+
                 _RemoteOperations = RemoteOperations
     return _RemoteOperations
 
@@ -60,5 +64,6 @@ def _get_ai_assistant():
         with _lazy_lock:
             if _AIAssistant is None:
                 from navig.ai import AIAssistant
+
                 _AIAssistant = AIAssistant
     return _AIAssistant

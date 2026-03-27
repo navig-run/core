@@ -36,6 +36,7 @@ Usage:
     # Notification
     await router.notify("✅ Task complete: paid bills", screenshot="/tmp/shot.png")
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,13 +49,14 @@ logger = logging.getLogger(__name__)
 
 # ─────────────────────────── Channel interface ────────────────────────────────
 
+
 class HitLChannel(ABC):
     """Abstract Human-in-the-Loop channel."""
 
     name: str = "base"
-    available: bool = True            # set False to skip this channel
+    available: bool = True  # set False to skip this channel
     _consecutive_failures: int = 0
-    _MAX_FAILURES = 3                 # disable after 3 consecutive failures
+    _MAX_FAILURES = 3  # disable after 3 consecutive failures
 
     @abstractmethod
     async def ping(self) -> bool:
@@ -65,7 +67,9 @@ class HitLChannel(ABC):
         """Ask a free-text question. Returns user reply or '' on timeout."""
 
     @abstractmethod
-    async def choose(self, question: str, options: List[str], timeout: int = 300) -> str:
+    async def choose(
+        self, question: str, options: List[str], timeout: int = 300
+    ) -> str:
         """Show options and wait for a selection. Returns selected option or ''."""
 
     @abstractmethod
@@ -79,10 +83,15 @@ class HitLChannel(ABC):
         self._consecutive_failures += 1
         if self._consecutive_failures >= self._MAX_FAILURES:
             self.available = False
-            logger.warning("CommsRouter: channel %s disabled after %d failures", self.name, self._MAX_FAILURES)
+            logger.warning(
+                "CommsRouter: channel %s disabled after %d failures",
+                self.name,
+                self._MAX_FAILURES,
+            )
 
 
 # ─────────────────────────── Matrix channel ──────────────────────────────────
+
 
 class MatrixHitLChannel(HitLChannel):
     """
@@ -121,7 +130,9 @@ class MatrixHitLChannel(HitLChannel):
                 return False
             # Upload screenshot if given
             if screenshot_path and Path(screenshot_path).exists():
-                await bot.upload_file(self._room_id, screenshot_path, body="📸 Task Screenshot")
+                await bot.upload_file(
+                    self._room_id, screenshot_path, body="📸 Task Screenshot"
+                )
             await bot.send_message(self._room_id, f"🤖 NAVIG\n\n{message}")
             self.record_success()
             return True
@@ -137,6 +148,7 @@ class MatrixHitLChannel(HitLChannel):
         picking up unrelated messages.
         """
         import uuid
+
         corr = str(uuid.uuid4())[:6]
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[corr] = future
@@ -145,6 +157,7 @@ class MatrixHitLChannel(HitLChannel):
             bot = self._bot()
             if not bot or not bot.is_running:
                 return ""
+
             # Register one-shot reply handler
             async def _on_reply(room_id, sender, body):
                 if corr in body or corr not in self._pending:
@@ -156,7 +169,7 @@ class MatrixHitLChannel(HitLChannel):
             bot.on_message(_on_reply)
             await bot.send_message(
                 self._room_id,
-                f"⏸️ NAVIG (ref:{corr})\n\n{question}\n\n_Reply to this message with your answer_"
+                f"⏸️ NAVIG (ref:{corr})\n\n{question}\n\n_Reply to this message with your answer_",
             )
             reply = await asyncio.wait_for(future, timeout=timeout)
             self.record_success()
@@ -171,7 +184,9 @@ class MatrixHitLChannel(HitLChannel):
         finally:
             self._pending.pop(corr, None)
 
-    async def choose(self, question: str, options: List[str], timeout: int = 300) -> str:
+    async def choose(
+        self, question: str, options: List[str], timeout: int = 300
+    ) -> str:
         """Present numbered choices. User replies with the number."""
         numbered = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options))
         full_q = f"{question}\n\n{numbered}\n\n_Reply with the number of your choice._"
@@ -188,6 +203,7 @@ class MatrixHitLChannel(HitLChannel):
 
 
 # ─────────────────────────── Telegram channel ────────────────────────────────
+
 
 class TelegramHitLChannel(HitLChannel):
     """
@@ -215,7 +231,9 @@ class TelegramHitLChannel(HitLChannel):
 
     async def notify(self, message: str, screenshot_path: Optional[str] = None) -> bool:
         try:
-            await self._bridge().send_notification(message, screenshot_path=screenshot_path)
+            await self._bridge().send_notification(
+                message, screenshot_path=screenshot_path
+            )
             self.record_success()
             return True
         except Exception as exc:
@@ -233,7 +251,9 @@ class TelegramHitLChannel(HitLChannel):
             self.record_failure()
             return ""
 
-    async def choose(self, question: str, options: List[str], timeout: int = 300) -> str:
+    async def choose(
+        self, question: str, options: List[str], timeout: int = 300
+    ) -> str:
         try:
             result = await self._bridge().pause_and_ask(question, options)
             self.record_success()
@@ -245,6 +265,7 @@ class TelegramHitLChannel(HitLChannel):
 
 
 # ─────────────────────────── SMS channel (Twilio) ────────────────────────────
+
 
 class SMSHitLChannel(HitLChannel):
     """
@@ -258,7 +279,9 @@ class SMSHitLChannel(HitLChannel):
 
     name = "sms"
 
-    def __init__(self, account_sid: str, auth_token: str, from_number: str, to_number: str) -> None:
+    def __init__(
+        self, account_sid: str, auth_token: str, from_number: str, to_number: str
+    ) -> None:
         self._sid = account_sid
         self._tok = auth_token
         self._from = from_number
@@ -270,7 +293,10 @@ class SMSHitLChannel(HitLChannel):
     async def _send_sms(self, body: str) -> bool:
         try:
             import httpx
-            url = f"https://api.twilio.com/2010-04-01/Accounts/{self._sid}/Messages.json"
+
+            url = (
+                f"https://api.twilio.com/2010-04-01/Accounts/{self._sid}/Messages.json"
+            )
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     url,
@@ -280,7 +306,9 @@ class SMSHitLChannel(HitLChannel):
                 )
                 ok = resp.status_code in (200, 201)
                 if not ok:
-                    logger.warning("Twilio SMS failed: %s %s", resp.status_code, resp.text[:200])
+                    logger.warning(
+                        "Twilio SMS failed: %s %s", resp.status_code, resp.text[:200]
+                    )
                 return ok
         except Exception as exc:
             logger.warning("SMS send failed: %s", exc)
@@ -300,16 +328,21 @@ class SMSHitLChannel(HitLChannel):
         The user's reply would need a Twilio webhook configured to feed back.
         For now: sends SMS and returns '' to signal no reply available.
         """
-        await self._send_sms(f"NAVIG asks: {question}\n\nReply to your NAVIG dashboard to continue.")
+        await self._send_sms(
+            f"NAVIG asks: {question}\n\nReply to your NAVIG dashboard to continue."
+        )
         return ""  # Can't wait for SMS reply without inbound webhook
 
-    async def choose(self, question: str, options: List[str], timeout: int = 300) -> str:
+    async def choose(
+        self, question: str, options: List[str], timeout: int = 300
+    ) -> str:
         numbered = " | ".join(f"{i+1}:{opt}" for i, opt in enumerate(options))
         await self._send_sms(f"NAVIG: {question} [{numbered}] Reply via dashboard.")
         return ""
 
 
 # ─────────────────────────── CommsRouter ─────────────────────────────────────
+
 
 class CommsRouter:
     """
@@ -350,7 +383,9 @@ class CommsRouter:
             if reply:
                 self._promote(ch)
                 return reply
-        logger.warning("CommsRouter: no reply from any channel for ask: %s", question[:60])
+        logger.warning(
+            "CommsRouter: no reply from any channel for ask: %s", question[:60]
+        )
         return ""
 
     async def choose(
@@ -381,7 +416,7 @@ class CommsRouter:
 
     async def handle_browser_pause(
         self,
-        signal: str,        # "captcha" | "2fa" | "blocked"
+        signal: str,  # "captcha" | "2fa" | "blocked"
         context: str = "",  # extra info (URL, service name)
         screenshot_path: Optional[str] = None,
     ) -> str:
@@ -423,7 +458,10 @@ class CommsRouter:
 
     def _priority_order(self) -> List[HitLChannel]:
         """Return channels starting from preferred, skipping disabled ones."""
-        all_ch = self._channels[self._preferred_idx:] + self._channels[:self._preferred_idx]
+        all_ch = (
+            self._channels[self._preferred_idx :]
+            + self._channels[: self._preferred_idx]
+        )
         return [c for c in all_ch if c.available]
 
     def _promote(self, channel: HitLChannel) -> None:
@@ -472,6 +510,7 @@ def get_comms_router() -> CommsRouter:
     try:
         from navig.comms.matrix import get_matrix_bot
         from navig.config import get_config
+
         cfg = get_config()
 
         # Get the default room from config or KG
@@ -479,7 +518,10 @@ def get_comms_router() -> CommsRouter:
         if not matrix_room:
             try:
                 from navig.memory.knowledge_graph import get_knowledge_graph
-                facts = get_knowledge_graph().recall("user", predicate="matrix_hitl_room")
+
+                facts = get_knowledge_graph().recall(
+                    "user", predicate="matrix_hitl_room"
+                )
                 matrix_room = facts[0].object if facts else ""
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -496,6 +538,7 @@ def get_comms_router() -> CommsRouter:
     # ── 2. Telegram (fallback 1) ──────────────────────────────────────────────
     try:
         from navig.integrations.telegram_bridge import get_telegram_bridge
+
         ch_tg = TelegramHitLChannel(get_telegram_bridge)
         channels.append(ch_tg)
         logger.info("CommsRouter: Telegram channel configured")
@@ -506,6 +549,7 @@ def get_comms_router() -> CommsRouter:
     try:
         from navig.memory.knowledge_graph import get_knowledge_graph
         from navig.vault import get_vault
+
         vault = get_vault()
         twilio_creds = vault.list(provider="twilio")
         if twilio_creds:
@@ -521,7 +565,9 @@ def get_comms_router() -> CommsRouter:
                     to_number=to_number,
                 )
                 channels.append(ch_sms)
-                logger.info("CommsRouter: SMS channel configured (to=%s)", to_number[-4:])
+                logger.info(
+                    "CommsRouter: SMS channel configured (to=%s)", to_number[-4:]
+                )
     except Exception as exc:
         logger.info("CommsRouter: SMS channel unavailable: %s", exc)
 
@@ -534,7 +580,10 @@ def get_comms_router() -> CommsRouter:
     # Prefer the channel that was last used successfully (from KG)
     try:
         from navig.memory.knowledge_graph import get_knowledge_graph
-        facts = get_knowledge_graph().recall("user", predicate="comms_preferred_channel")
+
+        facts = get_knowledge_graph().recall(
+            "user", predicate="comms_preferred_channel"
+        )
         if facts:
             preferred_name = facts[0].object
             for i, ch in enumerate(channels):

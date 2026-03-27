@@ -76,7 +76,7 @@ python scripts/build.py --measure-startup
 python -X importtime -c "import navig.cli" 2>&1 | head -50
 ```
 
-### Key lazy-loaded modules:
+### Key lazy-loaded modules
 - `paramiko` - SSH library, loaded on tunnel/remote commands
 - `rich.*` - Terminal UI, loaded via `console_helper`
 - `requests` - HTTP client, loaded for AI/API calls
@@ -159,5 +159,3 @@ After building, test the binary:
 | Nuitka | ~25MB | ~22MB | ~24MB |
 
 Nuitka typically produces 30-50% smaller binaries with faster startup.
-
-

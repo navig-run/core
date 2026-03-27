@@ -1,5 +1,6 @@
 """Tests for navig.mesh.collective — PartialResultBus, TaskDecomposer,
 LeaderAggregator, MeshCollective."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,27 +8,30 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── Import ─────────────────────────────────────────────────────────────────────
+
 
 def test_import():
     from navig.mesh import collective  # noqa: F401
     from navig.mesh.collective import (
-        PartialResultBus,
-        TaskDecomposer,
+        MAX_PARALLEL_SUBTASKS,
+        SUBTASK_TIMEOUT_S,
         LeaderAggregator,
         MeshCollective,
-        SUBTASK_TIMEOUT_S,
-        MAX_PARALLEL_SUBTASKS,
+        PartialResultBus,
+        TaskDecomposer,
     )
+
     assert SUBTASK_TIMEOUT_S > 0
     assert MAX_PARALLEL_SUBTASKS >= 2
 
 
 # ── PartialResultBus ───────────────────────────────────────────────────────────
 
+
 def test_bus_subscribe_and_publish():
     from navig.mesh.collective import PartialResultBus
+
     bus = PartialResultBus()
     received = []
     bus.subscribe("task1", received.append)
@@ -37,12 +41,14 @@ def test_bus_subscribe_and_publish():
 
 def test_bus_publish_no_subscribers_noop():
     from navig.mesh.collective import PartialResultBus
+
     bus = PartialResultBus()
     bus.publish("task-unknown", {"text": "x"})  # must not raise
 
 
 def test_bus_unsubscribe_clears_callbacks():
     from navig.mesh.collective import PartialResultBus
+
     bus = PartialResultBus()
     received = []
     bus.subscribe("task1", received.append)
@@ -53,6 +59,7 @@ def test_bus_unsubscribe_clears_callbacks():
 
 def test_bus_multiple_subscribers():
     from navig.mesh.collective import PartialResultBus
+
     bus = PartialResultBus()
     a, b = [], []
     bus.subscribe("t", a.append)
@@ -75,8 +82,10 @@ def test_bus_callback_exception_does_not_propagate():
 
 # ── TaskDecomposer ─────────────────────────────────────────────────────────────
 
+
 def test_decomposer_short_task_no_split():
     from navig.mesh.collective import TaskDecomposer
+
     d = TaskDecomposer()
     result = d.decompose("Short task", peer_count=4)
     assert result == ["Short task"]
@@ -84,6 +93,7 @@ def test_decomposer_short_task_no_split():
 
 def test_decomposer_single_peer_no_split():
     from navig.mesh.collective import TaskDecomposer
+
     long_task = ("This is a very long sentence. " * 20).strip()
     d = TaskDecomposer()
     result = d.decompose(long_task, peer_count=1)
@@ -92,15 +102,19 @@ def test_decomposer_single_peer_no_split():
 
 def test_decomposer_long_task_splits():
     from navig.mesh.collective import TaskDecomposer
+
     # Build something with enough sentences and length
-    task = ". ".join([f"Sentence number {i} about something interesting" for i in range(20)])
+    task = ". ".join(
+        [f"Sentence number {i} about something interesting" for i in range(20)]
+    )
     d = TaskDecomposer()
     result = d.decompose(task, peer_count=4)
     assert len(result) >= 2
 
 
 def test_decomposer_chunks_capped_at_max():
-    from navig.mesh.collective import TaskDecomposer, MAX_PARALLEL_SUBTASKS
+    from navig.mesh.collective import MAX_PARALLEL_SUBTASKS, TaskDecomposer
+
     task = ". ".join([f"Sentence {i} is here and has content" for i in range(100)])
     d = TaskDecomposer()
     result = d.decompose(task, peer_count=20)
@@ -109,6 +123,7 @@ def test_decomposer_chunks_capped_at_max():
 
 def test_decomposer_empty_task():
     from navig.mesh.collective import TaskDecomposer
+
     d = TaskDecomposer()
     result = d.decompose("", peer_count=3)
     assert result == [""]
@@ -116,9 +131,11 @@ def test_decomposer_empty_task():
 
 # ── LeaderAggregator ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_aggregator_collects_expected():
     from navig.mesh.collective import LeaderAggregator
+
     agg = LeaderAggregator("task1", expected_count=2, timeout_s=5)
     agg.on_partial({"text": "part1"})
     agg.on_partial({"text": "part2"})
@@ -129,6 +146,7 @@ async def test_aggregator_collects_expected():
 @pytest.mark.asyncio
 async def test_aggregator_timeout_returns_partial():
     from navig.mesh.collective import LeaderAggregator
+
     agg = LeaderAggregator("task1", expected_count=5, timeout_s=0.05)
     agg.on_partial({"text": "only_one"})
     results = await agg.wait()
@@ -138,12 +156,14 @@ async def test_aggregator_timeout_returns_partial():
 
 def test_assemble_empty_returns_empty():
     from navig.mesh.collective import LeaderAggregator
+
     out = LeaderAggregator.assemble([], "original")
     assert out == ""
 
 
 def test_assemble_joins_text():
     from navig.mesh.collective import LeaderAggregator
+
     results = [{"text": "alpha"}, {"text": "beta"}, {"output": "gamma"}]
     out = LeaderAggregator.assemble(results, "original")
     assert "alpha" in out
@@ -153,6 +173,7 @@ def test_assemble_joins_text():
 
 def test_assemble_skips_empty_parts():
     from navig.mesh.collective import LeaderAggregator
+
     results = [{"text": ""}, {"text": "real"}, {}]
     out = LeaderAggregator.assemble(results, "original")
     assert out == "real"
@@ -160,8 +181,10 @@ def test_assemble_skips_empty_parts():
 
 # ── MeshCollective – init & start ─────────────────────────────────────────────
 
+
 def test_mesh_collective_init():
     from navig.mesh.collective import MeshCollective
+
     reg = MagicMock()
     disc = MagicMock()
     mc = MeshCollective(reg, disc)
@@ -171,6 +194,7 @@ def test_mesh_collective_init():
 @pytest.mark.asyncio
 async def test_mesh_collective_start_disabled_by_default():
     from navig.mesh.collective import MeshCollective
+
     reg = MagicMock()
     disc = MagicMock()
     mc = MeshCollective(reg, disc)
@@ -187,6 +211,7 @@ async def test_mesh_collective_start_disabled_by_default():
 @pytest.mark.asyncio
 async def test_mesh_collective_start_enabled_by_config():
     from navig.mesh.collective import MeshCollective
+
     reg = MagicMock()
     disc = MagicMock()
     mc = MeshCollective(reg, disc)
@@ -204,6 +229,7 @@ async def test_mesh_collective_start_enabled_by_config():
 @pytest.mark.asyncio
 async def test_mesh_collective_stop_disables():
     from navig.mesh.collective import MeshCollective
+
     mc = MeshCollective(MagicMock(), MagicMock())
     mc._enabled = True
     await mc.stop()
@@ -212,9 +238,11 @@ async def test_mesh_collective_stop_disables():
 
 # ── MeshCollective.run – disabled path ────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_run_disabled_no_local_fn_returns_empty():
     from navig.mesh.collective import MeshCollective
+
     mc = MeshCollective(MagicMock(), MagicMock())
     mc._enabled = False
     result = await mc.run("do something", local_fn=None)
@@ -224,6 +252,7 @@ async def test_run_disabled_no_local_fn_returns_empty():
 @pytest.mark.asyncio
 async def test_run_disabled_calls_local_fn():
     from navig.mesh.collective import MeshCollective
+
     mc = MeshCollective(MagicMock(), MagicMock())
     mc._enabled = False
 
@@ -237,6 +266,7 @@ async def test_run_disabled_calls_local_fn():
 @pytest.mark.asyncio
 async def test_run_not_leader_calls_local():
     from navig.mesh.collective import MeshCollective
+
     reg = MagicMock()
     reg.am_i_leader.return_value = False
     mc = MeshCollective(reg, MagicMock())
@@ -252,6 +282,7 @@ async def test_run_not_leader_calls_local():
 @pytest.mark.asyncio
 async def test_run_leader_no_peers_calls_local():
     from navig.mesh.collective import MeshCollective
+
     reg = MagicMock()
     reg.am_i_leader.return_value = True
     reg.list_peers.return_value = []
@@ -267,8 +298,10 @@ async def test_run_leader_no_peers_calls_local():
 
 # ── notify_partial ─────────────────────────────────────────────────────────────
 
+
 def test_notify_partial_publishes_to_bus():
     from navig.mesh.collective import MeshCollective
+
     mc = MeshCollective(MagicMock(), MagicMock())
     received = []
     mc._bus.subscribe("t1", received.append)

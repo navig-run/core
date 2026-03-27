@@ -15,6 +15,7 @@ try:
     from loguru import logger as _logger
 except ImportError:
     import logging as _log
+
     _logger = _log.getLogger(__name__)
 
 
@@ -22,6 +23,7 @@ def _gw_base_url() -> str:
     """Return the local gateway base URL from config (gateway.port / gateway.host)."""
     try:
         from navig.config import get_config_manager
+
         raw = get_config_manager()._load_global_config()
     except Exception as _e:
         _logger.debug(f"Could not load gateway config: {_e}")
@@ -32,6 +34,7 @@ def _gw_base_url() -> str:
     # Always connect via localhost regardless of bind address
     return f"http://localhost:{port}"
 
+
 gateway_app = typer.Typer(
     name="gateway",
     help="Manage the autonomous agent gateway",
@@ -41,9 +44,20 @@ gateway_app = typer.Typer(
 
 @gateway_app.command("start")
 def gateway_start(
-    port: Optional[int] = typer.Option(None, "--port", "-p", help="Port to run gateway on (default: gateway.port from config, fallback 8765)"),
-    host: Optional[str] = typer.Option(None, "--host", help="Host to bind to (default: gateway.host from config, fallback 0.0.0.0)"),
-    background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
+    port: Optional[int] = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="Port to run gateway on (default: gateway.port from config, fallback 8765)",
+    ),
+    host: Optional[str] = typer.Option(
+        None,
+        "--host",
+        help="Host to bind to (default: gateway.host from config, fallback 0.0.0.0)",
+    ),
+    background: bool = typer.Option(
+        False, "--background", "-b", help="Run in background"
+    ),
 ):
     """
     Start the autonomous agent gateway server.
@@ -65,11 +79,12 @@ def gateway_start(
     # Fill port/host from config if not explicitly passed
     try:
         from navig.config import get_config_manager
+
         _raw = get_config_manager()._load_global_config()
     except Exception as _e:
         _logger.debug(f"Could not load gateway start config: {_e}")
         _raw = {}
-    _gw_cfg = (_raw.get("gateway") or {})
+    _gw_cfg = _raw.get("gateway") or {}
     if port is None:
         port = int(_gw_cfg.get("port") or 8765)
     if host is None:
@@ -82,10 +97,10 @@ def gateway_start(
 
         # Build config dict for GatewayConfig
         raw_config = {
-            'gateway': {
-                'enabled': True,
-                'port': port,
-                'host': host,
+            "gateway": {
+                "enabled": True,
+                "port": port,
+                "host": host,
             }
         }
 
@@ -168,6 +183,7 @@ def gateway_status(
     raw_cfg: dict = {}
     try:
         from navig.config import get_config_manager
+
         raw_cfg = get_config_manager()._load_global_config()
     except Exception:  # noqa: BLE001
         pass
@@ -176,6 +192,7 @@ def gateway_status(
     def _http_alive(url: str, timeout: float = 2.0) -> bool:
         try:
             import urllib.request
+
             with urllib.request.urlopen(url, timeout=timeout) as r:
                 return r.status < 500
         except Exception:  # noqa: BLE001
@@ -198,6 +215,7 @@ def gateway_status(
         try:
             import json as _j
             import urllib.request
+
             tok = tg_cfg["bot_token"]
             with urllib.request.urlopen(
                 f"https://api.telegram.org/bot{tok}/getMe", timeout=5
@@ -227,7 +245,9 @@ def gateway_status(
 
     # ── Email / SMTP ──────────────────────────────────────────────────────────
     em_cfg = raw_cfg.get("email") or raw_cfg.get("smtp") or {}
-    em_configured = bool(em_cfg.get("smtp_host") or em_cfg.get("SMTP_HOST") or em_cfg.get("host"))
+    em_configured = bool(
+        em_cfg.get("smtp_host") or em_cfg.get("SMTP_HOST") or em_cfg.get("host")
+    )
     em_port = int(em_cfg.get("smtp_port") or em_cfg.get("port") or 587)
     em_host = str(em_cfg.get("smtp_host") or em_cfg.get("host") or "")
     em_online = _port_alive(em_host, em_port) if em_host else False
@@ -238,40 +258,44 @@ def gateway_status(
 
     channels = [
         {
-            "channel":    "Telegram",
+            "channel": "Telegram",
             "configured": tg_token,
-            "detail":     f"users={tg_users}  groups={tg_groups}" if tg_token else "bot_token missing",
-            "reachable":  tg_online,
+            "detail": (
+                f"users={tg_users}  groups={tg_groups}"
+                if tg_token
+                else "bot_token missing"
+            ),
+            "reachable": tg_online,
         },
         {
-            "channel":    "Matrix",
+            "channel": "Matrix",
             "configured": mx_token,
-            "detail":     mx_hs if mx_token else "access_token missing",
-            "reachable":  mx_online,
+            "detail": mx_hs if mx_token else "access_token missing",
+            "reachable": mx_online,
         },
         {
-            "channel":    "Discord",
+            "channel": "Discord",
             "configured": dc_token,
-            "detail":     "bot_token present" if dc_token else "bot_token missing",
-            "reachable":  dc_online,
+            "detail": "bot_token present" if dc_token else "bot_token missing",
+            "reachable": dc_online,
         },
         {
-            "channel":    "WhatsApp",
+            "channel": "WhatsApp",
             "configured": wa_enabled,
-            "detail":     f"bridge port {wa_port}" if wa_enabled else "not enabled",
-            "reachable":  wa_running,
+            "detail": f"bridge port {wa_port}" if wa_enabled else "not enabled",
+            "reachable": wa_running,
         },
         {
-            "channel":    "Email/SMTP",
+            "channel": "Email/SMTP",
             "configured": em_configured,
-            "detail":     f"{em_host}:{em_port}" if em_configured else "smtp_host missing",
-            "reachable":  em_online,
+            "detail": f"{em_host}:{em_port}" if em_configured else "smtp_host missing",
+            "reachable": em_online,
         },
         {
-            "channel":    "Gateway API",
+            "channel": "Gateway API",
             "configured": True,
-            "detail":     f"localhost:{gw_port}",
-            "reachable":  gw_live,
+            "detail": f"localhost:{gw_port}",
+            "reachable": gw_live,
         },
     ]
 
@@ -284,8 +308,8 @@ def gateway_status(
     ch.console.print("  " + "─" * 62)
 
     for c in channels:
-        cfg_icon  = "[green]✓[/green]" if c["configured"]  else "[red]✗[/red]"
-        live_icon = "[green]✓[/green]" if c["reachable"]   else "[dim]─[/dim]"
+        cfg_icon = "[green]✓[/green]" if c["configured"] else "[red]✗[/red]"
+        live_icon = "[green]✓[/green]" if c["reachable"] else "[dim]─[/dim]"
         ch.console.print(
             f"  [cyan]{c['channel']:<14}[/cyan] {cfg_icon:<12} {live_icon:<14} [dim]{c['detail']}[/dim]"
         )
@@ -305,12 +329,14 @@ def gateway_test(
     ),
     target: str = typer.Option(
         "",
-        "--target", "-t",
+        "--target",
+        "-t",
         help="Recipient: @username / chat_id for Telegram; room for Matrix; address for email",
     ),
     message: str = typer.Option(
         "🟢 NAVIG gateway smoke-test — all systems go",
-        "--message", "-m",
+        "--message",
+        "-m",
         help="Message body to send",
     ),
 ) -> None:
@@ -324,9 +350,7 @@ def gateway_test(
         navig gateway test all      --target @username
     """
 
-    channels_to_test = (
-        ["telegram", "matrix"] if channel == "all" else [channel.lower()]
-    )
+    channels_to_test = ["telegram", "matrix"] if channel == "all" else [channel.lower()]
 
     results: list[dict] = []
 
@@ -336,17 +360,29 @@ def gateway_test(
         if ch_name == "telegram":
             if not target:
                 ch.warning("  --target required for Telegram (e.g. --target @username)")
-                results.append({"channel": "telegram", "ok": False, "reason": "no target"})
+                results.append(
+                    {"channel": "telegram", "ok": False, "reason": "no target"}
+                )
                 continue
             from navig.commands.telegram import telegram_send as _tg_send
+
             try:
-                _tg_send(target=target, message=message, parse_mode="Markdown", resolve_only=False, host="")
+                _tg_send(
+                    target=target,
+                    message=message,
+                    parse_mode="Markdown",
+                    resolve_only=False,
+                    host="",
+                )
                 results.append({"channel": "telegram", "ok": True})
             except SystemExit:
-                results.append({"channel": "telegram", "ok": False, "reason": "send failed"})
+                results.append(
+                    {"channel": "telegram", "ok": False, "reason": "send failed"}
+                )
 
         elif ch_name == "matrix":
             from navig.commands.bridge import matrix_bridge_test_alert as _mx_test
+
             try:
                 _mx_test(message=message)
                 results.append({"channel": "matrix", "ok": True})
@@ -355,27 +391,36 @@ def gateway_test(
                 results.append({"channel": "matrix", "ok": False, "reason": str(exc)})
 
         elif ch_name == "discord":
-            ch.dim("  Discord test not yet implemented — verify via Discord Dev Portal.")
-            results.append({"channel": "discord", "ok": None, "reason": "not implemented"})
+            ch.dim(
+                "  Discord test not yet implemented — verify via Discord Dev Portal."
+            )
+            results.append(
+                {"channel": "discord", "ok": None, "reason": "not implemented"}
+            )
 
         elif ch_name == "email":
             ch.dim("  Email test: run navig email send --to example@domain.com")
-            results.append({"channel": "email", "ok": None, "reason": "not implemented"})
+            results.append(
+                {"channel": "email", "ok": None, "reason": "not implemented"}
+            )
 
         else:
-            ch.warning(f"  Unknown channel '{ch_name}'. Choices: telegram | matrix | discord | email | all")
+            ch.warning(
+                f"  Unknown channel '{ch_name}'. Choices: telegram | matrix | discord | email | all"
+            )
             results.append({"channel": ch_name, "ok": False, "reason": "unknown"})
 
     # Summary
     ch.console.print("\n[bold]Results[/bold]")
     for r in results:
-        icon = "[green]✓[/green]" if r["ok"] else ("[dim]–[/dim]" if r["ok"] is None else "[red]✗[/red]")
+        icon = (
+            "[green]✓[/green]"
+            if r["ok"]
+            else ("[dim]–[/dim]" if r["ok"] is None else "[red]✗[/red]")
+        )
         detail = f"  [dim]{r.get('reason','')}[/dim]" if r.get("reason") else ""
         ch.console.print(f"  {icon} {r['channel']}{detail}")
     ch.console.print()
-
-
-
 
 
 @gateway_app.command("session")
@@ -409,10 +454,7 @@ def gateway_session(
                 ch.error(f"Failed to list sessions: {response.status_code}")
 
         elif action == "show" and session_key:
-            response = requests.get(
-                f"{_base}/sessions/{session_key}",
-                timeout=5
-            )
+            response = requests.get(f"{_base}/sessions/{session_key}", timeout=5)
             if response.status_code == 200:
                 session = response.json()
                 ch.info(f"Session: {session_key}")
@@ -421,10 +463,7 @@ def gateway_session(
                 ch.error(f"Session not found: {session_key}")
 
         elif action == "clear" and session_key:
-            response = requests.delete(
-                f"{_base}/sessions/{session_key}",
-                timeout=5
-            )
+            response = requests.delete(f"{_base}/sessions/{session_key}", timeout=5)
             if response.status_code == 200:
                 ch.success(f"Session cleared: {session_key}")
             else:
@@ -448,6 +487,7 @@ def gateway_session(
 # ============================================================================
 # These functions provide a consistent interface for the interactive menu system.
 # Each wrapper calls the underlying Typer command with appropriate defaults.
+
 
 def status_cmd(ctx: Dict[str, Any]) -> None:
     """Wrapper for gateway status command (interactive menu)."""

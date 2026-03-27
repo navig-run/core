@@ -4,6 +4,7 @@ handler.py - Pack lifecycle for navig-telegram-handlers.
 Registers formatters and menu builders with navig-telegram on load.
 Gracefully no-ops if navig-telegram is not present.
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,13 +45,15 @@ def on_load(ctx: PluginContext) -> None:
         # Attempt to register with navig-telegram's handler registry
         try:
             from navig_telegram import handler_registry  # noqa: PLC0415
+
             for name, fn in FORMATTERS.items():
                 handler_registry.register_formatter(name, fn)
             for name, fn in MENUS.items():
                 handler_registry.register_menu(name, fn)
             logger.info(
                 "[navig-telegram-handlers] Registered %d formatter(s) and %d menu(s)",
-                len(FORMATTERS), len(MENUS),
+                len(FORMATTERS),
+                len(MENUS),
             )
         except ImportError:
             # navig-telegram not present or handler_registry not yet implemented
@@ -68,8 +71,10 @@ def on_unload(ctx: PluginContext) -> None:
     """Deregister formatters on removal; must not raise."""
     try:
         from formatters import FORMATTERS  # noqa: PLC0415
+
         try:
             from navig_telegram import handler_registry  # noqa: PLC0415
+
             for name in FORMATTERS:
                 handler_registry.deregister_formatter(name)
         except ImportError:

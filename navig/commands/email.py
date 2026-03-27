@@ -23,9 +23,10 @@ def list_emails(
 ):
     """
     List emails from your inbox.
-    
+
     Fetches emails from your configured email provider(s).
     """
+
     async def _fetch():
         from navig.agent.proactive import (
             GmailProvider,
@@ -61,7 +62,7 @@ def list_emails(
                     email=email_addr,
                     password=password,
                     imap_host=imap_host,
-                    smtp_host=smtp_host
+                    smtp_host=smtp_host,
                 )
             else:
                 provider = MockEmail()
@@ -107,7 +108,9 @@ def list_emails(
             ch.console.print(f"    [dim]From: {msg.sender}[/dim]")
             ch.console.print(f"    [dim]{date_str}[/dim]")
             if msg.preview:
-                preview = msg.preview[:80] + "..." if len(msg.preview) > 80 else msg.preview
+                preview = (
+                    msg.preview[:80] + "..." if len(msg.preview) > 80 else msg.preview
+                )
                 ch.console.print(f"    [dim]{preview}[/dim]")
             ch.console.print()
 
@@ -118,7 +121,7 @@ def setup_email(
 ):
     """
     Configure email provider credentials.
-    
+
     Interactive setup for email access.
     """
     import yaml
@@ -128,7 +131,7 @@ def setup_email(
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
 
-    with open(global_config_file, 'r') as f:
+    with open(global_config_file, "r") as f:
         config = yaml.safe_load(f) or {}
 
     if "proactive" not in config:
@@ -153,7 +156,7 @@ def setup_email(
         email_cfg["imap_host"] = imap_host
         email_cfg["smtp_host"] = smtp_host
 
-    with open(global_config_file, 'w') as f:
+    with open(global_config_file, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     ch.success("✓ Email configured!")
@@ -181,9 +184,10 @@ def send_email(
 ):
     """
     Send an email.
-    
+
     Requires configured email provider with SMTP access.
     """
+
     async def _send():
         from navig.agent.proactive import GmailProvider, IMAPEmailProvider
         from navig.config import get_config_manager
@@ -212,7 +216,7 @@ def send_email(
                 email=email_addr,
                 password=password,
                 imap_host=imap_host,
-                smtp_host=smtp_host
+                smtp_host=smtp_host,
             )
         else:
             ch.error(f"Sending not supported for provider: {provider_type}")
@@ -223,6 +227,7 @@ def send_email(
         if not email_body:
             ch.info("Enter email body (Ctrl+D to finish):")
             import sys
+
             email_body = sys.stdin.read()
 
         from navig.agent.proactive.models import EmailMessage
@@ -233,7 +238,7 @@ def send_email(
             sender=email_addr,
             date=None,
             preview=email_body[:100],
-            is_important=False
+            is_important=False,
         )
 
         # Note: send_email method needs to be added to provider interface
@@ -247,7 +252,7 @@ def send_email(
 def sync_email():
     """
     Sync email data from remote provider.
-    
+
     Refreshes cached email data.
     """
     ch.info("Syncing email...")

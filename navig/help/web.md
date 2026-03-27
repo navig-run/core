@@ -14,5 +14,3 @@ Examples:
 
 Tips:
 - If you use HestiaCP, see: `navig web hestia --help`
-
-

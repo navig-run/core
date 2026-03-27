@@ -38,6 +38,7 @@ _HERE = Path(__file__).parent
 # 1. Auto-install pip dependencies declared in plugin.json
 # ---------------------------------------------------------------------------
 
+
 def _auto_install_deps() -> None:
     """
     Read depends.pip from plugin.json and pip-install any missing packages.
@@ -61,7 +62,14 @@ def _auto_install_deps() -> None:
     to_install: list[str] = []
     for dep in pip_deps:
         # Extract bare package name (strip version specifiers)
-        pkg_name = dep.split("[")[0].split(">")[0].split("<")[0].split("=")[0].split("!")[0].strip()
+        pkg_name = (
+            dep.split("[")[0]
+            .split(">")[0]
+            .split("<")[0]
+            .split("=")[0]
+            .split("!")[0]
+            .strip()
+        )
         # Normalise: replace hyphens with underscores for importlib check
         import_name = pkg_name.replace("-", "_").replace(".", "_").lower()
         # Special-case known import-name mismatches
@@ -83,17 +91,21 @@ def _auto_install_deps() -> None:
     logger.info("Auto-installing missing deps: %s", to_install)
     try:
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", "--upgrade"] + to_install,
+            [sys.executable, "-m", "pip", "install", "--quiet", "--upgrade"]
+            + to_install,
             stdout=subprocess.DEVNULL,
         )
         logger.info("Deps installed successfully.")
     except subprocess.CalledProcessError as exc:
-        logger.warning("pip install failed (exit %s) — some plugins may not work.", exc.returncode)
+        logger.warning(
+            "pip install failed (exit %s) — some plugins may not work.", exc.returncode
+        )
 
 
 # ---------------------------------------------------------------------------
 # 2. Token resolution — vault → config → env
 # ---------------------------------------------------------------------------
+
 
 def _get_token() -> str:
     """Resolve Telegram bot token from NAVIG vault, config, or env."""
@@ -102,6 +114,7 @@ def _get_token() -> str:
     try:
         sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # navig-core root
         from navig.vault import get_vault  # type: ignore[import]
+
         token = get_vault().get_api_key("telegram") or ""
         if token.strip():
             logger.info("Token resolved from NAVIG vault (provider=telegram)")
@@ -112,6 +125,7 @@ def _get_token() -> str:
     # ── 2b. ~/.navig/config.yaml ───────────────────────────────────────────
     try:
         import yaml  # installed by auto_install above or already present
+
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
             cfg: dict = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
@@ -119,7 +133,9 @@ def _get_token() -> str:
             # telegram.nas_token  (current navig config layout)
             tg_block = cfg.get("telegram", {})
             for key in ("nas_token", "bot_token", "token", "api_key"):
-                val = tg_block.get(key, "").strip() if isinstance(tg_block, dict) else ""
+                val = (
+                    tg_block.get(key, "").strip() if isinstance(tg_block, dict) else ""
+                )
                 if val:
                     logger.info("Token resolved from config.yaml telegram.%s", key)
                     return val
@@ -147,7 +163,7 @@ def _get_token() -> str:
         "  3. env TELEGRAM_BOT_TOKEN\n\n"
         "Fix: add your bot token to ~/.navig/config.yaml:\n"
         "  telegram:\n"
-        "    nas_token: \"1234567890:ABC-DEF...\"\n"
+        '    nas_token: "1234567890:ABC-DEF..."\n'
     )
 
 
@@ -155,12 +171,13 @@ def _get_token() -> str:
 # 3. Main entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     # Install deps first — ensures plugin imports work
     _auto_install_deps()
 
-    from telegram.ext import Application
     from plugin_loader import PluginLoader
+    from telegram.ext import Application
 
     token = _get_token()
 

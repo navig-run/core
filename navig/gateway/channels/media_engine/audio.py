@@ -19,6 +19,7 @@ Each external call is:
 Dependencies: mutagen, httpx, navig.voice.stt (for Whisper)
 Optional:     spotipy, pylast
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,9 +46,11 @@ _RETRIES = 2
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _env(*keys: str) -> Optional[str]:
     try:
         from navig.vault.resolver import resolve_secret
+
         return resolve_secret(list(keys))
     except Exception:
         for k in keys:
@@ -67,6 +70,7 @@ async def _fetch_json(
     """Thin async httpx wrapper — returns None on any failure."""
     try:
         import httpx  # lazy import
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await getattr(client, method)(url, **kwargs)
             resp.raise_for_status()
@@ -91,17 +95,27 @@ async def _with_retry(coro_func, retries: int = _RETRIES):
 
 # ── Stage implementations ─────────────────────────────────────────────────────
 
+
 def _stage_metadata(file_bytes: bytes) -> dict:
     """Extract metadata via mutagen (synchronous, fast)."""
-    result: dict = {"format": "audio", "duration_sec": None, "bitrate": None,
-                    "title": None, "artist": None, "album": None, "genre": None}
+    result: dict = {
+        "format": "audio",
+        "duration_sec": None,
+        "bitrate": None,
+        "title": None,
+        "artist": None,
+        "album": None,
+        "genre": None,
+    }
     try:
         import mutagen  # type: ignore
 
         f = mutagen.File(io.BytesIO(file_bytes))
         if f is None:
             return result
-        result["duration_sec"] = int(getattr(f, "info", None) and f.info.length or 0) or None
+        result["duration_sec"] = (
+            int(getattr(f, "info", None) and f.info.length or 0) or None
+        )
         result["bitrate"] = int(getattr(getattr(f, "info", None), "bitrate", 0)) or None
         tags = f.tags or {}
 
@@ -132,14 +146,18 @@ async def _stage_audd(file_bytes: bytes, budget: BudgetGuard) -> Optional[dict]:
         return None
     try:
         import httpx
+
         b64 = base64.b64encode(file_bytes).decode()
 
         async def _call():
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 r = await client.post(
                     _PRUL.get("audd", {}).get("base", "https://api.audd.io/"),
-                    data={"api_token": api_key, "audio": b64,
-                          "return": "spotify,apple_music,deezer"},
+                    data={
+                        "api_token": api_key,
+                        "audio": b64,
+                        "return": "spotify,apple_music,deezer",
+                    },
                 )
                 r.raise_for_status()
                 return r.json()
@@ -169,7 +187,10 @@ async def _stage_whisper(file_bytes: bytes, budget: BudgetGuard) -> Optional[str
         async def _call():
             async with httpx.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
-                    _PRUL.get("openai", {}).get("transcriptions", "https://api.openai.com/v1/audio/transcriptions"),
+                    _PRUL.get("openai", {}).get(
+                        "transcriptions",
+                        "https://api.openai.com/v1/audio/transcriptions",
+                    ),
                     headers={"Authorization": f"Bearer {api_key}"},
                     files={"file": ("audio.mp3", file_bytes, "audio/mpeg")},
                     data={"model": "whisper-1"},
@@ -188,7 +209,9 @@ async def _stage_whisper(file_bytes: bytes, budget: BudgetGuard) -> Optional[str
     return None
 
 
-async def _stage_spotify(artist: str, title: str, budget: BudgetGuard) -> Optional[dict]:
+async def _stage_spotify(
+    artist: str, title: str, budget: BudgetGuard
+) -> Optional[dict]:
     """Enrich with Spotify track info (no charge, public API with client creds)."""
     client_id = _env("SPOTIFY_CLIENT_ID")
     client_secret = _env("SPOTIFY_CLIENT_SECRET")
@@ -199,9 +222,13 @@ async def _stage_spotify(artist: str, title: str, budget: BudgetGuard) -> Option
         auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
         token_data = await _fetch_json(
             "post",
-            _PRUL.get("spotify", {}).get("token", "https://accounts.spotify.com/api/token"),
-            headers={"Authorization": f"Basic {auth}",
-                     "Content-Type": "application/x-www-form-urlencoded"},
+            _PRUL.get("spotify", {}).get(
+                "token", "https://accounts.spotify.com/api/token"
+            ),
+            headers={
+                "Authorization": f"Basic {auth}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
             data="grant_type=client_credentials",
         )
         if not token_data or "access_token" not in token_data:
@@ -257,7 +284,10 @@ async def _stage_lastfm(artist: str, title: str, budget: BudgetGuard) -> Optiona
             "listeners": track.get("listeners"),
             "tags": tags,
             "lastfm_url": track.get("url"),
-            "wiki_summary": (track.get("wiki", {}).get("summary") or "").split("<a href")[0].strip() or None,
+            "wiki_summary": (track.get("wiki", {}).get("summary") or "")
+            .split("<a href")[0]
+            .strip()
+            or None,
         }
     except Exception as exc:
         logger.debug("Last.fm enrichment: %s", exc)
@@ -265,6 +295,7 @@ async def _stage_lastfm(artist: str, title: str, budget: BudgetGuard) -> Optiona
 
 
 # ── Card builder ──────────────────────────────────────────────────────────────
+
 
 def _build_audio_card(
     metadata: dict,
@@ -331,7 +362,7 @@ def _build_audio_card(
     # ---- Transcript snippet
     if transcript:
         snippet = transcript[:200] + ("…" if len(transcript) > 200 else "")
-        parts.append(f'\n🗣 <i>{snippet}</i>')
+        parts.append(f"\n🗣 <i>{snippet}</i>")
 
     # ---- Footer
     parts.append(f"\n⏱ <i>Analyzed in {duration_ms / 1000:.1f}s</i>")
@@ -340,6 +371,7 @@ def _build_audio_card(
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 class AudioEngine:
     """

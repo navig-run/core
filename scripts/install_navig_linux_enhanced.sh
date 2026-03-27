@@ -95,7 +95,7 @@ check_python() {
         log_info "Install with: sudo apt install python3 python3-venv python3-pip"
         exit 1
     fi
-    
+
     local ver=$(python3 --version 2>&1 | awk '{print $NF}')
     log_success "Python found: $ver"
 }
@@ -103,7 +103,7 @@ check_python() {
 check_disk_space() {
     local available=$(df "$HOME" | tail -1 | awk '{print $4}')
     local required=$((2 * 1024 * 1024))  # 2GB
-    
+
     if (( available < required )); then
         log_warn "Low disk space: $(numfmt --to=iec $((available * 1024)))"
     else
@@ -126,7 +126,7 @@ is_samba_installed() {
 
 install_rclone() {
     log_info "Installing rclone..."
-    
+
     if is_apt_available; then
         sudo apt update >/dev/null
         sudo apt install -y rclone >/dev/null
@@ -134,7 +134,7 @@ install_rclone() {
         # Generic installation
         curl https://rclone.org/install.sh | sudo bash >/dev/null 2>&1
     fi
-    
+
     if is_rclone_installed; then
         log_success "rclone installed: $(rclone --version | head -1)"
     else
@@ -144,7 +144,7 @@ install_rclone() {
 
 install_samba() {
     log_info "Installing Samba server..."
-    
+
     if is_apt_available; then
         sudo apt update >/dev/null
         sudo apt install -y samba samba-common-bin >/dev/null
@@ -157,14 +157,14 @@ install_samba() {
 # ── NAVIG INSTALLATION ────────────────────────────────────────
 install_navig() {
     progress_step 2 5 "Installing NAVIG"
-    
+
     log_info "Creating Python virtualenv..."
     python3 -m venv "$VENV_PATH"
-    
+
     log_info "Installing NAVIG package..."
     "$VENV_PATH/bin/python" -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1
     "$VENV_PATH/bin/python" -m pip install -e "$SRC_PATH" >/dev/null 2>&1
-    
+
     log_info "Creating command wrapper..."
     mkdir -p "$BIN_PATH"
     cat > "$BIN_PATH/navig" <<'EOF'
@@ -177,7 +177,7 @@ fi
 exec "$HOME/.navig/venv/bin/python" -m navig.main "$@"
 EOF
     chmod +x "$BIN_PATH/navig"
-    
+
     log_success "NAVIG core installation complete"
 }
 
@@ -185,15 +185,15 @@ EOF
 setup_telegram() {
     local token="$1"
     [[ -z "$token" ]] && return 0
-    
+
     progress_step 3 5 "Configuring Telegram Bot"
-    
+
     local config_dir="${HOME}/.navig"
     local env_file="${config_dir}/.env"
     local config_file="${config_dir}/config.yaml"
-    
+
     mkdir -p "$config_dir"
-    
+
     # Update .env
     if [[ -f "$env_file" ]]; then
         grep -v '^TELEGRAM_BOT_TOKEN=' "$env_file" > "${env_file}.tmp" || true
@@ -201,7 +201,7 @@ setup_telegram() {
     fi
     printf 'TELEGRAM_BOT_TOKEN=%s\n' "$token" >> "$env_file"
     chmod 600 "$env_file"
-    
+
     # Create config.yaml if missing
     if [[ ! -f "$config_file" ]] || ! grep -q 'bot_token:' "$config_file"; then
         cat > "$config_file" <<YAML
@@ -213,18 +213,18 @@ telegram:
   group_activation_mode: "mention"
 YAML
     fi
-    
+
     log_info "Starting NAVIG daemon..."
     "$BIN_PATH/navig" service install --bot --gateway --scheduler --no-start >/dev/null 2>&1 || true
     "$BIN_PATH/navig" service start >/dev/null 2>&1 || true
-    
+
     log_success "Telegram bot configured and daemon started"
 }
 
 # ── SAMBA SETUP (LINUX → WINDOWS) ────────────────────────────
 setup_samba() {
     progress_step 3 5 "Setting Up Samba File Sharing"
-    
+
     if is_samba_installed; then
         log_success "Samba already installed"
     else
@@ -235,17 +235,17 @@ setup_samba() {
                 return
             fi
         fi
-        
+
         install_samba
     fi
-    
+
     # Create share configuration
     local username="${SUDO_USER:-${USER}}"
     local home_dir="/home/${username}"
     local smb_config="/etc/samba/smb.conf"
-    
+
     log_info "Configuring Samba share for $username..."
-    
+
     if ! grep -q '\[navig_share\]' "$smb_config"; then
         sudo tee -a "$smb_config" >/dev/null <<SAMBA_CONFIG
 [navig_share]
@@ -256,11 +256,11 @@ setup_samba() {
     force user = ${username}
     force group = ${username}
 SAMBA_CONFIG
-        
+
         log_info "Restarting Samba..."
         sudo systemctl restart smbd nmbd >/dev/null 2>&1 || true
     fi
-    
+
     log_success "Samba share ready!"
     log_info "From Windows, mount with:"
     log_info "  net use Z: \\\\$(hostname)\\navig_share /user:${username}"
@@ -269,7 +269,7 @@ SAMBA_CONFIG
 # ── RCLONE SETUP (CLOUD DRIVES) ───────────────────────────────
 setup_rclone() {
     progress_step 4 5 "Setting Up Cloud Drive Mounting"
-    
+
     if is_rclone_installed; then
         log_success "rclone already installed"
     else
@@ -280,10 +280,10 @@ setup_rclone() {
                 return
             fi
         fi
-        
+
         install_rclone
     fi
-    
+
     if is_rclone_installed; then
         log_info "rclone is ready!"
         log_info "Configure cloud provider with:"
@@ -314,9 +314,9 @@ update_path() {
 # ── VERIFICATION ─────────────────────────────────────────────
 verify_installation() {
     progress_step 5 5 "Verifying Installation"
-    
+
     local issues=0
-    
+
     if "$BIN_PATH/navig" --version >/dev/null 2>&1; then
         local ver=$("$BIN_PATH/navig" --version)
         log_success "NAVIG CLI working: $ver"
@@ -324,24 +324,24 @@ verify_installation() {
         log_error "NAVIG command not accessible (add $BIN_PATH to PATH)"
         ((issues++))
     fi
-    
+
     if [[ -d "$VENV_PATH" ]]; then
         log_success "Virtual environment created"
     else
         log_error "Virtual environment missing"
         ((issues++))
     fi
-    
+
     if is_rclone_installed; then
         log_success "rclone available"
     else
         log_info "rclone not installed (optional)"
     fi
-    
+
     if is_samba_installed; then
         log_success "Samba server available"
     fi
-    
+
     return $issues
 }
 
@@ -362,38 +362,38 @@ main() {
 ╚════════════════════════════════════════════════════════════╝
 BANNER
     echo ""
-    
+
     # Step 1: Prerequisites
     progress_step 1 5 "Checking Prerequisites"
     check_python
     check_disk_space
-    
+
     # Step 2: Install NAVIG
     install_navig
-    
+
     # Step 3: Telegram (if token provided)
     if [[ -n "$TELEGRAM_TOKEN" ]]; then
         setup_telegram "$TELEGRAM_TOKEN"
     else
         log_info "No Telegram token provided (skipping bot setup)"
     fi
-    
+
     # Step 4: Samba (unless skipped)
     if [[ $SKIP_SAMBA -eq 0 ]]; then
         setup_samba
     fi
-    
+
     # Step 5: rclone (unless skipped)
     if [[ $SKIP_RCLONE -eq 0 ]]; then
         setup_rclone
     fi
-    
+
     # Update PATH
     update_path
-    
+
     # Verify
     verify_installation || true
-    
+
     # Done
     cat <<'DONE'
 

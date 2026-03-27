@@ -23,6 +23,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:  # noqa: BLE001
@@ -32,31 +33,31 @@ def _debug_log(message: str) -> None:
 class MemoryWatcher:
     """
     Watches memory directory for changes and triggers reindexing.
-    
+
     Uses polling (cross-platform) with debouncing to efficiently
     detect and batch file changes.
-    
+
     Usage:
         watcher = MemoryWatcher(manager)
         watcher.start()
-        
+
         # Later...
         watcher.stop()
     """
 
     # File extensions to watch
-    WATCHED_EXTENSIONS = {'.md', '.markdown', '.txt'}
+    WATCHED_EXTENSIONS = {".md", ".markdown", ".txt"}
 
     def __init__(
         self,
-        manager: 'MemoryManager',
+        manager: "MemoryManager",
         debounce_seconds: float = 1.5,
         poll_interval: float = 1.0,
         on_indexed: Optional[Callable[[int, int], None]] = None,
     ):
         """
         Initialize file watcher.
-        
+
         Args:
             manager: MemoryManager instance
             debounce_seconds: Wait time before indexing after changes
@@ -134,7 +135,7 @@ class MemoryWatcher:
         mtimes = {}
 
         try:
-            for path in self.manager.memory_dir.rglob('*'):
+            for path in self.manager.memory_dir.rglob("*"):
                 if path.is_file() and path.suffix.lower() in self.WATCHED_EXTENSIONS:
                     rel_path = str(path.relative_to(self.manager.memory_dir))
                     try:
@@ -191,8 +192,10 @@ class MemoryWatcher:
             return
 
         # Separate deletions from updates
-        deleted = {p.replace('deleted:', '') for p in changes if p.startswith('deleted:')}
-        updated = {p for p in changes if not p.startswith('deleted:')}
+        deleted = {
+            p.replace("deleted:", "") for p in changes if p.startswith("deleted:")
+        }
+        updated = {p for p in changes if not p.startswith("deleted:")}
 
         files_indexed = 0
         chunks_created = 0
@@ -233,18 +236,18 @@ class MemoryWatcher:
         """Get watcher status."""
         with self._lock:
             return {
-                'running': self._running,
-                'watched_files': len(self._file_mtimes),
-                'pending_changes': len(self._pending_changes),
-                'debounce_seconds': self.debounce_seconds,
-                'poll_interval': self.poll_interval,
+                "running": self._running,
+                "watched_files": len(self._file_mtimes),
+                "pending_changes": len(self._pending_changes),
+                "debounce_seconds": self.debounce_seconds,
+                "poll_interval": self.poll_interval,
             }
 
 
 class WatcherContext:
     """
     Context manager for temporary watching.
-    
+
     Usage:
         with WatcherContext(manager) as watcher:
             # Do stuff, files will be watched
@@ -254,7 +257,7 @@ class WatcherContext:
 
     def __init__(
         self,
-        manager: 'MemoryManager',
+        manager: "MemoryManager",
         **kwargs,
     ):
         self.watcher = MemoryWatcher(manager, **kwargs)
@@ -270,14 +273,15 @@ class WatcherContext:
 # Optional: Watchdog-based watcher for better performance
 # (requires: pip install watchdog)
 
+
 def _create_watchdog_watcher(
-    manager: 'MemoryManager',
+    manager: "MemoryManager",
     debounce_seconds: float = 1.5,
     on_indexed: Optional[Callable[[int, int], None]] = None,
-) -> Optional['WatchdogWatcher']:
+) -> Optional["WatchdogWatcher"]:
     """
     Create a watchdog-based watcher if available.
-    
+
     Returns None if watchdog is not installed.
     """
     try:
@@ -292,13 +296,13 @@ def _create_watchdog_watcher(
 class WatchdogWatcher:
     """
     File watcher using watchdog for better performance.
-    
+
     Only available if watchdog is installed.
     """
 
     def __init__(
         self,
-        manager: 'MemoryManager',
+        manager: "MemoryManager",
         debounce_seconds: float = 1.5,
         on_indexed: Optional[Callable[[int, int], None]] = None,
     ):
@@ -339,11 +343,11 @@ class WatchdogWatcher:
 class _WatchdogHandler:
     """Internal event handler for watchdog."""
 
-    WATCHED_EXTENSIONS = {'.md', '.markdown', '.txt'}
+    WATCHED_EXTENSIONS = {".md", ".markdown", ".txt"}
 
     def __init__(
         self,
-        manager: 'MemoryManager',
+        manager: "MemoryManager",
         debounce_seconds: float,
         on_indexed: Optional[Callable[[int, int], None]],
     ):

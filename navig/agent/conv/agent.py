@@ -1,4 +1,5 @@
 """ConversationalAgent: DI-orchestrated multi-turn chat sessions for NAVIG gateway."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,11 +12,15 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 
 if TYPE_CHECKING:
     from typing import Protocol
+
     class AIClientProtocol(Protocol):
         async def chat(self, messages: list[dict]) -> str: ...
-        async def chat_routed(self, msgs: list[dict], *, user_message: str = "", tier_override: str = "") -> str: ...
+        async def chat_routed(
+            self, msgs: list[dict], *, user_message: str = "", tier_override: str = ""
+        ) -> str: ...
         @property
         def model_router(self) -> object: ...
+
 
 from navig.agent.conv.status_event import StatusEvent
 
@@ -35,8 +40,12 @@ class ConversationalAgent:
         on_status_update: Callable | None = None,
         soul_content: str | None = None,
         *,
-        soul_loader=None, history=None, language_detector=None,
-        localization=None, task_executor=None, fallback_planner=None,
+        soul_loader=None,
+        history=None,
+        language_detector=None,
+        localization=None,
+        task_executor=None,
+        fallback_planner=None,
     ) -> None:
         from navig.agent.conv.executor import TaskExecutor
         from navig.agent.conv.history import ConversationHistory
@@ -44,15 +53,20 @@ class ConversationalAgent:
         from navig.agent.conv.localization import LocalizationStore
         from navig.agent.conv.planner import FallbackPlanner, PlanExtractor
         from navig.agent.conv.soul import get_soul_loader
+
         self._ai_client = ai_client
         self._on_status_update: Callable[[StatusEvent], Awaitable[None]] | None = None
         self._session_id: str = str(uuid.uuid4())[:8]
-        self.on_status_update = on_status_update  # triggers property setter — shim applied
+        self.on_status_update = (
+            on_status_update  # triggers property setter — shim applied
+        )
         self._soul_loader = soul_loader or get_soul_loader()
         self._history = history or ConversationHistory(user_id="default")
         self._lang = language_detector or LanguageDetector()
         self._loc = loc = localization or LocalizationStore()
-        self._executor = task_executor or TaskExecutor(on_status_update=self._on_status_update, localization=loc)
+        self._executor = task_executor or TaskExecutor(
+            on_status_update=self._on_status_update, localization=loc
+        )
         self._planner = fallback_planner or FallbackPlanner()
         self._plan_extractor = PlanExtractor()
         if soul_content is not None:
@@ -88,19 +102,29 @@ class ConversationalAgent:
                     )
                     if is_legacy:
                         _legacy = cb
-                        if inspect.iscoroutinefunction(_legacy) or inspect.iscoroutinefunction(
+                        if inspect.iscoroutinefunction(
+                            _legacy
+                        ) or inspect.iscoroutinefunction(
                             getattr(_legacy, "__call__", None)
                         ):
-                            async def cb(event: StatusEvent, _cb: Callable = _legacy) -> None:  # noqa: E731
+
+                            async def cb(
+                                event: StatusEvent, _cb: Callable = _legacy
+                            ) -> None:  # noqa: E731
                                 await _cb(event.message)
+
                         else:
-                            def cb(event: StatusEvent, _cb: Callable = _legacy) -> None:  # noqa: E731
+
+                            def cb(
+                                event: StatusEvent, _cb: Callable = _legacy
+                            ) -> None:  # noqa: E731
                                 _cb(event.message)
+
             except (ValueError, TypeError):
                 pass  # malformed or missing value; skip
         self._on_status_update = cb  # type: ignore[assignment]
         # Sync executor if already initialised (handles post-__init__ assignment)
-        if hasattr(self, '_executor'):
+        if hasattr(self, "_executor"):
             self._executor._notify_cb = self._on_status_update
 
     async def _emit_event(self, event: StatusEvent) -> None:
@@ -132,6 +156,7 @@ class ConversationalAgent:
         SOUL.md cannot be found on any search path.
         """
         from navig.agent.conv.soul import get_soul_loader
+
         loader = get_soul_loader()
         if loader.cached_content is None:
             loader._sync_load()
@@ -154,6 +179,7 @@ class ConversationalAgent:
         """
         try:
             from navig.agent.soul import get_mood_profile
+
             self._focus_mode = get_mood_profile(mode).id
         except Exception:
             # Soul module may not be installed in all deployments; fallback is safe.
@@ -162,10 +188,22 @@ class ConversationalAgent:
     def _build_awareness_context(self) -> str:
         now = datetime.now()
         h = now.hour
-        tod = "morning" if 5<=h<12 else "afternoon" if 12<=h<18 else "evening" if 18<=h<22 else "late night"
-        parts = [f"Current time: {now.strftime('%H:%M')} ({tod}), {now.strftime('%A %d %B %Y')}."]
+        tod = (
+            "morning"
+            if 5 <= h < 12
+            else (
+                "afternoon"
+                if 12 <= h < 18
+                else "evening" if 18 <= h < 22 else "late night"
+            )
+        )
+        parts = [
+            f"Current time: {now.strftime('%H:%M')} ({tod}), {now.strftime('%A %d %B %Y')}."
+        ]
         if uname := self._user_identity.get("username", ""):
-            parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
+            parts.append(
+                f"You are talking to {uname} (your operator). Address them naturally."
+            )
         elif uid := self._user_identity.get("user_id", ""):
             parts.append(f"User ID: {uid}.")
         return "\n".join(parts)
@@ -198,12 +236,18 @@ class ConversationalAgent:
         response = await self._get_ai_response(message)
         try:
             from navig.agent.soul import ContextSignal, get_mood_profile, shape_response
-            response = shape_response(response, ContextSignal.build(message), get_mood_profile(self._focus_mode))
+
+            response = shape_response(
+                response,
+                ContextSignal.build(message),
+                get_mood_profile(self._focus_mode),
+            )
         except Exception:
             # Soul shaping is best-effort; the raw response is still valid output.
             pass
         if lang == "ru":
             from navig.agent.conv.history import _strip_cjk
+
             response = _strip_cjk(response)
         plan = self._plan_extractor.extract(response)
         if plan:
@@ -222,6 +266,7 @@ class ConversationalAgent:
          - No pending task → returns a 'nothing to confirm' message.
         """
         from navig.agent.conv.executor import TaskStatus
+
         task = self._executor.current_task
         if task is None or task.status != TaskStatus.PLANNING:
             return "No pending task to confirm."
@@ -249,36 +294,56 @@ class ConversationalAgent:
             result = self._planner.plan(message)
             return json.dumps(result) if result else "I'm ready to help."
         system_prompt = self._build_system_prompt(message)
-        msgs = [{"role": "system", "content": system_prompt}, *self._history.get_messages()]
+        msgs = [
+            {"role": "system", "content": system_prompt},
+            *self._history.get_messages(),
+        ]
         if self.context:
             msgs[0]["content"] += f"\nContext: {json.dumps(self.context)}"
         tier = self._tier_override
-        await self._emit_event(StatusEvent(
-            type="thinking",
-            task_id=self._session_id,
-            message="Thinking\u2026",
-            timestamp=datetime.now(),
-        ))
+        await self._emit_event(
+            StatusEvent(
+                type="thinking",
+                task_id=self._session_id,
+                message="Thinking\u2026",
+                timestamp=datetime.now(),
+            )
+        )
         # Optional streaming path — only activates if ai_client exposes chat_stream
         if hasattr(self._ai_client, "chat_stream"):
             tokens: list[str] = []
             async for token in self._ai_client.chat_stream(msgs, user_message=message, tier_override=tier):  # type: ignore[union-attr]
                 tokens.append(token)
-                await self._emit_event(StatusEvent(
-                    type="streaming_token",
-                    task_id=self._session_id,
-                    message="",
-                    timestamp=datetime.now(),
-                    metadata={"token": token},
-                ))
+                await self._emit_event(
+                    StatusEvent(
+                        type="streaming_token",
+                        task_id=self._session_id,
+                        message="",
+                        timestamp=datetime.now(),
+                        metadata={"token": token},
+                    )
+                )
             if tokens:
                 return "".join(tokens)
         try:
             from navig.routing.router import RouteRequest, get_router
-            text = (await get_router().run(RouteRequest(messages=msgs, text=message, tier_override=tier, entrypoint=self._entrypoint)))[0]
-            if text: return text
+
+            text = (
+                await get_router().run(
+                    RouteRequest(
+                        messages=msgs,
+                        text=message,
+                        tier_override=tier,
+                        entrypoint=self._entrypoint,
+                    )
+                )
+            )[0]
+            if text:
+                return text
         except Exception as exc:
             logger.warning("Unified router failed: %s", exc)
         if hasattr(self._ai_client, "chat_routed"):
-            return await self._ai_client.chat_routed(msgs, user_message=message, tier_override=tier)
+            return await self._ai_client.chat_routed(
+                msgs, user_message=message, tier_override=tier
+            )
         return await self._ai_client.chat(msgs)

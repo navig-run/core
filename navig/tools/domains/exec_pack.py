@@ -13,6 +13,7 @@ Usage (via ToolRouter)::
         parameters={"command": "ls -la /tmp", "timeout_seconds": 15},
     ))
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,6 +33,7 @@ _OUTPUT_CAP = 50_000
 # =============================================================================
 # Core execution
 # =============================================================================
+
 
 async def _run_shell(
     command: str,
@@ -70,6 +72,7 @@ async def _run_shell(
 # =============================================================================
 # Handler
 # =============================================================================
+
 
 def bash_exec_handler(
     command: str,
@@ -125,6 +128,7 @@ async def bash_exec_async_handler(
 # =============================================================================
 # Registration
 # =============================================================================
+
 
 def register_tools(registry: "ToolRegistry") -> None:
     """Register bash_exec with the ToolRegistry."""

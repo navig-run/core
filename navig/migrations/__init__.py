@@ -7,4 +7,4 @@ between versions.
 
 from .migrate_addons_to_templates import migrate_addons_to_templates
 
-__all__ = ['migrate_addons_to_templates']
+__all__ = ["migrate_addons_to_templates"]

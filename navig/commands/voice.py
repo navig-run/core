@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from typing import Optional
 
@@ -14,12 +13,17 @@ voice_app = typer.Typer(
     no_args_is_help=True,
 )
 
+
 @voice_app.command("speak")
 def speak_command(
     text: str = typer.Argument(..., help="Text to speak"),
-    provider: str = typer.Option(None, "--provider", "-p", help="TTS Provider (openai, elevenlabs, edge)"),
+    provider: str = typer.Option(
+        None, "--provider", "-p", help="TTS Provider (openai, elevenlabs, edge)"
+    ),
     voice: str = typer.Option(None, "--voice", "-v", help="Voice ID/Name"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path (.mp3)"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file path (.mp3)"
+    ),
     play: bool = typer.Option(True, "--play/--no-play", help="Play audio immediately"),
 ):
     """Synthesize speech from text."""
@@ -41,23 +45,23 @@ def speak_command(
         ch.info(f"Synthesizing: '{text}'...")
 
         result = await tts.synthesize(
-            text,
-            provider=prov_enum,
-            voice=voice,
-            output_path=output
+            text, provider=prov_enum, voice=voice, output_path=output
         )
 
         if result.success:
             ch.success(f"Audio saved to: {result.audio_path}")
             if result.provider:
-                 ch.info(f"Provider: {result.provider.value}, Voice: {result.voice}")
+                ch.info(f"Provider: {result.provider.value}, Voice: {result.voice}")
 
             if play and result.audio_path:
                 try:
                     from navig.voice.playback import play_sound
+
                     success = await play_sound(result.audio_path)
                     if not success:
-                         ch.warning("Playback failed (check audio device or ffmpeg/mpv installation)")
+                        ch.warning(
+                            "Playback failed (check audio device or ffmpeg/mpv installation)"
+                        )
                 except Exception as e:
                     ch.warning(f"Playback error: {e}")
         else:
@@ -103,7 +107,9 @@ def transcribe_command(
 
 @voice_app.command("list-voices")
 def list_voices(
-    provider: str = typer.Argument("openai", help="TTS Provider (openai, elevenlabs, edge)"),
+    provider: str = typer.Argument(
+        "openai", help="TTS Provider (openai, elevenlabs, edge)"
+    ),
 ):
     """List available voices for a provider."""
     import asyncio
@@ -125,6 +131,7 @@ def list_voices(
             return
 
         from rich.table import Table
+
         table = Table(title=f"Voices for {provider}")
         table.add_column("ID", style="cyan")
         table.add_column("Name", style="green")

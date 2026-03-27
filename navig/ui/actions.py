@@ -5,6 +5,7 @@ navig.ui.actions — Layer 4 action blocks, fallback messages, and action queue.
   render_fallback(cmd, reason)   — daemon-offline or degraded-path message
   render_action_queue(items)     — pending approval queue
 """
+
 from __future__ import annotations
 
 import sys
@@ -15,9 +16,9 @@ from navig.ui.models import ActionItem
 from navig.ui.theme import console
 
 _RISK_STYLE = {
-    "low":    "green",
+    "low": "green",
     "medium": "yellow",
-    "high":   "red",
+    "high": "red",
 }
 
 
@@ -33,7 +34,11 @@ def render_actions(
         console.print(f"\n[bold]{title}[/bold]")
         for item in items:
             risk_style = _RISK_STYLE.get(item.risk, "white")
-            val_str = f"  [{risk_style}]{item.estimated_value}[/{risk_style}]" if item.estimated_value else ""
+            val_str = (
+                f"  [{risk_style}]{item.estimated_value}[/{risk_style}]"
+                if item.estimated_value
+                else ""
+            )
             console.print(
                 f"  [bold cyan]{item.index}.[/bold cyan]  "
                 f"{item.description}"

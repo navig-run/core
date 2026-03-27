@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 # Feature defaults — safe-by-default philosophy
 MATRIX_FEATURE_DEFAULTS: Dict[str, bool] = {
-    "messaging": True,           # send / read / tail commands
-    "room_management": True,     # create / join / leave / invite rooms
-    "admin_ops": False,          # user management, server admin (dangerous)
-    "notifications": True,       # bridge into NAVIG notification pipeline
+    "messaging": True,  # send / read / tail commands
+    "room_management": True,  # create / join / leave / invite rooms
+    "admin_ops": False,  # user management, server admin (dangerous)
+    "notifications": True,  # bridge into NAVIG notification pipeline
     "registration_control": False,  # toggle open/closed registration (admin)
-    "file_sharing": False,       # upload / download files (Phase 2)
-    "e2ee": False,               # end-to-end encryption (Phase 3)
+    "file_sharing": False,  # upload / download files (Phase 2)
+    "e2ee": False,  # end-to-end encryption (Phase 3)
 }
 
 FEATURE_DESCRIPTIONS: Dict[str, str] = {
@@ -39,6 +39,7 @@ def _get_matrix_features_config() -> Dict[str, Any]:
     """Load the features block from config, falling back to defaults."""
     try:
         from navig.core.config import get_global_config
+
         cfg = get_global_config()
         return cfg.get("comms", {}).get("matrix", {}).get("features", {})
     except Exception:
@@ -49,6 +50,7 @@ def is_matrix_enabled() -> bool:
     """Check if Matrix is enabled at all."""
     try:
         from navig.core.config import get_global_config
+
         cfg = get_global_config()
         return cfg.get("comms", {}).get("matrix", {}).get("enabled", False)
     except Exception:
@@ -85,12 +87,14 @@ def require_feature(feature: str):
         def send_message(room: str, message: str):
             ...
     """
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if not is_feature_enabled(feature):
                 try:
                     from rich.console import Console
+
                     console = Console(stderr=True)
                     console.print(f"[red]✗[/] Matrix feature '{feature}' is disabled.")
                     console.print(
@@ -98,11 +102,16 @@ def require_feature(feature: str):
                     )
                 except ImportError:
                     print(f"✗ Matrix feature '{feature}' is disabled.")
-                    print(f"  Enable: navig config set comms.matrix.features.{feature} true")
+                    print(
+                        f"  Enable: navig config set comms.matrix.features.{feature} true"
+                    )
                 import typer
+
                 raise typer.Exit(1)
             return func(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -117,12 +126,14 @@ def require_matrix():
         def status():
             ...
     """
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if not is_matrix_enabled():
                 try:
                     from rich.console import Console
+
                     console = Console(stderr=True)
                     console.print("[red]✗[/] Matrix is not enabled.")
                     console.print(
@@ -132,7 +143,10 @@ def require_matrix():
                     print("✗ Matrix is not enabled.")
                     print("  Enable: navig config set comms.matrix.enabled true")
                 import typer
+
                 raise typer.Exit(1)
             return func(*args, **kwargs)
+
         return wrapper
+
     return decorator

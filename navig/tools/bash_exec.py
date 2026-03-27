@@ -14,6 +14,7 @@ Security notes
 
 Registered as ``"bash_exec"`` in the default tool registry.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -64,10 +65,30 @@ class BashExecTool(BaseTool):
     description = "Execute a shell command locally in the daemon environment."
     owner_only = True
     parameters = [
-        {"name": "command", "type": "string", "description": "Command string to execute", "required": True},
-        {"name": "cwd", "type": "string", "description": "Working directory relative to workspace", "required": False},
-        {"name": "timeout", "type": "number", "description": "Max seconds to wait", "required": False},
-        {"name": "requires_approval", "type": "boolean", "description": "Flag for execution gating", "required": False}
+        {
+            "name": "command",
+            "type": "string",
+            "description": "Command string to execute",
+            "required": True,
+        },
+        {
+            "name": "cwd",
+            "type": "string",
+            "description": "Working directory relative to workspace",
+            "required": False,
+        },
+        {
+            "name": "timeout",
+            "type": "number",
+            "description": "Max seconds to wait",
+            "required": False,
+        },
+        {
+            "name": "requires_approval",
+            "type": "boolean",
+            "description": "Flag for execution gating",
+            "required": False,
+        },
     ]
 
     name = "bash_exec"
@@ -103,7 +124,11 @@ class BashExecTool(BaseTool):
             )
 
         requires_approval = bool(args.get("requires_approval", False))
-        allow_all = os.getenv("NAVIG_ALLOW_ALL_COMMANDS", "").lower() in ("1", "true", "yes")
+        allow_all = os.getenv("NAVIG_ALLOW_ALL_COMMANDS", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         if requires_approval and not allow_all:
             return ToolResult(
                 name=self.name,
@@ -182,10 +207,14 @@ class BashExecTool(BaseTool):
 
             stdout = stdout_b.decode("utf-8", errors="replace")
             stderr = stderr_b.decode("utf-8", errors="replace")
-            combined = (stdout + ("\n[stderr]\n" + stderr if stderr.strip() else "")).strip()
+            combined = (
+                stdout + ("\n[stderr]\n" + stderr if stderr.strip() else "")
+            ).strip()
 
             if len(combined) > max_output:
-                combined = combined[:max_output] + f"\n… [truncated at {max_output} chars]"
+                combined = (
+                    combined[:max_output] + f"\n… [truncated at {max_output} chars]"
+                )
 
             returncode = proc.returncode or 0
             success = returncode == 0

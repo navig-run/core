@@ -31,17 +31,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import (
-    Any,
-    Callable,
-    Coroutine,
-    Dict,
-    List,
-    Optional,
-    Set,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Set, TypeVar, Union
 
 logger = logging.getLogger("navig.hooks")
 
@@ -61,47 +51,39 @@ HOOK_EVENT_TYPES = {
     "command:before_execute": "Before a command is executed",
     "command:after_execute": "After a command completes",
     "command:error": "When a command fails",
-
     # Session lifecycle
     "session": "General session events",
     "session:start": "When a session starts",
     "session:end": "When a session ends",
     "session:context_update": "When session context is updated",
-
     # Agent events
     "agent": "General agent events",
     "agent:bootstrap": "When an agent is bootstrapped",
     "agent:message": "When an agent receives a message",
     "agent:response": "When an agent sends a response",
     "agent:tool_call": "When an agent makes a tool call",
-
     # Plugin events
     "plugin": "General plugin events",
     "plugin:load": "When a plugin is loaded",
     "plugin:unload": "When a plugin is unloaded",
     "plugin:error": "When a plugin encounters an error",
-
     # Gateway events
     "gateway": "General gateway events",
     "gateway:request": "When a gateway request is received",
     "gateway:response": "When a gateway response is sent",
-
     # Memory events
     "memory": "General memory events",
     "memory:index": "When files are indexed",
     "memory:search": "When memory is searched",
-
     # Security events
     "security": "General security events",
     "security:audit": "When a security audit runs",
     "security:violation": "When a security violation is detected",
-
     # SSH/Remote events
     "ssh": "General SSH events",
     "ssh:connect": "When SSH connection is established",
     "ssh:disconnect": "When SSH connection is closed",
     "ssh:command": "When an SSH command is executed",
-
     # Automation events
     "automation": "General automation events",
     "automation:workflow_start": "When a workflow starts",
@@ -114,7 +96,7 @@ HOOK_EVENT_TYPES = {
 class HookEvent:
     """
     Event object passed to hook handlers.
-    
+
     Attributes:
         type: The event type (e.g., 'command', 'session', 'agent')
         action: The specific action (e.g., 'before_execute', 'start', 'bootstrap')
@@ -124,6 +106,7 @@ class HookEvent:
         cancel: Set to True to cancel the operation (where supported)
         data: Arbitrary data that hooks can attach for downstream use
     """
+
     type: str
     action: str
     context: Dict[str, Any] = field(default_factory=dict)
@@ -145,10 +128,11 @@ class HookEvent:
 # Hook Registry
 # =============================================================================
 
+
 class HookRegistry:
     """
     Registry of hook handlers.
-    
+
     Supports:
     - Registration by event type (e.g., 'command') or specific action (e.g., 'command:new')
     - Priority ordering (lower priority = runs first)
@@ -161,14 +145,11 @@ class HookRegistry:
         self._disabled_hooks: Set[str] = set()
 
     def register(
-        self,
-        event_key: str,
-        handler: HookHandler,
-        priority: int = 100
+        self, event_key: str, handler: HookHandler, priority: int = 100
     ) -> None:
         """
         Register a hook handler for an event.
-        
+
         Args:
             event_key: Event type or type:action (e.g., 'command' or 'command:new')
             handler: Function to call when event triggers
@@ -186,11 +167,11 @@ class HookRegistry:
     def unregister(self, event_key: str, handler: HookHandler) -> bool:
         """
         Unregister a specific hook handler.
-        
+
         Args:
             event_key: Event key the handler was registered for
             handler: The handler function to remove
-            
+
         Returns:
             True if handler was found and removed
         """
@@ -214,7 +195,7 @@ class HookRegistry:
     def clear(self, event_key: Optional[str] = None) -> None:
         """
         Clear registered hooks.
-        
+
         Args:
             event_key: If provided, clear only this event's handlers.
                       If None, clear all handlers.
@@ -259,29 +240,28 @@ _registry = HookRegistry()
 # Public API
 # =============================================================================
 
+
 def register_hook(
-    event_key: str,
-    handler: Optional[HookHandler] = None,
-    priority: int = 100
+    event_key: str, handler: Optional[HookHandler] = None, priority: int = 100
 ) -> Union[None, Callable[[HookHandler], HookHandler]]:
     """
     Register a hook handler for an event.
-    
+
     Can be used as a decorator or called directly:
-    
+
         # As decorator
         @register_hook("command:before_execute")
         async def my_handler(event):
             pass
-        
+
         # Direct call
         register_hook("command:before_execute", my_handler)
-        
+
         # With priority (lower = runs first)
         @register_hook("command:before_execute", priority=50)
         async def early_handler(event):
             pass
-    
+
     Args:
         event_key: Event type or type:action
         handler: Handler function (optional if using as decorator)
@@ -295,17 +275,18 @@ def register_hook(
     def decorator(fn: HookHandler) -> HookHandler:
         _registry.register(event_key, fn, priority)
         return fn
+
     return decorator
 
 
 def unregister_hook(event_key: str, handler: HookHandler) -> bool:
     """
     Unregister a specific hook handler.
-    
+
     Args:
         event_key: Event key the handler was registered for
         handler: The handler function to remove
-        
+
     Returns:
         True if handler was found and removed
     """
@@ -315,7 +296,7 @@ def unregister_hook(event_key: str, handler: HookHandler) -> bool:
 def clear_hooks(event_key: Optional[str] = None) -> None:
     """
     Clear registered hooks.
-    
+
     Args:
         event_key: If provided, clear only this event's handlers.
                   If None, clear all handlers.
@@ -332,32 +313,27 @@ async def trigger_hook(
     event_type: str,
     action: str = "",
     context: Optional[Dict[str, Any]] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> HookEvent:
     """
     Trigger a hook event and run all registered handlers.
-    
+
     Handlers are called in priority order. Errors in handlers are logged
     but don't prevent other handlers from running.
-    
+
     Args:
         event_type: The event type (e.g., 'command', 'session')
         action: The specific action (e.g., 'before_execute')
         context: Additional context data
         **kwargs: Additional event attributes
-        
+
     Returns:
         The HookEvent after all handlers have run
     """
     if context is None:
         context = {}
 
-    event = HookEvent(
-        type=event_type,
-        action=action,
-        context=context,
-        **kwargs
-    )
+    event = HookEvent(type=event_type, action=action, context=context, **kwargs)
 
     # Get handlers for both general type and specific action
     type_handlers = _registry.get_handlers(event_type)
@@ -375,9 +351,7 @@ async def trigger_hook(
             if asyncio.iscoroutine(result):
                 await result
         except Exception as e:
-            logger.error(
-                f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}"
-            )
+            logger.error(f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}")
             # Continue with other handlers
 
     return event
@@ -387,24 +361,19 @@ def trigger_hook_sync(
     event_type: str,
     action: str = "",
     context: Optional[Dict[str, Any]] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> HookEvent:
     """
     Synchronous version of trigger_hook.
-    
+
     Only calls synchronous handlers. Async handlers are skipped with a warning.
-    
+
     Use this when you need to trigger hooks from sync code.
     """
     if context is None:
         context = {}
 
-    event = HookEvent(
-        type=event_type,
-        action=action,
-        context=context,
-        **kwargs
-    )
+    event = HookEvent(type=event_type, action=action, context=context, **kwargs)
 
     type_handlers = _registry.get_handlers(event_type)
     action_handlers = _registry.get_handlers(event.event_key) if action else []
@@ -420,9 +389,7 @@ def trigger_hook_sync(
                 )
                 result.close()  # Prevent coroutine warning
         except Exception as e:
-            logger.error(
-                f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}"
-            )
+            logger.error(f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}")
 
     return event
 
@@ -431,57 +398,57 @@ def create_hook_event(
     event_type: str,
     action: str,
     context: Optional[Dict[str, Any]] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> HookEvent:
     """
     Create a HookEvent without triggering it.
-    
+
     Useful for building events before triggering.
     """
-    return HookEvent(
-        type=event_type,
-        action=action,
-        context=context or {},
-        **kwargs
-    )
+    return HookEvent(type=event_type, action=action, context=context or {}, **kwargs)
 
 
 # =============================================================================
 # Hook Decorators for Common Patterns
 # =============================================================================
 
+
 def before_command(command_name: Optional[str] = None, priority: int = 100):
     """
     Decorator to register a before-command hook.
-    
+
     Args:
         command_name: If provided, only trigger for this command
         priority: Execution priority
-    
+
     Example:
         @before_command("deploy")
         async def validate_deploy(event):
             if not event.context.get("confirmed"):
                 event.cancel = True
     """
-    event_key = f"command:before_{command_name}" if command_name else "command:before_execute"
+    event_key = (
+        f"command:before_{command_name}" if command_name else "command:before_execute"
+    )
     return register_hook(event_key, priority=priority)
 
 
 def after_command(command_name: Optional[str] = None, priority: int = 100):
     """Decorator to register an after-command hook."""
-    event_key = f"command:after_{command_name}" if command_name else "command:after_execute"
+    event_key = (
+        f"command:after_{command_name}" if command_name else "command:after_execute"
+    )
     return register_hook(event_key, priority=priority)
 
 
 def on_error(event_type: Optional[str] = None, priority: int = 100):
     """
     Decorator to register an error hook.
-    
+
     Args:
         event_type: If provided, only trigger for errors in this event type
         priority: Execution priority
-    
+
     Example:
         @on_error("ssh")
         async def handle_ssh_error(event):
@@ -495,6 +462,7 @@ def on_error(event_type: Optional[str] = None, priority: int = 100):
 # =============================================================================
 # Utility Functions
 # =============================================================================
+
 
 def hook_stats() -> Dict[str, Any]:
     """Get statistics about registered hooks."""

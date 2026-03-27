@@ -11,6 +11,7 @@ dict with keys:
     domain  : str  - the queried domain
     details : str  - human-readable explanation
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,8 +25,7 @@ if TYPE_CHECKING:
 
 # Strict domain validation pattern
 _VALID_DOMAIN = re.compile(
-    r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
-    r"(?:\.[a-zA-Z]{2,})+$"
+    r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?" r"(?:\.[a-zA-Z]{2,})+$"
 )
 
 _RDAP_BASE = "https://rdap.org/domain/"
@@ -43,7 +43,11 @@ def _rdap_lookup(domain: str) -> dict:
                     "domain": domain,
                     "details": f"{domain} is already registered (RDAP 200).",
                 }
-        return {"status": "error", "domain": domain, "details": "Unexpected RDAP response."}
+        return {
+            "status": "error",
+            "domain": domain,
+            "details": "Unexpected RDAP response.",
+        }
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return {

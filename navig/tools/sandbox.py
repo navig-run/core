@@ -9,6 +9,7 @@ Features:
 - Timeout enforcement
 - Output capture and streaming
 """
+
 import asyncio
 import shutil
 import tempfile
@@ -25,6 +26,7 @@ logger = get_debug_logger()
 
 class SandboxStatus(Enum):
     """Status of sandbox execution."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -38,39 +40,41 @@ class SandboxConfig:
     """Configuration for sandbox environment."""
 
     # Resource limits
-    memory_limit: str = "512m"       # Memory limit (e.g., "512m", "1g")
-    cpu_limit: float = 1.0           # CPU cores limit
-    disk_limit: str = "1g"           # Disk space limit
+    memory_limit: str = "512m"  # Memory limit (e.g., "512m", "1g")
+    cpu_limit: float = 1.0  # CPU cores limit
+    disk_limit: str = "1g"  # Disk space limit
 
     # Timeouts
-    execution_timeout: int = 300     # Max execution time in seconds
-    startup_timeout: int = 30        # Container startup timeout
+    execution_timeout: int = 300  # Max execution time in seconds
+    startup_timeout: int = 30  # Container startup timeout
 
     # Network
-    network_enabled: bool = False    # Allow network access
-    network_mode: str = "none"       # "none", "bridge", "host"
+    network_enabled: bool = False  # Allow network access
+    network_mode: str = "none"  # "none", "bridge", "host"
 
     # Security
-    read_only_root: bool = True      # Read-only root filesystem
-    no_new_privileges: bool = True   # Prevent privilege escalation
+    read_only_root: bool = True  # Read-only root filesystem
+    no_new_privileges: bool = True  # Prevent privilege escalation
     cap_drop: List[str] = field(default_factory=lambda: ["ALL"])
 
     # Image settings
     default_image: str = "python:3.11-slim"  # Default container image
-    allowed_images: List[str] = field(default_factory=lambda: [
-        "python:3.11-slim",
-        "python:3.12-slim",
-        "node:20-slim",
-        "ubuntu:22.04",
-        "alpine:latest",
-    ])
+    allowed_images: List[str] = field(
+        default_factory=lambda: [
+            "python:3.11-slim",
+            "python:3.12-slim",
+            "node:20-slim",
+            "ubuntu:22.04",
+            "alpine:latest",
+        ]
+    )
 
     # Paths
     workspace_mount: Optional[str] = None  # Host path to mount as workspace
-    output_dir: Optional[str] = None       # Directory for output files
+    output_dir: Optional[str] = None  # Directory for output files
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'SandboxConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "SandboxConfig":
         """Create config from dictionary."""
         return cls(
             memory_limit=data.get("memory_limit", "512m"),
@@ -91,6 +95,7 @@ class SandboxConfig:
 @dataclass
 class SandboxResult:
     """Result of sandboxed execution."""
+
     execution_id: str
     status: SandboxStatus
     exit_code: Optional[int] = None
@@ -118,7 +123,7 @@ class SandboxResult:
 class DockerSandbox:
     """
     Docker-based sandbox for isolated command execution.
-    
+
     Usage:
         sandbox = DockerSandbox()
         result = await sandbox.execute("python script.py", image="python:3.11-slim")
@@ -127,7 +132,7 @@ class DockerSandbox:
     def __init__(self, config: Optional[SandboxConfig] = None):
         """
         Initialize Docker sandbox.
-        
+
         Args:
             config: Sandbox configuration
         """
@@ -141,7 +146,8 @@ class DockerSandbox:
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "docker", "version",
+                "docker",
+                "version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -163,7 +169,7 @@ class DockerSandbox:
     ) -> SandboxResult:
         """
         Execute a command in a sandboxed container.
-        
+
         Args:
             command: Command to execute
             image: Docker image to use
@@ -171,11 +177,12 @@ class DockerSandbox:
             env: Environment variables
             files: Files to create in workspace (name -> content)
             timeout: Execution timeout override
-            
+
         Returns:
             SandboxResult with execution details
         """
         import uuid
+
         execution_id = str(uuid.uuid4())[:8]
 
         # Check Docker availability
@@ -287,16 +294,23 @@ class DockerSandbox:
     ) -> List[str]:
         """Build the docker run command with security options."""
         cmd = [
-            "docker", "run",
+            "docker",
+            "run",
             "--rm",  # Remove container after execution
-            "--name", f"navig-sandbox-{execution_id}",
-
+            "--name",
+            f"navig-sandbox-{execution_id}",
             # Resource limits
-            "--memory", self.config.memory_limit,
-            "--cpus", str(self.config.cpu_limit),
-
+            "--memory",
+            self.config.memory_limit,
+            "--cpus",
+            str(self.config.cpu_limit),
             # Security options
-            "--security-opt", "no-new-privileges:true" if self.config.no_new_privileges else "no-new-privileges:false",
+            "--security-opt",
+            (
+                "no-new-privileges:true"
+                if self.config.no_new_privileges
+                else "no-new-privileges:false"
+            ),
         ]
 
         # Read-only root
@@ -316,10 +330,14 @@ class DockerSandbox:
             cmd.extend(["--network", self.config.network_mode])
 
         # Mount workspace
-        cmd.extend([
-            "-v", f"{workspace_path}:{working_dir}",
-            "-w", working_dir,
-        ])
+        cmd.extend(
+            [
+                "-v",
+                f"{workspace_path}:{working_dir}",
+                "-w",
+                working_dir,
+            ]
+        )
 
         # Environment variables
         if env:
@@ -336,7 +354,9 @@ class DockerSandbox:
         """Kill a running container."""
         try:
             proc = await asyncio.create_subprocess_exec(
-                "docker", "kill", f"navig-sandbox-{execution_id}",
+                "docker",
+                "kill",
+                f"navig-sandbox-{execution_id}",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -348,7 +368,10 @@ class DockerSandbox:
         """Remove a container if it exists."""
         try:
             proc = await asyncio.create_subprocess_exec(
-                "docker", "rm", "-f", f"navig-sandbox-{execution_id}",
+                "docker",
+                "rm",
+                "-f",
+                f"navig-sandbox-{execution_id}",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -364,12 +387,12 @@ class DockerSandbox:
     ) -> SandboxResult:
         """
         Execute a script in sandboxed environment.
-        
+
         Args:
             script_content: Script source code
             language: Programming language ("python", "node", "bash")
             **kwargs: Additional arguments for execute()
-            
+
         Returns:
             SandboxResult
         """
@@ -409,12 +432,12 @@ async def sandboxed_execute(
 ) -> SandboxResult:
     """
     Execute a command in a sandboxed environment.
-    
+
     Args:
         command: Command to execute
         config: Sandbox configuration
         **kwargs: Additional arguments
-        
+
     Returns:
         SandboxResult
     """
@@ -426,6 +449,7 @@ def is_sandbox_available() -> bool:
     """Check if Docker sandbox is available (sync check)."""
     try:
         import subprocess
+
         result = subprocess.run(
             ["docker", "version"],
             capture_output=True,

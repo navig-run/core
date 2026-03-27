@@ -10,5 +10,3 @@ Common commands:
 Examples:
 - `navig wiki rag query "nginx config"`
 - `navig wiki rag query "deploy" --context`
-
-

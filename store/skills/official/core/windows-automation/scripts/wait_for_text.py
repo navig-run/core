@@ -6,15 +6,16 @@ Usage: py wait_for_text.py "text" "window" [timeout_seconds]
        py wait_for_text.py "Complete" "Terminal" 30
        py wait_for_text.py "Ready" "Chrome"
 """
-import sys
 import io
+import sys
 import time
+
 from pywinauto import Desktop
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 if len(sys.argv) < 3:
-    print("Usage: py wait_for_text.py \"text\" \"window\" [timeout]")
+    print('Usage: py wait_for_text.py "text" "window" [timeout]')
     sys.exit(1)
 
 search_text = sys.argv[1]
@@ -24,10 +25,14 @@ timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 30
 try:
     desktop = Desktop(backend="uia")
     start_time = time.time()
-    
+
     while time.time() - start_time < timeout:
-        windows = [w for w in desktop.windows() if window_filter.lower() in w.window_text().lower()]
-        
+        windows = [
+            w
+            for w in desktop.windows()
+            if window_filter.lower() in w.window_text().lower()
+        ]
+
         for window in windows:
             try:
                 for ctrl in window.descendants():
@@ -41,12 +46,12 @@ try:
                         pass  # best-effort; suppress all errors
             except Exception:  # noqa: BLE001
                 pass  # best-effort; suppress all errors
-        
+
         time.sleep(0.5)  # Check every 500ms
-    
+
     print(f"Timeout: Text '{search_text}' not found after {timeout}s")
     sys.exit(1)
-    
+
 except Exception as e:
     print(f"Error: {e}")
     sys.exit(1)

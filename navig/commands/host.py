@@ -16,13 +16,16 @@ from navig.config import get_config_manager
 # Lazy import for ServerDiscovery - only loaded when discovery operations are needed
 _server_discovery = None
 
+
 def _get_server_discovery():
     """Lazy import ServerDiscovery to avoid loading paramiko on startup."""
     global _server_discovery
     if _server_discovery is None:
         from navig.discovery import ServerDiscovery
+
         _server_discovery = ServerDiscovery
     return _server_discovery
+
 
 config_manager = get_config_manager()
 
@@ -30,13 +33,13 @@ config_manager = get_config_manager()
 def _is_ppk_format(key_path: str) -> bool:
     """
     Check if an SSH key file is in PuTTY PPK format.
-    
+
     PPK files start with "PuTTY-User-Key-File" header.
     OpenSSH keys start with "-----BEGIN" or are binary.
-    
+
     Args:
         key_path: Path to the SSH key file
-        
+
     Returns:
         True if the file is in PPK format, False otherwise
     """
@@ -45,9 +48,9 @@ def _is_ppk_format(key_path: str) -> bool:
         if not expanded_path.exists():
             return False
 
-        with open(expanded_path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(expanded_path, "r", encoding="utf-8", errors="ignore") as f:
             first_line = f.readline().strip()
-            return first_line.startswith('PuTTY-User-Key-File')
+            return first_line.startswith("PuTTY-User-Key-File")
     except Exception:
         return False
 
@@ -55,12 +58,12 @@ def _is_ppk_format(key_path: str) -> bool:
 def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
     """
     Validate an SSH key file and return (valid, message).
-    
+
     Checks:
     1. File exists
     2. Not in PPK format (needs conversion)
     3. Basic OpenSSH format validation
-    
+
     Returns:
         Tuple of (is_valid, error_or_info_message)
     """
@@ -82,16 +85,16 @@ def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
             f"    3. Conversions → Export OpenSSH key\n"
             f"    4. Save as: {key_path}_openssh\n\n"
             f"  Option 2: Use command line (if puttygen is installed):\n"
-            f"    puttygen \"{key_path}\" -O private-openssh -o \"{key_path}_openssh\"\n\n"
+            f'    puttygen "{key_path}" -O private-openssh -o "{key_path}_openssh"\n\n'
             f"Then use the converted key path."
         )
         return False, ppk_msg
 
     # Check for OpenSSH format (starts with -----BEGIN)
     try:
-        with open(expanded_path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(expanded_path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read(100)
-            if '-----BEGIN' in content:
+            if "-----BEGIN" in content:
                 return True, "Valid OpenSSH key format"
             # Could be a binary key or other format - let SSH handle it
             return True, "Key file found (format will be validated by SSH)"
@@ -108,15 +111,15 @@ def list_hosts(options: Dict[str, Any]):
         return
 
     # Fast path for plain/raw output — just names, no config loading needed
-    if options.get('raw') or options.get('plain'):
+    if options.get("raw") or options.get("plain"):
         for host in hosts:
             ch.raw_print(host)
         return
 
     active_host = config_manager.get_active_host()
-    default_host = config_manager.global_config.get('default_host')
-    show_all = options.get('all', False)
-    output_format = options.get('format', 'table')
+    default_host = config_manager.global_config.get("default_host")
+    show_all = options.get("all", False)
+    output_format = options.get("format", "table")
 
     if not hosts:
         ch.warning("No hosts configured", "Use 'navig host add <name>' to add one.")
@@ -136,38 +139,41 @@ def list_hosts(options: Dict[str, Any]):
                 status_icons.append("★ Default")
 
             host_info = {
-                'name': host,
-                'host': config.get('host', 'N/A'),
-                'user': config.get('user', 'N/A'),
-                'port': config.get('port', 22),
-                'apps_count': len(apps),
-                'status': " | ".join(status_icons) if status_icons else "",
-                'is_active': host == active_host,
-                'is_default': host == default_host,
+                "name": host,
+                "host": config.get("host", "N/A"),
+                "user": config.get("user", "N/A"),
+                "port": config.get("port", 22),
+                "apps_count": len(apps),
+                "status": " | ".join(status_icons) if status_icons else "",
+                "is_active": host == active_host,
+                "is_default": host == default_host,
             }
 
             if show_all:
-                host_info['apps'] = apps
-                host_info['ssh_key'] = config.get('ssh_key', 'N/A')
-                if 'metadata' in config:
-                    host_info['os'] = config['metadata'].get('os', 'N/A')
+                host_info["apps"] = apps
+                host_info["ssh_key"] = config.get("ssh_key", "N/A")
+                if "metadata" in config:
+                    host_info["os"] = config["metadata"].get("os", "N/A")
 
             host_data.append(host_info)
         except Exception as e:
-            host_data.append({
-                'name': host,
-                'host': 'ERROR',
-                'user': '',
-                'port': 0,
-                'apps_count': 0,
-                'status': str(e),
-                'is_active': False,
-                'is_default': False,
-            })
+            host_data.append(
+                {
+                    "name": host,
+                    "host": "ERROR",
+                    "user": "",
+                    "port": 0,
+                    "apps_count": 0,
+                    "status": str(e),
+                    "is_active": False,
+                    "is_default": False,
+                }
+            )
 
     # Output based on format
-    if options.get('json'):
+    if options.get("json"):
         import json
+
         ch.raw_print(
             json.dumps(
                 {
@@ -183,11 +189,13 @@ def list_hosts(options: Dict[str, Any]):
                 sort_keys=True,
             )
         )
-    elif output_format == 'json':
+    elif output_format == "json":
         import json
+
         print(json.dumps(host_data, indent=2))
-    elif output_format == 'yaml':
+    elif output_format == "yaml":
         import yaml
+
         print(yaml.dump(host_data, default_flow_style=False, sort_keys=False))
     else:  # table format
         # Create rich table with color-coded status
@@ -200,21 +208,25 @@ def list_hosts(options: Dict[str, Any]):
                     {"name": "User", "style": "blue"},
                     {"name": "Port", "style": "magenta"},
                     {"name": "Apps", "style": "yellow"},
-                    {"name": "Status", "style": "yellow"}
-                ]
+                    {"name": "Status", "style": "yellow"},
+                ],
             )
 
             for host_info in host_data:
                 # Color-code active/default hosts
-                name_style = "bold green" if host_info['is_active'] else ("bold yellow" if host_info['is_default'] else "cyan")
+                name_style = (
+                    "bold green"
+                    if host_info["is_active"]
+                    else ("bold yellow" if host_info["is_default"] else "cyan")
+                )
 
                 table.add_row(
                     f"[{name_style}]{host_info['name']}[/{name_style}]",
-                    host_info['host'],
-                    host_info['user'],
-                    str(host_info['port']),
-                    str(host_info['apps_count']),
-                    host_info['status']
+                    host_info["host"],
+                    host_info["user"],
+                    str(host_info["port"]),
+                    str(host_info["apps_count"]),
+                    host_info["status"],
                 )
         else:
             table = ch.create_table(
@@ -223,19 +235,23 @@ def list_hosts(options: Dict[str, Any]):
                     {"name": "Name", "style": "cyan"},
                     {"name": "Host", "style": "green"},
                     {"name": "User", "style": "blue"},
-                    {"name": "Status", "style": "yellow"}
-                ]
+                    {"name": "Status", "style": "yellow"},
+                ],
             )
 
             for host_info in host_data:
                 # Color-code active/default hosts
-                name_style = "bold green" if host_info['is_active'] else ("bold yellow" if host_info['is_default'] else "cyan")
+                name_style = (
+                    "bold green"
+                    if host_info["is_active"]
+                    else ("bold yellow" if host_info["is_default"] else "cyan")
+                )
 
                 table.add_row(
                     f"[{name_style}]{host_info['name']}[/{name_style}]",
-                    host_info['host'],
-                    host_info['user'],
-                    host_info['status']
+                    host_info["host"],
+                    host_info["user"],
+                    host_info["status"],
                 )
 
         ch.print_table(table)
@@ -243,28 +259,32 @@ def list_hosts(options: Dict[str, Any]):
 
 def use_host(name: str, options: Dict[str, Any]):
     """Switch active host context (global).
-    
+
     Sets the global active host in ~/.navig/cache/active_host.txt.
     This affects all terminals that don't have a project-local config.
-    
+
     Note: Project-local .navig/config.yaml takes precedence over this global setting.
     """
     if not config_manager.host_exists(name):
-        ch.error(f"Host '{name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Host '{name}' not found", "Use 'navig host list' to see available hosts."
+        )
         return
 
     config_manager.set_active_host(name)
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         ch.success(f"Switched to host: {name}")
 
         # Check if there's a local override that would take precedence
         local_navig_dir = Path.cwd() / ".navig"
         if local_navig_dir.exists() and local_navig_dir.is_dir():
             local_config = config_manager.get_local_config()
-            local_host = local_config.get('active_host')
+            local_host = local_config.get("active_host")
             if local_host and local_host != name:
-                ch.dim("💡 Note: This directory has a local override (.navig/config.yaml)")
+                ch.dim(
+                    "💡 Note: This directory has a local override (.navig/config.yaml)"
+                )
                 ch.dim(f"   Local active_host: {local_host} (takes precedence here)")
 
 
@@ -272,7 +292,7 @@ def show_current_host(options: Dict[str, Any]):
     """Show currently active host with source information."""
     active, source = config_manager.get_active_host(return_source=True)
 
-    if options.get('raw'):
+    if options.get("raw"):
         ch.raw_print(active if active else "")
         return
 
@@ -282,12 +302,12 @@ def show_current_host(options: Dict[str, Any]):
 
     # Map source to display format
     source_display = {
-        'env': '🔧 env (NAVIG_ACTIVE_HOST)',
-        'local': '📍 local (.navig/config.yaml)',
-        'legacy': '📄 legacy (.navig file)',
-        'global': '🌐 global (~/.navig/cache/)',
-        'default': '⚙️  default (from config)',
-        'none': 'none'
+        "env": "🔧 env (NAVIG_ACTIVE_HOST)",
+        "local": "📍 local (.navig/config.yaml)",
+        "legacy": "📄 legacy (.navig file)",
+        "global": "🌐 global (~/.navig/cache/)",
+        "default": "⚙️  default (from config)",
+        "none": "none",
     }
 
     try:
@@ -304,9 +324,9 @@ def set_default_host(name: str, options: Dict[str, Any]):
         ch.error(f"Host '{name}' not found")
         return
 
-    config_manager.update_global_config({'default_host': name})
+    config_manager.update_global_config({"default_host": name})
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         ch.success(f"Default host set to: {name}")
 
 
@@ -326,9 +346,7 @@ def add_host(name: str, options: Dict[str, Any]):
     user = ch.prompt_input("SSH User", default="root")
 
     auth_method = ch.prompt_choice(
-        "Authentication method",
-        ["key", "password"],
-        default="key"
+        "Authentication method", ["key", "password"], default="key"
     )
 
     ssh_key = None
@@ -345,7 +363,7 @@ def add_host(name: str, options: Dict[str, Any]):
             else:
                 ch.error("Invalid SSH key:")
                 # Print multi-line message properly
-                for line in message.split('\n'):
+                for line in message.split("\n"):
                     ch.info(f"  {line}")
                 ch.newline()
                 if not ch.confirm_action("Try a different key path?", default=True):
@@ -358,15 +376,15 @@ def add_host(name: str, options: Dict[str, Any]):
     ch.header("Host Auto-Discovery")
 
     ssh_config = {
-        'host': host,
-        'port': port,
-        'user': user,
-        'ssh_key': ssh_key,
-        'ssh_password': ssh_password,
+        "host": host,
+        "port": port,
+        "user": user,
+        "ssh_key": ssh_key,
+        "ssh_password": ssh_password,
     }
 
     # Get debug logger from options if available
-    debug_logger = options.get('debug_logger') if options else None
+    debug_logger = options.get("debug_logger") if options else None
     ServerDiscovery = _get_server_discovery()
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
@@ -391,7 +409,9 @@ def add_host(name: str, options: Dict[str, Any]):
         ch.success("✓ Connection successful\n")
 
         # Run auto-discovery (skip web root - that's app-specific)
-        if ch.confirm_action("Run auto-discovery to detect host configuration?", default=True):
+        if ch.confirm_action(
+            "Run auto-discovery to detect host configuration?", default=True
+        ):
             discovered = discovery.discover_all(progress=True, skip_web_root=True)
         else:
             discovered = {}
@@ -400,32 +420,34 @@ def add_host(name: str, options: Dict[str, Any]):
     ch.header("Database Configuration")
 
     # Get discovered database info
-    discovered_dbs = discovered.get('databases', [])
+    discovered_dbs = discovered.get("databases", [])
     if discovered_dbs:
         db_default = discovered_dbs[0]
-        db_type = db_default['type']
-        db_port = db_default['port']
-        db_version = db_default.get('version', 'Unknown')
+        db_type = db_default["type"]
+        db_port = db_default["port"]
+        db_version = db_default.get("version", "Unknown")
 
         ch.success(f"Detected {db_type.upper()} {db_version} on port {db_port}")
 
         # Check if root credentials were auto-detected
-        root_user = db_default.get('root_user', 'root')
-        root_password = db_default.get('root_password')
+        root_user = db_default.get("root_user", "root")
+        root_password = db_default.get("root_password")
 
-        if root_password and root_password != '<encrypted>':
+        if root_password and root_password != "<encrypted>":
             ch.success(f"Auto-detected root credentials for user '{root_user}'")
             ch.dim("Root credentials will be stored for server management tasks.")
 
             # Ask if user wants to use auto-detected credentials
-            use_auto_creds = ch.confirm_action("Use auto-detected root credentials?", default=True)
+            use_auto_creds = ch.confirm_action(
+                "Use auto-detected root credentials?", default=True
+            )
             if not use_auto_creds:
                 root_user = ch.prompt_input("Database Root User", default=root_user)
                 root_password = ch.prompt_input("Database Root Password", password=True)
-        elif root_password == '<encrypted>':
+        elif root_password == "<encrypted>":
             ch.warning("Root credentials are encrypted in mysql_config_editor")
             ch.dim("You can use mysql commands without password on the server.")
-            root_user = db_default.get('root_user', 'root')
+            root_user = db_default.get("root_user", "root")
             root_password = None  # Will use mysql_config_editor
         else:
             ch.warning("Could not auto-detect root credentials")
@@ -452,11 +474,11 @@ def add_host(name: str, options: Dict[str, Any]):
 
     # Store root credentials at host level (for server management)
     database = {
-        'type': db_type,
-        'remote_port': db_port,
-        'local_tunnel_port': 3307,
-        'root_user': root_user,
-        'root_password': root_password,
+        "type": db_type,
+        "remote_port": db_port,
+        "local_tunnel_port": 3307,
+        "root_user": root_user,
+        "root_password": root_password,
     }
 
     # Step 4: Server Paths (host-level only, no web root)
@@ -464,54 +486,54 @@ def add_host(name: str, options: Dict[str, Any]):
     ch.dim("Note: Web root is app-specific and will be configured when adding apps.\n")
 
     paths = {
-        'logs': '',
-        'php_config': '',
-        'nginx_config': '',
+        "logs": "",
+        "php_config": "",
+        "nginx_config": "",
     }
 
     # Get log paths from discovery
-    log_paths = discovered.get('log_paths', [])
+    log_paths = discovered.get("log_paths", [])
     if log_paths:
-        paths['logs'] = log_paths[0]  # Use first detected log path
+        paths["logs"] = log_paths[0]  # Use first detected log path
         ch.success(f"Detected log directory: {paths['logs']}")
 
     # Get PHP config path from discovery
-    php_info = discovered.get('php_info', {})
-    if php_info.get('config_path'):
-        paths['php_config'] = php_info['config_path']
+    php_info = discovered.get("php_info", {})
+    if php_info.get("config_path"):
+        paths["php_config"] = php_info["config_path"]
         ch.success(f"Detected PHP config: {paths['php_config']}")
 
     # Get Nginx config from discovery
-    web_servers = discovered.get('web_servers', [])
+    web_servers = discovered.get("web_servers", [])
     for ws in web_servers:
-        if ws['type'] == 'nginx' and 'sites_path' in ws:
-            paths['nginx_config'] = ws['sites_path']
+        if ws["type"] == "nginx" and "sites_path" in ws:
+            paths["nginx_config"] = ws["sites_path"]
             ch.success(f"Detected Nginx config: {paths['nginx_config']}")
 
     # Step 5: Services (with smart defaults from discovery)
     services = {
-        'web': 'nginx',
-        'php': 'php-fpm',
-        'database': 'mysql',
-        'cache': 'redis-server',
+        "web": "nginx",
+        "php": "php-fpm",
+        "database": "mysql",
+        "cache": "redis-server",
     }
 
     # Update services from discovery
     if web_servers:
-        services['web'] = web_servers[0]['type']
+        services["web"] = web_servers[0]["type"]
 
     if discovered_dbs:
-        services['database'] = discovered_dbs[0].get('service_name', 'mysql')
+        services["database"] = discovered_dbs[0].get("service_name", "mysql")
 
-    if php_info.get('fpm_service'):
-        services['php'] = php_info['fpm_service']
+    if php_info.get("fpm_service"):
+        services["php"] = php_info["fpm_service"]
 
     # Step 6: Metadata
     metadata = {
-        'os': discovered.get('os', ''),
-        'php_version': php_info.get('version', '') if php_info else '',
-        'mysql_version': discovered_dbs[0].get('version', '') if discovered_dbs else '',
-        'last_inspected': None,
+        "os": discovered.get("os", ""),
+        "php_version": php_info.get("version", "") if php_info else "",
+        "mysql_version": discovered_dbs[0].get("version", "") if discovered_dbs else "",
+        "last_inspected": None,
     }
 
     # Create host config
@@ -528,7 +550,7 @@ def add_host(name: str, options: Dict[str, Any]):
     )
 
     # Update metadata
-    config['metadata'].update(metadata)
+    config["metadata"].update(metadata)
 
     # Save host configuration using the correct method (saves to hosts/ directory)
     try:
@@ -544,11 +566,13 @@ def add_host(name: str, options: Dict[str, Any]):
     ch.console.print(f"[green]Host: {host}:{port}[/green]")
     ch.console.print(f"[green]User: {user}[/green]")
     ch.console.print(f"[green]OS: {metadata['os']}[/green]")
-    if metadata['php_version']:
+    if metadata["php_version"]:
         ch.console.print(f"[green]PHP: {metadata['php_version']}[/green]")
-    if metadata['mysql_version']:
-        ch.console.print(f"[green]Database: {db_type} {metadata['mysql_version']}[/green]")
-    if paths.get('web_root'):
+    if metadata["mysql_version"]:
+        ch.console.print(
+            f"[green]Database: {db_type} {metadata['mysql_version']}[/green]"
+        )
+    if paths.get("web_root"):
         ch.console.print(f"[green]Web Root: {paths['web_root']}[/green]")
 
     # Ask if they want to make it active
@@ -560,14 +584,14 @@ def add_host(name: str, options: Dict[str, Any]):
 
 def remove_host(name: str, options: Dict[str, Any]):
     """Remove host configuration."""
-    quiet = options.get('quiet', False)
+    quiet = options.get("quiet", False)
 
     if not config_manager.host_exists(name):
         if not quiet:
             ch.error(f"Host '{name}' not found.")
         return
 
-    if not options.get('yes'):
+    if not options.get("yes"):
         if not ch.confirm_action(f"Are you sure you want to remove host '{name}'?"):
             ch.warning("Cancelled.")
             return
@@ -596,7 +620,7 @@ def inspect_host(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     from navig.server_template_manager import ServerTemplateManager
 
-    silent = options.get('silent', False)  # Don't print output if True
+    silent = options.get("silent", False)  # Don't print output if True
 
     active = config_manager.get_active_host()
     if not active:
@@ -617,15 +641,15 @@ def inspect_host(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     # Run discovery
     ssh_config = {
-        'host': host_config['host'],
-        'port': host_config.get('port', 22),
-        'user': host_config['user'],
-        'ssh_key': host_config.get('ssh_key'),
-        'ssh_password': host_config.get('ssh_password'),
+        "host": host_config["host"],
+        "port": host_config.get("port", 22),
+        "user": host_config["user"],
+        "ssh_key": host_config.get("ssh_key"),
+        "ssh_password": host_config.get("ssh_password"),
     }
 
     # Get debug logger from options if available
-    debug_logger = options.get('debug_logger') if options else None
+    debug_logger = options.get("debug_logger") if options else None
     ServerDiscovery = _get_server_discovery()
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
@@ -648,62 +672,62 @@ def inspect_host(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     # Update host configuration with discovered info
     updates = {
-        'metadata': {
-            'os': discovered.get('os', host_config.get('metadata', {}).get('os', '')),
-            'kernel': discovered.get('kernel', ''),
-            'php_version': discovered.get('version', ''),  # PHP version is flat key
-            'mysql_version': '',
+        "metadata": {
+            "os": discovered.get("os", host_config.get("metadata", {}).get("os", "")),
+            "kernel": discovered.get("kernel", ""),
+            "php_version": discovered.get("version", ""),  # PHP version is flat key
+            "mysql_version": "",
         }
     }
 
     # Update database info
-    discovered_dbs = discovered.get('databases', [])
+    discovered_dbs = discovered.get("databases", [])
     if discovered_dbs:
         db = discovered_dbs[0]
-        if 'database' in host_config:
-            host_config['database']['type'] = db['type']
-            host_config['database']['remote_port'] = db['port']
-        updates['metadata']['mysql_version'] = db.get('version', '')
+        if "database" in host_config:
+            host_config["database"]["type"] = db["type"]
+            host_config["database"]["remote_port"] = db["port"]
+        updates["metadata"]["mysql_version"] = db.get("version", "")
 
     # Update PHP services and paths
-    if discovered.get('fpm_service'):
-        if 'services' not in host_config:
-            host_config['services'] = {}
-        host_config['services']['php'] = discovered['fpm_service']
-    if discovered.get('config_path'):
-        if 'paths' not in host_config:
-            host_config['paths'] = {}
-        host_config['paths']['php_config'] = discovered['config_path']
+    if discovered.get("fpm_service"):
+        if "services" not in host_config:
+            host_config["services"] = {}
+        host_config["services"]["php"] = discovered["fpm_service"]
+    if discovered.get("config_path"):
+        if "paths" not in host_config:
+            host_config["paths"] = {}
+        host_config["paths"]["php_config"] = discovered["config_path"]
 
     # Update web server info
-    web_servers = discovered.get('web_servers', [])
+    web_servers = discovered.get("web_servers", [])
     if web_servers:
         ws = web_servers[0]
-        if 'services' not in host_config:
-            host_config['services'] = {}
-        host_config['services']['web'] = ws['type']
+        if "services" not in host_config:
+            host_config["services"] = {}
+        host_config["services"]["web"] = ws["type"]
 
-        if ws['type'] == 'nginx' and 'sites_path' in ws:
-            if 'paths' not in host_config:
-                host_config['paths'] = {}
-            host_config['paths']['nginx_config'] = ws['sites_path']
+        if ws["type"] == "nginx" and "sites_path" in ws:
+            if "paths" not in host_config:
+                host_config["paths"] = {}
+            host_config["paths"]["nginx_config"] = ws["sites_path"]
 
     # Update paths
-    if discovered.get('web_root'):
-        if 'paths' not in host_config:
-            host_config['paths'] = {}
-        if not host_config['paths'].get('web_root'):
-            host_config['paths']['web_root'] = discovered['web_root']
+    if discovered.get("web_root"):
+        if "paths" not in host_config:
+            host_config["paths"] = {}
+        if not host_config["paths"].get("web_root"):
+            host_config["paths"]["web_root"] = discovered["web_root"]
 
-    log_paths = discovered.get('log_paths', [])
+    log_paths = discovered.get("log_paths", [])
     if log_paths:
-        if 'paths' not in host_config:
-            host_config['paths'] = {}
-        if not host_config['paths'].get('logs'):
-            host_config['paths']['logs'] = log_paths[0]
+        if "paths" not in host_config:
+            host_config["paths"] = {}
+        if not host_config["paths"].get("logs"):
+            host_config["paths"]["logs"] = log_paths[0]
 
     # Save updated configuration
-    config_manager.update_host_metadata(active, updates['metadata'])
+    config_manager.update_host_metadata(active, updates["metadata"])
 
     # Initialize detected templates
     if detected_templates and not silent:
@@ -715,18 +739,18 @@ def inspect_host(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         ch.success(f"✓ Host '{active}' configuration updated\n")
         ch.header("Updated Information")
         ch.info(f"OS: {updates['metadata']['os']}", style="green")
-        if updates['metadata']['php_version']:
+        if updates["metadata"]["php_version"]:
             ch.info(f"PHP: {updates['metadata']['php_version']}", style="green")
-        if updates['metadata']['mysql_version']:
+        if updates["metadata"]["mysql_version"]:
             ch.info(f"Database: {updates['metadata']['mysql_version']}", style="green")
         if detected_templates:
             ch.info(f"Templates: {', '.join(detected_templates.keys())}", style="cyan")
 
     # Return discovery results for silent mode (used by interactive menu)
     return {
-        'discovered': discovered,
-        'detected_templates': detected_templates,
-        'updates': updates
+        "discovered": discovered,
+        "detected_templates": detected_templates,
+        "updates": updates,
     }
 
 
@@ -735,7 +759,7 @@ def edit_host(options: Dict[str, Any]) -> None:
     import os
     import subprocess
 
-    host_name = options.get('host_name')
+    host_name = options.get("host_name")
 
     if not host_name:
         ch.error("Host name is required")
@@ -743,7 +767,10 @@ def edit_host(options: Dict[str, Any]) -> None:
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
-        ch.error(f"Host '{host_name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Host '{host_name}' not found",
+            "Use 'navig host list' to see available hosts.",
+        )
         return
 
     # Get host config file path
@@ -758,23 +785,23 @@ def edit_host(options: Dict[str, Any]) -> None:
             return
 
     # Determine editor
-    editor = os.environ.get('EDITOR') or os.environ.get('VISUAL')
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
 
     if not editor:
         # Use platform-specific defaults
         system = platform.system()
-        if system == 'Windows':
-            editor = 'notepad'
-        elif system == 'Darwin':  # macOS
-            editor = 'open -e'
+        if system == "Windows":
+            editor = "notepad"
+        elif system == "Darwin":  # macOS
+            editor = "open -e"
         else:  # Linux
-            editor = 'nano'
+            editor = "nano"
 
     ch.info(f"Opening {host_file} in {editor}...")
 
     try:
         # Open editor - use shlex.split for safe argument parsing
-        if platform.system() == 'Windows' and editor == 'notepad':
+        if platform.system() == "Windows" and editor == "notepad":
             subprocess.run([editor, str(host_file)], check=True)
         else:
             # Safely split editor command and add file path
@@ -792,8 +819,8 @@ def edit_host(options: Dict[str, Any]) -> None:
 
 def clone_host(options: Dict[str, Any]) -> None:
     """Clone an existing host configuration."""
-    source_name = options.get('source_name')
-    new_name = options.get('new_name')
+    source_name = options.get("source_name")
+    new_name = options.get("new_name")
 
     if not source_name or not new_name:
         ch.error("Both source and new host names are required")
@@ -801,7 +828,10 @@ def clone_host(options: Dict[str, Any]) -> None:
 
     # Verify source exists
     if not config_manager.host_exists(source_name):
-        ch.error(f"Source host '{source_name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Source host '{source_name}' not found",
+            "Use 'navig host list' to see available hosts.",
+        )
         return
 
     # Verify new name doesn't exist
@@ -817,30 +847,30 @@ def clone_host(options: Dict[str, Any]) -> None:
         return
 
     # Update name in cloned config
-    source_config['name'] = new_name
+    source_config["name"] = new_name
 
     # Prompt for new host details
     ch.info(f"Cloning host '{source_name}' to '{new_name}'")
     ch.dim("Update the following fields (press Enter to keep current value):\n")
 
     # Prompt for host
-    current_host = source_config.get('host', '')
+    current_host = source_config.get("host", "")
     new_host = ch.prompt_input(f"Host [{current_host}]")
     if new_host:
-        source_config['host'] = new_host
+        source_config["host"] = new_host
 
     # Prompt for user
-    current_user = source_config.get('user', '')
+    current_user = source_config.get("user", "")
     new_user = ch.prompt_input(f"User [{current_user}]")
     if new_user:
-        source_config['user'] = new_user
+        source_config["user"] = new_user
 
     # Prompt for port
-    current_port = source_config.get('port', 22)
+    current_port = source_config.get("port", 22)
     new_port_str = ch.prompt_input(f"Port [{current_port}]")
     if new_port_str:
         try:
-            source_config['port'] = int(new_port_str)
+            source_config["port"] = int(new_port_str)
         except ValueError:
             ch.warning(f"Invalid port number, keeping {current_port}")
 
@@ -866,9 +896,9 @@ def test_host(options: Dict[str, Any]) -> None:
     """
     import subprocess
 
-    host_name = options.get('host_name')
-    verbose = options.get('verbose', False)
-    silent = options.get('silent', False)  # Don't print output if True
+    host_name = options.get("host_name")
+    verbose = options.get("verbose", False)
+    silent = options.get("silent", False)  # Don't print output if True
 
     if not host_name:
         # Use active host if not specified
@@ -880,7 +910,10 @@ def test_host(options: Dict[str, Any]) -> None:
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
-        ch.error(f"Host '{host_name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Host '{host_name}' not found",
+            "Use 'navig host list' to see available hosts.",
+        )
         raise RuntimeError(f"Host '{host_name}' not found")
 
     # Load host configuration
@@ -902,14 +935,22 @@ def test_host(options: Dict[str, Any]) -> None:
     # so ssh.exe (64-bit) must be found via SysNative alias.
     import pathlib
     import shutil
-    ssh_binary = shutil.which('ssh') or shutil.which('ssh.exe')
+
+    ssh_binary = shutil.which("ssh") or shutil.which("ssh.exe")
     if ssh_binary is None:
-        _sysroot = os.environ.get('SystemRoot', 'C:/Windows')
+        _sysroot = os.environ.get("SystemRoot", "C:/Windows")
         for _candidate in [
-            pathlib.Path(_sysroot) / 'SysNative' / 'OpenSSH' / 'ssh.exe',   # 32-bit process on 64-bit OS
-            pathlib.Path(_sysroot) / 'System32' / 'OpenSSH' / 'ssh.exe',    # native path
-            pathlib.Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'OpenSSH' / 'ssh.exe',
-            pathlib.Path(os.environ.get('ProgramFiles(x86)', '')) / 'OpenSSH' / 'ssh.exe',
+            pathlib.Path(_sysroot)
+            / "SysNative"
+            / "OpenSSH"
+            / "ssh.exe",  # 32-bit process on 64-bit OS
+            pathlib.Path(_sysroot) / "System32" / "OpenSSH" / "ssh.exe",  # native path
+            pathlib.Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+            / "OpenSSH"
+            / "ssh.exe",
+            pathlib.Path(os.environ.get("ProgramFiles(x86)", ""))
+            / "OpenSSH"
+            / "ssh.exe",
         ]:
             if _candidate.exists():
                 ssh_binary = str(_candidate)
@@ -919,17 +960,20 @@ def test_host(options: Dict[str, Any]) -> None:
         raise RuntimeError("SSH client not found")
     ssh_cmd = [
         ssh_binary,
-        '-o', 'ConnectTimeout=10',
-        '-o', 'BatchMode=yes',
-        '-p', str(host_config.get('port', 22)),
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "-p",
+        str(host_config.get("port", 22)),
     ]
 
     # Add verbose flag if requested
     if verbose:
-        ssh_cmd.append('-v')
+        ssh_cmd.append("-v")
 
     # Add SSH key if specified
-    ssh_key = host_config.get('ssh_key')
+    ssh_key = host_config.get("ssh_key")
     if ssh_key:
         ssh_key_path = os.path.expanduser(ssh_key)
         if verbose and not silent:
@@ -940,7 +984,7 @@ def test_host(options: Dict[str, Any]) -> None:
             ch.error("SSH key file not found", ssh_key_path)
             raise RuntimeError(f"SSH key file not found: {ssh_key_path}")
 
-        ssh_cmd.extend(['-i', ssh_key_path])
+        ssh_cmd.extend(["-i", ssh_key_path])
     else:
         if verbose:
             ch.dim("No SSH key configured (will use default keys)")
@@ -955,12 +999,7 @@ def test_host(options: Dict[str, Any]) -> None:
         ch.dim(f"\nSSH Command: {' '.join(ssh_cmd)}\n")
 
     try:
-        result = subprocess.run(
-            ssh_cmd,
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
+        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
 
         if result.returncode == 0:
             if not silent:
@@ -978,10 +1017,16 @@ def test_host(options: Dict[str, Any]) -> None:
                     if ssh_key:
                         ch.dim("  • Verify the SSH key is authorized on the server")
                         ch.dim("  • Check ~/.ssh/authorized_keys on the server")
-                        ch.dim(f"  • Ensure key file has correct permissions: {ssh_key_path}")
+                        ch.dim(
+                            f"  • Ensure key file has correct permissions: {ssh_key_path}"
+                        )
                     else:
-                        ch.dim("  • No SSH key configured - add one with 'navig host edit'")
-                        ch.dim("  • Or ensure password authentication is enabled on server")
+                        ch.dim(
+                            "  • No SSH key configured - add one with 'navig host edit'"
+                        )
+                        ch.dim(
+                            "  • Or ensure password authentication is enabled on server"
+                        )
                 elif "Connection refused" in error_msg:
                     ch.dim("\n💡 SSH service may not be running on the server")
                 elif "No route to host" in error_msg:
@@ -990,7 +1035,9 @@ def test_host(options: Dict[str, Any]) -> None:
             raise RuntimeError(f"SSH connection failed: {error_msg}")
 
     except subprocess.TimeoutExpired as _exc:
-        ch.error("Connection timeout", "Host may be unreachable or SSH service not running.")
+        ch.error(
+            "Connection timeout", "Host may be unreachable or SSH service not running."
+        )
         raise RuntimeError("Connection timeout") from _exc
     except FileNotFoundError as _exc:
         ch.error("SSH client not found", "Please install OpenSSH client.")
@@ -1010,8 +1057,8 @@ def info_host(options: Dict[str, Any]) -> None:
     """Show detailed host information (IP, port, user, apps count, etc.)."""
     from rich.console import Console
 
-    host_name = options.get('host_name')
-    json_output = options.get('json', False)
+    host_name = options.get("host_name")
+    json_output = options.get("json", False)
 
     if not host_name:
         # Use active host if not specified
@@ -1023,7 +1070,10 @@ def info_host(options: Dict[str, Any]) -> None:
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
-        ch.error(f"Host '{host_name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Host '{host_name}' not found",
+            "Use 'navig host list' to see available hosts.",
+        )
         return
 
     # Load host configuration
@@ -1035,30 +1085,31 @@ def info_host(options: Dict[str, Any]) -> None:
 
     # Get additional info
     active_host = config_manager.get_active_host()
-    default_host = config_manager.global_config.get('default_host')
+    default_host = config_manager.global_config.get("default_host")
     apps = config_manager.list_apps(host_name)
 
     # Build info dictionary
     info = {
-        'name': host_name,
-        'host': host_config.get('host'),
-        'port': host_config.get('port', 22),
-        'user': host_config.get('user'),
-        'ssh_key': host_config.get('ssh_key'),
-        'default_app': host_config.get('default_app'),
-        'apps_count': len(apps),
-        'apps': apps,
-        'is_active': host_name == active_host,
-        'is_default': host_name == default_host,
+        "name": host_name,
+        "host": host_config.get("host"),
+        "port": host_config.get("port", 22),
+        "user": host_config.get("user"),
+        "ssh_key": host_config.get("ssh_key"),
+        "default_app": host_config.get("default_app"),
+        "apps_count": len(apps),
+        "apps": apps,
+        "is_active": host_name == active_host,
+        "is_default": host_name == default_host,
     }
 
     # Add metadata if available
-    if 'metadata' in host_config:
-        info['metadata'] = host_config['metadata']
+    if "metadata" in host_config:
+        info["metadata"] = host_config["metadata"]
 
     # Output format
     if json_output:
         import json
+
         ch.raw_print(
             json.dumps(
                 {
@@ -1082,16 +1133,16 @@ def info_host(options: Dict[str, Any]) -> None:
         ch.info(f"  Host:     {info['host']}")
         ch.info(f"  Port:     {info['port']}")
         ch.info(f"  User:     {info['user']}")
-        if info['ssh_key']:
+        if info["ssh_key"]:
             ch.info(f"  SSH Key:  {info['ssh_key']}")
         ch.newline()
 
         # Status
         ch.subheader("Status")
         status_items = []
-        if info['is_active']:
+        if info["is_active"]:
             status_items.append("✓ Active")
-        if info['is_default']:
+        if info["is_default"]:
             status_items.append("★ Default")
         if status_items:
             ch.info(f"  {', '.join(status_items)}")
@@ -1103,7 +1154,7 @@ def info_host(options: Dict[str, Any]) -> None:
         ch.subheader(f"Apps ({info['apps_count']})")
         if apps:
             for app in apps:
-                is_default = app == info['default_app']
+                is_default = app == info["default_app"]
                 marker = "★ " if is_default else "  "
                 ch.info(f"{marker}{app}")
         else:
@@ -1111,14 +1162,14 @@ def info_host(options: Dict[str, Any]) -> None:
         ch.newline()
 
         # Metadata
-        if 'metadata' in info:
+        if "metadata" in info:
             ch.subheader("System Information")
-            metadata = info['metadata']
-            if 'os' in metadata:
+            metadata = info["metadata"]
+            if "os" in metadata:
                 ch.info(f"  OS:       {metadata['os']}")
-            if 'php_version' in metadata:
+            if "php_version" in metadata:
                 ch.info(f"  PHP:      {metadata['php_version']}")
-            if 'mysql_version' in metadata:
+            if "mysql_version" in metadata:
                 ch.info(f"  Database: {metadata['mysql_version']}")
             ch.newline()
 
@@ -1128,9 +1179,6 @@ def info_host(options: Dict[str, Any]) -> None:
             host_file = config_manager.apps_dir / f"{host_name}.yaml"
 
         ch.dim(f"Configuration: {host_file}")
-
-
-
 
 
 from typing import Any, Dict, Optional
@@ -1162,15 +1210,20 @@ def host_callback(ctx: typer.Context):
 def host_list(
     ctx: typer.Context,
     all: bool = typer.Option(False, "--all", "-a", help="Show detailed information"),
-    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, yaml"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one host per line) for scripting"),
+    format: str = typer.Option(
+        "table", "--format", "-f", help="Output format: table, json, yaml"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one host per line) for scripting"
+    ),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """List all configured hosts."""
     from navig.commands.host import list_hosts
-    ctx.obj['all'] = all
-    ctx.obj['format'] = "json" if json else format
-    ctx.obj['plain'] = plain
+
+    ctx.obj["all"] = all
+    ctx.obj["format"] = "json" if json else format
+    ctx.obj["plain"] = plain
     if json:
         ctx.obj["json"] = True
     list_hosts(ctx.obj)
@@ -1180,10 +1233,13 @@ def host_list(
 def host_use(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Host name to activate"),
-    default: bool = typer.Option(False, "--default", "-d", help="Also set as default host"),
+    default: bool = typer.Option(
+        False, "--default", "-d", help="Also set as default host"
+    ),
 ):
     """Switch active host context (global)."""
     from navig.commands.host import set_default_host, use_host
+
     use_host(name, ctx.obj)
     if default:
         set_default_host(name, ctx.obj)
@@ -1194,6 +1250,7 @@ def host_current(ctx: typer.Context):
     """[DEPRECATED: Use 'navig host show --current'] Show currently active host."""
     deprecation_warning("navig host current", "navig host show --current")
     from navig.commands.host import show_current_host
+
     show_current_host(ctx.obj)
 
 
@@ -1205,6 +1262,7 @@ def host_default(
     """[DEPRECATED: Use 'navig host use --default'] Set default host."""
     deprecation_warning("navig host default", "navig host use <name> --default")
     from navig.commands.host import set_default_host
+
     set_default_host(name, ctx.obj)
 
 
@@ -1212,16 +1270,20 @@ def host_default(
 def host_add(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Host name"),
-    from_host: Optional[str] = typer.Option(None, "--from", help="Clone from existing host"),
+    from_host: Optional[str] = typer.Option(
+        None, "--from", help="Clone from existing host"
+    ),
 ):
     """Add new host configuration (interactive wizard or clone)."""
     if from_host:
         from navig.commands.host import clone_host
-        ctx.obj['source_name'] = from_host
-        ctx.obj['new_name'] = name
+
+        ctx.obj["source_name"] = from_host
+        ctx.obj["new_name"] = name
         clone_host(ctx.obj)
     else:
         from navig.commands.host import add_host
+
         add_host(name, ctx.obj)
 
 
@@ -1234,39 +1296,47 @@ def host_clone(
     """[DEPRECATED: Use 'navig host add <name> --from <source>'] Clone host."""
     deprecation_warning("navig host clone", "navig host add <name> --from <source>")
     from navig.commands.host import clone_host
-    ctx.obj['source_name'] = source
-    ctx.obj['new_name'] = new_name
+
+    ctx.obj["source_name"] = source
+    ctx.obj["new_name"] = new_name
     clone_host(ctx.obj)
 
 
 @host_app.command("discover-local")
 def host_discover_local(
     ctx: typer.Context,
-    name: str = typer.Option("localhost", "--name", "-n", help="Name for the local host configuration"),
-    auto_confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
-    no_active: bool = typer.Option(False, "--no-active", help="Don't set as active host"),
+    name: str = typer.Option(
+        "localhost", "--name", "-n", help="Name for the local host configuration"
+    ),
+    auto_confirm: bool = typer.Option(
+        False, "--yes", "-y", help="Skip confirmation prompts"
+    ),
+    no_active: bool = typer.Option(
+        False, "--no-active", help="Don't set as active host"
+    ),
 ):
     """
     Discover and configure local development environment.
-    
-    Automatically detects OS, databases, web servers, PHP, Node.js, 
+
+    Automatically detects OS, databases, web servers, PHP, Node.js,
     Docker, and other tools installed on your local machine.
-    
+
     Creates a 'localhost' host configuration that can be used for
     local development without SSH.
-    
+
     Examples:
         navig host discover-local
         navig host discover-local --name my-dev
         navig host discover-local --yes --no-active
     """
     from navig.commands.local_discovery import discover_local_host
+
     discover_local_host(
         name=name,
-        auto_confirm=auto_confirm or ctx.obj.get('yes', False),
+        auto_confirm=auto_confirm or ctx.obj.get("yes", False),
         set_active=not no_active,
         progress=True,
-        no_cache=bool(ctx.obj.get('no_cache')),
+        no_cache=bool(ctx.obj.get("no_cache")),
     )
 
 
@@ -1275,25 +1345,31 @@ def host_inspect(ctx: typer.Context):
     """[DEPRECATED: Use 'navig host show --inspect'] Auto-discover host details."""
     deprecation_warning("navig host inspect", "navig host show --inspect")
     from navig.commands.host import inspect_host
+
     inspect_host(ctx.obj)
 
 
 @host_app.command("test")
 def host_test(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(None, help="Host name to test (uses active host if not specified)"),
+    name: Optional[str] = typer.Argument(
+        None, help="Host name to test (uses active host if not specified)"
+    ),
 ):
     """Test SSH connection to host."""
     from navig.commands.host import test_host
+
     if name:
-        ctx.obj['host_name'] = name
+        ctx.obj["host_name"] = name
     test_host(ctx.obj)
 
 
 @host_app.command("show")
 def host_show(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(None, help="Host name (uses active if omitted)"),
+    name: Optional[str] = typer.Argument(
+        None, help="Host name (uses active if omitted)"
+    ),
     current: bool = typer.Option(False, "--current", help="Show currently active host"),
     inspect: bool = typer.Option(False, "--inspect", help="Auto-discover host details"),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
@@ -1303,27 +1379,33 @@ def host_show(
         ctx.obj["json"] = True
     if current:
         from navig.commands.host import show_current_host
+
         show_current_host(ctx.obj)
     elif inspect:
         from navig.commands.host import inspect_host
+
         inspect_host(ctx.obj)
     else:
         from navig.commands.host import info_host
+
         if name:
-            ctx.obj['host_name'] = name
+            ctx.obj["host_name"] = name
         info_host(ctx.obj)
 
 
 @host_app.command("info", hidden=True)
 def host_info(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(None, help="Host name to show info for (uses active host if not specified)"),
+    name: Optional[str] = typer.Argument(
+        None, help="Host name to show info for (uses active host if not specified)"
+    ),
 ):
     """[DEPRECATED: Use 'navig host show'] Show detailed host information."""
     deprecation_warning("navig host info", "navig host show")
     from navig.commands.host import info_host
+
     if name:
-        ctx.obj['host_name'] = name
+        ctx.obj["host_name"] = name
     info_host(ctx.obj)
 
 
@@ -1345,6 +1427,7 @@ def host_monitor_callback(ctx: typer.Context):
     """Host monitoring - run without subcommand for health overview."""
     if ctx.invoked_subcommand is None:
         from navig.commands.monitoring import health_check
+
         health_check(ctx.obj)
         raise typer.Exit()
 
@@ -1352,27 +1435,38 @@ def host_monitor_callback(ctx: typer.Context):
 @host_monitor_app.command("show")
 def host_monitor_show(
     ctx: typer.Context,
-    resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
+    resources: bool = typer.Option(
+        False, "--resources", "-r", help="Show resource usage"
+    ),
     disk: bool = typer.Option(False, "--disk", "-d", help="Show disk space"),
-    services: bool = typer.Option(False, "--services", "-s", help="Show service status"),
+    services: bool = typer.Option(
+        False, "--services", "-s", help="Show service status"
+    ),
     network: bool = typer.Option(False, "--network", "-n", help="Show network stats"),
-    threshold: int = typer.Option(80, "--threshold", "-t", help="Alert threshold percentage"),
+    threshold: int = typer.Option(
+        80, "--threshold", "-t", help="Alert threshold percentage"
+    ),
 ):
     """Show monitoring information."""
     if resources:
         from navig.commands.monitoring import monitor_resources
+
         monitor_resources(ctx.obj)
     elif disk:
         from navig.commands.monitoring import monitor_disk
+
         monitor_disk(threshold, ctx.obj)
     elif services:
         from navig.commands.monitoring import monitor_services
+
         monitor_services(ctx.obj)
     elif network:
         from navig.commands.monitoring import monitor_network
+
         monitor_network(ctx.obj)
     else:
         from navig.commands.monitoring import health_check
+
         health_check(ctx.obj)
 
 
@@ -1380,6 +1474,7 @@ def host_monitor_show(
 def host_monitor_report(ctx: typer.Context):
     """Generate comprehensive monitoring report."""
     from navig.commands.monitoring import generate_report
+
     generate_report(ctx.obj)
 
 
@@ -1397,6 +1492,7 @@ def host_security_callback(ctx: typer.Context):
     """Host security - run without subcommand for security scan."""
     if ctx.invoked_subcommand is None:
         from navig.commands.security import security_scan
+
         security_scan(ctx.obj)
         raise typer.Exit()
 
@@ -1404,37 +1500,53 @@ def host_security_callback(ctx: typer.Context):
 @host_security_app.command("show")
 def host_security_show(
     ctx: typer.Context,
-    firewall: bool = typer.Option(False, "--firewall", "-f", help="Show firewall status"),
-    fail2ban: bool = typer.Option(False, "--fail2ban", "-b", help="Show fail2ban status"),
+    firewall: bool = typer.Option(
+        False, "--firewall", "-f", help="Show firewall status"
+    ),
+    fail2ban: bool = typer.Option(
+        False, "--fail2ban", "-b", help="Show fail2ban status"
+    ),
     ssh: bool = typer.Option(False, "--ssh", "-s", help="Show SSH audit"),
-    updates: bool = typer.Option(False, "--updates", "-u", help="Show security updates"),
-    connections: bool = typer.Option(False, "--connections", "-c", help="Show network connections"),
+    updates: bool = typer.Option(
+        False, "--updates", "-u", help="Show security updates"
+    ),
+    connections: bool = typer.Option(
+        False, "--connections", "-c", help="Show network connections"
+    ),
 ):
     """Show security information."""
     if firewall:
         from navig.commands.security import firewall_status
+
         firewall_status(ctx.obj)
     elif fail2ban:
         from navig.commands.security import fail2ban_status
+
         fail2ban_status(ctx.obj)
     elif ssh:
         from navig.commands.security import ssh_audit
+
         ssh_audit(ctx.obj)
     elif updates:
         from navig.commands.security import check_security_updates
+
         check_security_updates(ctx.obj)
     elif connections:
         from navig.commands.security import audit_connections
+
         audit_connections(ctx.obj)
     else:
         from navig.commands.security import security_scan
+
         security_scan(ctx.obj)
 
 
 @host_security_app.command("edit")
 def host_security_edit(
     ctx: typer.Context,
-    firewall: bool = typer.Option(False, "--firewall", "-f", help="Edit firewall rules"),
+    firewall: bool = typer.Option(
+        False, "--firewall", "-f", help="Edit firewall rules"
+    ),
     port: Optional[int] = typer.Option(None, "--port", "-p", help="Port number"),
     protocol: str = typer.Option("tcp", "--protocol", help="Protocol (tcp/udp)"),
     allow_from: str = typer.Option("any", "--from", help="IP address or subnet"),
@@ -1442,25 +1554,34 @@ def host_security_edit(
     remove: bool = typer.Option(False, "--remove", "-r", help="Remove a rule"),
     enable: bool = typer.Option(False, "--enable", help="Enable firewall"),
     disable: bool = typer.Option(False, "--disable", help="Disable firewall"),
-    unban: Optional[str] = typer.Option(None, "--unban", help="Unban IP address from fail2ban"),
-    jail: Optional[str] = typer.Option(None, "--jail", "-j", help="Jail name for fail2ban"),
+    unban: Optional[str] = typer.Option(
+        None, "--unban", help="Unban IP address from fail2ban"
+    ),
+    jail: Optional[str] = typer.Option(
+        None, "--jail", "-j", help="Jail name for fail2ban"
+    ),
 ):
     """Edit security settings."""
     if firewall:
         if enable:
             from navig.commands.security import firewall_enable
+
             firewall_enable(ctx.obj)
         elif disable:
             from navig.commands.security import firewall_disable
+
             firewall_disable(ctx.obj)
         elif add and port:
             from navig.commands.security import firewall_add_rule
+
             firewall_add_rule(port, protocol, allow_from, ctx.obj)
         elif remove and port:
             from navig.commands.security import firewall_remove_rule
+
             firewall_remove_rule(port, protocol, ctx.obj)
     elif unban:
         from navig.commands.security import fail2ban_unban
+
         fail2ban_unban(unban, jail, ctx.obj)
     else:
         ch.error("Specify what to edit: --firewall or --unban")
@@ -1480,6 +1601,7 @@ def host_maintenance_callback(ctx: typer.Context):
     """Host maintenance - run without subcommand for system info."""
     if ctx.invoked_subcommand is None:
         from navig.commands.maintenance import system_info
+
         system_info(ctx.obj)
         raise typer.Exit()
 
@@ -1494,12 +1616,15 @@ def host_maintenance_show(
     """Show system maintenance information."""
     if disk:
         from navig.commands.monitoring import monitor_disk
+
         monitor_disk(80, ctx.obj)
     elif memory:
         from navig.commands.monitoring import monitor_resources
+
         monitor_resources(ctx.obj)
     else:
         from navig.commands.maintenance import system_info
+
         system_info(ctx.obj)
 
 
@@ -1508,39 +1633,54 @@ def host_maintenance_run(
     ctx: typer.Context,
     update: bool = typer.Option(False, "--update", "-u", help="Update system packages"),
     clean: bool = typer.Option(False, "--clean", "-c", help="Clean package cache"),
-    rotate_logs: bool = typer.Option(False, "--rotate-logs", "-r", help="Rotate log files"),
-    cleanup_temp: bool = typer.Option(False, "--cleanup-temp", "-t", help="Clean temp files"),
+    rotate_logs: bool = typer.Option(
+        False, "--rotate-logs", "-r", help="Rotate log files"
+    ),
+    cleanup_temp: bool = typer.Option(
+        False, "--cleanup-temp", "-t", help="Clean temp files"
+    ),
     all: bool = typer.Option(False, "--all", "-a", help="Full maintenance"),
     reboot: bool = typer.Option(False, "--reboot", help="Reboot server"),
 ):
     """Run system maintenance operations."""
     if update:
         from navig.commands.maintenance import update_packages
+
         update_packages(ctx.obj)
     elif clean:
         from navig.commands.maintenance import clean_packages
+
         clean_packages(ctx.obj)
     elif rotate_logs:
         from navig.commands.maintenance import rotate_logs as rotate_logs_func
+
         rotate_logs_func(ctx.obj)
     elif cleanup_temp:
         from navig.commands.maintenance import cleanup_temp as cleanup_temp_func
+
         cleanup_temp_func(ctx.obj)
     elif all:
         from navig.commands.maintenance import system_maintenance
+
         system_maintenance(ctx.obj)
     elif reboot:
         from navig.commands.remote import run_remote_command
-        if ctx.obj.get('yes') or typer.confirm("Are you sure you want to reboot the server?"):
+
+        if ctx.obj.get("yes") or typer.confirm(
+            "Are you sure you want to reboot the server?"
+        ):
             run_remote_command("sudo reboot", ctx.obj)
     else:
-        ch.error("Specify an action: --update, --clean, --rotate-logs, --cleanup-temp, --all, --reboot")
+        ch.error(
+            "Specify an action: --update, --clean, --rotate-logs, --cleanup-temp, --all, --reboot"
+        )
 
 
 @host_maintenance_app.command("update")
 def host_maintenance_update(ctx: typer.Context):
     """Update system packages."""
     from navig.commands.maintenance import update_packages
+
     update_packages(ctx.obj)
 
 
@@ -1548,6 +1688,7 @@ def host_maintenance_update(ctx: typer.Context):
 def host_maintenance_clean(ctx: typer.Context):
     """Clean package cache and orphans."""
     from navig.commands.maintenance import clean_packages
+
     clean_packages(ctx.obj)
 
 
@@ -1558,6 +1699,5 @@ def host_maintenance_install(
 ):
     """Install a package on the remote host."""
     from navig.commands.remote import install_remote_package
+
     install_remote_package(package, ctx.obj)
-
-

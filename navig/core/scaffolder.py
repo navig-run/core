@@ -24,15 +24,15 @@ class Scaffolder:
 
     def __init__(self):
         self.jinja_env = jinja2.Environment(
-            loader=jinja2.BaseLoader(), # We load templates from strings in YAML usually
+            loader=jinja2.BaseLoader(),  # We load templates from strings in YAML usually
             keep_trailing_newline=True,
-            autoescape=False # We are generating code/config, not HTML
+            autoescape=False,  # We are generating code/config, not HTML
         )
 
     def validate_template(self, template_path: Path) -> Dict[str, Any]:
         """Load and validate a template file."""
         try:
-            with open(template_path, 'r', encoding='utf-8') as f:
+            with open(template_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid YAML in template: {e}") from e
@@ -40,15 +40,20 @@ class Scaffolder:
         if not isinstance(data, dict):
             raise ValueError("Template must be a dictionary")
 
-        if 'structure' not in data:
+        if "structure" not in data:
             raise ValueError("Template missing 'structure' section")
 
         return data
 
-    def generate(self, template_data: Dict[str, Any], target_dir: Path, variables: Dict[str, Any] = None) -> None:
+    def generate(
+        self,
+        template_data: Dict[str, Any],
+        target_dir: Path,
+        variables: Dict[str, Any] = None,
+    ) -> None:
         """
         Generate the scaffold structure in the target directory.
-        
+
         Args:
             template_data: Parsed template dictionary
             target_dir: Directory where structure will be created
@@ -57,15 +62,17 @@ class Scaffolder:
         variables = variables or {}
 
         # Merge template default variables
-        template_vars = template_data.get('meta', {}).get('variables', {})
+        template_vars = template_data.get("meta", {}).get("variables", {})
         # User variables override template defaults
         merged_vars = {**template_vars, **variables}
 
-        structure = template_data.get('structure', [])
+        structure = template_data.get("structure", [])
 
         self._process_structure(structure, target_dir, merged_vars)
 
-    def generate_to_temp_archive(self, template_data: Dict[str, Any], variables: Dict[str, Any] = None) -> Path:
+    def generate_to_temp_archive(
+        self, template_data: Dict[str, Any], variables: Dict[str, Any] = None
+    ) -> Path:
         """
         Generate scaffold to a temporary directory and return path to a tar.gz archive.
         Useful for remote deployment.
@@ -76,7 +83,7 @@ class Scaffolder:
             self.generate(template_data, temp_path, variables)
 
             # Create archive
-            archive_fd, archive_path = tempfile.mkstemp(suffix='.tar.gz')
+            archive_fd, archive_path = tempfile.mkstemp(suffix=".tar.gz")
             os.close(archive_fd)
 
             with tarfile.open(archive_path, "w:gz") as tar:
@@ -87,33 +94,37 @@ class Scaffolder:
 
         return Path(archive_path)
 
-    def _process_structure(self, items: List[Dict[str, Any]], current_path: Path, variables: Dict[str, Any]):
+    def _process_structure(
+        self, items: List[Dict[str, Any]], current_path: Path, variables: Dict[str, Any]
+    ):
         """Recursively process structure items."""
         for item in items:
             if not self._check_condition(item, variables):
                 continue
 
             # Render path name
-            name_template = self.jinja_env.from_string(item.get('path', ''))
+            name_template = self.jinja_env.from_string(item.get("path", ""))
             name = name_template.render(**variables)
 
             if not name:
                 continue
 
             item_path = current_path / name
-            item_type = item.get('type', 'file')
-            mode = item.get('mode')
+            item_type = item.get("type", "file")
+            mode = item.get("mode")
 
-            if item_type == 'directory':
+            if item_type == "directory":
                 self._create_directory(item_path, mode)
-                if 'children' in item:
-                    self._process_structure(item.get('children', []), item_path, variables)
+                if "children" in item:
+                    self._process_structure(
+                        item.get("children", []), item_path, variables
+                    )
             else:
                 self._create_file(item, item_path, mode, variables)
 
     def _check_condition(self, item: Dict[str, Any], variables: Dict[str, Any]) -> bool:
         """Check 'condition' field using Jinja2 expression evaluation."""
-        condition = item.get('condition')
+        condition = item.get("condition")
         if condition is None:
             return True
 
@@ -132,8 +143,10 @@ class Scaffolder:
             if "{{" not in cond_str:
                 cond_str = "{{" + cond_str + "}}"
 
-            result = self.jinja_env.from_string(cond_str).render(**variables).strip().lower()
-            return result in ('true', 'yes', '1', 'on')
+            result = (
+                self.jinja_env.from_string(cond_str).render(**variables).strip().lower()
+            )
+            return result in ("true", "yes", "1", "on")
         except Exception as e:
             ch.warning(f"Failed to evaluate condition '{condition}': {e}")
             return False
@@ -150,15 +163,21 @@ class Scaffolder:
                 # On Windows this often fails or is ignored, so we warn but don't stop
                 pass
 
-    def _create_file(self, item: Dict[str, Any], path: Path, mode: Optional[str], variables: Dict[str, Any]):
+    def _create_file(
+        self,
+        item: Dict[str, Any],
+        path: Path,
+        mode: Optional[str],
+        variables: Dict[str, Any],
+    ):
         """Create a file from content or source."""
         content = ""
 
-        if 'content' in item:
+        if "content" in item:
             # Inline content
-            content_tmpl = self.jinja_env.from_string(item['content'])
+            content_tmpl = self.jinja_env.from_string(item["content"])
             content = content_tmpl.render(**variables)
-        elif 'source' in item:
+        elif "source" in item:
             # External source files: copy from template directory
             # Source paths are relative to the template file location
             # For now, this is not fully implemented - use inline content instead
@@ -168,7 +187,7 @@ class Scaffolder:
             )
 
         try:
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
             if mode:

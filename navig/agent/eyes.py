@@ -41,16 +41,16 @@ class SystemMetrics:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'cpu_percent': self.cpu_percent,
-            'memory_percent': self.memory_percent,
-            'memory_used_mb': self.memory_used_mb,
-            'disk_percent': self.disk_percent,
-            'disk_used_gb': self.disk_used_gb,
-            'load_average': self.load_average,
-            'network_bytes_sent': self.network_bytes_sent,
-            'network_bytes_recv': self.network_bytes_recv,
-            'process_count': self.process_count,
-            'timestamp': self.timestamp.isoformat(),
+            "cpu_percent": self.cpu_percent,
+            "memory_percent": self.memory_percent,
+            "memory_used_mb": self.memory_used_mb,
+            "disk_percent": self.disk_percent,
+            "disk_used_gb": self.disk_used_gb,
+            "load_average": self.load_average,
+            "network_bytes_sent": self.network_bytes_sent,
+            "network_bytes_recv": self.network_bytes_recv,
+            "process_count": self.process_count,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
@@ -67,25 +67,25 @@ class Alert:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'level': self.level,
-            'category': self.category,
-            'message': self.message,
-            'value': self.value,
-            'threshold': self.threshold,
-            'timestamp': self.timestamp.isoformat(),
+            "level": self.level,
+            "category": self.category,
+            "message": self.message,
+            "value": self.value,
+            "threshold": self.threshold,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
 class Eyes(Component):
     """
     System monitoring component.
-    
+
     The Eyes continuously observe:
     - System resource usage
     - Log files for patterns/errors
     - File system changes
     - Service health
-    
+
     When thresholds are exceeded or anomalies detected,
     the Eyes emit alerts through the nervous system.
     """
@@ -113,6 +113,7 @@ class Eyes(Component):
         self._psutil: Optional[Any] = None
         try:
             import psutil
+
             self._psutil = psutil
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -129,7 +130,11 @@ class Eyes(Component):
 
     async def _on_stop(self) -> None:
         """Stop monitoring tasks."""
-        for task in [self._monitoring_task, self._log_watcher_task, self._file_watcher_task]:
+        for task in [
+            self._monitoring_task,
+            self._log_watcher_task,
+            self._file_watcher_task,
+        ]:
             if task:
                 task.cancel()
                 try:
@@ -140,11 +145,13 @@ class Eyes(Component):
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for eyes."""
         return {
-            'last_metrics': self._last_metrics.to_dict() if self._last_metrics else None,
-            'alert_count': len(self._alerts),
-            'watched_logs': len(self.config.log_paths),
-            'watched_files': len(self.config.watch_paths),
-            'psutil_available': self._psutil is not None,
+            "last_metrics": (
+                self._last_metrics.to_dict() if self._last_metrics else None
+            ),
+            "alert_count": len(self._alerts),
+            "watched_logs": len(self.config.log_paths),
+            "watched_files": len(self.config.watch_paths),
+            "psutil_available": self._psutil is not None,
         }
 
     async def _monitoring_loop(self) -> None:
@@ -159,8 +166,7 @@ class Eyes(Component):
 
                 # Emit metrics event
                 await self.emit(
-                    EventType.METRIC_COLLECTED,
-                    {'metrics': metrics.to_dict()}
+                    EventType.METRIC_COLLECTED, {"metrics": metrics.to_dict()}
                 )
 
                 # Check thresholds and emit alerts
@@ -186,12 +192,12 @@ class Eyes(Component):
                 metrics.memory_used_mb = mem.used / (1024 * 1024)
 
                 # Disk
-                disk = self._psutil.disk_usage('/')
+                disk = self._psutil.disk_usage("/")
                 metrics.disk_percent = disk.percent
-                metrics.disk_used_gb = disk.used / (1024 ** 3)
+                metrics.disk_used_gb = disk.used / (1024**3)
 
                 # Load average (Unix only)
-                if hasattr(os, 'getloadavg'):
+                if hasattr(os, "getloadavg"):
                     metrics.load_average = os.getloadavg()
 
                 # Network
@@ -214,33 +220,39 @@ class Eyes(Component):
 
         # CPU threshold
         if metrics.cpu_percent > self.config.cpu_threshold:
-            alerts.append(Alert(
-                level='warning',
-                category='cpu',
-                message=f'CPU usage is {metrics.cpu_percent:.1f}%',
-                value=metrics.cpu_percent,
-                threshold=self.config.cpu_threshold,
-            ))
+            alerts.append(
+                Alert(
+                    level="warning",
+                    category="cpu",
+                    message=f"CPU usage is {metrics.cpu_percent:.1f}%",
+                    value=metrics.cpu_percent,
+                    threshold=self.config.cpu_threshold,
+                )
+            )
 
         # Memory threshold
         if metrics.memory_percent > self.config.memory_threshold:
-            alerts.append(Alert(
-                level='warning',
-                category='memory',
-                message=f'Memory usage is {metrics.memory_percent:.1f}%',
-                value=metrics.memory_percent,
-                threshold=self.config.memory_threshold,
-            ))
+            alerts.append(
+                Alert(
+                    level="warning",
+                    category="memory",
+                    message=f"Memory usage is {metrics.memory_percent:.1f}%",
+                    value=metrics.memory_percent,
+                    threshold=self.config.memory_threshold,
+                )
+            )
 
         # Disk threshold
         if metrics.disk_percent > self.config.disk_threshold:
-            alerts.append(Alert(
-                level='critical' if metrics.disk_percent > 95 else 'warning',
-                category='disk',
-                message=f'Disk usage is {metrics.disk_percent:.1f}%',
-                value=metrics.disk_percent,
-                threshold=self.config.disk_threshold,
-            ))
+            alerts.append(
+                Alert(
+                    level="critical" if metrics.disk_percent > 95 else "warning",
+                    category="disk",
+                    message=f"Disk usage is {metrics.disk_percent:.1f}%",
+                    value=metrics.disk_percent,
+                    threshold=self.config.disk_threshold,
+                )
+            )
 
         # Emit alerts
         for alert in alerts:
@@ -248,13 +260,17 @@ class Eyes(Component):
 
             await self.emit(
                 EventType.ALERT_TRIGGERED,
-                {'alert': alert.to_dict()},
-                priority=EventPriority.HIGH if alert.level == 'critical' else EventPriority.NORMAL
+                {"alert": alert.to_dict()},
+                priority=(
+                    EventPriority.HIGH
+                    if alert.level == "critical"
+                    else EventPriority.NORMAL
+                ),
             )
 
         # Trim alerts
         if len(self._alerts) > self._max_alerts:
-            self._alerts = self._alerts[-self._max_alerts:]
+            self._alerts = self._alerts[-self._max_alerts :]
 
     async def _log_watcher_loop(self) -> None:
         """Watch log files for important entries."""
@@ -262,7 +278,7 @@ class Eyes(Component):
         positions: Dict[str, int] = {}
 
         # Patterns to watch for
-        error_patterns = ['error', 'exception', 'failed', 'critical', 'fatal']
+        error_patterns = ["error", "exception", "failed", "critical", "fatal"]
 
         while True:
             try:
@@ -274,7 +290,7 @@ class Eyes(Component):
                         continue
 
                     try:
-                        with open(path, 'r', errors='ignore') as f:
+                        with open(path, "r", errors="ignore") as f:
                             # Seek to last known position
                             if str(path) in positions:
                                 f.seek(positions[str(path)])
@@ -292,10 +308,10 @@ class Eyes(Component):
                                         await self.emit(
                                             EventType.LOG_ENTRY,
                                             {
-                                                'path': str(path),
-                                                'line': line.strip()[:500],
-                                                'pattern': pattern,
-                                            }
+                                                "path": str(path),
+                                                "line": line.strip()[:500],
+                                                "pattern": pattern,
+                                            },
                                         )
                                         break
 
@@ -320,7 +336,7 @@ class Eyes(Component):
                     if path.is_file():
                         await self._check_file_change(path)
                     elif path.is_dir():
-                        for file_path in path.rglob('*'):
+                        for file_path in path.rglob("*"):
                             if file_path.is_file():
                                 await self._check_file_change(file_path)
 
@@ -340,10 +356,10 @@ class Eyes(Component):
                     await self.emit(
                         EventType.FILE_CHANGED,
                         {
-                            'path': path_str,
-                            'previous_mtime': self._watched_files[path_str],
-                            'new_mtime': mtime,
-                        }
+                            "path": path_str,
+                            "previous_mtime": self._watched_files[path_str],
+                            "new_mtime": mtime,
+                        },
                     )
 
             self._watched_files[path_str] = mtime
@@ -361,21 +377,21 @@ class Eyes(Component):
     def get_system_info(self) -> Dict[str, Any]:
         """Get static system information."""
         info = {
-            'platform': platform.system(),
-            'platform_release': platform.release(),
-            'platform_version': platform.version(),
-            'architecture': platform.machine(),
-            'hostname': platform.node(),
-            'processor': platform.processor(),
-            'python_version': platform.python_version(),
+            "platform": platform.system(),
+            "platform_release": platform.release(),
+            "platform_version": platform.version(),
+            "architecture": platform.machine(),
+            "hostname": platform.node(),
+            "processor": platform.processor(),
+            "python_version": platform.python_version(),
         }
 
         if self._psutil:
             try:
-                info['cpu_count'] = self._psutil.cpu_count()
-                info['cpu_count_logical'] = self._psutil.cpu_count(logical=True)
+                info["cpu_count"] = self._psutil.cpu_count()
+                info["cpu_count_logical"] = self._psutil.cpu_count(logical=True)
                 mem = self._psutil.virtual_memory()
-                info['memory_total_gb'] = mem.total / (1024 ** 3)
+                info["memory_total_gb"] = mem.total / (1024**3)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 

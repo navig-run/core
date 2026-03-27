@@ -164,9 +164,7 @@ class WriteBatcher:
     def _schedule_timer(self) -> None:
         """Schedule a flush after ``flush_interval_ms``."""
         self._cancel_timer()
-        self._timer = threading.Timer(
-            self._flush_interval_s, self._timer_callback
-        )
+        self._timer = threading.Timer(self._flush_interval_s, self._timer_callback)
         self._timer.daemon = True
         self._timer.start()
 

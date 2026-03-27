@@ -22,10 +22,13 @@ logger = logging.getLogger("navig.browser.template_runner")
 
 try:
     import yaml
+
     _YAML_OK = True
 except ImportError:
     _YAML_OK = False
-    logger.warning("PyYAML not installed; template runner disabled. Run: pip install pyyaml")
+    logger.warning(
+        "PyYAML not installed; template runner disabled. Run: pip install pyyaml"
+    )
 
 
 class TemplateRunner:
@@ -66,6 +69,7 @@ class TemplateRunner:
         """Find the best matching template for a URL.
         Returns None if no site-specific template matches."""
         from urllib.parse import urlparse
+
         host = (urlparse(url).hostname or "").lower()
 
         for tmpl in self._templates:  # already sorted by priority desc
@@ -80,7 +84,10 @@ class TemplateRunner:
     def get_template_by_name(self, name: str) -> Optional[dict]:
         """Retrieve a template by site name or file name."""
         for tmpl in self._templates:
-            if tmpl.get("site") == name or tmpl.get("_file", "").replace(".yaml", "") == name:
+            if (
+                tmpl.get("site") == name
+                or tmpl.get("_file", "").replace(".yaml", "") == name
+            ):
                 return tmpl
         return None
 
@@ -122,7 +129,10 @@ class TemplateRunner:
             results.append(result)
             logger.info(
                 "[Templates] Step %d/%d: %s → %s",
-                i + 1, len(steps), step.get("action"), "✓" if result["ok"] else f"✗ {result.get('error')}"
+                i + 1,
+                len(steps),
+                step.get("action"),
+                "✓" if result["ok"] else f"✗ {result.get('error')}",
             )
 
             if not result["ok"]:
@@ -151,16 +161,23 @@ class TemplateRunner:
         last_err = None
         for candidate in candidates:
             kind = candidate.get("kind", "css")
-            val  = candidate.get("value", "")
+            val = candidate.get("value", "")
             ok, err = await self._dispatch(action, kind, val, input_val)
             if ok:
-                return {"ok": True, "action": action, "selector": candidate, "input": input_val}
+                return {
+                    "ok": True,
+                    "action": action,
+                    "selector": candidate,
+                    "input": input_val,
+                }
             last_err = err
             logger.debug("[Templates] ✗ %s:%s → %s", kind, val, err)
 
         return {"ok": False, "action": action, "error": last_err}
 
-    async def _dispatch(self, action: str, kind: str, val: str, input_val: str) -> tuple:
+    async def _dispatch(
+        self, action: str, kind: str, val: str, input_val: str
+    ) -> tuple:
         """Send a single action to the driver. Returns (ok, error_str)."""
         try:
             page = self.driver._page
@@ -176,7 +193,9 @@ class TemplateRunner:
             if kind == "role":
                 m = re.match(r"(\w+)\[name\*?=['\"]?([^'\"]+)['\"]?\]", val)
                 if m:
-                    locator = page.get_by_role(m.group(1), name=re.compile(m.group(2), re.I))
+                    locator = page.get_by_role(
+                        m.group(1), name=re.compile(m.group(2), re.I)
+                    )
                 else:
                     locator = page.get_by_role(val)
 

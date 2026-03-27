@@ -36,9 +36,9 @@ BASE_PRAGMAS: Dict[str, Any] = {
     "synchronous": "NORMAL",
     "foreign_keys": "ON",
     "busy_timeout": 5000,
-    "cache_size": -8000,       # 8 MB
+    "cache_size": -8000,  # 8 MB
     "temp_store": "MEMORY",
-    "mmap_size": 0,            # disabled by default
+    "mmap_size": 0,  # disabled by default
 }
 
 
@@ -50,6 +50,7 @@ def _utcnow() -> str:
 def _get_engine():
     """Lazy import to avoid circular dependency at module level."""
     from navig.storage import get_engine
+
     return get_engine()
 
 

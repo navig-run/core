@@ -24,6 +24,7 @@ and every ``ToolEvent.BEFORE_EXECUTE`` is re-emitted as BEFORE phase.
 Error and Denied events are bridged to the ERROR phase with an appropriate
 ``error`` field set.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,6 +58,7 @@ def _make_before_handler():
             args=ev.parameters,
         )
         _fire_engine_event(engine_event)
+
     return _before
 
 
@@ -70,6 +72,7 @@ def _make_after_handler():
             elapsed_ms=ev.elapsed_ms,
         )
         _fire_engine_event(engine_event)
+
     return _after
 
 
@@ -84,6 +87,7 @@ def _make_error_handler():
             elapsed_ms=ev.elapsed_ms,
         )
         _fire_engine_event(engine_event)
+
     return _error
 
 
@@ -98,6 +102,7 @@ def _make_denied_handler():
             elapsed_ms=0.0,
         )
         _fire_engine_event(engine_event)
+
     return _denied
 
 
@@ -127,9 +132,9 @@ class ToolHookBridge:
         reg = tool_registry or get_hook_registry()
 
         reg.register(ToolEvent.BEFORE_EXECUTE, _make_before_handler())
-        reg.register(ToolEvent.AFTER_EXECUTE,  _make_after_handler())
-        reg.register(ToolEvent.ERROR,          _make_error_handler())
-        reg.register(ToolEvent.DENIED,         _make_denied_handler())
+        reg.register(ToolEvent.AFTER_EXECUTE, _make_after_handler())
+        reg.register(ToolEvent.ERROR, _make_error_handler())
+        reg.register(ToolEvent.DENIED, _make_denied_handler())
 
         _WIRED = True
         logger.debug("hook_bridge: wired tool hooks → engine global_hooks")

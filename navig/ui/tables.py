@@ -3,6 +3,7 @@ navig.ui.tables — Rich table renderers for findings and fleet views.
 
 Uses box.SIMPLE / box.MINIMAL — never heavy borders.
 """
+
 from __future__ import annotations
 
 import sys
@@ -48,7 +49,10 @@ def render_findings_table(
         try:
             print(f"  {title}", file=sys.stdout)
             for f in findings:
-                print(f"  [{f.severity}] {f.confidence}%  {f.description}", file=sys.stdout)
+                print(
+                    f"  [{f.severity}] {f.confidence}%  {f.description}",
+                    file=sys.stdout,
+                )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 

@@ -5,12 +5,15 @@ try:
 except ImportError:
     web = None
 
+
 def _get_tracker():
     try:
         from navig.agent.proactive.user_state import get_user_state_tracker
+
         return get_user_state_tracker()
     except Exception:
         return None
+
 
 async def handle_deck_status(request: "web.Request") -> "web.Response":
     tracker = _get_tracker()
@@ -22,18 +25,25 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
         try:
             q_stats = gateway.task_queue.get_stats()
             tasks_done = int(q_stats.get("status_counts", {}).get("completed", 0))
-            tasks_pending = int(q_stats.get("status_counts", {}).get("queued", 0)) + int(
-                q_stats.get("status_counts", {}).get("running", 0)
-            )
+            tasks_pending = int(
+                q_stats.get("status_counts", {}).get("queued", 0)
+            ) + int(q_stats.get("status_counts", {}).get("running", 0))
             task_status = "available"
         except Exception:
             task_status = "error"
 
     if not tracker:
         return web.json_response(
-            {"avatar_state": "calm", "state_label": "systems nominal",
-             "tasks_done": tasks_done, "tasks_pending": tasks_pending, "errors": 0,
-             "current_mode": "work", "uptime": "unknown", "task_queue_status": task_status},
+            {
+                "avatar_state": "calm",
+                "state_label": "systems nominal",
+                "tasks_done": tasks_done,
+                "tasks_pending": tasks_pending,
+                "errors": 0,
+                "current_mode": "work",
+                "uptime": "unknown",
+                "task_queue_status": task_status,
+            },
         )
 
     mode = tracker.get_preference("chat_mode", "work")
@@ -60,14 +70,18 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
     uptime = "unknown"
     try:
         import subprocess
+
         result = subprocess.run(
             ["systemctl", "show", "navig-daemon", "--property=ActiveEnterTimestamp"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
         if result.returncode == 0:
             ts_str = result.stdout.strip().split("=", 1)[-1]
             if ts_str and ts_str != "n/a":
                 from datetime import datetime
+
                 started = datetime.strptime(ts_str.strip(), "%a %Y-%m-%d %H:%M:%S %Z")
                 delta = datetime.now() - started
                 hours = int(delta.total_seconds() // 3600)
@@ -76,16 +90,19 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
-    return web.json_response({
-        "avatar_state": avatar_state,
-        "state_label": state_labels.get(avatar_state, "nominal"),
-        "tasks_done": tasks_done,
-        "tasks_pending": tasks_pending,
-        "errors": 0,
-        "current_mode": mode,
-        "uptime": uptime,
-        "task_queue_status": task_status,
-    })
+    return web.json_response(
+        {
+            "avatar_state": avatar_state,
+            "state_label": state_labels.get(avatar_state, "nominal"),
+            "tasks_done": tasks_done,
+            "tasks_pending": tasks_pending,
+            "errors": 0,
+            "current_mode": mode,
+            "uptime": uptime,
+            "task_queue_status": task_status,
+        }
+    )
+
 
 async def handle_deck_settings_get(request: "web.Request") -> "web.Response":
     tracker = _get_tracker()
@@ -103,6 +120,7 @@ async def handle_deck_settings_get(request: "web.Request") -> "web.Response":
             defaults[key] = tracker.get_preference(key, defaults[key])
     return web.json_response(defaults)
 
+
 async def handle_deck_settings_post(request: "web.Request") -> "web.Response":
     try:
         body = await request.json()
@@ -114,9 +132,13 @@ async def handle_deck_settings_post(request: "web.Request") -> "web.Response":
         return web.json_response({"error": "state tracker unavailable"}, status=500)
 
     allowed_keys = {
-        "chat_mode", "verbosity", "autonomy_level",
-        "quiet_hours_start", "quiet_hours_end",
-        "quiet_hours_enabled", "notifications_enabled",
+        "chat_mode",
+        "verbosity",
+        "autonomy_level",
+        "quiet_hours_start",
+        "quiet_hours_end",
+        "quiet_hours_enabled",
+        "notifications_enabled",
     }
 
     for key, value in body.items():
@@ -127,6 +149,7 @@ async def handle_deck_settings_post(request: "web.Request") -> "web.Response":
     for key in allowed_keys:
         result[key] = tracker.get_preference(key, None)
     return web.json_response(result)
+
 
 async def handle_deck_mode(request: "web.Request") -> "web.Response":
     try:

@@ -11,6 +11,7 @@ A real-time operations dashboard for NAVIG Core. Features:
 - Responsive layout for all terminal sizes
 - Fast boot animation
 """
+
 import json
 import os
 import platform
@@ -47,7 +48,6 @@ KRAKEN_FRAMES = [
     " /|\\  |  /|\\\n"
     "/ | \\ | / | \\\n"
     "~  ~  ~  ~  ~",
-
     "     ___\n"
     "  .-'   '-.\n"
     " /  ◉   ◉  \\\n"
@@ -57,7 +57,6 @@ KRAKEN_FRAMES = [
     "  /| \\ / |\\\n"
     " / |  X  | \\\n"
     "~  | / \\ |  ~",
-
     "     ___\n"
     "  .-'   '-.\n"
     " /  ●   ●  \\\n"
@@ -67,7 +66,6 @@ KRAKEN_FRAMES = [
     " /|\\  |  /|\\\n"
     "/ | \\ | / | \\\n"
     "~  ~  ~  ~  ~",
-
     "     ___\n"
     "  .-'   '-.\n"
     " /  ◉   ◉  \\\n"
@@ -78,11 +76,7 @@ KRAKEN_FRAMES = [
     " ~    ~    ~",
 ]
 
-KRAKEN_MINI = (
-    " ◉‿◉\n"
-    " /||\\\n"
-    " ~  ~"
-)
+KRAKEN_MINI = " ◉‿◉\n" " /||\\\n" " ~  ~"
 
 NAVIG_BANNER = (
     "    ███╗   ██╗ █████╗ ██╗   ██╗██╗ ██████╗\n"
@@ -93,11 +87,7 @@ NAVIG_BANNER = (
     "    ╚═╝  ╚═══╝╚═╝  ╚═╝  ╚═══╝  ╚═╝ ╚═════╝"
 )
 
-NAVIG_BANNER_MINI = (
-    " ╔═╗╔═╗╦  ╦╦╔═╗\n"
-    " ║║║╠═╣╚╗╔╝║║ ╦\n"
-    " ╝╚╝╩ ╩ ╚╝ ╩╚═╝"
-)
+NAVIG_BANNER_MINI = " ╔═╗╔═╗╦  ╦╦╔═╗\n" " ║║║╠═╣╚╗╔╝║║ ╦\n" " ╝╚╝╩ ╩ ╚╝ ╩╚═╝"
 
 TENTACLE_TIPS = [
     "The Kraken sees all ports, hears all logs.",
@@ -127,9 +117,11 @@ GATEWAY_PORT = 8789
 # Operational Service Detection
 # ═══════════════════════════════════════════════════════════════
 
+
 def _check_port(port: int) -> bool:
     """Return True if a TCP port is listening on localhost."""
     import socket
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(0.3)
@@ -143,6 +135,7 @@ def _check_pid_alive(pid: int) -> bool:
     try:
         if sys.platform == "win32":
             import ctypes
+
             kernel32 = ctypes.windll.kernel32
             handle = kernel32.OpenProcess(0x100000, False, pid)
             if handle:
@@ -182,7 +175,9 @@ def _detect_daemon_status() -> Dict[str, Any]:
     return info
 
 
-def _detect_child_status(daemon_info: Dict[str, Any], child_name: str) -> Dict[str, Any]:
+def _detect_child_status(
+    daemon_info: Dict[str, Any], child_name: str
+) -> Dict[str, Any]:
     """Extract a specific child status from daemon state."""
     for child in daemon_info.get("children", []):
         if child.get("name") == child_name:
@@ -218,13 +213,15 @@ def _detect_tunnels() -> List[Dict[str, Any]]:
         for name, info in data.items():
             pid = info.get("pid")
             alive = _check_pid_alive(pid) if pid else False
-            tunnels.append({
-                "server": name,
-                "pid": pid,
-                "local_port": info.get("local_port"),
-                "started_at": info.get("started_at"),
-                "alive": alive,
-            })
+            tunnels.append(
+                {
+                    "server": name,
+                    "pid": pid,
+                    "local_port": info.get("local_port"),
+                    "started_at": info.get("started_at"),
+                    "alive": alive,
+                }
+            )
         return tunnels
     except Exception:
         return []
@@ -234,6 +231,7 @@ def _detect_pool_stats() -> Dict[str, Any]:
     """Get SSH connection pool stats (safe — no import error if pool unused)."""
     try:
         from navig.connection_pool import SSHConnectionPool
+
         pool = SSHConnectionPool.get_instance()
         return pool.stats
     except Exception:
@@ -249,6 +247,7 @@ def _get_terminal_size() -> tuple:
 # ═══════════════════════════════════════════════════════════════
 # Keyboard Input (cross-platform, non-blocking)
 # ═══════════════════════════════════════════════════════════════
+
 
 class KeyReader:
     """Non-blocking keyboard reader for the dashboard."""
@@ -283,6 +282,7 @@ class KeyReader:
 
     def _read_win(self):
         import msvcrt
+
         while self._running:
             if msvcrt.kbhit():
                 try:
@@ -296,6 +296,7 @@ class KeyReader:
         import select
         import termios
         import tty
+
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         try:
@@ -371,6 +372,7 @@ def run_boot_sequence(fast: bool = False) -> None:
 # ═══════════════════════════════════════════════════════════════
 # Dashboard Panels
 # ═══════════════════════════════════════════════════════════════
+
 
 def create_layout(cols: int = 120, rows: int = 30) -> Layout:
     """Build responsive dashboard grid."""
@@ -457,8 +459,11 @@ def make_services_panel(op_state: Dict[str, Any], cols: int = 120) -> Panel:
     compact = cols < 90
 
     table = Table(
-        show_header=True, header_style="bold cyan",
-        expand=True, box=None, padding=(0, 1),
+        show_header=True,
+        header_style="bold cyan",
+        expand=True,
+        box=None,
+        padding=(0, 1),
     )
     table.add_column("Service", min_width=10)
     table.add_column("Status", width=12, justify="center")
@@ -470,10 +475,10 @@ def make_services_panel(op_state: Dict[str, Any], cols: int = 120) -> Panel:
     # Status renderer
     def _st(status: str) -> str:
         return {
-            "running":  "[green]● running[/green]",
-            "stopped":  "[white]○ stopped[/white]",
-            "dead":     "[red]✖ dead[/red]",
-            "unknown":  "[dim]? unknown[/dim]",
+            "running": "[green]● running[/green]",
+            "stopped": "[white]○ stopped[/white]",
+            "dead": "[red]✖ dead[/red]",
+            "unknown": "[dim]? unknown[/dim]",
             "disabled": "[dim]- disabled[/dim]",
         }.get(status, f"[dim]{status}[/dim]")
 
@@ -489,7 +494,13 @@ def make_services_panel(op_state: Dict[str, Any], cols: int = 120) -> Panel:
     if compact:
         table.add_row("🐙 Daemon", _st(daemon.get("status", "stopped")))
     else:
-        table.add_row("🐙 Daemon Supervisor", _st(daemon.get("status", "stopped")), d_pid, "-", d_info)
+        table.add_row(
+            "🐙 Daemon Supervisor",
+            _st(daemon.get("status", "stopped")),
+            d_pid,
+            "-",
+            d_info,
+        )
 
     # 2. Telegram Bot
     b_status = bot.get("status", "unknown")
@@ -527,7 +538,11 @@ def make_services_panel(op_state: Dict[str, Any], cols: int = 120) -> Panel:
     active = pool.get("active_connections", 0)
     hits = pool.get("hits", 0)
     rate = pool.get("hit_rate", 0)
-    pool_info = f"active: {active}  hits: {hits}  rate: {rate:.0%}" if hits > 0 else f"active: {active}"
+    pool_info = (
+        f"active: {active}  hits: {hits}  rate: {rate:.0%}"
+        if hits > 0
+        else f"active: {active}"
+    )
     p_status = "running" if active > 0 else "stopped"
     if compact:
         table.add_row(f"🔗 SSH Pool ({active})", _st(p_status))
@@ -544,12 +559,16 @@ def make_tunnels_panel(tunnels: List[Dict[str, Any]], cols: int = 120) -> Panel:
     if not tunnels:
         return Panel(
             "[dim]No active tunnels — use [cyan]navig tunnel start[/cyan] to open one[/dim]",
-            title="[bold]🦑 SSH Tunnels[/bold]", border_style="magenta",
+            title="[bold]🦑 SSH Tunnels[/bold]",
+            border_style="magenta",
         )
 
     table = Table(
-        show_header=True, header_style="bold magenta",
-        expand=True, box=None, padding=(0, 1),
+        show_header=True,
+        header_style="bold magenta",
+        expand=True,
+        box=None,
+        padding=(0, 1),
     )
     table.add_column("Server", min_width=8)
     table.add_column("Port", width=6, justify="right")
@@ -582,13 +601,17 @@ def make_tunnels_panel(tunnels: List[Dict[str, Any]], cols: int = 120) -> Panel:
     return Panel(table, title=title, border_style="magenta")
 
 
-def make_hosts_panel(config_manager, hosts_status: Dict[str, Any], cols: int = 120) -> Panel:
+def make_hosts_panel(
+    config_manager, hosts_status: Dict[str, Any], cols: int = 120
+) -> Panel:
     """Remote host connectivity panel."""
     compact = cols < 90
 
     table = Table(
-        show_header=True, header_style="bold cyan",
-        expand=True, box=None,
+        show_header=True,
+        header_style="bold cyan",
+        expand=True,
+        box=None,
     )
     table.add_column("Host", style="bold")
     if not compact:
@@ -618,7 +641,11 @@ def make_hosts_panel(config_manager, hosts_status: Dict[str, Any], cols: int = 1
                     si_txt = "[yellow]○ …[/yellow]"
                     lat = ""
 
-                nm = f"[bold green]{host_name}[/bold green]" if host_name == active else host_name
+                nm = (
+                    f"[bold green]{host_name}[/bold green]"
+                    if host_name == active
+                    else host_name
+                )
                 if compact:
                     table.add_row(nm, si_txt, lat)
                 else:
@@ -643,7 +670,9 @@ def make_kraken_panel(frame_idx: int, compact: bool = False) -> Panel:
         frame = KRAKEN_MINI
     else:
         frame = KRAKEN_FRAMES[frame_idx % len(KRAKEN_FRAMES)]
-    frame = frame.replace("◉", "[bold cyan]◉[/bold cyan]").replace("●", "[bold magenta]●[/bold magenta]")
+    frame = frame.replace("◉", "[bold cyan]◉[/bold cyan]").replace(
+        "●", "[bold magenta]●[/bold magenta]"
+    )
     return Panel(
         Align.center(Text.from_markup(f"[magenta]{frame}[/magenta]")),
         title="[bold magenta]🐙 Kraken[/bold magenta]",
@@ -669,8 +698,10 @@ def make_history_panel() -> Panel:
     from navig.operation_recorder import get_operation_recorder
 
     table = Table(
-        show_header=True, header_style="bold yellow",
-        expand=True, box=None,
+        show_header=True,
+        header_style="bold yellow",
+        expand=True,
+        box=None,
     )
     table.add_column("Time", style="dim", width=6)
     table.add_column("Command", style="bold")
@@ -683,7 +714,8 @@ def make_history_panel() -> Panel:
         if not ops:
             return Panel(
                 "[dim]No operations yet — they appear as you use NAVIG[/dim]",
-                title="[bold]📋 Recent Ops[/bold]", border_style="yellow",
+                title="[bold]📋 Recent Ops[/bold]",
+                border_style="yellow",
             )
         for op in ops:
             try:
@@ -692,11 +724,17 @@ def make_history_panel() -> Panel:
             except Exception:
                 t = "?"
             cmd = op.command[:20] + "…" if len(op.command) > 20 else op.command
-            st_map = {"success": "[green]✓[/green]", "failed": "[red]✗[/red]", "running": "[yellow]●[/yellow]"}
+            st_map = {
+                "success": "[green]✓[/green]",
+                "failed": "[red]✗[/red]",
+                "running": "[yellow]●[/yellow]",
+            }
             st = st_map.get(op.status, "[dim]○[/dim]")
             table.add_row(t, cmd, (op.host or "-")[:8], st)
     except Exception as e:
-        return Panel(f"[red]{e}[/red]", title="[bold]📋 Recent Ops[/bold]", border_style="yellow")
+        return Panel(
+            f"[red]{e}[/red]", title="[bold]📋 Recent Ops[/bold]", border_style="yellow"
+        )
 
     return Panel(table, title="[bold]📋 Recent Ops[/bold]", border_style="yellow")
 
@@ -721,12 +759,15 @@ def make_footer(cols: int = 120) -> Panel:
 # Dashboard State
 # ═══════════════════════════════════════════════════════════════
 
+
 class DashboardState:
     """All mutable dashboard state."""
 
     def __init__(self):
         self.hosts_status: Dict[str, Dict[str, Any]] = {}
-        self.op_state: Dict[str, Any] = {}  # daemon, telegram_bot, gateway, scheduler, pool, tunnels
+        self.op_state: Dict[str, Any] = (
+            {}
+        )  # daemon, telegram_bot, gateway, scheduler, pool, tunnels
         self.last_hosts_check: float = 0
         self.last_service_check: float = 0
         self.host_check_interval: float = 30.0
@@ -751,7 +792,10 @@ class DashboardState:
 # Background Workers
 # ═══════════════════════════════════════════════════════════════
 
-def check_host_connectivity(host_config: Dict[str, Any], timeout: int = 5) -> Dict[str, Any]:
+
+def check_host_connectivity(
+    host_config: Dict[str, Any], timeout: int = 5
+) -> Dict[str, Any]:
     """Ping-based connectivity check."""
     try:
         host = host_config.get("host", host_config.get("ip"))
@@ -761,15 +805,21 @@ def check_host_connectivity(host_config: Dict[str, Any], timeout: int = 5) -> Di
         if platform.system().lower() == "windows":
             r = subprocess.run(
                 ["ping", "-n", "1", "-w", str(timeout * 1000), host],
-                capture_output=True, timeout=timeout + 1,
+                capture_output=True,
+                timeout=timeout + 1,
             )
         else:
             r = subprocess.run(
                 ["ping", "-c", "1", "-W", str(timeout), host],
-                capture_output=True, timeout=timeout + 1,
+                capture_output=True,
+                timeout=timeout + 1,
             )
         lat = (time.time() - start) * 1000
-        return {"status": "connected", "latency": lat} if r.returncode == 0 else {"status": "failed", "latency": None}
+        return (
+            {"status": "connected", "latency": lat}
+            if r.returncode == 0
+            else {"status": "failed", "latency": None}
+        )
     except Exception:
         return {"status": "failed", "latency": None}
 
@@ -786,17 +836,21 @@ def _bg_update_hosts(config_manager, state: DashboardState):
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
         state.last_hosts_check = time.time()
+
     threading.Thread(target=_work, daemon=True).start()
 
 
 def _bg_update_services(state: DashboardState):
     """Update all operational service states in background."""
+
     def _work():
         try:
             # Daemon + children
             daemon = _detect_daemon_status()
             state.op_state["daemon"] = daemon
-            state.op_state["telegram_bot"] = _detect_child_status(daemon, "telegram-bot")
+            state.op_state["telegram_bot"] = _detect_child_status(
+                daemon, "telegram-bot"
+            )
             state.op_state["scheduler"] = _detect_child_status(daemon, "scheduler")
 
             # Gateway
@@ -810,12 +864,14 @@ def _bg_update_services(state: DashboardState):
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
         state.last_service_check = time.time()
+
     threading.Thread(target=_work, daemon=True).start()
 
 
 # ═══════════════════════════════════════════════════════════════
 # Main Dashboard Entry Points
 # ═══════════════════════════════════════════════════════════════
+
 
 def run_dashboard(
     refresh_interval: int = 5,
@@ -863,7 +919,9 @@ def run_dashboard(
         layout = create_layout(cols, rows)
         up = time.time() - state.started_at
 
-        layout["header"].update(make_header(active_host, active_app, state.events, state.errors, up, cols))
+        layout["header"].update(
+            make_header(active_host, active_app, state.events, state.errors, up, cols)
+        )
         layout["services"].update(make_services_panel(state.op_state, cols))
 
         tunnels = state.op_state.get("tunnels", [])
@@ -871,7 +929,9 @@ def run_dashboard(
 
         # Wide layout has left/right split
         if cols >= 90:
-            layout["hosts"].update(make_hosts_panel(config_manager, state.hosts_status, cols))
+            layout["hosts"].update(
+                make_hosts_panel(config_manager, state.hosts_status, cols)
+            )
             # Kraken only on tall terminals
             if rows >= 28:
                 layout["kraken"].update(make_kraken_panel(state.kraken_frame))
@@ -879,7 +939,9 @@ def run_dashboard(
             layout["history"].update(make_history_panel())
         else:
             # Narrow: vertical stack
-            layout["hosts"].update(make_hosts_panel(config_manager, state.hosts_status, cols))
+            layout["hosts"].update(
+                make_hosts_panel(config_manager, state.hosts_status, cols)
+            )
             layout["history"].update(make_history_panel())
 
         layout["footer"].update(make_footer(cols))

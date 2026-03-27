@@ -1,9 +1,9 @@
 # Skill: win-perf-tuner
 
-**id**: `win-perf-tuner`  
-**version**: `1.0.0`  
-**os**: `windows`  
-**tool_id**: `win_perf_tuner`  
+**id**: `win-perf-tuner`
+**version**: `1.0.0`
+**os**: `windows`
+**tool_id**: `win_perf_tuner`
 **cli**: `navig sys perf`
 
 ---
@@ -35,7 +35,7 @@ navig sys perf scan
 navig sys perf status
 ```
 
-`scan` returns per-target `optimal: true/false` with recommendations.  
+`scan` returns per-target `optimal: true/false` with recommendations.
 `status` returns a single summary block, machine-readable.
 
 ### Apply

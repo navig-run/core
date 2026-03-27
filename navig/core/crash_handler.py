@@ -8,6 +8,7 @@ Handles uncaught exceptions by:
 
 No telemetry or automatic reporting is performed.
 """
+
 import json
 import os
 import platform
@@ -43,6 +44,7 @@ class CrashHandler:
         try:
             # Try to get from config manager
             from navig.config import get_config_manager
+
             cm = get_config_manager()
             log_dir = cm.base_dir / "logs"
         except Exception:
@@ -98,6 +100,7 @@ class CrashHandler:
             # Try to get version
             try:
                 from navig import __version__
+
                 sys_info["version"] = __version__
             except ImportError:
                 sys_info["version"] = "unknown"
@@ -110,7 +113,7 @@ class CrashHandler:
                 "exception_type": type(exc).__name__,
                 "exception_message": str(exc),
                 "traceback": tb,
-                "system": sys_info
+                "system": sys_info,
             }
 
             with open(log_path, "w", encoding="utf-8") as f:
@@ -134,7 +137,7 @@ class CrashHandler:
                 oldest = logs.pop(0)
                 os.remove(oldest)
         except Exception:
-            pass # Ignore cleanup errors
+            pass  # Ignore cleanup errors
 
     def _print_friendly_error(self, exc: Exception, log_path: Optional[Path]):
         """Print a nice error message to stderr."""
@@ -145,33 +148,46 @@ class CrashHandler:
         # Use rich if available, else plain text
         try:
             from rich.console import Console
+
             console = Console(stderr=True)
 
             console.print()
-            console.print(f"[bold red]💥 Navig encountered an unexpected error ({err_type})[/bold red]")
+            console.print(
+                f"[bold red]💥 Navig encountered an unexpected error ({err_type})[/bold red]"
+            )
             console.print(f"   [red]{msg}[/red]")
             console.print()
 
             if log_path:
                 console.print(f"[dim]Crash details saved to: {log_path}[/dim]")
 
-            console.print("[yellow]Tip:[/yellow] Run with [bold]--debug[/bold] for full details.")
-            console.print("     Or run [bold]navig crash export[/bold] to Create a report for GitHub.")
+            console.print(
+                "[yellow]Tip:[/yellow] Run with [bold]--debug[/bold] for full details."
+            )
+            console.print(
+                "     Or run [bold]navig crash export[/bold] to Create a report for GitHub."
+            )
             console.print()
 
         except ImportError:
-            sys.stderr.write(f"\n💥 Navig encountered an unexpected error ({err_type})\n")
+            sys.stderr.write(
+                f"\n💥 Navig encountered an unexpected error ({err_type})\n"
+            )
             sys.stderr.write(f"   {msg}\n\n")
             if log_path:
                 sys.stderr.write(f"Crash details saved to: {log_path}\n")
             sys.stderr.write("Tip: Run with --debug for full details.\n")
-            sys.stderr.write("     Or run 'navig crash export' to create a report for GitHub.\n\n")
+            sys.stderr.write(
+                "     Or run 'navig crash export' to create a report for GitHub.\n\n"
+            )
 
     def get_latest_crash_report(self) -> Optional[Dict[str, Any]]:
         """Retrieve the content of the most recent crash log."""
         try:
             log_dir = self._get_log_dir()
-            logs = sorted(log_dir.glob("crash-*.json"), key=os.path.getmtime, reverse=True)
+            logs = sorted(
+                log_dir.glob("crash-*.json"), key=os.path.getmtime, reverse=True
+            )
 
             if not logs:
                 return None
@@ -182,6 +198,7 @@ class CrashHandler:
 
         except Exception:
             return None
+
 
 # Global instance
 crash_handler = CrashHandler()

@@ -7,6 +7,7 @@ navig.ui.diff — Unified diff preview with semantic coloring.
 
 Only rendered when debug context is active or explicitly requested.
 """
+
 from __future__ import annotations
 
 import sys
@@ -16,9 +17,9 @@ from navig.ui.models import DiffLine, DiffPreview
 from navig.ui.theme import console
 
 _OP_STYLE = {
-    "add":     ("green", "+"),
-    "remove":  ("red",   "-"),
-    "context": ("dim",   " "),
+    "add": ("green", "+"),
+    "remove": ("red", "-"),
+    "context": ("dim", " "),
 }
 
 
@@ -31,6 +32,7 @@ def render_diff_preview(
     """Render a diff block. Skipped unless debug=True or NAVIG_DEBUG env is set.
     Never raises."""
     import os
+
     if not debug and os.getenv("NAVIG_DEBUG", "0") != "1":
         return
     try:
@@ -57,6 +59,7 @@ def render_diff_preview(
 def diff_lines_from_text(before: str, after: str) -> List[DiffLine]:
     """Generate DiffLine list from two multiline strings."""
     import difflib
+
     lines: List[DiffLine] = []
     before_lines = before.splitlines()
     after_lines = after.splitlines()

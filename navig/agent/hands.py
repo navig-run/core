@@ -58,14 +58,14 @@ class CommandResult:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'command': self.command,
-            'status': self.status.name,
-            'exit_code': self.exit_code,
-            'stdout': self.stdout[:10000],  # Limit output size
-            'stderr': self.stderr[:10000],
-            'duration_seconds': self.duration_seconds,
-            'success': self.success,
-            'timestamp': self.timestamp.isoformat(),
+            "command": self.command,
+            "status": self.status.name,
+            "exit_code": self.exit_code,
+            "stdout": self.stdout[:10000],  # Limit output size
+            "stderr": self.stderr[:10000],
+            "duration_seconds": self.duration_seconds,
+            "success": self.success,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
@@ -84,52 +84,52 @@ class PendingAction:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'id': self.id,
-            'command': self.command,
-            'reason': self.reason,
-            'requested_by': self.requested_by,
-            'requested_at': self.requested_at.isoformat(),
-            'approved': self.approved,
-            'approved_by': self.approved_by,
-            'approved_at': self.approved_at.isoformat() if self.approved_at else None,
+            "id": self.id,
+            "command": self.command,
+            "reason": self.reason,
+            "requested_by": self.requested_by,
+            "requested_at": self.requested_at.isoformat(),
+            "approved": self.approved,
+            "approved_by": self.approved_by,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
         }
 
 
 class Hands(Component):
     """
     Command execution component.
-    
+
     The Hands execute actions on behalf of the agent:
     - Shell commands
     - NAVIG CLI operations
     - File operations
     - Service management
-    
+
     Safety is paramount - dangerous commands require approval.
     """
 
     # Dangerous command patterns that always require confirmation
     DANGEROUS_PATTERNS = [
-        'rm -rf',
-        'rm -r',
-        'rmdir',
-        'delete',
-        'drop',
-        'truncate',
-        'shutdown',
-        'reboot',
-        'halt',
-        'poweroff',
-        'kill -9',
-        'pkill',
-        'killall',
-        'dd if=',
-        'mkfs',
-        'fdisk',
-        'parted',
-        '> /dev/',
-        'chmod 777',
-        'chown -R',
+        "rm -rf",
+        "rm -r",
+        "rmdir",
+        "delete",
+        "drop",
+        "truncate",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+        "kill -9",
+        "pkill",
+        "killall",
+        "dd if=",
+        "mkfs",
+        "fdisk",
+        "parted",
+        "> /dev/",
+        "chmod 777",
+        "chown -R",
     ]
 
     def __init__(
@@ -172,10 +172,10 @@ class Hands(Component):
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for hands."""
         return {
-            'running_commands': len(self._running_commands),
-            'pending_approvals': len(self._pending_actions),
-            'command_history_size': len(self._command_history),
-            'safe_mode': self.config.safe_mode,
+            "running_commands": len(self._running_commands),
+            "pending_approvals": len(self._pending_actions),
+            "command_history_size": len(self._command_history),
+            "safe_mode": self.config.safe_mode,
         }
 
     def _is_dangerous(self, command: str) -> bool:
@@ -196,7 +196,7 @@ class Hands(Component):
 
     def _is_sudo_command(self, command: str) -> bool:
         """Check if command requires sudo."""
-        return command.strip().startswith('sudo ')
+        return command.strip().startswith("sudo ")
 
     async def execute(
         self,
@@ -209,7 +209,7 @@ class Hands(Component):
     ) -> CommandResult:
         """
         Execute a shell command.
-        
+
         Args:
             command: The command to execute
             cwd: Working directory
@@ -217,7 +217,7 @@ class Hands(Component):
             timeout: Timeout in seconds (uses config default if not provided)
             requester: Who requested this command
             force: Skip safety checks (use with caution)
-        
+
         Returns:
             CommandResult with output and status
         """
@@ -260,10 +260,7 @@ class Hands(Component):
         cmd_id = f"cmd_{start_time.timestamp()}"
 
         # Emit command started event
-        await self.emit(
-            EventType.COMMAND_STARTED,
-            {'command': command, 'id': cmd_id}
-        )
+        await self.emit(EventType.COMMAND_STARTED, {"command": command, "id": cmd_id})
 
         try:
             # Prepare environment
@@ -272,12 +269,12 @@ class Hands(Component):
                 full_env.update(env)
 
             # Determine shell
-            if os.name == 'nt':
+            if os.name == "nt":
                 # Windows
-                shell_cmd = ['cmd', '/c', command]
+                shell_cmd = ["cmd", "/c", command]
             else:
                 # Unix
-                shell_cmd = ['bash', '-c', command]
+                shell_cmd = ["bash", "-c", command]
 
             # Start process
             process = await asyncio.create_subprocess_exec(
@@ -293,8 +290,7 @@ class Hands(Component):
             try:
                 # Wait for completion with timeout
                 stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=timeout
+                    process.communicate(), timeout=timeout
                 )
 
                 duration = (datetime.now() - start_time).total_seconds()
@@ -303,8 +299,8 @@ class Hands(Component):
                     command=command,
                     status=CommandStatus.COMPLETED,
                     exit_code=process.returncode,
-                    stdout=stdout.decode('utf-8', errors='replace'),
-                    stderr=stderr.decode('utf-8', errors='replace'),
+                    stdout=stdout.decode("utf-8", errors="replace"),
+                    stderr=stderr.decode("utf-8", errors="replace"),
                     duration_seconds=duration,
                 )
 
@@ -337,14 +333,16 @@ class Hands(Component):
         # Store in history
         self._command_history.append(result)
         if len(self._command_history) > self._max_history:
-            self._command_history = self._command_history[-self._max_history:]
+            self._command_history = self._command_history[-self._max_history :]
 
         # Emit completion event
-        event_type = EventType.COMMAND_COMPLETED if result.success else EventType.COMMAND_FAILED
+        event_type = (
+            EventType.COMMAND_COMPLETED if result.success else EventType.COMMAND_FAILED
+        )
         await self.emit(
             event_type,
-            {'result': result.to_dict()},
-            priority=EventPriority.HIGH if not result.success else EventPriority.NORMAL
+            {"result": result.to_dict()},
+            priority=EventPriority.HIGH if not result.success else EventPriority.NORMAL,
         )
 
         return result
@@ -369,13 +367,15 @@ class Hands(Component):
         # Emit approval request event
         await self.emit(
             EventType.ACTION_PENDING,
-            {'action': action.to_dict()},
-            priority=EventPriority.HIGH
+            {"action": action.to_dict()},
+            priority=EventPriority.HIGH,
         )
 
         # Wait for approval (with timeout)
         try:
-            await asyncio.wait_for(approval_event.wait(), timeout=300)  # 5 minute timeout
+            await asyncio.wait_for(
+                approval_event.wait(), timeout=300
+            )  # 5 minute timeout
             return self._pending_actions.get(action_id, action).approved or False
         except asyncio.TimeoutError:
             return False
@@ -397,10 +397,7 @@ class Hands(Component):
         if action_id in self._approval_callbacks:
             self._approval_callbacks[action_id].set()
 
-        await self.emit(
-            EventType.ACTION_APPROVED,
-            {'action': action.to_dict()}
-        )
+        await self.emit(EventType.ACTION_APPROVED, {"action": action.to_dict()})
 
         return True
 
@@ -418,10 +415,7 @@ class Hands(Component):
         if action_id in self._approval_callbacks:
             self._approval_callbacks[action_id].set()
 
-        await self.emit(
-            EventType.ACTION_REJECTED,
-            {'action': action.to_dict()}
-        )
+        await self.emit(EventType.ACTION_REJECTED, {"action": action.to_dict()})
 
         return True
 
@@ -453,64 +447,67 @@ class Hands(Component):
 
         return True
 
-    async def run_workflow(self, name: str, variables: Dict[str, str] = None) -> CommandResult:
+    async def run_workflow(
+        self, name: str, variables: Dict[str, str] = None
+    ) -> CommandResult:
         """Run an automation workflow directly."""
         from navig.core.automation_engine import WorkflowEngine
 
         loop = asyncio.get_running_loop()
 
         def _run():
-             engine = WorkflowEngine()
-             wf = engine.load_workflow(name)
-             if not wf:
-                 raise ValueError(f"Workflow '{name}' not found")
-             return engine.execute_workflow(wf, variables)
+            engine = WorkflowEngine()
+            wf = engine.load_workflow(name)
+            if not wf:
+                raise ValueError(f"Workflow '{name}' not found")
+            return engine.execute_workflow(wf, variables)
 
         start_time = datetime.now()
         try:
-             # Run in thread pool to avoid blocking async loop with sleep/subprocess
-             result_vars = await loop.run_in_executor(None, _run)
+            # Run in thread pool to avoid blocking async loop with sleep/subprocess
+            result_vars = await loop.run_in_executor(None, _run)
 
-             duration = (datetime.now() - start_time).total_seconds()
+            duration = (datetime.now() - start_time).total_seconds()
 
-             # Format output nicely
-             import json
-             output = json.dumps(result_vars, indent=2)
+            # Format output nicely
+            import json
 
-             # Log success
-             await self.emit(
-                 EventType.COMMAND_COMPLETED,
-                 {'command': f"workflow run {name}", 'result': output},
-                 priority=EventPriority.NORMAL
-             )
+            output = json.dumps(result_vars, indent=2)
 
-             return CommandResult(
-                 command=f"workflow run {name}",
-                 status=CommandStatus.COMPLETED,
-                 exit_code=0,
-                 stdout=output,
-                 duration_seconds=duration
-             )
+            # Log success
+            await self.emit(
+                EventType.COMMAND_COMPLETED,
+                {"command": f"workflow run {name}", "result": output},
+                priority=EventPriority.NORMAL,
+            )
+
+            return CommandResult(
+                command=f"workflow run {name}",
+                status=CommandStatus.COMPLETED,
+                exit_code=0,
+                stdout=output,
+                duration_seconds=duration,
+            )
         except Exception as e:
-             duration = (datetime.now() - start_time).total_seconds()
+            duration = (datetime.now() - start_time).total_seconds()
 
-             await self.emit(
-                 EventType.COMMAND_FAILED,
-                 {'command': f"workflow run {name}", 'error': str(e)},
-                 priority=EventPriority.HIGH
-             )
+            await self.emit(
+                EventType.COMMAND_FAILED,
+                {"command": f"workflow run {name}", "error": str(e)},
+                priority=EventPriority.HIGH,
+            )
 
-             return CommandResult(
-                 command=f"workflow run {name}",
-                 status=CommandStatus.FAILED,
-                 stderr=str(e),
-                 duration_seconds=duration
-             )
+            return CommandResult(
+                command=f"workflow run {name}",
+                status=CommandStatus.FAILED,
+                stderr=str(e),
+                duration_seconds=duration,
+            )
 
     async def run_auto_command(self, action: str, **kwargs) -> CommandResult:
         """
         Execute a cross-platform automation action directly.
-        
+
         Available actions:
         - click(x, y, button='left')
         - type(text, delay=50)
@@ -535,22 +532,36 @@ class Hands(Component):
 
             # Map action to adapter method
             method_map = {
-                'click': lambda: adapter.click(kwargs.get('x'), kwargs.get('y'), kwargs.get('button', 'left')),
-                'type': lambda: adapter.type_text(kwargs.get('text'), kwargs.get('delay', 50)),
-                'open_app': lambda: adapter.open_app(kwargs.get('target')),
-                'snap_window': lambda: adapter.snap_window(kwargs.get('selector'), kwargs.get('position')),
-                'get_clipboard': lambda: adapter.get_clipboard(),
-                'set_clipboard': lambda: adapter.set_clipboard(kwargs.get('text')),
-                'get_focused_window': lambda: adapter.get_focused_window(),
-                'windows': lambda: adapter.get_all_windows(),
-                'activate_window': lambda: adapter.activate_window(kwargs.get('selector')),
-                'close_window': lambda: adapter.close_window(kwargs.get('selector')),
-                'minimize_window': lambda: adapter.minimize_window(kwargs.get('selector')),
-                'maximize_window': lambda: adapter.maximize_window(kwargs.get('selector')),
+                "click": lambda: adapter.click(
+                    kwargs.get("x"), kwargs.get("y"), kwargs.get("button", "left")
+                ),
+                "type": lambda: adapter.type_text(
+                    kwargs.get("text"), kwargs.get("delay", 50)
+                ),
+                "open_app": lambda: adapter.open_app(kwargs.get("target")),
+                "snap_window": lambda: adapter.snap_window(
+                    kwargs.get("selector"), kwargs.get("position")
+                ),
+                "get_clipboard": lambda: adapter.get_clipboard(),
+                "set_clipboard": lambda: adapter.set_clipboard(kwargs.get("text")),
+                "get_focused_window": lambda: adapter.get_focused_window(),
+                "windows": lambda: adapter.get_all_windows(),
+                "activate_window": lambda: adapter.activate_window(
+                    kwargs.get("selector")
+                ),
+                "close_window": lambda: adapter.close_window(kwargs.get("selector")),
+                "minimize_window": lambda: adapter.minimize_window(
+                    kwargs.get("selector")
+                ),
+                "maximize_window": lambda: adapter.maximize_window(
+                    kwargs.get("selector")
+                ),
             }
 
             if action not in method_map:
-                raise ValueError(f"Unknown action: {action}. Available: {list(method_map.keys())}")
+                raise ValueError(
+                    f"Unknown action: {action}. Available: {list(method_map.keys())}"
+                )
 
             return method_map[action]()
 
@@ -560,11 +571,11 @@ class Hands(Component):
             duration = (datetime.now() - start_time).total_seconds()
 
             # Format result
-            if hasattr(result, 'to_dict'):
+            if hasattr(result, "to_dict"):
                 output = json.dumps(result.to_dict(), indent=2)
-            elif isinstance(result, list) and result and hasattr(result[0], 'to_dict'):
+            elif isinstance(result, list) and result and hasattr(result[0], "to_dict"):
                 output = json.dumps([w.to_dict() for w in result], indent=2)
-            elif hasattr(result, 'success'):
+            elif hasattr(result, "success"):
                 output = "Success" if result.success else f"Failed: {result.stderr}"
             else:
                 output = str(result)
@@ -574,7 +585,7 @@ class Hands(Component):
                 status=CommandStatus.COMPLETED,
                 exit_code=0,
                 stdout=output,
-                duration_seconds=duration
+                duration_seconds=duration,
             )
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
@@ -582,7 +593,7 @@ class Hands(Component):
                 command=f"auto {action}",
                 status=CommandStatus.FAILED,
                 stderr=str(e),
-                duration_seconds=duration
+                duration_seconds=duration,
             )
 
     async def evolve_workflow(self, goal: str) -> CommandResult:
@@ -595,43 +606,47 @@ class Hands(Component):
 
     async def list_workflows(self) -> CommandResult:
         """List available workflows."""
-        return await self.execute('navig workflow list')
+        return await self.execute("navig workflow list")
 
     async def list_scripts(self) -> CommandResult:
         """List available scripts."""
-        return await self.execute('navig script list')
+        return await self.execute("navig script list")
 
     async def run_script(self, name: str) -> CommandResult:
         """Run a Python script."""
-        return await self.execute(f'navig script run {name}')
+        return await self.execute(f"navig script run {name}")
 
-    async def evolve_ahk(self, goal: str, retries: int = 3, dry_run: bool = False) -> CommandResult:
+    async def evolve_ahk(
+        self, goal: str, retries: int = 3, dry_run: bool = False
+    ) -> CommandResult:
         """
         Generate and evolve an AHK script using AI.
-        
+
         This creates Windows-specific automation scripts that can:
         - Control windows and applications
         - Automate mouse and keyboard
         - Register global hotkeys
         - Use OCR and screenshots
-        
+
         Args:
             goal: Natural language description of what to automate
             retries: Max evolution attempts
             dry_run: Show script without executing
-            
+
         Returns:
             CommandResult with generated script or execution output
         """
         cmd = f'navig ahk evolve "{goal}" --retries {retries}'
         if dry_run:
-            cmd += ' --dry-run'
+            cmd += " --dry-run"
         return await self.execute(cmd)
 
-    async def generate_ahk(self, goal: str, save: bool = False, dry_run: bool = False) -> CommandResult:
+    async def generate_ahk(
+        self, goal: str, save: bool = False, dry_run: bool = False
+    ) -> CommandResult:
         """
         Generate an AHK script using AI (single attempt, no evolution).
-        
+
         Args:
             goal: Natural language description
             save: Save to library if successful
@@ -639,19 +654,19 @@ class Hands(Component):
         """
         cmd = f'navig ahk generate "{goal}"'
         if save:
-            cmd += ' --save'
+            cmd += " --save"
         if dry_run:
-            cmd += ' --dry-run'
+            cmd += " --dry-run"
         return await self.execute(cmd)
 
     async def ahk_dashboard(self) -> CommandResult:
         """Launch live AHK window dashboard."""
-        return await self.execute('navig ahk dashboard')
+        return await self.execute("navig ahk dashboard")
 
     async def ahk_snap(self, window: str, position: str) -> CommandResult:
         """
         Snap a window to a screen position.
-        
+
         Args:
             window: Window selector (title/class)
             position: left, right, top, bottom, top-left, etc.
@@ -664,16 +679,18 @@ class Hands(Component):
 
     async def save_window_layout(self, name: str) -> CommandResult:
         """Save current window arrangement as a layout."""
-        return await self.execute(f'navig ahk layout save {name}')
+        return await self.execute(f"navig ahk layout save {name}")
 
     async def restore_window_layout(self, name: str) -> CommandResult:
         """Restore a saved window layout."""
-        return await self.execute(f'navig ahk layout restore {name}')
+        return await self.execute(f"navig ahk layout restore {name}")
 
-    async def register_global_hotkey(self, hotkey: str, command: str, start_listener: bool = True) -> CommandResult:
+    async def register_global_hotkey(
+        self, hotkey: str, command: str, start_listener: bool = True
+    ) -> CommandResult:
         """
         Register a global hotkey that runs a command.
-        
+
         Args:
             hotkey: AHK hotkey format (e.g., "^!t" for Ctrl+Alt+T)
             command: Command to run when hotkey is pressed
@@ -681,6 +698,5 @@ class Hands(Component):
         """
         cmd = f'navig ahk listen "{hotkey}" "{command}"'
         if start_listener:
-            cmd += ' --start'
+            cmd += " --start"
         return await self.execute(cmd)
-

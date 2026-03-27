@@ -3,14 +3,16 @@ navig-commands-core/commands/whois.py
 
 RDAP-based domain / IP lookup — stdlib only (urllib).
 """
+
 from __future__ import annotations
+
 import json
-from urllib.request import urlopen, Request
-from urllib.error import URLError
 from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 _RDAP_DOMAIN = "https://rdap.org/domain/{}"
-_RDAP_IP     = "https://rdap.org/ip/{}"
+_RDAP_IP = "https://rdap.org/ip/{}"
 
 _HEADERS = {"Accept": "application/json", "User-Agent": "navig-commands-core/1.1"}
 
@@ -23,6 +25,7 @@ def _rdap_fetch(url: str, timeout: float) -> dict:
 
 def _is_ip(value: str) -> bool:
     import socket
+
     for family in (socket.AF_INET, socket.AF_INET6):
         try:
             socket.inet_pton(family, value)
@@ -49,14 +52,18 @@ def handle(args: dict, ctx: Any = None) -> dict:
     try:
         raw = _rdap_fetch(url, timeout)
     except URLError as exc:
-        return {"status": "error", "message": f"RDAP lookup failed: {exc}", "target": target}
+        return {
+            "status": "error",
+            "message": f"RDAP lookup failed: {exc}",
+            "target": target,
+        }
     except Exception as exc:
         return {"status": "error", "message": str(exc), "target": target}
 
     # Extract the most useful fields
     result: dict[str, Any] = {"target": target, "rdap_url": url}
 
-    if "ldhName" in raw:              # domain
+    if "ldhName" in raw:  # domain
         result["name"] = raw.get("ldhName")
         result["status"] = raw.get("status", [])
         nameservers = [ns.get("ldhName") for ns in raw.get("nameservers", [])]
@@ -68,11 +75,15 @@ def handle(args: dict, ctx: Any = None) -> dict:
         for e in raw.get("entities", []):
             roles = e.get("roles", [])
             vcards = e.get("vcardArray", [None, []])
-            name_entry = next((v[3] for v in vcards[1] if v[0] == "fn"), None) if len(vcards) > 1 else None
+            name_entry = (
+                next((v[3] for v in vcards[1] if v[0] == "fn"), None)
+                if len(vcards) > 1
+                else None
+            )
             entities.append({"roles": roles, "name": name_entry})
         result["entities"] = entities
 
-    elif "ipVersion" in raw:          # IP
+    elif "ipVersion" in raw:  # IP
         result["ip_version"] = raw.get("ipVersion")
         result["handle"] = raw.get("handle")
         result["country"] = raw.get("country")

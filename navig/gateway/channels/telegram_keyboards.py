@@ -40,6 +40,7 @@ MAX_CALLBACK_DATA = 64  # Telegram limit
 
 class ContentCategory(str, Enum):
     """Categories used to decide which keyboard profile to use."""
+
     INFORMATIONAL = "info"
     COMPARISON = "compare"
     HOWTO = "howto"
@@ -52,10 +53,11 @@ class ContentCategory(str, Enum):
 
 class KeyboardProfile(str, Enum):
     """Keyboard profile — determines which rows to show."""
-    ACTION = "action"       # Approve/Reject/Details
-    EXPAND = "expand"       # Show more / Open in Deck
-    FEEDBACK = "feedback"   # 👍 👎
-    NONE = "none"           # No keyboard
+
+    ACTION = "action"  # Approve/Reject/Details
+    EXPAND = "expand"  # Show more / Open in Deck
+    FEEDBACK = "feedback"  # 👍 👎
+    NONE = "none"  # No keyboard
 
 
 # ────────────────────────────────────────────────────────────────
@@ -159,6 +161,7 @@ def choose_profile(
 # Callback data store (bounded in-memory)
 # ────────────────────────────────────────────────────────────────
 
+
 def _short_hash(text: str, length: int = 6) -> str:
     return hashlib.md5(text.encode()).hexdigest()[:length]
 
@@ -166,6 +169,7 @@ def _short_hash(text: str, length: int = 6) -> str:
 @dataclass
 class CallbackEntry:
     """Stored context for a callback button."""
+
     action: str
     user_message: str
     ai_response: str
@@ -210,6 +214,7 @@ def get_callback_store() -> CallbackStore:
 # ResponseKeyboardBuilder
 # ────────────────────────────────────────────────────────────────
 
+
 class ResponseKeyboardBuilder:
     """
     Builds an InlineKeyboardMarkup (list-of-lists-of-dicts) using one of
@@ -251,7 +256,9 @@ class ResponseKeyboardBuilder:
             try:
                 profile = KeyboardProfile(profile_override)
             except ValueError:
-                profile = choose_profile(ai_response, category, has_approval=has_approval)
+                profile = choose_profile(
+                    ai_response, category, has_approval=has_approval
+                )
         else:
             profile = choose_profile(ai_response, category, has_approval=has_approval)
 
@@ -266,7 +273,9 @@ class ResponseKeyboardBuilder:
                 msg_hash, user_message, ai_response, category, approval_actions
             )
         elif profile == KeyboardProfile.EXPAND:
-            rows = self._build_expand_rows(msg_hash, user_message, ai_response, category)
+            rows = self._build_expand_rows(
+                msg_hash, user_message, ai_response, category
+            )
         elif profile == KeyboardProfile.FEEDBACK:
             rows = self._build_feedback_rows(msg_hash, user_message, ai_response)
 
@@ -288,13 +297,16 @@ class ResponseKeyboardBuilder:
         if len(cb_key) > MAX_CALLBACK_DATA:
             cb_key = cb_key[:MAX_CALLBACK_DATA]
 
-        self.store.put(cb_key, CallbackEntry(
-            action=action,
-            user_message=user_message,
-            ai_response=ai_response[:3000],
-            category=classify_response(ai_response).value,
-            extra=extra or {},
-        ))
+        self.store.put(
+            cb_key,
+            CallbackEntry(
+                action=action,
+                user_message=user_message,
+                ai_response=ai_response[:3000],
+                category=classify_response(ai_response).value,
+                extra=extra or {},
+            ),
+        )
         return {"text": label, "callback_data": cb_key}
 
     def _build_action_rows(
@@ -311,23 +323,45 @@ class ResponseKeyboardBuilder:
             for item in approval_actions[:MAX_BUTTONS_PER_ROW]:
                 request_id = str(item.get("request_id", "")).strip()
                 extra = {"request_id": request_id} if request_id else None
-                row.append(self._make_button(
-                    item["label"],
-                    item["action"],
+                row.append(
+                    self._make_button(
+                        item["label"],
+                        item["action"],
+                        msg_hash,
+                        user_message,
+                        ai_response,
+                        extra=extra,
+                    )
+                )
+            return [row]
+
+        is_ru = bool(re.search(r"[А-Яа-я]", ai_response))
+        # Default approval pattern
+        return [
+            [
+                self._make_button(
+                    "✅ Принять" if is_ru else "✅ Approve",
+                    "approve",
                     msg_hash,
                     user_message,
                     ai_response,
-                    extra=extra,
-                ))
-            return [row]
-
-        is_ru = bool(re.search(r'[А-Яа-я]', ai_response))
-        # Default approval pattern
-        return [[
-            self._make_button("✅ Принять" if is_ru else "✅ Approve", "approve", msg_hash, user_message, ai_response),
-            self._make_button("🔀 Альтернатива" if is_ru else "🔀 Alternative", "alternative", msg_hash, user_message, ai_response),
-            self._make_button("❌ Отмена" if is_ru else "❌ Cancel", "cancel", msg_hash, user_message, ai_response),
-        ]]
+                ),
+                self._make_button(
+                    "🔀 Альтернатива" if is_ru else "🔀 Alternative",
+                    "alternative",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
+                self._make_button(
+                    "❌ Отмена" if is_ru else "❌ Cancel",
+                    "cancel",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
+            ]
+        ]
 
     def _build_expand_rows(
         self,
@@ -346,28 +380,76 @@ class ResponseKeyboardBuilder:
         Row 2 → [👍] [👎] (always)
         """
         # Minimal language detection check based on cyrillic characters
-        is_ru = bool(re.search(r'[А-Яа-я]', ai_response))
+        is_ru = bool(re.search(r"[А-Яа-я]", ai_response))
 
         # Row 1 — contextual actions
         if category == ContentCategory.CODE:
             row1 = [
-                self._make_button("🔍 Объяснить" if is_ru else "🔍 Explain", "explain", msg_hash, user_message, ai_response),
-                self._make_button("📋 Копировать" if is_ru else "📋 Copy code", "copy_code", msg_hash, user_message, ai_response),
+                self._make_button(
+                    "🔍 Объяснить" if is_ru else "🔍 Explain",
+                    "explain",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
+                self._make_button(
+                    "📋 Копировать" if is_ru else "📋 Copy code",
+                    "copy_code",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
             ]
         elif category == ContentCategory.HOWTO:
             row1 = [
-                self._make_button("📋 Кратко" if is_ru else "📋 Summarize", "summarize", msg_hash, user_message, ai_response),
-                self._make_button("📝 По шагам" if is_ru else "📝 Show steps", "show_steps", msg_hash, user_message, ai_response),
+                self._make_button(
+                    "📋 Кратко" if is_ru else "📋 Summarize",
+                    "summarize",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
+                self._make_button(
+                    "📝 По шагам" if is_ru else "📝 Show steps",
+                    "show_steps",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
             ]
         elif category == ContentCategory.COMPARISON:
             row1 = [
-                self._make_button("📊 Сравнить" if is_ru else "📊 Compare", "table_fmt", msg_hash, user_message, ai_response),
-                self._make_button("✅ Рекомендовать" if is_ru else "✅ Recommend", "recommend", msg_hash, user_message, ai_response),
+                self._make_button(
+                    "📊 Сравнить" if is_ru else "📊 Compare",
+                    "table_fmt",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
+                self._make_button(
+                    "✅ Рекомендовать" if is_ru else "✅ Recommend",
+                    "recommend",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
             ]
         else:
             row1 = [
-                self._make_button("📋 Кратко" if is_ru else "📋 Summarize", "summarize", msg_hash, user_message, ai_response),
-                self._make_button("🔍 Подробнее" if is_ru else "🔍 Go deeper", "elaborate", msg_hash, user_message, ai_response),
+                self._make_button(
+                    "📋 Кратко" if is_ru else "📋 Summarize",
+                    "summarize",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
+                self._make_button(
+                    "🔍 Подробнее" if is_ru else "🔍 Go deeper",
+                    "elaborate",
+                    msg_hash,
+                    user_message,
+                    ai_response,
+                ),
             ]
 
         # Row 2 — feedback
@@ -385,10 +467,12 @@ class ResponseKeyboardBuilder:
         ai_response: str,
     ) -> List[List[Dict[str, str]]]:
         """Feedback profile: just [👍] [👎]."""
-        return [[
-            self._make_button("👍", "fb_up", msg_hash, user_message, ai_response),
-            self._make_button("👎", "fb_down", msg_hash, user_message, ai_response),
-        ]]
+        return [
+            [
+                self._make_button("👍", "fb_up", msg_hash, user_message, ai_response),
+                self._make_button("👎", "fb_down", msg_hash, user_message, ai_response),
+            ]
+        ]
 
 
 # ────────────────────────────────────────────────────────────────
@@ -397,37 +481,33 @@ class ResponseKeyboardBuilder:
 
 _ACTION_PROMPTS: Dict[str, str] = {
     "regen": (
-        "The user asked: \"{user_message}\"\n"
+        'The user asked: "{user_message}"\n'
         "Your previous answer was not satisfactory. "
         "Provide a better, more complete answer."
     ),
     "summarize": (
-        "Summarize the following in 2-3 concise sentences:\n\n"
-        "{ai_response}"
+        "Summarize the following in 2-3 concise sentences:\n\n" "{ai_response}"
     ),
     "elaborate": (
-        "The user asked: \"{user_message}\"\n"
-        "Your answer was: \"{ai_response_short}\"\n"
+        'The user asked: "{user_message}"\n'
+        'Your answer was: "{ai_response_short}"\n'
         "Elaborate with more detail, examples, and depth."
     ),
     "explain": (
-        "Explain the following code clearly and concisely:\n\n"
-        "{ai_response}"
+        "Explain the following code clearly and concisely:\n\n" "{ai_response}"
     ),
     "show_steps": (
-        "Rewrite the following as a clear numbered step-by-step:\n\n"
-        "{ai_response}"
+        "Rewrite the following as a clear numbered step-by-step:\n\n" "{ai_response}"
     ),
     "table_fmt": (
-        "Reformat the following comparison into a clear table:\n\n"
-        "{ai_response}"
+        "Reformat the following comparison into a clear table:\n\n" "{ai_response}"
     ),
     "recommend": (
         "From the following comparison, give a clear recommendation "
         "with brief justification:\n\n{ai_response}"
     ),
     "fb_improve": (
-        "The user asked: \"{user_message}\"\n"
+        'The user asked: "{user_message}"\n'
         "Your previous answer was rated poorly. "
         "Provide a significantly improved answer."
     ),
@@ -441,6 +521,7 @@ _ACTION_PROMPTS: Dict[str, str] = {
 }
 
 # ── Settings menu helpers ─────────────────────────────────────────────────────
+
 
 def _audio_header_text(session: Any) -> str:
     """Header text for the /audio panel — shows reply routing at a glance."""
@@ -471,15 +552,16 @@ def _settings_hub_text(session: Any) -> str:
     """Header text for the /settings hub panel."""
     try:
         from navig.agent.soul import MOOD_REGISTRY
+
         focus = getattr(session, "focus_mode", "balance")
         mp = MOOD_REGISTRY.get(focus)
         focus_label = f"{mp.emoji} {focus}" if mp else focus
     except Exception:
         focus_label = getattr(session, "focus_mode", "balance")
 
-    tts_p  = getattr(session, "tts_provider", "auto")
-    vr     = "on" if getattr(session, "voice_replies", False) else "off"
-    ai_m   = getattr(session, "ai_mode", "") or "auto"
+    tts_p = getattr(session, "tts_provider", "auto")
+    vr = "on" if getattr(session, "voice_replies", False) else "off"
+    ai_m = getattr(session, "ai_mode", "") or "auto"
     return (
         "⚙️ *NAVIG Settings*\n\n"
         f"Focus `{focus_label}` · AI mode `{ai_m}`\n"
@@ -509,25 +591,49 @@ def build_audio_keyboard(session: Any) -> List[List[Dict[str, Any]]]:
 
     return [
         [
-            {"text": f"🎤 Voice → Text{_on(voice_mode == 'text')}", "callback_data": "st_vrv_text"},
-            {"text": f"🎤 Voice → Voice{_on(voice_mode == 'voice')}", "callback_data": "st_vrv_voice"},
-            {"text": f"🎤 Voice → Auto{_on(voice_mode == 'auto')}", "callback_data": "st_vrv_auto"},
+            {
+                "text": f"🎤 Voice → Text{_on(voice_mode == 'text')}",
+                "callback_data": "st_vrv_text",
+            },
+            {
+                "text": f"🎤 Voice → Voice{_on(voice_mode == 'voice')}",
+                "callback_data": "st_vrv_voice",
+            },
+            {
+                "text": f"🎤 Voice → Auto{_on(voice_mode == 'auto')}",
+                "callback_data": "st_vrv_auto",
+            },
         ],
         [
-            {"text": f"⌨️ Text → Text{_on(text_mode == 'text')}", "callback_data": "st_vrt_text"},
-            {"text": f"⌨️ Text → Voice{_on(text_mode == 'voice')}", "callback_data": "st_vrt_voice"},
-            {"text": f"⌨️ Text → Off{_on(text_mode == 'off')}", "callback_data": "st_vrt_off"},
+            {
+                "text": f"⌨️ Text → Text{_on(text_mode == 'text')}",
+                "callback_data": "st_vrt_text",
+            },
+            {
+                "text": f"⌨️ Text → Voice{_on(text_mode == 'voice')}",
+                "callback_data": "st_vrt_voice",
+            },
+            {
+                "text": f"⌨️ Text → Off{_on(text_mode == 'off')}",
+                "callback_data": "st_vrt_off",
+            },
         ],
         [
-            {"text": f"{'👥' if grp_on else '💬'} Group voice {'ON' if grp_on else 'OFF'}", "callback_data": "st_grp"},
+            {
+                "text": f"{'👥' if grp_on else '💬'} Group voice {'ON' if grp_on else 'OFF'}",
+                "callback_data": "st_grp",
+            },
         ],
         [
-            {"text": f"🎙 Provider: {provider_labels.get(tts_p, 'Auto')}", "callback_data": "st_goto_voice"},
+            {
+                "text": f"🎙 Provider: {provider_labels.get(tts_p, 'Auto')}",
+                "callback_data": "st_goto_voice",
+            },
         ],
         [
             {"text": "🎙 TTS Providers", "callback_data": "st_goto_voice"},
             {"text": "⚙️ All settings", "callback_data": "st_goto_settings"},
-            {"text": "✕ close",          "callback_data": "st_close"},
+            {"text": "✕ close", "callback_data": "st_close"},
         ],
     ]
 
@@ -540,14 +646,14 @@ def build_settings_hub_keyboard(session: Any = None) -> List[List[Dict[str, Any]
     """Main /settings hub — pro inline navigation panel."""
     return [
         [
-            {"text": "🎙  Voice settings",        "callback_data": "st_goto_audio"},
-            {"text": "🤖  Providers & Models",     "callback_data": "st_goto_providers"},
+            {"text": "🎙  Voice settings", "callback_data": "st_goto_audio"},
+            {"text": "🤖  Providers & Models", "callback_data": "st_goto_providers"},
         ],
         [
-            {"text": "🛠  Debug",                  "callback_data": "st_goto_debug"},
+            {"text": "🛠  Debug", "callback_data": "st_goto_debug"},
         ],
         [
-            {"text": "✕  Close",                  "callback_data": "st_close"},
+            {"text": "✕  Close", "callback_data": "st_close"},
         ],
     ]
 
@@ -574,51 +680,70 @@ class CallbackHandler:
 
         # ── Model switcher callbacks (ms_*) — no store needed ──
         if cb_data.startswith("task:"):
-            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_task_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         if cb_data.startswith("task:"):
-            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_task_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         if cb_data.startswith("ms_"):
-            await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_model_switch(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         # ── Provider model picker callbacks (pm_*) — no store needed ──
         if cb_data.startswith("pm_"):
-            await self._handle_provider_model_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_provider_model_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         # ── Provider hub callbacks (prov_*) — no store needed ──
         if cb_data.startswith("prov_"):
-            await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_provider_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         # ── Settings callbacks (st_*) — no store needed ──
         if cb_data.startswith("st_"):
-            await self._handle_settings_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_settings_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         # ── Debug callbacks (dbg_*) — no store needed ──
         if cb_data.startswith("dbg_"):
-            await self._handle_debug_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_debug_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         # ── Trace action buttons (trace_*) — no store needed ──
         if cb_data.startswith("trace_"):
-            await self._handle_trace_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_trace_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         # ── Heard action cards (heard_*) — no store needed ──
         if cb_data.startswith("heard_"):
-            await self._handle_heard_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_heard_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         # ── Audio deep menu (audio:*) — no store needed ──
         if cb_data.startswith("audio:"):
             try:
                 from navig.gateway.channels.audio_menu import handle_audio_callback
+
                 await handle_audio_callback(
                     self.channel, cb_id, cb_data, chat_id, message_id, user_id
                 )
@@ -629,7 +754,9 @@ class CallbackHandler:
 
         # ── Audio file action buttons (audmsg:*) — no store needed ──
         if cb_data.startswith("audmsg:"):
-            await self._handle_audio_file_callback(cb_id, cb_data, chat_id, message_id, user_id)
+            await self._handle_audio_file_callback(
+                cb_id, cb_data, chat_id, message_id, user_id
+            )
             return
 
         if not chat_id or not cb_data:
@@ -713,9 +840,13 @@ class CallbackHandler:
                         user_message=entry.user_message,
                         message_id=message_id,
                     )
-                    await self.channel.send_message(chat_id, response, keyboard=keyboard)
+                    await self.channel.send_message(
+                        chat_id, response, keyboard=keyboard
+                    )
                 else:
-                    await self.channel.send_message(chat_id, "❌ Couldn't generate a response.")
+                    await self.channel.send_message(
+                        chat_id, "❌ Couldn't generate a response."
+                    )
             finally:
                 typing_task.cancel()
                 try:
@@ -741,12 +872,17 @@ class CallbackHandler:
 
         await self._answer(cb_id, "⚠️ Unknown action")
 
-    async def _answer(self, callback_id: str, text: str, show_alert: bool = False) -> None:
-        await self.channel._api_call("answerCallbackQuery", {
-            "callback_query_id": callback_id,
-            "text": text,
-            "show_alert": show_alert,
-        })
+    async def _answer(
+        self, callback_id: str, text: str, show_alert: bool = False
+    ) -> None:
+        await self.channel._api_call(
+            "answerCallbackQuery",
+            {
+                "callback_query_id": callback_id,
+                "text": text,
+                "show_alert": show_alert,
+            },
+        )
 
     async def _handle_approval_action(
         self,
@@ -812,6 +948,7 @@ class CallbackHandler:
             model_name = ""
             try:
                 from navig.agent.ai_client import get_ai_client
+
                 client = get_ai_client()
                 router = client.model_router
                 if router and tier:
@@ -841,6 +978,7 @@ class CallbackHandler:
             # Show full routing table
             try:
                 from navig.agent.ai_client import get_ai_client
+
                 client = get_ai_client()
                 router = client.model_router
                 if router and router.is_active:
@@ -864,7 +1002,7 @@ class CallbackHandler:
 
         # ── Provider-force shortcuts (ms_prov_*) ──
         prov_map = {
-            "ms_prov_xai":    ("xai",    "⚡ xAI/Grok"),
+            "ms_prov_xai": ("xai", "⚡ xAI/Grok"),
             "ms_prov_openai": ("openai", "🤖 OpenAI"),
         }
         if cb_data in prov_map:
@@ -907,7 +1045,9 @@ class CallbackHandler:
 
         if cb_data == "prov_noai":
             self.channel._user_model_prefs[user_id] = "noai"
-            await self._answer(cb_id, "🚫 Raw mode — no AI on next message", show_alert=True)
+            await self._answer(
+                cb_id, "🚫 Raw mode — no AI on next message", show_alert=True
+            )
             return
 
         if cb_data == "prov_bridge":
@@ -924,19 +1064,19 @@ class CallbackHandler:
         # Providers that open a full model↔tier picker
         # Static map for known providers + dynamic fallback via registry
         picker_map: dict = {
-            "prov_openrouter":    "openrouter",
-            "prov_github":        "github_models",
+            "prov_openrouter": "openrouter",
+            "prov_github": "github_models",
             "prov_github_models": "github_models",
-            "prov_nvidia":        "nvidia",
-            "prov_ollama":        "ollama",
-            "prov_xai":           "xai",
-            "prov_openai":        "openai",
-            "prov_anthropic":     "anthropic",
-            "prov_google":        "google",
-            "prov_groq":          "groq",
-            "prov_mistral":       "mistral",
-            "prov_llamacpp":      "llamacpp",
-            "prov_airllm":        "airllm",
+            "prov_nvidia": "nvidia",
+            "prov_ollama": "ollama",
+            "prov_xai": "xai",
+            "prov_openai": "openai",
+            "prov_anthropic": "anthropic",
+            "prov_google": "google",
+            "prov_groq": "groq",
+            "prov_mistral": "mistral",
+            "prov_llamacpp": "llamacpp",
+            "prov_airllm": "airllm",
         }
         if cb_data in picker_map:
             await self._answer(cb_id, "")
@@ -953,21 +1093,23 @@ class CallbackHandler:
             return
 
         # Generic fallback: look up provider in registry for a live description
-        prov_id = cb_data[len("prov_"):]  # strip "prov_" prefix
+        prov_id = cb_data[len("prov_") :]  # strip "prov_" prefix
         try:
             from navig.providers.registry import get_provider
             from navig.providers.verifier import verify_provider
+
             manifest = get_provider(prov_id)
             if manifest:
                 result = verify_provider(manifest)
                 if result.key_detected or not manifest.requires_key:
                     key_status = "✅ configured"
                 else:
-                    env_hint = " or ".join(manifest.env_vars[:2]) if manifest.env_vars else "—"
+                    env_hint = (
+                        " or ".join(manifest.env_vars[:2]) if manifest.env_vars else "—"
+                    )
                     vault_hint = manifest.vault_keys[0] if manifest.vault_keys else "—"
-                    key_status = (
-                        f"⬜ not found — set {env_hint}"
-                        + (f" or vault '{vault_hint}'" if vault_hint != "—" else "")
+                    key_status = f"⬜ not found — set {env_hint}" + (
+                        f" or vault '{vault_hint}'" if vault_hint != "—" else ""
                     )
                 toast = (
                     f"{manifest.emoji} {manifest.display_name} — "
@@ -1003,8 +1145,8 @@ class CallbackHandler:
         prov_id, model_idx_str, tier_code = parts
 
         tier_map: dict = {
-            "s": ("small",     "⚡ Small"),
-            "b": ("big",       "🧠 Big"),
+            "s": ("small", "⚡ Small"),
+            "b": ("big", "🧠 Big"),
             "c": ("coder_big", "💻 Code"),
         }
         if tier_code not in tier_map:
@@ -1020,18 +1162,25 @@ class CallbackHandler:
 
         # Resolve model list for this provider
         import json as _json
+
         models: list = []
         if prov_id == "ollama":
             try:
                 import urllib.request
-                with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
+
+                with urllib.request.urlopen(
+                    "http://127.0.0.1:11434/api/tags", timeout=2
+                ) as r:
                     data = _json.loads(r.read())
-                    models = [m["name"] for m in data.get("models", []) if m.get("name")]
+                    models = [
+                        m["name"] for m in data.get("models", []) if m.get("name")
+                    ]
             except Exception:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
         else:
             try:
                 from navig.providers.registry import _INDEX as PROV_INDEX
+
                 manifest = PROV_INDEX.get(prov_id)
                 if manifest:
                     models = list(manifest.models)
@@ -1046,6 +1195,7 @@ class CallbackHandler:
         # Update the live hybrid router config in-place (session-level override)
         try:
             from navig.agent.ai_client import get_ai_client
+
             router = get_ai_client().model_router
             if not router or not router.is_active:
                 await self._answer(
@@ -1084,7 +1234,9 @@ class CallbackHandler:
                 await self.channel._handle_trace(chat_id, user_id)
             except Exception as exc:
                 logger.debug("Debug trace callback failed: %s", exc)
-                await self.channel.send_message(chat_id, "⚠️ Trace unavailable.", parse_mode=None)
+                await self.channel.send_message(
+                    chat_id, "⚠️ Trace unavailable.", parse_mode=None
+                )
         else:
             await self.channel.send_message(
                 chat_id, f"⚠️ Unknown debug action: `{cb_data}`", parse_mode=None
@@ -1133,12 +1285,14 @@ class CallbackHandler:
     ) -> None:
         """Handle action buttons for received audio/music files (audmsg:{action}:{file_id})."""
         import asyncio as _asyncio
+
         parts = cb_data.split(":", 2)  # ["audmsg", action, short_id]
         action = parts[1] if len(parts) > 1 else ""
         short_id = parts[2] if len(parts) > 2 else ""
 
         try:
             from navig.gateway.channels.telegram_voice import _af_cache
+
             meta = _af_cache.get(short_id, {})
         except Exception:
             meta = {}
@@ -1164,11 +1318,15 @@ class CallbackHandler:
                 send_task_card,
                 update_task_card,
             )
-            view = make_task([
-                ("download", "Downloading audio file"),
-                ("stt",      "Running speech-to-text"),
-                ("finalize", "Finalizing transcript"),
-            ], title="🎤 Transcribing Audio...")
+
+            view = make_task(
+                [
+                    ("download", "Downloading audio file"),
+                    ("stt", "Running speech-to-text"),
+                    ("finalize", "Finalizing transcript"),
+                ],
+                title="🎤 Transcribing Audio...",
+            )
 
             # Use raw message store if context data not easily available
             if not getattr(self.channel, "task_views", None):
@@ -1188,7 +1346,11 @@ class CallbackHandler:
                     view.recompute_percent()
                     await update_task_card(self.channel, chat_id, view, force=True)
 
-                    await self.channel.send_message(chat_id, f"📝 *Transcript:*\n{transcript}", parse_mode="Markdown")
+                    await self.channel.send_message(
+                        chat_id,
+                        f"📝 *Transcript:*\n{transcript}",
+                        parse_mode="Markdown",
+                    )
                 else:
                     view.set_step("finalize", StepState.FAILED, "No speech found")
                     view.done = True
@@ -1197,10 +1359,12 @@ class CallbackHandler:
                     await update_task_card(self.channel, chat_id, view, force=True)
 
                     await self.channel.send_message(
-                        chat_id, "⚠️ Transcription failed — this file may not contain speech."
+                        chat_id,
+                        "⚠️ Transcription failed — this file may not contain speech.",
                     )
             except Exception as exc:
                 import logging
+
                 logging.getLogger("navig").warning("audmsg:transcribe error: %s", exc)
                 view.set_step("finalize", StepState.FAILED, str(exc)[:50])
                 view.done = True
@@ -1209,7 +1373,8 @@ class CallbackHandler:
                 await update_task_card(self.channel, chat_id, view, force=True)
 
                 await self.channel.send_message(
-                    chat_id, "⚠️ Transcription failed — this file may not contain speech."
+                    chat_id,
+                    "⚠️ Transcription failed — this file may not contain speech.",
                 )
             return
 
@@ -1222,13 +1387,14 @@ class CallbackHandler:
 
             prompt = f'The user sent an audio file titled "{title}"'
             if performer:
-                prompt += f' by {performer}'
+                prompt += f" by {performer}"
             if duration:
-                prompt += f' ({mins}:{secs:02d} long)'
+                prompt += f" ({mins}:{secs:02d} long)"
             prompt += ". Tell the user what you know about this track or artist in 2-3 short sentences. If you don't recognise it, say so honestly."
 
             try:
                 from navig.llm_generate import llm_generate
+
                 reply = await _asyncio.to_thread(
                     llm_generate,
                     messages=[{"role": "user", "content": prompt}],
@@ -1237,7 +1403,9 @@ class CallbackHandler:
                 await self.channel.send_message(chat_id, reply or "Nothing found.")
             except Exception as exc:
                 logger.warning("audmsg:identify error: %s", exc)
-                await self.channel.send_message(chat_id, "⚠️ Couldn't look that up right now.")
+                await self.channel.send_message(
+                    chat_id, "⚠️ Couldn't look that up right now."
+                )
             return
 
         if action == "info":
@@ -1273,6 +1441,7 @@ class CallbackHandler:
                     # Ask LLM what language the transcript is in
                     try:
                         from navig.llm_generate import llm_generate
+
                         prompt = f'What language is this text written in? Reply with only the language name.\n\n"{transcript[:500]}"'
                         lang_reply = await _asyncio.to_thread(
                             llm_generate,
@@ -1280,12 +1449,18 @@ class CallbackHandler:
                             mode="chat",
                         )
                         await self.channel.send_message(
-                            chat_id, f"🌐 Detected language: *{lang_reply or 'Unknown'}*", parse_mode="Markdown"
+                            chat_id,
+                            f"🌐 Detected language: *{lang_reply or 'Unknown'}*",
+                            parse_mode="Markdown",
                         )
                     except Exception:
-                        await self.channel.send_message(chat_id, "⚠️ Language detection failed.")
+                        await self.channel.send_message(
+                            chat_id, "⚠️ Language detection failed."
+                        )
                 else:
-                    await self.channel.send_message(chat_id, "⚠️ Could not transcribe audio for language detection.")
+                    await self.channel.send_message(
+                        chat_id, "⚠️ Could not transcribe audio for language detection."
+                    )
             except Exception as exc:
                 logger.warning("audmsg:lang error: %s", exc)
                 await self.channel.send_message(chat_id, "⚠️ Language detection failed.")
@@ -1308,7 +1483,9 @@ class CallbackHandler:
         elif cb_data == "heard_retry":
             await self._answer(cb_id, "🔁 Send a new voice message to re-transcribe.")
         elif cb_data == "heard_edit":
-            await self._answer(cb_id, "📝 Reply to the Heard: message with your edited text.")
+            await self._answer(
+                cb_id, "📝 Reply to the Heard: message with your edited text."
+            )
         else:
             await self._answer(cb_id, "")
 
@@ -1326,6 +1503,7 @@ class CallbackHandler:
         # Resolve session
         try:
             from navig.gateway.channels.telegram_sessions import get_session_manager
+
             sm = get_session_manager()
             session = sm.get_or_create_session(chat_id, user_id, is_group)
         except Exception as exc:
@@ -1336,10 +1514,13 @@ class CallbackHandler:
         if cb_data == "st_close":
             await self._answer(cb_id, "✖ Settings closed")
             try:
-                await self.channel._api_call("deleteMessage", {
-                    "chat_id": chat_id,
-                    "message_id": message_id,
-                })
+                await self.channel._api_call(
+                    "deleteMessage",
+                    {
+                        "chat_id": chat_id,
+                        "message_id": message_id,
+                    },
+                )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
             return
@@ -1347,9 +1528,9 @@ class CallbackHandler:
         # Map callback → (field, value) or toggle
         _TOGGLE = {
             "st_voice": "voice_enabled",
-            "st_stt":   "stt_enabled",
-            "st_grp":   "voice_in_groups",
-            "st_vr":    "voice_replies",
+            "st_stt": "stt_enabled",
+            "st_grp": "voice_in_groups",
+            "st_vr": "voice_replies",
         }
         _SELECT = {
             "st_tts_a": ("tts_provider", "auto"),
@@ -1369,15 +1550,15 @@ class CallbackHandler:
             "st_mode_c": ("ai_mode", "code"),
         }
         _TOAST = {
-            "st_voice":  lambda s: f"🔊 Voice {'ON' if s.voice_enabled else 'OFF'}",
-            "st_stt":    lambda s: f"🎙 Transcription {'ON' if s.stt_enabled else 'OFF'}",
-            "st_grp":    lambda s: f"👥 Group voice {'ON' if s.voice_in_groups else 'OFF'}",
-            "st_vr":     lambda s: f"🔊 Bot voice replies {'ON' if s.voice_replies else 'OFF'}",
-            "st_tts_a":  lambda _: "⚡ TTS: Auto (Edge → Google fallback)",
-            "st_tts_g":  lambda _: "☁️ TTS: Google Cloud",
-            "st_tts_e":  lambda _: "🌐 TTS: Edge TTS (Microsoft, no key needed)",
-            "st_tts_o":  lambda _: "🤖 TTS: OpenAI TTS-1",
-            "st_tts_d":  lambda _: "🎙 TTS: Deepgram (API key required)",
+            "st_voice": lambda s: f"🔊 Voice {'ON' if s.voice_enabled else 'OFF'}",
+            "st_stt": lambda s: f"🎙 Transcription {'ON' if s.stt_enabled else 'OFF'}",
+            "st_grp": lambda s: f"👥 Group voice {'ON' if s.voice_in_groups else 'OFF'}",
+            "st_vr": lambda s: f"🔊 Bot voice replies {'ON' if s.voice_replies else 'OFF'}",
+            "st_tts_a": lambda _: "⚡ TTS: Auto (Edge → Google fallback)",
+            "st_tts_g": lambda _: "☁️ TTS: Google Cloud",
+            "st_tts_e": lambda _: "🌐 TTS: Edge TTS (Microsoft, no key needed)",
+            "st_tts_o": lambda _: "🤖 TTS: OpenAI TTS-1",
+            "st_tts_d": lambda _: "🎙 TTS: Deepgram (API key required)",
             "st_vrv_text": lambda _: "🎤 Voice messages will get text replies",
             "st_vrv_voice": lambda _: "🎤 Voice messages will get voice replies",
             "st_vrv_auto": lambda s: f"🎤 Voice messages set to auto ({'voice' if s.voice_replies else 'text'} fallback)",
@@ -1392,14 +1573,14 @@ class CallbackHandler:
 
         # ── Navigation callbacks ───────────────────────────────────────────
         _NAV = {
-            "st_goto_audio":     "_handle_audio_menu",
-            "st_goto_voice":     "_handle_voice_menu",
+            "st_goto_audio": "_handle_audio_menu",
+            "st_goto_voice": "_handle_voice_menu",
             "st_goto_providers": "_handle_providers_and_models",
-            "st_goto_focus":     "_handle_mode_menu",
-            "st_goto_model":     "_handle_models_command",
-            "st_goto_trace":     "_handle_trace",
-            "st_goto_debug":     "_handle_debug",
-            "st_goto_settings":  "_handle_settings_hub",
+            "st_goto_focus": "_handle_mode_menu",
+            "st_goto_model": "_handle_models_command",
+            "st_goto_trace": "_handle_trace",
+            "st_goto_debug": "_handle_debug",
+            "st_goto_settings": "_handle_settings_hub",
         }
         if cb_data in _NAV:
             await self._answer(cb_id, "")
@@ -1442,13 +1623,16 @@ class CallbackHandler:
         # Refresh the settings message in-place
         keyboard_rows = build_audio_keyboard(session)
         try:
-            await self.channel._api_call("editMessageText", {
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": _audio_header_text(session),
-                "parse_mode": "Markdown",
-                "reply_markup": {"inline_keyboard": keyboard_rows},
-            })
+            await self.channel._api_call(
+                "editMessageText",
+                {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": _audio_header_text(session),
+                    "parse_mode": "Markdown",
+                    "reply_markup": {"inline_keyboard": keyboard_rows},
+                },
+            )
         except Exception as exc:
             logger.debug("Audio settings refresh failed: %s", exc)
 

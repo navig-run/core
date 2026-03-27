@@ -12,6 +12,7 @@ Master Key  (Argon2id / PBKDF2 from passphrase or machine fingerprint)
 
 Compromising one DEK exposes only that item.
 """
+
 from __future__ import annotations
 
 import os
@@ -35,14 +36,14 @@ except ImportError:
 __all__ = ["CryptoEngine", "CryptoError"]
 
 # ── Constants ────────────────────────────────────────────────────────────────
-_NONCE_LEN      = 12       # AES-GCM recommended nonce size
-_KEY_LEN        = 32       # AES-256
-_SALT_LEN       = 32       # KDF salt
-_A2_TIME_COST   = 3
-_A2_MEMORY_COST = 65_536   # 64 MiB — RFC 9106 interactive
+_NONCE_LEN = 12  # AES-GCM recommended nonce size
+_KEY_LEN = 32  # AES-256
+_SALT_LEN = 32  # KDF salt
+_A2_TIME_COST = 3
+_A2_MEMORY_COST = 65_536  # 64 MiB — RFC 9106 interactive
 _A2_PARALLELISM = 4
-_A2_SALT_PAD    = 16       # argon2 requires salt ≥ 8; use 16 for alignment
-_PBKDF2_ITERS   = 600_000  # OWASP 2023 minimum for PBKDF2-HMAC-SHA256
+_A2_SALT_PAD = 16  # argon2 requires salt ≥ 8; use 16 for alignment
+_PBKDF2_ITERS = 600_000  # OWASP 2023 minimum for PBKDF2-HMAC-SHA256
 
 
 class CryptoError(Exception):
@@ -81,7 +82,9 @@ class CryptoEngine:
         if salt_path.exists():
             data = salt_path.read_bytes()
             if len(data) < 16:
-                raise CryptoError(f"Salt file corrupt (only {len(data)} bytes): {salt_path}")
+                raise CryptoError(
+                    f"Salt file corrupt (only {len(data)} bytes): {salt_path}"
+                )
             self._salt = data
         else:
             self._salt = os.urandom(_SALT_LEN)
@@ -147,6 +150,7 @@ class CryptoEngine:
         if platform.system() == "Windows":
             try:
                 import winreg  # noqa: PLC0415
+
                 key = winreg.OpenKey(
                     winreg.HKEY_LOCAL_MACHINE,
                     r"SOFTWARE\Microsoft\Cryptography",

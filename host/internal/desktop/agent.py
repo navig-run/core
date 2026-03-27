@@ -159,9 +159,17 @@ def _method_find_element(params: _Params) -> _Result:
             match = True
             if "Name" in search_kwargs and elem.Name != search_kwargs["Name"]:
                 match = False
-            if match and "ClassName" in search_kwargs and elem.ClassName != search_kwargs["ClassName"]:
+            if (
+                match
+                and "ClassName" in search_kwargs
+                and elem.ClassName != search_kwargs["ClassName"]
+            ):
                 match = False
-            if match and "ControlType" in search_kwargs and elem.ControlType != search_kwargs["ControlType"]:
+            if (
+                match
+                and "ControlType" in search_kwargs
+                and elem.ControlType != search_kwargs["ControlType"]
+            ):
                 match = False
             if match and (name or class_name or control_type_str):
                 results.append(_element_to_dict(elem))
@@ -230,6 +238,7 @@ def _method_set_value(params: _Params) -> _Result:
         elem.SetFocus()
         # Clear existing content and type new value
         import uiautomation as _auto
+
         _auto.SendKeys("{Ctrl}a", waitTime=0.05)
         _auto.SendKeys(value, waitTime=0.0)
         return {"method": "SendKeys"}

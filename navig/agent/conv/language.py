@@ -1,4 +1,5 @@
 """LanguageDetector: script-heuristic + langdetect language identification."""
+
 from __future__ import annotations
 
 import functools
@@ -8,12 +9,37 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 _FRENCH_MARKERS = (
-    "à", "â", "é", "è", "ê", "ë", "î", "ï", "ô", "ù", "û", "ü", "ç", "œ", "æ",
+    "à",
+    "â",
+    "é",
+    "è",
+    "ê",
+    "ë",
+    "î",
+    "ï",
+    "ô",
+    "ù",
+    "û",
+    "ü",
+    "ç",
+    "œ",
+    "æ",
 )
 _FRENCH_KEYWORDS = (
-    "bonjour", "salut", "merci", "s'il vous", "comment", "pourquoi",
-    "qu'est-ce", "je suis", "c'est", "est-ce que", "oui", "non",
-    "bonsoir", "au revoir",
+    "bonjour",
+    "salut",
+    "merci",
+    "s'il vous",
+    "comment",
+    "pourquoi",
+    "qu'est-ce",
+    "je suis",
+    "c'est",
+    "est-ce que",
+    "oui",
+    "non",
+    "bonsoir",
+    "au revoir",
 )
 
 # Language codes recognised as first-class by this module.
@@ -28,6 +54,7 @@ _ZH_VARIANTS: frozenset[str] = frozenset({"zh-cn", "zh-tw", "zh"})
 # Public result type
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class LanguageResult:
     """Outcome of a language-detection call.
@@ -41,6 +68,7 @@ class LanguageResult:
         method:     Detection path taken: ``"langdetect"``, ``"script"``,
                     or ``"fallback"``.
     """
+
     code: str
     confidence: float
     method: str
@@ -138,6 +166,7 @@ _INSTRUCTIONS: dict[str, str] = {
 # Script-based heuristic detector (Unicode + French keyword scoring)
 # ---------------------------------------------------------------------------
 
+
 def _script_detect(text: str) -> str:
     """Return a language code using Unicode script ranges and French keywords.
 
@@ -157,9 +186,8 @@ def _script_detect(text: str) -> str:
         return "ar"
     if has_latin and not has_cyrillic and not has_cjk:
         lower = text.lower()
-        score = (
-            sum(1 for m in _FRENCH_MARKERS if m in lower)
-            + sum(2 for k in _FRENCH_KEYWORDS if k in lower)
+        score = sum(1 for m in _FRENCH_MARKERS if m in lower) + sum(
+            2 for k in _FRENCH_KEYWORDS if k in lower
         )
         return "fr" if score >= 2 else "en"
     return "mixed"
@@ -169,6 +197,7 @@ def _script_detect(text: str) -> str:
 # detect_confidence — module-level public helper
 # ---------------------------------------------------------------------------
 
+
 def detect_confidence(message: str) -> float:
     """Return the probability of the top-ranked language from ``langdetect``.
 
@@ -177,6 +206,7 @@ def detect_confidence(message: str) -> float:
     """
     try:
         from langdetect import detect_langs as _dl  # type: ignore[import]
+
         results = _dl(message)
         if results:
             return float(results[0].prob)
@@ -188,6 +218,7 @@ def detect_confidence(message: str) -> float:
 # ---------------------------------------------------------------------------
 # Core detection function
 # ---------------------------------------------------------------------------
+
 
 def _detect_language_code(message: str) -> LanguageResult:
     """Detect the language of *message* and return a :class:`LanguageResult`.
@@ -210,6 +241,7 @@ def _detect_language_code(message: str) -> LanguageResult:
 
     try:
         from langdetect import detect as _ld  # type: ignore[import]
+
         raw_code: str = _ld(message)
         # Normalise Chinese variants.
         if raw_code in _ZH_VARIANTS:
@@ -227,6 +259,7 @@ def _detect_language_code(message: str) -> LanguageResult:
 # LRU-cached wrapper — use this for repeated calls with the same message.
 # ---------------------------------------------------------------------------
 
+
 @functools.lru_cache(maxsize=50)
 def _cached_detect(message: str) -> LanguageResult:
     """Thin LRU-cached wrapper around :func:`_detect_language_code`.
@@ -240,6 +273,7 @@ def _cached_detect(message: str) -> LanguageResult:
 # Module-level instruction builder
 # ---------------------------------------------------------------------------
 
+
 def _build_language_instruction(code: str) -> str:
     """Return the pre-built language-enforcement block for *code*."""
     return _INSTRUCTIONS.get(code, _INSTRUCTIONS["mixed"])
@@ -248,6 +282,7 @@ def _build_language_instruction(code: str) -> str:
 # ---------------------------------------------------------------------------
 # Public LanguageDetector class — backward-compatible str-returning API
 # ---------------------------------------------------------------------------
+
 
 class LanguageDetector:
     """

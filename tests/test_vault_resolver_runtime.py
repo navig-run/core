@@ -6,7 +6,11 @@ from navig.vault.resolver import resolve_json_str, resolve_secret
 
 
 class _FakeVault:
-    def __init__(self, secrets: dict[str, str] | None = None, json_blobs: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        secrets: dict[str, str] | None = None,
+        json_blobs: dict[str, str] | None = None,
+    ) -> None:
         self.secrets = secrets or {}
         self.json_blobs = json_blobs or {}
 
@@ -31,7 +35,6 @@ def test_resolve_secret_prefers_env(monkeypatch) -> None:
     assert resolve_secret(["OPENAI_API_KEY"], ["openai/api_key"]) == "env-openai"
 
 
-
 def test_resolve_secret_falls_back_to_vault(monkeypatch) -> None:
     monkeypatch.delenv("DEEPGRAM_KEY", raising=False)
     monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
@@ -40,24 +43,36 @@ def test_resolve_secret_falls_back_to_vault(monkeypatch) -> None:
         lambda: _FakeVault(secrets={"deepgram/api_key": "vault-deepgram"}),
     )
 
-    assert resolve_secret(["DEEPGRAM_KEY", "DEEPGRAM_API_KEY"], ["deepgram/api_key"]) == "vault-deepgram"
-
+    assert (
+        resolve_secret(["DEEPGRAM_KEY", "DEEPGRAM_API_KEY"], ["deepgram/api_key"])
+        == "vault-deepgram"
+    )
 
 
 def test_resolve_json_str_reads_path_from_env(monkeypatch, tmp_path: Path) -> None:
     service_account = tmp_path / "sa.json"
-    service_account.write_text('{"type":"service_account","project_id":"demo"}', encoding="utf-8")
+    service_account.write_text(
+        '{"type":"service_account","project_id":"demo"}', encoding="utf-8"
+    )
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(service_account))
 
-    assert '"project_id":"demo"' in resolve_json_str(["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"])
-
+    assert '"project_id":"demo"' in resolve_json_str(
+        ["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"]
+    )
 
 
 def test_resolve_json_str_falls_back_to_vault(monkeypatch) -> None:
     monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
     monkeypatch.setattr(
         "navig.vault.core_v2.get_vault_v2",
-        lambda: _FakeVault(json_blobs={"google/vision-service-account": '{"type":"service_account"}'}),
+        lambda: _FakeVault(
+            json_blobs={"google/vision-service-account": '{"type":"service_account"}'}
+        ),
     )
 
-    assert resolve_json_str(["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"]) == '{"type":"service_account"}'
+    assert (
+        resolve_json_str(
+            ["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"]
+        )
+        == '{"type":"service_account"}'
+    )

@@ -29,10 +29,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from navig.storage.pragma_profiles import (
-    PragmaProfile,
-    profile_for_db,
-)
+from navig.storage.pragma_profiles import PragmaProfile, profile_for_db
 from navig.storage.query_timer import QueryTimer, get_query_timer
 from navig.storage.write_batcher import WriteBatcher
 
@@ -40,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Custom SQL functions ──────────────────────────────────────
+
 
 def _sql_cosine_distance(a: bytes, b: bytes) -> Optional[float]:
     """
@@ -79,6 +77,7 @@ def _sql_json_extract_text(json_str: Optional[str], key: str) -> Optional[str]:
 
 
 # ── Prepared statement cache ──────────────────────────────────
+
 
 class _StmtCache:
     """

@@ -39,6 +39,7 @@ def is_matrix_available() -> bool:
     """Check if Matrix integration is available."""
     try:
         import nio
+
         return True
     except ImportError:
         return False
@@ -81,6 +82,7 @@ def is_discord_available() -> bool:
     """Check if Discord integration is available."""
     try:
         import discord
+
         return True
     except ImportError:
         return False
@@ -90,6 +92,7 @@ def is_whatsapp_available() -> bool:
     """Check if WhatsApp integration is available."""
     try:
         import aiohttp
+
         return True
     except ImportError:
         return False
@@ -99,6 +102,7 @@ def is_telegram_available() -> bool:
     """Check if Telegram integration is available."""
     try:
         import aiohttp
+
         return True
     except ImportError:
         return False
@@ -108,18 +112,21 @@ def is_telegram_available() -> bool:
 def get_channel_registry():
     """Get the channel registry for unified channel management."""
     from .registry import get_channel_registry as _get_registry
+
     return _get_registry()
 
 
 def list_channels(available_only: bool = False):
     """List registered channels."""
     from .registry import list_channels as _list
+
     return _list(available_only)
 
 
 def get_channel(channel_id: str):
     """Get channel by ID or alias."""
     from .registry import get_channel as _get
+
     return _get(channel_id)
 
 
@@ -138,4 +145,3 @@ __all__ = [
     "list_channels",
     "get_channel",
 ]
-

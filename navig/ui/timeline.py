@@ -4,6 +4,7 @@ navig.ui.timeline — Timestamped event timeline renderer.
 Each event is rendered on one line:
   timestamp  icon  label  —  detail
 """
+
 from __future__ import annotations
 
 import sys
@@ -39,6 +40,9 @@ def render_event_timeline(
             if show_title and title:
                 print(f"  {title}", file=sys.stdout)
             for ev in events:
-                print(f"  {ev.timestamp}  {ev.icon_safe if SAFE_MODE else ev.icon}  {ev.label}  {ev.detail}", file=sys.stdout)
+                print(
+                    f"  {ev.timestamp}  {ev.icon_safe if SAFE_MODE else ev.icon}  {ev.label}  {ev.detail}",
+                    file=sys.stdout,
+                )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical

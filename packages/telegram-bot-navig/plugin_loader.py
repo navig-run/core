@@ -34,14 +34,20 @@ import threading
 from pathlib import Path
 from typing import Dict, Optional
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
-
 from plugin_base import BotPlugin
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 try:
     from watchdog.events import FileSystemEvent, FileSystemEventHandler
     from watchdog.observers import Observer
+
     _WATCHDOG_AVAILABLE = True
 except ImportError:
     _WATCHDOG_AVAILABLE = False
@@ -67,11 +73,11 @@ class PluginLoader:
         plugins_dir: str | Path | None = None,
     ) -> None:
         self._app = app
-        self._plugins: Dict[str, BotPlugin] = {}              # name → instance
-        self._errors: Dict[str, str] = {}                     # stem → load error
-        self._cmd_handlers: Dict[str, CommandHandler] = {}   # name → handler obj
-        self._provides_index: Dict[str, str] = {}             # capability → plugin_name
-        self._stem_to_name_map: Dict[str, str] = {}           # stem → plugin_name
+        self._plugins: Dict[str, BotPlugin] = {}  # name → instance
+        self._errors: Dict[str, str] = {}  # stem → load error
+        self._cmd_handlers: Dict[str, CommandHandler] = {}  # name → handler obj
+        self._provides_index: Dict[str, str] = {}  # capability → plugin_name
+        self._stem_to_name_map: Dict[str, str] = {}  # stem → plugin_name
         self._observer: Optional[object] = None
         self._reload_lock = threading.Lock()
 
@@ -99,9 +105,9 @@ class PluginLoader:
             self._load_from_file(plugin_file)
 
         # Register management commands
-        self._app.add_handler(CommandHandler("help",       self._cmd_help))
-        self._app.add_handler(CommandHandler("plugins",    self._cmd_plugins))
-        self._app.add_handler(CommandHandler("activate",   self._cmd_activate))
+        self._app.add_handler(CommandHandler("help", self._cmd_help))
+        self._app.add_handler(CommandHandler("plugins", self._cmd_plugins))
+        self._app.add_handler(CommandHandler("activate", self._cmd_activate))
         self._app.add_handler(CommandHandler("deactivate", self._cmd_deactivate))
 
         # Register passive (NL / URL) message dispatcher
@@ -120,7 +126,9 @@ class PluginLoader:
         if biz:
             try:
                 self._app.add_handler(
-                    MessageHandler(filters.UpdateType.BUSINESS_MESSAGE, self._dispatch_business)
+                    MessageHandler(
+                        filters.UpdateType.BUSINESS_MESSAGE, self._dispatch_business
+                    )
                 )
                 logger.info(
                     "%d plugin(s) registered for business message handling",
@@ -201,9 +209,9 @@ class PluginLoader:
                 # For simplicity we only add if not already present globally;
                 # a full solution would track handler objects per plugin.
                 pass  # passive dispatcher is registered at load_all() time.
-                      # New passive plugins discovered via hot-reload will fire
-                      # on next message because _dispatch_passive iterates
-                      # self._plugins dynamically — no re-registration needed.
+                # New passive plugins discovered via hot-reload will fire
+                # on next message because _dispatch_passive iterates
+                # self._plugins dynamically — no re-registration needed.
 
             logger.info("Hot-reload complete for %s", path.name)
 
@@ -214,9 +222,7 @@ class PluginLoader:
             return
         # Release any capabilities this plugin claimed
         self._provides_index = {
-            cap: owner
-            for cap, owner in self._provides_index.items()
-            if owner != name
+            cap: owner for cap, owner in self._provides_index.items() if owner != name
         }
         handler = self._cmd_handlers.pop(name, None)
         if handler is not None:
@@ -262,7 +268,9 @@ class PluginLoader:
                     pass  # best-effort; failure is non-critical
         return {}
 
-    def _install_pip_deps(self, plugin_file: Path, manifest: dict | None = None) -> None:
+    def _install_pip_deps(
+        self, plugin_file: Path, manifest: dict | None = None
+    ) -> None:
         """
         Read the plugin.json adjacent to *plugin_file* and pip-install any
         packages listed under depends.pip.  Skips gracefully if no manifest
@@ -280,7 +288,11 @@ class PluginLoader:
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError as exc:
-                logger.warning("Malformed plugin.json at %s: %s", plugin_file.with_suffix(".json"), exc)
+                logger.warning(
+                    "Malformed plugin.json at %s: %s",
+                    plugin_file.with_suffix(".json"),
+                    exc,
+                )
                 return
 
         pip_deps = manifest.get("depends", {}).get("pip", [])
@@ -301,9 +313,7 @@ class PluginLoader:
                 stdout=subprocess.DEVNULL,
             )
         except subprocess.CalledProcessError as exc:
-            raise RuntimeError(
-                f"pip install failed for {pip_deps}: {exc}"
-            ) from exc
+            raise RuntimeError(f"pip install failed for {pip_deps}: {exc}") from exc
 
     def _load_from_file(self, path: Path) -> None:
         """Import a single plugin module and register it."""
@@ -426,7 +436,6 @@ class PluginLoader:
                         "Business handler error in plugin '%s'", plugin.meta.name
                     )
 
-
     async def _cmd_help(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -443,13 +452,10 @@ class PluginLoader:
             lines.append("\n_Plugins_")
             for plugin in cmd_plugins:
                 state = "" if plugin.enabled else " *(disabled)*"
-                lines.append(
-                    f"`/{plugin.command}`  — {plugin.meta.description}{state}"
-                )
+                lines.append(f"`/{plugin.command}`  — {plugin.meta.description}{state}")
 
         passive_plugins = [
-            p for p in self._plugins.values()
-            if not p.command and p.passive_patterns
+            p for p in self._plugins.values() if not p.command and p.passive_patterns
         ]
         if passive_plugins:
             lines.append("\n_Passive listeners_")
@@ -543,6 +549,7 @@ class PluginLoader:
 # ---------------------------------------------------------------------------
 
 if _WATCHDOG_AVAILABLE:
+
     class _PluginReloadHandler(FileSystemEventHandler):
         """
         Watches the plugins/ directory and hot-reloads *.py files on change.
@@ -575,8 +582,11 @@ if _WATCHDOG_AVAILABLE:
             if not event.is_directory and self._is_plugin_file(event.src_path):
                 logger.info("Hot-reload: plugin file removed: %s", event.src_path)
                 self._loader._hot_delete(Path(event.src_path))
+
 else:
+
     class _PluginReloadHandler:  # type: ignore[no-redef]
         """Stub when watchdog is not installed."""
+
         def __init__(self, loader: PluginLoader) -> None:
             pass

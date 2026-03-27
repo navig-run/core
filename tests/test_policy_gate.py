@@ -8,6 +8,7 @@ import threading
 import unittest
 from pathlib import Path
 
+from navig.gateway.audit_log import AuditLog
 from navig.gateway.policy_gate import (
     PolicyConfig,
     PolicyDecision,
@@ -15,12 +16,11 @@ from navig.gateway.policy_gate import (
     PolicyResult,
     PolicyRule,
 )
-from navig.gateway.audit_log import AuditLog
-
 
 # ---------------------------------------------------------------------------
 # PolicyGate tests
 # ---------------------------------------------------------------------------
+
 
 class TestPolicyGateDefaults(unittest.TestCase):
     """Gate with no config — everything is ALLOW by default."""
@@ -65,25 +65,23 @@ class TestPolicyGateFromConfig(unittest.TestCase):
         return PolicyGate.from_config(raw)
 
     def test_require_approval_db(self):
-        gate = self._make_gate([
-            {"pattern": "db.*", "action": "require_approval"}
-        ])
+        gate = self._make_gate([{"pattern": "db.*", "action": "require_approval"}])
         result = gate.check("db.query")
         self.assertTrue(result.needs_approval)
         self.assertEqual(result.matched_rule, "db.*")
 
     def test_deny_explicit_rule(self):
-        gate = self._make_gate([
-            {"pattern": "run.delete", "action": "deny"}
-        ])
+        gate = self._make_gate([{"pattern": "run.delete", "action": "deny"}])
         result = gate.check("run.delete")
         self.assertTrue(result.is_denied)
 
     def test_first_match_wins(self):
-        gate = self._make_gate([
-            {"pattern": "run.*", "action": "require_approval"},
-            {"pattern": "run.shell", "action": "allow"},
-        ])
+        gate = self._make_gate(
+            [
+                {"pattern": "run.*", "action": "require_approval"},
+                {"pattern": "run.shell", "action": "allow"},
+            ]
+        )
         # First rule matches "run.shell" before the more specific one
         result = gate.check("run.shell")
         self.assertTrue(result.needs_approval)
@@ -100,20 +98,26 @@ class TestPolicyGateFromConfig(unittest.TestCase):
         self.assertTrue(result.is_allowed)
 
     def test_skips_rule_with_bad_action(self):
-        gate = self._make_gate([
-            {"pattern": "db.*", "action": "UNKNOWN_ACTION"},
-            {"pattern": "db.*", "action": "deny"},
-        ])
+        gate = self._make_gate(
+            [
+                {"pattern": "db.*", "action": "UNKNOWN_ACTION"},
+                {"pattern": "db.*", "action": "deny"},
+            ]
+        )
         # First rule is skipped; second matches
         result = gate.check("db.query")
         self.assertTrue(result.is_denied)
 
     def test_skips_rule_with_empty_pattern(self):
-        gate = self._make_gate([
-            {"pattern": "", "action": "deny"},
-        ])
+        gate = self._make_gate(
+            [
+                {"pattern": "", "action": "deny"},
+            ]
+        )
         result = gate.check("db.query")
-        self.assertTrue(result.is_allowed)  # empty pattern rule skipped -> default allow
+        self.assertTrue(
+            result.is_allowed
+        )  # empty pattern rule skipped -> default allow
 
     def test_from_config_none(self):
         gate = PolicyGate.from_config(None)
@@ -136,9 +140,7 @@ class TestPolicyGateHardDeny(unittest.TestCase):
         raw = {
             "policy": {
                 "default": "allow",
-                "rules": [
-                    {"pattern": "system.delete_all", "action": "allow"}
-                ]
+                "rules": [{"pattern": "system.delete_all", "action": "allow"}],
             }
         }
         gate = PolicyGate.from_config(raw)
@@ -152,6 +154,7 @@ class TestPolicyGateHardDeny(unittest.TestCase):
 # AuditLog tests
 # ---------------------------------------------------------------------------
 
+
 class TestAuditLog(unittest.TestCase):
 
     def setUp(self):
@@ -163,11 +166,15 @@ class TestAuditLog(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def test_record_creates_file(self):
-        self.log.record(actor="test", action="db.query", policy="allow", status="success")
+        self.log.record(
+            actor="test", action="db.query", policy="allow", status="success"
+        )
         self.assertTrue(self._log_path.exists())
 
     def test_record_returns_dict(self):
-        rec = self.log.record(actor="a", action="run.shell", policy="allow", status="success")
+        rec = self.log.record(
+            actor="a", action="run.shell", policy="allow", status="success"
+        )
         self.assertIsInstance(rec, dict)
         self.assertEqual(rec["actor"], "a")
         self.assertEqual(rec["action"], "run.shell")
@@ -177,8 +184,10 @@ class TestAuditLog(unittest.TestCase):
 
     def test_input_is_hashed_not_stored(self):
         rec = self.log.record(
-            actor="bot", action="db.query",
-            policy="allow", status="success",
+            actor="bot",
+            action="db.query",
+            policy="allow",
+            status="success",
             raw_input="SELECT * FROM users WHERE password='secret'",
         )
         self.assertIn("input_hash", rec)
@@ -187,8 +196,10 @@ class TestAuditLog(unittest.TestCase):
 
     def test_output_length_stored_not_content(self):
         rec = self.log.record(
-            actor="bot", action="db.query",
-            policy="allow", status="success",
+            actor="bot",
+            action="db.query",
+            policy="allow",
+            status="success",
             raw_output="result data " * 10,
         )
         self.assertIn("output_len", rec)
@@ -197,15 +208,19 @@ class TestAuditLog(unittest.TestCase):
 
     def test_metadata_included(self):
         rec = self.log.record(
-            actor="bot", action="run.shell",
-            policy="require_approval", status="pending_approval",
+            actor="bot",
+            action="run.shell",
+            policy="require_approval",
+            status="pending_approval",
             metadata={"request_id": "abc-123"},
         )
         self.assertEqual(rec.get("metadata", {}).get("request_id"), "abc-123")
 
     def test_multiple_records_appended(self):
         for i in range(5):
-            self.log.record(actor="a", action=f"cmd.{i}", policy="allow", status="success")
+            self.log.record(
+                actor="a", action=f"cmd.{i}", policy="allow", status="success"
+            )
         lines = self._log_path.read_text().strip().split("\n")
         self.assertEqual(len(lines), 5)
         for line in lines:
@@ -213,7 +228,9 @@ class TestAuditLog(unittest.TestCase):
 
     def test_tail_returns_last_n(self):
         for i in range(20):
-            self.log.record(actor="a", action=f"cmd.{i}", policy="allow", status="success")
+            self.log.record(
+                actor="a", action=f"cmd.{i}", policy="allow", status="success"
+            )
         tail = self.log.tail(5)
         self.assertEqual(len(tail), 5)
         self.assertEqual(tail[-1]["action"], "cmd.19")

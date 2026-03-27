@@ -1,4 +1,5 @@
 """TaskExecutor: dataclasses for task state + execution with exponential-backoff retry."""
+
 from __future__ import annotations
 
 import asyncio
@@ -31,6 +32,7 @@ class TaskStatus(Enum):
 @dataclass
 class ExecutionStep:
     """A single step within a task execution plan."""
+
     action: str
     description: str
     params: dict[str, Any] = field(default_factory=dict)
@@ -42,6 +44,7 @@ class ExecutionStep:
 @dataclass
 class Task:
     """A goal the agent is autonomously working toward."""
+
     id: str
     goal: str
     context: str = ""
@@ -55,12 +58,20 @@ class Task:
     final_result: str | None = None
     # Executor-private: excluded from __init__, __repr__, __eq__ to keep Task
     # as a pure data object; TaskExecutor sets this directly after construction.
-    _reflection_attempted: bool = field(default=False, repr=False, compare=False, init=False)
+    _reflection_attempted: bool = field(
+        default=False, repr=False, compare=False, init=False
+    )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise the essential task fields to a plain dict for logging / API responses."""
-        return {"id": self.id, "goal": self.goal, "status": self.status.name,
-                "current_step": self.current_step, "total_steps": len(self.plan), "attempts": self.attempts}
+        return {
+            "id": self.id,
+            "goal": self.goal,
+            "status": self.status.name,
+            "current_step": self.current_step,
+            "total_steps": len(self.plan),
+            "attempts": self.attempts,
+        }
 
 
 class TaskExecutor:
@@ -77,7 +88,9 @@ class TaskExecutor:
         max_attempts: int = 3,
     ) -> None:
         """Initialise the executor with an optional status callback, localisation store, and retry limit."""
-        self._notify_cb: Callable[[StatusEvent], Awaitable[None]] | None = on_status_update
+        self._notify_cb: Callable[[StatusEvent], Awaitable[None]] | None = (
+            on_status_update
+        )
         self._loc: LocalizationStore = localization or LocalizationStore()
         self._max_attempts = max(1, max_attempts)
         self.current_task: Task | None = None
@@ -98,12 +111,25 @@ class TaskExecutor:
         task = Task(
             id=str(uuid.uuid4())[:8],
             goal=plan_data.get("understanding", "Execute task"),
-            status=TaskStatus.PLANNING if plan_data.get("confirmation_needed") else TaskStatus.EXECUTING,
-            plan=[ExecutionStep(action=s.get("action", "unknown"), description=s.get("description", ""), params=s.get("params", {})) for s in steps],
+            status=(
+                TaskStatus.PLANNING
+                if plan_data.get("confirmation_needed")
+                else TaskStatus.EXECUTING
+            ),
+            plan=[
+                ExecutionStep(
+                    action=s.get("action", "unknown"),
+                    description=s.get("description", ""),
+                    params=s.get("params", {}),
+                )
+                for s in steps
+            ],
         )
         self.current_task = task
         if task.status == TaskStatus.PLANNING:
-            steps_desc = "\n".join(f"  {i+1}. {s.description}" for i, s in enumerate(task.plan))
+            steps_desc = "\n".join(
+                f"  {i+1}. {s.description}" for i, s in enumerate(task.plan)
+            )
             return f"{message}\n\nPlan:\n{steps_desc}\n\nReply 'yes' to proceed or 'no' to cancel."
         return await self.execute(task)
 
@@ -111,57 +137,65 @@ class TaskExecutor:
         self.current_task = task  # ensure current_task is set even when called directly
         task.status = TaskStatus.EXECUTING
         task.attempts += 1
-        await self._emit_event(StatusEvent(
-            type="task_start",
-            task_id=task.id,
-            message=task.goal,
-            timestamp=datetime.now(),
-        ))
+        await self._emit_event(
+            StatusEvent(
+                type="task_start",
+                task_id=task.id,
+                message=task.goal,
+                timestamp=datetime.now(),
+            )
+        )
         lang = "en"
         results: list[str] = []
         for i, step in enumerate(task.plan):
             task.current_step = i
-            await self._emit_event(StatusEvent(
-                type="step_start",
-                task_id=task.id,
-                message=step.description,
-                timestamp=datetime.now(),
-                step_index=i,
-                total_steps=len(task.plan),
-            ))
+            await self._emit_event(
+                StatusEvent(
+                    type="step_start",
+                    task_id=task.id,
+                    message=step.description,
+                    timestamp=datetime.now(),
+                    step_index=i,
+                    total_steps=len(task.plan),
+                )
+            )
             last_err: Exception | None = None
             for attempt in range(self._max_attempts):
                 try:
                     result = await self._execute_step(step)
                     step.status, step.result = "success", str(result)
                     results.append(f"✅ {step.description}")
-                    await self._emit_event(StatusEvent(
-                        type="step_done",
-                        task_id=task.id,
-                        message=step.description,
-                        timestamp=datetime.now(),
-                        step_index=i,
-                        total_steps=len(task.plan),
-                    ))
+                    await self._emit_event(
+                        StatusEvent(
+                            type="step_done",
+                            task_id=task.id,
+                            message=step.description,
+                            timestamp=datetime.now(),
+                            step_index=i,
+                            total_steps=len(task.plan),
+                        )
+                    )
                     last_err = None
                     break
                 except Exception as exc:
                     last_err = exc
-                    await self._emit_event(StatusEvent(
-                        type="step_failed",
-                        task_id=task.id,
-                        message=step.description,
-                        timestamp=datetime.now(),
-                        step_index=i,
-                        total_steps=len(task.plan),
-                        metadata={
-                            "error": str(exc),
-                            "attempt": attempt,
-                            "is_final": attempt >= self._max_attempts - 1,
-                        },
-                    ))
+                    await self._emit_event(
+                        StatusEvent(
+                            type="step_failed",
+                            task_id=task.id,
+                            message=step.description,
+                            timestamp=datetime.now(),
+                            step_index=i,
+                            total_steps=len(task.plan),
+                            metadata={
+                                "error": str(exc),
+                                "attempt": attempt,
+                                "is_final": attempt >= self._max_attempts - 1,
+                            },
+                        )
+                    )
                     if attempt < self._max_attempts - 1:
-                        delay = min(1.0 * (2 ** attempt) + random.uniform(0.0, 0.5), 30.0)
+                        delay = min(1.0 * (2**attempt) + random.uniform(0.0, 0.5), 30.0)
                         await asyncio.sleep(delay)
             if last_err is not None:
                 step.status, step.error = "failed", str(last_err)
@@ -192,6 +226,7 @@ class TaskExecutor:
                 from navig.llm_generate import (
                     run_llm,  # lazy: heavy module, only used on reflection pass
                 )
+
                 llm_result = await asyncio.to_thread(
                     run_llm,
                     messages=[{"role": "user", "content": reflection_prompt}],
@@ -205,6 +240,7 @@ class TaskExecutor:
                 if not achieved and confidence < 70:
                     task.status = TaskStatus.EXECUTING
                     from navig.agent.conv.planner import FallbackPlanner  # lazy
+
                     remediation_plan = FallbackPlanner().plan(task.goal) or {}
                     remediation_steps = [
                         ExecutionStep(
@@ -219,42 +255,60 @@ class TaskExecutor:
                         last_rem_err: Exception | None = None
                         for attempt in range(self._max_attempts):
                             try:
-                                await self._emit_event(StatusEvent(
-                                    type="step_start",
-                                    task_id=task.id,
-                                    message=rem_step.description,
-                                    timestamp=datetime.now(),
-                                ))
+                                await self._emit_event(
+                                    StatusEvent(
+                                        type="step_start",
+                                        task_id=task.id,
+                                        message=rem_step.description,
+                                        timestamp=datetime.now(),
+                                    )
+                                )
                                 rem_result = await self._execute_step(rem_step)
-                                rem_step.status, rem_step.result = "success", str(rem_result)
-                                results.append(f"✅ (remediation) {rem_step.description}")
-                                await self._emit_event(StatusEvent(
-                                    type="step_done",
-                                    task_id=task.id,
-                                    message=rem_step.description,
-                                    timestamp=datetime.now(),
-                                ))
+                                rem_step.status, rem_step.result = "success", str(
+                                    rem_result
+                                )
+                                results.append(
+                                    f"✅ (remediation) {rem_step.description}"
+                                )
+                                await self._emit_event(
+                                    StatusEvent(
+                                        type="step_done",
+                                        task_id=task.id,
+                                        message=rem_step.description,
+                                        timestamp=datetime.now(),
+                                    )
+                                )
                                 last_rem_err = None
                                 break
                             except Exception as exc:
                                 last_rem_err = exc
-                                await self._emit_event(StatusEvent(
-                                    type="step_failed",
-                                    task_id=task.id,
-                                    message=rem_step.description,
-                                    timestamp=datetime.now(),
-                                    metadata={
-                                        "error": str(exc),
-                                        "attempt": attempt,
-                                        "is_final": attempt >= self._max_attempts - 1,
-                                    },
-                                ))
+                                await self._emit_event(
+                                    StatusEvent(
+                                        type="step_failed",
+                                        task_id=task.id,
+                                        message=rem_step.description,
+                                        timestamp=datetime.now(),
+                                        metadata={
+                                            "error": str(exc),
+                                            "attempt": attempt,
+                                            "is_final": attempt
+                                            >= self._max_attempts - 1,
+                                        },
+                                    )
+                                )
                                 if attempt < self._max_attempts - 1:
-                                    delay = min(1.0 * (2 ** attempt) + random.uniform(0.0, 0.5), 30.0)
+                                    delay = min(
+                                        1.0 * (2**attempt) + random.uniform(0.0, 0.5),
+                                        30.0,
+                                    )
                                     await asyncio.sleep(delay)
                         if last_rem_err is not None:
-                            rem_step.status, rem_step.error = "failed", str(last_rem_err)
-                            results.append(f"❌ (remediation) {rem_step.description}: {last_rem_err}")
+                            rem_step.status, rem_step.error = "failed", str(
+                                last_rem_err
+                            )
+                            results.append(
+                                f"❌ (remediation) {rem_step.description}: {last_rem_err}"
+                            )
                             rem_any_failed = True
                     if not rem_any_failed:
                         task.status = TaskStatus.SUCCESS
@@ -274,12 +328,14 @@ class TaskExecutor:
             result_str += f" (Self-assessed confidence: {reflection_confidence}/100)"
         # Emit task_done BEFORE clearing current_task so callbacks can inspect
         # executor.current_task if needed.
-        await self._emit_event(StatusEvent(
-            type="task_done",
-            task_id=task.id,
-            message=result_str,
-            timestamp=datetime.now(),
-        ))
+        await self._emit_event(
+            StatusEvent(
+                type="task_done",
+                task_id=task.id,
+                message=result_str,
+                timestamp=datetime.now(),
+            )
+        )
         self.current_task = None
         return result_str
 
@@ -303,7 +359,6 @@ class TaskExecutor:
         except Exception as exc:
             logger.warning("StatusEvent callback error: %s", exc)
 
-
     async def _execute_step(self, step: ExecutionStep) -> object:
         """Dispatch a single step via ActionRegistry; unknown actions fall through to ToolRouter."""
         action, params = step.action, step.params
@@ -313,6 +368,7 @@ class TaskExecutor:
         # auto.*) are registered in navig.agent.action_registry.
         # Adding a new action no longer requires editing this file.
         from navig.agent.action_registry import get_action_registry
+
         _matched, _result = await get_action_registry().dispatch(action, params)
         if _matched:
             return _result
@@ -324,6 +380,7 @@ class TaskExecutor:
         # is genuinely unknown (preserves existing error contract).
         from navig.tools.router import ToolResultStatus, get_tool_router
         from navig.tools.schemas import ToolCallAction as _ToolCallAction
+
         _router = get_tool_router()
         _result = await _router.async_execute(
             _ToolCallAction(tool=action, parameters=params)
@@ -335,7 +392,6 @@ class TaskExecutor:
         raise RuntimeError(
             f"Tool '{action}' failed ({_result.status.value}): {_result.error}"
         )
-
 
     async def execute_multi_step_action(
         self,
@@ -349,6 +405,7 @@ class TaskExecutor:
         raises RuntimeError immediately, halting the chain.
         """
         from navig.tools.router import ToolResultStatus, get_tool_router
+
         _router = get_tool_router()
         outputs: list[str] = []
         for i, step in enumerate(action.steps, 1):
@@ -360,6 +417,3 @@ class TaskExecutor:
                     f"Step {i} ('{step.tool}') failed ({result.status.value}): {result.error}"
                 )
         return "\n".join(outputs) if outputs else "(no steps executed)"
-
-
-

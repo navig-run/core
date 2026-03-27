@@ -31,6 +31,7 @@ farmore_app = typer.Typer(
 # Token helpers
 # ---------------------------------------------------------------------------
 
+
 def _resolve_github_token() -> Optional[str]:
     """
     Resolve a GitHub token with the full navig credential chain.
@@ -45,6 +46,7 @@ def _resolve_github_token() -> Optional[str]:
     # 1 — navig vault
     try:
         from navig.vault import get_vault  # type: ignore
+
         vault = get_vault()
         secret = vault.get("github_token", caller="farmore")
         if secret and getattr(secret, "value", None):
@@ -60,6 +62,7 @@ def _resolve_github_token() -> Optional[str]:
     # 3 — ~/.navig/config.yaml
     try:
         import yaml  # type: ignore
+
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text()) or {}
@@ -76,6 +79,7 @@ def _farmore_available() -> bool:
     """Return True if the `farmore` CLI is importable."""
     try:
         import farmore  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -116,6 +120,7 @@ def _run_farmore(args: list[str], token: Optional[str]) -> None:
 # Fallback: navig-native git clone (no token required)
 # ---------------------------------------------------------------------------
 
+
 def _fallback_git_clone(repo_url: str, dest: str) -> None:
     """
     Minimal git-based clone used when no GitHub token is available.
@@ -132,13 +137,13 @@ def _fallback_git_clone(repo_url: str, dest: str) -> None:
         ch.info(f"Updating existing repo at {clone_dest} …")
         result = subprocess.run(
             ["git", "-C", str(clone_dest), "pull", "--ff-only"],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         )
     else:
         ch.info(f"Cloning {repo_url} → {clone_dest} …")
         result = subprocess.run(
-            ["git", "clone", repo_url, str(clone_dest)],
-            capture_output=True, text=True
+            ["git", "clone", repo_url, str(clone_dest)], capture_output=True, text=True
         )
 
     if result.returncode == 0:
@@ -152,17 +157,35 @@ def _fallback_git_clone(repo_url: str, dest: str) -> None:
 # sub-commands
 # ---------------------------------------------------------------------------
 
+
 @farmore_app.command("search")
 def farmore_search(
     query: Annotated[str, typer.Argument(help="Search keyword (e.g. 'agent soul')")],
-    output_dir: Annotated[Optional[Path], typer.Option("--output-dir", "-o", help="Destination directory")] = None,
-    limit: Annotated[int, typer.Option("--limit", "-l", min=1, max=100, help="Max repos to clone")] = 20,
-    language: Annotated[Optional[str], typer.Option("--language", help="Filter by language")] = None,
-    min_stars: Annotated[Optional[int], typer.Option("--min-stars", help="Minimum star count")] = None,
-    sort: Annotated[str, typer.Option("--sort", help="Sort: stars|forks|updated|best-match")] = "stars",
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Auto-confirm, no prompt")] = False,
-    workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel clone workers")] = 4,
-    token: Annotated[Optional[str], typer.Option("--token", "-t", help="GitHub token (overrides auto-resolve)")] = None,
+    output_dir: Annotated[
+        Optional[Path], typer.Option("--output-dir", "-o", help="Destination directory")
+    ] = None,
+    limit: Annotated[
+        int, typer.Option("--limit", "-l", min=1, max=100, help="Max repos to clone")
+    ] = 20,
+    language: Annotated[
+        Optional[str], typer.Option("--language", help="Filter by language")
+    ] = None,
+    min_stars: Annotated[
+        Optional[int], typer.Option("--min-stars", help="Minimum star count")
+    ] = None,
+    sort: Annotated[
+        str, typer.Option("--sort", help="Sort: stars|forks|updated|best-match")
+    ] = "stars",
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Auto-confirm, no prompt")
+    ] = False,
+    workers: Annotated[
+        int, typer.Option("--workers", "-w", help="Parallel clone workers")
+    ] = 4,
+    token: Annotated[
+        Optional[str],
+        typer.Option("--token", "-t", help="GitHub token (overrides auto-resolve)"),
+    ] = None,
 ):
     """
     🔍 Search GitHub and clone matching repositories.
@@ -185,7 +208,16 @@ def farmore_search(
     if not _require_farmore():
         raise typer.Exit(1)
 
-    args = ["search", query, "--limit", str(limit), "--sort", sort, "--workers", str(workers)]
+    args = [
+        "search",
+        query,
+        "--limit",
+        str(limit),
+        "--sort",
+        sort,
+        "--workers",
+        str(workers),
+    ]
     if output_dir:
         args += ["--output-dir", str(output_dir)]
     if language:
@@ -201,11 +233,19 @@ def farmore_search(
 @farmore_app.command("backup")
 def farmore_backup(
     target: Annotated[str, typer.Argument(help="GitHub username or org to backup")],
-    dest: Annotated[Optional[Path], typer.Option("--dest", "-d", help="Destination directory")] = None,
-    visibility: Annotated[str, typer.Option("--visibility", help="all|public|private")] = "all",
-    workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel clone workers")] = 4,
+    dest: Annotated[
+        Optional[Path], typer.Option("--dest", "-d", help="Destination directory")
+    ] = None,
+    visibility: Annotated[
+        str, typer.Option("--visibility", help="all|public|private")
+    ] = "all",
+    workers: Annotated[
+        int, typer.Option("--workers", "-w", help="Parallel clone workers")
+    ] = 4,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Auto-confirm")] = False,
-    token: Annotated[Optional[str], typer.Option("--token", "-t", help="GitHub token")] = None,
+    token: Annotated[
+        Optional[str], typer.Option("--token", "-t", help="GitHub token")
+    ] = None,
 ):
     """
     📦 Clone / mirror every repo for a user or organisation.
@@ -237,8 +277,12 @@ def farmore_backup(
 @farmore_app.command("clone")
 def farmore_clone(
     repo: Annotated[str, typer.Argument(help="owner/repo or full GitHub URL")],
-    dest: Annotated[Optional[Path], typer.Option("--dest", "-d", help="Destination directory")] = None,
-    token: Annotated[Optional[str], typer.Option("--token", "-t", help="GitHub token")] = None,
+    dest: Annotated[
+        Optional[Path], typer.Option("--dest", "-d", help="Destination directory")
+    ] = None,
+    token: Annotated[
+        Optional[str], typer.Option("--token", "-t", help="GitHub token")
+    ] = None,
 ):
     """
     ⬇️  Clone a single repository (with farmore if available, else plain git).
@@ -285,7 +329,9 @@ farmore_app.add_typer(token_app, name="token")
 @token_app.command("set")
 def token_set(
     value: Annotated[str, typer.Argument(help="GitHub Personal Access Token")],
-    use_vault: Annotated[bool, typer.Option("--vault/--no-vault", help="Store in navig vault (default)")] = True,
+    use_vault: Annotated[
+        bool, typer.Option("--vault/--no-vault", help="Store in navig vault (default)")
+    ] = True,
 ):
     """
     🔑 Save a GitHub token for farmore to use automatically.
@@ -299,6 +345,7 @@ def token_set(
     if use_vault:
         try:
             from navig.vault import get_vault  # type: ignore
+
             vault = get_vault()
             existing = vault.get("github_token", caller="farmore.token_set")
             if existing:
@@ -318,6 +365,7 @@ def token_set(
     # Fallback: write to ~/.navig/config.yaml
     try:
         import yaml  # type: ignore
+
         cfg_path = Path.home() / ".navig" / "config.yaml"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
@@ -345,6 +393,7 @@ def token_show():
         # Identify source
         try:
             from navig.vault import get_vault  # type: ignore
+
             v = get_vault()
             s = v.get("github_token", caller="farmore.token_show")
             if s and getattr(s, "value", None) == token:
@@ -377,6 +426,7 @@ def token_remove():
     # Vault
     try:
         from navig.vault import get_vault  # type: ignore
+
         vault = get_vault()
         secret = vault.get("github_token", caller="farmore.token_remove")
         if secret:
@@ -389,6 +439,7 @@ def token_remove():
     # Config file
     try:
         import yaml  # type: ignore
+
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text()) or {}
@@ -416,6 +467,7 @@ def farmore_status():
     if _farmore_available():
         try:
             import farmore as fm  # type: ignore
+
             version = getattr(fm, "__version__", "unknown")
             ch.success(f"farmore installed — version {version}")
         except Exception:

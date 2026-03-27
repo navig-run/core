@@ -41,7 +41,7 @@ navig db query --b64 $b64 -d my_database --plain
 ### User Management
 ```bash
 # Create a new user (role)
-navig db query "CREATE USER app_user WITH PASSWORD 'secure_password';" -d postgres
+navig db query "CREATE USER app_user WITH PASSWORD 'secure_password';" -d postgres  # pragma: allowlist secret
 
 # Grant permissions
 navig db query "GRANT ALL PRIVILEGES ON DATABASE my_database TO app_user;" -d postgres
@@ -80,6 +80,3 @@ navig db restore /tmp/backup.sql.gz -d my_database
 1. **Use `--plain`**: Always use the plain output flag when parsing results or feeding them into another tool.
 2. **Transaction Safety**: For critical updates, wrap your SQL in `BEGIN; ... COMMIT;` (execute as a single block).
 3. **Limit Results**: Standard queries should always have a `LIMIT` clause to prevent flooding the output.
-
-
-

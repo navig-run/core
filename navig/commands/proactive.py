@@ -15,13 +15,17 @@ proactive_app = typer.Typer(help="Proactive assistance (calendar, email)")
 
 @proactive_app.command("start")
 def start_proactive_agent(
-    interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
-    calendar: bool = typer.Option(True, "--calendar/--no-calendar", help="Enable calendar checks"),
+    interval: int = typer.Option(
+        60, "--interval", "-i", help="Poll interval in seconds"
+    ),
+    calendar: bool = typer.Option(
+        True, "--calendar/--no-calendar", help="Enable calendar checks"
+    ),
     email: bool = typer.Option(True, "--email/--no-email", help="Enable email checks"),
 ):
     """
     Start the proactive agent loop.
-    
+
     Monitors configured calendar and email sources for events,
     and triggers actions based on your automation rules.
     """
@@ -80,12 +84,10 @@ def proactive_status():
 @proactive_app.command("setup")
 def proactive_setup(
     calendar_type: str = typer.Option(
-        None, "--calendar", "-c",
-        help="Calendar type: google, ics, caldav, mock"
+        None, "--calendar", "-c", help="Calendar type: google, ics, caldav, mock"
     ),
     email_type: str = typer.Option(
-        None, "--email", "-e",
-        help="Email type: gmail, outlook, imap, mock"
+        None, "--email", "-e", help="Email type: gmail, outlook, imap, mock"
     ),
 ):
     """
@@ -98,7 +100,7 @@ def proactive_setup(
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
 
-    with open(global_config_file, 'r') as f:
+    with open(global_config_file, "r") as f:
         config = yaml.safe_load(f) or {}
 
     if "proactive" not in config:
@@ -121,8 +123,7 @@ def proactive_setup(
             ch.console.print("3. Download credentials.json")
 
             creds_path = typer.prompt(
-                "Path to credentials.json",
-                default="~/.navig/credentials/google.json"
+                "Path to credentials.json", default="~/.navig/credentials/google.json"
             )
             proactive["calendar"]["credentials_path"] = creds_path
 
@@ -169,7 +170,7 @@ def proactive_setup(
         ch.success(f"Email configured: {email_type}")
 
     # Save config
-    with open(global_config_file, 'w') as f:
+    with open(global_config_file, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     ch.success("Configuration saved!")
@@ -198,7 +199,9 @@ def proactive_test(
                 events = await cal.list_events(start, end)
                 ch.success(f"  Found {len(events)} events")
                 for e in events[:3]:
-                    ch.console.print(f"    • {e.title} @ {e.start.strftime('%Y-%m-%d %H:%M')}")
+                    ch.console.print(
+                        f"    • {e.title} @ {e.start.strftime('%Y-%m-%d %H:%M')}"
+                    )
             except Exception as e:
                 ch.error(f"  Calendar test failed: {e}")
 
@@ -214,4 +217,3 @@ def proactive_test(
                 ch.error(f"  Email test failed: {e}")
 
     asyncio.run(_test())
-

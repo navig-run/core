@@ -12,6 +12,7 @@ Commands:
   navig desktop tree                   Dump the UI element tree.
   navig desktop ahk <script|filepath>  Run an AHK script (requires --confirm).
 """
+
 from __future__ import annotations
 
 import json
@@ -42,6 +43,7 @@ if sys.platform != "win32":
 
 # ─────────────────────────── Agent RPC client ─────────────────────────────────
 
+
 class _AgentError(Exception):
     pass
 
@@ -55,10 +57,22 @@ class _DesktopClient:
     """
 
     def __init__(self) -> None:
-        agent_script = Path(__file__).parent.parent.parent / "host" / "internal" / "desktop" / "agent.py"
+        agent_script = (
+            Path(__file__).parent.parent.parent
+            / "host"
+            / "internal"
+            / "desktop"
+            / "agent.py"
+        )
         if not agent_script.exists():
             # Try relative to package install
-            agent_script = Path(__file__).parent.parent.parent.parent / "host" / "internal" / "desktop" / "agent.py"
+            agent_script = (
+                Path(__file__).parent.parent.parent.parent
+                / "host"
+                / "internal"
+                / "desktop"
+                / "agent.py"
+            )
 
         python_exe = os.environ.get("NAVIG_PYTHON_PATH", sys.executable)
 
@@ -183,8 +197,12 @@ def desktop_ping(
 
 @desktop_app.command("find")
 def desktop_find(
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Filter by element Name."),
-    class_name: Optional[str] = typer.Option(None, "--class", "-c", help="Filter by ClassName."),
+    name: Optional[str] = typer.Option(
+        None, "--name", "-n", help="Filter by element Name."
+    ),
+    class_name: Optional[str] = typer.Option(
+        None, "--class", "-c", help="Filter by ClassName."
+    ),
     control_type: Optional[str] = typer.Option(
         None, "--type", "-t", help="Filter by control type (e.g. Button, Edit)."
     ),
@@ -220,8 +238,12 @@ def desktop_find(
 
 @desktop_app.command("click")
 def desktop_click(
-    handle: int = typer.Argument(..., help="Native window handle of the element to click."),
-    confirm: bool = typer.Option(False, "--confirm", help="Required flag for destructive operation."),
+    handle: int = typer.Argument(
+        ..., help="Native window handle of the element to click."
+    ),
+    confirm: bool = typer.Option(
+        False, "--confirm", help="Required flag for destructive operation."
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON."),
 ) -> None:
     """Click a UI element by its native window handle."""
@@ -230,7 +252,9 @@ def desktop_click(
         raise typer.Exit(1)
 
     if not confirm:
-        typer.echo("error: --confirm flag required for destructive operations", err=True)
+        typer.echo(
+            "error: --confirm flag required for destructive operations", err=True
+        )
         raise typer.Exit(1)
 
     client = _get_client()
@@ -248,7 +272,9 @@ def desktop_click(
 def desktop_set(
     handle: int = typer.Argument(..., help="Native window handle of the element."),
     value: str = typer.Argument(..., help="Value to set on the element."),
-    confirm: bool = typer.Option(False, "--confirm", help="Required flag for destructive operation."),
+    confirm: bool = typer.Option(
+        False, "--confirm", help="Required flag for destructive operation."
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON."),
 ) -> None:
     """Set the value of a UI element by its native window handle."""
@@ -257,7 +283,9 @@ def desktop_set(
         raise typer.Exit(1)
 
     if not confirm:
-        typer.echo("error: --confirm flag required for destructive operations", err=True)
+        typer.echo(
+            "error: --confirm flag required for destructive operations", err=True
+        )
         raise typer.Exit(1)
 
     client = _get_client()
@@ -315,7 +343,9 @@ def desktop_ahk(
             "If a file path is provided, its contents are read and executed."
         ),
     ),
-    confirm: bool = typer.Option(False, "--confirm", help="Required flag for destructive operation."),
+    confirm: bool = typer.Option(
+        False, "--confirm", help="Required flag for destructive operation."
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON."),
 ) -> None:
     """Execute an AutoHotkey v2 script via AutoHotkey.exe."""
@@ -324,7 +354,9 @@ def desktop_ahk(
         raise typer.Exit(1)
 
     if not confirm:
-        typer.echo("error: --confirm flag required for destructive operations", err=True)
+        typer.echo(
+            "error: --confirm flag required for destructive operations", err=True
+        )
         raise typer.Exit(1)
 
     # Resolve file vs inline script

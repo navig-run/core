@@ -15,11 +15,17 @@ from navig.ai_context import log_error
 class RetryConfig:
     """Configuration for retry behavior."""
 
-    def __init__(self, max_retries: int = 3, base_delay: float = 1.0,
-                 max_delay: float = 30.0, exponential_base: float = 2.0,
-                 jitter: bool = True, timeout: Optional[float] = None):
+    def __init__(
+        self,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+        max_delay: float = 30.0,
+        exponential_base: float = 2.0,
+        jitter: bool = True,
+        timeout: Optional[float] = None,
+    ):
         """Initialize retry configuration.
-        
+
         Args:
             max_retries: Maximum number of retry attempts (0 = no retries)
             base_delay: Initial delay between retries in seconds
@@ -37,15 +43,15 @@ class RetryConfig:
 
     def get_delay(self, attempt: int) -> float:
         """Calculate delay for given attempt number.
-        
+
         Args:
             attempt: Retry attempt number (0-indexed)
-            
+
         Returns:
             Delay in seconds
         """
         # Exponential backoff: base_delay * (exponential_base ^ attempt)
-        delay = self.base_delay * (self.exponential_base ** attempt)
+        delay = self.base_delay * (self.exponential_base**attempt)
 
         # Cap at max_delay
         delay = min(delay, self.max_delay)
@@ -61,10 +67,15 @@ class RetryConfig:
 class RetryableOperation:
     """Wrapper for operations that can be retried."""
 
-    def __init__(self, operation: Callable, config: RetryConfig,
-                 error_category: str, command_name: str):
+    def __init__(
+        self,
+        operation: Callable,
+        config: RetryConfig,
+        error_category: str,
+        command_name: str,
+    ):
         """Initialize retryable operation.
-        
+
         Args:
             operation: Function to execute (should raise exception on failure)
             config: Retry configuration
@@ -79,10 +90,10 @@ class RetryableOperation:
 
     def execute(self, *args, **kwargs) -> Any:
         """Execute operation with retry logic.
-        
+
         Returns:
             Operation result if successful
-            
+
         Raises:
             Last exception if all retries exhausted
         """
@@ -99,7 +110,7 @@ class RetryableOperation:
                         self.error_category,
                         self.command_name,
                         error_msg,
-                        {'timeout': self.config.timeout, 'elapsed': elapsed}
+                        {"timeout": self.config.timeout, "elapsed": elapsed},
                     )
                     raise TimeoutError(error_msg)
 
@@ -127,9 +138,9 @@ class RetryableOperation:
                         self.command_name,
                         str(e),
                         {
-                            'attempts': attempt + 1,
-                            'total_time': time.time() - self.start_time
-                        }
+                            "attempts": attempt + 1,
+                            "total_time": time.time() - self.start_time,
+                        },
                     )
                     raise
 
@@ -147,15 +158,18 @@ class RetryableOperation:
         raise last_exception
 
 
-def with_retry(config: Optional[RetryConfig] = None, error_category: str = 'general',
-               command_name: str = 'unknown'):
+def with_retry(
+    config: Optional[RetryConfig] = None,
+    error_category: str = "general",
+    command_name: str = "unknown",
+):
     """Decorator to add retry logic to a function.
-    
+
     Args:
         config: Retry configuration (uses defaults if None)
         error_category: Error category for logging
         command_name: Command name for error logging
-        
+
     Example:
         @with_retry(RetryConfig(max_retries=5, base_delay=2.0), 'tunnel', 'tunnel_start')
         def start_tunnel():
@@ -170,7 +184,9 @@ def with_retry(config: Optional[RetryConfig] = None, error_category: str = 'gene
         def wrapper(*args, **kwargs):
             operation = RetryableOperation(func, config, error_category, command_name)
             return operation.execute(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -182,7 +198,7 @@ TUNNEL_RETRY_CONFIG = RetryConfig(
     max_delay=16.0,  # 1s → 2s → 4s → 8s → 16s
     exponential_base=2.0,
     jitter=True,
-    timeout=60.0  # 1 minute overall timeout
+    timeout=60.0,  # 1 minute overall timeout
 )
 
 DATABASE_RETRY_CONFIG = RetryConfig(
@@ -191,7 +207,7 @@ DATABASE_RETRY_CONFIG = RetryConfig(
     max_delay=10.0,  # 2s → 4s → 8s (capped at 10s)
     exponential_base=2.0,
     jitter=True,
-    timeout=30.0  # 30 seconds overall timeout
+    timeout=30.0,  # 30 seconds overall timeout
 )
 
 FILE_RETRY_CONFIG = RetryConfig(
@@ -200,7 +216,7 @@ FILE_RETRY_CONFIG = RetryConfig(
     max_delay=8.0,  # 1s → 2s → 4s → 8s
     exponential_base=2.0,
     jitter=True,
-    timeout=120.0  # 2 minutes for large files
+    timeout=120.0,  # 2 minutes for large files
 )
 
 NETWORK_RETRY_CONFIG = RetryConfig(
@@ -209,21 +225,25 @@ NETWORK_RETRY_CONFIG = RetryConfig(
     max_delay=15.0,  # 0.5s → 1s → 2s → 4s → 8s (capped at 15s)
     exponential_base=2.0,
     jitter=True,
-    timeout=45.0  # 45 seconds overall timeout
+    timeout=45.0,  # 45 seconds overall timeout
 )
 
 
 class CircuitBreaker:
     """Circuit breaker pattern for failing operations.
-    
+
     Prevents repeated attempts to operations that are likely to fail.
     States: CLOSED (normal), OPEN (failing), HALF_OPEN (testing recovery).
     """
 
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0,
-                 success_threshold: int = 2):
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+        success_threshold: int = 2,
+    ):
         """Initialize circuit breaker.
-        
+
         Args:
             failure_threshold: Failures before opening circuit
             recovery_timeout: Seconds before trying again (OPEN → HALF_OPEN)
@@ -233,31 +253,31 @@ class CircuitBreaker:
         self.recovery_timeout = recovery_timeout
         self.success_threshold = success_threshold
 
-        self.state = 'CLOSED'  # CLOSED, OPEN, HALF_OPEN
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
         self.failure_count = 0
         self.success_count = 0
         self.last_failure_time = None
 
     def call(self, operation: Callable, *args, **kwargs) -> Any:
         """Execute operation through circuit breaker.
-        
+
         Args:
             operation: Function to execute
-            
+
         Returns:
             Operation result
-            
+
         Raises:
             CircuitBreakerOpenError: If circuit is open
             Original exception: If operation fails
         """
         # Check if circuit is OPEN and recovery timeout has passed
-        if self.state == 'OPEN':
+        if self.state == "OPEN":
             if self.last_failure_time:
                 elapsed = time.time() - self.last_failure_time
                 if elapsed >= self.recovery_timeout:
                     ch.dim("Circuit breaker: Testing recovery (HALF_OPEN)")
-                    self.state = 'HALF_OPEN'
+                    self.state = "HALF_OPEN"
                     self.success_count = 0
                 else:
                     raise CircuitBreakerOpenError(
@@ -280,16 +300,16 @@ class CircuitBreaker:
 
     def _on_success(self):
         """Handle successful operation."""
-        if self.state == 'HALF_OPEN':
+        if self.state == "HALF_OPEN":
             self.success_count += 1
 
             if self.success_count >= self.success_threshold:
                 ch.success("Circuit breaker: Service recovered (CLOSED)")
-                self.state = 'CLOSED'
+                self.state = "CLOSED"
                 self.failure_count = 0
                 self.success_count = 0
 
-        elif self.state == 'CLOSED':
+        elif self.state == "CLOSED":
             # Reset failure count on success
             self.failure_count = 0
 
@@ -298,24 +318,24 @@ class CircuitBreaker:
         self.failure_count += 1
         self.last_failure_time = time.time()
 
-        if self.state == 'HALF_OPEN':
+        if self.state == "HALF_OPEN":
             # Failed during recovery test - back to OPEN
             ch.warning("Circuit breaker: Recovery failed (OPEN)")
-            self.state = 'OPEN'
+            self.state = "OPEN"
             self.success_count = 0
 
-        elif self.state == 'CLOSED':
+        elif self.state == "CLOSED":
             if self.failure_count >= self.failure_threshold:
                 ch.error(
                     f"Circuit breaker: Too many failures "
                     f"({self.failure_count}) - Opening circuit"
                 )
-                self.state = 'OPEN'
+                self.state = "OPEN"
 
     def reset(self):
         """Manually reset circuit breaker to CLOSED state."""
         ch.info("Circuit breaker: Manual reset (CLOSED)")
-        self.state = 'CLOSED'
+        self.state = "CLOSED"
         self.failure_count = 0
         self.success_count = 0
         self.last_failure_time = None
@@ -323,6 +343,7 @@ class CircuitBreaker:
 
 class CircuitBreakerOpenError(Exception):
     """Raised when circuit breaker is open."""
+
     pass
 
 

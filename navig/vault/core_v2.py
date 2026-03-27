@@ -14,6 +14,7 @@ v.unlock(passphrase=b"mypass")      # passphrase unlock
 item_id = v.put("openai/api_key", b"sk-...")
 secret  = v.get_secret("openai/api_key")  # → "sk-..."
 """
+
 from __future__ import annotations
 
 import json
@@ -42,9 +43,9 @@ class VaultV2:
     """
 
     def __init__(self, vault_dir: Path) -> None:
-        self.vault_dir  = vault_dir
-        self._engine    = CryptoEngine(vault_dir)
-        self._store     = VaultStore(vault_dir)
+        self.vault_dir = vault_dir
+        self._engine = CryptoEngine(vault_dir)
+        self._store = VaultStore(vault_dir)
 
     # ── Unlock / Lock ────────────────────────────────────────────────────────
 
@@ -99,11 +100,11 @@ class VaultV2:
         master_key = self._master_key()
 
         # Generate per-item DEK and encrypt payload
-        dek            = CryptoEngine.generate_dek()
+        dek = CryptoEngine.generate_dek()
         encrypted_blob = CryptoEngine.seal(dek, payload)
 
         # Encrypt DEK with master key
-        encrypted_dek  = CryptoEngine.seal(master_key, dek)
+        encrypted_dek = CryptoEngine.seal(master_key, dek)
 
         now = datetime.now(timezone.utc)
 
@@ -154,7 +155,7 @@ class VaultV2:
         if item is None:
             raise KeyError(f"Vault item not found: {label!r}")
         master_key = self._master_key()
-        dek     = CryptoEngine.open(master_key, item.encrypted_dek)
+        dek = CryptoEngine.open(master_key, item.encrypted_dek)
         payload = CryptoEngine.open(dek, item.encrypted_blob)
         self._store.audit(item.id, "read")
         return payload
@@ -179,6 +180,7 @@ class VaultV2:
                 return data["value"]
             if item.provider:
                 from .provider import get_provider
+
                 meta = get_provider(item.provider) or {}
                 key_field = meta.get("key_field", "api_key")
                 if key_field in data:
@@ -221,6 +223,7 @@ class VaultV2:
         # Force-create a new salt so the new KDF output differs
         salt_path = self.vault_dir / CryptoEngine.SALT_FILE
         import os
+
         new_salt = os.urandom(32)
         self._engine._salt = None  # clear cache
         salt_path.write_bytes(new_salt)
@@ -231,11 +234,11 @@ class VaultV2:
 
         new_master = self._engine.derive_key(new_passphrase)
 
-        items   = self._store.list()
+        items = self._store.list()
         rotated = 0
         for item in items:
             try:
-                dek         = CryptoEngine.open(old_master, item.encrypted_dek)
+                dek = CryptoEngine.open(old_master, item.encrypted_dek)
                 new_enc_dek = CryptoEngine.seal(new_master, dek)
                 rotated_item = VaultItem(
                     id=item.id,
@@ -258,11 +261,13 @@ class VaultV2:
         # Update session with new master key
         session = SessionStore.get()
         if session is not None:
-            SessionStore.set(VaultSession(
-                master_key=new_master,
-                unlocked_at=session.unlocked_at,
-                ttl_seconds=session.ttl_seconds,
-            ))
+            SessionStore.set(
+                VaultSession(
+                    master_key=new_master,
+                    unlocked_at=session.unlocked_at,
+                    ttl_seconds=session.ttl_seconds,
+                )
+            )
 
         return rotated
 
@@ -289,7 +294,9 @@ class VaultV2:
         """
         import json as _json
 
-        src_path = Path(source).expanduser() if isinstance(source, (str, Path)) else None
+        src_path = (
+            Path(source).expanduser() if isinstance(source, (str, Path)) else None
+        )
         if src_path is not None and src_path.exists():
             raw = src_path.read_text(encoding="utf-8")
             original_name = src_path.name
@@ -319,6 +326,7 @@ class VaultV2:
     def get_json_file(self, label: str) -> dict:
         """Decrypt and return a stored JSON key file as a Python dict."""
         import json as _json
+
         return _json.loads(self.get_bytes(label))
 
     def get_json_str(self, label: str) -> str:
@@ -366,6 +374,7 @@ def get_vault_v2(vault_dir: Optional[Path] = None) -> VaultV2:
     if _vault_v2 is None:
         if vault_dir is None:
             from navig.platform.paths import vault_dir as _vault_dir_fn
+
             vault_dir = _vault_dir_fn()
         _vault_v2 = VaultV2(vault_dir)
     return _vault_v2

@@ -25,4 +25,3 @@ services:
 metadata:
   description: "Staging server"
   type: "django"
-

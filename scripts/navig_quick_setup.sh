@@ -69,33 +69,33 @@ find_installer() {
         "../scripts/install_navig_linux_enhanced.sh"
         "$SCRIPT_DIR/install_navig_linux_enhanced.sh"
     )
-    
+
     for p in "${paths[@]}"; do
         [[ -f "$p" ]] && echo "$p" && return 0
     done
-    
+
     return 1
 }
 
 main() {
     banner
-    
+
     if [[ $FAST_MODE -eq 1 ]]; then
         echo -e "${C[accent]}⏱️  FAST MODE: Automated setup${C[reset]}"
         echo "   • Pre-installs Samba & rclone"
         echo "   • Skips optional prompts"
         echo "   • ~5 minute setup"
         echo ""
-        
+
         installer=$(find_installer || true)
         if [[ -z "$installer" ]]; then
             error "Enhanced installer not found!"
             exit 1
         fi
-        
+
         info "Running installer: $installer"
         bash "$installer" --install-samba --install-rclone --silent
-        
+
     else
         # Interactive mode
         echo "NAVIG Fast Setup"
@@ -104,7 +104,7 @@ main() {
         echo "0. Exit"
         echo ""
         read -p "Choose: " choice
-        
+
         case $choice in
             1)
                 FAST_MODE=1
@@ -123,7 +123,7 @@ main() {
                 ;;
         esac
     fi
-    
+
     # Show completion summary
     cat <<EOF
 

@@ -22,6 +22,7 @@ logger = get_debug_logger()
 @dataclass
 class WebhookEvent:
     """Received webhook event."""
+
     id: str
     source: str
     event_type: str
@@ -33,18 +34,19 @@ class WebhookEvent:
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
-            'id': self.id,
-            'source': self.source,
-            'event_type': self.event_type,
-            'payload': self.payload,
-            'received_at': self.received_at.isoformat(),
-            'signature_valid': self.signature_valid,
+            "id": self.id,
+            "source": self.source,
+            "event_type": self.event_type,
+            "payload": self.payload,
+            "received_at": self.received_at.isoformat(),
+            "signature_valid": self.signature_valid,
         }
 
 
 @dataclass
 class WebhookSourceConfig:
     """Configuration for a webhook source."""
+
     name: str
     enabled: bool = True
     secret: Optional[str] = None
@@ -67,29 +69,29 @@ class WebhookSourceConfig:
 class WebhookReceiver:
     """
     Receives and processes incoming webhooks.
-    
+
     Features:
     - Signature verification per provider (GitHub, Stripe, etc.)
     - Event filtering by type
     - Event routing to handlers
     - Integration with Gateway system events
-    
+
     Example:
         receiver = WebhookReceiver(config)
-        
+
         @receiver.on_event
         async def handle_event(event: WebhookEvent):
             print(f"Received: {event.source}/{event.event_type}")
-        
+
         # In aiohttp app:
         app.router.add_routes(receiver.get_routes())
     """
 
     def __init__(self, config: dict = None):
         config = config or {}
-        self.webhook_config = config.get('webhooks', {})
-        self.enabled = self.webhook_config.get('enabled', True)
-        self.path_prefix = self.webhook_config.get('path_prefix', '/webhook')
+        self.webhook_config = config.get("webhooks", {})
+        self.enabled = self.webhook_config.get("enabled", True)
+        self.path_prefix = self.webhook_config.get("path_prefix", "/webhook")
 
         # Load source configs
         self._sources: Dict[str, WebhookSourceConfig] = {}
@@ -106,29 +108,29 @@ class WebhookReceiver:
         """Load webhook source configurations."""
         import os
 
-        secrets = self.webhook_config.get('secrets', {})
-        sources = self.webhook_config.get('sources', {})
+        secrets = self.webhook_config.get("secrets", {})
+        sources = self.webhook_config.get("sources", {})
 
         # Default sources if not configured
         if not sources:
             sources = {
-                'github': {
-                    'enabled': True,
-                    'signature_header': 'X-Hub-Signature-256',
-                    'signature_algo': 'sha256',
+                "github": {
+                    "enabled": True,
+                    "signature_header": "X-Hub-Signature-256",
+                    "signature_algo": "sha256",
                 },
-                'stripe': {
-                    'enabled': True,
-                    'signature_header': 'Stripe-Signature',
+                "stripe": {
+                    "enabled": True,
+                    "signature_header": "Stripe-Signature",
                 },
-                'gitlab': {
-                    'enabled': True,
-                    'signature_header': 'X-Gitlab-Token',
-                    'signature_algo': 'plain',
+                "gitlab": {
+                    "enabled": True,
+                    "signature_header": "X-Gitlab-Token",
+                    "signature_algo": "plain",
                 },
-                'custom': {
-                    'enabled': True,
-                    'verify_signature': False,
+                "custom": {
+                    "enabled": True,
+                    "verify_signature": False,
                 },
             }
 
@@ -136,24 +138,24 @@ class WebhookReceiver:
             # Resolve secret from secrets dict or environment
             secret = secrets.get(name)
             if secret and isinstance(secret, str):
-                if secret.startswith('${') and secret.endswith('}'):
+                if secret.startswith("${") and secret.endswith("}"):
                     env_var = secret[2:-1]
                     secret = os.environ.get(env_var)
 
             self._sources[name] = WebhookSourceConfig(
                 name=name,
-                enabled=cfg.get('enabled', True),
+                enabled=cfg.get("enabled", True),
                 secret=secret,
-                signature_header=cfg.get('signature_header'),
-                signature_algo=cfg.get('signature_algo', 'sha256'),
-                events=cfg.get('events'),
-                verify_signature=cfg.get('verify_signature', True),
+                signature_header=cfg.get("signature_header"),
+                signature_algo=cfg.get("signature_algo", "sha256"),
+                events=cfg.get("events"),
+                verify_signature=cfg.get("verify_signature", True),
             )
 
     def on_event(self, handler: Callable):
         """
         Register an event handler.
-        
+
         Can be used as decorator:
             @receiver.on_event
             async def handle(event):
@@ -165,24 +167,26 @@ class WebhookReceiver:
     def get_routes(self):
         """
         Get aiohttp routes for webhook endpoints.
-        
+
         Returns list of route definitions.
         """
         try:
             from aiohttp import web
         except ImportError as _exc:
-            raise ImportError("aiohttp required for webhook receiver: pip install aiohttp") from _exc
+            raise ImportError(
+                "aiohttp required for webhook receiver: pip install aiohttp"
+            ) from _exc
 
         return [
-            web.post(f'{self.path_prefix}/{{source}}', self.handle_webhook),
-            web.get(f'{self.path_prefix}/status', self.handle_status),
-            web.get(f'{self.path_prefix}/history', self.handle_history),
+            web.post(f"{self.path_prefix}/{{source}}", self.handle_webhook),
+            web.get(f"{self.path_prefix}/status", self.handle_status),
+            web.get(f"{self.path_prefix}/history", self.handle_history),
         ]
 
-    async def handle_webhook(self, request) -> 'web.Response':
+    async def handle_webhook(self, request) -> "web.Response":
         """
         Handle incoming webhook request.
-        
+
         Route: POST /webhook/{source}
         """
         from aiohttp import web
@@ -190,7 +194,7 @@ class WebhookReceiver:
         if not self.enabled:
             return web.json_response({"error": "Webhooks disabled"}, status=503)
 
-        source = request.match_info.get('source')
+        source = request.match_info.get("source")
 
         # Check if source is configured
         source_cfg = self._sources.get(source)
@@ -224,7 +228,9 @@ class WebhookReceiver:
 
         # Check if event is allowed
         if source_cfg.events and event_type not in source_cfg.events:
-            logger.debug(f"Ignoring event {event_type} from {source} (not in allowed list)")
+            logger.debug(
+                f"Ignoring event {event_type} from {source} (not in allowed list)"
+            )
             return web.json_response({"ok": True, "ignored": True})
 
         # Create event
@@ -248,56 +254,64 @@ class WebhookReceiver:
 
         logger.info(f"Webhook received: {source}/{event_type} (id={event.id})")
 
-        return web.json_response({
-            "ok": True,
-            "event_id": event.id,
-            "event_type": event_type,
-        })
+        return web.json_response(
+            {
+                "ok": True,
+                "event_id": event.id,
+                "event_type": event_type,
+            }
+        )
 
-    async def handle_status(self, request) -> 'web.Response':
+    async def handle_status(self, request) -> "web.Response":
         """
         Get webhook receiver status.
-        
+
         Route: GET /webhook/status
         """
         from aiohttp import web
 
         sources = []
         for name, cfg in self._sources.items():
-            sources.append({
-                "name": name,
-                "enabled": cfg.enabled,
-                "has_secret": cfg.secret is not None,
-                "verify_signature": cfg.verify_signature,
-            })
+            sources.append(
+                {
+                    "name": name,
+                    "enabled": cfg.enabled,
+                    "has_secret": cfg.secret is not None,
+                    "verify_signature": cfg.verify_signature,
+                }
+            )
 
-        return web.json_response({
-            "enabled": self.enabled,
-            "path_prefix": self.path_prefix,
-            "sources": sources,
-            "recent_events_count": len(self._recent_events),
-        })
+        return web.json_response(
+            {
+                "enabled": self.enabled,
+                "path_prefix": self.path_prefix,
+                "sources": sources,
+                "recent_events_count": len(self._recent_events),
+            }
+        )
 
-    async def handle_history(self, request) -> 'web.Response':
+    async def handle_history(self, request) -> "web.Response":
         """
         Get recent webhook events.
-        
+
         Route: GET /webhook/history
         """
         from aiohttp import web
 
-        limit = int(request.query.get('limit', 20))
-        source_filter = request.query.get('source')
+        limit = int(request.query.get("limit", 20))
+        source_filter = request.query.get("source")
 
         events = self._recent_events[-limit:]
 
         if source_filter:
             events = [e for e in events if e.source == source_filter]
 
-        return web.json_response({
-            "events": [e.to_dict() for e in reversed(events)],
-            "total": len(events),
-        })
+        return web.json_response(
+            {
+                "events": [e.to_dict() for e in reversed(events)],
+                "total": len(events),
+            }
+        )
 
     def _verify_signature(
         self,
@@ -356,7 +370,9 @@ class WebhookReceiver:
         """Remove a webhook source configuration."""
         self._sources.pop(name, None)
 
-    def get_recent_events(self, limit: int = 20, source: str = None) -> List[WebhookEvent]:
+    def get_recent_events(
+        self, limit: int = 20, source: str = None
+    ) -> List[WebhookEvent]:
         """Get recent events, optionally filtered by source."""
         events = self._recent_events[-limit:]
         if source:

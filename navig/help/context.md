@@ -29,5 +29,3 @@ Project isolation:
 - Each project can have its own `.navig/config.yaml`
 - Add `.navig/` to `.gitignore` to keep context local
 - Use `NAVIG_ACTIVE_HOST` in CI/CD for explicit context
-
-

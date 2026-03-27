@@ -21,6 +21,7 @@ def _get_local_ops():
     global _local_ops
     if _local_ops is None:
         from navig.local_operations import LocalOperations
+
         _local_ops = LocalOperations()
     return _local_ops
 
@@ -32,6 +33,7 @@ def _ensure_rich():
         from rich.panel import Panel
         from rich.syntax import Syntax
         from rich.table import Table
+
         return Console(), Table, Panel, Syntax
     except ImportError:
         ch.error("Rich library required for this command")
@@ -44,9 +46,9 @@ def _ensure_rich():
 def system_info(options: dict):
     """
     Display local system information.
-    
+
     Shows OS type, hostname, admin status, and paths.
-    
+
     Args:
         options: Command options (json_output, plain)
     """
@@ -55,12 +57,13 @@ def system_info(options: dict):
 
     info = local_ops.get_system_info()
 
-    if options.get('json_output'):
+    if options.get("json_output"):
         import json
+
         console.print(json.dumps(info.to_dict(), indent=2))
         return
 
-    if options.get('plain'):
+    if options.get("plain"):
         print(f"hostname={info.hostname}")
         print(f"os={info.os_name}")
         print(f"os_display={info.os_display_name}")
@@ -88,7 +91,7 @@ def system_info(options: dict):
 def resource_usage(options: dict):
     """
     Display local resource usage (CPU, memory, disk).
-    
+
     Args:
         options: Command options
     """
@@ -112,7 +115,7 @@ def resource_usage(options: dict):
 def hosts_view(options: dict):
     """
     View the system hosts file with syntax highlighting.
-    
+
     Args:
         options: Command options (plain, json_output)
     """
@@ -122,26 +125,23 @@ def hosts_view(options: dict):
     hosts_path = local_ops.get_hosts_file_path()
     content = local_ops.read_hosts_file()
 
-    if options.get('json_output'):
+    if options.get("json_output"):
         import json
+
         # Parse hosts file into structured data
         entries = []
-        for line in content.split('\n'):
+        for line in content.split("\n"):
             line = line.strip()
-            if line and not line.startswith('#'):
+            if line and not line.startswith("#"):
                 parts = line.split()
                 if len(parts) >= 2:
-                    entries.append({
-                        'ip': parts[0],
-                        'hostnames': parts[1:]
-                    })
-        console.print(json.dumps({
-            'path': str(hosts_path),
-            'entries': entries
-        }, indent=2))
+                    entries.append({"ip": parts[0], "hostnames": parts[1:]})
+        console.print(
+            json.dumps({"path": str(hosts_path), "entries": entries}, indent=2)
+        )
         return
 
-    if options.get('plain'):
+    if options.get("plain"):
         print(f"# Path: {hosts_path}")
         print(content)
         return
@@ -149,7 +149,9 @@ def hosts_view(options: dict):
     # Rich display with syntax highlighting
     console.print(f"\n[cyan]📄 Hosts File: {hosts_path}[/cyan]\n")
 
-    if content.startswith("Permission denied") or content.startswith("Hosts file not found"):
+    if content.startswith("Permission denied") or content.startswith(
+        "Hosts file not found"
+    ):
         ch.error(content)
         return
 
@@ -165,9 +167,9 @@ def hosts_view(options: dict):
 def hosts_edit(options: dict):
     """
     Open the hosts file in the default editor.
-    
+
     Requires admin privileges on most systems.
-    
+
     Args:
         options: Command options
     """
@@ -184,7 +186,7 @@ def hosts_edit(options: dict):
         console.print(f"\n[cyan]Hosts file location:[/cyan] {hosts_path}")
 
         os_adapter = local_ops.os_adapter
-        if os_adapter.name == 'windows':
+        if os_adapter.name == "windows":
             console.print("\n[dim]To edit manually:[/dim]")
             console.print("  1. Open Notepad as Administrator")
             console.print(f"  2. File → Open → {hosts_path}")
@@ -203,7 +205,7 @@ def hosts_edit(options: dict):
 def hosts_add(ip: str, hostname: str, options: dict):
     """
     Add an entry to the hosts file.
-    
+
     Args:
         ip: IP address
         hostname: Hostname to add
@@ -223,20 +225,20 @@ def hosts_add(ip: str, hostname: str, options: dict):
         return
 
     # Check if entry already exists
-    for line in content.split('\n'):
-        if hostname in line.split() and not line.strip().startswith('#'):
+    for line in content.split("\n"):
+        if hostname in line.split() and not line.strip().startswith("#"):
             ch.warning(f"Hostname '{hostname}' already exists in hosts file")
             return
 
     # Add new entry
     new_entry = f"{ip}\t{hostname}"
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.info(f"DRY RUN: Would add entry: {new_entry}")
         return
 
     try:
-        with open(hosts_path, 'a') as f:
+        with open(hosts_path, "a") as f:
             f.write(f"\n{new_entry}")
         ch.success(f"Added hosts entry: {new_entry}")
     except PermissionError:
@@ -251,12 +253,12 @@ def hosts_add(ip: str, hostname: str, options: dict):
 def software_list(options: dict):
     """
     List installed software packages.
-    
+
     Uses the OS-appropriate package manager:
     - Windows: winget
     - Linux: dpkg/rpm/pacman
     - macOS: brew
-    
+
     Args:
         options: Command options (json_output, plain, limit)
     """
@@ -272,16 +274,17 @@ def software_list(options: dict):
         return
 
     # Apply limit if specified
-    limit = options.get('limit')
+    limit = options.get("limit")
     if limit and isinstance(limit, int):
         packages = packages[:limit]
 
-    if options.get('json_output'):
+    if options.get("json_output"):
         import json
+
         console.print(json.dumps([p.to_dict() for p in packages], indent=2))
         return
 
-    if options.get('plain'):
+    if options.get("plain"):
         for pkg in packages:
             print(f"{pkg.name}\t{pkg.version}")
         return
@@ -293,7 +296,7 @@ def software_list(options: dict):
     table.add_column("Source", style="dim")
 
     for pkg in packages:
-        table.add_row(pkg.name, pkg.version, pkg.source or '')
+        table.add_row(pkg.name, pkg.version, pkg.source or "")
 
     console.print()
     console.print(table)
@@ -303,7 +306,7 @@ def software_list(options: dict):
 def software_search(query: str, options: dict):
     """
     Search installed packages by name.
-    
+
     Args:
         query: Search term
         options: Command options
@@ -321,12 +324,13 @@ def software_search(query: str, options: dict):
         ch.info(f"No packages matching '{query}' found")
         return
 
-    if options.get('json_output'):
+    if options.get("json_output"):
         import json
+
         console.print(json.dumps([p.to_dict() for p in matches], indent=2))
         return
 
-    if options.get('plain'):
+    if options.get("plain"):
         for pkg in matches:
             print(f"{pkg.name}\t{pkg.version}")
         return
@@ -349,13 +353,13 @@ def software_search(query: str, options: dict):
 def security_audit(options: dict):
     """
     Run a local security audit.
-    
+
     Checks:
     - Privilege level (running as admin?)
     - Firewall status
     - Open ports
     - Running services
-    
+
     Args:
         options: Command options (json_output, verbose, ai)
     """
@@ -366,8 +370,9 @@ def security_audit(options: dict):
 
     checks = local_ops.run_security_audit()
 
-    if options.get('json_output'):
+    if options.get("json_output"):
         import json
+
         console.print(json.dumps([c.to_dict() for c in checks], indent=2))
         return
 
@@ -379,9 +384,9 @@ def security_audit(options: dict):
 
     for check in checks:
         status_style = {
-            'ok': '[green]✓ OK[/green]',
-            'warning': '[yellow]⚠ Warning[/yellow]',
-            'critical': '[red]✗ Critical[/red]'
+            "ok": "[green]✓ OK[/green]",
+            "warning": "[yellow]⚠ Warning[/yellow]",
+            "critical": "[red]✗ Critical[/red]",
         }.get(check.status, check.status)
 
         table.add_row(check.category.title(), status_style, check.message)
@@ -390,7 +395,7 @@ def security_audit(options: dict):
     console.print()
 
     # Verbose mode: show more details
-    if options.get('verbose'):
+    if options.get("verbose"):
         console.print("[cyan]═══ Open Ports ═══[/cyan]\n")
         ports_result = local_ops.get_open_ports()
         if ports_result.exit_code == 0:
@@ -408,7 +413,7 @@ def security_audit(options: dict):
             console.print(output)
 
     # AI analysis if requested
-    if options.get('ai'):
+    if options.get("ai"):
         _run_ai_security_analysis(checks, local_ops, options)
 
 
@@ -450,7 +455,9 @@ Be concise and actionable."""
         response = query_ai(prompt, context=context)
 
         if response:
-            console.print(Panel(response, title="🤖 AI Security Analysis", border_style="cyan"))
+            console.print(
+                Panel(response, title="🤖 AI Security Analysis", border_style="cyan")
+            )
         else:
             ch.warning("AI analysis not available")
 
@@ -463,7 +470,7 @@ Be concise and actionable."""
 def security_ports(options: dict):
     """
     Show open/listening ports on the local machine.
-    
+
     Args:
         options: Command options
     """
@@ -478,7 +485,7 @@ def security_ports(options: dict):
         ch.error(f"Failed to list ports: {result.stderr}")
         return
 
-    if options.get('plain'):
+    if options.get("plain"):
         print(result.stdout)
     else:
         console.print(result.stdout)
@@ -487,7 +494,7 @@ def security_ports(options: dict):
 def security_firewall(options: dict):
     """
     Show local firewall status.
-    
+
     Args:
         options: Command options
     """
@@ -500,10 +507,12 @@ def security_firewall(options: dict):
 
     if result.exit_code != 0:
         ch.warning(f"Could not get firewall status: {result.stderr}")
-        ch.info("This may require admin privileges or the firewall service may not be running.")
+        ch.info(
+            "This may require admin privileges or the firewall service may not be running."
+        )
         return
 
-    if options.get('plain'):
+    if options.get("plain"):
         print(result.stdout)
     else:
         console.print(result.stdout)
@@ -515,7 +524,7 @@ def security_firewall(options: dict):
 def network_interfaces(options: dict):
     """
     Show network interfaces.
-    
+
     Args:
         options: Command options
     """
@@ -536,7 +545,7 @@ def network_interfaces(options: dict):
 def network_ping(host: str, count: int = 4, options: dict = None):
     """
     Ping a host.
-    
+
     Args:
         host: Host to ping
         count: Number of pings
@@ -550,7 +559,7 @@ def network_ping(host: str, count: int = 4, options: dict = None):
 
     result = local_ops.ping(host, count)
 
-    if options.get('plain'):
+    if options.get("plain"):
         print(result.stdout)
         if result.stderr:
             print(result.stderr)
@@ -563,7 +572,7 @@ def network_ping(host: str, count: int = 4, options: dict = None):
 def network_dns(hostname: str, options: dict = None):
     """
     Perform DNS lookup.
-    
+
     Args:
         hostname: Hostname to lookup
         options: Command options

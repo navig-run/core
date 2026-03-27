@@ -5,6 +5,7 @@ This centralizes lazy import guards so `telegram.py` can stay focused on
 channel orchestration while preserving the existing optional-dependency
 behavior.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -31,6 +32,7 @@ try:
         build_settings_keyboard,
         get_callback_store,
     )
+
     HAS_KEYBOARDS = True
 except ImportError:
     HAS_KEYBOARDS = False
@@ -40,15 +42,12 @@ _audio_screen_a_kb: Callable[..., Any] | None = None
 _audio_screen_a_text: Callable[..., str] | None = None
 _load_audio_config: Callable[..., Any] | None = None
 try:
-    from navig.gateway.channels.audio_menu import (
-        load_config as _load_audio_config,
-    )
+    from navig.gateway.channels.audio_menu import load_config as _load_audio_config
     from navig.gateway.channels.audio_menu import (
         screen_a_keyboard as _audio_screen_a_kb,
     )
-    from navig.gateway.channels.audio_menu import (
-        screen_a_text as _audio_screen_a_text,
-    )
+    from navig.gateway.channels.audio_menu import screen_a_text as _audio_screen_a_text
+
     HAS_AUDIO_MENU = True
 except ImportError:
     HAS_AUDIO_MENU = False
@@ -65,6 +64,7 @@ try:
         get_mention_gate,
         get_session_manager,
     )
+
     HAS_SESSIONS = True
 except ImportError:
     HAS_SESSIONS = False
@@ -73,6 +73,7 @@ except ImportError:
 enforce_response_limits: Callable[..., Any] | None = None
 try:
     from navig.gateway.channels.telegram_templates import enforce_response_limits
+
     HAS_TEMPLATES = True
 except ImportError:
     HAS_TEMPLATES = False
@@ -81,6 +82,7 @@ except ImportError:
 generate_decoy: Callable[..., Any] | None = None
 try:
     from navig.gateway.decoy_responder import generate as generate_decoy
+
     HAS_DECOY = True
 except ImportError:
     HAS_DECOY = False
@@ -89,6 +91,7 @@ except ImportError:
 StatusRenderer: Any = None
 try:
     from navig.gateway.channels.telegram_renderer import StatusRenderer
+
     HAS_RENDERER = True
 except ImportError:
     HAS_RENDERER = False
@@ -105,6 +108,7 @@ try:
         mode_to_llm_tier,
         select_tools_for_text,
     )
+
     HAS_CLASSIFIER = True
 except ImportError:
     HAS_CLASSIFIER = False
@@ -117,6 +121,7 @@ try:
     from navig.voice.tts import TTS as _TTS
     from navig.voice.tts import TTSConfig as _TTSConfig
     from navig.voice.tts import TTSProvider as _TTSProvider
+
     HAS_VOICE = True
 except ImportError:
     _STT = None
@@ -138,7 +143,9 @@ _FEATURE_FLAGS = {
     "voice": HAS_VOICE,
 }
 
-TELEGRAM_FEATURES = frozenset(name for name, enabled in _FEATURE_FLAGS.items() if enabled)
+TELEGRAM_FEATURES = frozenset(
+    name for name, enabled in _FEATURE_FLAGS.items() if enabled
+)
 
 
 class TelegramFeaturesMixin:

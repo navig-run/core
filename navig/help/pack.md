@@ -122,10 +122,10 @@ variables:
 steps:
   - description: "First step"
     command: "navig host test ${host}"
-    
+
   - description: "Manual step"
     notes: "Verify this manually before continuing"
-    
+
   - description: "Risky step"
     command: "navig db backup"
     prompt: "Run database backup?"  # Ask for confirmation
@@ -246,5 +246,3 @@ NAVIG includes starter packs in `packs/starter/`:
 3. **Add notes**: Document manual steps clearly
 4. **Test locally**: Create packs in local dir before sharing
 5. **Use prompts**: Add confirmation for destructive operations
-
-

@@ -21,8 +21,8 @@ class DeployHistory:
     """Manages the append-only deploy history log."""
 
     def __init__(self, cache_dir: Path, keep: int = 50):
-        self._path  = cache_dir / _HISTORY_FILE
-        self._keep  = keep
+        self._path = cache_dir / _HISTORY_FILE
+        self._keep = keep
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def append(self, result_dict: Dict[str, Any]) -> None:
@@ -31,7 +31,9 @@ class DeployHistory:
             fh.write(json.dumps(result_dict, ensure_ascii=False) + "\n")
         self._trim()
 
-    def read(self, limit: int = 10, app: Optional[str] = None, host: Optional[str] = None) -> List[Dict[str, Any]]:
+    def read(
+        self, limit: int = 10, app: Optional[str] = None, host: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Read deploy history entries, newest-first.
 
@@ -72,7 +74,11 @@ class DeployHistory:
         if not self._path.exists():
             return
         try:
-            lines = [l for l in self._path.read_text(encoding="utf-8").splitlines() if l.strip()]
+            lines = [
+                l
+                for l in self._path.read_text(encoding="utf-8").splitlines()
+                if l.strip()
+            ]
             if len(lines) > self._keep:
                 self._path.write_text(
                     "\n".join(lines[-self._keep :]) + "\n",

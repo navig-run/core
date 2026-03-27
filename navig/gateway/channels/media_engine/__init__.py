@@ -9,6 +9,7 @@ Submodules:
   audio       — Audio context pipeline (mutagen → AudD → Whisper → Spotify/Last.fm)
   image       — Image context pipeline (EXIF → GPT-4o → Tesseract → SerpAPI)
 """
+
 from .audio import AudioEngine
 from .image import ImageEngine
 

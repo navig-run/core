@@ -20,26 +20,33 @@ from typing import Any, Dict
 try:
     import questionary
     from questionary import Style
+
     HAS_QUESTIONARY = True
 except ImportError:
     HAS_QUESTIONARY = False
 
 
 # Custom style for questionary
-WIZARD_STYLE = Style([
-    ('qmark', 'fg:cyan bold'),
-    ('question', 'bold'),
-    ('answer', 'fg:green'),
-    ('pointer', 'fg:cyan bold'),
-    ('highlighted', 'fg:cyan bold'),
-    ('selected', 'fg:green'),
-]) if HAS_QUESTIONARY else None
+WIZARD_STYLE = (
+    Style(
+        [
+            ("qmark", "fg:cyan bold"),
+            ("question", "bold"),
+            ("answer", "fg:green"),
+            ("pointer", "fg:cyan bold"),
+            ("highlighted", "fg:cyan bold"),
+            ("selected", "fg:green"),
+        ]
+    )
+    if HAS_QUESTIONARY
+    else None
+)
 
 
 class SetupWizard:
     """
     Interactive setup wizard for NAVIG.
-    
+
     Steps:
     1. Welcome & prerequisites check
     2. AI provider selection & API key
@@ -103,27 +110,27 @@ class SetupWizard:
         # Python version
         py_version = sys.version_info
         py_ok = py_version >= (3, 10)
-        checks.append((
-            f"Python {py_version.major}.{py_version.minor}",
-            py_ok,
-            "Python 3.10+ required" if not py_ok else None
-        ))
+        checks.append(
+            (
+                f"Python {py_version.major}.{py_version.minor}",
+                py_ok,
+                "Python 3.10+ required" if not py_ok else None,
+            )
+        )
 
         # SSH availability
         ssh_ok = self._check_command("ssh")
-        checks.append((
-            "SSH client",
-            ssh_ok,
-            "Install OpenSSH" if not ssh_ok else None
-        ))
+        checks.append(("SSH client", ssh_ok, "Install OpenSSH" if not ssh_ok else None))
 
         # Git (optional)
         git_ok = self._check_command("git")
-        checks.append((
-            "Git",
-            git_ok,
-            "Optional: Install Git for version control" if not git_ok else None
-        ))
+        checks.append(
+            (
+                "Git",
+                git_ok,
+                "Optional: Install Git for version control" if not git_ok else None,
+            )
+        )
 
         # Print results
         all_ok = True
@@ -146,11 +153,7 @@ class SetupWizard:
     def _check_command(self, cmd: str) -> bool:
         """Check if a command is available."""
         try:
-            subprocess.run(
-                [cmd, "--version"],
-                capture_output=True,
-                timeout=5
-            )
+            subprocess.run([cmd, "--version"], capture_output=True, timeout=5)
             return True
         except Exception:
             return False
@@ -174,7 +177,7 @@ class SetupWizard:
             choice = questionary.select(
                 "Select your AI provider:",
                 choices=[f"{name} - {desc}" for name, desc in providers],
-                style=WIZARD_STYLE
+                style=WIZARD_STYLE,
             ).ask()
             provider = choice.split(" - ")[0] if choice else "skip"
         else:
@@ -188,7 +191,9 @@ class SetupWizard:
                 provider = "openrouter"
 
         if provider == "skip":
-            print("  Skipping AI setup. You can configure later in ~/.navig/config.yaml")
+            print(
+                "  Skipping AI setup. You can configure later in ~/.navig/config.yaml"
+            )
             return
 
         self.config["ai"] = {"default_provider": provider}
@@ -209,8 +214,7 @@ class SetupWizard:
 
             if HAS_QUESTIONARY:
                 api_key = questionary.password(
-                    f"Enter your {provider} API key:",
-                    style=WIZARD_STYLE
+                    f"Enter your {provider} API key:", style=WIZARD_STYLE
                 ).ask()
             else:
                 api_key = input(f"Enter your {provider} API key: ").strip()
@@ -253,14 +257,14 @@ class SetupWizard:
                 resp = httpx.get(
                     "https://openrouter.ai/api/v1/models",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    timeout=10
+                    timeout=10,
                 )
                 return resp.status_code == 200
             elif provider == "openai":
                 resp = httpx.get(
                     "https://api.openai.com/v1/models",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    timeout=10
+                    timeout=10,
                 )
                 return resp.status_code == 200
             # Add more providers as needed
@@ -304,13 +308,21 @@ class SetupWizard:
 
                 try:
                     ssh_dir.mkdir(exist_ok=True, mode=0o700)
-                    subprocess.run([
-                        "ssh-keygen",
-                        "-t", "ed25519",
-                        "-f", str(key_path),
-                        "-N", "",  # No passphrase for automation
-                        "-C", "navig@local"
-                    ], check=True, capture_output=True)
+                    subprocess.run(
+                        [
+                            "ssh-keygen",
+                            "-t",
+                            "ed25519",
+                            "-f",
+                            str(key_path),
+                            "-N",
+                            "",  # No passphrase for automation
+                            "-C",
+                            "navig@local",
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
 
                     self.config["ssh"] = {"default_key_path": str(key_path)}
                     print(f"  ✅ Key generated: {key_path}")
@@ -342,8 +354,7 @@ class SetupWizard:
 
         if HAS_QUESTIONARY:
             bot_token = questionary.password(
-                "Enter bot token:",
-                style=WIZARD_STYLE
+                "Enter bot token:", style=WIZARD_STYLE
             ).ask()
         else:
             bot_token = input("Enter bot token: ").strip()
@@ -364,7 +375,9 @@ class SetupWizard:
 
             # Get user IDs
             print()
-            user_ids_str = input("  Your Telegram user ID (comma-separated for multiple): ").strip()
+            user_ids_str = input(
+                "  Your Telegram user ID (comma-separated for multiple): "
+            ).strip()
 
             user_ids = []
             if user_ids_str:
@@ -375,7 +388,7 @@ class SetupWizard:
 
             self.config["telegram"] = {
                 "bot_token": "${TELEGRAM_BOT_TOKEN}",
-                "allowed_users": user_ids
+                "allowed_users": user_ids,
             }
 
             # Save token to .env
@@ -391,10 +404,8 @@ class SetupWizard:
         """Test Telegram bot token."""
         try:
             import httpx
-            resp = httpx.get(
-                f"https://api.telegram.org/bot{token}/getMe",
-                timeout=10
-            )
+
+            resp = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
             return resp.status_code == 200 and resp.json().get("ok")
         except Exception:
             return False
@@ -430,12 +441,9 @@ class SetupWizard:
             port = input("  SSH port [22]: ").strip()
             port = int(port) if port else 22
 
-            hosts.append({
-                "name": name,
-                "hostname": hostname,
-                "user": user,
-                "port": port
-            })
+            hosts.append(
+                {"name": name, "hostname": hostname, "user": user, "port": port}
+            )
 
             print(f"  ✅ Added {name} ({user}@{hostname}:{port})")
 
@@ -462,7 +470,7 @@ class SetupWizard:
 
         # Load existing config if reconfiguring
         if self.reconfigure and self.config_file.exists():
-            with open(self.config_file, 'r') as f:
+            with open(self.config_file, "r") as f:
                 existing = yaml.safe_load(f) or {}
                 # Merge new config into existing
                 for key, value in self.config.items():
@@ -473,7 +481,7 @@ class SetupWizard:
                 self.config = existing
 
         # Write config
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             yaml.dump(self.config, f, default_flow_style=False, sort_keys=False)
 
         print(f"  ✅ Configuration saved to {self.config_file}")
@@ -523,9 +531,7 @@ class SetupWizard:
         """Ask for confirmation."""
         if HAS_QUESTIONARY:
             return questionary.confirm(
-                message,
-                default=default,
-                style=WIZARD_STYLE
+                message, default=default, style=WIZARD_STYLE
             ).ask()
         else:
             suffix = " [Y/n]" if default else " [y/N]"
@@ -538,10 +544,10 @@ class SetupWizard:
 def install_daemon(service_type: str = "auto") -> bool:
     """
     Install NAVIG as a system daemon.
-    
+
     Args:
         service_type: 'systemd', 'launchd', or 'auto' to detect
-        
+
     Returns:
         True if successful
     """
@@ -585,7 +591,7 @@ WantedBy=multi-user.target
 """.format(
         user=os.getenv("USER", "root"),
         path=os.environ.get("PATH", ""),
-        python=sys.executable
+        python=sys.executable,
     )
 
     service_path = Path("/etc/systemd/system/navig.service")
@@ -600,7 +606,7 @@ WantedBy=multi-user.target
                 ["sudo", "tee", str(service_path)],
                 input=service_content.encode(),
                 check=True,
-                capture_output=True
+                capture_output=True,
             )
         else:
             service_path.write_text(service_content)

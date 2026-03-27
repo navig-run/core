@@ -31,12 +31,14 @@ if TYPE_CHECKING:
 
 logger = get_debug_logger()
 
+
 # Local gateway base URL for mesh routes — resolved from navig config at call time
 # so it tracks config changes without requiring a restart.
 # Default port: 8789.  Override via ~/.navig/config.yaml: gateway.port
 def _gateway_base() -> str:
     try:
         from navig.config import get_config_manager
+
         port = get_config_manager().global_config.get("gateway", {}).get("port", 8789)
         return f"http://127.0.0.1:{port}"
     except Exception:
@@ -103,10 +105,7 @@ class TelegramMeshMixin:
                 return
 
             is_me = " *(this node)*" if my_role == "leader" else ""
-            msg = (
-                f"*current leader:* `{leader}`{is_me}\n"
-                f"*epoch:* {epoch}"
-            )
+            msg = f"*current leader:* `{leader}`{is_me}\n" f"*epoch:* {epoch}"
             await self.send_message(chat_id, msg, parse_mode="Markdown")
 
         except Exception as exc:
@@ -141,9 +140,7 @@ class TelegramMeshMixin:
 
             if action in ("on", "off"):
                 enabled = action == "on"
-                resp = await self._mesh_post(
-                    "/mesh/config", {"enabled": enabled}
-                )
+                resp = await self._mesh_post("/mesh/config", {"enabled": enabled})
                 status = resp.get("status", "ok")
                 await self.send_message(
                     chat_id,

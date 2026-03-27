@@ -132,5 +132,3 @@ gh pr list --repo {owner}/{repo} --json number,title --jq '.[] | "\(.number): \(
 - **gh not installed**: "GitHub CLI (gh) is not installed. Install: https://cli.github.com"
 - **Not authenticated**: "Run `gh auth login` to authenticate with GitHub"
 - **Repo not found**: "Repository '{repo}' not found. Check the name or your permissions."
-
-

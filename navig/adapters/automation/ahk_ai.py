@@ -1,6 +1,7 @@
 """
 NAVIG AutoHotkey AI Generator
 """
+
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List
@@ -13,13 +14,16 @@ class GenerationContext:
     screen_height: int
 
     def to_prompt_str(self) -> str:
-        win_list = "\n".join([f"- {w['title']} (PID: {w.get('pid', '?')})" for w in self.windows])
+        win_list = "\n".join(
+            [f"- {w['title']} (PID: {w.get('pid', '?')})" for w in self.windows]
+        )
         return f"""
 Current System State:
 Screen Resolution: {self.screen_width}x{self.screen_height}
 Visible Windows:
 {win_list}
 """
+
 
 @dataclass
 class GenerationResult:
@@ -28,12 +32,14 @@ class GenerationResult:
     error: str = ""
     explanation: str = ""
 
+
 class AHKAIGenerator:
     """Generates AutoHotkey v2 scripts from natural language."""
 
     def __init__(self):
         try:
             from navig.ai import ask_ai_with_context
+
             self.has_ai = True
         except ImportError:
             self.has_ai = False
@@ -72,15 +78,18 @@ Generate the AHK v2 script.
 
         try:
             import os
+
             if os.environ.get("NAVIG_MOCK_AI"):
-                 return GenerationResult(True, script='#Requires AutoHotkey v2.0\n#SingleInstance Force\nFileAppend "Mock Success", "*"\nExitApp 0')
+                return GenerationResult(
+                    True,
+                    script='#Requires AutoHotkey v2.0\n#SingleInstance Force\nFileAppend "Mock Success", "*"\nExitApp 0',
+                )
 
             from navig.ai import ask_ai_with_context
 
             # Use the standalone function that supports custom system prompts
             response = ask_ai_with_context(
-                prompt=user_prompt,
-                system_prompt=system_prompt
+                prompt=user_prompt, system_prompt=system_prompt
             )
 
             # Check for API error
@@ -92,7 +101,7 @@ Generate the AHK v2 script.
             patterns = [
                 r"```(?:ahk|autohotkey)?\n(.*?)```",
                 r"```\n(.*?)```",
-                r"```(.*?)```"
+                r"```(.*?)```",
             ]
 
             script = None
@@ -107,11 +116,17 @@ Generate the AHK v2 script.
 
             # If no code block, maybe the whole response is code?
             if "#Requires" in response or "WinActivate" in response:
-                 # Clean up any potential markdown that wasn't caught
-                clean_response = response.replace("```ahk", "").replace("```", "").strip()
+                # Clean up any potential markdown that wasn't caught
+                clean_response = (
+                    response.replace("```ahk", "").replace("```", "").strip()
+                )
                 return GenerationResult(True, script=clean_response)
 
-            return GenerationResult(False, error=f"No valid AHK code found. Response start: {response[:100]}...", explanation=response)
+            return GenerationResult(
+                False,
+                error=f"No valid AHK code found. Response start: {response[:100]}...",
+                explanation=response,
+            )
 
         except Exception as e:
             return GenerationResult(False, error=str(e))

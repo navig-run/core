@@ -1,6 +1,6 @@
 # NAVIG - Usage Guide
 
-**No Admin Visible In Graveyard**  
+**No Admin Visible In Graveyard**
 Keep your servers alive. Forever.
 
 ## Table of Contents
@@ -1024,7 +1024,5 @@ python navig.py --help | grep "navig "
 
 ---
 
-**NAVIG - No Admin Visible In Graveyard**  
+**NAVIG - No Admin Visible In Graveyard**
 Keep your servers alive. Forever.
-
-

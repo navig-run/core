@@ -26,9 +26,11 @@ from navig import console_helper as ch
 # DATA CLASSES
 # ============================================================================
 
+
 @dataclass
 class WorkflowStep:
     """Represents a single step in a workflow."""
+
     name: str
     command: str
     description: str = ""
@@ -53,6 +55,7 @@ class WorkflowStep:
 @dataclass
 class Workflow:
     """Represents a complete workflow definition."""
+
     name: str
     description: str = ""
     variables: Dict[str, Any] = field(default_factory=dict)
@@ -68,7 +71,7 @@ class Workflow:
             "version": self.version,
             "author": self.author,
             "variables": self.variables,
-            "steps": [step.to_dict() for step in self.steps]
+            "steps": [step.to_dict() for step in self.steps],
         }
 
 
@@ -76,12 +79,14 @@ class Workflow:
 # WORKFLOW MANAGER
 # ============================================================================
 
+
 class WorkflowManager:
     """Manages workflow discovery, parsing, validation, and execution."""
 
     def __init__(self, config_manager=None):
         """Initialize workflow manager with config paths."""
         from navig.config import get_config_manager
+
         self.config_manager = config_manager or get_config_manager()
 
         # Workflow locations (in priority order)
@@ -116,7 +121,7 @@ class WorkflowManager:
     def discover_workflows(self) -> Dict[str, Path]:
         """
         Discover all available workflows.
-        
+
         Returns:
             Dict mapping workflow names to their file paths.
             Project-local workflows override global ones.
@@ -142,7 +147,10 @@ class WorkflowManager:
 
         if "resources" in path_str:
             return "builtin"
-        elif self.config_manager.app_config_dir and str(self.config_manager.app_config_dir) in path_str:
+        elif (
+            self.config_manager.app_config_dir
+            and str(self.config_manager.app_config_dir) in path_str
+        ):
             return "project"
         else:
             return "global"
@@ -150,10 +158,10 @@ class WorkflowManager:
     def load_workflow(self, name: str) -> Optional[Workflow]:
         """
         Load and parse a workflow by name.
-        
+
         Args:
             name: Workflow name (filename without extension)
-            
+
         Returns:
             Workflow object or None if not found
         """
@@ -169,7 +177,7 @@ class WorkflowManager:
     def _parse_workflow_file(self, path: Path) -> Optional[Workflow]:
         """Parse a YAML workflow file into a Workflow object."""
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             if not data:
@@ -206,7 +214,7 @@ class WorkflowManager:
     def validate_workflow(self, workflow: Workflow) -> List[str]:
         """
         Validate a workflow for common issues.
-        
+
         Returns:
             List of validation error messages (empty if valid)
         """
@@ -223,7 +231,7 @@ class WorkflowManager:
                 errors.append(f"Step {i+1} '{step.name}' has no command")
 
             # Check for undefined variables
-            var_pattern = r'\$\{(\w+)\}'
+            var_pattern = r"\$\{(\w+)\}"
             variables = re.findall(var_pattern, step.command)
             for var in variables:
                 if var not in workflow.variables:
@@ -231,15 +239,17 @@ class WorkflowManager:
 
         return errors
 
-    def substitute_variables(self, text: str, variables: Dict[str, Any], extra_vars: Dict[str, Any] = None) -> str:
+    def substitute_variables(
+        self, text: str, variables: Dict[str, Any], extra_vars: Dict[str, Any] = None
+    ) -> str:
         """
         Substitute ${variable} placeholders with actual values.
-        
+
         Args:
             text: Text containing variable placeholders
             variables: Workflow-defined variables
             extra_vars: Runtime-provided variable overrides
-            
+
         Returns:
             Text with variables substituted
         """
@@ -251,16 +261,18 @@ class WorkflowManager:
             var_name = match.group(1)
             return str(merged_vars.get(var_name, match.group(0)))
 
-        return re.sub(r'\$\{(\w+)\}', replace_var, text)
+        return re.sub(r"\$\{(\w+)\}", replace_var, text)
 
-    def prompt_for_variables(self, workflow: Workflow, provided_vars: Dict[str, str] = None) -> Dict[str, str]:
+    def prompt_for_variables(
+        self, workflow: Workflow, provided_vars: Dict[str, str] = None
+    ) -> Dict[str, str]:
         """
         Interactively prompt for missing variables.
-        
+
         Args:
             workflow: Workflow with variable definitions
             provided_vars: Variables already provided via CLI
-            
+
         Returns:
             Complete variable dictionary
         """
@@ -278,7 +290,7 @@ class WorkflowManager:
                 user_input = typer.prompt(
                     f"  {var_name}{default_str}",
                     default=str(default_value) if default_value else "",
-                    show_default=False
+                    show_default=False,
                 )
                 result[var_name] = user_input if user_input else str(default_value)
 
@@ -290,18 +302,18 @@ class WorkflowManager:
         variables: Dict[str, str] = None,
         dry_run: bool = False,
         skip_prompts: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
     ) -> bool:
         """
         Execute a workflow.
-        
+
         Args:
             workflow: Workflow to execute
             variables: Variable values (will prompt for missing)
             dry_run: If True, show commands without executing
             skip_prompts: If True, auto-confirm all prompts
             verbose: If True, show detailed output
-            
+
         Returns:
             True if all steps succeeded, False otherwise
         """
@@ -311,7 +323,11 @@ class WorkflowManager:
         ch.console.print("")
 
         # Resolve variables
-        final_vars = self.prompt_for_variables(workflow, variables) if not skip_prompts else (variables or {})
+        final_vars = (
+            self.prompt_for_variables(workflow, variables)
+            if not skip_prompts
+            else (variables or {})
+        )
 
         # Merge with defaults
         for var_name, default_value in workflow.variables.items():
@@ -346,6 +362,7 @@ class WorkflowManager:
             # Handle interactive prompts
             if step.prompt and not skip_prompts and not dry_run:
                 import typer
+
                 if not typer.confirm(f"   {step.prompt}", default=True):
                     ch.warning("   Skipped by user")
                     skip_count += 1
@@ -402,11 +419,11 @@ class WorkflowManager:
     def _execute_navig_command(self, command: str, verbose: bool = False) -> bool:
         """
         Execute a NAVIG command.
-        
+
         Args:
             command: Command string (without 'navig' prefix)
             verbose: Show command output
-            
+
         Returns:
             True if command succeeded
         """
@@ -418,7 +435,7 @@ class WorkflowManager:
                 full_command,
                 capture_output=not verbose,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=300,  # 5 minute timeout
             )
 
             if verbose and result.stdout:
@@ -435,11 +452,11 @@ class WorkflowManager:
     def create_workflow(self, name: str, global_scope: bool = False) -> Optional[Path]:
         """
         Create a new workflow from template.
-        
+
         Args:
             name: Workflow name
             global_scope: If True, create in global directory
-            
+
         Returns:
             Path to created workflow file
         """
@@ -468,28 +485,34 @@ class WorkflowManager:
                 WorkflowStep(
                     name="Example step",
                     command="host list",
-                    description="This is an example step"
+                    description="This is an example step",
                 ),
                 WorkflowStep(
                     name="Step with prompt",
                     command="run \"echo 'Hello from ${host}'\"",
-                    prompt="Continue with this step?"
+                    prompt="Continue with this step?",
                 ),
-            ]
+            ],
         )
 
-        with open(target_file, 'w', encoding='utf-8') as f:
-            yaml.dump(template.to_dict(), f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        with open(target_file, "w", encoding="utf-8") as f:
+            yaml.dump(
+                template.to_dict(),
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
 
         return target_file
 
     def delete_workflow(self, name: str) -> bool:
         """
         Delete a workflow file.
-        
+
         Args:
             name: Workflow name
-            
+
         Returns:
             True if deleted successfully
         """
@@ -520,6 +543,7 @@ class WorkflowManager:
 # CLI COMMANDS
 # ============================================================================
 
+
 def list_workflows():
     """List all available workflows."""
     manager = WorkflowManager()
@@ -541,7 +565,11 @@ def list_workflows():
         source = manager.get_workflow_source(path)
         workflow = manager.load_workflow(name)
         if workflow:
-            desc = workflow.description[:50] + "..." if len(workflow.description) > 50 else workflow.description
+            desc = (
+                workflow.description[:50] + "..."
+                if len(workflow.description) > 50
+                else workflow.description
+            )
             table.add_row(name, source, desc, str(len(workflow.steps)))
         else:
             table.add_row(name, source, "[red]Parse error[/red]", "-")
@@ -604,7 +632,7 @@ def run_workflow(
     dry_run: bool = False,
     yes: bool = False,
     verbose: bool = False,
-    var: List[str] = None
+    var: List[str] = None,
 ):
     """Execute a workflow."""
     manager = WorkflowManager()
@@ -638,7 +666,7 @@ def run_workflow(
         variables=variables,
         dry_run=dry_run,
         skip_prompts=yes,
-        verbose=verbose
+        verbose=verbose,
     )
 
     if not success and not dry_run:
@@ -729,4 +757,3 @@ def edit_workflow(name: str):
     except Exception as e:
         ch.error(f"Failed to open editor: {e}")
         ch.info(f"Manually edit: {path}")
-

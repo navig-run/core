@@ -21,6 +21,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:
@@ -42,26 +43,30 @@ class Message:
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""
         return {
-            'id': self.id,
-            'session_key': self.session_key,
-            'role': self.role,
-            'content': self.content,
-            'timestamp': self.timestamp.isoformat(),
-            'metadata': json.dumps(self.metadata),
-            'token_count': self.token_count,
+            "id": self.id,
+            "session_key": self.session_key,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp.isoformat(),
+            "metadata": json.dumps(self.metadata),
+            "token_count": self.token_count,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Message':
+    def from_dict(cls, data: dict) -> "Message":
         """Create from dictionary."""
         return cls(
-            id=data['id'],
-            session_key=data['session_key'],
-            role=data['role'],
-            content=data['content'],
-            timestamp=datetime.fromisoformat(data['timestamp']),
-            metadata=json.loads(data['metadata']) if isinstance(data['metadata'], str) else data['metadata'],
-            token_count=data.get('token_count', 0),
+            id=data["id"],
+            session_key=data["session_key"],
+            role=data["role"],
+            content=data["content"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            metadata=(
+                json.loads(data["metadata"])
+                if isinstance(data["metadata"], str)
+                else data["metadata"]
+            ),
+            token_count=data.get("token_count", 0),
         )
 
 
@@ -80,17 +85,17 @@ class SessionInfo:
 class ConversationStore(BaseStore):
     """
     SQLite-backed conversation storage.
-    
+
     Stores messages with session keys for multi-tenant support.
     Thread-safe with connection pooling via ``BaseStore``.
-    
+
     Usage:
         store = ConversationStore(Path.home() / '.navig' / 'memory.db')
-        
+
         # Add message
         msg = Message(session_key='task-123', role='user', content='Hello')
         store.add_message(msg)
-        
+
         # Get history
         history = store.get_history('task-123', limit=50)
     """
@@ -98,7 +103,8 @@ class ConversationStore(BaseStore):
     SCHEMA_VERSION = 1
 
     def _create_schema(self, conn: sqlite3.Connection) -> None:
-        conn.executescript('''
+        conn.executescript(
+            """
             -- Sessions table
             CREATE TABLE IF NOT EXISTS sessions (
                 session_key TEXT PRIMARY KEY,
@@ -107,7 +113,7 @@ class ConversationStore(BaseStore):
                 metadata TEXT DEFAULT '{}',
                 total_tokens INTEGER DEFAULT 0
             );
-            
+
             -- Messages table
             CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
@@ -119,24 +125,25 @@ class ConversationStore(BaseStore):
                 token_count INTEGER DEFAULT 0,
                 FOREIGN KEY (session_key) REFERENCES sessions(session_key)
             );
-            
+
             -- Indexes for common queries
-            CREATE INDEX IF NOT EXISTS idx_messages_session 
+            CREATE INDEX IF NOT EXISTS idx_messages_session
                 ON messages(session_key, timestamp DESC);
-            CREATE INDEX IF NOT EXISTS idx_messages_role 
+            CREATE INDEX IF NOT EXISTS idx_messages_role
                 ON messages(session_key, role);
-            CREATE INDEX IF NOT EXISTS idx_sessions_updated 
+            CREATE INDEX IF NOT EXISTS idx_sessions_updated
                 ON sessions(updated_at DESC);
-        ''')
+        """
+        )
         _debug_log(f"ConversationStore initialized at {self.db_path}")
 
     def add_message(self, message: Message) -> Message:
         """
         Add a message to the store.
-        
+
         Args:
             message: The message to store
-            
+
         Returns:
             The stored message with ID
         """
@@ -150,26 +157,35 @@ class ConversationStore(BaseStore):
                 conn.execute("BEGIN IMMEDIATE")
 
                 # Ensure session exists
-                conn.execute('''
+                conn.execute(
+                    """
                     INSERT INTO sessions (session_key, created_at, updated_at, metadata)
                     VALUES (?, ?, ?, '{}')
                     ON CONFLICT(session_key) DO UPDATE SET updated_at = excluded.updated_at
-                ''', (message.session_key, now, now))
+                """,
+                    (message.session_key, now, now),
+                )
 
                 # Insert message
                 data = message.to_dict()
-                conn.execute('''
+                conn.execute(
+                    """
                     INSERT INTO messages (id, session_key, role, content, timestamp, metadata, token_count)
                     VALUES (:id, :session_key, :role, :content, :timestamp, :metadata, :token_count)
-                ''', data)
+                """,
+                    data,
+                )
 
                 # Update session token count
-                conn.execute('''
-                    UPDATE sessions 
+                conn.execute(
+                    """
+                    UPDATE sessions
                     SET total_tokens = total_tokens + ?,
                         updated_at = ?
                     WHERE session_key = ?
-                ''', (message.token_count, now, message.session_key))
+                """,
+                    (message.token_count, now, message.session_key),
+                )
 
                 conn.execute("COMMIT")
             except Exception:
@@ -193,31 +209,31 @@ class ConversationStore(BaseStore):
     ) -> list[Message]:
         """
         Get message history for a session.
-        
+
         Args:
             session_key: The session to query
             limit: Maximum messages to return
             before: Only return messages before this time
             roles: Filter by message roles
-            
+
         Returns:
             List of messages in chronological order
         """
         conn = self._get_conn()
 
-        query = 'SELECT * FROM messages WHERE session_key = ?'
+        query = "SELECT * FROM messages WHERE session_key = ?"
         params: list = [session_key]
 
         if before:
-            query += ' AND timestamp < ?'
+            query += " AND timestamp < ?"
             params.append(before.isoformat())
 
         if roles:
-            placeholders = ','.join('?' * len(roles))
-            query += f' AND role IN ({placeholders})'
+            placeholders = ",".join("?" * len(roles))
+            query += f" AND role IN ({placeholders})"
             params.extend(roles)
 
-        query += ' ORDER BY timestamp DESC LIMIT ?'
+        query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
 
         cursor = conn.execute(query, params)
@@ -234,8 +250,7 @@ class ConversationStore(BaseStore):
         conn = self._get_conn()
 
         cursor = conn.execute(
-            'SELECT * FROM sessions WHERE session_key = ?',
-            (session_key,)
+            "SELECT * FROM sessions WHERE session_key = ?", (session_key,)
         )
         row = cursor.fetchone()
 
@@ -244,18 +259,17 @@ class ConversationStore(BaseStore):
 
         # Count messages
         count_cursor = conn.execute(
-            'SELECT COUNT(*) FROM messages WHERE session_key = ?',
-            (session_key,)
+            "SELECT COUNT(*) FROM messages WHERE session_key = ?", (session_key,)
         )
         message_count = count_cursor.fetchone()[0]
 
         return SessionInfo(
-            session_key=row['session_key'],
-            created_at=datetime.fromisoformat(row['created_at']),
-            updated_at=datetime.fromisoformat(row['updated_at']),
+            session_key=row["session_key"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
             message_count=message_count,
-            total_tokens=row['total_tokens'],
-            metadata=json.loads(row['metadata']),
+            total_tokens=row["total_tokens"],
+            metadata=json.loads(row["metadata"]),
         )
 
     def list_sessions(
@@ -266,14 +280,14 @@ class ConversationStore(BaseStore):
         """List all sessions."""
         conn = self._get_conn()
 
-        query = 'SELECT * FROM sessions'
+        query = "SELECT * FROM sessions"
         params: list = []
 
         if active_after:
-            query += ' WHERE updated_at > ?'
+            query += " WHERE updated_at > ?"
             params.append(active_after.isoformat())
 
-        query += ' ORDER BY updated_at DESC LIMIT ?'
+        query += " ORDER BY updated_at DESC LIMIT ?"
         params.append(limit)
 
         cursor = conn.execute(query, params)
@@ -283,19 +297,21 @@ class ConversationStore(BaseStore):
         for row in rows:
             # Get message count for each session
             count_cursor = conn.execute(
-                'SELECT COUNT(*) FROM messages WHERE session_key = ?',
-                (row['session_key'],)
+                "SELECT COUNT(*) FROM messages WHERE session_key = ?",
+                (row["session_key"],),
             )
             message_count = count_cursor.fetchone()[0]
 
-            sessions.append(SessionInfo(
-                session_key=row['session_key'],
-                created_at=datetime.fromisoformat(row['created_at']),
-                updated_at=datetime.fromisoformat(row['updated_at']),
-                message_count=message_count,
-                total_tokens=row['total_tokens'],
-                metadata=json.loads(row['metadata']),
-            ))
+            sessions.append(
+                SessionInfo(
+                    session_key=row["session_key"],
+                    created_at=datetime.fromisoformat(row["created_at"]),
+                    updated_at=datetime.fromisoformat(row["updated_at"]),
+                    message_count=message_count,
+                    total_tokens=row["total_tokens"],
+                    metadata=json.loads(row["metadata"]),
+                )
+            )
 
         return sessions
 
@@ -304,13 +320,9 @@ class ConversationStore(BaseStore):
         conn = self._get_conn()
 
         with self._lock:
-            conn.execute(
-                'DELETE FROM messages WHERE session_key = ?',
-                (session_key,)
-            )
+            conn.execute("DELETE FROM messages WHERE session_key = ?", (session_key,))
             cursor = conn.execute(
-                'DELETE FROM sessions WHERE session_key = ?',
-                (session_key,)
+                "DELETE FROM sessions WHERE session_key = ?", (session_key,)
             )
             conn.commit()
 
@@ -326,11 +338,11 @@ class ConversationStore(BaseStore):
     ) -> int:
         """
         Clear old messages from a session, keeping the most recent.
-        
+
         Args:
             session_key: The session to compact
             keep_last: Number of recent messages to keep
-            
+
         Returns:
             Number of messages deleted
         """
@@ -338,38 +350,50 @@ class ConversationStore(BaseStore):
 
         with self._lock:
             # Find cutoff point
-            cursor = conn.execute('''
-                SELECT id FROM messages 
+            cursor = conn.execute(
+                """
+                SELECT id FROM messages
                 WHERE session_key = ?
                 ORDER BY timestamp DESC
                 LIMIT 1 OFFSET ?
-            ''', (session_key, keep_last))
+            """,
+                (session_key, keep_last),
+            )
 
             row = cursor.fetchone()
             if not row:
                 return 0
 
             # Delete older messages
-            delete_cursor = conn.execute('''
-                DELETE FROM messages 
-                WHERE session_key = ? 
+            delete_cursor = conn.execute(
+                """
+                DELETE FROM messages
+                WHERE session_key = ?
                 AND timestamp < (
                     SELECT timestamp FROM messages WHERE id = ?
                 )
-            ''', (session_key, row['id']))
+            """,
+                (session_key, row["id"]),
+            )
 
             deleted = delete_cursor.rowcount
 
             # Recalculate token count
-            token_cursor = conn.execute('''
-                SELECT COALESCE(SUM(token_count), 0) 
+            token_cursor = conn.execute(
+                """
+                SELECT COALESCE(SUM(token_count), 0)
                 FROM messages WHERE session_key = ?
-            ''', (session_key,))
+            """,
+                (session_key,),
+            )
             new_total = token_cursor.fetchone()[0]
 
-            conn.execute('''
+            conn.execute(
+                """
                 UPDATE sessions SET total_tokens = ? WHERE session_key = ?
-            ''', (new_total, session_key))
+            """,
+                (new_total, session_key),
+            )
 
             conn.commit()
 
@@ -386,32 +410,38 @@ class ConversationStore(BaseStore):
     ) -> list[Message]:
         """
         Full-text search across message content.
-        
+
         Args:
             query: Search query
             session_key: Optional session filter
             limit: Maximum results
-            
+
         Returns:
             Matching messages
         """
         conn = self._get_conn()
 
         # Simple LIKE search (FTS can be added later)
-        search_pattern = f'%{query}%'
+        search_pattern = f"%{query}%"
 
         if session_key:
-            cursor = conn.execute('''
-                SELECT * FROM messages 
+            cursor = conn.execute(
+                """
+                SELECT * FROM messages
                 WHERE session_key = ? AND content LIKE ?
                 ORDER BY timestamp DESC LIMIT ?
-            ''', (session_key, search_pattern, limit))
+            """,
+                (session_key, search_pattern, limit),
+            )
         else:
-            cursor = conn.execute('''
-                SELECT * FROM messages 
+            cursor = conn.execute(
+                """
+                SELECT * FROM messages
                 WHERE content LIKE ?
                 ORDER BY timestamp DESC LIMIT ?
-            ''', (search_pattern, limit))
+            """,
+                (search_pattern, limit),
+            )
 
         return [Message.from_dict(dict(row)) for row in cursor.fetchall()]
 
@@ -419,11 +449,10 @@ class ConversationStore(BaseStore):
         """Get total token count for a session."""
         conn = self._get_conn()
         cursor = conn.execute(
-            'SELECT total_tokens FROM sessions WHERE session_key = ?',
-            (session_key,)
+            "SELECT total_tokens FROM sessions WHERE session_key = ?", (session_key,)
         )
         row = cursor.fetchone()
-        return row['total_tokens'] if row else 0
+        return row["total_tokens"] if row else 0
 
     def iter_messages(
         self,
@@ -432,19 +461,22 @@ class ConversationStore(BaseStore):
     ) -> Iterator[Message]:
         """
         Iterate over all messages in a session.
-        
+
         Memory-efficient for large histories.
         """
         conn = self._get_conn()
         offset = 0
 
         while True:
-            cursor = conn.execute('''
-                SELECT * FROM messages 
+            cursor = conn.execute(
+                """
+                SELECT * FROM messages
                 WHERE session_key = ?
                 ORDER BY timestamp ASC
                 LIMIT ? OFFSET ?
-            ''', (session_key, batch_size, offset))
+            """,
+                (session_key, batch_size, offset),
+            )
 
             rows = cursor.fetchall()
             if not rows:

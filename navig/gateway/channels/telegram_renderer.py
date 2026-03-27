@@ -11,6 +11,7 @@ Usage:
     await renderer.update("Fetching data...", detail="3 sources queried", progress=4)
     await renderer.finalize(conclusion_dict, title="DIAGNOSIS", model_name="gpt-4o")
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,8 +28,8 @@ logger = logging.getLogger(__name__)
 _FILLED = "🟩"
 _EMPTY = "⬛"
 _BAR_WIDTH = 10
-_MIN_EDIT_INTERVAL = 0.35   # seconds — stay under Telegram rate limit
-_MAX_MESSAGE_LEN = 3_800    # safe under Telegram's 4096 hard limit
+_MIN_EDIT_INTERVAL = 0.35  # seconds — stay under Telegram rate limit
+_MAX_MESSAGE_LEN = 3_800  # safe under Telegram's 4096 hard limit
 
 
 @dataclass
@@ -73,7 +74,9 @@ class StatusRenderer:
     ) -> None:
         """Add a step to the pipeline and edit the message in-place."""
         self._current_progress = max(self._current_progress, progress)
-        self._steps.append(_Step(icon=icon, text=step, detail=detail, is_warning=warning))
+        self._steps.append(
+            _Step(icon=icon, text=step, detail=detail, is_warning=warning)
+        )
         await self._push()
 
     async def warn(self, tool_name: str, reason: str) -> None:
@@ -109,10 +112,7 @@ class StatusRenderer:
         if not success:
             # Fall back to a new message if the edit failed (e.g. string too large or deleted sentinel)
             res = await self._channel.send_message(
-                self._chat_id,
-                full_text,
-                parse_mode=None,
-                keyboard=keyboard
+                self._chat_id, full_text, parse_mode=None, keyboard=keyboard
             )
             return res is not None
         return True
@@ -153,7 +153,7 @@ class StatusRenderer:
         text = "\n".join(lines)
         # Ensure we stay under Telegram's message size limit
         if len(text) > _MAX_MESSAGE_LEN:
-            text = text[:_MAX_MESSAGE_LEN - 20] + "\n…(truncated)"
+            text = text[: _MAX_MESSAGE_LEN - 20] + "\n…(truncated)"
         return text
 
     async def _push(self) -> None:
@@ -164,13 +164,15 @@ class StatusRenderer:
             await asyncio.sleep(_MIN_EDIT_INTERVAL - gap)
         await self._edit(self._build_frame())
 
-    async def _edit(self, text: str, keyboard: Optional[List[List[Dict]]] = None) -> bool:
+    async def _edit(
+        self, text: str, keyboard: Optional[List[List[Dict]]] = None
+    ) -> bool:
         try:
             res = await self._channel.edit_message(
                 self._chat_id,
                 self._message_id,
                 text,
-                parse_mode=None,   # plain text — avoids Markdown parse errors mid-stream
+                parse_mode=None,  # plain text — avoids Markdown parse errors mid-stream
                 keyboard=keyboard,
             )
             self._last_edit_ts = time.monotonic()
@@ -194,8 +196,6 @@ def _format_conclusion(
     """Render key-value conclusion block."""
     line = "━" * 26
     rows = "\n".join(
-        f"{str(k).ljust(14)}: {v}"
-        for k, v in data.items()
-        if v is not None and v != ""
+        f"{str(k).ljust(14)}: {v}" for k, v in data.items() if v is not None and v != ""
     )
     return f"📋 {title}\n{line}\n{rows}\n{line}\n{footer}"

@@ -22,15 +22,16 @@ from navig.agent.proactive.user_state import UserStateTracker
 @dataclass
 class FeatureInfo:
     """Metadata for a promotable feature."""
-    key: str                    # Unique identifier (matches command prefix)
-    name: str                   # Human-readable name
-    description: str            # What it does (1-2 sentences)
-    example_command: str        # Example usage
-    category: str               # Feature category
-    prerequisites: List[str] = field(default_factory=list)   # Required context
-    when_to_suggest: str = ""   # Natural language trigger hint
-    min_interactions: int = 5   # Min interactions before promoting this
-    priority: int = 5           # Base priority (1-10)
+
+    key: str  # Unique identifier (matches command prefix)
+    name: str  # Human-readable name
+    description: str  # What it does (1-2 sentences)
+    example_command: str  # Example usage
+    category: str  # Feature category
+    prerequisites: List[str] = field(default_factory=list)  # Required context
+    when_to_suggest: str = ""  # Natural language trigger hint
+    min_interactions: int = 5  # Min interactions before promoting this
+    priority: int = 5  # Base priority (1-10)
 
 
 # ─── Feature Registry ───────────────────────────────────────────────
@@ -64,7 +65,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         category="infrastructure",
         when_to_suggest="Server has been running a while without maintenance.",
     ),
-
     # Database Operations
     FeatureInfo(
         key="db_optimize",
@@ -83,7 +83,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         prerequisites=["db"],
         when_to_suggest="User queries databases but hasn't backed up recently.",
     ),
-
     # Docker Operations
     FeatureInfo(
         key="docker_stats",
@@ -102,7 +101,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         prerequisites=["docker"],
         when_to_suggest="User manages Docker but uses individual commands.",
     ),
-
     # File Operations
     FeatureInfo(
         key="file_tree",
@@ -120,7 +118,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         category="files",
         when_to_suggest="User reads files but hasn't edited remotely yet.",
     ),
-
     # Web Server
     FeatureInfo(
         key="web_recommend",
@@ -130,7 +127,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         category="web",
         when_to_suggest="User manages web servers.",
     ),
-
     # Workflows
     FeatureInfo(
         key="flow",
@@ -141,7 +137,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         when_to_suggest="User runs repetitive command sequences.",
         min_interactions=20,
     ),
-
     # Backup
     FeatureInfo(
         key="backup_run",
@@ -151,7 +146,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         category="backup",
         when_to_suggest="User hasn't done a full backup in a while.",
     ),
-
     # Config
     FeatureInfo(
         key="config_validate",
@@ -161,7 +155,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         category="config",
         when_to_suggest="User encounters configuration errors.",
     ),
-
     # Application Management
     FeatureInfo(
         key="app_search",
@@ -172,7 +165,6 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
         when_to_suggest="User manages multiple hosts with applications.",
         min_interactions=15,
     ),
-
     # Scaffolding
     FeatureInfo(
         key="scaffold",
@@ -189,7 +181,7 @@ FEATURE_REGISTRY: List[FeatureInfo] = [
 class CapabilityPromoter:
     """
     Selects the most relevant feature to promote based on usage patterns.
-    
+
     Selection algorithm:
     1. Filter out features the user already uses frequently
     2. Filter out features whose prerequisites the user hasn't met
@@ -207,7 +199,7 @@ class CapabilityPromoter:
     ) -> Tuple[Optional[str], Optional[str]]:
         """
         Get a feature promotion message and feature key.
-        
+
         Returns (message, feature_key) or (None, None) if nothing to promote.
         """
         candidates = self._score_candidates(state)
@@ -221,7 +213,9 @@ class CapabilityPromoter:
                 msg = self._build_promotion_message(feature)
                 self._promotion_history.append(feature.key)
                 if len(self._promotion_history) > self._max_history:
-                    self._promotion_history = self._promotion_history[-self._max_history:]
+                    self._promotion_history = self._promotion_history[
+                        -self._max_history :
+                    ]
                 return msg, feature.key
 
         # All top candidates were recently promoted — pick best anyway
@@ -250,9 +244,7 @@ class CapabilityPromoter:
 
             # Check prerequisites (user should have used prerequisite features)
             if feature.prerequisites:
-                prereqs_met = all(
-                    p in used_features for p in feature.prerequisites
-                )
+                prereqs_met = all(p in used_features for p in feature.prerequisites)
                 if not prereqs_met:
                     continue
 
@@ -267,7 +259,8 @@ class CapabilityPromoter:
 
             # Category relevance: if user uses features in same category, +2
             category_features = [
-                f.key for f in self.features
+                f.key
+                for f in self.features
                 if f.category == feature.category and f.key != feature.key
             ]
             if any(f in used_features for f in category_features):

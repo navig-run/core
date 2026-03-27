@@ -3,6 +3,7 @@ navig-telegram post_install.py
 Runs once after the pack is installed.
 Checks for the Telegram bot token and prints a setup message.
 """
+
 from __future__ import annotations
 
 import os
@@ -22,6 +23,7 @@ def _check_token() -> str | None:
     if config_yaml.exists():
         try:
             import yaml
+
             cfg = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
             token = cfg.get("telegram", {}).get("bot_token", "")
             if token:
@@ -34,6 +36,7 @@ def _check_token() -> str | None:
     if config_json.exists():
         try:
             import json
+
             cfg = json.loads(config_json.read_text(encoding="utf-8"))
             token = cfg.get("telegram", {}).get("bot_token", "")
             if token:

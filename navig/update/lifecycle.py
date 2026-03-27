@@ -4,6 +4,7 @@ Lifecycle per node:
   discover → compare → (skip if up-to-date) → backup_version →
   install → verify → commit  |  (on failure) → rollback → record
 """
+
 from __future__ import annotations
 
 import shutil
@@ -42,6 +43,7 @@ class UpdateEngine:
         if remote_ops is None:
             try:
                 from navig.remote import RemoteOperations
+
                 remote_ops = RemoteOperations()
             except Exception:
                 remote_ops = None
@@ -146,7 +148,8 @@ class UpdateEngine:
                 continue
 
             nr = self._run_one(
-                t, p.version_infos.get(t.node_id),
+                t,
+                p.version_infos.get(t.node_id),
                 skip_backup=skip_backup,
                 auto_rollback=auto_rollback,
                 channel=channel,
@@ -242,7 +245,9 @@ class UpdateEngine:
 
         # Prefer delegating to navig on the remote node (self-contained update)
         cmd = "navig update run --force --no-rollback 2>&1 || pip install --upgrade navig 2>&1"
-        r = self._remote_ops.execute_command(cmd, server_config=target.server_config or {})
+        r = self._remote_ops.execute_command(
+            cmd, server_config=target.server_config or {}
+        )
 
         rc = getattr(r, "returncode", 0) if hasattr(r, "returncode") else 0
         stderr = getattr(r, "stderr", "") or ""
@@ -256,12 +261,14 @@ class UpdateEngine:
     def _verify_version(self, target: UpdateTarget, nr: NodeResult) -> None:
         if target.is_local:
             from navig.commands.update import _reload_version
+
             new_v = _reload_version()
         else:
             if self._remote_ops is None:
                 raise RuntimeError("No remote_ops for verify")
             import json as _json
             import re as _re
+
             r = self._remote_ops.execute_command(
                 "navig version --json 2>/dev/null || navig --version 2>/dev/null",
                 server_config=target.server_config or {},
@@ -283,11 +290,23 @@ class UpdateEngine:
         uv = shutil.which("uv")
         if target.is_local:
             if uv:
-                cmd = [uv, "pip", "install", "--python", sys.executable,
-                       f"navig=={old_version}"]
+                cmd = [
+                    uv,
+                    "pip",
+                    "install",
+                    "--python",
+                    sys.executable,
+                    f"navig=={old_version}",
+                ]
             else:
-                cmd = [sys.executable, "-m", "pip", "install",
-                       f"navig=={old_version}", "-q"]
+                cmd = [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    f"navig=={old_version}",
+                    "-q",
+                ]
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             if r.returncode != 0:
                 raise RuntimeError(f"Rollback failed: {r.stderr[:80]}")
@@ -296,7 +315,9 @@ class UpdateEngine:
                 raise RuntimeError("No remote_ops for rollback")
             pkg = f"navig=={old_version}"
             cmd = f"pip install '{pkg}' -q 2>&1 || uv pip install '{pkg}' 2>&1"
-            self._remote_ops.execute_command(cmd, server_config=target.server_config or {})
+            self._remote_ops.execute_command(
+                cmd, server_config=target.server_config or {}
+            )
 
     # ------------------------------------------------------------------
     # History
@@ -304,6 +325,7 @@ class UpdateEngine:
 
     def _record_history(self, nr: NodeResult, channel: str) -> None:
         import datetime
+
         record = {
             "node_id": nr.node_id,
             "old_version": nr.old_version,

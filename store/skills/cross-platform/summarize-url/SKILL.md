@@ -106,5 +106,3 @@ navig ai ask "Summarize this document: $(cat {file})"
 - **URL not accessible**: "Can't reach that URL. Check if it's publicly accessible."
 - **No AI provider**: "Set up an AI provider first: `navig ai providers`"
 - **Content too long**: "Content is very long. Here's a summary of the first section..."
-
-

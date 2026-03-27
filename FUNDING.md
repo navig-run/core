@@ -67,5 +67,3 @@ If NAVIG saves you time managing servers, prevents infrastructure disasters, or 
 Thank you for supporting open-source software. 🦑
 
 **Questions?** Contact funding@navig.run
-
-

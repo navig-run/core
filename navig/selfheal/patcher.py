@@ -13,6 +13,7 @@ presence of a pip package name pattern), that dependency is appended to
 
 Returns a raw ``.patch`` string — no prose, no wrappers.
 """
+
 from __future__ import annotations
 
 import difflib
@@ -70,7 +71,9 @@ def _apply_finding_to_lines(
     """
     idx = finding.line - 1
     if idx < 0 or idx >= len(lines):
-        logger.debug("Line {} out of range (file has {} lines)", finding.line, len(lines))
+        logger.debug(
+            "Line {} out of range (file has {} lines)", finding.line, len(lines)
+        )
         return lines
 
     original_line = lines[idx]
@@ -82,7 +85,9 @@ def _apply_finding_to_lines(
     # Special-case: bare except clause → safe replacement
     bare_match = _BARE_EXCEPT_RE.match(stripped)
     if bare_match:
-        new_content = f"{bare_match.group(1)}except Exception as exc:{bare_match.group(2)}"
+        new_content = (
+            f"{bare_match.group(1)}except Exception as exc:{bare_match.group(2)}"
+        )
         heal_comment = f"  # NAVIG-HEAL: {finding.description[:80]}"
         new_line = new_content.rstrip() + heal_comment + "\n"
     else:

@@ -71,6 +71,3 @@ Acknowledge commands or mark items as done.
 
 ## Configuration
 Requires `channels.discord` to be configured in the agent settings with a valid bot token.
-
-
-

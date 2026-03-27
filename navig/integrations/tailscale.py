@@ -18,6 +18,7 @@ from typing import List, Optional
 @dataclass
 class TailscalePeer:
     """Represents a single Tailscale network peer."""
+
     hostname: str
     tailscale_ip: str
     online: bool
@@ -28,6 +29,7 @@ class TailscalePeer:
 @dataclass
 class TailscaleStatus:
     """Result of a ``tailscale status --json`` call."""
+
     available: bool
     running: bool
     backend_state: str = ""
@@ -107,12 +109,17 @@ class Tailscale:
         self_hostname = self_node.get("HostName", "")
         # TailscaleIPs is a list; take the first IPv4
         self_ips: list = self_node.get("TailscaleIPs", [])
-        self_ip = next((ip for ip in self_ips if ":" not in ip), self_ips[0] if self_ips else "")
+        self_ip = next(
+            (ip for ip in self_ips if ":" not in ip), self_ips[0] if self_ips else ""
+        )
 
         peers: list[TailscalePeer] = []
         for _id, peer in (data.get("Peer", None) or {}).items():
             peer_ips: list = peer.get("TailscaleIPs", [])
-            peer_ip = next((ip for ip in peer_ips if ":" not in ip), peer_ips[0] if peer_ips else "")
+            peer_ip = next(
+                (ip for ip in peer_ips if ":" not in ip),
+                peer_ips[0] if peer_ips else "",
+            )
             peers.append(
                 TailscalePeer(
                     hostname=peer.get("HostName", _id),
@@ -134,7 +141,9 @@ class Tailscale:
 
     async def ping(self, peer: str, timeout: int = 5) -> bool:
         """Ping a Tailscale peer. Returns True if reachable."""
-        rc, stdout, stderr = self._run("ping", "--c", "1", "--timeout", str(timeout), peer, timeout=timeout + 3)
+        rc, stdout, stderr = self._run(
+            "ping", "--c", "1", "--timeout", str(timeout), peer, timeout=timeout + 3
+        )
         # tailscale ping exits 0 on success and prints "pong from ..."
         return rc == 0 and "pong" in stdout.lower()
 

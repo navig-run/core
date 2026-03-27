@@ -10,17 +10,17 @@ Covers:
 """
 
 import json
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_formations(tmp_path):
@@ -72,15 +72,14 @@ def tmp_workspace(tmp_path):
     navig_dir = tmp_path / ".navig"
     navig_dir.mkdir()
     profile = {"version": 1, "profile": "test_formation"}
-    (navig_dir / "profile.json").write_text(
-        json.dumps(profile), encoding="utf-8"
-    )
+    (navig_dir / "profile.json").write_text(json.dumps(profile), encoding="utf-8")
     return tmp_path
 
 
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
+
 
 class TestTypes:
     def test_agent_spec_round_trip(self):
@@ -143,6 +142,7 @@ class TestTypes:
 # Schema Validation
 # ---------------------------------------------------------------------------
 
+
 class TestSchemaValidation:
     def test_valid_agent(self, tmp_formations):
         from navig.formations.schema import validate_agent_file
@@ -152,7 +152,10 @@ class TestSchemaValidation:
         assert agent.id == "agent_a"
 
     def test_invalid_agent_missing_field(self, tmp_path):
-        from navig.formations.schema import validate_agent_file, FormationValidationError
+        from navig.formations.schema import (
+            FormationValidationError,
+            validate_agent_file,
+        )
 
         bad = tmp_path / "bad.agent.json"
         bad.write_text(json.dumps({"id": "x"}), encoding="utf-8")
@@ -204,9 +207,14 @@ class TestSchemaValidation:
 # Discovery & Loading
 # ---------------------------------------------------------------------------
 
+
 class TestDiscovery:
     def test_discover_formations(self, tmp_formations):
-        from navig.formations.loader import discover_formations, set_formations_roots, clear_formations_roots
+        from navig.formations.loader import (
+            clear_formations_roots,
+            discover_formations,
+            set_formations_roots,
+        )
 
         try:
             set_formations_roots([tmp_formations])
@@ -220,7 +228,11 @@ class TestDiscovery:
             clear_formations_roots()
 
     def test_discover_empty_dir(self, tmp_path):
-        from navig.formations.loader import discover_formations, set_formations_roots, clear_formations_roots
+        from navig.formations.loader import (
+            clear_formations_roots,
+            discover_formations,
+            set_formations_roots,
+        )
 
         try:
             set_formations_roots([tmp_path])
@@ -255,10 +267,10 @@ class TestDiscovery:
 
     def test_resolve_formation(self, tmp_formations):
         from navig.formations.loader import (
+            clear_formations_roots,
             discover_formations,
             resolve_formation,
             set_formations_roots,
-            clear_formations_roots,
         )
 
         try:
@@ -275,9 +287,9 @@ class TestDiscovery:
 
     def test_get_active_formation(self, tmp_formations, tmp_workspace):
         from navig.formations.loader import (
+            clear_formations_roots,
             get_active_formation,
             set_formations_roots,
-            clear_formations_roots,
         )
 
         try:
@@ -291,9 +303,9 @@ class TestDiscovery:
 
     def test_list_available_formations(self, tmp_formations):
         from navig.formations.loader import (
+            clear_formations_roots,
             list_available_formations,
             set_formations_roots,
-            clear_formations_roots,
         )
 
         try:
@@ -306,12 +318,13 @@ class TestDiscovery:
 
     def test_fallback_to_app_project(self, tmp_path):
         """When no profile.json exists, get_active_formation falls back to app_project."""
+        from pathlib import Path
+
         from navig.formations.loader import (
+            clear_formations_roots,
             get_active_formation,
             set_formations_roots,
-            clear_formations_roots,
         )
-        from pathlib import Path
 
         # Point formation roots at the real built-in formations
         builtin = Path(__file__).parent.parent / "store" / "formations"
@@ -329,12 +342,13 @@ class TestDiscovery:
 
     def test_fallback_on_unknown_profile(self, tmp_path):
         """When profile references unknown formation, falls back to app_project."""
+        from pathlib import Path
+
         from navig.formations.loader import (
+            clear_formations_roots,
             get_active_formation,
             set_formations_roots,
-            clear_formations_roots,
         )
-        from pathlib import Path
 
         builtin = Path(__file__).parent.parent / "store" / "formations"
         if not builtin.exists():
@@ -361,6 +375,7 @@ class TestDiscovery:
 # Built-in Formations (Smoke Test)
 # ---------------------------------------------------------------------------
 
+
 class TestBuiltinFormations:
     """Validate the 4 built-in formations shipped with NAVIG."""
 
@@ -386,9 +401,9 @@ class TestBuiltinFormations:
         assert fm is not None, f"Failed to load {formation_id}"
         assert fm.id == formation_id
         assert len(fm.agents) == expected_agents
-        assert len(fm.loaded_agents) == expected_agents, (
-            f"Only loaded {len(fm.loaded_agents)}/{expected_agents} agents"
-        )
+        assert (
+            len(fm.loaded_agents) == expected_agents
+        ), f"Only loaded {len(fm.loaded_agents)}/{expected_agents} agents"
 
     @pytest.mark.parametrize(
         "formation_id",
@@ -405,15 +420,15 @@ class TestBuiltinFormations:
         assert fm is not None
 
         for agent_id, agent in fm.loaded_agents.items():
-            assert len(agent.system_prompt) >= 100, (
-                f"Agent {agent_id} system_prompt too short ({len(agent.system_prompt)} chars)"
-            )
+            assert (
+                len(agent.system_prompt) >= 100
+            ), f"Agent {agent_id} system_prompt too short ({len(agent.system_prompt)} chars)"
 
     def test_builtin_discovery(self):
         from navig.formations.loader import (
+            clear_formations_roots,
             discover_formations,
             set_formations_roots,
-            clear_formations_roots,
         )
 
         if not self.FORMATIONS_DIR.exists():
@@ -442,10 +457,11 @@ class TestBuiltinFormations:
 # Council Engine (Unit tests - no AI calls)
 # ---------------------------------------------------------------------------
 
+
 class TestCouncil:
     def test_council_no_agents(self):
-        from navig.formations.types import Formation
         from navig.formations.council import run_council
+        from navig.formations.types import Formation
 
         fm = Formation(
             id="empty",
@@ -460,8 +476,8 @@ class TestCouncil:
 
     def test_council_with_mock_agents(self, tmp_formations):
         """Test council structure with mocked AI calls."""
-        from navig.formations.loader import load_formation
         from navig.formations.council import run_council
+        from navig.formations.loader import load_formation
 
         fm_dir = tmp_formations / "test_formation"
         fm = load_formation(fm_dir)
@@ -470,7 +486,9 @@ class TestCouncil:
         mock_response = "This is a test response.\nCONFIDENCE: 0.85"
 
         # Patch at the import location inside _call_agent
-        with patch("navig.ai.ask_ai_with_context", return_value=mock_response, create=True):
+        with patch(
+            "navig.ai.ask_ai_with_context", return_value=mock_response, create=True
+        ):
             result = run_council(fm, "test question", rounds=1, timeout_per_agent=30)
 
         assert "question" in result

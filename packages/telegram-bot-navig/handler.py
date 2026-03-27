@@ -33,6 +33,7 @@ _logger: logging.Logger | None = None
 # Lifecycle: on_load
 # ---------------------------------------------------------------------------
 
+
 def on_load(ctx: dict[str, Any]) -> None:
     """
     Initialise the Telegram bot.
@@ -47,7 +48,7 @@ def on_load(ctx: dict[str, Any]) -> None:
     cfg = ctx.get("config", {})
 
     _BOT_TOKEN = cfg.get("telegram_bot_token") or _environ("TELEGRAM_BOT_TOKEN")
-    _CHAT_ID   = cfg.get("telegram_chat_id") or _environ("TELEGRAM_CHAT_ID")
+    _CHAT_ID = cfg.get("telegram_chat_id") or _environ("TELEGRAM_CHAT_ID")
 
     if not _BOT_TOKEN:
         raise RuntimeError(
@@ -62,6 +63,7 @@ def on_load(ctx: dict[str, Any]) -> None:
 # Lifecycle: on_unload
 # ---------------------------------------------------------------------------
 
+
 def on_unload(ctx: dict[str, Any]) -> None:  # noqa: ARG001
     """Teardown — swallow all exceptions per contract."""
     global _BOT_TOKEN, _CHAT_ID, _logger
@@ -75,6 +77,7 @@ def on_unload(ctx: dict[str, Any]) -> None:  # noqa: ARG001
 # ---------------------------------------------------------------------------
 # Event hooks
 # ---------------------------------------------------------------------------
+
 
 def on_message(ctx: dict[str, Any]) -> dict[str, Any] | None:
     """
@@ -106,17 +109,20 @@ def on_heartbeat(ctx: dict[str, Any]) -> None:  # noqa: ARG001
 # Private helpers
 # ---------------------------------------------------------------------------
 
+
 def _send(text: str) -> None:
     """Fire-and-forget Telegram message. Swallows network errors."""
     if not _BOT_TOKEN or not _CHAT_ID:
         return
     try:
-        import urllib.request, json as _json  # noqa: E401
+        import json as _json  # noqa: E401
+        import urllib.request
 
         payload = _json.dumps({"chat_id": _CHAT_ID, "text": text}).encode()
         url = f"https://api.telegram.org/bot{_BOT_TOKEN}/sendMessage"
-        req = urllib.request.Request(url, data=payload,
-                                     headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}
+        )
         urllib.request.urlopen(req, timeout=5)  # noqa: S310
     except Exception as exc:  # noqa: BLE001
         _logger and _logger.warning("telegram-bot-navig: send failed — %s", exc)
@@ -124,4 +130,5 @@ def _send(text: str) -> None:
 
 def _environ(key: str) -> str | None:
     import os
+
     return os.environ.get(key)

@@ -212,5 +212,3 @@ YAML is recommended for better readability and comment support.
 | **Example** | nginx paths, ports, commands | "Check disk space" → df -h | Backup procedure runbook |
 
 Templates are **referenced by skills**: e.g., the `hestiacp-manage` skill uses the `templates/hestiacp/` template config.
-
-

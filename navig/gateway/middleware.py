@@ -11,6 +11,7 @@ Usage (in _start_http_server):
     cors_mw = make_cors_middleware()
     app = web.Application(middlewares=[rate_mw, cors_mw])
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,7 +55,9 @@ def make_rate_limit_middleware(
         if recent_failures >= max_failures:
             logger.warning(
                 "rate-limited %s: %d auth failures in %ds",
-                peer, recent_failures, window,
+                peer,
+                recent_failures,
+                window,
             )
             return web.json_response(
                 {
@@ -79,6 +82,7 @@ def make_cors_middleware() -> Any:
 
     All other routes are passed through untouched.
     """
+
     @web.middleware
     async def cors(request: web.Request, handler: Any) -> web.Response:
         if request.method == "OPTIONS":

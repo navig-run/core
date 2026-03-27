@@ -28,13 +28,13 @@ console = Console()
 def firewall_status(options):
     """
     Display UFW firewall status and rules.
-    
+
     Shows:
     - Firewall status (active/inactive)
     - Default policies
     - All configured rules
     - Logging level
-    
+
     Args:
         options: Global options (dry_run, json_output, etc.)
     """
@@ -48,7 +48,7 @@ def firewall_status(options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would check firewall status")
         return
 
@@ -57,15 +57,17 @@ def firewall_status(options):
     # Get UFW status
     result = remote_ops.execute_command("sudo ufw status verbose")
 
-    if result['exit_code'] != 0:
-        console.print(f"[red]✗[/red] Failed to get firewall status: {result.get('stderr', 'Unknown error')}")
+    if result["exit_code"] != 0:
+        console.print(
+            f"[red]✗[/red] Failed to get firewall status: {result.get('stderr', 'Unknown error')}"
+        )
         return
 
-    output = result['stdout']
+    output = result["stdout"]
 
-    if options.get('json_output'):
+    if options.get("json_output"):
         # Parse UFW output for JSON
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         status = "inactive"
         rules = []
 
@@ -75,25 +77,23 @@ def firewall_status(options):
             elif " ALLOW " in line or " DENY " in line:
                 rules.append(line.strip())
 
-        json_data = {
-            'server': server_name,
-            'status': status,
-            'rules': rules
-        }
+        json_data = {"server": server_name, "status": status, "rules": rules}
         console.print(json.dumps(json_data, indent=2))
     else:
         # Display with Rich formatting
         console.print(output)
 
         # Count rules
-        rule_count = len([line for line in output.split('\n') if 'ALLOW' in line or 'DENY' in line])
+        rule_count = len(
+            [line for line in output.split("\n") if "ALLOW" in line or "DENY" in line]
+        )
         console.print(f"\n[dim]Total rules: {rule_count}[/dim]")
 
 
 def firewall_add_rule(port, protocol, allow_from, options):
     """
     Add a new UFW firewall rule.
-    
+
     Args:
         port: Port number to allow
         protocol: Protocol (tcp/udp)
@@ -111,14 +111,16 @@ def firewall_add_rule(port, protocol, allow_from, options):
     remote_ops = RemoteOperations(server_config)
 
     # Build UFW command
-    if allow_from == 'any':
+    if allow_from == "any":
         command = f"sudo ufw allow {port}/{protocol}"
         rule_desc = f"{port}/{protocol} from any"
     else:
-        command = f"sudo ufw allow from {allow_from} to any port {port} proto {protocol}"
+        command = (
+            f"sudo ufw allow from {allow_from} to any port {port} proto {protocol}"
+        )
         rule_desc = f"{port}/{protocol} from {allow_from}"
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print(f"[yellow]DRY RUN:[/yellow] Would add firewall rule: {rule_desc}")
         console.print(f"[dim]Command: {command}[/dim]")
         return
@@ -127,18 +129,20 @@ def firewall_add_rule(port, protocol, allow_from, options):
 
     result = remote_ops.execute_command(command)
 
-    if result['exit_code'] == 0:
+    if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall rule added successfully")
-        if result['stdout']:
+        if result["stdout"]:
             console.print(f"[dim]{result['stdout']}[/dim]")
     else:
-        console.print(f"[red]✗[/red] Failed to add firewall rule: {result.get('stderr', 'Unknown error')}")
+        console.print(
+            f"[red]✗[/red] Failed to add firewall rule: {result.get('stderr', 'Unknown error')}"
+        )
 
 
 def firewall_remove_rule(port, protocol, options):
     """
     Remove a UFW firewall rule.
-    
+
     Args:
         port: Port number
         protocol: Protocol (tcp/udp)
@@ -157,8 +161,10 @@ def firewall_remove_rule(port, protocol, options):
     command = f"sudo ufw delete allow {port}/{protocol}"
     rule_desc = f"{port}/{protocol}"
 
-    if options.get('dry_run'):
-        console.print(f"[yellow]DRY RUN:[/yellow] Would remove firewall rule: {rule_desc}")
+    if options.get("dry_run"):
+        console.print(
+            f"[yellow]DRY RUN:[/yellow] Would remove firewall rule: {rule_desc}"
+        )
         console.print(f"[dim]Command: {command}[/dim]")
         return
 
@@ -166,18 +172,20 @@ def firewall_remove_rule(port, protocol, options):
 
     result = remote_ops.execute_command(command)
 
-    if result['exit_code'] == 0:
+    if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall rule removed successfully")
-        if result['stdout']:
+        if result["stdout"]:
             console.print(f"[dim]{result['stdout']}[/dim]")
     else:
-        console.print(f"[red]✗[/red] Failed to remove firewall rule: {result.get('stderr', 'Unknown error')}")
+        console.print(
+            f"[red]✗[/red] Failed to remove firewall rule: {result.get('stderr', 'Unknown error')}"
+        )
 
 
 def firewall_enable(options):
     """
     Enable UFW firewall.
-    
+
     Args:
         options: Global options
     """
@@ -191,7 +199,7 @@ def firewall_enable(options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would enable UFW firewall")
         return
 
@@ -200,17 +208,21 @@ def firewall_enable(options):
     # Use --force to avoid interactive prompt
     result = remote_ops.execute_command("sudo ufw --force enable")
 
-    if result['exit_code'] == 0:
+    if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall enabled successfully")
-        console.print("[yellow]⚠[/yellow] Make sure SSH (port 22) is allowed to avoid lockout")
+        console.print(
+            "[yellow]⚠[/yellow] Make sure SSH (port 22) is allowed to avoid lockout"
+        )
     else:
-        console.print(f"[red]✗[/red] Failed to enable firewall: {result.get('stderr', 'Unknown error')}")
+        console.print(
+            f"[red]✗[/red] Failed to enable firewall: {result.get('stderr', 'Unknown error')}"
+        )
 
 
 def firewall_disable(options):
     """
     Disable UFW firewall.
-    
+
     Args:
         options: Global options
     """
@@ -224,7 +236,7 @@ def firewall_disable(options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would disable UFW firewall")
         return
 
@@ -232,23 +244,25 @@ def firewall_disable(options):
 
     result = remote_ops.execute_command("sudo ufw disable")
 
-    if result['exit_code'] == 0:
+    if result["exit_code"] == 0:
         console.print("[green]✓[/green] Firewall disabled successfully")
         console.print("[yellow]⚠[/yellow] Server is now unprotected by firewall")
     else:
-        console.print(f"[red]✗[/red] Failed to disable firewall: {result.get('stderr', 'Unknown error')}")
+        console.print(
+            f"[red]✗[/red] Failed to disable firewall: {result.get('stderr', 'Unknown error')}"
+        )
 
 
 def fail2ban_status(options):
     """
     Display Fail2Ban status and banned IPs.
-    
+
     Shows:
     - Fail2Ban service status
     - Active jails
     - Banned IP addresses per jail
     - Ban statistics
-    
+
     Args:
         options: Global options
     """
@@ -262,15 +276,21 @@ def fail2ban_status(options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would check Fail2Ban status")
         return
 
     console.print(f"\n[cyan]═══ Fail2Ban Status - {server_name} ═══[/cyan]\n")
 
     # Check if Fail2Ban is running
-    service_result = remote_ops.execute_command("systemctl is-active fail2ban 2>/dev/null")
-    service_status = service_result['stdout'].strip() if service_result['exit_code'] == 0 else "inactive"
+    service_result = remote_ops.execute_command(
+        "systemctl is-active fail2ban 2>/dev/null"
+    )
+    service_status = (
+        service_result["stdout"].strip()
+        if service_result["exit_code"] == 0
+        else "inactive"
+    )
 
     if service_status != "active":
         console.print("[red]✗[/red] Fail2Ban service is not running")
@@ -282,18 +302,18 @@ def fail2ban_status(options):
     # Get jail status
     jails_result = remote_ops.execute_command("sudo fail2ban-client status 2>/dev/null")
 
-    if jails_result['exit_code'] != 0:
+    if jails_result["exit_code"] != 0:
         console.print("[red]✗[/red] Failed to get Fail2Ban status")
         return
 
     # Parse jails
-    jails_output = jails_result['stdout']
+    jails_output = jails_result["stdout"]
     console.print(f"\n{jails_output}\n")
 
     # Extract jail names
-    jail_match = re.search(r'Jail list:\s*(.+)', jails_output)
+    jail_match = re.search(r"Jail list:\s*(.+)", jails_output)
     if jail_match:
-        jail_names = [j.strip() for j in jail_match.group(1).split(',')]
+        jail_names = [j.strip() for j in jail_match.group(1).split(",")]
 
         # Create table for banned IPs
         table = Table(title="Banned IPs by Jail")
@@ -303,17 +323,19 @@ def fail2ban_status(options):
 
         for jail in jail_names:
             # Get jail-specific status
-            jail_status = remote_ops.execute_command(f"sudo fail2ban-client status {jail} 2>/dev/null")
+            jail_status = remote_ops.execute_command(
+                f"sudo fail2ban-client status {jail} 2>/dev/null"
+            )
 
-            if jail_status['exit_code'] == 0:
-                output = jail_status['stdout']
+            if jail_status["exit_code"] == 0:
+                output = jail_status["stdout"]
 
                 # Parse banned IPs
                 currently_banned = 0
                 total_banned = 0
 
-                current_match = re.search(r'Currently banned:\s*(\d+)', output)
-                total_match = re.search(r'Total banned:\s*(\d+)', output)
+                current_match = re.search(r"Currently banned:\s*(\d+)", output)
+                total_match = re.search(r"Total banned:\s*(\d+)", output)
 
                 if current_match:
                     currently_banned = int(current_match.group(1))
@@ -326,16 +348,18 @@ def fail2ban_status(options):
                 table.add_row(
                     jail,
                     f"[{banned_color}]{currently_banned}[/{banned_color}]",
-                    str(total_banned)
+                    str(total_banned),
                 )
 
                 # Show banned IPs if any
                 if currently_banned > 0:
-                    ips_match = re.search(r'Banned IP list:\s*(.+)', output)
+                    ips_match = re.search(r"Banned IP list:\s*(.+)", output)
                     if ips_match:
                         ips = ips_match.group(1).strip()
                         if ips:
-                            console.print(f"[yellow]⚠[/yellow] {jail} banned IPs: {ips}")
+                            console.print(
+                                f"[yellow]⚠[/yellow] {jail} banned IPs: {ips}"
+                            )
 
         console.print(table)
 
@@ -343,7 +367,7 @@ def fail2ban_status(options):
 def fail2ban_unban(ip_address, jail, options):
     """
     Unban an IP address from Fail2Ban.
-    
+
     Args:
         ip_address: IP address to unban
         jail: Jail name (e.g., sshd, default: all jails)
@@ -366,7 +390,7 @@ def fail2ban_unban(ip_address, jail, options):
         command = f"sudo fail2ban-client unban {ip_address}"
         target = f"{ip_address} from all jails"
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print(f"[yellow]DRY RUN:[/yellow] Would unban {target}")
         console.print(f"[dim]Command: {command}[/dim]")
         return
@@ -375,23 +399,25 @@ def fail2ban_unban(ip_address, jail, options):
 
     result = remote_ops.execute_command(command)
 
-    if result['exit_code'] == 0:
+    if result["exit_code"] == 0:
         console.print("[green]✓[/green] IP address unbanned successfully")
     else:
-        console.print(f"[red]✗[/red] Failed to unban IP: {result.get('stderr', 'Unknown error')}")
+        console.print(
+            f"[red]✗[/red] Failed to unban IP: {result.get('stderr', 'Unknown error')}"
+        )
 
 
 def ssh_audit(options):
     """
     Audit SSH configuration for security best practices.
-    
+
     Checks:
     - PermitRootLogin (should be: prohibit-password or no)
     - PasswordAuthentication (should be: no)
     - PermitEmptyPasswords (should be: no)
     - X11Forwarding (should be: no)
     - MaxAuthTries (should be: 3 or less)
-    
+
     Args:
         options: Global options
     """
@@ -405,7 +431,7 @@ def ssh_audit(options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would audit SSH configuration")
         return
 
@@ -413,11 +439,27 @@ def ssh_audit(options):
 
     # Define security checks
     checks = [
-        {"name": "PermitRootLogin", "pattern": "^PermitRootLogin", "recommended": ["prohibit-password", "no"]},
-        {"name": "PasswordAuthentication", "pattern": "^PasswordAuthentication", "recommended": ["no"]},
-        {"name": "PermitEmptyPasswords", "pattern": "^PermitEmptyPasswords", "recommended": ["no"]},
+        {
+            "name": "PermitRootLogin",
+            "pattern": "^PermitRootLogin",
+            "recommended": ["prohibit-password", "no"],
+        },
+        {
+            "name": "PasswordAuthentication",
+            "pattern": "^PasswordAuthentication",
+            "recommended": ["no"],
+        },
+        {
+            "name": "PermitEmptyPasswords",
+            "pattern": "^PermitEmptyPasswords",
+            "recommended": ["no"],
+        },
         {"name": "X11Forwarding", "pattern": "^X11Forwarding", "recommended": ["no"]},
-        {"name": "MaxAuthTries", "pattern": "^MaxAuthTries", "recommended": ["3", "2", "1"]},
+        {
+            "name": "MaxAuthTries",
+            "pattern": "^MaxAuthTries",
+            "recommended": ["3", "2", "1"],
+        },
     ]
 
     # Create table
@@ -438,29 +480,31 @@ def ssh_audit(options):
             )
 
             current_value = "not set"
-            if result['exit_code'] == 0 and result['stdout'].strip():
-                parts = result['stdout'].strip().split()
+            if result["exit_code"] == 0 and result["stdout"].strip():
+                parts = result["stdout"].strip().split()
                 if len(parts) >= 2:
                     current_value = parts[1]
 
             # Check if current value is recommended
-            is_ok = current_value in check['recommended']
+            is_ok = current_value in check["recommended"]
             status = "✓ OK" if is_ok else "⚠ REVIEW"
             status_color = "green" if is_ok else "yellow"
 
             table.add_row(
-                check['name'],
+                check["name"],
                 current_value,
-                " or ".join(check['recommended']),
-                f"[{status_color}]{status}[/{status_color}]"
+                " or ".join(check["recommended"]),
+                f"[{status_color}]{status}[/{status_color}]",
             )
 
             if not is_ok:
-                issues_found.append({
-                    'setting': check['name'],
-                    'current': current_value,
-                    'recommended': check['recommended']
-                })
+                issues_found.append(
+                    {
+                        "setting": check["name"],
+                        "current": current_value,
+                        "recommended": check["recommended"],
+                    }
+                )
 
             progress.update(task, advance=1)
 
@@ -468,16 +512,22 @@ def ssh_audit(options):
 
     # Summary
     if issues_found:
-        console.print(f"\n[yellow]⚠[/yellow] Found {len(issues_found)} settings to review")
-        console.print("[dim]Edit /etc/ssh/sshd_config and restart SSH: sudo systemctl restart sshd[/dim]")
+        console.print(
+            f"\n[yellow]⚠[/yellow] Found {len(issues_found)} settings to review"
+        )
+        console.print(
+            "[dim]Edit /etc/ssh/sshd_config and restart SSH: sudo systemctl restart sshd[/dim]"
+        )
     else:
-        console.print("\n[green]✓[/green] All SSH security settings are configured correctly")
+        console.print(
+            "\n[green]✓[/green] All SSH security settings are configured correctly"
+        )
 
 
 def check_security_updates(options):
     """
     Check for available security updates.
-    
+
     Args:
         options: Global options
     """
@@ -491,7 +541,7 @@ def check_security_updates(options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would check for security updates")
         return
 
@@ -510,12 +560,12 @@ def check_security_updates(options):
         )
         progress.update(task, completed=100)
 
-    if result['exit_code'] == 0 and result['stdout'].strip():
+    if result["exit_code"] == 0 and result["stdout"].strip():
         console.print("[yellow]⚠[/yellow] Security updates available:\n")
-        console.print(result['stdout'])
+        console.print(result["stdout"])
 
         # Count updates
-        update_count = len(result['stdout'].strip().split('\n'))
+        update_count = len(result["stdout"].strip().split("\n"))
         console.print(f"\n[yellow]Total security updates: {update_count}[/yellow]")
         console.print("[dim]Install with: sudo apt-get upgrade[/dim]")
     else:
@@ -526,12 +576,12 @@ def check_security_updates(options):
 def audit_connections(options):
     """
     Audit active network connections and listening ports.
-    
+
     Shows:
     - Established connections
     - Listening ports
     - Suspicious processes (netcat, etc.)
-    
+
     Args:
         options: Global options
     """
@@ -545,7 +595,7 @@ def audit_connections(options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would audit network connections")
         return
 
@@ -555,8 +605,8 @@ def audit_connections(options):
     console.print("[bold]Established Connections:[/bold]")
     est_result = remote_ops.execute_command("ss -tunap 2>/dev/null | grep ESTAB")
 
-    if est_result['exit_code'] == 0 and est_result['stdout'].strip():
-        lines = est_result['stdout'].strip().split('\n')
+    if est_result["exit_code"] == 0 and est_result["stdout"].strip():
+        lines = est_result["stdout"].strip().split("\n")
         console.print(f"[yellow]Found {len(lines)} established connections[/yellow]\n")
 
         # Show first 10
@@ -572,8 +622,8 @@ def audit_connections(options):
     console.print("\n[bold]Listening Ports:[/bold]")
     listen_result = remote_ops.execute_command("ss -tuln 2>/dev/null | grep LISTEN")
 
-    if listen_result['exit_code'] == 0 and listen_result['stdout'].strip():
-        lines = listen_result['stdout'].strip().split('\n')
+    if listen_result["exit_code"] == 0 and listen_result["stdout"].strip():
+        lines = listen_result["stdout"].strip().split("\n")
         console.print(f"[yellow]Found {len(lines)} listening ports[/yellow]\n")
 
         for line in lines:
@@ -587,9 +637,9 @@ def audit_connections(options):
         "ps aux 2>/dev/null | grep -E 'nc|ncat|netcat' | grep -v grep"
     )
 
-    if susp_result['exit_code'] == 0 and susp_result['stdout'].strip():
+    if susp_result["exit_code"] == 0 and susp_result["stdout"].strip():
         console.print("[red]⚠[/red] Suspicious processes found:\n")
-        console.print(susp_result['stdout'])
+        console.print(susp_result["stdout"])
     else:
         console.print("[green]✓[/green] No suspicious processes detected")
 
@@ -597,14 +647,14 @@ def audit_connections(options):
 def security_scan(options):
     """
     Run comprehensive security scan.
-    
+
     Executes all security checks:
     - Firewall status
     - Fail2Ban status
     - SSH audit
     - Security updates
     - Connection audit
-    
+
     Args:
         options: Global options
     """
@@ -615,7 +665,7 @@ def security_scan(options):
         console.print("[red]✗[/red] No active server configured")
         return
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would run comprehensive security scan")
         return
 
@@ -635,20 +685,22 @@ def security_scan(options):
 def config_audit(options):
     """
     Audit local NAVIG configuration for security issues.
-    
+
     Based on advanced security audit patterns. Checks:
     - Hardcoded credentials in config files
     - File permissions (SSH keys, config files)
     - Environment variable usage
     - Database connection security
-    
+
     This runs locally - no remote server required.
-    
+
     Args:
         options: Global options (json_output, verbose, etc.)
     """
 
-    console.print("\n[bold cyan]═══ NAVIG Configuration Security Audit ═══[/bold cyan]\n")
+    console.print(
+        "\n[bold cyan]═══ NAVIG Configuration Security Audit ═══[/bold cyan]\n"
+    )
 
     config_manager = get_config_manager()
 
@@ -668,17 +720,16 @@ def config_audit(options):
 
     # Run audit
     report = run_security_audit(
-        config=global_config,
-        config_dir=config_manager.base_dir
+        config=global_config, config_dir=config_manager.base_dir
     )
 
-    if options.get('json_output'):
+    if options.get("json_output"):
         console.print(json.dumps(report, indent=2))
         return
 
     # Display findings
-    findings = report.get('findings', [])
-    summary = report.get('summary', {})
+    findings = report.get("findings", [])
+    summary = report.get("summary", {})
 
     if not findings:
         console.print("[green]✓[/green] No security issues found!")
@@ -693,20 +744,20 @@ def config_audit(options):
     table.add_column("Fix", style="green")
 
     severity_colors = {
-        'critical': 'red',
-        'warn': 'yellow',
-        'info': 'blue',
+        "critical": "red",
+        "warn": "yellow",
+        "info": "blue",
     }
 
     for finding in findings:
-        severity = finding.get('severity', 'info')
-        color = severity_colors.get(severity, 'white')
+        severity = finding.get("severity", "info")
+        color = severity_colors.get(severity, "white")
 
         table.add_row(
             f"[{color}]{severity.upper()}[/{color}]",
-            finding.get('title', 'Unknown'),
-            finding.get('detail', ''),
-            finding.get('remediation', '-')
+            finding.get("title", "Unknown"),
+            finding.get("detail", ""),
+            finding.get("remediation", "-"),
         )
 
     console.print(table)
@@ -717,7 +768,7 @@ def config_audit(options):
     console.print(f"  Warnings: [yellow]{summary.get('warn', 0)}[/yellow]")
     console.print(f"  Info: [blue]{summary.get('info', 0)}[/blue]")
 
-    if report.get('passed'):
+    if report.get("passed"):
         console.print("\n[green]✓[/green] Audit passed (no critical issues)")
     else:
         console.print("\n[red]✗[/red] Audit failed - critical issues found")
@@ -727,13 +778,13 @@ def config_audit(options):
 def check_secrets(options):
     """
     Scan configuration files for accidentally committed secrets.
-    
+
     Checks for:
     - API keys (OpenAI, Anthropic, GitHub, etc.)
     - Passwords and tokens
     - Private keys
     - Connection strings with credentials
-    
+
     Args:
         options: Global options
     """
@@ -778,29 +829,39 @@ def check_secrets(options):
 
         for config_file in config_files:
             try:
-                content = config_file.read_text(errors='replace')
+                content = config_file.read_text(errors="replace")
 
                 # Check if redaction changes the content (indicates secrets present)
                 redacted = redact_sensitive_text(content)
 
                 if redacted != content:
                     # Count how many patterns matched
-                    match_count = content.count('sk-') + content.count('ghp_') + \
-                                 content.count('password:') + content.count('token:')
+                    match_count = (
+                        content.count("sk-")
+                        + content.count("ghp_")
+                        + content.count("password:")
+                        + content.count("token:")
+                    )
 
-                    secrets_found.append({
-                        'file': str(config_file.relative_to(config_manager.base_dir)),
-                        'matches': match_count,
-                    })
+                    secrets_found.append(
+                        {
+                            "file": str(
+                                config_file.relative_to(config_manager.base_dir)
+                            ),
+                            "matches": match_count,
+                        }
+                    )
             except Exception as e:
-                if options.get('verbose'):
+                if options.get("verbose"):
                     console.print(f"[dim]Error reading {config_file}: {e}[/dim]")
 
             progress.update(task, advance=1)
 
     if not secrets_found:
         console.print("[green]✓[/green] No secrets detected in configuration files")
-        console.print("[dim]Your configs appear to use environment variables correctly[/dim]")
+        console.print(
+            "[dim]Your configs appear to use environment variables correctly[/dim]"
+        )
         return
 
     # Display findings
@@ -810,17 +871,14 @@ def check_secrets(options):
     table.add_column("Action", style="red")
 
     for finding in secrets_found:
-        table.add_row(
-            finding['file'],
-            str(finding['matches']),
-            "Move to env vars"
-        )
+        table.add_row(finding["file"], str(finding["matches"]), "Move to env vars")
 
     console.print(table)
 
-    console.print(f"\n[red]⚠[/red] Found potential secrets in {len(secrets_found)} files")
+    console.print(
+        f"\n[red]⚠[/red] Found potential secrets in {len(secrets_found)} files"
+    )
     console.print("\n[bold]Recommendations:[/bold]")
     console.print("  1. Use environment variables: api_key: ${OPENROUTER_API_KEY}")
     console.print("  2. Add to .gitignore if not already")
     console.print("  3. Rotate any exposed credentials immediately")
-

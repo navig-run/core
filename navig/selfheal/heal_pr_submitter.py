@@ -13,6 +13,7 @@ Activation policy (enforced by the *caller*, not this module):
 Fallback: if GitHub is unreachable the patch is stored locally under
 ~/.navig/heal_patches/ and the caller is notified.
 """
+
 from __future__ import annotations
 
 import os
@@ -93,7 +94,9 @@ class HealPRSubmitter:
         try:
             branch = create_branch(token)  # uses navig-selfheal/{date}-{hash} pattern
         except Exception as exc:
-            logger.warning("heal_pr: create_branch failed, using timestamp branch: %s", exc)
+            logger.warning(
+                "heal_pr: create_branch failed, using timestamp branch: %s", exc
+            )
             # Fall through — we'll attempt PR creation anyway
 
         username = get_github_username(token)
@@ -155,6 +158,7 @@ class HealPRSubmitter:
         patch_path = _HEAL_PATCHES_DIR / fname
 
         import json
+
         payload: Dict[str, Any] = {
             "ts": ts,
             "failure_class": failure_class,
@@ -174,6 +178,7 @@ class HealPRSubmitter:
         if not _HEAL_PATCHES_DIR.exists():
             return []
         import json
+
         pending = []
         for p in sorted(_HEAL_PATCHES_DIR.glob("*.patch.json")):
             try:
@@ -211,7 +216,9 @@ class HealPRSubmitter:
             )
         except Exception as exc:
             # Non-fatal — PR is open even if labels fail
-            logger.warning("heal_pr: could not attach labels to #%s: %s", pr_number, exc)
+            logger.warning(
+                "heal_pr: could not attach labels to #%s: %s", pr_number, exc
+            )
 
     @staticmethod
     def _build_pr_body(
@@ -271,6 +278,6 @@ See the patch section below for the proposed resolution.
 
 ---
 
-*This PR was opened automatically by NAVIG Auto-Heal.  
+*This PR was opened automatically by NAVIG Auto-Heal.
 Assign for human review before merging.*
 """

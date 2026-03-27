@@ -4,11 +4,12 @@
 Get Active Window - Print title of currently focused window
 Usage: py get_active_window.py
 """
-import sys
 import io
+import sys
+
 import pygetwindow as gw
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 try:
     active = gw.getActiveWindow()

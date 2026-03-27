@@ -50,6 +50,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(messa
 # In production, PTB provides real Update / Context objects.
 # Here we mock just enough to run handlers locally.
 
+
 def _fake_update(text: str = "/cmd") -> MagicMock:
     update = MagicMock()
     update.message = MagicMock()
@@ -57,6 +58,7 @@ def _fake_update(text: str = "/cmd") -> MagicMock:
     update.message.reply_text = AsyncMock()
     update.message.edit_text = AsyncMock()
     return update
+
 
 def _fake_context(*args: str) -> MagicMock:
     ctx = MagicMock()
@@ -160,6 +162,7 @@ _SAFE_OPS = {
 
 def _safe_eval(expr: str) -> float:
     """Evaluate a numeric expression using AST — no eval(), no exec()."""
+
     def _eval(node: ast.expr) -> float:
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
             return float(node.value)
@@ -171,6 +174,7 @@ def _safe_eval(expr: str) -> float:
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
             return _op.neg(_eval(node.operand))
         raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
     tree = ast.parse(expr.strip(), mode="eval")
     return _eval(tree.body)
 
@@ -193,13 +197,17 @@ class CalcPlugin(BotPlugin):
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         expr = " ".join(context.args or [])
         if not expr:
-            await update.message.reply_text("Usage: /calc <expression>   e.g. /calc 2 ** 10")
+            await update.message.reply_text(
+                "Usage: /calc <expression>   e.g. /calc 2 ** 10"
+            )
             return
         try:
             result = _safe_eval(expr)
             # Format: drop trailing .0 for whole numbers
             formatted = f"{result:.10g}"
-            await update.message.reply_text(f"`{expr}` = *{formatted}*", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"`{expr}` = *{formatted}*", parse_mode="Markdown"
+            )
         except (ValueError, ZeroDivisionError, SyntaxError) as exc:
             await update.message.reply_text(f"⚠️ Could not evaluate: {exc}")
 
@@ -233,28 +241,41 @@ app.run_polling()
 # Run this file directly: python sdk_examples.py
 # ────────────────────────────────────────────────────────────────────────────
 
+
 async def _run_local_tests() -> None:
     print("\n" + "═" * 60)
     print("  telegram-bot-navig SDK — local plugin test runner")
     print("═" * 60 + "\n")
 
     plugins = [
-        ("echo",  create_echo(),  _fake_update("/echo hello world"), _fake_context("hello", "world")),
-        ("echo",  create_echo(),  _fake_update("/echo"),              _fake_context()),
-        ("pick",  create_pick(),  _fake_update("/pick"), _fake_context("pizza", " sushi", " tacos")),
-        ("calc",  create_calc(),  _fake_update("/calc"), _fake_context("2", "**", "10")),
-        ("calc",  create_calc(),  _fake_update("/calc"), _fake_context("10", "/", "0")),
+        (
+            "echo",
+            create_echo(),
+            _fake_update("/echo hello world"),
+            _fake_context("hello", "world"),
+        ),
+        ("echo", create_echo(), _fake_update("/echo"), _fake_context()),
+        (
+            "pick",
+            create_pick(),
+            _fake_update("/pick"),
+            _fake_context("pizza", " sushi", " tacos"),
+        ),
+        ("calc", create_calc(), _fake_update("/calc"), _fake_context("2", "**", "10")),
+        ("calc", create_calc(), _fake_update("/calc"), _fake_context("10", "/", "0")),
     ]
 
     # Test disabled state using the wrap-around __call__
     disabled_plugin = create_echo()
     disabled_plugin.disable()
-    plugins.append((
-        "echo (disabled)",
-        disabled_plugin,
-        _fake_update("/echo hi"),
-        _fake_context("hi"),
-    ))
+    plugins.append(
+        (
+            "echo (disabled)",
+            disabled_plugin,
+            _fake_update("/echo hi"),
+            _fake_context("hi"),
+        )
+    )
 
     for label, plugin, update, ctx in plugins:
         print(f"▶ /{label}")

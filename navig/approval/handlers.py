@@ -16,11 +16,11 @@ logger = get_debug_logger()
 class TelegramApprovalHandler:
     """
     Telegram-specific approval handler.
-    
+
     Uses inline keyboards for approval buttons.
     """
 
-    def __init__(self, manager: 'ApprovalManager', bot: Any = None):
+    def __init__(self, manager: "ApprovalManager", bot: Any = None):
         self.manager = manager
         self.bot = bot
 
@@ -36,14 +36,22 @@ class TelegramApprovalHandler:
             # Import here to avoid circular deps
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-            keyboard = InlineKeyboardMarkup([
+            keyboard = InlineKeyboardMarkup(
                 [
-                    InlineKeyboardButton("✅ Approve", callback_data=f"approve:{request.id}"),
-                    InlineKeyboardButton("❌ Deny", callback_data=f"deny:{request.id}"),
+                    [
+                        InlineKeyboardButton(
+                            "✅ Approve", callback_data=f"approve:{request.id}"
+                        ),
+                        InlineKeyboardButton(
+                            "❌ Deny", callback_data=f"deny:{request.id}"
+                        ),
+                    ]
                 ]
-            ])
+            )
 
-            level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(request.level.value, "❓")
+            level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(
+                request.level.value, "❓"
+            )
 
             message = (
                 f"{level_emoji} **Approval Required**\n\n"
@@ -58,16 +66,18 @@ class TelegramApprovalHandler:
                 chat_id=int(chat_id),
                 text=message,
                 reply_markup=keyboard,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
 
         except Exception as e:
             logger.error(f"Failed to send Telegram approval request: {e}")
 
-    async def handle_callback(self, callback_data: str, user_id: str) -> tuple[bool, str]:
+    async def handle_callback(
+        self, callback_data: str, user_id: str
+    ) -> tuple[bool, str]:
         """
         Handle Telegram callback button press.
-        
+
         Returns (success, message).
         """
         if ":" not in callback_data:
@@ -91,17 +101,17 @@ class TelegramApprovalHandler:
 class CLIApprovalHandler:
     """
     CLI approval handler.
-    
+
     Uses terminal prompts for interactive approval.
     """
 
-    def __init__(self, manager: 'ApprovalManager'):
+    def __init__(self, manager: "ApprovalManager"):
         self.manager = manager
 
     async def prompt_approval(self, request: ApprovalRequest) -> bool:
         """
         Prompt user for approval in terminal.
-        
+
         Returns True if approved.
         """
         from rich.console import Console
@@ -128,27 +138,27 @@ class CLIApprovalHandler:
 class GatewayApprovalHandler:
     """
     Gateway API approval handler.
-    
+
     Exposes approval via REST endpoints.
     """
 
-    def __init__(self, manager: 'ApprovalManager'):
+    def __init__(self, manager: "ApprovalManager"):
         self.manager = manager
 
     async def handle_request(self, data: dict) -> dict:
         """Handle approval request via API."""
-        command = data.get('command')
-        session_key = data.get('session_key', 'api:default')
-        channel = data.get('channel', 'api')
-        user_id = data.get('user_id', 'anonymous')
-        description = data.get('description')
+        command = data.get("command")
+        session_key = data.get("session_key", "api:default")
+        channel = data.get("channel", "api")
+        user_id = data.get("user_id", "anonymous")
+        description = data.get("description")
 
         if not command:
             return {"error": "Missing 'command' field"}
 
         # Non-blocking: create request and return immediately
         # Caller must poll or wait for WebSocket notification
-        if data.get('async', False):
+        if data.get("async", False):
             request_id = await self._create_async_request(
                 command, session_key, channel, user_id, description
             )
@@ -178,7 +188,9 @@ class GatewayApprovalHandler:
         from datetime import datetime, timedelta
 
         request_id = str(uuid.uuid4())[:8]
-        expires_at = datetime.now() + timedelta(seconds=self.manager.policy.timeout_seconds)
+        expires_at = datetime.now() + timedelta(
+            seconds=self.manager.policy.timeout_seconds
+        )
 
         from .manager import ApprovalRequest
 

@@ -30,6 +30,7 @@ def mode_callback(ctx: typer.Context):
 
 # ── navig mode show ──────────────────────────────────────
 
+
 @mode_app.command("show")
 def mode_show(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -39,6 +40,7 @@ def mode_show(
         import json as _json
 
         from navig.llm_router import get_llm_router
+
         router = get_llm_router()
         typer.echo(_json.dumps(router.get_all_modes(), indent=2))
     else:
@@ -110,14 +112,23 @@ def _show_modes():
 
 # ── navig mode set ───────────────────────────────────────
 
+
 @mode_app.command("set")
 def mode_set(
-    mode: str = typer.Argument(..., help="Mode name or alias (e.g. coding, chat, research)"),
-    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="Provider (ollama, openai, groq, etc.)"),
+    mode: str = typer.Argument(
+        ..., help="Mode name or alias (e.g. coding, chat, research)"
+    ),
+    provider: Optional[str] = typer.Option(
+        None, "--provider", "-p", help="Provider (ollama, openai, groq, etc.)"
+    ),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model name/ID"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", "--temp", "-t", help="Temperature (0.0–2.0)"),
+    temperature: Optional[float] = typer.Option(
+        None, "--temperature", "--temp", "-t", help="Temperature (0.0–2.0)"
+    ),
     max_tokens: Optional[int] = typer.Option(None, "--max-tokens", help="Max tokens"),
-    uncensored: Optional[bool] = typer.Option(None, "--uncensored/--no-uncensored", help="Enable/disable uncensored routing"),
+    uncensored: Optional[bool] = typer.Option(
+        None, "--uncensored/--no-uncensored", help="Enable/disable uncensored routing"
+    ),
 ):
     """Update a mode's provider, model, or parameters."""
     from rich.console import Console
@@ -144,9 +155,13 @@ def mode_set(
     # Persist to config
     try:
         _persist_mode_config(router)
-        console.print(f"[green]✓[/green] Mode [cyan]{canonical}[/cyan] updated and saved.")
+        console.print(
+            f"[green]✓[/green] Mode [cyan]{canonical}[/cyan] updated and saved."
+        )
     except Exception as e:
-        console.print(f"[yellow]⚠[/yellow] Updated in memory but failed to persist: {e}")
+        console.print(
+            f"[yellow]⚠[/yellow] Updated in memory but failed to persist: {e}"
+        )
 
     # Show resolved config
     resolved = router.get_config(canonical)
@@ -166,16 +181,23 @@ def _persist_mode_config(router):
     if "llm_router" not in raw:
         raw["llm_router"] = {}
     raw["llm_router"]["llm_modes"] = router.get_all_modes()
-    raw["llm_router"]["uncensored_overrides"] = router.uncensored.model_dump() if hasattr(router.uncensored, "model_dump") else {}
+    raw["llm_router"]["uncensored_overrides"] = (
+        router.uncensored.model_dump()
+        if hasattr(router.uncensored, "model_dump")
+        else {}
+    )
 
     cm.save_global_config(raw)
 
 
 # ── navig mode list ──────────────────────────────────────
 
+
 @mode_app.command("list")
 def mode_list(
-    uncensored_only: bool = typer.Option(False, "--uncensored-only", "-u", help="Show only uncensored models"),
+    uncensored_only: bool = typer.Option(
+        False, "--uncensored-only", "-u", help="Show only uncensored models"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List available models per provider, with uncensored status."""
@@ -191,6 +213,7 @@ def mode_list(
 
     if json_output:
         import json as _json
+
         typer.echo(_json.dumps(uncensored_info, indent=2))
         return
 
@@ -204,7 +227,11 @@ def mode_list(
         table.add_column("Installed", justify="center")
 
         for m in uncensored_info["local"]:
-            status = "[green]✓ pulled[/green]" if m["available"] else "[red]✗ not pulled[/red]"
+            status = (
+                "[green]✓ pulled[/green]"
+                if m["available"]
+                else "[red]✗ not pulled[/red]"
+            )
             table.add_row(m["alias"], m["model"], status)
         console.print(table)
     else:
@@ -221,7 +248,11 @@ def mode_list(
         table.add_column("API Key", justify="center")
 
         for m in uncensored_info["api"]:
-            status = "[green]✓ present[/green]" if m["api_key_present"] else "[red]✗ missing[/red]"
+            status = (
+                "[green]✓ present[/green]"
+                if m["api_key_present"]
+                else "[red]✗ missing[/red]"
+            )
             table.add_row(m["alias"], m["model"], m["provider"], status)
         console.print(table)
     else:
@@ -234,6 +265,7 @@ def mode_list(
 
 
 # ── navig mode detect ────────────────────────────────────
+
 
 @mode_app.command("detect")
 def mode_detect(
@@ -253,4 +285,6 @@ def mode_detect(
     console.print(f"[bold]Detected mode:[/bold] [cyan]{mode}[/cyan]")
     console.print(f"[bold]Would route to:[/bold] {resolved.provider}:{resolved.model}")
     console.print(f"[bold]Reason:[/bold] [dim]{resolved.resolution_reason}[/dim]")
-    console.print(f"[bold]Uncensored:[/bold] {'[yellow]YES[/yellow]' if resolved.is_uncensored else '[dim]no[/dim]'}")
+    console.print(
+        f"[bold]Uncensored:[/bold] {'[yellow]YES[/yellow]' if resolved.is_uncensored else '[dim]no[/dim]'}"
+    )

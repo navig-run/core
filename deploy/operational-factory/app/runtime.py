@@ -1,17 +1,23 @@
-from datetime import datetime, timezone
-import imaplib
 import email
-from email.header import decode_header
+import imaplib
 import json
 import os
+from datetime import datetime, timezone
+from email.header import decode_header
 
 import httpx
+from app.audit import write_audit
+from app.db import db_session, fetch_all_dict, fetch_one_dict
+from app.settings import (
+    CODE_MODEL,
+    DEFAULT_TENANT,
+    OLLAMA_BASE_URL,
+    PRIMARY_MODEL,
+    REPO_PATH,
+    TOOL_GATEWAY_URL,
+)
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
-
-from app.db import db_session, fetch_one_dict, fetch_all_dict
-from app.settings import DEFAULT_TENANT, TOOL_GATEWAY_URL, OLLAMA_BASE_URL, PRIMARY_MODEL, CODE_MODEL, REPO_PATH
-from app.audit import write_audit
 
 app = FastAPI(title="NAVIG Runtime", version="0.1.0")
 
@@ -28,7 +34,9 @@ AGENTS = {
 
 
 def _tenant_id(session):
-    row = fetch_one_dict(session, "SELECT id FROM tenants WHERE slug = :slug", {"slug": DEFAULT_TENANT})
+    row = fetch_one_dict(
+        session, "SELECT id FROM tenants WHERE slug = :slug", {"slug": DEFAULT_TENANT}
+    )
     if not row:
         raise HTTPException(status_code=500, detail="default tenant missing")
     return row["id"]
@@ -55,7 +63,11 @@ def _call_ollama(prompt: str, task_type: str = "general"):
                 timeout=90,
             )
             resp.raise_for_status()
-            return {"model": PRIMARY_MODEL, "text": resp.json().get("response", ""), "fallback_from": model}
+            return {
+                "model": PRIMARY_MODEL,
+                "text": resp.json().get("response", ""),
+                "fallback_from": model,
+            }
 
         resp.raise_for_status()
         return {"model": model, "text": resp.json().get("response", "")}
@@ -97,9 +109,24 @@ def _imap_fetch(limit: int = 10):
 
     if not host or not user or not password:
         return [
-            {"id": "demo-1", "from": "client-a@example.com", "subject": "Need a quote for integration", "body": "Can you send pricing for 10 seats?"},
-            {"id": "demo-2", "from": "support-user@example.com", "subject": "Issue with login", "body": "User cannot login after password reset."},
-            {"id": "demo-3", "from": "partner@example.com", "subject": "Partnership proposal", "body": "Let's discuss co-marketing campaign."},
+            {
+                "id": "demo-1",
+                "from": "client-a@example.com",
+                "subject": "Need a quote for integration",
+                "body": "Can you send pricing for 10 seats?",
+            },
+            {
+                "id": "demo-2",
+                "from": "support-user@example.com",
+                "subject": "Issue with login",
+                "body": "User cannot login after password reset.",
+            },
+            {
+                "id": "demo-3",
+                "from": "partner@example.com",
+                "subject": "Partnership proposal",
+                "body": "Let's discuss co-marketing campaign.",
+            },
         ]
 
     mails = []
@@ -123,7 +150,14 @@ def _imap_fetch(limit: int = 10):
                         break
             else:
                 body = msg.get_payload(decode=True).decode(errors="replace")
-            mails.append({"id": msg_id.decode(), "from": sender, "subject": subj, "body": body[:3000]})
+            mails.append(
+                {
+                    "id": msg_id.decode(),
+                    "from": sender,
+                    "subject": subj,
+                    "body": body[:3000],
+                }
+            )
     return mails
 
 
@@ -151,7 +185,11 @@ def flow_email_intake(payload: dict):
         tenant_id = _tenant_id(session)
         for mail in mails[:3]:
             category = _classify_email(mail["subject"], mail["body"])
-            agent = "email_support" if category == "support" else ("sales_bd" if category == "sales" else "executive_assistant")
+            agent = (
+                "email_support"
+                if category == "support"
+                else ("sales_bd" if category == "sales" else "executive_assistant")
+            )
             prompt = f"Draft a concise professional reply.\nSubject: {mail['subject']}\nBody: {mail['body']}"
             draft_body = _call_ollama(prompt, task_type="general")["text"]
 
@@ -187,10 +225,18 @@ def flow_email_intake(payload: dict):
                     "draft_id": str(draft["id"]),
                 },
             }
-            response = httpx.post(f"{TOOL_GATEWAY_URL}/tool/execute", json=action_payload, timeout=20)
+            response = httpx.post(
+                f"{TOOL_GATEWAY_URL}/tool/execute", json=action_payload, timeout=20
+            )
             response.raise_for_status()
 
-            created_drafts.append({"draft_id": str(draft["id"]), "subject": draft["subject"], "queued": response.json()})
+            created_drafts.append(
+                {
+                    "draft_id": str(draft["id"]),
+                    "subject": draft["subject"],
+                    "queued": response.json(),
+                }
+            )
 
         write_audit(
             session,
@@ -229,7 +275,9 @@ def flow_repo_propose(payload: dict):
         )
         scan_resp.raise_for_status()
 
-        plan_prompt = "Propose safe PR plan from git status output: " + json.dumps(scan_resp.json())
+        plan_prompt = "Propose safe PR plan from git status output: " + json.dumps(
+            scan_resp.json()
+        )
         plan = _call_ollama(plan_prompt, task_type="repo")["text"]
 
         draft = fetch_one_dict(
@@ -273,7 +321,10 @@ def flow_repo_propose(payload: dict):
                 "actor_id": actor,
                 "action_name": "sandbox_lint_test",
                 "reason": "Validate candidate patch in sandbox",
-                "params": {"repo_path": repo_path, "command": "python -m compileall -q ."},
+                "params": {
+                    "repo_path": repo_path,
+                    "command": "python -m compileall -q .",
+                },
             },
             timeout=120,
         )
@@ -281,11 +332,31 @@ def flow_repo_propose(payload: dict):
         test_data = test_resp.json()
 
         preview = {
-            "diff_summary": patch_data.get("output", {}).get("diff_summary") if isinstance(patch_data, dict) else "",
-            "changed_files": patch_data.get("output", {}).get("changed_files", []) if isinstance(patch_data, dict) else [],
-            "commands": patch_data.get("output", {}).get("commands", []) if isinstance(patch_data, dict) else [],
-            "test_exit_code": test_data.get("output", {}).get("result", {}).get("exit_code") if isinstance(test_data, dict) else None,
-            "test_stdout": (test_data.get("output", {}).get("result", {}).get("stdout", "")[:1200] if isinstance(test_data, dict) else ""),
+            "diff_summary": (
+                patch_data.get("output", {}).get("diff_summary")
+                if isinstance(patch_data, dict)
+                else ""
+            ),
+            "changed_files": (
+                patch_data.get("output", {}).get("changed_files", [])
+                if isinstance(patch_data, dict)
+                else []
+            ),
+            "commands": (
+                patch_data.get("output", {}).get("commands", [])
+                if isinstance(patch_data, dict)
+                else []
+            ),
+            "test_exit_code": (
+                test_data.get("output", {}).get("result", {}).get("exit_code")
+                if isinstance(test_data, dict)
+                else None
+            ),
+            "test_stdout": (
+                test_data.get("output", {}).get("result", {}).get("stdout", "")[:1200]
+                if isinstance(test_data, dict)
+                else ""
+            ),
         }
 
         summary_text = _artifact_summary(plan, preview)
@@ -334,8 +405,14 @@ def flow_repo_propose(payload: dict):
 def flow_daily_briefing():
     with db_session() as session:
         tenant_id = _tenant_id(session)
-        pending_actions = fetch_all_dict(session, "SELECT id, action_name, requested_by_agent, created_at FROM proposed_actions WHERE status='pending' ORDER BY created_at ASC LIMIT 50")
-        recent_drafts = fetch_all_dict(session, "SELECT id, draft_type, subject, created_by_agent, created_at FROM drafts ORDER BY created_at DESC LIMIT 50")
+        pending_actions = fetch_all_dict(
+            session,
+            "SELECT id, action_name, requested_by_agent, created_at FROM proposed_actions WHERE status='pending' ORDER BY created_at ASC LIMIT 50",
+        )
+        recent_drafts = fetch_all_dict(
+            session,
+            "SELECT id, draft_type, subject, created_by_agent, created_at FROM drafts ORDER BY created_at DESC LIMIT 50",
+        )
 
         lines = ["Daily Operational Briefing", "", "Agents report:"]
         for agent_id, role in AGENTS.items():

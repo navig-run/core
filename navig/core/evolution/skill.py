@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -32,7 +31,9 @@ Detailed markdown instructions on how to perform the skill.
 Identify any prerequisite tools or setups needed.
 """
 
-    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
+    def _generate(
+        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
+    ) -> Any:
 
         prompt = f"Goal: Create a skill for {goal}\n\n"
 
@@ -62,15 +63,15 @@ Do nothing
                 return "Invalid frontmatter format (missing closing ---)"
 
             frontmatter = yaml.safe_load(parts[1])
-            if 'name' not in frontmatter:
+            if "name" not in frontmatter:
                 return "Frontmatter missing 'name'"
-            if 'description' not in frontmatter:
+            if "description" not in frontmatter:
                 return "Frontmatter missing 'description'"
 
             if len(parts[2].strip()) < 10:
                 return "Instructions seem too short or missing"
 
-            return None # Valid
+            return None  # Valid
         except yaml.YAMLError as e:
             return f"YAML Frontmatter Error: {e}"
         except Exception as e:
@@ -81,15 +82,17 @@ Do nothing
         try:
             parts = artifact.split("---", 2)
             frontmatter = yaml.safe_load(parts[1])
-            name = frontmatter.get('name', 'unnamed_skill')
+            name = frontmatter.get("name", "unnamed_skill")
             # Sanitize name
-            name = "".join([c if c.isalnum() or c in '-_' else '_' for c in name]).lower()
+            name = "".join(
+                [c if c.isalnum() or c in "-_" else "_" for c in name]
+            ).lower()
 
             skill_dir = self._skills_root / name
             skill_dir.mkdir(parents=True, exist_ok=True)
 
             path = skill_dir / "SKILL.md"
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(artifact)
 
             success(f"Skill saved to {path}")

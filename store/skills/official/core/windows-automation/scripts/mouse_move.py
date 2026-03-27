@@ -3,8 +3,9 @@
 Mouse Move - Move mouse to coordinates
 Usage: py mouse_move.py 500 300
 """
-import pyautogui
 import sys
+
+import pyautogui
 
 if len(sys.argv) < 3:
     print("Usage: py mouse_move.py X Y")

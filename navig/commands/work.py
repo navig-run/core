@@ -38,6 +38,7 @@ def _print_json(data) -> None:
     """Emit *data* as indented JSON to stdout."""
     typer.echo(json.dumps(data, indent=2, default=str))
 
+
 # ── App ─────────────────────────────────────────────────────────────────────
 
 work_app = typer.Typer(
@@ -59,7 +60,9 @@ _STAGE_ORDER = {s: i for i, s in enumerate(VALID_STAGES)}
 
 # Root of NAVIG data directory. Overridable in tests via monkeypatch.
 # Respects NAVIG_CONFIG_DIR env var for non-default install paths.
-_NAVIG_ROOT: Path = Path(_os.environ.get("NAVIG_CONFIG_DIR") or str(Path.home() / ".navig"))
+_NAVIG_ROOT: Path = Path(
+    _os.environ.get("NAVIG_CONFIG_DIR") or str(Path.home() / ".navig")
+)
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
@@ -133,9 +136,7 @@ def _unique_slug(conn, base_slug: str) -> str:
     """Ensure the slug is unique, appending -N suffixes as needed."""
     slug = base_slug
     n = 2
-    while conn.execute(
-        "SELECT 1 FROM work_items WHERE slug = ?", (slug,)
-    ).fetchone():
+    while conn.execute("SELECT 1 FROM work_items WHERE slug = ?", (slug,)).fetchone():
         slug = f"{base_slug}-{n}"
         n += 1
     return slug
@@ -213,11 +214,19 @@ def _create_wiki_note(slug: str, title: str, kind: str, stage: str) -> Optional[
 @work_app.command("add")
 def cmd_add(
     title: str = typer.Argument(..., help="Title of the work item."),
-    kind: str = typer.Option("task", "--kind", "-k", help=f"Item kind: {', '.join(VALID_KINDS)}."),
-    stage: str = typer.Option("inbox", "--stage", "-s", help=f"Initial stage: {', '.join(VALID_STAGES)}."),
-    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Owner name or identifier."),
+    kind: str = typer.Option(
+        "task", "--kind", "-k", help=f"Item kind: {', '.join(VALID_KINDS)}."
+    ),
+    stage: str = typer.Option(
+        "inbox", "--stage", "-s", help=f"Initial stage: {', '.join(VALID_STAGES)}."
+    ),
+    owner: Optional[str] = typer.Option(
+        None, "--owner", "-o", help="Owner name or identifier."
+    ),
     tag: List[str] = typer.Option([], "--tag", "-t", help="Tag (repeatable)."),
-    no_wiki: bool = typer.Option(False, "--no-wiki", help="Do not create a linked wiki note."),
+    no_wiki: bool = typer.Option(
+        False, "--no-wiki", help="Do not create a linked wiki note."
+    ),
     json_out: bool = typer.Option(False, "--json", help="Output result as JSON."),
 ):
     """Add a new work item."""
@@ -248,15 +257,21 @@ def cmd_add(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            slug, title, kind, stage, owner, notes_path,
-            json.dumps(list(tag)), "{}", now, now,
+            slug,
+            title,
+            kind,
+            stage,
+            owner,
+            notes_path,
+            json.dumps(list(tag)),
+            "{}",
+            now,
+            now,
         ),
     )
     conn.commit()
 
-    row = conn.execute(
-        "SELECT * FROM work_items WHERE slug = ?", (slug,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM work_items WHERE slug = ?", (slug,)).fetchone()
     item_id = row["id"]
     _record_event(conn, item_id, "created", {"kind": kind, "stage": stage})
     conn.commit()
@@ -297,9 +312,7 @@ def cmd_list(
         params.append(owner)
     if tag:
         # tags stored as JSON array — use json_each for portable match
-        sql += (
-            " AND EXISTS (SELECT 1 FROM json_each(tags_json) WHERE value = ?)"
-        )
+        sql += " AND EXISTS (SELECT 1 FROM json_each(tags_json) WHERE value = ?)"
         params.append(tag)
 
     # Exclude archived unless explicitly requested
@@ -326,13 +339,15 @@ def cmd_list(
     ch.info(header_line)
     ch.raw_print("-" * len(header_line))
     for r in rows:
-        line = "  ".join([
-            str(r["id"]).ljust(col_widths[0]),
-            str(r["slug"])[:col_widths[1]].ljust(col_widths[1]),
-            str(r["kind"])[:col_widths[2]].ljust(col_widths[2]),
-            str(r["stage"])[:col_widths[3]].ljust(col_widths[3]),
-            str(r["title"])[:col_widths[4]],
-        ])
+        line = "  ".join(
+            [
+                str(r["id"]).ljust(col_widths[0]),
+                str(r["slug"])[: col_widths[1]].ljust(col_widths[1]),
+                str(r["kind"])[: col_widths[2]].ljust(col_widths[2]),
+                str(r["stage"])[: col_widths[3]].ljust(col_widths[3]),
+                str(r["title"])[: col_widths[4]],
+            ]
+        )
         ch.raw_print(line)
 
 
@@ -387,14 +402,21 @@ def cmd_show(
         ch.info("History")
         for ev in events:
             payload = json.loads(ev["payload_json"] or "{}")
-            detail = ", ".join(f"{k}={v}" for k, v in payload.items()) if payload else ""
-            ch.raw_print(f"  {ev['created_at'][:19]}  {ev['event_type']}" + (f"  ({detail})" if detail else ""))
+            detail = (
+                ", ".join(f"{k}={v}" for k, v in payload.items()) if payload else ""
+            )
+            ch.raw_print(
+                f"  {ev['created_at'][:19]}  {ev['event_type']}"
+                + (f"  ({detail})" if detail else "")
+            )
 
 
 @work_app.command("move")
 def cmd_move(
     slug_or_id: str = typer.Argument(..., help="Slug or numeric ID."),
-    to: str = typer.Option(..., "--to", help=f"Target stage: {', '.join(VALID_STAGES)}."),
+    to: str = typer.Option(
+        ..., "--to", help=f"Target stage: {', '.join(VALID_STAGES)}."
+    ),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON."),
 ):
     """Move a work item to a new stage."""
@@ -463,9 +485,15 @@ def cmd_update(
     slug_or_id: str = typer.Argument(..., help="Slug or numeric ID."),
     title: Optional[str] = typer.Option(None, "--title", help="New title."),
     owner: Optional[str] = typer.Option(None, "--owner", "-o", help="New owner."),
-    tag: List[str] = typer.Option([], "--tag", "-t", help="Replace all tags (repeatable)."),
-    ref_type: Optional[str] = typer.Option(None, "--ref-type", help="External reference type (e.g. github, jira)."),
-    ref_id: Optional[str] = typer.Option(None, "--ref-id", help="External reference ID."),
+    tag: List[str] = typer.Option(
+        [], "--tag", "-t", help="Replace all tags (repeatable)."
+    ),
+    ref_type: Optional[str] = typer.Option(
+        None, "--ref-type", help="External reference type (e.g. github, jira)."
+    ),
+    ref_id: Optional[str] = typer.Option(
+        None, "--ref-id", help="External reference ID."
+    ),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON."),
 ):
     """Update fields on a work item."""
@@ -504,7 +532,12 @@ def cmd_update(
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [row["id"]]
     conn.execute(f"UPDATE work_items SET {set_clause} WHERE id = ?", values)
-    _record_event(conn, row["id"], "updated", {k: v for k, v in updates.items() if k != "updated_at"})
+    _record_event(
+        conn,
+        row["id"],
+        "updated",
+        {k: v for k, v in updates.items() if k != "updated_at"},
+    )
     conn.commit()
 
     if json_out:

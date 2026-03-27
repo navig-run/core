@@ -24,6 +24,7 @@ Usage (from code):
     choice = await bridge.pause_and_ask("Continue?", ["Yes", "No", "Skip"])
     await bridge.send_notification("Task done!", screenshot_path="/tmp/shot.png")
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 # ─────────────────────────── lazy Telegram import ────────────────────────────
 
+
 def _import_bot():
     try:
         from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -45,7 +47,18 @@ def _import_bot():
             MessageHandler,
             filters,
         )
-        return Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+
+        return (
+            Bot,
+            Update,
+            InlineKeyboardButton,
+            InlineKeyboardMarkup,
+            Application,
+            CommandHandler,
+            MessageHandler,
+            filters,
+            CallbackQueryHandler,
+        )
     except ImportError as _exc:
         raise RuntimeError(
             "python-telegram-bot not installed. Run: pip install python-telegram-bot"
@@ -53,6 +66,7 @@ def _import_bot():
 
 
 # ─────────────────────────── bridge class ────────────────────────────────────
+
 
 class TelegramBridge:
     """
@@ -66,7 +80,9 @@ class TelegramBridge:
     All methods are async. Use asyncio.run() or an existing event loop.
     """
 
-    def __init__(self, bot_token: str, chat_id: int | str, timeout_seconds: int = 300) -> None:
+    def __init__(
+        self, bot_token: str, chat_id: int | str, timeout_seconds: int = 300
+    ) -> None:
         self._token = bot_token
         self._chat_id = int(chat_id)
         self._timeout = timeout_seconds
@@ -118,6 +134,7 @@ class TelegramBridge:
         Bot, _, InlineKeyboardButton, InlineKeyboardMarkup, *_ = _import_bot()
 
         import uuid
+
         corr = str(uuid.uuid4())[:8]
 
         # Build inline keyboard
@@ -171,6 +188,7 @@ class TelegramBridge:
         Bot, *_ = _import_bot()
 
         import uuid
+
         corr = str(uuid.uuid4())[:8]
 
         bot = Bot(token=self._token)
@@ -222,7 +240,9 @@ class TelegramBridge:
 
     # ─────────────────────── callback handler ──────────────────────────────
 
-    def resolve_callback(self, callback_data: str, text_reply: Optional[str] = None) -> None:
+    def resolve_callback(
+        self, callback_data: str, text_reply: Optional[str] = None
+    ) -> None:
         """
         Called by the Telegram listener loop when a user presses a button or replies.
         Resolves any waiting future.
@@ -252,8 +272,17 @@ class TelegramBridge:
         The listener picks up button presses and text replies and routes them
         to waiting futures via resolve_callback().
         """
-        (Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup,
-         Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler) = _import_bot()
+        (
+            Bot,
+            Update,
+            InlineKeyboardButton,
+            InlineKeyboardMarkup,
+            Application,
+            CommandHandler,
+            MessageHandler,
+            filters,
+            CallbackQueryHandler,
+        ) = _import_bot()
 
         async def on_callback(update, context):
             query = update.callback_query
@@ -275,13 +304,11 @@ class TelegramBridge:
                         return
 
         async def on_start(update, context):
-            await update.message.reply_text("🤖 NAVIG bot is running. I'll contact you when I need help!")
+            await update.message.reply_text(
+                "🤖 NAVIG bot is running. I'll contact you when I need help!"
+            )
 
-        app = (
-            Application.builder()
-            .token(self._token)
-            .build()
-        )
+        app = Application.builder().token(self._token).build()
         app.add_handler(CommandHandler("start", on_start))
         app.add_handler(CallbackQueryHandler(on_callback))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))

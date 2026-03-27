@@ -1,10 +1,12 @@
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import text
+from datetime import datetime, timedelta, timezone
 
 from app.settings import RATE_WINDOW_SECONDS
+from sqlalchemy import text
 
 
-def enforce_rate_limit(session, *, actor_id: str, action_name: str, max_frequency: int) -> bool:
+def enforce_rate_limit(
+    session, *, actor_id: str, action_name: str, max_frequency: int
+) -> bool:
     since = datetime.now(timezone.utc) - timedelta(seconds=RATE_WINDOW_SECONDS)
     count = session.execute(
         text(

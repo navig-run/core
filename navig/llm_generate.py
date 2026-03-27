@@ -76,6 +76,7 @@ def llm_generate(
         )
 
     from navig.llm_router import resolve_llm
+
     resolved = resolve_llm(
         mode=mode,
         user_input=user_input,
@@ -83,7 +84,9 @@ def llm_generate(
     )
     logger.debug(
         "Router resolved: %s → %s:%s (reason: %s)",
-        resolved.mode, resolved.provider, resolved.model,
+        resolved.mode,
+        resolved.provider,
+        resolved.model,
         resolved.resolution_reason,
     )
 
@@ -105,6 +108,7 @@ def llm_generate(
 # ─────────────────────────────────────────────────────────────
 # run_llm() — Typed orchestrator (new canonical entrypoint)
 # ─────────────────────────────────────────────────────────────
+
 
 def run_llm(
     messages: List[Dict[str, str]],
@@ -171,21 +175,26 @@ def run_llm(
     if model_override:
         provider, model = _parse_model_spec(model_override, provider_override)
         selection = ModelSelection(
-            provider_name=provider, model_name=model,
+            provider_name=provider,
+            model_name=model,
             temperature=temperature or 0.7,
             max_tokens=max_tokens or 4096,
             strategy_name="model_override",
         )
     else:
         from navig.llm_router import resolve_llm
+
         resolved = resolve_llm(
-            mode=mode, user_input=user_input,
+            mode=mode,
+            user_input=user_input,
             prefer_uncensored=prefer_uncensored,
         )
         selection = ModelSelection(
             provider_name=resolved.provider,
             model_name=resolved.model,
-            temperature=temperature if temperature is not None else resolved.temperature,
+            temperature=(
+                temperature if temperature is not None else resolved.temperature
+            ),
             max_tokens=max_tokens if max_tokens is not None else resolved.max_tokens,
             base_url=resolved.base_url,
             api_key_env=resolved.api_key_env,
@@ -197,7 +206,8 @@ def run_llm(
     logger.debug(
         "run_llm routing: %s -> %s:%s (strategy: %s)",
         selection.metadata.get("mode", mode),
-        selection.provider_name, selection.model_name,
+        selection.provider_name,
+        selection.model_name,
         selection.strategy_name,
     )
 
@@ -255,7 +265,12 @@ def _call_and_wrap(
             provider=selection.provider_name,
         )
     except Exception as e:
-        logger.warning("LLM call failed (%s:%s): %s", selection.provider_name, selection.model_name, e)
+        logger.warning(
+            "LLM call failed (%s:%s): %s",
+            selection.provider_name,
+            selection.model_name,
+            e,
+        )
         return LLMResult(
             content="",
             model=selection.model_name,
@@ -277,13 +292,15 @@ def _call_with_fallback(
     try:
         from navig.providers.fallback import complete_with_fallback
 
-        result = _safe_run_async(lambda: complete_with_fallback(
-            messages=messages,
-            model=f"{selection.provider_name}:{selection.model_name}",
-            fallback_models=fallback_models,
-            temperature=selection.temperature,
-            max_tokens=selection.max_tokens,
-        ))
+        result = _safe_run_async(
+            lambda: complete_with_fallback(
+                messages=messages,
+                model=f"{selection.provider_name}:{selection.model_name}",
+                fallback_models=fallback_models,
+                temperature=selection.temperature,
+                max_tokens=selection.max_tokens,
+            )
+        )
         return LLMResult(
             content=result.response.content or "",
             model=result.model_used,
@@ -303,21 +320,30 @@ def _call_with_fallback(
         provider, model = _parse_model_spec(spec)
         try:
             content = _call_provider(
-                provider=provider, model=model, messages=messages,
+                provider=provider,
+                model=model,
+                messages=messages,
                 temperature=selection.temperature,
                 max_tokens=selection.max_tokens,
                 timeout=timeout,
             )
             return LLMResult(
-                content=content, model=model, provider=provider,
-                is_fallback=(i > 0), attempts=i + 1,
+                content=content,
+                model=model,
+                provider=provider,
+                is_fallback=(i > 0),
+                attempts=i + 1,
             )
         except Exception as e:
             last_error = e
-            logger.warning("Fallback candidate %d (%s:%s) failed: %s", i, provider, model, e)
+            logger.warning(
+                "Fallback candidate %d (%s:%s) failed: %s", i, provider, model, e
+            )
 
     return LLMResult(
-        content="", model="", provider="",
+        content="",
+        model="",
+        provider="",
         finish_reason=f"all_fallbacks_failed:{last_error}",
         attempts=len(all_specs),
     )
@@ -326,6 +352,7 @@ def _call_with_fallback(
 # ─────────────────────────────────────────────────────────────
 # Tool execution pipeline (Step 4)
 # ─────────────────────────────────────────────────────────────
+
 
 def _maybe_execute_tools(result: "LLMResult") -> "LLMResult":
     """
@@ -395,13 +422,16 @@ def _load_tools_safety_policy() -> Dict[str, Any]:
     """
     try:
         from navig.core.config_loader import load_config
+
         config = load_config()
         tools_cfg = getattr(config, "tools", None)
         if tools_cfg is None:
             return {}
         return {
             "blocked_tools": list(getattr(tools_cfg, "blocked_tools", [])),
-            "require_confirmation": list(getattr(tools_cfg, "require_confirmation", [])),
+            "require_confirmation": list(
+                getattr(tools_cfg, "require_confirmation", [])
+            ),
             "max_calls_per_turn": getattr(tools_cfg, "max_calls_per_turn", 10),
             "safety_mode": getattr(tools_cfg, "safety_mode", "standard"),
         }
@@ -412,6 +442,7 @@ def _load_tools_safety_policy() -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────
 # Context pipeline helpers
 # ─────────────────────────────────────────────────────────────
+
 
 def _build_pipeline_context(
     user_input: str,
@@ -426,6 +457,7 @@ def _build_pipeline_context(
     """
     try:
         from navig.memory.context_builder import build_context
+
         return build_context(user_input or "", caller_info, session_id)
     except Exception as exc:
         logger.debug("ContextBuilder unavailable or failed: %s", exc)
@@ -513,6 +545,7 @@ def _has_llm_modes_config() -> bool:
     """Check if llm_modes is configured in config.yaml."""
     try:
         from navig.config import get_config_manager
+
         cm = get_config_manager()
         raw = cm.global_config or {}
         return "llm_modes" in raw or "llm_router" in raw
@@ -520,9 +553,7 @@ def _has_llm_modes_config() -> bool:
         return False
 
 
-def _parse_model_spec(
-    spec: str, provider_override: Optional[str] = None
-) -> tuple:
+def _parse_model_spec(spec: str, provider_override: Optional[str] = None) -> tuple:
     """Parse 'provider:model' or just 'model' spec."""
     if provider_override:
         return provider_override, spec
@@ -555,8 +586,10 @@ def _safe_run_async(func):
         return asyncio.run(func())
 
     import concurrent.futures
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(lambda: asyncio.run(func())).result()
+
 
 def _call_provider(
     provider: str,
@@ -570,12 +603,26 @@ def _call_provider(
     """Call an LLM provider using the providers system."""
     try:
         return _call_via_providers_system(
-            provider, model, messages, temperature, max_tokens, timeout, base_url,
+            provider,
+            model,
+            messages,
+            temperature,
+            max_tokens,
+            timeout,
+            base_url,
         )
     except Exception as e:
-        logger.warning("Provider system call failed (%s), trying httpx direct: %s", provider, e)
+        logger.warning(
+            "Provider system call failed (%s), trying httpx direct: %s", provider, e
+        )
         return _call_direct_openai_compat(
-            provider, model, messages, temperature, max_tokens, timeout, base_url,
+            provider,
+            model,
+            messages,
+            temperature,
+            max_tokens,
+            timeout,
+            base_url,
         )
 
 
@@ -603,7 +650,10 @@ def _call_via_providers_system(
         # Build a minimal OpenAI-compatible config
         from navig.llm_router import PROVIDER_BASE_URLS
         from navig.providers.types import ModelApi, ProviderConfig
-        url = base_url or PROVIDER_BASE_URLS.get(provider, "https://openrouter.ai/api/v1")
+
+        url = base_url or PROVIDER_BASE_URLS.get(
+            provider, "https://openrouter.ai/api/v1"
+        )
         provider_cfg = ProviderConfig(
             name=provider,
             base_url=url,

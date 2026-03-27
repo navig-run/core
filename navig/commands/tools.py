@@ -12,6 +12,7 @@ Usage
     navig tools schema            # dump OpenAPI JSON
     navig tools schema --output openapi.json
 """
+
 from __future__ import annotations
 
 import json
@@ -28,25 +29,33 @@ tools_app = typer.Typer(
 
 def _get_registry():
     from navig.tools.router import get_tool_registry
+
     return get_tool_registry()
 
 
 @tools_app.command("list")
 def tools_list(
     domain: Optional[str] = typer.Option(
-        None, "--domain", "-d",
+        None,
+        "--domain",
+        "-d",
         help="Filter by domain (web, code, system, data, image, general).",
     ),
     detailed: bool = typer.Option(
-        False, "--detailed", "-D",
+        False,
+        "--detailed",
+        "-D",
         help="Show parameters schema for each tool.",
     ),
     available_only: bool = typer.Option(
-        True, "--available/--all",
+        True,
+        "--available/--all",
         help="Show only available tools (default) or all including disabled.",
     ),
     output_format: str = typer.Option(
-        "table", "--format", "-f",
+        "table",
+        "--format",
+        "-f",
         help="Output format: table | json | markdown.",
     ),
 ) -> None:
@@ -60,7 +69,10 @@ def tools_list(
         try:
             domain_enum = ToolDomain(domain.lower())
         except ValueError as _exc:
-            typer.echo(f"Unknown domain '{domain}'. Valid: {[d.value for d in ToolDomain]}", err=True)
+            typer.echo(
+                f"Unknown domain '{domain}'. Valid: {[d.value for d in ToolDomain]}",
+                err=True,
+            )
             raise typer.Exit(1) from _exc
 
     tools = registry.list_tools(available_only=available_only, domain=domain_enum)
@@ -74,7 +86,11 @@ def tools_list(
         return
 
     if output_format == "markdown":
-        typer.echo(registry.to_markdown_summary(available_only=available_only, domain=domain_enum))
+        typer.echo(
+            registry.to_markdown_summary(
+                available_only=available_only, domain=domain_enum
+            )
+        )
         return
 
     # Default: Rich table
@@ -88,7 +104,9 @@ def tools_list(
         if domain:
             title += f" — domain: {domain}"
 
-        table = Table(title=title, box=rich_box.SIMPLE, show_header=True, header_style="bold cyan")
+        table = Table(
+            title=title, box=rich_box.SIMPLE, show_header=True, header_style="bold cyan"
+        )
         table.add_column("Name", style="cyan", no_wrap=True)
         table.add_column("Domain", style="dim")
         table.add_column("Safety", style="dim")
@@ -96,7 +114,11 @@ def tools_list(
         table.add_column("Description")
 
         for t in tools:
-            safety_style = {"safe": "green", "moderate": "yellow", "dangerous": "red"}.get(t.safety.value, "white")
+            safety_style = {
+                "safe": "green",
+                "moderate": "yellow",
+                "dangerous": "red",
+            }.get(t.safety.value, "white")
             table.add_row(
                 t.name,
                 t.domain.value,
@@ -112,17 +134,22 @@ def tools_list(
     except ImportError:
         # Rich not available — plain text fallback
         for t in tools:
-            typer.echo(f"{t.name:30} {t.domain.value:10} {t.safety.value:10} {t.description[:60]}")
+            typer.echo(
+                f"{t.name:30} {t.domain.value:10} {t.safety.value:10} {t.description[:60]}"
+            )
 
 
 @tools_app.command("schema")
 def tools_schema(
     output: Optional[str] = typer.Option(
-        None, "--output", "-o",
+        None,
+        "--output",
+        "-o",
         help="Write to file instead of stdout.",
     ),
     available_only: bool = typer.Option(
-        True, "--available/--all",
+        True,
+        "--available/--all",
         help="Include only available tools.",
     ),
 ) -> None:
@@ -133,6 +160,7 @@ def tools_schema(
 
     if output:
         from pathlib import Path
+
         Path(output).write_text(text, encoding="utf-8")
         typer.echo(f"Schema written to {output}")
     else:

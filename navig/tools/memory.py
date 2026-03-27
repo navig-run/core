@@ -8,6 +8,7 @@ later — including fuzzy retrieval by keyword overlap.
 
 Registered as ``"memory_store"`` and ``"memory_fetch"`` in the default registry.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Core in-process store
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MemoryEntry:
@@ -257,10 +259,30 @@ class MemoryStoreTool(BaseTool):
         "Use tags to group related entries for later retrieval."
     )
     parameters = [
-        {"name": "key", "type": "string", "description": "Unique identifier for the stored value", "required": True},
-        {"name": "value", "type": "any", "description": "Value to store (str, dict, list, etc.)", "required": True},
-        {"name": "tags", "type": "string[]", "description": "Optional list of tag strings for grouping", "required": False},
-        {"name": "overwrite", "type": "boolean", "description": "If False, skip if key already exists (default True)", "required": False}
+        {
+            "name": "key",
+            "type": "string",
+            "description": "Unique identifier for the stored value",
+            "required": True,
+        },
+        {
+            "name": "value",
+            "type": "any",
+            "description": "Value to store (str, dict, list, etc.)",
+            "required": True,
+        },
+        {
+            "name": "tags",
+            "type": "string[]",
+            "description": "Optional list of tag strings for grouping",
+            "required": False,
+        },
+        {
+            "name": "overwrite",
+            "type": "boolean",
+            "description": "If False, skip if key already exists (default True)",
+            "required": False,
+        },
     ]
 
     async def run(
@@ -272,8 +294,12 @@ class MemoryStoreTool(BaseTool):
         key = args.get("key", "").strip()
         if not key:
             return ToolResult(
-                name=self.name, success=False, output=None,
-                error="'key' arg is required", elapsed_ms=0.0, status_events=[],
+                name=self.name,
+                success=False,
+                output=None,
+                error="'key' arg is required",
+                elapsed_ms=0.0,
+                status_events=[],
             )
         value = args.get("value")
         tags: List[str] = args.get("tags") or []
@@ -316,11 +342,36 @@ class MemoryFetchTool(BaseTool):
         "Can also list all stored entry metadata."
     )
     parameters = [
-        {"name": "key", "type": "string", "description": "Exact key to fetch (returns value or null if not found)", "required": False},
-        {"name": "query", "type": "string", "description": "Free-text search across all stored entries (if key absent)", "required": False},
-        {"name": "top_k", "type": "number", "description": "Max results for search mode (default 5)", "required": False},
-        {"name": "tags", "type": "string[]", "description": "Filter search results to entries with any of these tags", "required": False},
-        {"name": "list", "type": "boolean", "description": "If True, return metadata for all entries", "required": False}
+        {
+            "name": "key",
+            "type": "string",
+            "description": "Exact key to fetch (returns value or null if not found)",
+            "required": False,
+        },
+        {
+            "name": "query",
+            "type": "string",
+            "description": "Free-text search across all stored entries (if key absent)",
+            "required": False,
+        },
+        {
+            "name": "top_k",
+            "type": "number",
+            "description": "Max results for search mode (default 5)",
+            "required": False,
+        },
+        {
+            "name": "tags",
+            "type": "string[]",
+            "description": "Filter search results to entries with any of these tags",
+            "required": False,
+        },
+        {
+            "name": "list",
+            "type": "boolean",
+            "description": "If True, return metadata for all entries",
+            "required": False,
+        },
     ]
 
     async def run(
@@ -363,10 +414,7 @@ class MemoryFetchTool(BaseTool):
             top_k = int(args.get("top_k", 5))
             tags: Optional[List[str]] = args.get("tags")  # type: ignore[assignment]
             hits = store.search(query, top_k=top_k, tags=tags)
-            results = [
-                {"key": k, "value": v, "score": round(s, 4)}
-                for k, v, s in hits
-            ]
+            results = [{"key": k, "value": v, "score": round(s, 4)} for k, v, s in hits]
             return ToolResult(
                 name=self.name,
                 success=True,

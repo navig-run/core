@@ -24,7 +24,7 @@ logger = get_debug_logger()
 class Session:
     """
     Agent session with conversation history.
-    
+
     Attributes:
         key: Unique session identifier
         messages: Conversation history
@@ -32,6 +32,7 @@ class Session:
         created_at: When session was created
         updated_at: Last activity timestamp
     """
+
     key: str
     messages: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -55,27 +56,27 @@ class Session:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Session':
+    def from_dict(cls, data: Dict[str, Any]) -> "Session":
         """Deserialize session from dictionary."""
         created_at = None
         updated_at = None
 
-        if data.get('created_at'):
+        if data.get("created_at"):
             try:
-                created_at = datetime.fromisoformat(data['created_at'])
+                created_at = datetime.fromisoformat(data["created_at"])
             except (ValueError, TypeError):
                 pass  # malformed or missing value; skip
 
-        if data.get('updated_at'):
+        if data.get("updated_at"):
             try:
-                updated_at = datetime.fromisoformat(data['updated_at'])
+                updated_at = datetime.fromisoformat(data["updated_at"])
             except (ValueError, TypeError):
                 pass  # malformed or missing value; skip
 
         return cls(
-            key=data.get('key', ''),
-            messages=data.get('messages', []),
-            metadata=data.get('metadata', {}),
+            key=data.get("key", ""),
+            messages=data.get("messages", []),
+            metadata=data.get("metadata", {}),
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -84,9 +85,9 @@ class Session:
 class NavigSessionKey:
     """
     Build session keys for NAVIG context.
-    
+
     Format: agent:<agentId>:<channel>:<accountId>:<peerKind>:<peerId>[:host:<hostName>]
-    
+
     Examples:
         - agent:default:telegram:default:dm:123456789
         - agent:default:discord:default:group:987654321
@@ -121,7 +122,7 @@ class NavigSessionKey:
     @staticmethod
     def parse(session_key: str) -> Dict[str, str]:
         """Parse session key into components."""
-        parts = session_key.split(':')
+        parts = session_key.split(":")
 
         result = {
             "raw": session_key,
@@ -129,13 +130,15 @@ class NavigSessionKey:
         }
 
         if result["type"] == "agent" and len(parts) >= 6:
-            result.update({
-                "agent_id": parts[1],
-                "channel": parts[2],
-                "account_id": parts[3],
-                "peer_kind": parts[4],
-                "peer_id": parts[5],
-            })
+            result.update(
+                {
+                    "agent_id": parts[1],
+                    "channel": parts[2],
+                    "account_id": parts[3],
+                    "peer_kind": parts[4],
+                    "peer_id": parts[5],
+                }
+            )
 
             # Check for host suffix
             if len(parts) >= 8 and parts[6] == "host":
@@ -150,7 +153,7 @@ class NavigSessionKey:
 class SessionManager:
     """
     Manages persistent agent sessions.
-    
+
     Features:
     - Disk persistence (JSON files)
     - Automatic compaction when token limit approaches
@@ -166,7 +169,7 @@ class SessionManager:
     ):
         """
         Initialize session manager.
-        
+
         Args:
             storage_dir: Base storage directory
             max_message_chars: Trigger compaction at this char count
@@ -190,7 +193,7 @@ class SessionManager:
     def _sanitize_key(self, session_key: str) -> str:
         """Sanitize session key for use as filename."""
         # Replace unsafe characters
-        return session_key.replace(':', '_').replace('/', '_').replace('\\', '_')
+        return session_key.replace(":", "_").replace("/", "_").replace("\\", "_")
 
     def _get_session_file(self, session_key: str) -> Path:
         """Get path to session file."""
@@ -200,10 +203,10 @@ class SessionManager:
     async def get_session(self, session_key: str) -> Session:
         """
         Get or create a session.
-        
+
         Args:
             session_key: Unique session identifier
-            
+
         Returns:
             Session object
         """
@@ -223,7 +226,7 @@ class SessionManager:
 
         if session_file.exists():
             try:
-                data = json.loads(session_file.read_text(encoding='utf-8'))
+                data = json.loads(session_file.read_text(encoding="utf-8"))
                 logger.debug(f"Loaded session: {session_key}")
                 return Session.from_dict(data)
             except Exception as e:
@@ -242,7 +245,7 @@ class SessionManager:
             try:
                 session_file.write_text(
                     json.dumps(session.to_dict(), indent=2, ensure_ascii=False),
-                    encoding='utf-8'
+                    encoding="utf-8",
                 )
                 logger.debug(f"Saved session: {session.key}")
             except Exception as e:
@@ -259,11 +262,11 @@ class SessionManager:
         session_key: str,
         role: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         """
         Add message to session.
-        
+
         Args:
             session_key: Session identifier
             role: Message role (user, assistant, system)
@@ -300,8 +303,14 @@ class SessionManager:
 
         # Keep recent messages
         keep_count = self.compaction_keep_messages
-        recent = session.messages[-keep_count:] if len(session.messages) > keep_count else []
-        old = session.messages[:-keep_count] if len(session.messages) > keep_count else session.messages
+        recent = (
+            session.messages[-keep_count:] if len(session.messages) > keep_count else []
+        )
+        old = (
+            session.messages[:-keep_count]
+            if len(session.messages) > keep_count
+            else session.messages
+        )
 
         if not old:
             return
@@ -333,7 +342,7 @@ class SessionManager:
                 for m in messages[:50]  # Limit input
             )
 
-            prompt = f"""Summarize this conversation concisely (200 words max). 
+            prompt = f"""Summarize this conversation concisely (200 words max).
 Focus on key decisions, actions taken, and important context to remember.
 
 Conversation:
@@ -342,8 +351,7 @@ Conversation:
 Summary:"""
 
             summary = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: ask_ai(prompt, model='fast')
+                None, lambda: ask_ai(prompt, model="fast")
             )
 
             return summary.strip()
@@ -381,11 +389,11 @@ Summary:"""
     ) -> List[Dict[str, Any]]:
         """
         List sessions matching criteria.
-        
+
         Args:
             channel: Filter by channel (telegram, discord, etc.)
             agent_id: Filter by agent ID
-            
+
         Returns:
             List of session summaries
         """
@@ -394,31 +402,30 @@ Summary:"""
         # Scan session files
         for session_file in self.storage_dir.glob("*.json"):
             try:
-                data = json.loads(session_file.read_text(encoding='utf-8'))
-                key = data.get('key', '')
+                data = json.loads(session_file.read_text(encoding="utf-8"))
+                key = data.get("key", "")
                 parsed = NavigSessionKey.parse(key)
 
                 # Apply filters
-                if channel and parsed.get('channel') != channel:
+                if channel and parsed.get("channel") != channel:
                     continue
-                if agent_id and parsed.get('agent_id') != agent_id:
+                if agent_id and parsed.get("agent_id") != agent_id:
                     continue
 
-                sessions.append({
-                    "key": key,
-                    "parsed": parsed,
-                    "message_count": len(data.get('messages', [])),
-                    "updated_at": data.get('updated_at'),
-                })
+                sessions.append(
+                    {
+                        "key": key,
+                        "parsed": parsed,
+                        "message_count": len(data.get("messages", [])),
+                        "updated_at": data.get("updated_at"),
+                    }
+                )
 
             except Exception as e:
                 logger.warning(f"Failed to read session file {session_file}: {e}")
 
         # Sort by updated_at descending
-        sessions.sort(
-            key=lambda s: s.get('updated_at') or '',
-            reverse=True
-        )
+        sessions.sort(key=lambda s: s.get("updated_at") or "", reverse=True)
 
         return sessions
 
@@ -427,8 +434,8 @@ Summary:"""
         sessions = await self.list_sessions(agent_id=agent_id)
 
         for session_info in sessions:
-            channel = session_info.get('parsed', {}).get('channel')
-            if channel and channel not in ('main', 'cron'):
+            channel = session_info.get("parsed", {}).get("channel")
+            if channel and channel not in ("main", "cron"):
                 return channel
 
         return None

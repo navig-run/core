@@ -1,4 +1,5 @@
 """Tests for navig.tools.trust_boundary."""
+
 from __future__ import annotations
 
 import pytest

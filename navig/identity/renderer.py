@@ -8,6 +8,7 @@ Design language:
   • PING display   → live latency indicator with colour + signal bars
   • 60-col minimum card; full-width sigil on ≥80-col terminals
 """
+
 from __future__ import annotations
 
 import re
@@ -22,18 +23,19 @@ if TYPE_CHECKING:
     from navig.identity.entity import NaviEntity
 
 # ── NAVIG chrome (fixed brand tones, never changes) ──────────────────────────
-_BRAND_BLUE    = "#2271D0"
-_CHROME_LABEL  = "dim #6B8CAE"
-_CHROME_RULE   = "#1B3A5E"
+_BRAND_BLUE = "#2271D0"
+_CHROME_LABEL = "dim #6B8CAE"
+_CHROME_RULE = "#1B3A5E"
 _CHROME_HEADER = "#1B5EAF"
 
 # Glyph density tiers for depth-shaded sigil rendering
 _DENSE = frozenset("▓⣿⣾⣻⣛╋╬")
-_MID   = frozenset("▒⣶⣤┼╪╫")
+_MID = frozenset("▒⣶⣤┼╪╫")
 _LIGHT = frozenset("░⣀⠿⠶⠤⠁")
 
 
 # ── Terminal sizing ───────────────────────────────────────────────────────────
+
 
 def safe_width() -> int:
     return min(shutil.get_terminal_size(fallback=(80, 24)).columns, 100)
@@ -47,6 +49,7 @@ def sigil_fits(entity_sigil: List[List[str]]) -> bool:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _measure_ping() -> Tuple[int, str, str]:
     """
     Measure latency to a configurable probe host and return (ms_int, dot_color_hex, bars_str).
@@ -57,6 +60,7 @@ def _measure_ping() -> Tuple[int, str, str]:
     Fallback2: deterministic pseudo-value seeded from hostname
     """
     import os as _os
+
     _probe_host: str = _os.environ.get("NAVIG_LATENCY_PROBE_HOST", "8.8.8.8")
     ms: float | None = None
 
@@ -75,7 +79,9 @@ def _measure_ping() -> Tuple[int, str, str]:
             flag = "-n" if sys.platform == "win32" else "-c"
             result = subprocess.run(
                 ["ping", flag, "1", _probe_host],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             m = re.search(r"[=<](\d+(?:\.\d+)?)\s*ms", result.stdout)
             if m:
@@ -87,7 +93,13 @@ def _measure_ping() -> Tuple[int, str, str]:
     if ms is None:
         import hashlib
         import platform
-        h = int(hashlib.md5(platform.node().encode(), usedforsecurity=False).hexdigest()[:4], 16)
+
+        h = int(
+            hashlib.md5(platform.node().encode(), usedforsecurity=False).hexdigest()[
+                :4
+            ],
+            16,
+        )
         ms = float(15 + (h % 60))
 
     ms_int = int(ms)
@@ -115,13 +127,17 @@ def _measure_ping() -> Tuple[int, str, str]:
 
 def _glyph_style(glyph: str, primary: str, accent: str) -> str:
     """Map a sigil glyph to a Rich style using its density tier."""
-    if glyph in _DENSE:  return f"bold {primary}"
-    if glyph in _MID:    return accent
-    if glyph in _LIGHT:  return f"dim {accent}"
+    if glyph in _DENSE:
+        return f"bold {primary}"
+    if glyph in _MID:
+        return accent
+    if glyph in _LIGHT:
+        return f"dim {accent}"
     return ""  # space / void — unstyled
 
 
 # ── Main card renderer ────────────────────────────────────────────────────────
+
 
 def render_sigil_card(entity: "NaviEntity") -> None:
     """Render the full identity card to the terminal via Rich."""
@@ -138,14 +154,16 @@ def render_sigil_card(entity: "NaviEntity") -> None:
         return
 
     palette = PALETTES[entity.palette_key]
-    primary = palette[1]   # entity's signature color (changes per entity)
-    accent  = palette[2]   # entity's secondary color
+    primary = palette[1]  # entity's signature color (changes per entity)
+    accent = palette[2]  # entity's secondary color
 
-    matrix = entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
+    matrix = (
+        entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
+    )
 
     # ── Depth-shaded sigil ────────────────────────────────────────────────
     sigil = Text(justify="center")
-    sigil.append("\n")   # top breather
+    sigil.append("\n")  # top breather
     for row in matrix:
         sigil.append("  ")
         for glyph in row:
@@ -155,8 +173,9 @@ def render_sigil_card(entity: "NaviEntity") -> None:
 
     # ── Node ID — spaced for visual weight ────────────────────────────────
     node_id = "NODE-" + entity.seed[:4].upper()
-    name_line = Text("  ".join(node_id) + "\n", justify="center",
-                     style=f"bold {primary}")
+    name_line = Text(
+        "  ".join(node_id) + "\n", justify="center", style=f"bold {primary}"
+    )
 
     # ── Stats block — left-align rows, then center the block as a unit ────
     INDENT = "  "
@@ -167,8 +186,8 @@ def render_sigil_card(entity: "NaviEntity") -> None:
         stats.append(f"{INDENT}{label:<{col}}", style=_CHROME_LABEL)
         stats.append(value + "\n", style=vstyle)
 
-    stat("Machine",   generate_machine_name(entity.seed))
-    stat("Palette",   entity.palette_key.replace("_", " ").title())
+    stat("Machine", generate_machine_name(entity.seed))
+    stat("Palette", entity.palette_key.replace("_", " ").title())
     ping_ms, ping_color, ping_bars = _measure_ping()
     stats.append(f"{INDENT}{'PING':<{col}}", style=_CHROME_LABEL)
     stats.append("◉ ", style=f"bold {ping_color}")
@@ -197,8 +216,10 @@ def render_sigil_card(entity: "NaviEntity") -> None:
 
 # ── Plain-text fallback (no Rich) ─────────────────────────────────────────────
 
+
 def _render_sigil_plain(entity: "NaviEntity") -> None:
     from navig.identity.entity import generate_machine_name
+
     node_id = "NODE-" + entity.seed[:4].upper()
     print("\n  GENESIS RECORD")
     print(f"  {node_id}  ·  {generate_machine_name(entity.seed)}")

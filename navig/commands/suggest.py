@@ -7,6 +7,7 @@ Analyzes:
 - Command sequences (what usually follows what)
 - Project type detection
 """
+
 import re
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -117,6 +118,7 @@ def get_frequent_commands(limit: int = 10) -> List[Tuple[str, int]]:
     """Get most frequently used commands from history."""
     try:
         from navig.operation_recorder import get_operation_recorder
+
         recorder = get_operation_recorder()
 
         # Get recent operations
@@ -142,6 +144,7 @@ def get_recent_commands(limit: int = 5) -> List[str]:
     """Get most recent commands from history."""
     try:
         from navig.operation_recorder import get_operation_recorder
+
         recorder = get_operation_recorder()
         operations = recorder.get_last_n(limit)
         return [op.command for op in operations if op.command]
@@ -153,6 +156,7 @@ def get_command_sequences() -> Dict[str, List[str]]:
     """Analyze what commands typically follow other commands."""
     try:
         from navig.operation_recorder import get_operation_recorder
+
         recorder = get_operation_recorder()
         operations = recorder.get_last_n(200)
 
@@ -162,7 +166,7 @@ def get_command_sequences() -> Dict[str, List[str]]:
             next_cmd = operations[i + 1].command
             if current and next_cmd:
                 # Extract command type (first two words)
-                current_type = ' '.join(current.split()[:2])
+                current_type = " ".join(current.split()[:2])
                 sequences[current_type].append(next_cmd)
 
         # Return most common follow-up for each command type
@@ -184,12 +188,12 @@ def generate_suggestions(
     include_patterns: bool = True,
 ) -> List[Dict[str, Any]]:
     """Generate intelligent command suggestions.
-    
+
     Args:
         context_filter: Specific context to filter by (docker, database, etc.)
         limit: Maximum number of suggestions
         include_patterns: Include pattern-based suggestions
-        
+
     Returns:
         List of suggestion dicts with 'command', 'description', 'source', 'score'
     """
@@ -198,12 +202,14 @@ def generate_suggestions(
     # 1. Frequent commands (highest weight)
     frequent = get_frequent_commands(5)
     for cmd, count in frequent:
-        suggestions.append({
-            "command": cmd,
-            "description": f"Used {count} times recently",
-            "source": "history",
-            "score": 100 + count,
-        })
+        suggestions.append(
+            {
+                "command": cmd,
+                "description": f"Used {count} times recently",
+                "source": "history",
+                "score": 100 + count,
+            }
+        )
 
     # 2. Context-based suggestions
     if context_filter:
@@ -215,37 +221,43 @@ def generate_suggestions(
         for ctx in contexts:
             if ctx in CONTEXT_PATTERNS:
                 for cmd, desc in CONTEXT_PATTERNS[ctx][:3]:
-                    suggestions.append({
-                        "command": cmd,
-                        "description": desc,
-                        "source": f"context:{ctx}",
-                        "score": 50,
-                    })
+                    suggestions.append(
+                        {
+                            "command": cmd,
+                            "description": desc,
+                            "source": f"context:{ctx}",
+                            "score": 50,
+                        }
+                    )
 
     # 3. Time-based suggestions
     time_period = get_time_period()
     if include_patterns and time_period in TIME_PATTERNS:
         for cmd, desc in TIME_PATTERNS[time_period][:2]:
-            suggestions.append({
-                "command": cmd,
-                "description": f"{desc} (typical for {time_period})",
-                "source": "time",
-                "score": 30,
-            })
+            suggestions.append(
+                {
+                    "command": cmd,
+                    "description": f"{desc} (typical for {time_period})",
+                    "source": "time",
+                    "score": 30,
+                }
+            )
 
     # 4. Sequence-based suggestions (what usually follows recent command)
     recent = get_recent_commands(1)
     if recent:
         sequences = get_command_sequences()
-        last_cmd_type = ' '.join(recent[0].split()[:2])
+        last_cmd_type = " ".join(recent[0].split()[:2])
         if last_cmd_type in sequences:
             follow_cmd = sequences[last_cmd_type]
-            suggestions.append({
-                "command": follow_cmd,
-                "description": f"Usually follows '{last_cmd_type}'",
-                "source": "sequence",
-                "score": 70,
-            })
+            suggestions.append(
+                {
+                    "command": follow_cmd,
+                    "description": f"Usually follows '{last_cmd_type}'",
+                    "source": "sequence",
+                    "score": 70,
+                }
+            )
 
     # Sort by score and dedupe
     seen = set()
@@ -267,7 +279,7 @@ def show_suggestions(
     opts: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Display intelligent command suggestions.
-    
+
     Args:
         context: Filter by context (docker, database, deployment, monitoring)
         limit: Maximum suggestions to show
@@ -279,11 +291,17 @@ def show_suggestions(
 
     if json_out:
         import json
-        console.print(json.dumps({
-            "schema_version": "1.0.0",
-            "command": "suggest",
-            "suggestions": suggestions,
-        }, indent=2))
+
+        console.print(
+            json.dumps(
+                {
+                    "schema_version": "1.0.0",
+                    "command": "suggest",
+                    "suggestions": suggestions,
+                },
+                indent=2,
+            )
+        )
         return
 
     if plain:
@@ -293,7 +311,9 @@ def show_suggestions(
 
     # Rich formatted output
     if not suggestions:
-        console.print("[dim]No suggestions available. Run some commands to build history.[/dim]")
+        console.print(
+            "[dim]No suggestions available. Run some commands to build history.[/dim]"
+        )
         return
 
     table = Table(
@@ -326,31 +346,37 @@ def show_suggestions(
 
     console.print(table)
     console.print()
-    console.print("[dim]Legend: [green]H[/green]=History [yellow]S[/yellow]=Sequence [blue]T[/blue]=Time [magenta]C[/magenta]=Context[/dim]")
+    console.print(
+        "[dim]Legend: [green]H[/green]=History [yellow]S[/yellow]=Sequence [blue]T[/blue]=Time [magenta]C[/magenta]=Context[/dim]"
+    )
     console.print("[dim]Run a suggestion with: navig suggest --run 1[/dim]")
 
 
 def run_suggestion(index: int, dry_run: bool = False) -> bool:
     """Run a suggested command by index.
-    
+
     Args:
         index: 1-based index of suggestion to run
         dry_run: If True, just show the command without executing
-        
+
     Returns:
         True if command was executed/shown successfully
     """
     suggestions = generate_suggestions(limit=10)
 
     if index < 1 or index > len(suggestions):
-        console.print(f"[red]Invalid suggestion index. Choose 1-{len(suggestions)}[/red]")
+        console.print(
+            f"[red]Invalid suggestion index. Choose 1-{len(suggestions)}[/red]"
+        )
         return False
 
     suggestion = suggestions[index - 1]
     cmd = suggestion["command"]
 
     if "{" in cmd:
-        console.print("[yellow]This command has placeholders that need values:[/yellow]")
+        console.print(
+            "[yellow]This command has placeholders that need values:[/yellow]"
+        )
         console.print(f"  {cmd}")
         console.print("[dim]Fill in the values and run manually.[/dim]")
         return False
@@ -379,12 +405,12 @@ def run_suggestion(index: int, dry_run: bool = False) -> bool:
 
 def add_quick_action(name: str, command: str, description: str = "") -> bool:
     """Add a quick action shortcut.
-    
+
     Args:
         name: Short name for the action (e.g., 'deploy', 'backup')
         command: Full navig command to execute
         description: Optional description
-        
+
     Returns:
         True if action was added successfully
     """
@@ -398,7 +424,8 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
     actions = {}
     if quick_file.exists():
         import yaml
-        with open(quick_file, 'r') as f:
+
+        with open(quick_file, "r") as f:
             actions = yaml.safe_load(f) or {}
 
     # Add new action
@@ -410,7 +437,8 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
 
     # Save
     import yaml
-    with open(quick_file, 'w') as f:
+
+    with open(quick_file, "w") as f:
         yaml.safe_dump(actions, f, default_flow_style=False)
 
     console.print(f"[green]Added quick action:[/green] {name} -> {command}")
@@ -429,22 +457,20 @@ def list_quick_actions() -> List[Dict[str, Any]]:
         return []
 
     import yaml
-    with open(quick_file, 'r') as f:
+
+    with open(quick_file, "r") as f:
         actions = yaml.safe_load(f) or {}
 
-    return [
-        {"name": name, **data}
-        for name, data in actions.items()
-    ]
+    return [{"name": name, **data} for name, data in actions.items()]
 
 
 def run_quick_action(name: str, dry_run: bool = False) -> bool:
     """Run a quick action by name.
-    
+
     Args:
         name: Name of the quick action
         dry_run: If True, just show the command
-        
+
     Returns:
         True if successful
     """
@@ -488,11 +514,17 @@ def show_quick_actions(plain: bool = False, json_out: bool = False) -> None:
 
     if json_out:
         import json
-        console.print(json.dumps({
-            "schema_version": "1.0.0",
-            "command": "quick-list",
-            "actions": actions,
-        }, indent=2))
+
+        console.print(
+            json.dumps(
+                {
+                    "schema_version": "1.0.0",
+                    "command": "quick-list",
+                    "actions": actions,
+                },
+                indent=2,
+            )
+        )
         return
 
     if plain:

@@ -15,10 +15,10 @@ from navig.agent.conv.planner import (
     ValidatedPlan,
 )
 
-
 # ============================================================================
 # Helpers
 # ============================================================================
+
 
 def _make_valid_step(
     action: str = "auto.click",

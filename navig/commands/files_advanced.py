@@ -1,4 +1,5 @@
 """Advanced File Operation Commands - SECURE VERSION WITH COMMAND INJECTION PROTECTION"""
+
 import json
 import shlex  # CRITICAL: Import shlex for secure shell escaping
 from pathlib import Path
@@ -9,7 +10,7 @@ from navig import console_helper as ch
 
 def delete_file_cmd(remote: str, options: Dict[str, Any]):
     """Delete remote file or directory.
-    
+
     Args:
         remote: Remote path to delete
         options: Command options (app, recursive, force, dry_run, json)
@@ -20,7 +21,7 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
@@ -34,9 +35,9 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
     check_cmd = f"test -e {remote_quoted} && echo 'exists' || echo 'not_found'"
     result = remote_ops.execute_command(check_cmd, server_config)
 
-    if 'not_found' in result.stdout:
+    if "not_found" in result.stdout:
         msg = f"Path not found: {remote}"
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(msg)
@@ -45,13 +46,13 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
     # Determine if directory
     is_dir_cmd = f"test -d {remote_quoted} && echo 'dir' || echo 'file'"
     result = remote_ops.execute_command(is_dir_cmd, server_config)
-    is_directory = 'dir' in result.stdout
+    is_directory = "dir" in result.stdout
 
     # Build delete command
     if is_directory:
-        if not options.get('recursive'):
+        if not options.get("recursive"):
             msg = "Use --recursive to delete directories"
-            if options.get('json'):
+            if options.get("json"):
                 ch.raw_print(json.dumps({"success": False, "error": msg}))
             else:
                 ch.error(msg)
@@ -61,24 +62,28 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
         delete_cmd = f"rm -f {remote_quoted}"
 
     # Dry run mode
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         msg = f"Would delete: {remote} ({'directory' if is_directory else 'file'})"
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": delete_cmd}))
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps({"success": True, "dry_run": True, "action": delete_cmd})
+            )
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
 
     # Confirm unless forced
-    if not options.get('force'):
-        if not options.get('json'):
+    if not options.get("force"):
+        if not options.get("json"):
             if not ch.confirm_action(f"Delete {remote}?"):
                 msg = "Cancelled."
                 ch.warning(msg)
                 return False
         else:
             # JSON mode: always require --force
-            ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
+            ch.raw_print(
+                json.dumps({"success": False, "error": "Use --force in JSON mode"})
+            )
             return False
 
     # Execute delete
@@ -86,14 +91,14 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
 
     if result.returncode == 0:
         msg = f"Deleted: {remote}"
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "path": remote}))
         else:
             ch.success(f"✓ {msg}")
         return True
     else:
         msg = result.stderr
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"Delete failed: {msg}")
@@ -102,7 +107,7 @@ def delete_file_cmd(remote: str, options: Dict[str, Any]):
 
 def mkdir_cmd(remote: str, options: Dict[str, Any]):
     """Create remote directory.
-    
+
     Args:
         remote: Remote path to create
         options: Command options (app, parents, mode, dry_run, json)
@@ -113,7 +118,7 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
@@ -121,7 +126,7 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
     server_config = config_manager.load_server_config(server_name)
 
     # SECURITY: Validate and quote mode
-    mode = options.get('mode', '755')
+    mode = options.get("mode", "755")
     if not mode.isdigit() or len(mode) not in [3, 4]:
         ch.error("Invalid mode. Use numeric format like '755' or '0644'")
         return False
@@ -132,16 +137,18 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
 
     # Build mkdir command
     mkdir_flags = []
-    if options.get('parents'):
-        mkdir_flags.append('-p')
+    if options.get("parents"):
+        mkdir_flags.append("-p")
 
     mkdir_cmd = f"mkdir {' '.join(mkdir_flags)} -m {mode_quoted} {remote_quoted}"
 
     # Dry run mode
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         msg = f"Would create: {remote} (mode: {mode})"
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": mkdir_cmd}))
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps({"success": True, "dry_run": True, "action": mkdir_cmd})
+            )
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
@@ -151,14 +158,14 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
 
     if result.returncode == 0:
         msg = f"Created directory: {remote}"
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "path": remote, "mode": mode}))
         else:
             ch.success(f"✓ {msg}")
         return True
     else:
         msg = result.stderr
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"mkdir failed: {msg}")
@@ -167,7 +174,7 @@ def mkdir_cmd(remote: str, options: Dict[str, Any]):
 
 def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
     """Change file/directory permissions.
-    
+
     Args:
         remote: Remote path
         mode: Permission mode (e.g., '755', '644')
@@ -179,7 +186,7 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
@@ -189,7 +196,7 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
     # SECURITY: Validate mode format
     if not mode.isdigit() or len(mode) not in [3, 4]:
         msg = "Invalid mode. Use numeric format like '755' or '0644'"
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(msg)
@@ -201,16 +208,18 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
 
     # Build chmod command
     chmod_flags = []
-    if options.get('recursive'):
-        chmod_flags.append('-R')
+    if options.get("recursive"):
+        chmod_flags.append("-R")
 
     chmod_cmd = f"chmod {' '.join(chmod_flags)} {mode_quoted} {remote_quoted}"
 
     # Dry run mode
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         msg = f"Would set permissions: {remote} -> {mode}"
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": chmod_cmd}))
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps({"success": True, "dry_run": True, "action": chmod_cmd})
+            )
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
@@ -220,14 +229,14 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
 
     if result.returncode == 0:
         msg = f"Permissions set: {remote} -> {mode}"
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "path": remote, "mode": mode}))
         else:
             ch.success(f"✓ {msg}")
         return True
     else:
         msg = result.stderr
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"chmod failed: {msg}")
@@ -236,7 +245,7 @@ def chmod_cmd(remote: str, mode: str, options: Dict[str, Any]):
 
 def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
     """Change file/directory ownership.
-    
+
     Args:
         remote: Remote path
         owner: New owner (user or user:group)
@@ -248,7 +257,7 @@ def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return False
@@ -261,16 +270,18 @@ def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
 
     # Build chown command
     chown_flags = []
-    if options.get('recursive'):
-        chown_flags.append('-R')
+    if options.get("recursive"):
+        chown_flags.append("-R")
 
     chown_cmd = f"chown {' '.join(chown_flags)} {owner_quoted} {remote_quoted}"
 
     # Dry run mode
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         msg = f"Would change owner: {remote} -> {owner}"
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": chown_cmd}))
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps({"success": True, "dry_run": True, "action": chown_cmd})
+            )
         else:
             ch.info(f"[DRY RUN] {msg}")
         return True
@@ -280,26 +291,32 @@ def chown_cmd(remote: str, owner: str, options: Dict[str, Any]):
 
     if result.returncode == 0:
         msg = f"Owner changed: {remote} -> {owner}"
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "path": remote, "owner": owner}))
         else:
             ch.success(f"✓ {msg}")
         return True
     else:
         msg = result.stderr
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"chown failed: {msg}")
         return False
 
 
-def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = None, head: bool = False, tail: bool = False):
+def cat_file_cmd(
+    remote: str,
+    options: Dict[str, Any],
+    lines: Optional[str] = None,
+    head: bool = False,
+    tail: bool = False,
+):
     """Read and display remote file contents.
-    
+
     This is a convenience command that replaces:
         navig run "cat /path/to/file"
-    
+
     Args:
         remote: Remote file path
         options: Command options
@@ -313,7 +330,7 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -329,16 +346,16 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
     line_count = None
     if lines:
         # Check if it's a range (e.g., "100-200" or "100:200")
-        if '-' in lines and not lines.startswith('-'):
-            parts = lines.split('-', 1)
+        if "-" in lines and not lines.startswith("-"):
+            parts = lines.split("-", 1)
             try:
                 start_line = int(parts[0])
                 end_line = int(parts[1])
             except ValueError:
                 ch.error(f"Invalid line range: {lines}", "Use format: 100-200")
                 return
-        elif ':' in lines:
-            parts = lines.split(':', 1)
+        elif ":" in lines:
+            parts = lines.split(":", 1)
             try:
                 start_line = int(parts[0])
                 end_line = int(parts[1])
@@ -350,7 +367,10 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
             try:
                 line_count = int(lines)
             except ValueError:
-                ch.error(f"Invalid line number: {lines}", "Use an integer or range (e.g., 100-200)")
+                ch.error(
+                    f"Invalid line number: {lines}",
+                    "Use an integer or range (e.g., 100-200)",
+                )
                 return
 
     # Build command based on options
@@ -370,8 +390,8 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
     check_cmd = f"test -f {remote_quoted} && echo 'exists' || echo 'not_found'"
     result = remote_ops.execute_command(check_cmd, host_config)
 
-    if 'not_found' in result.stdout:
-        if options.get('json'):
+    if "not_found" in result.stdout:
+        if options.get("json"):
             ch.raw_print(
                 json.dumps(
                     {
@@ -389,7 +409,7 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
             ch.error(f"File not found: {remote}")
         return
 
-    if options.get('json'):
+    if options.get("json"):
         # JSON mode captures output instead of streaming.
         out = remote_ops.execute_command(cmd, host_config, capture_output=True)
         ch.raw_print(
@@ -412,7 +432,7 @@ def cat_file_cmd(remote: str, options: Dict[str, Any], lines: Optional[str] = No
         )
         return
 
-    if not options.get('quiet') and not options.get('raw'):
+    if not options.get("quiet") and not options.get("raw"):
         ch.info(f"Contents of {remote}:")
         ch.console.print()
 
@@ -431,15 +451,15 @@ def write_file_cmd(
     owner: Optional[str] = None,
 ):
     """Write content to a remote file.
-    
+
     This is a convenience command that replaces complex heredoc patterns like:
         navig run "cat > /path/file << 'EOF' ... EOF"
-    
+
     Instead, you can use:
         navig write-file /path/file --content "file contents"
         navig write-file /path/file --stdin  (pipe content)
         navig write-file /path/file --from-file local.txt
-    
+
     Args:
         remote: Remote file path to write
         content: Content to write (string)
@@ -460,7 +480,7 @@ def write_file_cmd(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return False
@@ -473,7 +493,10 @@ def write_file_cmd(
     if stdin:
         # Read from stdin
         if sys.stdin.isatty():
-            ch.error("No input provided via stdin.", "Pipe content to this command or use --content.")
+            ch.error(
+                "No input provided via stdin.",
+                "Pipe content to this command or use --content.",
+            )
             return False
         final_content = sys.stdin.read()
     elif local_file:
@@ -495,11 +518,11 @@ def write_file_cmd(
     # Confirm write operation
     if not ch.confirm_operation(
         operation_name=f"Write to: {remote}",
-        operation_type='standard',
+        operation_type="standard",
         host=host_name,
         details=f"{'Append' if append else 'Overwrite'} with {len(final_content)} bytes",
-        auto_confirm=options.get('yes', False),
-        force_confirm=options.get('confirm', False),
+        auto_confirm=options.get("yes", False),
+        force_confirm=options.get("confirm", False),
     ):
         ch.warning("Cancelled.")
         return False
@@ -509,14 +532,16 @@ def write_file_cmd(
 
     try:
         # Create temp file with content
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.tmp', delete=False, encoding='utf-8') as tf:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".tmp", delete=False, encoding="utf-8"
+        ) as tf:
             tf.write(final_content)
             temp_path = Path(tf.name)
 
         # Determine temp remote path
         remote_temp = f"/tmp/.navig_write_{os.getpid()}.tmp"
 
-        if not options.get('quiet'):
+        if not options.get("quiet"):
             ch.info(f"Writing to {remote}...")
 
         # Upload to temp location
@@ -542,13 +567,17 @@ def write_file_cmd(
 
         # Set permissions if specified
         if mode:
-            chmod_result = remote_ops.execute_command(f"chmod {shlex.quote(mode)} {remote_quoted}", host_config)
+            chmod_result = remote_ops.execute_command(
+                f"chmod {shlex.quote(mode)} {remote_quoted}", host_config
+            )
             if chmod_result.returncode != 0:
                 ch.warning(f"Failed to set permissions: {chmod_result.stderr}")
 
         # Set owner if specified
         if owner:
-            chown_result = remote_ops.execute_command(f"chown {shlex.quote(owner)} {remote_quoted}", host_config)
+            chown_result = remote_ops.execute_command(
+                f"chown {shlex.quote(owner)} {remote_quoted}", host_config
+            )
             if chown_result.returncode != 0:
                 ch.warning(f"Failed to set owner: {chown_result.stderr}")
 
@@ -561,12 +590,18 @@ def write_file_cmd(
             temp_path.unlink()
 
 
-def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: bool = True, human: bool = True):
+def list_dir_cmd(
+    remote: str,
+    options: Dict[str, Any],
+    all: bool = False,
+    long: bool = True,
+    human: bool = True,
+):
     """List remote directory contents.
-    
+
     This is a convenience command that replaces:
         navig run "ls -la /path"
-    
+
     Args:
         remote: Remote directory path
         options: Command options
@@ -580,7 +615,7 @@ def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: 
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -593,18 +628,18 @@ def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: 
     # Build ls command
     flags = []
     if long:
-        flags.append('l')
+        flags.append("l")
     if all:
-        flags.append('a')
+        flags.append("a")
     if human:
-        flags.append('h')
+        flags.append("h")
 
     if flags:
         cmd = f"ls -{''.join(flags)} {remote_quoted}"
     else:
         cmd = f"ls {remote_quoted}"
 
-    if options.get('json'):
+    if options.get("json"):
         # Prefer a structured listing from find. Fallback to ls -1.
         # %y: file type (f,d,l,...) %s: size bytes %TY-%Tm-%Td %TH:%TM:%TS: mtime
         find_cmd = (
@@ -616,7 +651,7 @@ def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: 
         entries = []
         if out.returncode == 0 and out.stdout:
             for line in out.stdout.splitlines():
-                parts = line.split('|', 3)
+                parts = line.split("|", 3)
                 if len(parts) != 4:
                     continue
                 name, ftype, size, mtime = parts
@@ -631,11 +666,20 @@ def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: 
         else:
             # Fallback: best-effort names.
             ls_flags = "-1A" if all else "-1"
-            ls_out = remote_ops.execute_command(f"ls {ls_flags} {remote_quoted}", host_config, capture_output=True)
+            ls_out = remote_ops.execute_command(
+                f"ls {ls_flags} {remote_quoted}", host_config, capture_output=True
+            )
             if ls_out.stdout:
                 for name in ls_out.stdout.splitlines():
                     if name.strip():
-                        entries.append({"name": name.strip(), "type": None, "size": None, "mtime": None})
+                        entries.append(
+                            {
+                                "name": name.strip(),
+                                "type": None,
+                                "size": None,
+                                "mtime": None,
+                            }
+                        )
             out = ls_out
 
         ch.raw_print(
@@ -656,16 +700,18 @@ def list_dir_cmd(remote: str, options: Dict[str, Any], all: bool = False, long: 
         )
         return
 
-    if not options.get('quiet') and not options.get('raw'):
+    if not options.get("quiet") and not options.get("raw"):
         ch.info(f"Contents of {remote}:")
         ch.console.print()
 
     remote_ops.execute_command(cmd, host_config, capture_output=False)
 
 
-def tree_cmd(remote: str, options: Dict[str, Any], depth: int = 2, dirs_only: bool = False):
+def tree_cmd(
+    remote: str, options: Dict[str, Any], depth: int = 2, dirs_only: bool = False
+):
     """Show directory tree structure.
-    
+
     Args:
         remote: Remote directory path
         options: Command options
@@ -678,7 +724,7 @@ def tree_cmd(remote: str, options: Dict[str, Any], depth: int = 2, dirs_only: bo
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -702,9 +748,8 @@ def tree_cmd(remote: str, options: Dict[str, Any], depth: int = 2, dirs_only: bo
 
     full_cmd = f"command -v tree >/dev/null 2>&1 && {tree_cmd} || ({fallback_cmd})"
 
-    if not options.get('quiet') and not options.get('raw'):
+    if not options.get("quiet") and not options.get("raw"):
         ch.info(f"Tree view of {remote}:")
         ch.console.print()
 
     remote_ops.execute_command(full_cmd, host_config, capture_output=False)
-

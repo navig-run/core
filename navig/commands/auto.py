@@ -1,6 +1,7 @@
 """
 Cross-platform automation CLI commands
 """
+
 import sys
 from typing import Optional
 
@@ -16,18 +17,23 @@ auto_app = typer.Typer(
     no_args_is_help=True,
 )
 
+
 def _get_adapter():
     """Get automation adapter for current platform."""
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         from navig.adapters.automation.ahk import AHKAdapter
+
         return AHKAdapter()
-    elif sys.platform == 'linux':
+    elif sys.platform == "linux":
         from navig.adapters.automation.linux import LinuxAdapter
+
         return LinuxAdapter()
-    elif sys.platform == 'darwin':
+    elif sys.platform == "darwin":
         from navig.adapters.automation.macos import MacOSAdapter
+
         return MacOSAdapter()
     return None
+
 
 @auto_app.command("status")
 def auto_status():
@@ -42,27 +48,30 @@ def auto_status():
         ch.success(f"Automation ready on {sys.platform}")
 
         # Platform-specific details
-        if sys.platform == 'linux':
+        if sys.platform == "linux":
             ch.info(f"  xdotool: {'✓' if adapter._has_xdotool else '✗'}")
             ch.info(f"  wmctrl: {'✓' if adapter._has_wmctrl else '✗'}")
             ch.info(f"  xclip: {'✓' if adapter._has_xclip else '✗'}")
-        elif sys.platform == 'darwin':
+        elif sys.platform == "darwin":
             ch.info("  AppleScript: ✓")
             ch.info(f"  cliclick: {'✓' if adapter._has_cliclick else '✗ (optional)'}")
     else:
         ch.error("Automation not available")
 
-        if sys.platform == 'linux':
+        if sys.platform == "linux":
             ch.info("Install required tools:")
             ch.console.print("  sudo apt install xdotool wmctrl xclip")
-        elif sys.platform == 'darwin':
+        elif sys.platform == "darwin":
             ch.info("Optional: brew install cliclick")
+
 
 @auto_app.command("click")
 def auto_click(
     x: int = typer.Argument(..., help="X coordinate"),
     y: int = typer.Argument(..., help="Y coordinate"),
-    button: str = typer.Option("left", "--button", "-b", help="Mouse button (left/right/middle)"),
+    button: str = typer.Option(
+        "left", "--button", "-b", help="Mouse button (left/right/middle)"
+    ),
 ):
     """Click at screen coordinates."""
     adapter = _get_adapter()
@@ -77,10 +86,13 @@ def auto_click(
         ch.error(f"Failed: {result.stderr}")
         raise typer.Exit(1)
 
+
 @auto_app.command("type")
 def auto_type(
     text: str = typer.Argument(..., help="Text to type"),
-    delay: int = typer.Option(50, "--delay", "-d", help="Delay between keystrokes (ms)"),
+    delay: int = typer.Option(
+        50, "--delay", "-d", help="Delay between keystrokes (ms)"
+    ),
 ):
     """Type text."""
     adapter = _get_adapter()
@@ -94,6 +106,7 @@ def auto_type(
     else:
         ch.error(f"Failed: {result.stderr}")
         raise typer.Exit(1)
+
 
 @auto_app.command("open")
 def auto_open(
@@ -112,6 +125,7 @@ def auto_open(
         ch.error(f"Failed: {result.stderr}")
         raise typer.Exit(1)
 
+
 @auto_app.command("windows")
 def auto_windows():
     """List all windows."""
@@ -123,6 +137,7 @@ def auto_windows():
     windows = adapter.get_all_windows()
 
     from rich.table import Table
+
     table = Table(title=f"Windows ({len(windows)})")
     table.add_column("ID", style="dim")
     table.add_column("Title", style="cyan")
@@ -136,10 +151,11 @@ def auto_windows():
             w.title[:50],
             w.process_name[:20],
             f"{w.x},{w.y}",
-            f"{w.width}x{w.height}"
+            f"{w.width}x{w.height}",
         )
 
     ch.console.print(table)
+
 
 @auto_app.command("snap")
 def auto_snap(
@@ -159,9 +175,12 @@ def auto_snap(
         ch.error(f"Failed: {result.stderr}")
         raise typer.Exit(1)
 
+
 @auto_app.command("clipboard")
 def auto_clipboard(
-    text: Optional[str] = typer.Argument(None, help="Text to copy (if omitted, prints clipboard)"),
+    text: Optional[str] = typer.Argument(
+        None, help="Text to copy (if omitted, prints clipboard)"
+    ),
 ):
     """Get or set clipboard content."""
     adapter = _get_adapter()
@@ -179,6 +198,7 @@ def auto_clipboard(
         else:
             ch.error(f"Failed: {result.stderr}")
             raise typer.Exit(1)
+
 
 @auto_app.command("focus")
 def auto_focus():

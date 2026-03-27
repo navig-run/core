@@ -77,6 +77,3 @@ navig file show /var/log/nginx/error.log --tail --lines 50
 # Check access logs for 404s
 grep "404" /var/log/nginx/access.log | tail -n 20
 ```
-
-
-

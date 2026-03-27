@@ -21,6 +21,7 @@ logger = get_debug_logger()
 @dataclass
 class ApprovalRequest:
     """A pending approval request."""
+
     id: str
     command: str
     level: ApprovalLevel
@@ -34,36 +35,36 @@ class ApprovalRequest:
 
     def to_dict(self) -> dict:
         return {
-            'id': self.id,
-            'command': self.command,
-            'level': self.level.value,
-            'description': self.description,
-            'session_key': self.session_key,
-            'channel': self.channel,
-            'user_id': self.user_id,
-            'created_at': self.created_at.isoformat(),
-            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
-            'status': self.status.value,
+            "id": self.id,
+            "command": self.command,
+            "level": self.level.value,
+            "description": self.description,
+            "session_key": self.session_key,
+            "channel": self.channel,
+            "user_id": self.user_id,
+            "created_at": self.created_at.isoformat(),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "status": self.status.value,
         }
 
 
 class ApprovalManager:
     """
     Manages approval flows for dangerous operations.
-    
+
     Integrates with Gateway session context to route approval
     requests to the appropriate channel/user.
     """
 
     def __init__(
         self,
-        gateway: Optional['NavigGateway'] = None,
+        gateway: Optional["NavigGateway"] = None,
         policy: Optional[ApprovalPolicy] = None,
-        audit_log: Optional['AuditLog'] = None,
+        audit_log: Optional["AuditLog"] = None,
     ):
         self.gateway = gateway
         self.policy = policy or ApprovalPolicy()
-        self._audit_log: Optional['AuditLog'] = audit_log
+        self._audit_log: Optional["AuditLog"] = audit_log
 
         # Pending approvals by ID
         self._pending: Dict[str, ApprovalRequest] = {}
@@ -80,7 +81,7 @@ class ApprovalManager:
         # Registered handlers by name (e.g., 'gateway', 'telegram')
         self._handlers: Dict[str, Any] = {}
 
-    def set_audit_log(self, audit_log: 'AuditLog') -> None:
+    def set_audit_log(self, audit_log: "AuditLog") -> None:
         """Wire in the audit log (called from gateway after both are initialised)."""
         self._audit_log = audit_log
 
@@ -121,7 +122,7 @@ class ApprovalManager:
 
     def register_handler(self, name: str, handler: Any) -> None:
         """Register an approval handler.
-        
+
         Args:
             name: Handler identifier (e.g., 'gateway', 'telegram')
             handler: Handler instance with handle_request method
@@ -176,7 +177,7 @@ class ApprovalManager:
     ) -> bool:
         """
         Request approval for a command.
-        
+
         Returns True if approved, False if denied/expired.
         Blocks until user responds or timeout.
         """
@@ -249,10 +250,7 @@ class ApprovalManager:
 
         try:
             # Wait for response or timeout
-            result = await asyncio.wait_for(
-                future,
-                timeout=self.policy.timeout_seconds
-            )
+            result = await asyncio.wait_for(future, timeout=self.policy.timeout_seconds)
             return result
 
         except asyncio.TimeoutError:
@@ -264,7 +262,9 @@ class ApprovalManager:
                 # Dangerous commands default to deny on timeout
                 default_approve = False
 
-            logger.info(f"Approval timeout for {request_id}: {'approved' if default_approve else 'denied'}")
+            logger.info(
+                f"Approval timeout for {request_id}: {'approved' if default_approve else 'denied'}"
+            )
             return default_approve
 
         except asyncio.CancelledError:
@@ -279,7 +279,7 @@ class ApprovalManager:
     async def respond(self, request_id: str, approved: bool) -> bool:
         """
         Respond to an approval request.
-        
+
         Returns True if request was found and responded to.
         """
         request = self._pending.get(request_id)
@@ -297,7 +297,9 @@ class ApprovalManager:
         logger.info(f"Approval {request_id}: {'approved' if approved else 'denied'}")
         return True
 
-    def get_pending(self, channel: Optional[str] = None, user_id: Optional[str] = None) -> list:
+    def get_pending(
+        self, channel: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list:
         """Get pending approval requests, optionally filtered."""
         requests = list(self._pending.values())
 
@@ -348,7 +350,8 @@ class ApprovalManager:
                 now = datetime.now()
 
                 expired_ids = [
-                    req_id for req_id, req in self._pending.items()
+                    req_id
+                    for req_id, req in self._pending.items()
                     if req.expires_at and req.expires_at < now
                 ]
 
@@ -362,7 +365,9 @@ class ApprovalManager:
                         future.set_result(False)  # Deny on expiry
 
                 if expired_ids:
-                    logger.debug(f"Cleaned up {len(expired_ids)} expired approval requests")
+                    logger.debug(
+                        f"Cleaned up {len(expired_ids)} expired approval requests"
+                    )
 
             except asyncio.CancelledError:
                 break

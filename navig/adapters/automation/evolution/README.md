@@ -27,5 +27,3 @@ It's a feedback loop:
 - `navig ahk library list`
 
 Let's build the `evolver.py` first.
-
-

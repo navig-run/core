@@ -12,5 +12,3 @@ Examples:
 - `navig docker ps --json`
 - `navig docker logs myapp --lines 200`
 - `navig docker exec myapp -- sh -lc "printenv | head"`
-
-

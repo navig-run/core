@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # Typed context + event contracts (used by handler.py lifecycle functions)
 # ---------------------------------------------------------------------------
 
+
 class PluginContext(TypedDict):
     """
     Typed dict injected into every handler.py lifecycle call.
@@ -46,11 +47,11 @@ class PluginContext(TypedDict):
     event_data : present only during on_event calls — absent on on_load/on_unload
     """
 
-    plugin_id:  str
+    plugin_id: str
     plugin_dir: str
-    store_dir:  str
-    config:     dict[str, Any]
-    logger:     logging.Logger
+    store_dir: str
+    config: dict[str, Any]
+    logger: logging.Logger
     event_data: NotRequired[dict[str, Any]]
 
 
@@ -64,14 +65,15 @@ class PluginEvent:
     data   : event payload — structure varies per event type
     """
 
-    name:   str
+    name: str
     source: str
-    data:   dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # Metadata container
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class PluginMeta:
@@ -89,6 +91,7 @@ class PluginMeta:
 # ---------------------------------------------------------------------------
 # Abstract base class
 # ---------------------------------------------------------------------------
+
 
 class BotPlugin(ABC):
     """
@@ -225,16 +228,14 @@ class BotPlugin(ABC):
         """
         if not self._enabled:
             await update.message.reply_text(
-                f"Plugin \"{self.meta.name}\" is currently disabled."
+                f'Plugin "{self.meta.name}" is currently disabled.'
             )
             return
 
         try:
             await self.handle(update, context)
         except Exception:
-            logger.exception(
-                "Unhandled exception in plugin '%s'", self.meta.name
-            )
+            logger.exception("Unhandled exception in plugin '%s'", self.meta.name)
             await update.message.reply_text(
                 "Something went wrong. Please try again later."
             )

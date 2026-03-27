@@ -282,4 +282,3 @@ The engagement system maintains persistent state in `~/.navig/engagement/user_st
 - Usage statistics (feature adoption, peak hours, session patterns)
 - Cooldown timestamps for each proactive action type
 - Operator feedback history
-

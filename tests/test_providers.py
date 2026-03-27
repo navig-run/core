@@ -1,29 +1,33 @@
 """Tests for LLM provider interfaces and routing types."""
 
 import pytest
+
 from navig.llm_routing_types import (
-    ModelSelection,
-    LLMResult,
     LLMChunk,
-    RoutingContext,
-    ModeRouterProtocol,
-    ModelRouterProtocol,
     LLMClientProtocol,
-    ProviderFactoryProtocol,
     LLMProviderAdapter,
+    LLMResult,
+    ModelRouterProtocol,
+    ModelSelection,
+    ModeRouterProtocol,
     ProviderClientAdapter,
+    ProviderFactoryProtocol,
+    RoutingContext,
     UnifiedProviderFactory,
     get_provider_factory,
 )
 
-
 # ---- Data structure tests ----
+
 
 class TestModelSelection:
     def test_creation(self):
         ms = ModelSelection(
-            provider_name="ollama", model_name="qwen2.5:3b",
-            temperature=0.8, max_tokens=1024, tier="small",
+            provider_name="ollama",
+            model_name="qwen2.5:3b",
+            temperature=0.8,
+            max_tokens=1024,
+            tier="small",
             strategy_name="heuristic",
         )
         assert ms.provider_name == "ollama"
@@ -35,8 +39,10 @@ class TestModelSelection:
 
     def test_repr(self):
         ms = ModelSelection(
-            provider_name="openai", model_name="gpt-4o",
-            tier="big", strategy_name="llm_router",
+            provider_name="openai",
+            model_name="gpt-4o",
+            tier="big",
+            strategy_name="llm_router",
         )
         r = repr(ms)
         assert "openai" in r
@@ -54,8 +60,11 @@ class TestLLMResult:
     def test_creation(self):
         r = LLMResult(
             content="Hello world",
-            model="gpt-4o", provider="openai",
-            latency_ms=150, prompt_tokens=10, completion_tokens=5,
+            model="gpt-4o",
+            provider="openai",
+            latency_ms=150,
+            prompt_tokens=10,
+            completion_tokens=5,
         )
         assert r.content == "Hello world"
         assert r.total_tokens == 15
@@ -64,8 +73,10 @@ class TestLLMResult:
 
     def test_fallback_result(self):
         r = LLMResult(
-            content="ok", model="gpt-3.5",
-            is_fallback=True, attempts=3,
+            content="ok",
+            model="gpt-3.5",
+            is_fallback=True,
+            attempts=3,
         )
         assert r.is_fallback is True
         assert r.attempts == 3
@@ -106,10 +117,12 @@ class TestRoutingContext:
 
 # ---- Protocol conformance tests ----
 
+
 class TestModeRouterProtocol:
     def test_llm_mode_router_conforms(self):
         """LLMModeRouter should conform to ModeRouterProtocol."""
         from navig.llm_router import LLMModeRouter
+
         router = LLMModeRouter({})
         assert isinstance(router, ModeRouterProtocol)
 
@@ -135,10 +148,13 @@ class TestProviderFactory:
 
 # ---- Provider adapter tests ----
 
+
 class TestLLMProviderAdapter:
     def test_adapter_wraps_provider(self):
         class FakeProvider:
-            async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
+            async def chat(
+                self, model, messages, temperature=0.7, max_tokens=512, **kw
+            ):
                 class R:
                     content = "test response"
                     model_attr = model
@@ -148,18 +164,23 @@ class TestLLMProviderAdapter:
                     completion_tokens = 10
                     finish_reason = "stop"
                     raw = {}
+
                 r = R()
                 r.model = model
                 return r
+
             async def close(self):
                 pass
 
         adapter = LLMProviderAdapter(FakeProvider())
         import asyncio
-        result = asyncio.run(adapter.complete(
-            messages=[{"role": "user", "content": "hi"}],
-            model="test-model",
-        ))
+
+        result = asyncio.run(
+            adapter.complete(
+                messages=[{"role": "user", "content": "hi"}],
+                model="test-model",
+            )
+        )
         assert isinstance(result, LLMResult)
         assert result.content == "test response"
         assert result.model == "test-model"
@@ -168,11 +189,13 @@ class TestLLMProviderAdapter:
     def test_stream_not_implemented(self):
         adapter = LLMProviderAdapter(None)
         import asyncio
+
         with pytest.raises(NotImplementedError):
             asyncio.run(adapter.stream([], "model"))
 
 
 # ---- Eval hook (router evaluation) ----
+
 
 class TestRouterEval:
     """Evaluate routing consistency across known test prompts."""
@@ -193,6 +216,7 @@ class TestRouterEval:
 
     def test_mode_detection_eval(self):
         from navig.llm_router import detect_mode
+
         failures = []
         for prompt, expected_mode in self.EVAL_CASES:
             actual = detect_mode(prompt)
@@ -202,9 +226,11 @@ class TestRouterEval:
             pytest.fail("Mode detection eval failures:\n" + "\n".join(failures))
 
     def test_heuristic_tier_eval(self):
-        from navig.agent.model_router import heuristic_route, RoutingConfig, ModelSlot
+        from navig.agent.model_router import ModelSlot, RoutingConfig, heuristic_route
+
         cfg = RoutingConfig(
-            enabled=True, mode="rules_then_fallback",
+            enabled=True,
+            mode="rules_then_fallback",
             small=ModelSlot(provider="ollama", model="s", max_tokens=200),
             big=ModelSlot(provider="openrouter", model="b", max_tokens=4096),
             coder_big=ModelSlot(provider="openrouter", model="c", max_tokens=8192),
@@ -219,6 +245,8 @@ class TestRouterEval:
         for prompt, expected_tier in TIER_CASES:
             actual = heuristic_route(prompt, cfg)
             if actual.tier != expected_tier:
-                failures.append(f"  {prompt!r}: expected={expected_tier}, got={actual.tier} ({actual.reason})")
+                failures.append(
+                    f"  {prompt!r}: expected={expected_tier}, got={actual.tier} ({actual.reason})"
+                )
         if failures:
             pytest.fail("Tier routing eval failures:\n" + "\n".join(failures))

@@ -35,16 +35,20 @@ from navig.mesh.registry import (
     NodeRegistry,
 )
 
-
 # ──────────────────────────────────────────────── helpers ─────────────────────
 
 
 def _make_registry(tmp_path: Path, suffix: str, load: float = 0.1) -> NodeRegistry:
     with (
-        patch("navig.mesh.registry._derive_node_id", return_value=f"navig-test-{suffix}"),
+        patch(
+            "navig.mesh.registry._derive_node_id", return_value=f"navig-test-{suffix}"
+        ),
         patch("navig.mesh.registry.NodeRegistry._local_ip", return_value="127.0.0.1"),
         patch("navig.mesh.registry._measure_load", return_value=load),
-        patch("navig.mesh.registry.NodeRegistry._detect_capabilities", return_value=["llm", "shell"]),
+        patch(
+            "navig.mesh.registry.NodeRegistry._detect_capabilities",
+            return_value=["llm", "shell"],
+        ),
     ):
         return NodeRegistry(storage_dir=tmp_path)
 
@@ -118,14 +122,17 @@ class TestTopologyFailureAnalysis(unittest.TestCase):
     def test_offline_peers_do_not_count_toward_redundancy(self):
         self.reg.upsert_peer(_make_peer("peer-online"))
         # peer-offline has last_seen > OFFLINE_AFTER_S seconds ago
-        self.reg.upsert_peer(_make_peer("peer-offline", health_age=OFFLINE_AFTER_S + 10))
+        self.reg.upsert_peer(
+            _make_peer("peer-offline", health_age=OFFLINE_AFTER_S + 10)
+        )
         report = self.reg.redundancy_check()
         self.assertEqual(report["healthy_peer_count"], 1)
         self.assertFalse(report["redundancy_satisfied"])
 
     def test_topology_report_includes_routing_metrics(self):
-        from navig.mesh.router import _get_metrics, get_topology_report
         import navig.mesh.router as router_module
+        from navig.mesh.router import _get_metrics, get_topology_report
+
         router_module._registry_instance = None
         # Inject a registry with 2 peers
         with patch("navig.mesh.router.get_registry", return_value=self.reg):
@@ -289,7 +296,9 @@ class TestPerformanceUnderLoad(unittest.IsolatedAsyncioTestCase):
                 return None
             return {"data": {"choices": [{"message": {"content": "ok"}}]}}
 
-        self.reg.upsert_peer(_make_peer("peer-bad", load=0.0))   # best score → tried first
+        self.reg.upsert_peer(
+            _make_peer("peer-bad", load=0.0)
+        )  # best score → tried first
         self.reg.upsert_peer(_make_peer("peer-good", load=0.5))
 
         with (
@@ -427,7 +436,9 @@ class TestPartialFailureResilience(unittest.IsolatedAsyncioTestCase):
 
     # ── Multi-node failure ────────────────────────────────────────────────────
 
-    async def test_multi_node_failure_leaves_redundancy_satisfied_when_one_healthy(self):
+    async def test_multi_node_failure_leaves_redundancy_satisfied_when_one_healthy(
+        self,
+    ):
         """SCENARIO: 3 peers, 2 fail. Routing must still work via the survivor."""
         for i in range(3):
             self.reg.upsert_peer(_make_peer(f"peer-{i}"))
@@ -505,7 +516,9 @@ class TestPartialFailureResilience(unittest.IsolatedAsyncioTestCase):
             await self.disc._handle_packet(p5, "127.0.0.1")
 
         self.assertEqual(self.disc._peer_seqs.get(node_id), 5)
-        loss_logs = [l for l in cm.output if "Packet loss" in l or "packet(s) missing" in l]
+        loss_logs = [
+            l for l in cm.output if "Packet loss" in l or "packet(s) missing" in l
+        ]
         self.assertTrue(len(loss_logs) > 0, "Expected packet-loss log entry")
         tmp_b.cleanup()
 

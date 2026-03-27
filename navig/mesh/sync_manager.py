@@ -100,7 +100,9 @@ class SyncManager:
         self._state = self._build_local_state()
         self._state_hash = self._hash_state(self._state)
         self._task = asyncio.create_task(self._loop(), name="sync_manager")
-        logger.info("[sync] SyncManager started (interval=%ds)", self._broadcast_interval_s)
+        logger.info(
+            "[sync] SyncManager started (interval=%ds)", self._broadcast_interval_s
+        )
 
     async def stop(self) -> None:
         """Stop the sync loop cleanly."""
@@ -136,7 +138,10 @@ class SyncManager:
         new_hash = self._hash_state(new_state)
 
         if new_hash != self._state_hash:
-            logger.debug("[sync] State changed, broadcasting new snapshot (hash=%s)", new_hash[:8])
+            logger.debug(
+                "[sync] State changed, broadcasting new snapshot (hash=%s)",
+                new_hash[:8],
+            )
 
         self._state = new_state
         self._state_hash = new_hash
@@ -145,6 +150,7 @@ class SyncManager:
         # Using ELECT_SYNC (sync_state) packet type defined in discovery.py
         try:
             from navig.mesh.discovery import ELECT_SYNC
+
             self._discovery.send_election_packet(
                 ELECT_SYNC,
                 {"sync_hash": self._state_hash, "epoch": self._get_epoch()},
@@ -209,12 +215,15 @@ class SyncManager:
 
         try:
             import aiohttp as _aio
+
             async with _aio.ClientSession() as session:
                 async with session.get(
                     url, timeout=_aio.ClientTimeout(total=PULL_TIMEOUT_S)
                 ) as resp:
                     if resp.status != 200:
-                        logger.warning("[sync] Pull failed (HTTP %d) from %s", resp.status, url)
+                        logger.warning(
+                            "[sync] Pull failed (HTTP %d) from %s", resp.status, url
+                        )
                         return
                     data = await resp.json()
 
@@ -277,6 +286,7 @@ class SyncManager:
         """Try to hash the navig cron schedule; return '' on any failure."""
         try:
             from navig.daemon.scheduler import get_scheduler  # type: ignore[import]
+
             sched = get_scheduler()
             jobs = [str(j) for j in sched.get_jobs()] if sched else []
             return hashlib.sha256("|".join(jobs).encode()).hexdigest()[:8]

@@ -25,6 +25,7 @@ logger = get_debug_logger()
 @dataclass
 class HeartbeatConfig:
     """Heartbeat configuration."""
+
     enabled: bool = True
     interval_minutes: int = 30
     timeout_seconds: int = 300  # 5 minutes max per heartbeat
@@ -34,21 +35,22 @@ class HeartbeatConfig:
     notify_on_start: bool = False
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'HeartbeatConfig':
+    def from_dict(cls, data: dict) -> "HeartbeatConfig":
         return cls(
-            enabled=data.get('enabled', True),
-            interval_minutes=data.get('interval', 30),
-            timeout_seconds=data.get('timeout', 300),
-            retry_on_error=data.get('retry_on_error', True),
-            retry_delay_seconds=data.get('retry_delay', 60),
-            max_retries=data.get('max_retries', 3),
-            notify_on_start=data.get('notify_on_start', False),
+            enabled=data.get("enabled", True),
+            interval_minutes=data.get("interval", 30),
+            timeout_seconds=data.get("timeout", 300),
+            retry_on_error=data.get("retry_on_error", True),
+            retry_delay_seconds=data.get("retry_delay", 60),
+            max_retries=data.get("max_retries", 3),
+            notify_on_start=data.get("notify_on_start", False),
         )
 
 
 @dataclass
 class HeartbeatResult:
     """Result of a heartbeat check."""
+
     success: bool
     response: str
     duration_seconds: float
@@ -62,14 +64,14 @@ class HeartbeatResult:
             self.issues_found = []
 
         # Check for HEARTBEAT_OK pattern
-        if self.success and 'HEARTBEAT_OK' in self.response:
+        if self.success and "HEARTBEAT_OK" in self.response:
             self.suppressed = True
 
 
 class HeartbeatRunner:
     """
     Runs periodic health checks using the AI agent.
-    
+
     The AI agent receives the HEARTBEAT.md instructions and:
     1. Checks all configured hosts
     2. Verifies service health
@@ -79,9 +81,7 @@ class HeartbeatRunner:
     """
 
     def __init__(
-        self,
-        gateway: 'NavigGateway',
-        config: Optional[HeartbeatConfig] = None
+        self, gateway: "NavigGateway", config: Optional[HeartbeatConfig] = None
     ):
         self.gateway = gateway
         self.config = config or HeartbeatConfig()
@@ -119,16 +119,16 @@ class HeartbeatRunner:
         self._task = asyncio.create_task(self._run_loop())
 
         logger.info(
-            f"Heartbeat runner started "
-            f"(interval: {self.config.interval_minutes}m)"
+            f"Heartbeat runner started " f"(interval: {self.config.interval_minutes}m)"
         )
 
         # Emit start event
         if self.gateway.event_queue:
             from navig.gateway.system_events import EventTypes
+
             await self.gateway.event_queue.emit(
                 EventTypes.HEARTBEAT_START,
-                {'interval_minutes': self.config.interval_minutes}
+                {"interval_minutes": self.config.interval_minutes},
             )
 
     async def stop(self) -> None:
@@ -172,6 +172,7 @@ class HeartbeatRunner:
         """Main heartbeat loop."""
         # Initial delay (randomized to avoid thundering herd)
         import random
+
         initial_delay = random.randint(10, 60)
         logger.debug(f"Heartbeat initial delay: {initial_delay}s")
         await asyncio.sleep(initial_delay)
@@ -208,7 +209,7 @@ class HeartbeatRunner:
             # Run agent
             response = await asyncio.wait_for(
                 self._run_heartbeat_agent(heartbeat_prompt),
-                timeout=self.config.timeout_seconds
+                timeout=self.config.timeout_seconds,
             )
 
             duration = (datetime.now() - start_time).total_seconds()
@@ -249,7 +250,7 @@ class HeartbeatRunner:
 
         # Trim history
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         # Handle result
         await self._handle_result(result)
@@ -261,16 +262,14 @@ class HeartbeatRunner:
         # Get workspace context
         from navig.gateway.config_watcher import WorkspaceManager
 
-        workspace = WorkspaceManager(
-            Path(self.gateway.config_manager.global_path)
-        )
+        workspace = WorkspaceManager(Path(self.gateway.config_manager.global_path))
 
-        heartbeat_instructions = workspace.read_file('HEARTBEAT.md')
+        heartbeat_instructions = workspace.read_file("HEARTBEAT.md")
 
         # Get list of hosts to check
         config = self.gateway.config_manager.global_config
-        hosts = config.get('hosts', {})
-        host_list = list(hosts.keys()) if hosts else ['(no hosts configured)']
+        hosts = config.get("hosts", {})
+        host_list = list(hosts.keys()) if hosts else ["(no hosts configured)"]
 
         prompt = f"""You are performing a scheduled health check.
 
@@ -299,8 +298,8 @@ Begin the health check now. Be thorough but efficient.
         """Run the AI agent for heartbeat."""
         # Use the gateway's agent turn method
         response = await self.gateway.run_agent_turn(
-            agent_id='heartbeat',
-            session_key='system:heartbeat',
+            agent_id="heartbeat",
+            session_key="system:heartbeat",
             message=prompt,
         )
 
@@ -310,25 +309,25 @@ Begin the health check now. Be thorough but efficient.
         """Parse issues from heartbeat response."""
         issues = []
 
-        if 'HEARTBEAT_OK' in response:
+        if "HEARTBEAT_OK" in response:
             return issues
 
         # Look for issue patterns
-        lines = response.split('\n')
+        lines = response.split("\n")
         in_issues_section = False
 
         for line in lines:
             line = line.strip()
 
-            if 'ISSUES FOUND' in line.upper():
+            if "ISSUES FOUND" in line.upper():
                 in_issues_section = True
                 continue
 
-            if in_issues_section and line.startswith('-'):
+            if in_issues_section and line.startswith("-"):
                 issues.append(line[1:].strip())
 
             # Also catch [severity] pattern
-            if line.startswith('[') and ']' in line:
+            if line.startswith("[") and "]" in line:
                 issues.append(line)
 
         return issues
@@ -336,20 +335,19 @@ Begin the health check now. Be thorough but efficient.
     async def _handle_result(self, result: HeartbeatResult) -> None:
         """Handle heartbeat result."""
         if result.suppressed:
-            logger.info(
-                f"Heartbeat OK (duration: {result.duration_seconds:.1f}s)"
-            )
+            logger.info(f"Heartbeat OK (duration: {result.duration_seconds:.1f}s)")
 
             # Emit event but don't notify
             if self.gateway.event_queue:
                 from navig.gateway.system_events import EventTypes
+
                 await self.gateway.event_queue.emit(
                     EventTypes.HEARTBEAT_COMPLETE,
                     {
-                        'success': True,
-                        'suppressed': True,
-                        'duration': result.duration_seconds,
-                    }
+                        "success": True,
+                        "suppressed": True,
+                        "duration": result.duration_seconds,
+                    },
                 )
             return
 
@@ -357,31 +355,26 @@ Begin the health check now. Be thorough but efficient.
             logger.error(f"Heartbeat failed: {result.error}")
 
             # Notify about failure
-            await self._notify_issue(
-                f"[!] Heartbeat check failed: {result.error}"
-            )
+            await self._notify_issue(f"[!] Heartbeat check failed: {result.error}")
 
             if self.gateway.event_queue:
                 from navig.gateway.system_events import EventTypes
+
                 await self.gateway.event_queue.emit(
                     EventTypes.HEARTBEAT_FAILED,
                     {
-                        'error': result.error,
-                        'duration': result.duration_seconds,
-                    }
+                        "error": result.error,
+                        "duration": result.duration_seconds,
+                    },
                 )
             return
 
         if result.issues_found:
-            logger.warning(
-                f"Heartbeat found {len(result.issues_found)} issues"
-            )
+            logger.warning(f"Heartbeat found {len(result.issues_found)} issues")
 
             # Format and send notification
             issue_text = "\n".join(f"- {i}" for i in result.issues_found)
-            await self._notify_issue(
-                f"[!] Health check found issues:\n{issue_text}"
-            )
+            await self._notify_issue(f"[!] Health check found issues:\n{issue_text}")
 
             # Call issue callbacks
             for callback in self._on_issue_callbacks:
@@ -396,14 +389,15 @@ Begin the health check now. Be thorough but efficient.
         # Complete event
         if self.gateway.event_queue:
             from navig.gateway.system_events import EventTypes
+
             await self.gateway.event_queue.emit(
                 EventTypes.HEARTBEAT_COMPLETE,
                 {
-                    'success': True,
-                    'suppressed': False,
-                    'issues_count': len(result.issues_found),
-                    'duration': result.duration_seconds,
-                }
+                    "success": True,
+                    "suppressed": False,
+                    "issues_count": len(result.issues_found),
+                    "duration": result.duration_seconds,
+                },
             )
 
         # Call complete callbacks
@@ -420,58 +414,59 @@ Begin the health check now. Be thorough but efficient.
         """Send notification about an issue."""
         # Get notification settings from config
         config = self.gateway.config_manager.global_config
-        notify_config = config.get('notifications', {})
+        notify_config = config.get("notifications", {})
 
         # Get primary channel
-        channel = notify_config.get('channel', 'telegram')
-        recipient = notify_config.get('recipient')
+        channel = notify_config.get("channel", "telegram")
+        recipient = notify_config.get("recipient")
 
         if not recipient:
             logger.warning("No notification recipient configured")
             return
 
         # Use smart notification filter if available
-        if hasattr(self.gateway, 'notification_filter'):
+        if hasattr(self.gateway, "notification_filter"):
             from navig.gateway.system_events import EventPriority
+
             should_send = await self.gateway.notification_filter.should_notify(
-                'heartbeat_issue',
-                message,
-                EventPriority.HIGH
+                "heartbeat_issue", message, EventPriority.HIGH
             )
             if not should_send:
                 return
 
         # Send via channel
         await self.gateway.send_notification(
-            channel=channel,
-            recipient=recipient,
-            message=message
+            channel=channel, recipient=recipient, message=message
         )
 
     def get_status(self) -> Dict[str, Any]:
         """Get heartbeat status."""
         return {
-            'running': self._running,
-            'enabled': self.config.enabled,
-            'interval_minutes': self.config.interval_minutes,
-            'last_heartbeat': self._last_heartbeat.isoformat() if self._last_heartbeat else None,
-            'next_heartbeat': self._next_heartbeat.isoformat() if self._next_heartbeat else None,
-            'time_until_next': self.get_time_until_next(),
-            'history_count': len(self._history),
-            'last_success': self._history[-1].success if self._history else None,
-            'last_suppressed': self._history[-1].suppressed if self._history else None,
+            "running": self._running,
+            "enabled": self.config.enabled,
+            "interval_minutes": self.config.interval_minutes,
+            "last_heartbeat": (
+                self._last_heartbeat.isoformat() if self._last_heartbeat else None
+            ),
+            "next_heartbeat": (
+                self._next_heartbeat.isoformat() if self._next_heartbeat else None
+            ),
+            "time_until_next": self.get_time_until_next(),
+            "history_count": len(self._history),
+            "last_success": self._history[-1].success if self._history else None,
+            "last_suppressed": self._history[-1].suppressed if self._history else None,
         }
 
     def get_history(self, limit: int = 10) -> List[Dict]:
         """Get recent heartbeat history."""
         return [
             {
-                'success': r.success,
-                'suppressed': r.suppressed,
-                'duration': r.duration_seconds,
-                'timestamp': r.timestamp.isoformat(),
-                'issues_count': len(r.issues_found),
-                'error': r.error,
+                "success": r.success,
+                "suppressed": r.suppressed,
+                "duration": r.duration_seconds,
+                "timestamp": r.timestamp.isoformat(),
+                "issues_count": len(r.issues_found),
+                "error": r.error,
             }
             for r in self._history[-limit:]
         ]

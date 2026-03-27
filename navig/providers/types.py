@@ -4,6 +4,7 @@ NAVIG AI Providers - Type Definitions and Configuration Schema
 Based on standard model provider architecture, adapted for Python.
 Supports multiple AI providers with unified interface.
 """
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -11,6 +12,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 class ModelApi(str, Enum):
     """Supported API types for different providers."""
+
     OPENAI_COMPLETIONS = "openai-completions"
     OPENAI_RESPONSES = "openai-responses"
     ANTHROPIC_MESSAGES = "anthropic-messages"
@@ -19,6 +21,7 @@ class ModelApi(str, Enum):
 
 class AuthMode(str, Enum):
     """Authentication modes for providers."""
+
     API_KEY = "api-key"
     OAUTH = "oauth"
     TOKEN = "token"
@@ -26,6 +29,7 @@ class AuthMode(str, Enum):
 
 class ModelInput(str, Enum):
     """Supported input modalities."""
+
     TEXT = "text"
     IMAGE = "image"
 
@@ -33,6 +37,7 @@ class ModelInput(str, Enum):
 @dataclass
 class ModelCost:
     """Cost configuration per 1M tokens (in USD * 1000 for precision)."""
+
     input: float = 0.0
     output: float = 0.0
     cache_read: float = 0.0
@@ -43,13 +48,14 @@ class ModelCost:
             "input": self.input,
             "output": self.output,
             "cacheRead": self.cache_read,
-            "cacheWrite": self.cache_write
+            "cacheWrite": self.cache_write,
         }
 
 
 @dataclass
 class ModelCompatConfig:
     """Model compatibility settings."""
+
     supports_store: bool = False
     supports_developer_role: bool = True
     supports_reasoning_effort: bool = False
@@ -59,6 +65,7 @@ class ModelCompatConfig:
 @dataclass
 class ModelDefinition:
     """Definition of a model within a provider."""
+
     id: str
     name: str
     api: Optional[ModelApi] = None
@@ -87,6 +94,7 @@ class ModelDefinition:
 @dataclass
 class ProviderConfig:
     """Configuration for a single AI provider."""
+
     name: str
     base_url: str
     api_key: Optional[str] = None  # Can be literal key or env var name
@@ -116,6 +124,7 @@ class ProviderConfig:
 @dataclass
 class ProvidersConfig:
     """Top-level providers configuration."""
+
     mode: Literal["merge", "replace"] = "merge"
     default_provider: Optional[str] = None
     default_model: Optional[str] = None
@@ -136,9 +145,11 @@ class ProvidersConfig:
 # Auth Profile Types (for credential storage)
 # ============================================================================
 
+
 @dataclass
 class ApiKeyCredential:
     """Static API key credential."""
+
     provider: str
     key: str
     email: Optional[str] = None
@@ -148,6 +159,7 @@ class ApiKeyCredential:
 @dataclass
 class TokenCredential:
     """Static bearer token credential."""
+
     provider: str
     token: str
     expires: Optional[int] = None  # ms since epoch
@@ -158,6 +170,7 @@ class TokenCredential:
 @dataclass
 class OAuthCredential:
     """OAuth credential with refresh capability."""
+
     provider: str
     access_token: str
     refresh_token: Optional[str] = None
@@ -173,6 +186,7 @@ AuthProfileCredential = Union[ApiKeyCredential, TokenCredential, OAuthCredential
 @dataclass
 class ProfileUsageStats:
     """Usage statistics for a profile."""
+
     last_used: Optional[int] = None
     cooldown_until: Optional[int] = None
     error_count: int = 0
@@ -183,10 +197,13 @@ class ProfileUsageStats:
 @dataclass
 class AuthProfileStore:
     """Storage for authentication profiles."""
+
     version: int = 1
     profiles: Dict[str, AuthProfileCredential] = field(default_factory=dict)
     order: Dict[str, List[str]] = field(default_factory=dict)  # provider -> profile IDs
-    last_good: Dict[str, str] = field(default_factory=dict)  # provider -> last successful profile
+    last_good: Dict[str, str] = field(
+        default_factory=dict
+    )  # provider -> last successful profile
     usage_stats: Dict[str, ProfileUsageStats] = field(default_factory=dict)
 
 
@@ -244,7 +261,9 @@ BUILTIN_PROVIDERS: Dict[str, ProviderConfig] = {
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=128000,
                 max_tokens=16384,
-                cost=ModelCost(input=0.15, output=0.6, cache_read=0.075, cache_write=0.15),
+                cost=ModelCost(
+                    input=0.15, output=0.6, cache_read=0.075, cache_write=0.15
+                ),
             ),
             ModelDefinition(
                 id="gpt-3.5-turbo",
@@ -500,6 +519,7 @@ PROVIDER_ENV_VARS: Dict[str, List[str]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 # Accessors
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def builtin_provider_configs() -> List[ProviderConfig]:
     """

@@ -1,4 +1,3 @@
-
 import os
 import subprocess
 import sys
@@ -17,9 +16,11 @@ script_app = typer.Typer(
     no_args_is_help=True,
 )
 
+
 def _get_scripts_dir() -> Path:
     # Use the same directory as ScriptEvolver
     return Path(__file__).parent.parent / "scripts"
+
 
 @script_app.command("list")
 def list_scripts():
@@ -35,6 +36,7 @@ def list_scripts():
         return
 
     from rich.table import Table
+
     table = Table(title="Available Scripts")
     table.add_column("Name", style="cyan")
     table.add_column("Path", style="dim")
@@ -44,10 +46,13 @@ def list_scripts():
 
     ch.console.print(table)
 
+
 @script_app.command("run")
 def run_script(
     name: str = typer.Argument(..., help="Script name (without extension)"),
-    args: Optional[list[str]] = typer.Argument(None, help="Arguments to pass to script"),
+    args: Optional[list[str]] = typer.Argument(
+        None, help="Arguments to pass to script"
+    ),
 ):
     """Run a Python script."""
     scripts_dir = _get_scripts_dir()
@@ -56,7 +61,7 @@ def run_script(
     if not script_path.exists():
         # Try local path?
         local_path = Path(name)
-        if local_path.exists() and local_path.suffix == '.py':
+        if local_path.exists() and local_path.suffix == ".py":
             script_path = local_path
         else:
             ch.error(f"Script not found: {name}")
@@ -75,6 +80,7 @@ def run_script(
     except Exception as e:
         ch.error(f"Failed to run script: {e}")
 
+
 @script_app.command("edit")
 def edit_script(
     name: str = typer.Argument(..., help="Script name"),
@@ -87,8 +93,9 @@ def edit_script(
         ch.error(f"Script not found: {name}")
         return
 
-    editor = os.environ.get('EDITOR', 'notepad' if sys.platform == 'win32' else 'nano')
+    editor = os.environ.get("EDITOR", "notepad" if sys.platform == "win32" else "nano")
     subprocess.run([editor, str(script_path)])
+
 
 @script_app.command("new")
 def new_script(
@@ -125,17 +132,16 @@ def main():
     if not ahk.is_available():
         print("AHK not found")
         return
-        
+
     print("Automating...")
     # Add your automation code here
-    
+
 if __name__ == "__main__":
     main()
 """
 
-    with open(script_path, 'w') as f:
+    with open(script_path, "w") as f:
         f.write(content)
 
     ch.success(f"Created script: {script_path}")
     ch.info(f"Edit with: navig script edit {name}")
-

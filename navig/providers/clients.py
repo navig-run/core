@@ -4,6 +4,7 @@ NAVIG AI Providers - Client Implementations
 Provider-specific adapters with unified interface.
 Based on multi-provider architecture.
 """
+
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -14,22 +15,19 @@ if TYPE_CHECKING:
 
 try:
     import httpx
+
     HTTPX_AVAILABLE = True
 except ImportError:
     httpx = None
     HTTPX_AVAILABLE = False
 
-from .types import (
-    BUILTIN_PROVIDERS,
-    ModelApi,
-    ModelDefinition,
-    ProviderConfig,
-)
+from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
 
 
 @dataclass
 class Message:
     """A chat message."""
+
     role: str  # "system", "user", "assistant", "tool"
     content: str
     name: Optional[str] = None
@@ -40,6 +38,7 @@ class Message:
 @dataclass
 class ToolDefinition:
     """A function/tool definition for function calling."""
+
     name: str
     description: str
     parameters: Dict[str, Any]
@@ -52,7 +51,7 @@ class ToolDefinition:
                 "name": self.name,
                 "description": self.description,
                 "parameters": self.parameters,
-            }
+            },
         }
 
     def to_anthropic_format(self) -> Dict[str, Any]:
@@ -67,6 +66,7 @@ class ToolDefinition:
 @dataclass
 class CompletionRequest:
     """Request for chat completion."""
+
     messages: List[Message]
     model: str
     temperature: float = 0.7
@@ -80,6 +80,7 @@ class CompletionRequest:
 @dataclass
 class ToolCall:
     """A tool call in a completion response."""
+
     id: str
     name: str
     arguments: str  # JSON string
@@ -88,6 +89,7 @@ class ToolCall:
 @dataclass
 class CompletionResponse:
     """Response from chat completion."""
+
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
     finish_reason: Optional[str] = None
@@ -103,9 +105,12 @@ class CompletionResponse:
 @dataclass
 class ProviderError(Exception):
     """Error from a provider."""
+
     message: str
     status_code: Optional[int] = None
-    error_type: Optional[str] = None  # "auth", "rate_limit", "billing", "invalid_request"
+    error_type: Optional[str] = (
+        None  # "auth", "rate_limit", "billing", "invalid_request"
+    )
     provider: Optional[str] = None
     retryable: bool = False
 
@@ -138,7 +143,9 @@ class BaseProviderClient(ABC):
     async def _get_client(self):
         """Get or create HTTP client."""
         if not HTTPX_AVAILABLE:
-            raise ImportError("httpx is required for provider clients. Install: pip install httpx")
+            raise ImportError(
+                "httpx is required for provider clients. Install: pip install httpx"
+            )
 
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
@@ -233,8 +240,7 @@ class OpenAIClient(BaseProviderClient):
         body: Dict[str, Any] = {
             "model": request.model,
             "messages": [
-                {"role": m.role, "content": m.content}
-                for m in request.messages
+                {"role": m.role, "content": m.content} for m in request.messages
             ],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
@@ -362,11 +368,13 @@ class AnthropicClient(BaseProviderClient):
                 if block.get("type") == "text":
                     content_text = block.get("text")
                 elif block.get("type") == "tool_use":
-                    tool_calls.append(ToolCall(
-                        id=block.get("id", ""),
-                        name=block.get("name", ""),
-                        arguments=json.dumps(block.get("input", {})),
-                    ))
+                    tool_calls.append(
+                        ToolCall(
+                            id=block.get("id", ""),
+                            name=block.get("name", ""),
+                            arguments=json.dumps(block.get("input", {})),
+                        )
+                    )
 
             return CompletionResponse(
                 content=content_text,
@@ -376,8 +384,8 @@ class AnthropicClient(BaseProviderClient):
                     "prompt_tokens": data.get("usage", {}).get("input_tokens", 0),
                     "completion_tokens": data.get("usage", {}).get("output_tokens", 0),
                     "total_tokens": (
-                        data.get("usage", {}).get("input_tokens", 0) +
-                        data.get("usage", {}).get("output_tokens", 0)
+                        data.get("usage", {}).get("input_tokens", 0)
+                        + data.get("usage", {}).get("output_tokens", 0)
                     ),
                 },
                 model=data.get("model"),
@@ -408,13 +416,13 @@ def create_client(
 ) -> BaseProviderClient:
     """
     Create a provider client based on configuration.
-    
+
     Args:
         config: Provider configuration
         api_key: Optional API key (overrides config)
         timeout: Request timeout in seconds
         airllm_config: Optional AirLLM configuration (for airllm provider)
-    
+
     Returns:
         Configured provider client
     """

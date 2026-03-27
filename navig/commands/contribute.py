@@ -11,6 +11,7 @@ All operations are opt-in.  If ``contribute.enabled`` is not ``true`` in
 
 Users must explicitly approve every submission — no silent auto-PRs.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -64,6 +65,7 @@ def _get_contribute_config(raw: dict[str, Any]) -> ContributeConfig:
         Populated :class:`~navig.selfheal.ContributeConfig` instance.
     """
     from navig.selfheal import ContributeConfig  # noqa: PLC0415
+
     return ContributeConfig.from_dict(raw)
 
 
@@ -151,6 +153,7 @@ def scan_cmd(
     # ------------------------------------------------------------------
     try:
         from navig.selfheal.pr_builder import _resolve_token  # noqa: PLC0415
+
         token = _resolve_token(cfg_typed.to_dict())
         username = get_github_username(token)
     except ValueError as exc:
@@ -200,7 +203,9 @@ def scan_cmd(
             raise typer.Exit(1) from exc
 
     if not findings:
-        _console.print("[green]✓ No issues found above the confidence threshold.[/green]")
+        _console.print(
+            "[green]✓ No issues found above the confidence threshold.[/green]"
+        )
         raise typer.Exit(0)
 
     # ------------------------------------------------------------------
@@ -224,6 +229,7 @@ def scan_cmd(
     version: Optional[str] = None
     try:
         from navig import __version__ as _v  # noqa: PLC0415
+
         version = _v
     except Exception:  # noqa: BLE001
         pass
@@ -239,9 +245,13 @@ def scan_cmd(
     )
 
     if pr_url:
-        _console.print(f"\n[bold green]✅ PR submitted:[/bold green] [link={pr_url}]{pr_url}[/link]")
+        _console.print(
+            f"\n[bold green]✅ PR submitted:[/bold green] [link={pr_url}]{pr_url}[/link]"
+        )
     else:
-        _console.print("[dim]No PR submitted (Telegram flow pending or cancelled).[/dim]")
+        _console.print(
+            "[dim]No PR submitted (Telegram flow pending or cancelled).[/dim]"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -259,16 +269,21 @@ def status_cmd() -> None:
     table.add_column("Key", style="cyan")
     table.add_column("Value")
 
-    table.add_row("Enabled", "[green]yes[/green]" if cfg_typed.enabled else "[red]no[/red]")
+    table.add_row(
+        "Enabled", "[green]yes[/green]" if cfg_typed.enabled else "[red]no[/red]"
+    )
     table.add_row("Min confidence", str(cfg_typed.min_confidence))
     table.add_row("Token env var", cfg_typed.github_token_env)
     table.add_row("Target repo", cfg_typed.upstream_repo)
     table.add_row("Contributor alias", cfg_typed.alias or "—")
 
     from navig.selfheal.git_manager import _CORE_REPO_DIR  # noqa: PLC0415
+
     table.add_row("Local clone", str(_CORE_REPO_DIR))
     clone_exists = (_CORE_REPO_DIR / ".git").exists()
-    table.add_row("Clone present", "[green]yes[/green]" if clone_exists else "[dim]no[/dim]")
+    table.add_row(
+        "Clone present", "[green]yes[/green]" if clone_exists else "[dim]no[/dim]"
+    )
 
     _console.print(table)
 
@@ -294,9 +309,9 @@ def _print_scan_report(findings: list) -> None:
 
     sev_colors = {
         "critical": "red",
-        "high":     "orange3",
-        "medium":   "yellow",
-        "low":      "blue",
+        "high": "orange3",
+        "medium": "yellow",
+        "low": "blue",
     }
 
     table = Table(

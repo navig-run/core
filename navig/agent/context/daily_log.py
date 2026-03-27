@@ -18,13 +18,13 @@ Features:
 
 Usage:
     from navig.agent.context.daily_log import DailyLog
-    
+
     log = DailyLog()
-    
+
     # Log an interaction
     log.add_entry("user", "Deploy the app to production")
     log.add_entry("agent", "Deployed successfully to prod-server-01")
-    
+
     # Get recent context for system prompt
     recent = log.get_recent_summary(hours=24)
 """
@@ -90,10 +90,11 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
 # Daily Log Class
 # =============================================================================
 
+
 class DailyLog:
     """
     Session-based interaction logger for agent continuity.
-    
+
     Stores interactions in SQLite with date partitioning for efficient
     retrieval and automatic cleanup.
     """
@@ -101,7 +102,7 @@ class DailyLog:
     def __init__(
         self,
         db_path: Optional[Path] = None,
-        retention_days: int = DEFAULT_RETENTION_DAYS
+        retention_days: int = DEFAULT_RETENTION_DAYS,
     ):
         self.db_path = db_path or get_daily_log_path()
         self.retention_days = retention_days
@@ -152,11 +153,11 @@ class DailyLog:
         channel: Optional[str] = None,
         server: Optional[str] = None,
         command: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> int:
         """
         Add an interaction entry to the log.
-        
+
         Args:
             role: "user" or "agent"
             content: The message content (will be truncated for privacy)
@@ -164,7 +165,7 @@ class DailyLog:
             server: Server context if applicable
             command: NAVIG command executed if applicable
             metadata: Additional metadata dict
-            
+
         Returns:
             Entry ID
         """
@@ -179,7 +180,7 @@ class DailyLog:
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO interactions 
+                INSERT INTO interactions
                 (timestamp, date, session_id, role, content, channel, server, command, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -193,19 +194,20 @@ class DailyLog:
                     server,
                     command,
                     json.dumps(metadata) if metadata else None,
-                )
+                ),
             )
             return cursor.lastrowid
 
     def _sanitize_content(self, content: str, max_length: int = 200) -> str:
         """
         Sanitize content for storage.
-        
+
         Truncates and removes potentially sensitive data.
         """
         # Import security module if available
         try:
             from navig.core.security import redact_sensitive_text
+
             content = redact_sensitive_text(content)
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -221,17 +223,15 @@ class DailyLog:
     # =========================================================================
 
     def get_recent_entries(
-        self,
-        hours: int = 24,
-        limit: int = MAX_SUMMARY_ENTRIES
+        self, hours: int = 24, limit: int = MAX_SUMMARY_ENTRIES
     ) -> List[Dict[str, Any]]:
         """
         Get recent interaction entries.
-        
+
         Args:
             hours: How many hours back to look
             limit: Maximum entries to return
-            
+
         Returns:
             List of entry dicts
         """
@@ -247,7 +247,7 @@ class DailyLog:
                 ORDER BY timestamp DESC
                 LIMIT ?
                 """,
-                (cutoff, limit)
+                (cutoff, limit),
             ).fetchall()
 
         return [dict(row) for row in rows]
@@ -267,12 +267,14 @@ class DailyLog:
                 WHERE date = ?
                 ORDER BY timestamp ASC
                 """,
-                (date,)
+                (date,),
             ).fetchall()
 
         return [dict(row) for row in rows]
 
-    def get_session_entries(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_session_entries(
+        self, session_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Get entries for a specific session."""
         self._ensure_initialized()
 
@@ -285,7 +287,7 @@ class DailyLog:
                 WHERE session_id = ?
                 ORDER BY timestamp ASC
                 """,
-                (session_id,)
+                (session_id,),
             ).fetchall()
 
         return [dict(row) for row in rows]
@@ -297,7 +299,7 @@ class DailyLog:
     def get_recent_summary(self, hours: int = 24) -> str:
         """
         Get a summary of recent interactions for context injection.
-        
+
         Returns a formatted string suitable for system prompt.
         """
         entries = self.get_recent_entries(hours=hours, limit=20)
@@ -308,7 +310,7 @@ class DailyLog:
         # Group by session
         sessions: Dict[str, List[Dict]] = {}
         for entry in entries:
-            sid = entry.get('session_id', 'unknown')
+            sid = entry.get("session_id", "unknown")
             if sid not in sessions:
                 sessions[sid] = []
             sessions[sid].append(entry)
@@ -319,15 +321,15 @@ class DailyLog:
         for session_id, session_entries in sessions.items():
             if session_entries:
                 first = session_entries[0]
-                timestamp = first.get('timestamp', '')[:16]  # YYYY-MM-DDTHH:MM
+                timestamp = first.get("timestamp", "")[:16]  # YYYY-MM-DDTHH:MM
                 lines.append(f"\n### Session {timestamp}")
 
                 for entry in session_entries[-5:]:  # Last 5 per session
-                    role = entry.get('role', '?')
-                    content = entry.get('content', '')[:100]
-                    channel = entry.get('channel', '')
+                    role = entry.get("role", "?")
+                    content = entry.get("content", "")[:100]
+                    channel = entry.get("channel", "")
 
-                    prefix = "👤" if role == 'user' else "🤖"
+                    prefix = "👤" if role == "user" else "🤖"
                     channel_str = f" [{channel}]" if channel else ""
                     lines.append(f"- {prefix}{channel_str} {content}")
 
@@ -342,7 +344,7 @@ class DailyLog:
     def get_context_for_agent(self) -> str:
         """
         Get formatted context for agent system prompt.
-        
+
         Returns context wrapped in XML tags.
         """
         summary = self.get_recent_summary(hours=24)
@@ -358,7 +360,7 @@ class DailyLog:
     def generate_daily_summary(self, date: Optional[str] = None) -> str:
         """
         Generate a summary for a specific date.
-        
+
         Uses simple extraction for now; could be enhanced with LLM.
         """
         date = date or datetime.utcnow().strftime("%Y-%m-%d")
@@ -373,12 +375,12 @@ class DailyLog:
         servers = set()
 
         for entry in entries:
-            if entry.get('command'):
-                commands.add(entry['command'])
-            if entry.get('channel'):
-                channels.add(entry['channel'])
-            if entry.get('server'):
-                servers.add(entry['server'])
+            if entry.get("command"):
+                commands.add(entry["command"])
+            if entry.get("channel"):
+                channels.add(entry["channel"])
+            if entry.get("server"):
+                servers.add(entry["server"])
 
         # Build summary
         lines = [f"Activity for {date}:"]
@@ -414,7 +416,7 @@ class DailyLog:
                     len(entries),
                     None,  # Topics could be extracted with NLP
                     datetime.utcnow().isoformat(),
-                )
+                ),
             )
 
     # =========================================================================
@@ -424,25 +426,21 @@ class DailyLog:
     def cleanup_old_entries(self) -> int:
         """
         Remove entries older than retention period.
-        
+
         Returns number of entries removed.
         """
         self._ensure_initialized()
 
-        cutoff = (datetime.utcnow() - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
+        cutoff = (datetime.utcnow() - timedelta(days=self.retention_days)).strftime(
+            "%Y-%m-%d"
+        )
 
         with self._get_connection() as conn:
-            cursor = conn.execute(
-                "DELETE FROM interactions WHERE date < ?",
-                (cutoff,)
-            )
+            cursor = conn.execute("DELETE FROM interactions WHERE date < ?", (cutoff,))
             deleted = cursor.rowcount
 
             # Also clean old summaries
-            conn.execute(
-                "DELETE FROM daily_summaries WHERE date < ?",
-                (cutoff,)
-            )
+            conn.execute("DELETE FROM daily_summaries WHERE date < ?", (cutoff,))
 
         return deleted
 
@@ -454,24 +452,24 @@ class DailyLog:
             total = conn.execute("SELECT COUNT(*) FROM interactions").fetchone()[0]
             today = conn.execute(
                 "SELECT COUNT(*) FROM interactions WHERE date = ?",
-                (datetime.utcnow().strftime("%Y-%m-%d"),)
+                (datetime.utcnow().strftime("%Y-%m-%d"),),
             ).fetchone()[0]
 
-            oldest = conn.execute(
-                "SELECT MIN(date) FROM interactions"
-            ).fetchone()[0]
+            oldest = conn.execute("SELECT MIN(date) FROM interactions").fetchone()[0]
 
-            by_role = dict(conn.execute(
-                "SELECT role, COUNT(*) FROM interactions GROUP BY role"
-            ).fetchall())
+            by_role = dict(
+                conn.execute(
+                    "SELECT role, COUNT(*) FROM interactions GROUP BY role"
+                ).fetchall()
+            )
 
         return {
-            'total_entries': total,
-            'today_entries': today,
-            'oldest_date': oldest,
-            'by_role': by_role,
-            'retention_days': self.retention_days,
-            'db_path': str(self.db_path),
+            "total_entries": total,
+            "today_entries": today,
+            "oldest_date": oldest,
+            "by_role": by_role,
+            "retention_days": self.retention_days,
+            "db_path": str(self.db_path),
         }
 
 
@@ -490,11 +488,7 @@ def get_daily_log() -> DailyLog:
     return _default_log
 
 
-def log_interaction(
-    role: str,
-    content: str,
-    **kwargs
-) -> int:
+def log_interaction(role: str, content: str, **kwargs) -> int:
     """Log an interaction to the daily log."""
     return get_daily_log().add_entry(role, content, **kwargs)
 

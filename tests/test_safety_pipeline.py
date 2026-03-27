@@ -24,22 +24,24 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ═══════════════════════════════════════════════════════════════
 # 1. safety_guard — classify_action_risk
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestClassifyActionRisk:
     """Tests for classify_action_risk."""
 
     def test_safe_action(self):
         from navig.safety_guard import classify_action_risk
+
         assert classify_action_risk("ls -la") == "safe"
         assert classify_action_risk("echo hello") == "safe"
         assert classify_action_risk("cat /etc/hosts") == "safe"
 
     def test_risky_action(self):
         from navig.safety_guard import classify_action_risk
+
         assert classify_action_risk("sudo apt update") == "risky"
         assert classify_action_risk("pip uninstall flask") == "risky"
         assert classify_action_risk("docker rm container") == "risky"
@@ -49,6 +51,7 @@ class TestClassifyActionRisk:
 
     def test_destructive_action(self):
         from navig.safety_guard import classify_action_risk
+
         assert classify_action_risk("rm -rf /var/www") == "destructive"
         assert classify_action_risk("DROP TABLE users") == "destructive"
         assert classify_action_risk("TRUNCATE TABLE sessions") == "destructive"
@@ -62,11 +65,13 @@ class TestClassifyActionRisk:
 
     def test_is_destructive(self):
         from navig.safety_guard import is_destructive
+
         assert is_destructive("rm -rf /") is True
         assert is_destructive("ls -la") is False
 
     def test_is_risky_includes_destructive(self):
         from navig.safety_guard import is_risky
+
         assert is_risky("rm -rf /") is True  # destructive is also risky
         assert is_risky("sudo apt update") is True
         assert is_risky("echo hello") is False
@@ -76,39 +81,60 @@ class TestClassifyActionRisk:
 # 2. should_confirm — ConfirmationLevel integration
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestShouldConfirm:
     """Tests for the config-aware should_confirm helper."""
 
     def test_critical_only_confirms_destructive(self):
         from navig.safety_guard import should_confirm
+
         assert should_confirm("rm -rf /var", confirmation_level="critical") is True
         assert should_confirm("sudo apt update", confirmation_level="critical") is False
         assert should_confirm("ls -la", confirmation_level="critical") is False
 
     def test_standard_confirms_risky_and_destructive(self):
         from navig.safety_guard import should_confirm
+
         assert should_confirm("rm -rf /var", confirmation_level="standard") is True
         assert should_confirm("sudo apt update", confirmation_level="standard") is True
         assert should_confirm("ls -la", confirmation_level="standard") is False
 
     def test_verbose_confirms_everything(self):
         from navig.safety_guard import should_confirm
+
         assert should_confirm("rm -rf /var", confirmation_level="verbose") is True
         assert should_confirm("sudo apt update", confirmation_level="verbose") is True
         assert should_confirm("ls -la", confirmation_level="verbose") is True
 
     def test_auto_confirm_safe_overrides_verbose(self):
         from navig.safety_guard import should_confirm
+
         # auto_confirm_safe=True skips confirmation for safe actions even in verbose
-        assert should_confirm("ls -la", confirmation_level="verbose", auto_confirm_safe=True) is False
+        assert (
+            should_confirm(
+                "ls -la", confirmation_level="verbose", auto_confirm_safe=True
+            )
+            is False
+        )
         # But risky/destructive still confirmed
-        assert should_confirm("sudo apt update", confirmation_level="verbose", auto_confirm_safe=True) is True
-        assert should_confirm("rm -rf /", confirmation_level="verbose", auto_confirm_safe=True) is True
+        assert (
+            should_confirm(
+                "sudo apt update", confirmation_level="verbose", auto_confirm_safe=True
+            )
+            is True
+        )
+        assert (
+            should_confirm(
+                "rm -rf /", confirmation_level="verbose", auto_confirm_safe=True
+            )
+            is True
+        )
 
 
 # ═══════════════════════════════════════════════════════════════
 # 3. ToolRouter safety_mode
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestToolRouterSafetyMode:
     """Tests for ToolRouter respecting safety_mode config."""
@@ -118,15 +144,25 @@ class TestToolRouterSafetyMode:
 
         registry = ToolRegistry()
         registry.register(
-            ToolMeta(name="safe.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE),
+            ToolMeta(
+                name="safe.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE
+            ),
             handler=lambda **kw: {"ok": True},
         )
         registry.register(
-            ToolMeta(name="moderate.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.MODERATE),
+            ToolMeta(
+                name="moderate.tool",
+                domain=ToolDomain.SYSTEM,
+                safety=SafetyLevel.MODERATE,
+            ),
             handler=lambda **kw: {"ok": True},
         )
         registry.register(
-            ToolMeta(name="dangerous.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.DANGEROUS),
+            ToolMeta(
+                name="dangerous.tool",
+                domain=ToolDomain.SYSTEM,
+                safety=SafetyLevel.DANGEROUS,
+            ),
             handler=lambda **kw: {"ok": True},
         )
         return registry
@@ -136,8 +172,12 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "permissive"})
-        result = router.execute(ToolCallAction(tool="moderate.tool", parameters={"cmd": "sudo apt update"}))
+        router = ToolRouter(
+            registry=registry, safety_policy={"safety_mode": "permissive"}
+        )
+        result = router.execute(
+            ToolCallAction(tool="moderate.tool", parameters={"cmd": "sudo apt update"})
+        )
         assert result.status == ToolResultStatus.SUCCESS
 
     def test_permissive_blocks_dangerous_destructive(self):
@@ -145,8 +185,12 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "permissive"})
-        result = router.execute(ToolCallAction(tool="dangerous.tool", parameters={"cmd": "rm -rf /"}))
+        router = ToolRouter(
+            registry=registry, safety_policy={"safety_mode": "permissive"}
+        )
+        result = router.execute(
+            ToolCallAction(tool="dangerous.tool", parameters={"cmd": "rm -rf /"})
+        )
         assert result.status == ToolResultStatus.DENIED
         assert "permissive" in (result.metadata or {}).get("safety_mode", "")
 
@@ -155,8 +199,12 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "standard"})
-        result = router.execute(ToolCallAction(tool="moderate.tool", parameters={"cmd": "rm -rf /var"}))
+        router = ToolRouter(
+            registry=registry, safety_policy={"safety_mode": "standard"}
+        )
+        result = router.execute(
+            ToolCallAction(tool="moderate.tool", parameters={"cmd": "rm -rf /var"})
+        )
         assert result.status == ToolResultStatus.DENIED
 
     def test_standard_allows_moderate_safe_params(self):
@@ -164,8 +212,12 @@ class TestToolRouterSafetyMode:
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = self._make_registry_with_tools()
-        router = ToolRouter(registry=registry, safety_policy={"safety_mode": "standard"})
-        result = router.execute(ToolCallAction(tool="moderate.tool", parameters={"cmd": "echo hello"}))
+        router = ToolRouter(
+            registry=registry, safety_policy={"safety_mode": "standard"}
+        )
+        result = router.execute(
+            ToolCallAction(tool="moderate.tool", parameters={"cmd": "echo hello"})
+        )
         assert result.status == ToolResultStatus.SUCCESS
 
     def test_strict_blocks_dangerous_outright(self):
@@ -174,7 +226,9 @@ class TestToolRouterSafetyMode:
 
         registry = self._make_registry_with_tools()
         router = ToolRouter(registry=registry, safety_policy={"safety_mode": "strict"})
-        result = router.execute(ToolCallAction(tool="dangerous.tool", parameters={"cmd": "echo hello"}))
+        result = router.execute(
+            ToolCallAction(tool="dangerous.tool", parameters={"cmd": "echo hello"})
+        )
         assert result.status == ToolResultStatus.DENIED
         assert "strict" in result.error.lower()
 
@@ -184,7 +238,11 @@ class TestToolRouterSafetyMode:
 
         registry = self._make_registry_with_tools()
         router = ToolRouter(registry=registry, safety_policy={"safety_mode": "strict"})
-        result = router.execute(ToolCallAction(tool="moderate.tool", parameters={"cmd": "sudo apt remove nginx"}))
+        result = router.execute(
+            ToolCallAction(
+                tool="moderate.tool", parameters={"cmd": "sudo apt remove nginx"}
+            )
+        )
         assert result.status == ToolResultStatus.DENIED
 
     def test_strict_allows_moderate_safe_params(self):
@@ -193,7 +251,9 @@ class TestToolRouterSafetyMode:
 
         registry = self._make_registry_with_tools()
         router = ToolRouter(registry=registry, safety_policy={"safety_mode": "strict"})
-        result = router.execute(ToolCallAction(tool="moderate.tool", parameters={"cmd": "echo hi"}))
+        result = router.execute(
+            ToolCallAction(tool="moderate.tool", parameters={"cmd": "echo hi"})
+        )
         assert result.status == ToolResultStatus.SUCCESS
 
     def test_safe_tool_always_allowed(self):
@@ -211,28 +271,45 @@ class TestToolRouterSafetyMode:
 # 4. ToolRouter NEEDS_CONFIRMATION
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestToolRouterNeedsConfirmation:
     """Tests for require_confirmation returning NEEDS_CONFIRMATION."""
 
     def test_require_confirmation_returns_needs_confirmation(self):
-        from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta, ToolRegistry, ToolRouter
+        from navig.tools.router import (
+            SafetyLevel,
+            ToolDomain,
+            ToolMeta,
+            ToolRegistry,
+            ToolRouter,
+        )
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = ToolRegistry()
         registry.register(
-            ToolMeta(name="confirm.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE),
+            ToolMeta(
+                name="confirm.tool", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE
+            ),
             handler=lambda **kw: {"ok": True},
         )
         router = ToolRouter(
             registry=registry,
             safety_policy={"require_confirmation": ["confirm.tool"]},
         )
-        result = router.execute(ToolCallAction(tool="confirm.tool", parameters={"x": 1}))
+        result = router.execute(
+            ToolCallAction(tool="confirm.tool", parameters={"x": 1})
+        )
         assert result.status == ToolResultStatus.NEEDS_CONFIRMATION
         assert "requires human confirmation" in result.error
 
     def test_blocked_tool_still_denied(self):
-        from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta, ToolRegistry, ToolRouter
+        from navig.tools.router import (
+            SafetyLevel,
+            ToolDomain,
+            ToolMeta,
+            ToolRegistry,
+            ToolRouter,
+        )
         from navig.tools.schemas import ToolCallAction, ToolResultStatus
 
         registry = ToolRegistry()
@@ -253,11 +330,13 @@ class TestToolRouterNeedsConfirmation:
 # 5. ApprovalPolicy
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestApprovalPolicy:
     """Tests for ApprovalPolicy classification."""
 
     def test_safe_pattern(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+
         policy = ApprovalPolicy.default()
         assert policy.classify_command("host list") == ApprovalLevel.SAFE
         assert policy.classify_command("help something") == ApprovalLevel.SAFE
@@ -265,12 +344,14 @@ class TestApprovalPolicy:
 
     def test_confirm_pattern(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+
         policy = ApprovalPolicy.default()
         assert policy.classify_command("file remove /tmp/test") == ApprovalLevel.CONFIRM
         assert policy.classify_command("db restore backup.sql") == ApprovalLevel.CONFIRM
 
     def test_dangerous_pattern(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+
         policy = ApprovalPolicy.default()
         assert policy.classify_command("run rm something") == ApprovalLevel.DANGEROUS
         assert policy.classify_command("run shutdown now") == ApprovalLevel.DANGEROUS
@@ -278,17 +359,22 @@ class TestApprovalPolicy:
 
     def test_never_pattern(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+
         policy = ApprovalPolicy.default()
         assert policy.classify_command("run rm -rf /") == ApprovalLevel.NEVER
-        assert policy.classify_command("DROP DATABASE production") == ApprovalLevel.NEVER
+        assert (
+            policy.classify_command("DROP DATABASE production") == ApprovalLevel.NEVER
+        )
 
     def test_unlisted_defaults_to_confirm(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+
         policy = ApprovalPolicy.default()
         assert policy.classify_command("some random command") == ApprovalLevel.CONFIRM
 
     def test_from_config(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+
         config = {
             "approval": {
                 "enabled": True,
@@ -309,12 +395,14 @@ class TestApprovalPolicy:
 
     def test_auto_approve_users(self):
         from navig.approval.policies import ApprovalPolicy
+
         policy = ApprovalPolicy(auto_approve_users=["admin123"])
         assert policy.is_user_auto_approved("admin123") is True
         assert policy.is_user_auto_approved("random") is False
 
     def test_classify_alias(self):
         from navig.approval.policies import ApprovalLevel, ApprovalPolicy
+
         policy = ApprovalPolicy.default()
         assert policy.classify("host list") == policy.classify_command("host list")
 
@@ -322,6 +410,7 @@ class TestApprovalPolicy:
 # ═══════════════════════════════════════════════════════════════
 # 6. ApprovalRequest
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestApprovalRequest:
     """Tests for ApprovalRequest serialization."""
@@ -350,8 +439,13 @@ class TestApprovalRequest:
         from navig.approval.policies import ApprovalLevel, ApprovalStatus
 
         req = ApprovalRequest(
-            id="x", command="test", level=ApprovalLevel.SAFE,
-            description="", session_key="", channel="", user_id="",
+            id="x",
+            command="test",
+            level=ApprovalLevel.SAFE,
+            description="",
+            session_key="",
+            channel="",
+            user_id="",
         )
         assert req.status == ApprovalStatus.PENDING
 
@@ -360,6 +454,7 @@ class TestApprovalRequest:
 # 7. ApprovalManager — async tests
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestApprovalManager:
     """Tests for ApprovalManager core logic."""
 
@@ -367,6 +462,7 @@ class TestApprovalManager:
     def manager(self):
         from navig.approval.manager import ApprovalManager
         from navig.approval.policies import ApprovalPolicy
+
         return ApprovalManager(policy=ApprovalPolicy.default())
 
     @pytest.mark.asyncio
@@ -383,6 +479,7 @@ class TestApprovalManager:
     async def test_disabled_policy_approves_all(self):
         from navig.approval.manager import ApprovalManager
         from navig.approval.policies import ApprovalPolicy
+
         policy = ApprovalPolicy(enabled=False)
         mgr = ApprovalManager(policy=policy)
         result = await mgr.request_approval("run rm -rf /")
@@ -392,6 +489,7 @@ class TestApprovalManager:
     async def test_auto_approve_user(self):
         from navig.approval.manager import ApprovalManager
         from navig.approval.policies import ApprovalPolicy
+
         policy = ApprovalPolicy(auto_approve_users=["trusted"])
         mgr = ApprovalManager(policy=policy)
         result = await mgr.request_approval("run rm something", user_id="trusted")
@@ -400,6 +498,7 @@ class TestApprovalManager:
     @pytest.mark.asyncio
     async def test_respond_approval(self, manager):
         """Test that responding to a pending request resolves the future."""
+
         # Create a confirm-level command (will block waiting for approval)
         async def approve_after_delay(mgr):
             await asyncio.sleep(0.1)
@@ -429,6 +528,7 @@ class TestApprovalManager:
     async def test_dangerous_timeout_denies(self):
         from navig.approval.manager import ApprovalManager
         from navig.approval.policies import ApprovalPolicy
+
         # Very short timeout for testing
         policy = ApprovalPolicy(timeout_seconds=1)
         mgr = ApprovalManager(policy=policy)
@@ -451,9 +551,13 @@ class TestApprovalManager:
         from navig.approval.policies import ApprovalLevel
 
         req = ApprovalRequest(
-            id="abc", command="run shutdown",
+            id="abc",
+            command="run shutdown",
             level=ApprovalLevel.DANGEROUS,
-            description="test", session_key="", channel="", user_id="",
+            description="test",
+            session_key="",
+            channel="",
+            user_id="",
         )
         msg = manager.format_approval_message(req)
         assert "🚨" in msg  # dangerous emoji
@@ -465,22 +569,26 @@ class TestApprovalManager:
 # 8. AuthGuard
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestAuthGuard:
     """Tests for the AuthGuard access control gate."""
 
     def test_open_mode_allows_everyone(self):
         from navig.gateway.auth_guard import AuthGuard
+
         guard = AuthGuard()  # empty allowlist = open mode
         assert guard.is_authorized(user_id=999, chat_id=1) is True
 
     def test_allowlist_allows_user(self):
         from navig.gateway.auth_guard import AuthGuard
+
         guard = AuthGuard(allowed_users={123, 456})
         assert guard.is_authorized(user_id=123, chat_id=1) is True
         assert guard.is_authorized(user_id=789, chat_id=1) is False
 
     def test_group_auth(self):
         from navig.gateway.auth_guard import AuthGuard
+
         guard = AuthGuard(allowed_users={123}, allowed_groups={-999})
         # User not in allowed_users but in allowed group
         assert guard.is_authorized(user_id=789, chat_id=-999, is_group=True) is True
@@ -489,6 +597,7 @@ class TestAuthGuard:
 
     def test_group_check_only_when_is_group(self):
         from navig.gateway.auth_guard import AuthGuard
+
         guard = AuthGuard(allowed_users={123}, allowed_groups={-999})
         # chat_id matches group, but is_group=False → not authorized
         assert guard.is_authorized(user_id=789, chat_id=-999, is_group=False) is False
@@ -498,17 +607,21 @@ class TestAuthGuard:
 # 9. Gateway routes field correctness (regression)
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestGatewayApprovalRoutes:
     """Regression tests for routes/approval.py field names."""
 
     def test_pending_uses_correct_fields(self):
         """Verify the _pending route handler accesses correct ApprovalRequest fields."""
         import importlib
+
         import navig.gateway.routes.approval as approval_mod
+
         source = importlib.util.find_spec("navig.gateway.routes.approval")
 
         # Read source and verify it uses 'req.command' not 'req.action'
         import inspect
+
         src = inspect.getsource(approval_mod)
         assert "req.command" in src, "Route should use req.command (not req.action)"
         assert "req.action" not in src, "Route should NOT use req.action (was bug)"
@@ -518,7 +631,9 @@ class TestGatewayApprovalRoutes:
     def test_request_uses_correct_kwargs(self):
         """Verify the _request route handler passes correct kwargs to request_approval."""
         import inspect
+
         import navig.gateway.routes.approval as mod
+
         src = inspect.getsource(mod)
         assert 'command=data["command"]' in src or "command=data[" in src
         # Should NOT pass 'action=' since the method signature uses 'command='
@@ -529,17 +644,27 @@ class TestGatewayApprovalRoutes:
 # 10. ToolResultStatus enum completeness
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestToolResultStatus:
     """Verify NEEDS_CONFIRMATION status exists."""
 
     def test_needs_confirmation_exists(self):
         from navig.tools.schemas import ToolResultStatus
+
         assert hasattr(ToolResultStatus, "NEEDS_CONFIRMATION")
         assert ToolResultStatus.NEEDS_CONFIRMATION.value == "needs_confirmation"
 
     def test_all_statuses(self):
         from navig.tools.schemas import ToolResultStatus
-        expected = {"success", "error", "timeout", "denied", "not_found", "needs_confirmation"}
+
+        expected = {
+            "success",
+            "error",
+            "timeout",
+            "denied",
+            "not_found",
+            "needs_confirmation",
+        }
         actual = {s.value for s in ToolResultStatus}
         assert actual == expected
 
@@ -548,11 +673,13 @@ class TestToolResultStatus:
 # 11. Config schema — ExecutionConfig + ToolsConfig safety fields
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestConfigSafetyFields:
     """Verify safety-related config fields exist and default correctly."""
 
     def test_execution_config_defaults(self):
         from navig.core.config_schema import GlobalConfig
+
         cfg = GlobalConfig()
         assert cfg.execution.confirmation_level.value == "standard"
         assert cfg.execution.auto_confirm_safe is False
@@ -560,21 +687,25 @@ class TestConfigSafetyFields:
 
     def test_tools_config_safety_mode(self):
         from navig.core.config_schema import GlobalConfig
+
         cfg = GlobalConfig()
         assert cfg.tools.safety_mode == "standard"
 
     def test_tools_config_custom_safety_mode(self):
         from navig.core.config_schema import GlobalConfig
+
         cfg = GlobalConfig(tools={"safety_mode": "strict"})
         assert cfg.tools.safety_mode == "strict"
 
     def test_tools_config_blocked_tools(self):
         from navig.core.config_schema import GlobalConfig
+
         cfg = GlobalConfig(tools={"blocked_tools": ["evil.tool"]})
         assert "evil.tool" in cfg.tools.blocked_tools
 
     def test_tools_config_require_confirmation(self):
         from navig.core.config_schema import GlobalConfig
+
         cfg = GlobalConfig(tools={"require_confirmation": ["risky.tool"]})
         assert "risky.tool" in cfg.tools.require_confirmation
 
@@ -583,25 +714,35 @@ class TestConfigSafetyFields:
 # 12. Integration: safety_guard + ToolRouter + Config
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestSafetyIntegration:
     """End-to-end integration tests for the safety pipeline."""
 
     def _make_registry(self):
         from navig.tools.router import SafetyLevel, ToolDomain, ToolMeta, ToolRegistry
+
         registry = ToolRegistry()
         # Safe tool
         registry.register(
-            ToolMeta(name="info.get", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE),
+            ToolMeta(
+                name="info.get", domain=ToolDomain.SYSTEM, safety=SafetyLevel.SAFE
+            ),
             handler=lambda **kw: {"info": "safe data"},
         )
         # Moderate tool
         registry.register(
-            ToolMeta(name="file.write", domain=ToolDomain.SYSTEM, safety=SafetyLevel.MODERATE),
+            ToolMeta(
+                name="file.write", domain=ToolDomain.SYSTEM, safety=SafetyLevel.MODERATE
+            ),
             handler=lambda **kw: {"written": True},
         )
         # Dangerous tool
         registry.register(
-            ToolMeta(name="system.exec", domain=ToolDomain.SYSTEM, safety=SafetyLevel.DANGEROUS),
+            ToolMeta(
+                name="system.exec",
+                domain=ToolDomain.SYSTEM,
+                safety=SafetyLevel.DANGEROUS,
+            ),
             handler=lambda **kw: {"executed": True},
         )
         return registry
@@ -622,11 +763,15 @@ class TestSafetyIntegration:
         assert r.status == ToolResultStatus.SUCCESS
 
         # Dangerous tool blocked even with safe params
-        r = router.execute(ToolCallAction(tool="system.exec", parameters={"cmd": "echo hi"}))
+        r = router.execute(
+            ToolCallAction(tool="system.exec", parameters={"cmd": "echo hi"})
+        )
         assert r.status == ToolResultStatus.DENIED
 
         # Moderate tool with safe params passes
-        r = router.execute(ToolCallAction(tool="file.write", parameters={"path": "/tmp/test"}))
+        r = router.execute(
+            ToolCallAction(tool="file.write", parameters={"path": "/tmp/test"})
+        )
         assert r.status == ToolResultStatus.SUCCESS
 
     def test_confirmation_and_blocked_priority(self):
@@ -652,8 +797,21 @@ class TestSafetyIntegration:
         from navig.safety_guard import should_confirm
 
         # Simulated config values
-        assert should_confirm("ls", confirmation_level="critical", auto_confirm_safe=False) is False
-        assert should_confirm("rm -rf /", confirmation_level="critical", auto_confirm_safe=True) is True
+        assert (
+            should_confirm("ls", confirmation_level="critical", auto_confirm_safe=False)
+            is False
+        )
+        assert (
+            should_confirm(
+                "rm -rf /", confirmation_level="critical", auto_confirm_safe=True
+            )
+            is True
+        )
         assert should_confirm("sudo apt", confirmation_level="standard") is True
         assert should_confirm("echo hi", confirmation_level="verbose") is True
-        assert should_confirm("echo hi", confirmation_level="verbose", auto_confirm_safe=True) is False
+        assert (
+            should_confirm(
+                "echo hi", confirmation_level="verbose", auto_confirm_safe=True
+            )
+            is False
+        )

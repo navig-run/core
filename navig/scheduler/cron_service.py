@@ -27,16 +27,18 @@ logger = get_debug_logger()
 
 class JobStatus(Enum):
     """Job execution status."""
-    PENDING = 'pending'
-    RUNNING = 'running'
-    SUCCESS = 'success'
-    FAILED = 'failed'
-    DISABLED = 'disabled'
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+    DISABLED = "disabled"
 
 
 @dataclass
 class CronConfig:
     """Cron service configuration."""
+
     enabled: bool = True
     max_concurrent_jobs: int = 5
     default_timeout_seconds: int = 300
@@ -44,23 +46,24 @@ class CronConfig:
     max_retries: int = 3
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'CronConfig':
+    def from_dict(cls, data: dict) -> "CronConfig":
         return cls(
-            enabled=data.get('enabled', True),
-            max_concurrent_jobs=data.get('max_concurrent', 5),
-            default_timeout_seconds=data.get('timeout', 300),
-            retry_failed=data.get('retry_failed', True),
-            max_retries=data.get('max_retries', 3),
+            enabled=data.get("enabled", True),
+            max_concurrent_jobs=data.get("max_concurrent", 5),
+            default_timeout_seconds=data.get("timeout", 300),
+            retry_failed=data.get("retry_failed", True),
+            max_retries=data.get("max_retries", 3),
         )
 
 
 @dataclass
 class CronJob:
     """A scheduled cron job."""
+
     id: str
     name: str
     schedule: str  # Cron expression or natural language
-    command: str   # NAVIG command or AI prompt
+    command: str  # NAVIG command or AI prompt
     enabled: bool = True
     timeout_seconds: int = 300
     retry_count: int = 0
@@ -73,44 +76,58 @@ class CronJob:
 
     def to_dict(self) -> dict:
         return {
-            'id': self.id,
-            'name': self.name,
-            'schedule': self.schedule,
-            'command': self.command,
-            'enabled': self.enabled,
-            'timeout_seconds': self.timeout_seconds,
-            'retry_count': self.retry_count,
-            'max_retries': self.max_retries,
-            'last_run': self.last_run.isoformat() if self.last_run else None,
-            'next_run': self.next_run.isoformat() if self.next_run else None,
-            'last_status': self.last_status.value if self.last_status else None,
-            'last_output': self.last_output,
-            'created_at': self.created_at.isoformat(),
+            "id": self.id,
+            "name": self.name,
+            "schedule": self.schedule,
+            "command": self.command,
+            "enabled": self.enabled,
+            "timeout_seconds": self.timeout_seconds,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
+            "last_run": self.last_run.isoformat() if self.last_run else None,
+            "next_run": self.next_run.isoformat() if self.next_run else None,
+            "last_status": self.last_status.value if self.last_status else None,
+            "last_output": self.last_output,
+            "created_at": self.created_at.isoformat(),
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'CronJob':
+    def from_dict(cls, data: dict) -> "CronJob":
         return cls(
-            id=data['id'],
-            name=data['name'],
-            schedule=data['schedule'],
-            command=data['command'],
-            enabled=data.get('enabled', True),
-            timeout_seconds=data.get('timeout_seconds', 300),
-            retry_count=data.get('retry_count', 0),
-            max_retries=data.get('max_retries', 3),
-            last_run=datetime.fromisoformat(data['last_run']) if data.get('last_run') else None,
-            next_run=datetime.fromisoformat(data['next_run']) if data.get('next_run') else None,
-            last_status=JobStatus(data['last_status']) if data.get('last_status') else None,
-            last_output=data.get('last_output'),
-            created_at=datetime.fromisoformat(data['created_at']) if data.get('created_at') else datetime.now(),
+            id=data["id"],
+            name=data["name"],
+            schedule=data["schedule"],
+            command=data["command"],
+            enabled=data.get("enabled", True),
+            timeout_seconds=data.get("timeout_seconds", 300),
+            retry_count=data.get("retry_count", 0),
+            max_retries=data.get("max_retries", 3),
+            last_run=(
+                datetime.fromisoformat(data["last_run"])
+                if data.get("last_run")
+                else None
+            ),
+            next_run=(
+                datetime.fromisoformat(data["next_run"])
+                if data.get("next_run")
+                else None
+            ),
+            last_status=(
+                JobStatus(data["last_status"]) if data.get("last_status") else None
+            ),
+            last_output=data.get("last_output"),
+            created_at=(
+                datetime.fromisoformat(data["created_at"])
+                if data.get("created_at")
+                else datetime.now()
+            ),
         )
 
 
 class CronParser:
     """
     Parses cron expressions and natural language schedules.
-    
+
     Supports:
     - Standard cron: "*/5 * * * *" (every 5 minutes)
     - Natural language: "every 30 minutes", "daily at 9am"
@@ -118,19 +135,19 @@ class CronParser:
 
     # Natural language patterns
     PATTERNS = [
-        (r'every (\d+) ?min(ute)?s?', lambda m: timedelta(minutes=int(m.group(1)))),
-        (r'every (\d+) ?hours?', lambda m: timedelta(hours=int(m.group(1)))),
-        (r'every (\d+) ?days?', lambda m: timedelta(days=int(m.group(1)))),
-        (r'hourly', lambda m: timedelta(hours=1)),
-        (r'daily', lambda m: timedelta(days=1)),
-        (r'weekly', lambda m: timedelta(weeks=1)),
+        (r"every (\d+) ?min(ute)?s?", lambda m: timedelta(minutes=int(m.group(1)))),
+        (r"every (\d+) ?hours?", lambda m: timedelta(hours=int(m.group(1)))),
+        (r"every (\d+) ?days?", lambda m: timedelta(days=int(m.group(1)))),
+        (r"hourly", lambda m: timedelta(hours=1)),
+        (r"daily", lambda m: timedelta(days=1)),
+        (r"weekly", lambda m: timedelta(weeks=1)),
     ]
 
     @classmethod
     def parse(cls, schedule: str) -> Optional[timedelta]:
         """
         Parse schedule string to interval.
-        
+
         For simple interval-based scheduling, returns timedelta.
         For complex cron expressions, returns None (use calculate_next instead).
         """
@@ -152,21 +169,19 @@ class CronParser:
     def _is_cron_expression(cls, schedule: str) -> bool:
         """Check if schedule is a cron expression."""
         parts = schedule.strip().split()
-        return len(parts) >= 5 and all(
-            cls._is_cron_field(p) for p in parts[:5]
-        )
+        return len(parts) >= 5 and all(cls._is_cron_field(p) for p in parts[:5])
 
     @classmethod
     def _is_cron_field(cls, field: str) -> bool:
         """Check if string is a valid cron field."""
         # Allow *, numbers, ranges, lists, steps
-        return bool(re.match(r'^[\d\*\-,/]+$', field))
+        return bool(re.match(r"^[\d\*\-,/]+$", field))
 
     @classmethod
     def calculate_next(cls, schedule: str, from_time: datetime = None) -> datetime:
         """
         Calculate the next run time for a schedule.
-        
+
         For interval-based schedules, adds interval to from_time.
         For cron expressions, calculates next matching time.
         """
@@ -189,7 +204,7 @@ class CronParser:
     def _next_cron_time(cls, cron_expr: str, from_time: datetime) -> datetime:
         """
         Calculate next run time for cron expression.
-        
+
         Simple implementation - for complex cron expressions,
         consider using croniter library.
         """
@@ -215,42 +230,36 @@ class CronParser:
 
     @classmethod
     def _matches_cron(
-        cls,
-        dt: datetime,
-        minute: str,
-        hour: str,
-        day: str,
-        month: str,
-        weekday: str
+        cls, dt: datetime, minute: str, hour: str, day: str, month: str, weekday: str
     ) -> bool:
         """Check if datetime matches cron fields."""
         return (
-            cls._matches_field(dt.minute, minute, 0, 59) and
-            cls._matches_field(dt.hour, hour, 0, 23) and
-            cls._matches_field(dt.day, day, 1, 31) and
-            cls._matches_field(dt.month, month, 1, 12) and
-            cls._matches_field(dt.weekday(), weekday, 0, 6)
+            cls._matches_field(dt.minute, minute, 0, 59)
+            and cls._matches_field(dt.hour, hour, 0, 23)
+            and cls._matches_field(dt.day, day, 1, 31)
+            and cls._matches_field(dt.month, month, 1, 12)
+            and cls._matches_field(dt.weekday(), weekday, 0, 6)
         )
 
     @classmethod
     def _matches_field(cls, value: int, field: str, min_val: int, max_val: int) -> bool:
         """Check if value matches cron field."""
-        if field == '*':
+        if field == "*":
             return True
 
         # Handle step (*/5)
-        if field.startswith('*/'):
+        if field.startswith("*/"):
             step = int(field[2:])
             return value % step == 0
 
         # Handle range (1-5)
-        if '-' in field:
-            start, end = field.split('-')
+        if "-" in field:
+            start, end = field.split("-")
             return int(start) <= value <= int(end)
 
         # Handle list (1,3,5)
-        if ',' in field:
-            values = [int(v) for v in field.split(',')]
+        if "," in field:
+            values = [int(v) for v in field.split(",")]
             return value in values
 
         # Exact match
@@ -260,7 +269,7 @@ class CronParser:
 class CronService:
     """
     Persistent cron-like job scheduler.
-    
+
     Features:
     - Add/remove/update jobs
     - Persistent storage
@@ -270,9 +279,9 @@ class CronService:
 
     def __init__(
         self,
-        gateway: 'NavigGateway',
+        gateway: "NavigGateway",
         storage_path: Path,
-        config: Optional[CronConfig] = None
+        config: Optional[CronConfig] = None,
     ):
         self.gateway = gateway
         self.storage_path = storage_path
@@ -295,7 +304,7 @@ class CronService:
         self._load_jobs()
 
     def _get_jobs_path(self) -> Path:
-        return self.storage_path / 'cron_jobs.json'
+        return self.storage_path / "cron_jobs.json"
 
     def _load_jobs(self) -> None:
         """Load jobs from disk."""
@@ -305,11 +314,11 @@ class CronService:
             try:
                 data = json.loads(jobs_path.read_text())
 
-                for job_data in data.get('jobs', []):
+                for job_data in data.get("jobs", []):
                     job = CronJob.from_dict(job_data)
                     self.jobs[job.id] = job
 
-                self._job_counter = data.get('counter', 0)
+                self._job_counter = data.get("counter", 0)
 
                 logger.info(f"Loaded {len(self.jobs)} cron jobs")
 
@@ -321,8 +330,8 @@ class CronService:
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
         data = {
-            'counter': self._job_counter,
-            'jobs': [j.to_dict() for j in self.jobs.values()],
+            "counter": self._job_counter,
+            "jobs": [j.to_dict() for j in self.jobs.values()],
         }
 
         self._get_jobs_path().write_text(json.dumps(data, indent=2))
@@ -375,18 +384,18 @@ class CronService:
         schedule: str,
         command: str,
         enabled: bool = True,
-        timeout_seconds: int = None
+        timeout_seconds: int = None,
     ) -> CronJob:
         """
         Add a new cron job.
-        
+
         Args:
             name: Human-readable job name
             schedule: Cron expression or natural language
             command: NAVIG command or AI prompt
             enabled: Whether job is active
             timeout_seconds: Max execution time
-            
+
         Returns:
             Created job
         """
@@ -419,7 +428,7 @@ class CronService:
                 setattr(job, key, value)
 
         # Recalculate next run if schedule changed
-        if 'schedule' in kwargs:
+        if "schedule" in kwargs:
             job.next_run = CronParser.calculate_next(job.schedule)
 
         self._save_jobs()
@@ -476,7 +485,8 @@ class CronService:
 
                 # Find jobs due to run
                 due_jobs = [
-                    job for job in self.jobs.values()
+                    job
+                    for job in self.jobs.values()
                     if job.enabled and job.next_run and job.next_run <= now
                 ]
 
@@ -510,8 +520,7 @@ class CronService:
             try:
                 # Run the command
                 output = await asyncio.wait_for(
-                    self._execute_job_command(job),
-                    timeout=job.timeout_seconds
+                    self._execute_job_command(job), timeout=job.timeout_seconds
                 )
 
                 job.last_status = JobStatus.SUCCESS
@@ -523,13 +532,14 @@ class CronService:
                 # Emit success event
                 if self.gateway.event_queue:
                     from navig.gateway.system_events import EventTypes
+
                     await self.gateway.event_queue.emit(
                         EventTypes.CRON_JOB_COMPLETE,
                         {
-                            'job_id': job.id,
-                            'job_name': job.name,
-                            'duration': (datetime.now() - start_time).total_seconds(),
-                        }
+                            "job_id": job.id,
+                            "job_name": job.name,
+                            "duration": (datetime.now() - start_time).total_seconds(),
+                        },
                     )
 
             except asyncio.TimeoutError:
@@ -549,13 +559,14 @@ class CronService:
                 # Emit failure event
                 if self.gateway.event_queue:
                     from navig.gateway.system_events import EventTypes
+
                     await self.gateway.event_queue.emit(
                         EventTypes.CRON_JOB_FAILED,
                         {
-                            'job_id': job.id,
-                            'job_name': job.name,
-                            'error': str(e),
-                        }
+                            "job_id": job.id,
+                            "job_name": job.name,
+                            "error": str(e),
+                        },
                     )
 
             # Calculate next run
@@ -578,7 +589,7 @@ class CronService:
         command = job.command.strip()
 
         # Check if it's a direct NAVIG command
-        if command.startswith('navig '):
+        if command.startswith("navig "):
             import shlex
             import subprocess
 
@@ -587,7 +598,7 @@ class CronService:
                 shell=False,
                 capture_output=True,
                 text=True,
-                timeout=job.timeout_seconds
+                timeout=job.timeout_seconds,
             )
 
             output = result.stdout
@@ -601,8 +612,8 @@ class CronService:
 
         # Otherwise, treat as AI prompt
         response = await self.gateway.run_agent_turn(
-            agent_id='cron',
-            session_key=f'cron:{job.id}',
+            agent_id="cron",
+            session_key=f"cron:{job.id}",
             message=command,
         )
 
@@ -637,10 +648,10 @@ class CronService:
             next_run_in = f"{minutes}m" if minutes > 0 else "now"
 
         return {
-            'running': self._running,
-            'enabled': self.config.enabled,
-            'total_jobs': len(self.jobs),
-            'enabled_jobs': sum(1 for j in self.jobs.values() if j.enabled),
-            'next_job': next_job.name if next_job else None,
-            'next_run_in': next_run_in,
+            "running": self._running,
+            "enabled": self.config.enabled,
+            "total_jobs": len(self.jobs),
+            "enabled_jobs": sum(1 for j in self.jobs.values() if j.enabled),
+            "next_job": next_job.name if next_job else None,
+            "next_run_in": next_run_in,
         }

@@ -1,4 +1,5 @@
 """tests/test_hooks.py — Unit tests for navig.tools.hooks."""
+
 from __future__ import annotations
 
 import pytest
@@ -11,10 +12,10 @@ from navig.tools.hooks import (
     reset_hook_registry,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def isolated_registry():
@@ -27,6 +28,7 @@ def isolated_registry():
 # ---------------------------------------------------------------------------
 # HookRegistry.register / .on decorator
 # ---------------------------------------------------------------------------
+
 
 def test_register_and_fire():
     reg = HookRegistry()
@@ -68,6 +70,7 @@ def test_fire_different_event_no_cross_trigger():
 # ---------------------------------------------------------------------------
 # ToolExecutionEvent payload construction
 # ---------------------------------------------------------------------------
+
 
 def test_event_payload_known_fields():
     reg = HookRegistry()
@@ -111,6 +114,7 @@ def test_event_payload_metadata_merged():
 # Error isolation — failing callbacks must not propagate
 # ---------------------------------------------------------------------------
 
+
 def test_failing_hook_does_not_propagate():
     reg = HookRegistry()
     good = []
@@ -129,6 +133,7 @@ def test_failing_hook_does_not_propagate():
 # ---------------------------------------------------------------------------
 # Unregister
 # ---------------------------------------------------------------------------
+
 
 def test_unregister_returns_true_when_present():
     reg = HookRegistry()
@@ -157,6 +162,7 @@ def test_unregister_stops_firing():
 # Clear
 # ---------------------------------------------------------------------------
 
+
 def test_clear_all():
     reg = HookRegistry()
     calls = []
@@ -183,6 +189,7 @@ def test_clear_single_event():
 # hook_count
 # ---------------------------------------------------------------------------
 
+
 def test_hook_count_all():
     reg = HookRegistry()
     reg.register(ToolEvent.BEFORE_EXECUTE, lambda ev: None)
@@ -202,6 +209,7 @@ def test_hook_count_per_event():
 # Global singleton
 # ---------------------------------------------------------------------------
 
+
 def test_get_hook_registry_singleton():
     a = get_hook_registry()
     b = get_hook_registry()
@@ -219,9 +227,10 @@ def test_reset_hook_registry_gives_fresh_instance():
 # ToolRouter integration — hooks fire during execution
 # ---------------------------------------------------------------------------
 
+
 def test_hooks_fire_on_router_execute():
     """ToolRouter fires BEFORE_EXECUTE and AFTER_EXECUTE for known tools."""
-    from navig.tools.router import get_tool_router, ToolCallAction, reset_globals
+    from navig.tools.router import ToolCallAction, get_tool_router, reset_globals
 
     reset_globals()
     reset_hook_registry()
@@ -244,7 +253,7 @@ def test_hooks_fire_on_router_execute():
 
 
 def test_hooks_fire_not_found():
-    from navig.tools.router import get_tool_router, ToolCallAction, reset_globals
+    from navig.tools.router import ToolCallAction, get_tool_router, reset_globals
 
     reset_globals()
     reset_hook_registry()
@@ -260,14 +269,18 @@ def test_hooks_fire_not_found():
 @pytest.mark.asyncio
 async def test_hooks_fire_on_async_execute():
     """async_execute path also fires hooks."""
-    from navig.tools.router import get_tool_router, ToolCallAction, reset_globals
+    from navig.tools.router import ToolCallAction, get_tool_router, reset_globals
 
     reset_globals()
     reset_hook_registry()
     reg = get_hook_registry()
     events: list[ToolEvent] = []
-    reg.register(ToolEvent.BEFORE_EXECUTE, lambda ev: events.append(ToolEvent.BEFORE_EXECUTE))
-    reg.register(ToolEvent.AFTER_EXECUTE, lambda ev: events.append(ToolEvent.AFTER_EXECUTE))
+    reg.register(
+        ToolEvent.BEFORE_EXECUTE, lambda ev: events.append(ToolEvent.BEFORE_EXECUTE)
+    )
+    reg.register(
+        ToolEvent.AFTER_EXECUTE, lambda ev: events.append(ToolEvent.AFTER_EXECUTE)
+    )
 
     router = get_tool_router()
     await router.async_execute(ToolCallAction(tool="system_info"))

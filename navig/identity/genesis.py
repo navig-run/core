@@ -12,6 +12,7 @@ Color language:
 
 Note: Subsystem status boot lines have moved to BootScreen (onboard.py).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,17 +29,19 @@ _NAVIG_SPECTRUM = ["#0057FF", "#00A8E8", "#003DA5", "#00D4FF", "#1B5EAF", "#2271
 
 # ── Entry points ──────────────────────────────────────────────────────────────
 
+
 async def play_genesis_animation(entity: "NaviEntity") -> None:
     """Async entry point — call from asyncio.run() or existing event loop."""
     from navig.identity.entity import PALETTES
 
-    palette         = PALETTES[entity.palette_key]
+    palette = PALETTES[entity.palette_key]
     primary, accent = palette[1], palette[2]
 
     await _act_noise()
     await _act_sigil_assembly(entity, primary, accent)
 
     from navig.identity.renderer import render_sigil_card
+
     render_sigil_card(entity)
 
 
@@ -48,6 +51,7 @@ def play_genesis_animation_sync(entity: "NaviEntity") -> None:
         asyncio.run(play_genesis_animation(entity))
     except RuntimeError:
         import threading
+
         done = threading.Event()
 
         def _run() -> None:
@@ -61,6 +65,7 @@ def play_genesis_animation_sync(entity: "NaviEntity") -> None:
 
 # ── ACT I — Signal emergence (NAVIG brand noise) ─────────────────────────────
 
+
 async def _act_noise() -> None:
     try:
         from rich.console import Console
@@ -69,19 +74,19 @@ async def _act_noise() -> None:
     except ImportError:
         return
 
-    width   = min(shutil.get_terminal_size(fallback=(80, 24)).columns - 4, 76)
-    NOISE   = list("░▒▓⣿⣶⣤⣀⠿⠶ ")
+    width = min(shutil.get_terminal_size(fallback=(80, 24)).columns - 4, 76)
+    NOISE = list("░▒▓⣿⣶⣤⣀⠿⠶ ")
     console = Console()
-    rng     = random.Random()   # noise phase is intentionally non-deterministic
+    rng = random.Random()  # noise phase is intentionally non-deterministic
 
     with Live(console=console, refresh_per_second=24, transient=True) as live:
         for frame in range(20):
             t = Text()
             # Gradually calm from wide noise → narrow centre stripe
             active = max(12, width - frame * 3)
-            pad    = (width - active) // 2
-            col_a  = _NAVIG_SPECTRUM[frame % len(_NAVIG_SPECTRUM)]
-            col_b  = _NAVIG_SPECTRUM[(frame + 2) % len(_NAVIG_SPECTRUM)]
+            pad = (width - active) // 2
+            col_a = _NAVIG_SPECTRUM[frame % len(_NAVIG_SPECTRUM)]
+            col_b = _NAVIG_SPECTRUM[(frame + 2) % len(_NAVIG_SPECTRUM)]
             for row in range(5):
                 line = " " * pad
                 line += "".join(rng.choice(NOISE) for _ in range(active))
@@ -92,6 +97,7 @@ async def _act_noise() -> None:
 
 
 # ── ACT II — Sigil assembly (entity colour materialises) ─────────────────────
+
 
 async def _act_sigil_assembly(entity: "NaviEntity", primary: str, accent: str) -> None:
     try:
@@ -104,7 +110,9 @@ async def _act_sigil_assembly(entity: "NaviEntity", primary: str, accent: str) -
     except ImportError:
         return
 
-    matrix  = entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
+    matrix = (
+        entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
+    )
     console = Console()
 
     with Live(console=console, refresh_per_second=14, transient=True) as live:
@@ -118,7 +126,3 @@ async def _act_sigil_assembly(entity: "NaviEntity", primary: str, accent: str) -
                 partial.append("\n")
             live.update(Align.center(partial))
             await asyncio.sleep(0.09)
-
-
-
-

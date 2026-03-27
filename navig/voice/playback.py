@@ -29,8 +29,10 @@ from typing import Optional
 # Sound catalog — maps names to bundled asset files
 # =============================================================================
 
+
 class NotificationSound(str, Enum):
     """Built-in notification sounds from Chappy firmware assets."""
+
     ALARM = "alarm-default.mp3"
     ALARM_SHORT = "alarm-di.wav"
     ANALYZING = "Analyzing.mp3"
@@ -84,6 +86,7 @@ def _resolve_asset(name: str) -> Optional[Path]:
 # Cross-platform playback backends
 # =============================================================================
 
+
 async def _play_windows(path: Path) -> bool:
     """Play audio on Windows using built-in winsound + PowerShell fallback."""
     ext = path.suffix.lower()
@@ -92,10 +95,10 @@ async def _play_windows(path: Path) -> bool:
     if ext == ".wav":
         try:
             import winsound
+
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
-                None,
-                lambda: winsound.PlaySound(str(path), winsound.SND_FILENAME)
+                None, lambda: winsound.PlaySound(str(path), winsound.SND_FILENAME)
             )
             return True
         except Exception:  # noqa: BLE001
@@ -127,7 +130,8 @@ async def _play_macos(path: Path) -> bool:
     """Play audio on macOS using afplay."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            "afplay", str(path),
+            "afplay",
+            str(path),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -163,6 +167,7 @@ async def _play_linux(path: Path) -> bool:
 # =============================================================================
 # Public API
 # =============================================================================
+
 
 async def play_sound(path_or_name: str | Path) -> bool:
     """

@@ -29,7 +29,9 @@ def _looks_like_private_key(path: Path) -> bool:
     return True
 
 
-def discover_local_ssh_keys(*, no_cache: bool = False, ttl_seconds: int = 300) -> Dict[str, Any]:
+def discover_local_ssh_keys(
+    *, no_cache: bool = False, ttl_seconds: int = 300
+) -> Dict[str, Any]:
     """Discover local SSH private keys.
 
     Returns:

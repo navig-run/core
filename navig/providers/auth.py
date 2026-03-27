@@ -4,6 +4,7 @@ NAVIG AI Providers - Auth Profile Store
 Manages secure storage of API keys and OAuth credentials.
 Based on multi-provider client architecture.
 """
+
 import json
 import os
 import time
@@ -24,7 +25,7 @@ from .types import (
 class AuthProfileManager:
     """
     Manages authentication profiles for AI providers.
-    
+
     Supports:
     - API key credentials (static keys)
     - Token credentials (bearer tokens with optional expiry)
@@ -40,7 +41,7 @@ class AuthProfileManager:
     def __init__(self, config_dir: Optional[Path] = None):
         """
         Initialize the auth profile manager.
-        
+
         Args:
             config_dir: Path to NAVIG config directory (default: ~/.navig)
         """
@@ -67,7 +68,7 @@ class AuthProfileManager:
             return AuthProfileStore()
 
         try:
-            with open(self.store_path, 'r', encoding='utf-8') as f:
+            with open(self.store_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             profiles = {}
@@ -182,7 +183,7 @@ class AuthProfileManager:
 
         # Write with restrictive permissions
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.store_path, 'w', encoding='utf-8') as f:
+        with open(self.store_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
         # Set file permissions (Unix only)
@@ -200,13 +201,13 @@ class AuthProfileManager:
     ) -> str:
         """
         Add an API key credential.
-        
+
         Args:
             provider: Provider name (e.g., "openai", "anthropic")
             api_key: The API key
             profile_id: Optional custom profile ID (default: provider name)
             email: Optional email associated with the key
-        
+
         Returns:
             The profile ID
         """
@@ -255,10 +256,10 @@ class AuthProfileManager:
     def list_profiles(self, provider: Optional[str] = None) -> List[str]:
         """
         List all profile IDs, optionally filtered by provider.
-        
+
         Args:
             provider: Optional provider to filter by
-        
+
         Returns:
             List of profile IDs
         """
@@ -266,23 +267,26 @@ class AuthProfileManager:
             return list(self.store.profiles.keys())
 
         return [
-            pid for pid, cred in self.store.profiles.items()
+            pid
+            for pid, cred in self.store.profiles.items()
             if cred.provider == provider
         ]
 
-    def get_api_key(self, provider: str, profile_id: Optional[str] = None) -> Optional[str]:
+    def get_api_key(
+        self, provider: str, profile_id: Optional[str] = None
+    ) -> Optional[str]:
         """
         Get an API key for a provider.
-        
+
         Resolution order:
         1. Specific profile_id if provided
         2. Profiles matching provider (respecting order)
         3. Environment variables
-        
+
         Args:
             provider: Provider name
             profile_id: Optional specific profile to use
-        
+
         Returns:
             API key or None if not found
         """
@@ -380,7 +384,7 @@ class AuthProfileManager:
     ) -> None:
         """
         Mark a profile as failed.
-        
+
         Args:
             profile_id: The profile that failed
             reason: Failure reason (auth, rate_limit, billing, timeout, unknown)
@@ -398,7 +402,7 @@ class AuthProfileManager:
             # Exponential backoff: 5h, 10h, 20h, max 24h
             hours = min(
                 self.COOLDOWN_HOURS * (2 ** (stats.error_count - 1)),
-                self.MAX_COOLDOWN_HOURS
+                self.MAX_COOLDOWN_HOURS,
             )
             stats.cooldown_until = int(time.time() * 1000) + (hours * 3600 * 1000)
 
@@ -414,7 +418,7 @@ class AuthProfileManager:
     def resolve_auth(self, provider: str) -> Tuple[Optional[str], str]:
         """
         Resolve authentication for a provider.
-        
+
         Returns:
             Tuple of (api_key, source_description)
         """
@@ -449,7 +453,7 @@ class AuthProfileManager:
     ) -> str:
         """
         Add OAuth credentials.
-        
+
         Args:
             provider: Provider name (e.g., "openai-codex")
             access_token: OAuth access token
@@ -459,7 +463,7 @@ class AuthProfileManager:
             account_id: User account ID
             email: User email
             profile_id: Optional custom profile ID
-        
+
         Returns:
             The profile ID
         """
@@ -484,11 +488,11 @@ class AuthProfileManager:
     ) -> Optional[OAuthCredential]:
         """
         Get OAuth credentials for a provider.
-        
+
         Args:
             provider: Provider name
             profile_id: Optional specific profile to use
-        
+
         Returns:
             OAuth credential or None
         """
@@ -514,13 +518,13 @@ class AuthProfileManager:
     ) -> bool:
         """
         Update OAuth tokens after a refresh.
-        
+
         Args:
             profile_id: Profile to update
             access_token: New access token
             refresh_token: Optional new refresh token
             expires_at: New expiry timestamp
-        
+
         Returns:
             True if updated, False if profile not found
         """
@@ -540,11 +544,11 @@ class AuthProfileManager:
     def is_oauth_expired(self, profile_id: str, buffer_ms: int = 300000) -> bool:
         """
         Check if OAuth credentials are expired or will expire soon.
-        
+
         Args:
             profile_id: Profile to check
             buffer_ms: Buffer time in milliseconds (default 5 minutes)
-        
+
         Returns:
             True if expired or expiring soon
         """

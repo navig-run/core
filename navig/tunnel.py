@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 import psutil  # We'll add this to requirements if needed
 
 # Platform-specific imports for file locking
-if sys.platform == 'win32':
+if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
@@ -26,7 +26,7 @@ else:
 class TunnelManager:
     """
     Manages SSH tunnels for secure database access.
-    
+
     All traffic is encrypted. The void sees nothing.
     """
 
@@ -41,9 +41,9 @@ class TunnelManager:
         lock_file = self.tunnels_file.parent / f"{self.tunnels_file.name}.lock"
         lock_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(lock_file, 'w') as lock:
+        with open(lock_file, "w") as lock:
             try:
-                if sys.platform == 'win32':
+                if sys.platform == "win32":
                     # Windows file locking
                     msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
                 else:
@@ -52,7 +52,7 @@ class TunnelManager:
 
                 yield lock
             finally:
-                if sys.platform == 'win32':
+                if sys.platform == "win32":
                     try:
                         msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
                     except OSError:
@@ -70,7 +70,7 @@ class TunnelManager:
 
         try:
             with self._lock_tunnels_file():
-                with open(self.tunnels_file, 'r') as f:
+                with open(self.tunnels_file, "r") as f:
                     return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return {}
@@ -80,7 +80,7 @@ class TunnelManager:
         self.tunnels_file.parent.mkdir(parents=True, exist_ok=True)
 
         with self._lock_tunnels_file():
-            with open(self.tunnels_file, 'w') as f:
+            with open(self.tunnels_file, "w") as f:
                 json.dump(tunnels, f, indent=2)
 
     def _find_available_port(self, start_port: int = 3307, end_port: int = 3399) -> int:
@@ -91,7 +91,7 @@ class TunnelManager:
         for port in range(start_port, end_port + 1):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('127.0.0.1', port))
+                    s.bind(("127.0.0.1", port))
                     return port
             except OSError:
                 continue
@@ -103,7 +103,7 @@ class TunnelManager:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(timeout)
-                s.connect(('127.0.0.1', port))
+                s.connect(("127.0.0.1", port))
                 return True
         except (socket.timeout, ConnectionRefusedError, OSError):
             return False
@@ -116,10 +116,12 @@ class TunnelManager:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
 
-    def get_tunnel_status(self, server_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_tunnel_status(
+        self, server_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Get tunnel status for a server.
-        
+
         Returns None if no tunnel is running, otherwise returns tunnel info:
         {
             'server': 'remotekit',
@@ -141,9 +143,9 @@ class TunnelManager:
             return None
 
         # Verify the process is still running
-        pid = tunnel_info.get('pid')
+        pid = tunnel_info.get("pid")
         if pid and self._is_process_running(pid):
-            tunnel_info['is_running'] = True
+            tunnel_info["is_running"] = True
             return tunnel_info
         else:
             # Process is dead. Clean up.
@@ -152,19 +154,19 @@ class TunnelManager:
             return None
 
     def start_tunnel(
-        self,
-        server_name: Optional[str] = None,
-        force_port: Optional[int] = None
+        self, server_name: Optional[str] = None, force_port: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Start SSH tunnel for a server.
-        
+
         Encrypted channel established. We're ghosts now.
         """
         if server_name is None:
             server_name = self.config.get_active_server()
             if server_name is None:
-                raise ValueError("No active server. Use 'navig server use <name>' first.")
+                raise ValueError(
+                    "No active server. Use 'navig server use <name>' first."
+                )
 
         # Check if tunnel already exists
         existing_tunnel = self.get_tunnel_status(server_name)
@@ -178,39 +180,46 @@ class TunnelManager:
         if force_port:
             local_port = force_port
         else:
-            preferred_port = server_config['database'].get('local_tunnel_port', 3307)
+            preferred_port = server_config["database"].get("local_tunnel_port", 3307)
             try:
                 # Try preferred port first
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('127.0.0.1', preferred_port))
+                    s.bind(("127.0.0.1", preferred_port))
                 local_port = preferred_port
             except OSError:
                 # Port conflict. Shifting to stealth mode.
-                port_range = self.config.global_config.get('tunnel_port_range', [3307, 3399])
+                port_range = self.config.global_config.get(
+                    "tunnel_port_range", [3307, 3399]
+                )
                 local_port = self._find_available_port(port_range[0], port_range[1])
 
         # Build SSH tunnel command
-        remote_host = server_config['database'].get('remote_port', '3306')
-        remote_port = server_config['database'].get('remote_port', 3306)
+        remote_host = server_config["database"].get("remote_port", "3306")
+        remote_port = server_config["database"].get("remote_port", 3306)
 
         ssh_args = [
-            'ssh',
-            '-L', f"{local_port}:localhost:{remote_port}",
-            '-N',  # Don't execute remote command
-            '-f',  # Run in background
-            '-o', 'ServerAliveInterval=60',  # Keep connection alive
-            '-o', 'ServerAliveCountMax=3',
-            '-o', 'ExitOnForwardFailure=yes',
-            '-o', 'StrictHostKeyChecking=accept-new',  # Auto-accept new host keys
+            "ssh",
+            "-L",
+            f"{local_port}:localhost:{remote_port}",
+            "-N",  # Don't execute remote command
+            "-f",  # Run in background
+            "-o",
+            "ServerAliveInterval=60",  # Keep connection alive
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "StrictHostKeyChecking=accept-new",  # Auto-accept new host keys
         ]
 
         # Add port if not default
-        if server_config.get('port', 22) != 22:
-            ssh_args.extend(['-p', str(server_config['port'])])
+        if server_config.get("port", 22) != 22:
+            ssh_args.extend(["-p", str(server_config["port"])])
 
         # Add SSH key if specified
-        if server_config.get('ssh_key'):
-            ssh_args.extend(['-i', server_config['ssh_key']])
+        if server_config.get("ssh_key"):
+            ssh_args.extend(["-i", server_config["ssh_key"]])
 
         # Add user@host
         ssh_args.append(f"{server_config['user']}@{server_config['host']}")
@@ -229,7 +238,7 @@ class TunnelManager:
 
             # Get the PID (for -f backgrounded ssh, we need to find it)
             # The process we started will fork and exit, so we need to find the actual tunnel process
-            pid = self._find_tunnel_process(local_port, server_config['host'])
+            pid = self._find_tunnel_process(local_port, server_config["host"])
 
             if pid is None:
                 raise RuntimeError("Failed to find SSH tunnel process")
@@ -240,18 +249,20 @@ class TunnelManager:
 
             # Save tunnel information
             tunnel_info = {
-                'server': server_name,
-                'pid': pid,
-                'local_port': local_port,
-                'started_at': datetime.now().isoformat(),
-                'is_running': True,
+                "server": server_name,
+                "pid": pid,
+                "local_port": local_port,
+                "started_at": datetime.now().isoformat(),
+                "is_running": True,
             }
 
             tunnels = self._load_tunnels()
             tunnels[server_name] = tunnel_info
             self._save_tunnels(tunnels)
 
-            self._log(f"[SUCCESS] Tunnel established: {server_name} -> 127.0.0.1:{local_port}")
+            self._log(
+                f"[SUCCESS] Tunnel established: {server_name} -> 127.0.0.1:{local_port}"
+            )
 
             return tunnel_info
 
@@ -259,23 +270,31 @@ class TunnelManager:
             self._log(f"[ERROR] Failed to start tunnel for {server_name}: {e}")
             raise
 
-    def _find_tunnel_process(self, local_port: int, remote_host: str, max_retries: int = 3) -> Optional[int]:
+    def _find_tunnel_process(
+        self, local_port: int, remote_host: str, max_retries: int = 3
+    ) -> Optional[int]:
         """Find the SSH tunnel process by port and host (with retry logic)."""
         for attempt in range(max_retries):
             try:
-                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                     try:
-                        proc_name = proc.info.get('name', '')
-                        if proc_name in ['ssh', 'ssh.exe']:
-                            cmdline = proc.info.get('cmdline')
+                        proc_name = proc.info.get("name", "")
+                        if proc_name in ["ssh", "ssh.exe"]:
+                            cmdline = proc.info.get("cmdline")
                             if cmdline:
-                                cmdline_str = ' '.join(cmdline)
+                                cmdline_str = " ".join(cmdline)
                                 # More precise matching: look for -L port:localhost:remote_port
-                                if f"-L {local_port}:localhost:" in cmdline_str and remote_host in cmdline_str:
-                                    return proc.info['pid']
+                                if (
+                                    f"-L {local_port}:localhost:" in cmdline_str
+                                    and remote_host in cmdline_str
+                                ):
+                                    return proc.info["pid"]
                                 # Also check alternative format
-                                elif f"-L{local_port}:localhost:" in cmdline_str and remote_host in cmdline_str:
-                                    return proc.info['pid']
+                                elif (
+                                    f"-L{local_port}:localhost:" in cmdline_str
+                                    and remote_host in cmdline_str
+                                ):
+                                    return proc.info["pid"]
                     except (psutil.NoSuchProcess, psutil.AccessDenied, KeyError):
                         continue  # Process disappeared or no access
 
@@ -284,7 +303,9 @@ class TunnelManager:
                     time.sleep(0.5)
 
             except (psutil.Error, OSError) as e:
-                self._log(f"[WARNING] Error finding tunnel process (attempt {attempt + 1}/{max_retries}): {e}")
+                self._log(
+                    f"[WARNING] Error finding tunnel process (attempt {attempt + 1}/{max_retries}): {e}"
+                )
                 if attempt < max_retries - 1:
                     time.sleep(0.5)
 
@@ -293,7 +314,7 @@ class TunnelManager:
     def stop_tunnel(self, server_name: Optional[str] = None) -> bool:
         """
         Stop SSH tunnel for a server.
-        
+
         Connection severed. The void stares back.
         """
         if server_name is None:
@@ -305,7 +326,7 @@ class TunnelManager:
         if tunnel_info is None:
             return False  # Already stopped
 
-        pid = tunnel_info['pid']
+        pid = tunnel_info["pid"]
 
         try:
             # Try graceful shutdown first (SIGTERM)
@@ -349,32 +370,34 @@ class TunnelManager:
     def auto_cleanup(self):
         """
         Clean up stale tunnel references.
-        
+
         The Schema doesn't leave loose ends.
         """
         tunnels = self._load_tunnels()
         active_tunnels = {}
 
         for server_name, tunnel_info in tunnels.items():
-            pid = tunnel_info.get('pid')
+            pid = tunnel_info.get("pid")
             if pid and self._is_process_running(pid):
                 active_tunnels[server_name] = tunnel_info
 
         if len(active_tunnels) != len(tunnels):
             self._save_tunnels(active_tunnels)
-            self._log(f"[INFO] Cleaned up {len(tunnels) - len(active_tunnels)} stale tunnel(s)")
+            self._log(
+                f"[INFO] Cleaned up {len(tunnels) - len(active_tunnels)} stale tunnel(s)"
+            )
 
     @contextmanager
     def auto_tunnel(self, server_name: Optional[str] = None, cleanup: bool = False):
         """
         Context manager for automatic tunnel lifecycle.
-        
+
         Usage:
             with tunnel_manager.auto_tunnel('production') as tunnel:
                 # Tunnel is guaranteed to be running
                 result = execute_sql_query(...)
             # Tunnel optionally cleaned up on exit if cleanup=True
-        
+
         Args:
             server_name: Server to create tunnel for (defaults to active server)
             cleanup: If True, stops tunnel on exit. If False, leaves tunnel running.
@@ -402,12 +425,14 @@ class TunnelManager:
                 try:
                     self.stop_tunnel(server_name)
                 except Exception as e:
-                    self._log(f"[WARNING] Failed to cleanup tunnel in context manager: {e}")
+                    self._log(
+                        f"[WARNING] Failed to cleanup tunnel in context manager: {e}"
+                    )
 
     def check_tunnel_health(self, server_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Comprehensive health check for tunnel.
-        
+
         Returns:
             {
                 'is_healthy': bool,
@@ -421,44 +446,44 @@ class TunnelManager:
             server_name = self.config.get_active_server()
 
         health = {
-            'is_healthy': True,
-            'issues': [],
-            'tunnel_info': None,
-            'port_accessible': False,
-            'process_running': False
+            "is_healthy": True,
+            "issues": [],
+            "tunnel_info": None,
+            "port_accessible": False,
+            "process_running": False,
         }
 
         tunnel_info = self.get_tunnel_status(server_name)
 
         if tunnel_info is None:
-            health['is_healthy'] = False
-            health['issues'].append("No tunnel running")
+            health["is_healthy"] = False
+            health["issues"].append("No tunnel running")
             return health
 
-        health['tunnel_info'] = tunnel_info
+        health["tunnel_info"] = tunnel_info
 
         # Check process
-        pid = tunnel_info.get('pid')
+        pid = tunnel_info.get("pid")
         if pid and self._is_process_running(pid):
-            health['process_running'] = True
+            health["process_running"] = True
         else:
-            health['is_healthy'] = False
-            health['issues'].append(f"Tunnel process (PID {pid}) not running")
+            health["is_healthy"] = False
+            health["issues"].append(f"Tunnel process (PID {pid}) not running")
 
         # Check port
-        local_port = tunnel_info.get('local_port')
+        local_port = tunnel_info.get("local_port")
         if local_port and self._test_port(local_port):
-            health['port_accessible'] = True
+            health["port_accessible"] = True
         else:
-            health['is_healthy'] = False
-            health['issues'].append(f"Port {local_port} not accessible")
+            health["is_healthy"] = False
+            health["issues"].append(f"Port {local_port} not accessible")
 
         return health
 
     def recover_tunnel(self, server_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Attempt to recover unhealthy tunnel.
-        
+
         Strategy:
         1. Check health
         2. If unhealthy, force stop
@@ -470,10 +495,12 @@ class TunnelManager:
 
         health = self.check_tunnel_health(server_name)
 
-        if health['is_healthy']:
-            return {'recovered': False, 'message': 'Tunnel is already healthy'}
+        if health["is_healthy"]:
+            return {"recovered": False, "message": "Tunnel is already healthy"}
 
-        self._log(f"[INFO] Recovering unhealthy tunnel for {server_name}: {health['issues']}")
+        self._log(
+            f"[INFO] Recovering unhealthy tunnel for {server_name}: {health['issues']}"
+        )
 
         # Force stop (cleanup zombie processes)
         try:
@@ -488,15 +515,12 @@ class TunnelManager:
         try:
             tunnel_info = self.start_tunnel(server_name)
             return {
-                'recovered': True,
-                'message': 'Tunnel recovered successfully',
-                'tunnel_info': tunnel_info
+                "recovered": True,
+                "message": "Tunnel recovered successfully",
+                "tunnel_info": tunnel_info,
             }
         except Exception as e:
-            return {
-                'recovered': False,
-                'message': f'Recovery failed: {e}'
-            }
+            return {"recovered": False, "message": f"Recovery failed: {e}"}
 
     def _log(self, message: str):
         """Write to log file."""
@@ -504,7 +528,7 @@ class TunnelManager:
         log_entry = f"[{timestamp}] {message}\n"
 
         try:
-            with open(self.log_file, 'a') as f:
+            with open(self.log_file, "a") as f:
                 f.write(log_entry)
         except OSError:
             pass  # Logging failure should not crash tunnel operations

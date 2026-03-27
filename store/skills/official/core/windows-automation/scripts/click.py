@@ -3,8 +3,9 @@
 Click - Click at coordinates (x, y, button, clicks)
 Usage: py click.py 500 300 left 1
 """
-import pyautogui
 import sys
+
+import pyautogui
 
 if len(sys.argv) < 3:
     print("Usage: py click.py X Y [button] [clicks]")

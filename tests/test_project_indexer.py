@@ -21,21 +21,21 @@ from pathlib import Path
 import pytest
 
 from navig.memory.project_indexer import (
-    ProjectIndexer,
+    DEFAULT_EXCLUDES,
     ProjectIndexConfig,
+    ProjectIndexer,
     ProjectSearchResult,
-    classify_content_type,
-    content_type_priority,
-    chunk_file,
     _is_ignored,
     _is_indexable,
-    DEFAULT_EXCLUDES,
+    chunk_file,
+    classify_content_type,
+    content_type_priority,
 )
-
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
@@ -43,7 +43,9 @@ def project_dir(tmp_path: Path) -> Path:
     # source files
     src = tmp_path / "src"
     src.mkdir()
-    (src / "main.ts").write_text(textwrap.dedent("""\
+    (src / "main.ts").write_text(
+        textwrap.dedent(
+            """\
         import { App } from './app';
 
         function main(): void {
@@ -70,9 +72,13 @@ def project_dir(tmp_path: Path) -> Path:
         }
 
         main();
-    """))
+    """
+        )
+    )
 
-    (src / "auth.ts").write_text(textwrap.dedent("""\
+    (src / "auth.ts").write_text(
+        textwrap.dedent(
+            """\
         export interface User {
             id: string;
             email: string;
@@ -102,16 +108,22 @@ def project_dir(tmp_path: Path) -> Path:
                 return authenticateUser(email, password);
             }
         }
-    """))
+    """
+        )
+    )
 
     # config files
-    (tmp_path / "package.json").write_text('{"name": "test-project", "version": "1.0.0"}')
+    (tmp_path / "package.json").write_text(
+        '{"name": "test-project", "version": "1.0.0"}'
+    )
     (tmp_path / "tsconfig.json").write_text('{"compilerOptions": {"target": "es2020"}}')
 
     # docs
     docs = tmp_path / "docs"
     docs.mkdir()
-    (docs / "README.md").write_text(textwrap.dedent("""\
+    (docs / "README.md").write_text(
+        textwrap.dedent(
+            """\
         # Test Project
 
         This is a test project for authentication and server management.
@@ -120,7 +132,9 @@ def project_dir(tmp_path: Path) -> Path:
         - User authentication
         - Role-based authorization
         - Server lifecycle management
-    """))
+    """
+        )
+    )
 
     # .navig plans
     navig = tmp_path / ".navig" / "plans"
@@ -150,6 +164,7 @@ def indexer(project_dir: Path) -> ProjectIndexer:
 # ============================================================================
 # Content type classification
 # ============================================================================
+
 
 class TestClassifyContentType:
     def test_code_files(self):
@@ -183,6 +198,7 @@ class TestClassifyContentType:
 # Ignore rules
 # ============================================================================
 
+
 class TestIgnoreRules:
     def test_default_excludes(self):
         assert _is_ignored("node_modules/lodash/index.js", DEFAULT_EXCLUDES)
@@ -209,6 +225,7 @@ class TestIgnoreRules:
 # ============================================================================
 # Chunking
 # ============================================================================
+
 
 class TestChunking:
     def test_code_chunk_size(self):
@@ -242,7 +259,9 @@ class TestChunking:
         assert chunks[0].end_line == 3
 
     def test_section_title_extraction(self):
-        content = "export function handleAuth(req: Request): Response {\n  return ok();\n}"
+        content = (
+            "export function handleAuth(req: Request): Response {\n  return ok();\n}"
+        )
         chunks = chunk_file("handlers.ts", content, ProjectIndexConfig())
         assert len(chunks) == 1
         assert chunks[0].section_title == "handleAuth"
@@ -257,6 +276,7 @@ class TestChunking:
 # Full scan
 # ============================================================================
 
+
 class TestFullScan:
     def test_scan_discovers_files(self, indexer: ProjectIndexer, project_dir: Path):
         stats = indexer.scan()
@@ -265,7 +285,9 @@ class TestFullScan:
         assert stats["chunks_created"] > 0
         assert stats["duration_s"] >= 0
 
-    def test_scan_ignores_node_modules(self, indexer: ProjectIndexer, project_dir: Path):
+    def test_scan_ignores_node_modules(
+        self, indexer: ProjectIndexer, project_dir: Path
+    ):
         indexer.scan()
         s = indexer.stats()
         # node_modules should be excluded
@@ -295,6 +317,7 @@ class TestFullScan:
 # ============================================================================
 # Incremental update
 # ============================================================================
+
 
 class TestIncrementalUpdate:
     def test_unchanged_files_skipped(self, indexer: ProjectIndexer, project_dir: Path):
@@ -331,7 +354,9 @@ class TestIncrementalUpdate:
         initial_stats = indexer.stats()
 
         # Add a new file
-        (project_dir / "src" / "utils.ts").write_text("export function clamp(n: number) { return n; }")
+        (project_dir / "src" / "utils.ts").write_text(
+            "export function clamp(n: number) { return n; }"
+        )
 
         stats = indexer.update_incremental()
         assert stats["files_updated"] >= 1
@@ -343,6 +368,7 @@ class TestIncrementalUpdate:
 # ============================================================================
 # BM25 search
 # ============================================================================
+
 
 class TestSearch:
     def test_basic_search(self, indexer: ProjectIndexer, project_dir: Path):
@@ -368,7 +394,9 @@ class TestSearch:
         results = indexer.search("server", top_k=2)
         assert len(results) <= 2
 
-    def test_search_results_have_scores(self, indexer: ProjectIndexer, project_dir: Path):
+    def test_search_results_have_scores(
+        self, indexer: ProjectIndexer, project_dir: Path
+    ):
         indexer.scan()
         results = indexer.search("authenticateUser email password")
         assert len(results) > 0
@@ -393,9 +421,9 @@ class TestSearch:
             file_counts[r.file_path] = file_counts.get(r.file_path, 0) + 1
 
         for path, count in file_counts.items():
-            assert count <= indexer.config.max_chunks_per_file, (
-                f"{path} has {count} chunks, exceeds cap of {indexer.config.max_chunks_per_file}"
-            )
+            assert (
+                count <= indexer.config.max_chunks_per_file
+            ), f"{path} has {count} chunks, exceeds cap of {indexer.config.max_chunks_per_file}"
 
     def test_content_type_boosting(self, indexer: ProjectIndexer, project_dir: Path):
         # Add a .navig/plans file mentioning "authentication"
@@ -418,6 +446,7 @@ class TestSearch:
 # File tree summary
 # ============================================================================
 
+
 class TestFileTree:
     def test_file_tree_not_empty(self, indexer: ProjectIndexer, project_dir: Path):
         indexer.scan()
@@ -435,6 +464,7 @@ class TestFileTree:
 # ============================================================================
 # Lifecycle
 # ============================================================================
+
 
 class TestLifecycle:
     def test_context_manager(self, project_dir: Path):
@@ -461,24 +491,25 @@ class TestLifecycle:
 # Content-type filter + get_context (WikiRAG merger)
 # ============================================================================
 
+
 class TestContentTypeFilter:
     def test_filter_docs_only(self, project_dir: Path):
         """content_type_filter='docs' should return only markdown/docs chunks."""
         with ProjectIndexer(project_dir) as idx:
             idx.scan()
             results = idx.search("authentication", content_type_filter="docs")
-            assert all(r.content_type == "docs" for r in results), (
-                f"Expected only 'docs', got: {[r.content_type for r in results]}"
-            )
+            assert all(
+                r.content_type == "docs" for r in results
+            ), f"Expected only 'docs', got: {[r.content_type for r in results]}"
 
     def test_filter_code_only(self, project_dir: Path):
         """content_type_filter='code' should return only code chunks."""
         with ProjectIndexer(project_dir) as idx:
             idx.scan()
             results = idx.search("authentication", content_type_filter="code")
-            assert all(r.content_type == "code" for r in results), (
-                f"Expected only 'code', got: {[r.content_type for r in results]}"
-            )
+            assert all(
+                r.content_type == "code" for r in results
+            ), f"Expected only 'code', got: {[r.content_type for r in results]}"
 
     def test_filter_no_match_returns_empty(self, project_dir: Path):
         """Filtering to an unused type should return []."""
@@ -530,6 +561,7 @@ class TestWikiRAGUnifiedDelegation:
 
     def test_search_delegates_and_returns_list(self, project_dir: Path):
         from navig.wiki_rag import WikiRAG
+
         wiki_path = project_dir / ".navig" / "wiki"
         wiki_path.mkdir(parents=True, exist_ok=True)
 
@@ -542,6 +574,7 @@ class TestWikiRAGUnifiedDelegation:
 
     def test_get_context_delegates(self, project_dir: Path):
         from navig.wiki_rag import WikiRAG
+
         wiki_path = project_dir / ".navig" / "wiki"
         wiki_path.mkdir(parents=True, exist_ok=True)
 
@@ -554,6 +587,7 @@ class TestWikiRAGUnifiedDelegation:
 
     def test_rebuild_index_noop_when_unified(self, project_dir: Path):
         from navig.wiki_rag import WikiRAG
+
         wiki_path = project_dir / ".navig" / "wiki"
         wiki_path.mkdir(parents=True, exist_ok=True)
 
@@ -565,6 +599,7 @@ class TestWikiRAGUnifiedDelegation:
 
     def test_get_stats_shows_backend(self, project_dir: Path):
         from navig.wiki_rag import WikiRAG
+
         wiki_path = project_dir / ".navig" / "wiki"
         wiki_path.mkdir(parents=True, exist_ok=True)
 
@@ -578,6 +613,7 @@ class TestWikiRAGUnifiedDelegation:
     def test_wiki_search_with_real_wiki_file(self, project_dir: Path):
         """When .navig/wiki/ contains markdown, wiki filter should find it."""
         from navig.wiki_rag import WikiRAG
+
         wiki_path = project_dir / ".navig" / "wiki"
         wiki_path.mkdir(parents=True, exist_ok=True)
         (wiki_path / "auth-guide.md").write_text(
@@ -589,6 +625,6 @@ class TestWikiRAGUnifiedDelegation:
             rag = WikiRAG(wiki_path, project_indexer=idx)
             results = rag.search("login token authentication", top_k=5)
             # Should find the wiki file we just indexed
-            assert any("auth-guide" in r["path"] for r in results), (
-                f"Expected auth-guide.md in results, got: {[r['path'] for r in results]}"
-            )
+            assert any(
+                "auth-guide" in r["path"] for r in results
+            ), f"Expected auth-guide.md in results, got: {[r['path'] for r in results]}"

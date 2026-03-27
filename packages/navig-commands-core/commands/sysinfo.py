@@ -4,7 +4,9 @@ navig-commands-core/commands/sysinfo.py
 CPU, memory, and disk information.
 Uses psutil when available; falls back to stdlib shutil/os.
 """
+
 from __future__ import annotations
+
 import os
 import shutil
 from typing import Any
@@ -27,18 +29,23 @@ def handle(args: dict, ctx: Any = None) -> dict:
     if section in ("cpu", "all"):
         try:
             import psutil  # type: ignore
+
             info["cpu"] = {
                 "percent": psutil.cpu_percent(interval=0.2),
                 "count_logical": psutil.cpu_count(logical=True),
                 "count_physical": psutil.cpu_count(logical=False),
             }
         except ImportError:
-            info["cpu"] = {"count_logical": os.cpu_count(), "note": "psutil not installed"}
+            info["cpu"] = {
+                "count_logical": os.cpu_count(),
+                "note": "psutil not installed",
+            }
 
     # Memory
     if section in ("memory", "all"):
         try:
             import psutil  # type: ignore
+
             vm = psutil.virtual_memory()
             info["memory"] = {
                 "total_gb": round(vm.total / 1e9, 2),

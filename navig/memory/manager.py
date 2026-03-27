@@ -27,6 +27,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:  # noqa: BLE001
@@ -36,24 +37,25 @@ def _debug_log(message: str) -> None:
 def _get_memory_dir() -> Path:
     """Get the default memory directory."""
     from navig.memory.paths import memory_dir
+
     return memory_dir()
 
 
 # Module-level singleton
-_manager_instance: Optional['MemoryManager'] = None
+_manager_instance: Optional["MemoryManager"] = None
 
 
 def get_memory_manager(
     memory_dir: Optional[Path] = None,
     use_embeddings: bool = True,
-) -> 'MemoryManager':
+) -> "MemoryManager":
     """
     Get or create the singleton memory manager.
-    
+
     Args:
         memory_dir: Optional custom memory directory
         use_embeddings: Whether to enable vector embeddings
-        
+
     Returns:
         MemoryManager instance
     """
@@ -68,7 +70,7 @@ def get_memory_manager(
     return _manager_instance
 
 
-def reload_memory_manager() -> 'MemoryManager':
+def reload_memory_manager() -> "MemoryManager":
     """Force reload of the memory manager."""
     global _manager_instance
 
@@ -82,18 +84,18 @@ def reload_memory_manager() -> 'MemoryManager':
 class MemoryManager:
     """
     Unified interface for memory bank operations.
-    
+
     Coordinates storage, indexing, and search components.
-    
+
     Usage:
         manager = MemoryManager()
-        
+
         # Index all files
         result = manager.index()
-        
+
         # Search
         response = manager.search("docker networking")
-        
+
         # Get context for AI
         context = manager.get_context("How do I configure nginx?")
     """
@@ -106,7 +108,7 @@ class MemoryManager:
     ):
         """
         Initialize memory manager.
-        
+
         Args:
             memory_dir: Directory containing memory files
             use_embeddings: Enable vector embeddings
@@ -120,13 +122,13 @@ class MemoryManager:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize components lazily
-        self._storage: Optional['MemoryStorage'] = None
-        self._embedding_provider: Optional['EmbeddingProvider'] = None
-        self._indexer: Optional['MemoryIndexer'] = None
-        self._search: Optional['HybridSearch'] = None
+        self._storage: Optional["MemoryStorage"] = None
+        self._embedding_provider: Optional["EmbeddingProvider"] = None
+        self._indexer: Optional["MemoryIndexer"] = None
+        self._search: Optional["HybridSearch"] = None
 
         # Predictive context cache
-        self._prewarm_cache: Dict[str, 'SearchResponse'] = {}
+        self._prewarm_cache: Dict[str, "SearchResponse"] = {}
 
         # mtime cache: file_path → (mtime_float, cached_age_days_at_capture)
         # Avoids repeated stat() syscalls for the same files within a session.
@@ -135,18 +137,18 @@ class MemoryManager:
         _debug_log(f"MemoryManager initialized: {self.memory_dir}")
 
     @property
-    def storage(self) -> 'MemoryStorage':
+    def storage(self) -> "MemoryStorage":
         """Get or create storage instance."""
         if self._storage is None:
             from navig.memory.storage import MemoryStorage
 
-            db_path = self.memory_dir / 'index.db'
+            db_path = self.memory_dir / "index.db"
             self._storage = MemoryStorage(db_path)
 
         return self._storage
 
     @property
-    def embedding_provider(self) -> Optional['EmbeddingProvider']:
+    def embedding_provider(self) -> Optional["EmbeddingProvider"]:
         """Get or create embedding provider."""
         if self._embedding_provider is None and self.use_embeddings:
             try:
@@ -163,7 +165,7 @@ class MemoryManager:
         return self._embedding_provider
 
     @property
-    def indexer(self) -> 'MemoryIndexer':
+    def indexer(self) -> "MemoryIndexer":
         """Get or create indexer instance."""
         if self._indexer is None:
             from navig.memory.indexer import MemoryIndexer
@@ -176,7 +178,7 @@ class MemoryManager:
         return self._indexer
 
     @property
-    def search_engine(self) -> 'HybridSearch':
+    def search_engine(self) -> "HybridSearch":
         """Get or create search engine."""
         if self._search is None:
             from navig.memory.search import HybridSearch
@@ -195,15 +197,15 @@ class MemoryManager:
         force: bool = False,
         embed: bool = True,
         progress_callback: Optional[callable] = None,
-    ) -> 'IndexResult':
+    ) -> "IndexResult":
         """
         Index all files in the memory directory.
-        
+
         Args:
             force: Re-index even unchanged files
             embed: Generate embeddings
             progress_callback: Optional callback(file_path, status)
-            
+
         Returns:
             IndexResult with statistics
         """
@@ -226,34 +228,33 @@ class MemoryManager:
         force: bool = False,
         embed: bool = True,
         progress_callback: Optional[callable] = None,
-    ) -> 'IndexResult':
+    ) -> "IndexResult":
         """
         Non-blocking async wrapper that pushes indexing into a TaskGroup/ThreadPoolExecutor
         to completely avoid stalling the primary agent context thread.
         """
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             lambda: self.index(
-                force=force,
-                embed=embed,
-                progress_callback=progress_callback
-            )
+                force=force, embed=embed, progress_callback=progress_callback
+            ),
         )
 
     def index_file(
         self,
         file_path: Path,
         embed: bool = True,
-    ) -> 'IndexResult':
+    ) -> "IndexResult":
         """
         Index a single file.
-        
+
         Args:
             file_path: Path to the file
             embed: Generate embeddings
-            
+
         Returns:
             IndexResult for this file
         """
@@ -270,15 +271,15 @@ class MemoryManager:
         query: str,
         limit: int = 10,
         file_filter: Optional[str] = None,
-    ) -> 'SearchResponse':
+    ) -> "SearchResponse":
         """
         Search the memory bank.
-        
+
         Args:
             query: Search query
             limit: Maximum results
             file_filter: Optional file path pattern
-            
+
         Returns:
             SearchResponse with results
         """
@@ -289,10 +290,13 @@ class MemoryManager:
             # Truncate if strict limit is requested
             if len(response.results) > limit:
                 import copy
+
                 response = copy.copy(response)
                 response.results = response.results[:limit]
 
-            _debug_log(f"Memory Cache Hit: Prewarmed context used for '{query[:20]}...'")
+            _debug_log(
+                f"Memory Cache Hit: Prewarmed context used for '{query[:20]}...'"
+            )
             return response
 
         return self.search_engine.search(
@@ -305,14 +309,14 @@ class MemoryManager:
         self,
         chunk_id: str,
         limit: int = 5,
-    ) -> 'SearchResponse':
+    ) -> "SearchResponse":
         """
         Find chunks similar to a given chunk.
-        
+
         Args:
             chunk_id: Source chunk ID
             limit: Maximum results
-            
+
         Returns:
             SearchResponse with similar chunks
         """
@@ -339,10 +343,10 @@ class MemoryManager:
     async def prewarm_async(self, query: str, limit: int = 10) -> None:
         """Async wrapper for predictive context prefetching utilizing thread pool."""
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None,
-            lambda: self.prewarm(query=query, limit=limit)
+            None, lambda: self.prewarm(query=query, limit=limit)
         )
 
     # ---------- Context Injection ----------
@@ -355,12 +359,12 @@ class MemoryManager:
     ) -> str:
         """
         Get formatted context for AI prompts.
-        
+
         Args:
             query: Query to search for
             max_tokens: Approximate token limit
             limit: Maximum results to include
-            
+
         Returns:
             Formatted context string with citations
         """
@@ -379,15 +383,15 @@ class MemoryManager:
         query: str,
         max_tokens: int = 2000,
         limit: int = 5,
-    ) -> tuple[str, List['SearchResult']]:
+    ) -> tuple[str, List["SearchResult"]]:
         """
         Get context and source list for AI prompts.
-        
+
         Args:
             query: Query to search for
             max_tokens: Approximate token limit
             limit: Maximum results
-            
+
         Returns:
             Tuple of (context_string, list_of_results)
         """
@@ -401,9 +405,9 @@ class MemoryManager:
 
     def _apply_decay(
         self,
-        results: List['SearchResult'],
+        results: List["SearchResult"],
         lambda_: float = 0.05,
-    ) -> List['SearchResult']:
+    ) -> List["SearchResult"]:
         """
         Re-rank search results using a recency decay multiplier.
 
@@ -530,12 +534,12 @@ class MemoryManager:
     ) -> Path:
         """
         Add a new file to the memory directory.
-        
+
         Args:
             content: File content
             filename: Filename (e.g., "project-notes.md")
             subdirectory: Optional subdirectory
-            
+
         Returns:
             Path to the created file
         """
@@ -546,7 +550,7 @@ class MemoryManager:
             target_dir = self.memory_dir
 
         file_path = target_dir / filename
-        file_path.write_text(content, encoding='utf-8')
+        file_path.write_text(content, encoding="utf-8")
 
         # Index the new file
         self.index_file(file_path)
@@ -556,10 +560,10 @@ class MemoryManager:
     def remove_file(self, file_path: str) -> bool:
         """
         Remove a file from the memory bank.
-        
+
         Args:
             file_path: Relative path from memory directory
-            
+
         Returns:
             True if file was removed
         """
@@ -575,7 +579,7 @@ class MemoryManager:
     def list_files(self) -> List[dict]:
         """
         List all indexed files.
-        
+
         Returns:
             List of file metadata dicts
         """
@@ -587,39 +591,39 @@ class MemoryManager:
     def get_stats(self) -> dict:
         """
         Get memory bank statistics.
-        
+
         Returns:
             Dict with storage stats
         """
         stats = self.storage.get_stats()
 
         # Add additional info
-        stats['memory_dir'] = str(self.memory_dir)
-        stats['embeddings_enabled'] = self.use_embeddings
+        stats["memory_dir"] = str(self.memory_dir)
+        stats["embeddings_enabled"] = self.use_embeddings
         if self.use_embeddings:
-            stats['embedding_model'] = self.embedding_model
+            stats["embedding_model"] = self.embedding_model
 
         return stats
 
     def get_status(self) -> dict:
         """
         Get detailed status for CLI display.
-        
+
         Returns:
             Dict with status information
         """
         stats = self.get_stats()
 
         return {
-            'memory_directory': str(self.memory_dir),
-            'indexed_files': stats['file_count'],
-            'total_chunks': stats['chunk_count'],
-            'total_tokens': stats['total_tokens'],
-            'embedded_chunks': stats['embedded_chunks'],
-            'embedding_cache': stats['embedding_cache_size'],
-            'database_size_mb': stats['database_size_mb'],
-            'embeddings_enabled': self.use_embeddings,
-            'embedding_model': self.embedding_model if self.use_embeddings else None,
+            "memory_directory": str(self.memory_dir),
+            "indexed_files": stats["file_count"],
+            "total_chunks": stats["chunk_count"],
+            "total_tokens": stats["total_tokens"],
+            "embedded_chunks": stats["embedded_chunks"],
+            "embedding_cache": stats["embedding_cache_size"],
+            "database_size_mb": stats["database_size_mb"],
+            "embeddings_enabled": self.use_embeddings,
+            "embedding_model": self.embedding_model if self.use_embeddings else None,
         }
 
     # ---------- Maintenance ----------
@@ -627,10 +631,10 @@ class MemoryManager:
     def clear(self, confirm: bool = False) -> dict:
         """
         Clear all indexed data.
-        
+
         Args:
             confirm: Must be True to proceed
-            
+
         Returns:
             Dict with deletion counts
         """
@@ -661,10 +665,10 @@ class MemoryManager:
     def memory_search_tool(self, query: str) -> str:
         """
         Tool function for AI agent to search memory.
-        
+
         Args:
             query: Natural language query
-            
+
         Returns:
             Formatted results string
         """
@@ -686,10 +690,10 @@ class MemoryManager:
     def memory_get_tool(self, file_path: str) -> str:
         """
         Tool function for AI agent to get file content.
-        
+
         Args:
             file_path: Relative path to file
-            
+
         Returns:
             File content or error message
         """
@@ -699,7 +703,7 @@ class MemoryManager:
             return f"File not found: {file_path}"
 
         try:
-            content = full_path.read_text(encoding='utf-8')
+            content = full_path.read_text(encoding="utf-8")
             return f"# {file_path}\n\n{content}"
         except Exception as e:
             return f"Error reading {file_path}: {e}"

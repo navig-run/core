@@ -51,6 +51,7 @@ from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 try:
     from pydantic import BaseModel, ConfigDict, Field, field_validator
+
     PYDANTIC_OK = True
 except ImportError:
     PYDANTIC_OK = False
@@ -65,37 +66,37 @@ CANONICAL_MODES = {"small_talk", "big_tasks", "coding", "summarize", "research"}
 
 MODE_ALIASES: Dict[str, str] = {
     # small_talk
-    "small":    "small_talk",
-    "chat":     "small_talk",
-    "casual":   "small_talk",
-    "talk":     "small_talk",
-    "hi":       "small_talk",
-    "hello":    "small_talk",
+    "small": "small_talk",
+    "chat": "small_talk",
+    "casual": "small_talk",
+    "talk": "small_talk",
+    "hi": "small_talk",
+    "hello": "small_talk",
     # big_tasks
-    "big":      "big_tasks",
-    "complex":  "big_tasks",
-    "plan":     "big_tasks",
-    "reason":   "big_tasks",
-    "think":    "big_tasks",
+    "big": "big_tasks",
+    "complex": "big_tasks",
+    "plan": "big_tasks",
+    "reason": "big_tasks",
+    "think": "big_tasks",
     # coding
-    "code":     "coding",
-    "dev":      "coding",
-    "debug":    "coding",
-    "program":  "coding",
-    "script":   "coding",
+    "code": "coding",
+    "dev": "coding",
+    "debug": "coding",
+    "program": "coding",
+    "script": "coding",
     # summarize
-    "sum":      "summarize",
-    "summary":  "summarize",
-    "tl;dr":    "summarize",
-    "tldr":     "summarize",
-    "digest":   "summarize",
+    "sum": "summarize",
+    "summary": "summarize",
+    "tl;dr": "summarize",
+    "tldr": "summarize",
+    "digest": "summarize",
     # research
     "research": "research",
     "analysis": "research",
-    "compare":  "research",
-    "sources":  "research",
-    "analyze":  "research",
-    "study":    "research",
+    "compare": "research",
+    "sources": "research",
+    "analyze": "research",
+    "study": "research",
 }
 
 # Providers that enforce content filtering (censored)
@@ -110,27 +111,27 @@ CENSORED_PROVIDERS: Set[str] = {"openai", "anthropic", "deepseek", "google"}
 
 PROVIDER_RESOURCE_URLS: Dict[str, Dict[str, str]] = {
     "openai": {
-        "chat":           "https://api.openai.com/v1/chat/completions",
+        "chat": "https://api.openai.com/v1/chat/completions",
         "transcriptions": "https://api.openai.com/v1/audio/transcriptions",
-        "speech":         "https://api.openai.com/v1/audio/speech",
-        "embeddings":     "https://api.openai.com/v1/embeddings",
+        "speech": "https://api.openai.com/v1/audio/speech",
+        "embeddings": "https://api.openai.com/v1/embeddings",
     },
     "deepgram": {
-        "listen":  "https://api.deepgram.com/v1/listen",
-        "speak":   "https://api.deepgram.com/v1/speak",
+        "listen": "https://api.deepgram.com/v1/listen",
+        "speak": "https://api.deepgram.com/v1/speak",
         "analyze": "https://api.deepgram.com/v1/read",
     },
     "elevenlabs": {
-        "tts_base":       "https://api.elevenlabs.io/v1/text-to-speech",
-        "voices":         "https://api.elevenlabs.io/v1/voices",
-        "tts_stream":     "https://api.elevenlabs.io/v1/text-to-speech/stream",
+        "tts_base": "https://api.elevenlabs.io/v1/text-to-speech",
+        "voices": "https://api.elevenlabs.io/v1/voices",
+        "tts_stream": "https://api.elevenlabs.io/v1/text-to-speech/stream",
     },
     "google_tts": {
         "synthesize": "https://texttospeech.googleapis.com/v1/text:synthesize",
     },
     "spotify": {
-        "token":         "https://accounts.spotify.com/api/token",
-        "search":        "https://api.spotify.com/v1/search",
+        "token": "https://accounts.spotify.com/api/token",
+        "search": "https://api.spotify.com/v1/search",
         "recommendations": "https://api.spotify.com/v1/recommendations",
     },
     "lastfm": {
@@ -146,40 +147,40 @@ PROVIDER_RESOURCE_URLS: Dict[str, Dict[str, str]] = {
 
 # Provider → env var(s) for API key resolution
 PROVIDER_ENV_KEYS: Dict[str, List[str]] = {
-    "openai":        ["OPENAI_API_KEY"],
-    "anthropic":     ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
-    "deepseek":      ["DEEPSEEK_API_KEY"],
-    "grok":          ["GROK_API_KEY", "XAI_API_KEY"],
-    "xai":           ["XAI_API_KEY", "GROK_API_KEY"],
-    "openrouter":    ["OPENROUTER_API_KEY"],
-    "groq":          ["GROQ_API_KEY"],
-    "google":        ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    "siliconflow":   ["SILICONFLOW_API_KEY"],
-    "mistral":       ["MISTRAL_API_KEY"],
-    "cohere":        ["COHERE_API_KEY"],
-    "together":      ["TOGETHER_API_KEY"],
+    "openai": ["OPENAI_API_KEY"],
+    "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
+    "deepseek": ["DEEPSEEK_API_KEY"],
+    "grok": ["GROK_API_KEY", "XAI_API_KEY"],
+    "xai": ["XAI_API_KEY", "GROK_API_KEY"],
+    "openrouter": ["OPENROUTER_API_KEY"],
+    "groq": ["GROQ_API_KEY"],
+    "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "siliconflow": ["SILICONFLOW_API_KEY"],
+    "mistral": ["MISTRAL_API_KEY"],
+    "cohere": ["COHERE_API_KEY"],
+    "together": ["TOGETHER_API_KEY"],
     "github_models": ["GITHUB_TOKEN"],  # free via GitHub PAT
-    "ollama":        [],  # local, no key needed
-    "mcp_bridge":     [],  # VS Code Copilot via MCP WebSocket (no key, uses tunnel)
+    "ollama": [],  # local, no key needed
+    "mcp_bridge": [],  # VS Code Copilot via MCP WebSocket (no key, uses tunnel)
 }
 
 # Provider → base URL
 PROVIDER_BASE_URLS: Dict[str, str] = {
-    "openai":        "https://api.openai.com/v1",
-    "anthropic":     "https://api.anthropic.com",
-    "deepseek":      "https://api.deepseek.com/v1",
-    "grok":          "https://api.x.ai/v1",
-    "xai":           "https://api.x.ai/v1",
-    "openrouter":    "https://openrouter.ai/api/v1",
-    "groq":          "https://api.groq.com/openai/v1",
-    "google":        "https://generativelanguage.googleapis.com/v1beta/openai",
-    "siliconflow":   "https://api.siliconflow.cn/v1",
-    "mistral":       "https://api.mistral.ai/v1",
-    "cohere":        "https://api.cohere.ai/v1",
-    "together":      "https://api.together.xyz/v1",
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com",
+    "deepseek": "https://api.deepseek.com/v1",
+    "grok": "https://api.x.ai/v1",
+    "xai": "https://api.x.ai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "google": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "siliconflow": "https://api.siliconflow.cn/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "cohere": "https://api.cohere.ai/v1",
+    "together": "https://api.together.xyz/v1",
     "github_models": "https://models.inference.ai.azure.com",
-    "ollama":        "http://127.0.0.1:11434/v1",
-    "mcp_bridge":     f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}",
+    "ollama": "http://127.0.0.1:11434/v1",
+    "mcp_bridge": f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}",
 }
 
 SUPPORTED_PROVIDERS = set(PROVIDER_BASE_URLS.keys())
@@ -192,6 +193,7 @@ if PYDANTIC_OK:
 
     class LLMModeConfig(BaseModel):
         """Configuration for a single LLM mode."""
+
         description: str = ""
         provider: str = "ollama"
         model: str = ""
@@ -208,20 +210,25 @@ if PYDANTIC_OK:
         def validate_provider(cls, v: str) -> str:
             v = v.lower().strip()
             if v and v not in SUPPORTED_PROVIDERS:
-                logger.warning("Unknown provider '%s' — may still work if OpenAI-compatible", v)
+                logger.warning(
+                    "Unknown provider '%s' — may still work if OpenAI-compatible", v
+                )
             return v
 
     class UncensoredLocalModels(BaseModel):
         """Map of alias → local Ollama model name for uncensored routing."""
+
         model_config = ConfigDict(extra="allow")
         # populated dynamically from config, no fixed fields
 
     class UncensoredApiModels(BaseModel):
         """Map of alias → API model ID for uncensored routing."""
+
         model_config = ConfigDict(extra="allow")
 
     class UncensoredOverrides(BaseModel):
         """Uncensored model override configuration."""
+
         enabled: bool = True
         local_models: Dict[str, str] = Field(default_factory=dict)
         api_models: Dict[str, str] = Field(default_factory=dict)
@@ -230,59 +237,70 @@ if PYDANTIC_OK:
 
     class LLMModesConfig(BaseModel):
         """Top-level llm_modes configuration block."""
-        small_talk: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
-            description="Fast, conversational, personality-driven chat",
-            # AUDIT self-check: Correct implementation? yes - restores documented defaults.
-            # AUDIT self-check: Break callers? no - user config still overrides these values.
-            # AUDIT self-check: Simpler alternative? yes - default provider swap only.
-            provider="ollama",
-            model="qwen2.5:3b-instruct",
-            fallback_model="qwen2.5:3b-instruct",
-            fallback_provider="ollama",
-            temperature=0.8,
-            max_tokens=1024,
-            use_uncensored=False,
-        ))
-        big_tasks: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
-            description="Complex reasoning, planning, multi-step tasks",
-            provider="openai",
-            model="gpt-4o-mini",
-            fallback_model="qwen2.5:7b-instruct",
-            fallback_provider="ollama",
-            temperature=0.5,
-            max_tokens=4096,
-            use_uncensored=False,
-        ))
-        coding: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
-            description="Code generation, review, debugging",
-            provider="deepseek",
-            model="deepseek-coder",
-            fallback_model="qwen2.5:7b-instruct",
-            fallback_provider="ollama",
-            temperature=0.2,
-            max_tokens=4096,
-            use_uncensored=False,
-        ))
-        summarize: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
-            description="Cheap, fast summarization of long text and logs",
-            provider="ollama",
-            model="qwen2.5:3b-instruct",
-            fallback_model="qwen2.5:3b-instruct",
-            fallback_provider="ollama",
-            temperature=0.3,
-            max_tokens=2048,
-            use_uncensored=False,
-        ))
-        research: LLMModeConfig = Field(default_factory=lambda: LLMModeConfig(
-            description="Long-context, tool-using research and document analysis",
-            provider="deepseek",
-            model="deepseek-chat",
-            fallback_model="qwen2.5:7b-instruct",
-            fallback_provider="ollama",
-            temperature=0.4,
-            max_tokens=4096,
-            use_uncensored=False,
-        ))
+
+        small_talk: LLMModeConfig = Field(
+            default_factory=lambda: LLMModeConfig(
+                description="Fast, conversational, personality-driven chat",
+                # AUDIT self-check: Correct implementation? yes - restores documented defaults.
+                # AUDIT self-check: Break callers? no - user config still overrides these values.
+                # AUDIT self-check: Simpler alternative? yes - default provider swap only.
+                provider="ollama",
+                model="qwen2.5:3b-instruct",
+                fallback_model="qwen2.5:3b-instruct",
+                fallback_provider="ollama",
+                temperature=0.8,
+                max_tokens=1024,
+                use_uncensored=False,
+            )
+        )
+        big_tasks: LLMModeConfig = Field(
+            default_factory=lambda: LLMModeConfig(
+                description="Complex reasoning, planning, multi-step tasks",
+                provider="openai",
+                model="gpt-4o-mini",
+                fallback_model="qwen2.5:7b-instruct",
+                fallback_provider="ollama",
+                temperature=0.5,
+                max_tokens=4096,
+                use_uncensored=False,
+            )
+        )
+        coding: LLMModeConfig = Field(
+            default_factory=lambda: LLMModeConfig(
+                description="Code generation, review, debugging",
+                provider="deepseek",
+                model="deepseek-coder",
+                fallback_model="qwen2.5:7b-instruct",
+                fallback_provider="ollama",
+                temperature=0.2,
+                max_tokens=4096,
+                use_uncensored=False,
+            )
+        )
+        summarize: LLMModeConfig = Field(
+            default_factory=lambda: LLMModeConfig(
+                description="Cheap, fast summarization of long text and logs",
+                provider="ollama",
+                model="qwen2.5:3b-instruct",
+                fallback_model="qwen2.5:3b-instruct",
+                fallback_provider="ollama",
+                temperature=0.3,
+                max_tokens=2048,
+                use_uncensored=False,
+            )
+        )
+        research: LLMModeConfig = Field(
+            default_factory=lambda: LLMModeConfig(
+                description="Long-context, tool-using research and document analysis",
+                provider="deepseek",
+                model="deepseek-chat",
+                fallback_model="qwen2.5:7b-instruct",
+                fallback_provider="ollama",
+                temperature=0.4,
+                max_tokens=4096,
+                use_uncensored=False,
+            )
+        )
 
         model_config = ConfigDict(extra="allow")
 
@@ -301,19 +319,22 @@ if PYDANTIC_OK:
 
     class LLMRouterConfig(BaseModel):
         """Full router configuration block (stored under 'llm_router' in config)."""
+
         llm_modes: LLMModesConfig = Field(default_factory=LLMModesConfig)
-        uncensored_overrides: UncensoredOverrides = Field(default_factory=lambda: UncensoredOverrides(
-            enabled=True,
-            local_models={
-                "dolphin": "dolphin-llama3:8b",
-                "hermes": "nous-hermes-llama3:8b",
-                "dolphin_small": "dolphin3:3b",
-            },
-            api_models={
-                "grok": "grok-beta",
-                "dolphin_api": "cognitivecomputations/dolphin-llama-3-70b",
-            },
-        ))
+        uncensored_overrides: UncensoredOverrides = Field(
+            default_factory=lambda: UncensoredOverrides(
+                enabled=True,
+                local_models={
+                    "dolphin": "dolphin-llama3:8b",
+                    "hermes": "nous-hermes-llama3:8b",
+                    "dolphin_small": "dolphin3:3b",
+                },
+                api_models={
+                    "grok": "grok-beta",
+                    "dolphin_api": "cognitivecomputations/dolphin-llama-3-70b",
+                },
+            )
+        )
 
         model_config = ConfigDict(extra="allow")
 
@@ -329,13 +350,20 @@ else:
 # Resolved Config (output of routing)
 # ─────────────────────────────────────────────────────────────
 
+
 class ResolvedLLMConfig:
     """Result of mode routing — everything needed to make an LLM call."""
 
     __slots__ = (
-        "provider", "model", "base_url", "temperature",
-        "max_tokens", "is_uncensored", "resolution_reason",
-        "mode", "api_key_env",
+        "provider",
+        "model",
+        "base_url",
+        "temperature",
+        "max_tokens",
+        "is_uncensored",
+        "resolution_reason",
+        "mode",
+        "api_key_env",
     )
 
     def __init__(
@@ -475,6 +503,7 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> Dict[str, 
 
     try:
         import httpx
+
         resp = httpx.get(f"{base_url}/api/tags", timeout=3.0)
         if resp.status_code == 200:
             data = resp.json()
@@ -506,6 +535,7 @@ def _resolve_api_key(provider: str) -> Optional[str]:
     # Also try vault
     try:
         from navig.vault import get_vault
+
         vault = get_vault()
         key = vault.get_api_key(provider)
         if key:
@@ -516,6 +546,7 @@ def _resolve_api_key(provider: str) -> Optional[str]:
     if provider == "github_models":
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager().global_config or {}
             token = cfg.get("github_models", {}).get("token", "")
             if token:
@@ -535,6 +566,7 @@ def _has_api_key(provider: str) -> bool:
 # ─────────────────────────────────────────────────────────────
 # LLMModeRouter
 # ─────────────────────────────────────────────────────────────
+
 
 class LLMModeRouter:
     """
@@ -776,23 +808,27 @@ class LLMModeRouter:
         for alias, model in self.uncensored.local_models.items():
             base = model.split(":")[0]
             available = model in installed or base in installed
-            result["local"].append({
-                "alias": alias,
-                "model": model,
-                "available": available,
-                "provider": "ollama",
-            })
+            result["local"].append(
+                {
+                    "alias": alias,
+                    "model": model,
+                    "available": available,
+                    "provider": "ollama",
+                }
+            )
 
         # API
         for alias, model in self.uncensored.api_models.items():
             provider = _infer_provider_for_uncensored(alias, model)
             has_key = _has_api_key(provider)
-            result["api"].append({
-                "alias": alias,
-                "model": model,
-                "provider": provider,
-                "api_key_present": has_key,
-            })
+            result["api"].append(
+                {
+                    "alias": alias,
+                    "model": model,
+                    "provider": provider,
+                    "api_key_present": has_key,
+                }
+            )
 
         return result
 
@@ -800,6 +836,7 @@ class LLMModeRouter:
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
+
 
 def _infer_provider_for_uncensored(alias: str, model: str) -> str:
     """Infer provider from uncensored model alias/name."""
@@ -846,6 +883,7 @@ def get_llm_router(force_new: bool = False) -> LLMModeRouter:
         config = {}
         try:
             from navig.config import get_config_manager
+
             cm = get_config_manager()
             raw = cm.global_config or {}
             # Look for llm_router or llm_modes at top level
@@ -863,6 +901,7 @@ def get_llm_router(force_new: bool = False) -> LLMModeRouter:
 # ─────────────────────────────────────────────────────────────
 # Convenience function (integration point)
 # ─────────────────────────────────────────────────────────────
+
 
 def resolve_llm(
     mode: Optional[str] = None,

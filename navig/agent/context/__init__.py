@@ -12,12 +12,12 @@ Context Files:
 
 Usage:
     from navig.agent.context import ContextLayer
-    
+
     ctx = ContextLayer()
-    
+
     # Load all context for system prompt
     system_additions = ctx.get_system_prompt_context()
-    
+
     # Update user profile
     ctx.update_user_profile({"name": "John", "timezone": "UTC"})
 """
@@ -35,6 +35,7 @@ import yaml
 # =============================================================================
 # Paths
 # =============================================================================
+
 
 def get_navig_dir() -> Path:
     """Get NAVIG config directory."""
@@ -55,23 +56,24 @@ def get_bundled_templates_dir() -> Path:
 # Markdown Frontmatter Parser
 # =============================================================================
 
+
 def parse_markdown_with_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     """
     Parse markdown with YAML frontmatter.
-    
+
     Returns:
         Tuple of (frontmatter_dict, body_content)
     """
-    if not content.startswith('---'):
+    if not content.startswith("---"):
         return {}, content
 
     # Find end of frontmatter
-    end_match = re.search(r'\n---\s*\n', content[3:])
+    end_match = re.search(r"\n---\s*\n", content[3:])
     if not end_match:
         return {}, content
 
     frontmatter_end = end_match.end() + 3
-    frontmatter_text = content[3:frontmatter_end - 4]
+    frontmatter_text = content[3 : frontmatter_end - 4]
     body = content[frontmatter_end:]
 
     try:
@@ -94,6 +96,7 @@ def format_markdown_with_frontmatter(frontmatter: Dict[str, Any], body: str) -> 
 # =============================================================================
 # Context Files
 # =============================================================================
+
 
 class ContextFile:
     """A single context file (SOUL.md, USER.md, etc.)."""
@@ -120,7 +123,7 @@ class ContextFile:
             self._loaded = True
             return
 
-        content = self.path.read_text(encoding='utf-8')
+        content = self.path.read_text(encoding="utf-8")
         self._frontmatter, self._body = parse_markdown_with_frontmatter(content)
         self._loaded = True
 
@@ -128,7 +131,7 @@ class ContextFile:
         """Save context file to disk."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         content = format_markdown_with_frontmatter(self._frontmatter, self._body)
-        self.path.write_text(content, encoding='utf-8')
+        self.path.write_text(content, encoding="utf-8")
 
     @property
     def frontmatter(self) -> Dict[str, Any]:
@@ -151,11 +154,11 @@ class ContextFile:
 
     def get_summary(self) -> Optional[str]:
         """Get summary from frontmatter."""
-        return self.frontmatter.get('summary')
+        return self.frontmatter.get("summary")
 
     def is_editable(self) -> bool:
         """Check if file is user-editable."""
-        return self.frontmatter.get('editable', True)
+        return self.frontmatter.get("editable", True)
 
     def update_body(self, new_body: str, save: bool = True) -> None:
         """Update the body content."""
@@ -178,10 +181,11 @@ class ContextFile:
 # Context Layer
 # =============================================================================
 
+
 class ContextLayer:
     """
     Manager for agent context files.
-    
+
     Provides access to SOUL.md (personality), USER.md (profile),
     and future context sources.
     """
@@ -219,9 +223,9 @@ class ContextLayer:
             else:
                 # Create minimal default
                 self.soul._frontmatter = {
-                    'summary': 'Agent personality and guidelines',
-                    'scope': 'global',
-                    'editable': True,
+                    "summary": "Agent personality and guidelines",
+                    "scope": "global",
+                    "editable": True,
                 }
                 self.soul._body = "# SOUL.md\n\nDefine your agent's personality here."
                 self.soul._loaded = True
@@ -257,10 +261,10 @@ class ContextLayer:
             else:
                 # Create minimal default
                 self.user._frontmatter = {
-                    'summary': 'User profile and preferences',
-                    'scope': 'user',
-                    'editable': True,
-                    'auto_update': True,
+                    "summary": "User profile and preferences",
+                    "scope": "user",
+                    "editable": True,
+                    "auto_update": True,
                 }
                 self.user._body = "# USER.md\n\nUser information will be added here."
                 self.user._loaded = True
@@ -276,15 +280,16 @@ class ContextLayer:
     def get_user_preferences(self) -> Dict[str, Any]:
         """
         Get parsed user preferences from USER.md.
-        
+
         Delegates to WorkspaceManager for robust parsing of preferences
         including timezone, work hours, communication style, etc.
-        
+
         Returns:
             Dict with parsed user preferences
         """
         try:
             from navig.workspace import WorkspaceManager
+
             wm = WorkspaceManager(workspace_path=self.context_dir)
             return wm.get_user_preferences()
         except ImportError:
@@ -295,7 +300,7 @@ class ContextLayer:
     def update_user_profile(self, updates: Dict[str, str]) -> None:
         """
         Update user profile with new information.
-        
+
         Intelligently updates the USER.md content based on the updates dict.
         """
         self.ensure_user()
@@ -309,10 +314,7 @@ class ContextLayer:
             else:
                 # Append to Notes section
                 if "## Notes" in body:
-                    body = body.replace(
-                        "## Notes",
-                        f"## Notes\n\n- **{key}:** {value}"
-                    )
+                    body = body.replace("## Notes", f"## Notes\n\n- **{key}:** {value}")
 
         self.user.update_body(body)
 
@@ -323,7 +325,7 @@ class ContextLayer:
     def get_system_prompt_context(self) -> str:
         """
         Get combined context for system prompt.
-        
+
         Returns a formatted string with SOUL and USER context.
         """
         parts = []
@@ -343,17 +345,17 @@ class ContextLayer:
     def get_context_summary(self) -> Dict[str, Any]:
         """Get summary of available context files."""
         return {
-            'soul': {
-                'exists': self.soul.exists,
-                'path': str(self.soul.path),
-                'summary': self.soul.get_summary() if self.soul.exists else None,
+            "soul": {
+                "exists": self.soul.exists,
+                "path": str(self.soul.path),
+                "summary": self.soul.get_summary() if self.soul.exists else None,
             },
-            'user': {
-                'exists': self.user.exists,
-                'path': str(self.user.path),
-                'summary': self.user.get_summary() if self.user.exists else None,
+            "user": {
+                "exists": self.user.exists,
+                "path": str(self.user.path),
+                "summary": self.user.get_summary() if self.user.exists else None,
             },
-            'context_dir': str(self.context_dir),
+            "context_dir": str(self.context_dir),
         }
 
     def initialize(self) -> None:

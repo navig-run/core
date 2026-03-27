@@ -12,6 +12,7 @@ Public surface::
     from navig.selfheal.git_manager import sync_fork, create_branch
     from navig.selfheal import ContributeConfig
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

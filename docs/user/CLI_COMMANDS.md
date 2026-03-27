@@ -407,5 +407,3 @@ navig evolve --help
 - Quick reference: `docs/QUICK_REFERENCE.md`
 - Architecture: `docs/ARCHITECTURE.md`
 - Evolution system: `docs/evolution.md`
-
-

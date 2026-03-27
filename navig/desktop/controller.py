@@ -20,6 +20,7 @@ def _init_pyautogui():
     if _pyautogui is None:
         try:
             import pyautogui
+
             _pyautogui = pyautogui
 
             # Configure failsafe
@@ -33,6 +34,7 @@ def _init_pyautogui():
     if _PIL is None:
         try:
             from PIL import Image
+
             _PIL = Image
         except ImportError:
             pass  # PIL is optional for some features
@@ -43,44 +45,45 @@ def _init_pyautogui():
 @dataclass
 class DesktopConfig:
     """Desktop automation configuration."""
+
     enabled: bool = False  # Disabled by default for security
     screenshot_dir: str = "~/.navig/screenshots"
     failsafe: bool = True
     default_pause: float = 0.1
 
     @classmethod
-    def from_config(cls, config: dict) -> 'DesktopConfig':
+    def from_config(cls, config: dict) -> "DesktopConfig":
         """Load from navig config dict."""
-        desktop_cfg = config.get('desktop', {})
+        desktop_cfg = config.get("desktop", {})
 
         return cls(
-            enabled=desktop_cfg.get('enabled', False),
-            screenshot_dir=desktop_cfg.get('screenshot_dir', '~/.navig/screenshots'),
-            failsafe=desktop_cfg.get('failsafe', True),
-            default_pause=desktop_cfg.get('default_pause', 0.1),
+            enabled=desktop_cfg.get("enabled", False),
+            screenshot_dir=desktop_cfg.get("screenshot_dir", "~/.navig/screenshots"),
+            failsafe=desktop_cfg.get("failsafe", True),
+            default_pause=desktop_cfg.get("default_pause", 0.1),
         )
 
 
 class DesktopController:
     """
     Desktop automation using pyautogui.
-    
+
     WARNING: Desktop automation can perform any action a user can.
     Enable only when needed and with appropriate approval flows.
-    
+
     Example:
         controller = DesktopController(DesktopConfig(enabled=True))
-        
+
         # Take screenshot
         path = controller.screenshot()
-        
+
         # Move and click
         controller.move_to(100, 200)
         controller.click(100, 200)
-        
+
         # Type text
         controller.type_text("Hello World")
-        
+
         # Keyboard shortcuts
         controller.hotkey('ctrl', 'c')
     """
@@ -113,11 +116,11 @@ class DesktopController:
     ) -> str:
         """
         Take screenshot of screen or region.
-        
+
         Args:
             region: Optional (x, y, width, height) tuple
             name: Optional filename
-        
+
         Returns:
             Path to saved screenshot
         """
@@ -126,8 +129,8 @@ class DesktopController:
         if not name:
             name = f"desktop_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
 
-        if not name.endswith('.png'):
-            name += '.png'
+        if not name.endswith(".png"):
+            name += ".png"
 
         path = self._screenshot_dir / name
 
@@ -141,17 +144,17 @@ class DesktopController:
         self,
         x: int,
         y: int,
-        button: str = 'left',
+        button: str = "left",
         clicks: int = 1,
     ) -> bool:
         """
         Click at screen coordinates.
-        
+
         Args:
             x, y: Screen coordinates
             button: 'left', 'right', or 'middle'
             clicks: Number of clicks
-        
+
         Returns:
             True on success
         """
@@ -174,7 +177,7 @@ class DesktopController:
     def move_to(self, x: int, y: int, duration: float = 0.25) -> bool:
         """
         Move mouse to coordinates.
-        
+
         Args:
             x, y: Target coordinates
             duration: Movement duration in seconds
@@ -194,7 +197,7 @@ class DesktopController:
         x: int,
         y: int,
         duration: float = 0.5,
-        button: str = 'left',
+        button: str = "left",
     ) -> bool:
         """Drag mouse to coordinates."""
         self._ensure_initialized()
@@ -204,7 +207,7 @@ class DesktopController:
     def type_text(self, text: str, interval: float = 0.05) -> bool:
         """
         Type text character by character.
-        
+
         Args:
             text: Text to type
             interval: Delay between keystrokes
@@ -216,15 +219,16 @@ class DesktopController:
     def write(self, text: str) -> bool:
         """
         Type text using clipboard (faster, supports unicode).
-        
+
         Uses pyperclip if available, falls back to typewrite.
         """
         self._ensure_initialized()
 
         try:
             import pyperclip
+
             pyperclip.copy(text)
-            _pyautogui.hotkey('ctrl', 'v')
+            _pyautogui.hotkey("ctrl", "v")
             return True
         except ImportError:
             return self.type_text(text)
@@ -232,10 +236,10 @@ class DesktopController:
     def hotkey(self, *keys: str) -> bool:
         """
         Press key combination.
-        
+
         Args:
             keys: Key names (e.g., 'ctrl', 'c')
-        
+
         Example:
             controller.hotkey('ctrl', 'c')  # Copy
             controller.hotkey('alt', 'tab')  # Switch window
@@ -247,7 +251,7 @@ class DesktopController:
     def press(self, key: str, presses: int = 1, interval: float = 0.1) -> bool:
         """
         Press a single key.
-        
+
         Args:
             key: Key name (e.g., 'enter', 'escape', 'tab')
             presses: Number of presses
@@ -277,7 +281,7 @@ class DesktopController:
     ) -> bool:
         """
         Scroll mouse wheel.
-        
+
         Args:
             clicks: Number of scroll clicks (positive = up, negative = down)
             x, y: Optional position to scroll at
@@ -304,15 +308,15 @@ class DesktopController:
     ) -> Optional[Tuple[int, int, int, int]]:
         """
         Find image on screen.
-        
+
         Args:
             image_path: Path to image file
             confidence: Match confidence (0-1)
             grayscale: Search in grayscale (faster)
-        
+
         Returns:
             (x, y, width, height) or None if not found
-        
+
         Note: Requires opencv-python for confidence matching.
         """
         self._ensure_initialized()
@@ -339,10 +343,12 @@ class DesktopController:
         self._ensure_initialized()
 
         try:
-            locations = list(_pyautogui.locateAllOnScreen(
-                image_path,
-                confidence=confidence,
-            ))
+            locations = list(
+                _pyautogui.locateAllOnScreen(
+                    image_path,
+                    confidence=confidence,
+                )
+            )
             return [(loc.left, loc.top, loc.width, loc.height) for loc in locations]
         except Exception as e:
             logger.warning(f"Image locate failed: {e}")
@@ -353,11 +359,11 @@ class DesktopController:
         self,
         image_path: str,
         confidence: float = 0.9,
-        button: str = 'left',
+        button: str = "left",
     ) -> bool:
         """
         Find image on screen and click its center.
-        
+
         Returns True if image found and clicked.
         """
         location = self.locate_on_screen(image_path, confidence)
@@ -376,13 +382,13 @@ class DesktopController:
     ) -> Optional[Tuple[int, int, int, int]]:
         """
         Wait for image to appear on screen.
-        
+
         Args:
             image_path: Path to image file
             timeout: Maximum wait time in seconds
             confidence: Match confidence
             interval: Check interval in seconds
-        
+
         Returns:
             (x, y, width, height) or None if timeout
         """
@@ -422,9 +428,11 @@ class DesktopController:
         """Show confirmation dialog. Returns True if OK clicked."""
         self._ensure_initialized()
         result = _pyautogui.confirm(text=text, title=title)
-        return result == 'OK'
+        return result == "OK"
 
-    def prompt(self, text: str, title: str = "NAVIG", default: str = "") -> Optional[str]:
+    def prompt(
+        self, text: str, title: str = "NAVIG", default: str = ""
+    ) -> Optional[str]:
         """Show text input dialog. Returns None if cancelled."""
         self._ensure_initialized()
         return _pyautogui.prompt(text=text, title=title, default=default)

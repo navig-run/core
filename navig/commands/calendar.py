@@ -24,9 +24,10 @@ def list_events(
 ):
     """
     List upcoming calendar events.
-    
+
     Fetches events from your configured calendar provider(s).
     """
+
     async def _fetch():
         from navig.agent.proactive import (
             CalDAVProvider,
@@ -108,9 +109,10 @@ def authenticate(
 ):
     """
     Authenticate with a calendar provider.
-    
+
     Opens OAuth flow for cloud providers like Google Calendar.
     """
+
     async def _auth():
         if provider == "google":
             from navig.agent.proactive import GoogleCalendar
@@ -144,9 +146,10 @@ def add_event(
 ):
     """
     Add a new calendar event.
-    
+
     Requires a calendar provider that supports write operations (CalDAV).
     """
+
     async def _add():
         from navig.agent.proactive import CalDAVProvider
         from navig.config import get_config_manager
@@ -186,7 +189,7 @@ def add_event(
             start=start_dt,
             end=end_dt,
             location=location or "",
-            description=""
+            description="",
         )
 
         await provider.add_event(event)
@@ -199,7 +202,7 @@ def add_event(
 def sync_calendar():
     """
     Sync calendar data from remote providers.
-    
+
     Refreshes cached calendar data.
     """
     ch.info("Syncing calendar...")

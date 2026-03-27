@@ -33,7 +33,6 @@ class _FakeVault:
         return self.json_blobs[label]
 
 
-
 def _runtime_step(tmp_path: Path):
     config = EngineConfig(navig_dir=tmp_path, node_name="test-node")
     genesis = load_or_create(tmp_path, "test-node")
@@ -41,7 +40,9 @@ def _runtime_step(tmp_path: Path):
     return next(step for step in steps if step.id == "runtime-secrets")
 
 
-def test_runtime_secrets_step_marks_configured_when_blank(monkeypatch, tmp_path: Path) -> None:
+def test_runtime_secrets_step_marks_configured_when_blank(
+    monkeypatch, tmp_path: Path
+) -> None:
     fake_vault = _FakeVault()
     step = _runtime_step(tmp_path)
 
@@ -58,8 +59,9 @@ def test_runtime_secrets_step_marks_configured_when_blank(monkeypatch, tmp_path:
     assert fake_vault.json_blobs == {}
 
 
-
-def test_runtime_secrets_step_imports_env_into_vault(monkeypatch, tmp_path: Path) -> None:
+def test_runtime_secrets_step_imports_env_into_vault(
+    monkeypatch, tmp_path: Path
+) -> None:
     fake_vault = _FakeVault()
     step = _runtime_step(tmp_path)
 
@@ -77,8 +79,9 @@ def test_runtime_secrets_step_imports_env_into_vault(monkeypatch, tmp_path: Path
     assert "OpenAI API key" in result.output["importedFromEnv"]
 
 
-
-def test_runtime_secrets_step_stores_google_json_in_both_labels(monkeypatch, tmp_path: Path) -> None:
+def test_runtime_secrets_step_stores_google_json_in_both_labels(
+    monkeypatch, tmp_path: Path
+) -> None:
     fake_vault = _FakeVault()
     step = _runtime_step(tmp_path)
     json_blob = '{"type":"service_account","project_id":"demo"}'
@@ -94,6 +97,3 @@ def test_runtime_secrets_step_stores_google_json_in_both_labels(monkeypatch, tmp
     assert result.status == "completed"
     assert fake_vault.json_blobs["google/vision-service-account"] == json_blob
     assert fake_vault.json_blobs["google/tts-service-account"] == json_blob
-
-
-

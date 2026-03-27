@@ -53,6 +53,7 @@ logger = logging.getLogger("navig.voice.streaming_stt")
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 class StreamingProvider(str, Enum):
     DEEPGRAM = "deepgram"
     WHISPER_API = "whisper_api"
@@ -114,16 +115,17 @@ class StreamingSTTConfig:
 # Result Types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class StreamingSTTResult:
     """A single STT result from the streaming pipeline."""
 
-    transcript:  str
-    is_final:    bool
-    confidence:  float = 0.0
-    language:    Optional[str] = None
-    provider:    StreamingProvider = StreamingProvider.DEEPGRAM
-    latency_ms:  Optional[float] = None
+    transcript: str
+    is_final: bool
+    confidence: float = 0.0
+    language: Optional[str] = None
+    provider: StreamingProvider = StreamingProvider.DEEPGRAM
+    latency_ms: Optional[float] = None
 
     # Word-level timestamps (if available from Deepgram)
     words: List[dict] = field(default_factory=list)
@@ -139,6 +141,7 @@ class StreamingSTTResult:
 # ---------------------------------------------------------------------------
 # Streaming STT Engine
 # ---------------------------------------------------------------------------
+
 
 class StreamingSTT:
     """
@@ -179,13 +182,16 @@ class StreamingSTT:
             api_key = self._get_deepgram_key()
             if api_key:
                 try:
-                    async for result in self._stream_deepgram(audio_queue, api_key, buffered):
+                    async for result in self._stream_deepgram(
+                        audio_queue, api_key, buffered
+                    ):
                         yield result
                     return  # success — no fallback needed
                 except Exception as exc:
                     logger.warning(
                         "Deepgram streaming failed (%s) — falling back to %s",
-                        exc, self.config.fallback.value,
+                        exc,
+                        self.config.fallback.value,
                     )
                     # buffered was populated during the Deepgram attempt
 
@@ -230,16 +236,16 @@ class StreamingSTT:
             ) from exc
 
         params = {
-            "model":         self.config.deepgram_model,
-            "language":      self.config.language,
-            "encoding":      "linear16",
-            "sample_rate":   str(self.config.sample_rate),
-            "channels":      str(self.config.channels),
+            "model": self.config.deepgram_model,
+            "language": self.config.language,
+            "encoding": "linear16",
+            "sample_rate": str(self.config.sample_rate),
+            "channels": str(self.config.channels),
             "interim_results": "true" if self.config.interim_results else "false",
             "utterance_end_ms": str(self.config.utterance_end_ms),
-            "punctuate":     "true",
-            "endpointing":   "500",
-            "smart_format":  "true",
+            "punctuate": "true",
+            "endpointing": "500",
+            "smart_format": "true",
         }
         if self.config.detect_language:
             params.pop("language", None)
@@ -247,6 +253,7 @@ class StreamingSTT:
 
         # Build URL with query parameters
         from urllib.parse import urlencode
+
         ws_url = f"{self.config.deepgram_ws_url}?{urlencode(params)}"
 
         headers = {"Authorization": f"Token {api_key}"}
@@ -272,14 +279,14 @@ class StreamingSTT:
                     if msg_type != "Results":
                         continue
 
-                    channel    = data.get("channel", {})
-                    alts       = channel.get("alternatives", [{}])
-                    alt        = alts[0] if alts else {}
+                    channel = data.get("channel", {})
+                    alts = channel.get("alternatives", [{}])
+                    alt = alts[0] if alts else {}
                     transcript = alt.get("transcript", "")
                     confidence = alt.get("confidence", 0.0)
-                    words      = alt.get("words", [])
-                    is_final   = data.get("is_final", False)
-                    lang       = channel.get("detected_language", self.config.language)
+                    words = alt.get("words", [])
+                    is_final = data.get("is_final", False)
+                    lang = channel.get("detected_language", self.config.language)
 
                     latency_ms: Optional[float] = None
                     if self._start_time is not None:
@@ -327,7 +334,7 @@ class StreamingSTT:
         async with _ws.connect(ws_url, additional_headers=headers) as ws:
             # Run sender and receiver concurrently
             receiver_task = asyncio.create_task(_receiver(ws))
-            sender_task   = asyncio.create_task(_sender(ws))
+            sender_task = asyncio.create_task(_sender(ws))
 
             try:
                 while True:
@@ -354,8 +361,11 @@ class StreamingSTT:
         """
         from navig.voice.stt import STT, STTConfig, STTProvider
 
-        logger.info("StreamingSTT fallback: transcribing %.1f KB via %s",
-                    sum(len(c) for c in chunks) / 1024, self.config.fallback.value)
+        logger.info(
+            "StreamingSTT fallback: transcribing %.1f KB via %s",
+            sum(len(c) for c in chunks) / 1024,
+            self.config.fallback.value,
+        )
 
         # Build WAV bytes from raw PCM
         wav_bytes = self._chunks_to_wav(chunks)
@@ -366,9 +376,9 @@ class StreamingSTT:
 
         try:
             provider = {
-                StreamingProvider.WHISPER_API:   STTProvider.WHISPER_API,
-                StreamingProvider.WHISPER_LOCAL:  STTProvider.WHISPER_LOCAL,
-                StreamingProvider.DEEPGRAM:       STTProvider.DEEPGRAM,
+                StreamingProvider.WHISPER_API: STTProvider.WHISPER_API,
+                StreamingProvider.WHISPER_LOCAL: STTProvider.WHISPER_LOCAL,
+                StreamingProvider.DEEPGRAM: STTProvider.DEEPGRAM,
             }.get(self.config.fallback, STTProvider.WHISPER_API)
 
             config = STTConfig(
@@ -385,7 +395,9 @@ class StreamingSTT:
                 logger.error("STT fallback failed: %s", result.error)
                 return None
 
-            latency_ms = (time.monotonic() - (self._start_time or time.monotonic())) * 1000
+            latency_ms = (
+                time.monotonic() - (self._start_time or time.monotonic())
+            ) * 1000
             return StreamingSTTResult(
                 transcript=result.text or "",
                 is_final=True,
@@ -419,6 +431,7 @@ class StreamingSTT:
         """Resolve Deepgram API key exclusively from VaultV2."""
         try:
             from navig.vault import get_vault_v2
+
             key = get_vault_v2().get_secret(self.config.deepgram_vault_label)
             if key:
                 return key
@@ -437,6 +450,7 @@ class StreamingSTT:
         """Resolve OpenAI API key exclusively from VaultV2."""
         try:
             from navig.vault import get_vault_v2
+
             return get_vault_v2().get_secret(self.config.openai_vault_label)
         except Exception:
             return None
@@ -445,6 +459,7 @@ class StreamingSTT:
 # ---------------------------------------------------------------------------
 # Convenience: transcribe a VoiceSession's buffered audio
 # ---------------------------------------------------------------------------
+
 
 async def transcribe_session_audio(
     session: Any,  # VoiceSession
@@ -460,6 +475,7 @@ async def transcribe_session_audio(
     Returns the final transcript string or None on failure.
     """
     from navig.voice.session_manager import VoiceSession as _VS
+
     if not isinstance(session, _VS):
         raise TypeError("session must be a VoiceSession instance")
 
@@ -473,6 +489,3 @@ async def transcribe_session_audio(
     if result and result.transcript:
         return result.transcript
     return None
-
-
-

@@ -1,4 +1,5 @@
 """Tests for navig.skills.loader security (SkillSecurityError + _validate_install_spec)."""
+
 from __future__ import annotations
 
 import textwrap
@@ -12,10 +13,10 @@ from navig.skills.loader import (
     parse_skill_file,
 )
 
-
 # ---------------------------------------------------------------------------
 # _validate_install_spec  unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestValidateInstallSpec:
     def test_valid_brew_package(self):
@@ -50,7 +51,9 @@ class TestValidateInstallSpec:
         assert exc_info.value.field_name == "install.download.url"
 
     def test_valid_download_https(self):
-        _validate_install_spec({"download": {"url": "https://releases.example.com/tool.tar.gz"}})
+        _validate_install_spec(
+            {"download": {"url": "https://releases.example.com/tool.tar.gz"}}
+        )
 
     def test_non_dict_spec_is_ignored(self):
         _validate_install_spec("not a dict")  # should not raise
@@ -62,6 +65,7 @@ class TestValidateInstallSpec:
 # ---------------------------------------------------------------------------
 # parse_skill_file integration
 # ---------------------------------------------------------------------------
+
 
 def _write_skill(tmp_path: Path, content: str) -> Path:
     skill_dir = tmp_path / "my_skill"

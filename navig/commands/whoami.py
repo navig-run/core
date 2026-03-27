@@ -8,6 +8,7 @@ Loads the persisted identity, re-derives the full NaviEntity from the seed,
 and renders the Rich sigil card in the terminal. If no identity exists yet,
 prompts the user to run `navig onboard` first.
 """
+
 from __future__ import annotations
 
 
@@ -20,12 +21,15 @@ def run_whoami() -> None:
     if not data:
         try:
             from rich.console import Console
+
             Console().print(
                 "\n[bold yellow]No entity found.[/bold yellow]  "
                 "Run [bold cyan]navig onboard[/bold cyan] to generate your identity sigil.\n"
             )
         except ImportError:
-            print("No entity found.  Run `navig onboard` to generate your identity sigil.")
+            print(
+                "No entity found.  Run `navig onboard` to generate your identity sigil."
+            )
         return
 
     entity = derive_entity(data["seed"])

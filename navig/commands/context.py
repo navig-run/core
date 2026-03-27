@@ -16,26 +16,26 @@ from navig.config import get_config_manager
 def show_context(opts: Dict[str, Any]) -> None:
     """
     Show current context resolution with source information.
-    
+
     Displays:
     - Active host and where it's resolved from
-    - Active app and where it's resolved from  
+    - Active app and where it's resolved from
     - Project-local context file if present
     - Environment variables if set
     """
     import os
 
     config = get_config_manager()
-    want_json = opts.get('json', False)
-    want_plain = opts.get('plain', False)
+    want_json = opts.get("json", False)
+    want_plain = opts.get("plain", False)
 
     # Get active host with source
     host, host_source = config.get_active_host(return_source=True)
     app, app_source = config.get_active_app(return_source=True)
 
     # Check for environment variables
-    env_host = os.environ.get('NAVIG_ACTIVE_HOST', '')
-    env_app = os.environ.get('NAVIG_ACTIVE_APP', '')
+    env_host = os.environ.get("NAVIG_ACTIVE_HOST", "")
+    env_app = os.environ.get("NAVIG_ACTIVE_APP", "")
 
     # Check for project-local context
     local_context_file = Path.cwd() / ".navig" / "config.yaml"
@@ -52,30 +52,32 @@ def show_context(opts: Dict[str, Any]) -> None:
 
     if want_json:
         result = {
-            'host': {
-                'name': host,
-                'source': host_source,
+            "host": {
+                "name": host,
+                "source": host_source,
             },
-            'app': {
-                'name': app,
-                'source': app_source,
+            "app": {
+                "name": app,
+                "source": app_source,
             },
-            'environment': {
-                'NAVIG_ACTIVE_HOST': env_host or None,
-                'NAVIG_ACTIVE_APP': env_app or None,
+            "environment": {
+                "NAVIG_ACTIVE_HOST": env_host or None,
+                "NAVIG_ACTIVE_APP": env_app or None,
             },
-            'local_context_file': str(local_context_file) if local_context else None,
-            'local_context': local_context,
-            'legacy_file': str(legacy_file) if legacy_context else None,
-            'legacy_context': legacy_context,
-            'working_directory': str(Path.cwd()),
+            "local_context_file": str(local_context_file) if local_context else None,
+            "local_context": local_context,
+            "legacy_file": str(legacy_file) if legacy_context else None,
+            "legacy_context": legacy_context,
+            "working_directory": str(Path.cwd()),
         }
         print(json.dumps(result, indent=2))
         return
 
     if want_plain:
         # One-line format for scripting
-        print(f"host={host or 'none'} source={host_source} app={app or 'none'} app_source={app_source}")
+        print(
+            f"host={host or 'none'} source={host_source} app={app or 'none'} app_source={app_source}"
+        )
         return
 
     # Rich output
@@ -83,12 +85,12 @@ def show_context(opts: Dict[str, Any]) -> None:
 
     # Show host resolution
     source_labels = {
-        'env': 'environment variable (NAVIG_ACTIVE_HOST)',
-        'project': 'project .navig/config.yaml',
-        'legacy': 'legacy .navig file',
-        'user': 'user cache (navig host use)',
-        'default': 'default host (global config)',
-        'none': 'not set',
+        "env": "environment variable (NAVIG_ACTIVE_HOST)",
+        "project": "project .navig/config.yaml",
+        "legacy": "legacy .navig file",
+        "user": "user cache (navig host use)",
+        "default": "default host (global config)",
+        "none": "not set",
     }
 
     if host:
@@ -122,9 +124,9 @@ def show_context(opts: Dict[str, Any]) -> None:
     if local_context:
         ch.header("Project Context (.navig/config.yaml)")
         ch.dim(f"  Path: {local_context_file}")
-        if local_context.get('active_host'):
+        if local_context.get("active_host"):
             ch.info(f"  active_host: {local_context['active_host']}")
-        if local_context.get('active_app'):
+        if local_context.get("active_app"):
             ch.info(f"  active_app: {local_context['active_app']}")
         print()
     elif legacy_context:
@@ -134,17 +136,17 @@ def show_context(opts: Dict[str, Any]) -> None:
         print()
 
     # Show resolution priority
-    ch.dim("Resolution priority: --host flag > env var > project > user cache > default")
+    ch.dim(
+        "Resolution priority: --host flag > env var > project > user cache > default"
+    )
 
 
 def set_context(
-    host: Optional[str] = None,
-    app: Optional[str] = None,
-    opts: Dict[str, Any] = None
+    host: Optional[str] = None, app: Optional[str] = None, opts: Dict[str, Any] = None
 ) -> None:
     """
     Set project-local context in .navig/config.yaml.
-    
+
     Creates the .navig directory if it doesn't exist.
     """
     opts = opts or {}
@@ -164,7 +166,9 @@ def set_context(
     if app:
         target_host = host or config.get_active_host()
         if not target_host:
-            ch.error("Cannot set app without a host. Specify --host or set an active host first.")
+            ch.error(
+                "Cannot set app without a host. Specify --host or set an active host first."
+            )
             return
         if not config.app_exists(target_host, app):
             ch.error(f"App '{app}' not found on host '{target_host}'")
@@ -183,9 +187,9 @@ def set_context(
 
     # Update config
     if host:
-        local_config['active_host'] = host
+        local_config["active_host"] = host
     if app:
-        local_config['active_app'] = app
+        local_config["active_app"] = app
 
     # Save config
     config.set_local_config(local_config)
@@ -214,11 +218,11 @@ def clear_context(opts: Dict[str, Any] = None) -> None:
 
     # Remove context keys
     changed = False
-    if 'active_host' in local_config:
-        del local_config['active_host']
+    if "active_host" in local_config:
+        del local_config["active_host"]
         changed = True
-    if 'active_app' in local_config:
-        del local_config['active_app']
+    if "active_app" in local_config:
+        del local_config["active_app"]
         changed = True
 
     if not changed:
@@ -242,7 +246,7 @@ def clear_context(opts: Dict[str, Any] = None) -> None:
 def init_context(opts: Dict[str, Any] = None) -> None:
     """
     Initialize .navig directory in current project.
-    
+
     Creates:
     - .navig/config.yaml with active_host from current global context
     - Migrates legacy .navig file if present
@@ -262,8 +266,8 @@ def init_context(opts: Dict[str, Any] = None) -> None:
     if legacy_file.exists() and legacy_file.is_file():
         try:
             content = legacy_file.read_text().strip()
-            if ':' in content:
-                legacy_host, legacy_app = content.split(':', 1)
+            if ":" in content:
+                legacy_host, legacy_app = content.split(":", 1)
             else:
                 legacy_host = content
             migrate_from_legacy = True
@@ -291,9 +295,9 @@ def init_context(opts: Dict[str, Any] = None) -> None:
     if migrate_from_legacy:
         # Migrate from legacy file
         if legacy_host:
-            local_config['active_host'] = legacy_host
+            local_config["active_host"] = legacy_host
         if legacy_app:
-            local_config['active_app'] = legacy_app
+            local_config["active_app"] = legacy_app
         ch.success(f"Migrated legacy context: host={legacy_host}, app={legacy_app}")
 
         # Rename legacy file
@@ -304,7 +308,7 @@ def init_context(opts: Dict[str, Any] = None) -> None:
         # Use current global context as starting point
         host = config.get_active_host()
         if host:
-            local_config['active_host'] = host
+            local_config["active_host"] = host
             ch.info(f"Using current active host: {host}")
 
     # Save config
@@ -318,10 +322,10 @@ def init_context(opts: Dict[str, Any] = None) -> None:
         should_add = True
         if gitignore.exists():
             content = gitignore.read_text()
-            if '.navig' in content or '.navig/' in content:
+            if ".navig" in content or ".navig/" in content:
                 should_add = False
 
         if should_add:
-            with open(gitignore, 'a', encoding='utf-8') as f:
+            with open(gitignore, "a", encoding="utf-8") as f:
                 f.write("\n# NAVIG project context\n.navig/\n")
             ch.dim("Added .navig/ to .gitignore")

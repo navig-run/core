@@ -19,27 +19,22 @@ from pathlib import Path
 
 import pytest
 
-from navig.memory.key_facts import (
-    KeyFact,
-    KeyFactStore,
-    VALID_CATEGORIES,
-    _utcnow,
-)
 from navig.memory.fact_extractor import (
-    FactExtractor,
     ExtractionResult,
-    extract_rules,
-    _is_low_signal,
+    FactExtractor,
     _is_high_signal,
+    _is_low_signal,
+    extract_rules,
 )
 from navig.memory.fact_retriever import (
-    FactRetriever,
     FactRetrievalResult,
+    FactRetriever,
     RetrievalConfig,
 )
-
+from navig.memory.key_facts import VALID_CATEGORIES, KeyFact, KeyFactStore, _utcnow
 
 # ── Fixtures ──────────────────────────────────────────────────
+
 
 @pytest.fixture
 def tmp_db(tmp_path):
@@ -59,16 +54,36 @@ def store(tmp_db):
 def populated_store(store):
     """Store pre-loaded with a set of test facts."""
     facts = [
-        KeyFact(content="User prefers Python 3.12+", category="preference",
-                confidence=0.9, tags=["python", "preference"]),
-        KeyFact(content="User works at Navig Labs", category="identity",
-                confidence=0.95, tags=["identity", "company"]),
-        KeyFact(content="User deploys using Docker on Ubuntu", category="technical",
-                confidence=0.85, tags=["docker", "linux", "technical"]),
-        KeyFact(content="User decided to use PostgreSQL over MySQL", category="decision",
-                confidence=0.8, tags=["database", "decision"]),
-        KeyFact(content="User likes dark mode in all editors", category="preference",
-                confidence=0.7, tags=["ui", "preference"]),
+        KeyFact(
+            content="User prefers Python 3.12+",
+            category="preference",
+            confidence=0.9,
+            tags=["python", "preference"],
+        ),
+        KeyFact(
+            content="User works at Navig Labs",
+            category="identity",
+            confidence=0.95,
+            tags=["identity", "company"],
+        ),
+        KeyFact(
+            content="User deploys using Docker on Ubuntu",
+            category="technical",
+            confidence=0.85,
+            tags=["docker", "linux", "technical"],
+        ),
+        KeyFact(
+            content="User decided to use PostgreSQL over MySQL",
+            category="decision",
+            confidence=0.8,
+            tags=["database", "decision"],
+        ),
+        KeyFact(
+            content="User likes dark mode in all editors",
+            category="preference",
+            confidence=0.7,
+            tags=["ui", "preference"],
+        ),
     ]
     for f in facts:
         store.upsert(f)
@@ -76,6 +91,7 @@ def populated_store(store):
 
 
 # ── KeyFact Dataclass Tests ───────────────────────────────────
+
 
 class TestKeyFact:
     def test_default_values(self):
@@ -109,6 +125,7 @@ class TestKeyFact:
 
 
 # ── KeyFactStore CRUD Tests ───────────────────────────────────
+
 
 class TestKeyFactStore:
     def test_upsert_and_get(self, store):
@@ -249,6 +266,7 @@ class TestKeyFactStore:
 
 # ── Rule-Based Extraction Tests ───────────────────────────────
 
+
 class TestRuleExtraction:
     def test_preference_pattern(self):
         result = extract_rules(
@@ -307,6 +325,7 @@ class TestRuleExtraction:
 
 # ── FactExtractor Integration Tests ──────────────────────────
 
+
 class TestFactExtractor:
     def test_sync_extraction(self, store):
         extractor = FactExtractor(store=store, mode="rule")
@@ -332,6 +351,7 @@ class TestFactExtractor:
 
 
 # ── FactRetriever Tests ───────────────────────────────────────
+
 
 class TestFactRetriever:
     def test_retrieve_basic(self, populated_store):
@@ -375,19 +395,23 @@ class TestFactRetriever:
 
     def test_recency_score(self):
         from navig.memory.fact_retriever import FactRetriever
+
         score = FactRetriever._recency_score(_utcnow())
         assert score > 0.95  # Just created = near 1.0
 
 
 # ── Context Builder Integration Tests ─────────────────────────
 
+
 class TestContextBuilderIntegration:
     def test_key_facts_in_empty_context(self):
         from navig.memory.context_builder import EMPTY_CONTEXT
+
         assert "key_facts" in EMPTY_CONTEXT
 
     def test_build_context_includes_key_facts_key(self, tmp_path):
         from navig.memory.context_builder import ContextBuilder
+
         builder = ContextBuilder(
             config={"enabled": True, "include_key_facts": True},
             project_root=tmp_path,
@@ -397,6 +421,7 @@ class TestContextBuilderIntegration:
 
     def test_build_context_disables_key_facts(self, tmp_path):
         from navig.memory.context_builder import ContextBuilder
+
         builder = ContextBuilder(
             config={"enabled": True, "include_key_facts": False},
             project_root=tmp_path,

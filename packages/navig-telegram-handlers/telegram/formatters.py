@@ -4,6 +4,7 @@ telegram/formatters.py - Formats navig-commands-core result dicts into styled Te
 Each format_<command> function accepts the dict returned by the command handler
 and returns a ready-to-send Markdown string. No business logic here.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -17,8 +18,8 @@ def format_checkdomain(result: dict[str, Any]) -> str:
 
     icon = {
         "available": "✅",
-        "taken":     "❌",
-        "error":     "⚠️",
+        "taken": "❌",
+        "error": "⚠️",
     }.get(status, "❓")
 
     lines = [f"{icon} *{domain}*" if domain else f"{icon} *Unknown domain*"]

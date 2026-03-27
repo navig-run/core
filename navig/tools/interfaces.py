@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 # Stream Events
 # =============================================================================
 
+
 class EventPhase(str, Enum):
     STATUS = "status"
     CHUNK = "chunk"
@@ -63,9 +64,11 @@ EventCallback = Callable[[ExecutionEvent], None]
 # Execution Context & Requests
 # =============================================================================
 
+
 @dataclass
 class ExecutionContext:
     """Normalized environment context for tool execution."""
+
     session_id: str = ""
     agent_id: str = ""
     cwd: str = ""
@@ -76,6 +79,7 @@ class ExecutionContext:
 @dataclass
 class ExecutionRequest:
     """Bundled invocation encapsulating the tool call and rules."""
+
     tool_name: str
     args: Dict[str, Any]
     context: ExecutionContext = field(default_factory=ExecutionContext)
@@ -93,6 +97,7 @@ class ExecutionRequest:
 # Execution Result
 # =============================================================================
 
+
 class EndState(str, Enum):
     SUCCESS = "success"
     ERROR = "error"
@@ -103,6 +108,7 @@ class EndState(str, Enum):
 @dataclass
 class ExecutionResult:
     """Strict, state-machine output of the execution loop."""
+
     state: EndState
     output: Any = None
     error: Optional[str] = None
@@ -113,9 +119,11 @@ class ExecutionResult:
 # Tool & Skill Specifications
 # =============================================================================
 
+
 @dataclass
 class ToolSpec:
     """Declarative schema for a tool's inputs, outputs, and requirements."""
+
     id: str
     name: str = ""
     description: str = ""
@@ -143,6 +151,7 @@ class ToolSpec:
 @dataclass
 class SkillSpec:
     """A capability grouping containing environment constraints and execution directives."""
+
     id: str
     name: str
     description: str

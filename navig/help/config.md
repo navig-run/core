@@ -21,5 +21,3 @@ Examples:
 Tips:
 - Global config lives in `~/.navig/`
 - Project config lives in `.navig/` in your repo (created via `navig init`)
-
-

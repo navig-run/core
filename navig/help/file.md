@@ -12,5 +12,3 @@ Common actions:
 
 Legacy compatibility:
 - `navig upload` / `navig download` / `navig ls` still exist for compatibility, but prefer `navig file ...`.
-
-

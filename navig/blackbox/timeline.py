@@ -1,4 +1,5 @@
 """NAVIG Blackbox Timeline — Rich table rendering of event streams."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -13,13 +14,13 @@ from .types import BlackboxEvent, EventType
 __all__ = ["render_timeline", "format_event_summary"]
 
 _TYPE_STYLES: dict[EventType, tuple[str, str]] = {
-    EventType.COMMAND: ("blue",    "CMD"),
-    EventType.SESSION: ("cyan",    "SES"),
-    EventType.OUTPUT:  ("dim",     "OUT"),
-    EventType.WARNING: ("yellow",  "WRN"),
-    EventType.ERROR:   ("red",     "ERR"),
-    EventType.CRASH:   ("bold red","CRH"),
-    EventType.SYSTEM:  ("dim cyan","SYS"),
+    EventType.COMMAND: ("blue", "CMD"),
+    EventType.SESSION: ("cyan", "SES"),
+    EventType.OUTPUT: ("dim", "OUT"),
+    EventType.WARNING: ("yellow", "WRN"),
+    EventType.ERROR: ("red", "ERR"),
+    EventType.CRASH: ("bold red", "CRH"),
+    EventType.SYSTEM: ("dim cyan", "SYS"),
 }
 
 
@@ -52,9 +53,9 @@ def render_timeline(
         expand=True,
         border_style="dim",
     )
-    table.add_column("Time",    style="dim",       no_wrap=True, width=20)
-    table.add_column("Type",    no_wrap=True,      width=5)
-    table.add_column("Source",  style="dim",       width=12)
+    table.add_column("Time", style="dim", no_wrap=True, width=20)
+    table.add_column("Type", no_wrap=True, width=5)
+    table.add_column("Source", style="dim", width=12)
     table.add_column("Summary", ratio=1)
 
     for event in display:
@@ -66,7 +67,14 @@ def render_timeline(
             ts_str,
             Text(abbr, style=style),
             event.source,
-            Text(summary, style=style if event.event_type in (EventType.ERROR, EventType.CRASH) else ""),
+            Text(
+                summary,
+                style=(
+                    style
+                    if event.event_type in (EventType.ERROR, EventType.CRASH)
+                    else ""
+                ),
+            ),
         )
 
     console.print(table)
@@ -77,13 +85,13 @@ def format_event_summary(event: BlackboxEvent) -> str:
     p = event.payload
 
     if event.event_type == EventType.COMMAND:
-        cmd  = p.get("command", "")
+        cmd = p.get("command", "")
         args = p.get("args", "")
         return f"{cmd} {args}".strip() or "(unknown command)"
 
     if event.event_type == EventType.CRASH:
-        exc  = p.get("exception_type", "Exception")
-        msg  = p.get("exception_msg", "")
+        exc = p.get("exception_type", "Exception")
+        msg = p.get("exception_msg", "")
         return f"{exc}: {msg}"[:120] if msg else exc
 
     if event.event_type == EventType.ERROR:
@@ -108,7 +116,7 @@ def format_event_summary(event: BlackboxEvent) -> str:
 
 def _format_ts(ts: datetime) -> str:
     """Format timestamp as 'HH:MM:SS' (today) or 'MM-DD HH:MM:SS' (older)."""
-    now   = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
     local = ts.astimezone()
     if local.date() == now.astimezone().date():
         return local.strftime("%H:%M:%S")

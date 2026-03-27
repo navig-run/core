@@ -10,6 +10,7 @@ Usage::
         "command": "summary",
     })
 """
+
 from __future__ import annotations
 
 import shlex
@@ -50,11 +51,14 @@ class SkillRunTool(BaseTool):
                 error="skill_id arg required. Use /skill list to see available skills.",
             )
 
-        await self._emit(on_status, f"Running skill `{skill_id}`…", command or "(no command)", 20)
+        await self._emit(
+            on_status, f"Running skill `{skill_id}`…", command or "(no command)", 20
+        )
 
         # Validate that the skill exists
         try:
             from navig.skills.loader import skills_by_id  # lazy
+
             index = skills_by_id()
             if skill_id not in index:
                 available = ", ".join(sorted(index.keys())[:20])
@@ -86,7 +90,9 @@ class SkillRunTool(BaseTool):
                     success=True,
                     output={"info": summary},
                 )
-            return ToolResult(name=self.name, success=False, error="command arg required")
+            return ToolResult(
+                name=self.name, success=False, error="command arg required"
+            )
 
         # Build CLI invocation
         navig_bin_argv = _find_navig_bin()

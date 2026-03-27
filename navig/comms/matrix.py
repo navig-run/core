@@ -4,6 +4,7 @@ NavigMatrixBot -- optional Matrix channel backend for navig.comms.
 Uses `matrix-nio` (lazy-imported) so the package is only required when
 ``comms.matrix.enabled`` is true in config.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,6 +21,7 @@ _bot: Optional["NavigMatrixBot"] = None
 HAS_OLM = False
 try:
     import olm  # noqa: F401
+
     HAS_OLM = True
 except ImportError:
     pass  # optional dependency not installed; feature disabled
@@ -80,17 +82,22 @@ class NavigMatrixBot:
             )
         except ImportError as _exc:
             logger.error("matrix-nio is not installed. pip install matrix-nio[e2e]")
-            raise ImportError("matrix-nio required for Matrix support. pip install matrix-nio[e2e]") from _exc
+            raise ImportError(
+                "matrix-nio required for Matrix support. pip install matrix-nio[e2e]"
+            ) from _exc
 
         # Resolve E2EE: enabled only if config says so AND libolm is available
         want_e2ee = self.cfg.e2ee and HAS_OLM
         if self.cfg.e2ee and not HAS_OLM:
-            logger.warning("E2EE requested but libolm not installed. pip install matrix-nio[e2e]")
+            logger.warning(
+                "E2EE requested but libolm not installed. pip install matrix-nio[e2e]"
+            )
 
         # Resolve store path for crypto persistence
         store_dir = self.cfg.store_path or None
         if want_e2ee and not store_dir:
             import os
+
             store_dir = os.path.expanduser("~/.navig/matrix-store")
             os.makedirs(store_dir, exist_ok=True)
             logger.info("Matrix: crypto store at %s", store_dir)
@@ -114,7 +121,9 @@ class NavigMatrixBot:
             self._client.user_id = self.cfg.user_id
             logger.info("Matrix: using access token for %s", self.cfg.user_id)
         else:
-            resp = await self._client.login(self.cfg.password, device_name=self.cfg.device_name)
+            resp = await self._client.login(
+                self.cfg.password, device_name=self.cfg.device_name
+            )
             if not isinstance(resp, LoginResponse):
                 raise RuntimeError(f"Matrix login failed: {resp}")
             logger.info("Matrix: logged in as %s", self.cfg.user_id)
@@ -127,10 +136,14 @@ class NavigMatrixBot:
         if self._e2ee_enabled:
             try:
                 from nio import KeyVerificationEvent
+
                 self._client.add_to_device_callback(
-                    self._on_key_verification, KeyVerificationEvent,
+                    self._on_key_verification,
+                    KeyVerificationEvent,
                 )
-                logger.info("Matrix: E2EE enabled, key verification callbacks registered")
+                logger.info(
+                    "Matrix: E2EE enabled, key verification callbacks registered"
+                )
             except (ImportError, Exception) as exc:
                 logger.warning("Matrix: could not register E2EE callbacks: %s", exc)
 
@@ -139,6 +152,7 @@ class NavigMatrixBot:
             import os
 
             from navig.comms.matrix_store import MatrixStore
+
             store_db = os.path.expanduser("~/.navig/matrix.db")
             self._store = MatrixStore(store_db)
             self._store.prune_events()  # keep DB tidy
@@ -203,6 +217,7 @@ class NavigMatrixBot:
             return None
         try:
             from nio import RoomSendResponse
+
             resp = await self._client.room_send(
                 room_id=room_id or self.cfg.default_room_id,
                 message_type="m.room.message",
@@ -227,6 +242,7 @@ class NavigMatrixBot:
             return None
         try:
             from nio import RoomSendResponse
+
             resp = await self._client.room_send(
                 room_id=room_id or self.cfg.default_room_id,
                 message_type="m.room.message",
@@ -240,17 +256,25 @@ class NavigMatrixBot:
             return None
 
     async def create_room(
-        self, name: str, *, topic: str = "",
-        is_public: bool = False, invite_user_ids: Optional[List[str]] = None,
+        self,
+        name: str,
+        *,
+        topic: str = "",
+        is_public: bool = False,
+        invite_user_ids: Optional[List[str]] = None,
     ) -> Optional[str]:
         """Create a room. Returns room_id or None."""
         if not self._client:
             return None
         try:
             from nio import RoomCreateResponse, RoomVisibility
+
             resp = await self._client.room_create(
-                name=name, topic=topic,
-                visibility=RoomVisibility.public if is_public else RoomVisibility.private,
+                name=name,
+                topic=topic,
+                visibility=(
+                    RoomVisibility.public if is_public else RoomVisibility.private
+                ),
                 invite=invite_user_ids or [],
             )
             if isinstance(resp, RoomCreateResponse):
@@ -258,13 +282,16 @@ class NavigMatrixBot:
                 if self._store:
                     try:
                         from navig.comms.matrix_store import MatrixRoom as _MR
-                        self._store.upsert_room(_MR(
-                            room_id=resp.room_id,
-                            name=name,
-                            topic=topic,
-                            purpose="general",
-                            encrypted=False,
-                        ))
+
+                        self._store.upsert_room(
+                            _MR(
+                                room_id=resp.room_id,
+                                name=name,
+                                topic=topic,
+                                purpose="general",
+                                encrypted=False,
+                            )
+                        )
                     except Exception:
                         logger.debug("Matrix: could not persist room to store")
                 return resp.room_id
@@ -417,12 +444,17 @@ class NavigMatrixBot:
         rooms = []
         try:
             for room_id, room in self._client.rooms.items():
-                rooms.append({
-                    "room_id": room_id,
-                    "name": getattr(room, "name", "") or getattr(room, "display_name", "") or "",
-                    "topic": getattr(room, "topic", "") or "",
-                    "member_count": getattr(room, "member_count", 0) or len(getattr(room, "users", {})),
-                })
+                rooms.append(
+                    {
+                        "room_id": room_id,
+                        "name": getattr(room, "name", "")
+                        or getattr(room, "display_name", "")
+                        or "",
+                        "topic": getattr(room, "topic", "") or "",
+                        "member_count": getattr(room, "member_count", 0)
+                        or len(getattr(room, "users", {})),
+                    }
+                )
         except Exception:
             logger.exception("get_rooms failed")
 
@@ -430,12 +462,15 @@ class NavigMatrixBot:
         if self._store and rooms:
             try:
                 from navig.comms.matrix_store import MatrixRoom as _MR
+
                 for r in rooms:
-                    self._store.upsert_room(_MR(
-                        room_id=r["room_id"],
-                        name=r["name"],
-                        topic=r["topic"],
-                    ))
+                    self._store.upsert_room(
+                        _MR(
+                            room_id=r["room_id"],
+                            name=r["name"],
+                            topic=r["topic"],
+                        )
+                    )
             except Exception:
                 logger.debug("Matrix: room sync to store failed (non-fatal)")
 
@@ -452,17 +487,21 @@ class NavigMatrixBot:
             from nio import RoomMessagesResponse
 
             resp = await self._client.room_messages(
-                room_id, start="", limit=limit,
+                room_id,
+                start="",
+                limit=limit,
             )
             if isinstance(resp, RoomMessagesResponse):
                 for evt in reversed(resp.chunk):
                     if hasattr(evt, "body"):
-                        messages.append({
-                            "event_id": evt.event_id,
-                            "sender": evt.sender,
-                            "body": evt.body,
-                            "timestamp": evt.server_timestamp,
-                        })
+                        messages.append(
+                            {
+                                "event_id": evt.event_id,
+                                "sender": evt.sender,
+                                "body": evt.body,
+                                "timestamp": evt.server_timestamp,
+                            }
+                        )
         except Exception:
             logger.exception("get_room_messages failed")
         return messages
@@ -485,12 +524,14 @@ class NavigMatrixBot:
                         continue
                     seen.add(uid)
                     content = evt.content or {}
-                    members.append({
-                        "user_id": uid,
-                        "display_name": content.get("displayname", ""),
-                        "membership": content.get("membership", ""),
-                        "power_level": 0,  # Enriched below if possible
-                    })
+                    members.append(
+                        {
+                            "user_id": uid,
+                            "display_name": content.get("displayname", ""),
+                            "membership": content.get("membership", ""),
+                            "power_level": 0,  # Enriched below if possible
+                        }
+                    )
 
             # Enrich with power levels
             room = self._client.rooms.get(room_id)
@@ -520,14 +561,18 @@ class NavigMatrixBot:
         if self._store:
             try:
                 from navig.comms.matrix_store import MatrixEvent as _ME
-                self._store.add_event(_ME(
-                    event_id=event.event_id,
-                    room_id=room.room_id,
-                    sender=event.sender,
-                    event_type="m.room.message",
-                    content={"body": getattr(event, "body", "")},
-                    origin_ts=getattr(event, "server_timestamp", 0) or int(time.time() * 1000),
-                ))
+
+                self._store.add_event(
+                    _ME(
+                        event_id=event.event_id,
+                        room_id=room.room_id,
+                        sender=event.sender,
+                        event_type="m.room.message",
+                        content={"body": getattr(event, "body", "")},
+                        origin_ts=getattr(event, "server_timestamp", 0)
+                        or int(time.time() * 1000),
+                    )
+                )
             except Exception:
                 logger.debug("Matrix: event store failed (non-fatal)")
 
@@ -592,7 +637,12 @@ class NavigMatrixBot:
                 return None
             resp = await self._client.start_key_verification(device)
             txn_id = getattr(resp, "transaction_id", None) if resp else None
-            logger.info("Matrix: started verification txn=%s with %s/%s", txn_id, user_id, device_id)
+            logger.info(
+                "Matrix: started verification txn=%s with %s/%s",
+                txn_id,
+                user_id,
+                device_id,
+            )
             return txn_id
         except Exception:
             logger.exception("start_verification failed")
@@ -707,16 +757,19 @@ class NavigMatrixBot:
             if user_id is None:
                 # Own devices from server
                 from nio import DevicesResponse
+
                 resp = await self._client.devices()
                 if isinstance(resp, DevicesResponse):
                     for d in resp.devices:
-                        devices.append({
-                            "device_id": d.id,
-                            "display_name": d.display_name or "",
-                            "last_seen_ip": getattr(d, "last_seen_ip", ""),
-                            "last_seen_ts": getattr(d, "last_seen_date", ""),
-                            "trust": "self",
-                        })
+                        devices.append(
+                            {
+                                "device_id": d.id,
+                                "display_name": d.display_name or "",
+                                "last_seen_ip": getattr(d, "last_seen_ip", ""),
+                                "last_seen_ts": getattr(d, "last_seen_date", ""),
+                                "trust": "self",
+                            }
+                        )
             elif self._e2ee_enabled:
                 # Other user's devices from local store
                 user_devices = self._client.device_store.active_user_devices(user_id)
@@ -725,13 +778,19 @@ class NavigMatrixBot:
                     if hasattr(d, "trust_state"):
                         ts = d.trust_state
                         trust = ts.name if hasattr(ts, "name") else str(ts)
-                    devices.append({
-                        "device_id": d.id if hasattr(d, "id") else d.device_id,
-                        "display_name": getattr(d, "display_name", ""),
-                        "user_id": user_id,
-                        "ed25519_key": getattr(d, "ed25519", "")[:20] + "..." if getattr(d, "ed25519", "") else "",
-                        "trust": trust,
-                    })
+                    devices.append(
+                        {
+                            "device_id": d.id if hasattr(d, "id") else d.device_id,
+                            "display_name": getattr(d, "display_name", ""),
+                            "user_id": user_id,
+                            "ed25519_key": (
+                                getattr(d, "ed25519", "")[:20] + "..."
+                                if getattr(d, "ed25519", "")
+                                else ""
+                            ),
+                            "trust": trust,
+                        }
+                    )
         except Exception:
             logger.exception("get_devices failed")
         return devices

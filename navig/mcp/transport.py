@@ -43,7 +43,7 @@ class MCPTransport(ABC):
 class StdioTransport(MCPTransport):
     """
     Stdio transport for MCP servers.
-    
+
     Spawns subprocess and communicates via stdin/stdout.
     Uses JSON-RPC over newline-delimited JSON.
     """
@@ -72,9 +72,13 @@ class StdioTransport(MCPTransport):
         if self.env:
             # Resolve environment variable references
             for key, value in self.env.items():
-                if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
+                if (
+                    isinstance(value, str)
+                    and value.startswith("${")
+                    and value.endswith("}")
+                ):
                     env_var = value[2:-1]
-                    value = os.environ.get(env_var, '')
+                    value = os.environ.get(env_var, "")
                 full_env[key] = value
 
         logger.debug(f"Starting MCP server: {self.command} {' '.join(self.args)}")
@@ -99,7 +103,9 @@ class StdioTransport(MCPTransport):
             logger.info(f"MCP stdio transport connected: {self.command}")
 
         except FileNotFoundError as _exc:
-            raise RuntimeError(f"MCP server command not found: {self.command}") from _exc
+            raise RuntimeError(
+                f"MCP server command not found: {self.command}"
+            ) from _exc
         except Exception as e:
             raise RuntimeError(f"Failed to start MCP server: {e}") from e
 
@@ -232,7 +238,7 @@ class StdioTransport(MCPTransport):
 class SSETransport(MCPTransport):
     """
     SSE (Server-Sent Events) transport for MCP servers.
-    
+
     Connects to HTTP endpoint for sending and receives via SSE.
     """
 
@@ -253,7 +259,9 @@ class SSETransport(MCPTransport):
         try:
             import aiohttp
         except ImportError as _exc:
-            raise ImportError("aiohttp required for SSE transport: pip install aiohttp") from _exc
+            raise ImportError(
+                "aiohttp required for SSE transport: pip install aiohttp"
+            ) from _exc
 
         self._session = aiohttp.ClientSession(headers=self.headers)
         logger.info(f"MCP SSE transport connected: {self.url}")
@@ -284,9 +292,7 @@ class SSETransport(MCPTransport):
             raise RuntimeError("Transport not connected")
 
         async with self._session.post(
-            self.url,
-            data=data,
-            headers={"Content-Type": "application/json"}
+            self.url, data=data, headers={"Content-Type": "application/json"}
         ) as response:
             if response.status != 200:
                 error = await response.text()

@@ -5,10 +5,11 @@ Usage: py read_region.py x1 y1 x2 y2
        py read_region.py 100 100 500 300
 Note: Requires pytesseract + Tesseract OCR installed
 """
+import io
 import sys
+
 import pyautogui
 from PIL import Image
-import io
 
 # Note: This is a fallback method. For better accuracy, install:
 # 1. Tesseract OCR: https://github.com/tesseract-ocr/tesseract
@@ -17,6 +18,7 @@ import io
 
 try:
     import pytesseract
+
     HAS_OCR = True
 except ImportError:
     HAS_OCR = False
@@ -35,13 +37,13 @@ try:
     # Capture region
     width = x2 - x1
     height = y2 - y1
-    
+
     if width <= 0 or height <= 0:
         print("Error: Invalid coordinates (x2 must be > x1, y2 must be > y1)")
         sys.exit(1)
-    
+
     screenshot = pyautogui.screenshot(region=(x1, y1, width, height))
-    
+
     if HAS_OCR:
         # Extract text using OCR
         text = pytesseract.image_to_string(screenshot)
@@ -55,7 +57,7 @@ try:
         print("  2. pip install pytesseract")
         print("\nFor now, use read_window.py for UI text extraction")
         sys.exit(1)
-        
+
 except Exception as e:
     print(f"Error: {e}")
     sys.exit(1)

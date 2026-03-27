@@ -7,6 +7,7 @@ Format: { "seed", "name", "archetype", "palette_key", "resonance", "version" }
 The seed is all that's needed to fully re-derive the entity — other fields
 are cached for display without needing to re-run derivation on every command.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,12 +33,12 @@ def persist_entity(entity: "NaviEntity") -> None:
     path = _identity_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "version":     _SCHEMA_VERSION,
-        "seed":        entity.seed,
-        "name":        entity.name,
-        "archetype":   entity.archetype,
+        "version": _SCHEMA_VERSION,
+        "seed": entity.seed,
+        "name": entity.name,
+        "archetype": entity.archetype,
         "palette_key": entity.palette_key,
-        "resonance":   entity.resonance,
+        "resonance": entity.resonance,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

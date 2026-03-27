@@ -10,11 +10,12 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ─── Registry Structure Tests ──────────────────────────────────────────────────
+
 
 class TestRegistryIntegrity:
     """Structural correctness of ALL_PROVIDERS."""
@@ -23,18 +24,18 @@ class TestRegistryIntegrity:
         from navig.providers.registry import ALL_PROVIDERS
 
         ids = [p.id for p in ALL_PROVIDERS]
-        assert len(ids) == len(set(ids)), (
-            f"Duplicate provider IDs: {[i for i in ids if ids.count(i) > 1]}"
-        )
+        assert len(ids) == len(
+            set(ids)
+        ), f"Duplicate provider IDs: {[i for i in ids if ids.count(i) > 1]}"
 
     def test_all_providers_have_valid_tier(self):
         from navig.providers.registry import ALL_PROVIDERS
 
         valid_tiers = {"cloud", "local", "proxy"}
         for p in ALL_PROVIDERS:
-            assert p.tier in valid_tiers, (
-                f"Provider '{p.id}' has invalid tier '{p.tier}'"
-            )
+            assert (
+                p.tier in valid_tiers
+            ), f"Provider '{p.id}' has invalid tier '{p.tier}'"
 
     def test_all_providers_have_display_name(self):
         from navig.providers.registry import ALL_PROVIDERS
@@ -54,9 +55,9 @@ class TestRegistryIntegrity:
         local_ids = {"ollama", "llamacpp", "airllm"}
         for p in ALL_PROVIDERS:
             if p.id in local_ids:
-                assert not p.requires_key, (
-                    f"Local provider '{p.id}' should not require a key"
-                )
+                assert (
+                    not p.requires_key
+                ), f"Local provider '{p.id}' should not require a key"
 
     def test_cloud_providers_require_key(self):
         from navig.providers.registry import ALL_PROVIDERS
@@ -64,9 +65,7 @@ class TestRegistryIntegrity:
         cloud_no_key_exceptions = {"github_copilot"}  # OAuth based
         for p in ALL_PROVIDERS:
             if p.tier == "cloud" and p.id not in cloud_no_key_exceptions:
-                assert p.requires_key, (
-                    f"Cloud provider '{p.id}' should require a key"
-                )
+                assert p.requires_key, f"Cloud provider '{p.id}' should require a key"
 
     def test_get_provider_returns_manifest(self):
         from navig.providers.registry import get_provider
@@ -105,12 +104,13 @@ class TestRegistryIntegrity:
 
 # ─── Factory Coverage Tests ────────────────────────────────────────────────────
 
+
 class TestFactoryCoverage:
     """Every enabled provider must have a runtime factory entry."""
 
     def test_factory_covers_all_enabled_providers(self):
-        from navig.providers.registry import list_enabled_providers
         from navig.agent.llm_providers import _PROVIDER_MAP
+        from navig.providers.registry import list_enabled_providers
 
         missing = []
         for manifest in list_enabled_providers():
@@ -124,8 +124,8 @@ class TestFactoryCoverage:
 
     def test_no_orphaned_factory_keys(self):
         """Factory keys should correspond to known provider IDs (or known aliases)."""
-        from navig.providers.registry import list_all_providers
         from navig.agent.llm_providers import _PROVIDER_MAP
+        from navig.providers.registry import list_all_providers
 
         all_ids = {p.id for p in list_all_providers()}
         # Known aliases that don't match a top-level provider ID
@@ -143,6 +143,7 @@ class TestFactoryCoverage:
 
 
 # ─── Verifier Tests ────────────────────────────────────────────────────────────
+
 
 class TestVerifier:
     """Verifier returns structured results without raising."""
@@ -177,12 +178,13 @@ class TestVerifier:
         result = verify_provider(manifest)
 
         # Ollama requires no key — key_detected should be True (vacuously)
-        assert result.key_detected is True, (
-            "Local provider 'ollama' should pass key check (no key required)"
-        )
+        assert (
+            result.key_detected is True
+        ), "Local provider 'ollama' should pass key check (no key required)"
 
 
 # ─── Wizard Dynamic Loading Tests ─────────────────────────────────────────────
+
 
 class TestWizardDynamicLoad:
     """Wizard step reads from registry, not a hardcoded list."""
@@ -204,6 +206,7 @@ class TestWizardDynamicLoad:
             return_value=[fake_manifest],
         ) as mock_lep:
             from navig.providers.registry import list_enabled_providers
+
             providers = list_enabled_providers()
             mock_lep.assert_called_once()
             assert len(providers) == 1
@@ -218,6 +221,7 @@ class TestWizardDynamicLoad:
 
 
 # ─── Routing Strategy Tests ────────────────────────────────────────────────────
+
 
 class TestRoutingStrategy:
     """Request classification correctness."""
@@ -250,7 +254,9 @@ class TestRoutingStrategy:
     def test_agentic_keywords_trigger_agentic(self):
         from navig.agent.routing_strategy import classify_request
 
-        prompt = "plan and execute a workflow to orchestrate and delegate multiple subtasks"
+        prompt = (
+            "plan and execute a workflow to orchestrate and delegate multiple subtasks"
+        )
         result = classify_request([{"role": "user", "content": prompt}])
         assert result.tier == "AGENTIC"
         assert result.agentic_score >= 0.5
@@ -263,7 +269,7 @@ class TestRoutingStrategy:
         assert result.tier == "REASONING"
 
     def test_result_has_required_fields(self):
-        from navig.agent.routing_strategy import classify_request, ClassificationResult
+        from navig.agent.routing_strategy import ClassificationResult, classify_request
 
         result = classify_request([{"role": "user", "content": "hello"}])
         assert isinstance(result, ClassificationResult)

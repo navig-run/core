@@ -6,6 +6,7 @@ Supports both direct API and OpenRouter proxy.
 
 Based on standard perplexity integration pattern.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 
 try:
     import httpx
+
     HTTPX_AVAILABLE = True
 except ImportError:
     httpx = None  # type: ignore[assignment]
@@ -29,11 +31,7 @@ from .clients import (
     CompletionResponse,
     ProviderError,
 )
-from .types import (
-    ModelApi,
-    ModelDefinition,
-    ProviderConfig,
-)
+from .types import ModelApi, ModelDefinition, ProviderConfig
 
 # API Endpoints
 PERPLEXITY_DIRECT_URL = "https://api.perplexity.ai"
@@ -71,6 +69,7 @@ PERPLEXITY_MODELS = [
 @dataclass
 class PerplexitySearchResult:
     """A search result from Perplexity API."""
+
     content: str
     citations: List[str]
     model: str
@@ -80,7 +79,7 @@ class PerplexitySearchResult:
 class PerplexityClient(BaseProviderClient):
     """
     Client for Perplexity Sonar API.
-    
+
     Supports:
     - Direct Perplexity API (pplx-xxx keys)
     - OpenRouter proxy (sk-or-xxx keys)
@@ -96,7 +95,7 @@ class PerplexityClient(BaseProviderClient):
     ):
         """
         Initialize Perplexity client.
-        
+
         Args:
             api_key: API key (Perplexity or OpenRouter)
             base_url: Optional base URL override
@@ -182,7 +181,9 @@ class PerplexityClient(BaseProviderClient):
     async def _get_client(self):
         """Get or create HTTP client."""
         if not HTTPX_AVAILABLE:
-            raise ImportError("httpx is required for Perplexity client. Install: pip install httpx")
+            raise ImportError(
+                "httpx is required for Perplexity client. Install: pip install httpx"
+            )
 
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
@@ -200,13 +201,13 @@ class PerplexityClient(BaseProviderClient):
     ) -> PerplexitySearchResult:
         """
         Perform a web search with AI synthesis.
-        
+
         Args:
             query: Search query
             model: Optional model override
             system_prompt: Optional system prompt
             max_tokens: Maximum response tokens
-            
+
         Returns:
             PerplexitySearchResult with content and citations
         """
@@ -267,7 +268,7 @@ class PerplexityClient(BaseProviderClient):
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """
         Execute chat completion using Perplexity API.
-        
+
         Note: Perplexity doesn't support tools/function calling.
         Use search() for web search queries.
         """
@@ -282,8 +283,7 @@ class PerplexityClient(BaseProviderClient):
         body: Dict[str, Any] = {
             "model": model_id,
             "messages": [
-                {"role": m.role, "content": m.content}
-                for m in request.messages
+                {"role": m.role, "content": m.content} for m in request.messages
             ],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
@@ -349,6 +349,7 @@ class PerplexityClient(BaseProviderClient):
 
 # Convenience functions
 
+
 def create_perplexity_client(
     api_key: Optional[str] = None,
     model: str = DEFAULT_PERPLEXITY_MODEL,
@@ -356,12 +357,12 @@ def create_perplexity_client(
 ) -> PerplexityClient:
     """
     Create a Perplexity client.
-    
+
     Args:
         api_key: API key (auto-detected from env if not provided)
         model: Model to use
         timeout: Request timeout
-        
+
     Returns:
         Configured PerplexityClient
     """
@@ -376,13 +377,13 @@ async def perplexity_search(
 ) -> PerplexitySearchResult:
     """
     Perform a one-shot Perplexity search.
-    
+
     Args:
         query: Search query
         api_key: API key (auto-detected from env if not provided)
         model: Model to use
         system_prompt: Optional system prompt
-        
+
     Returns:
         PerplexitySearchResult
     """

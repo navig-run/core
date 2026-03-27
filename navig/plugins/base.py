@@ -5,16 +5,16 @@ Abstract base class that all plugins should inherit from to ensure consistent in
 
 Usage:
     from navig.plugins.base import PluginBase
-    
+
     class MyPlugin(PluginBase):
         @property
         def name(self) -> str:
             return "my-plugin"
-        
+
         @property
         def app(self) -> typer.Typer:
             return my_app
-        
+
         def check_dependencies(self) -> Tuple[bool, List[str]]:
             # Check if required packages are installed
             missing = []
@@ -34,15 +34,15 @@ import typer
 class PluginBase(ABC):
     """
     Base class for NAVIG plugins.
-    
+
     Plugins extend NAVIG with custom commands and functionality.
     Each plugin is registered as a sub-command group (e.g., 'navig brain').
-    
+
     Required implementations:
     - name: Plugin name (used as CLI command)
     - app: Typer app instance with plugin commands
     - check_dependencies(): Verify required packages are installed
-    
+
     Optional overrides:
     - description: Plugin description for help text
     - version: Plugin version string
@@ -55,7 +55,7 @@ class PluginBase(ABC):
     def name(self) -> str:
         """
         Plugin name (used as CLI command, e.g., 'brain' for 'navig brain').
-        
+
         Must be a valid Python identifier (letters, numbers, underscores).
         """
         pass
@@ -65,15 +65,15 @@ class PluginBase(ABC):
     def app(self) -> typer.Typer:
         """
         Typer app instance with plugin commands.
-        
+
         Example:
             app = typer.Typer(help="My plugin description")
-            
+
             @app.command()
             def my_command():
                 '''My command help'''
                 pass
-            
+
             @property
             def app(self) -> typer.Typer:
                 return app
@@ -84,16 +84,16 @@ class PluginBase(ABC):
     def check_dependencies(self) -> Tuple[bool, List[str]]:
         """
         Check if all required dependencies are available.
-        
+
         This is called before the plugin is loaded. If dependencies
         are missing, the plugin will not be registered but NAVIG
         will continue to work without it.
-        
+
         Returns:
             Tuple of (success, missing_packages)
             - (True, []) if all dependencies are satisfied
             - (False, ['pkg1', 'pkg2']) if dependencies are missing
-        
+
         Example:
             def check_dependencies(self) -> Tuple[bool, List[str]]:
                 missing = []
@@ -133,7 +133,7 @@ class PluginBase(ABC):
     def permissions(self) -> List[str]:
         """
         Required permissions for this plugin.
-        
+
         Valid permissions:
         - 'ssh': Execute commands on remote hosts
         - 'config_read': Read NAVIG configuration
@@ -146,7 +146,7 @@ class PluginBase(ABC):
     def on_load(self) -> None:
         """
         Called after plugin is successfully loaded.
-        
+
         Use this for initialization that depends on NAVIG being fully loaded.
         """
         pass
@@ -154,7 +154,7 @@ class PluginBase(ABC):
     def on_unload(self) -> None:
         """
         Called before plugin is unloaded.
-        
+
         Use this for cleanup (close connections, save state, etc.).
         """
         pass
@@ -162,21 +162,22 @@ class PluginBase(ABC):
     def get_config(self, key: str = None, default: Any = None) -> Any:
         """
         Get plugin-specific configuration.
-        
+
         Configuration is stored under plugins.<name>.* in NAVIG config.
-        
+
         Args:
             key: Configuration key (relative to plugin namespace)
             default: Default value if not found
-        
+
         Returns:
             Configuration value
-        
+
         Example:
             # Get plugins.brain.db_path
             db_path = self.get_config('db_path', '~/.navig/brain.db')
         """
         from navig.core import Config
+
         config = Config()
         if key:
             return config.get_plugin_config(self.name, key, default)
@@ -185,12 +186,13 @@ class PluginBase(ABC):
     def set_config(self, key: str, value: Any) -> None:
         """
         Set plugin-specific configuration.
-        
+
         Args:
             key: Configuration key (relative to plugin namespace)
             value: Value to set
         """
         from navig.core import Config
+
         config = Config()
         config.set_plugin_config(self.name, key, value)
         config.save()
@@ -199,16 +201,16 @@ class PluginBase(ABC):
 class PluginAPI:
     """
     NAVIG API for plugins to interact with the core system.
-    
+
     Provides safe access to:
     - SSH/Remote execution
     - Configuration
     - Console output
     - Active host/app context
-    
+
     Usage:
         from navig.plugins.base import PluginAPI
-        
+
         api = PluginAPI()
         host = api.get_active_host()
         result = api.run_remote("ls -la")
@@ -235,10 +237,10 @@ class PluginAPI:
     def get_host_config(self, host_name: str = None) -> Optional[Dict[str, Any]]:
         """
         Get configuration for a host.
-        
+
         Args:
             host_name: Host name (uses active host if not specified)
-        
+
         Returns:
             Host configuration dict or None if not found
         """
@@ -257,17 +259,17 @@ class PluginAPI:
         command: str,
         host_name: str = None,
         timeout: int = 30,
-        capture_output: bool = True
+        capture_output: bool = True,
     ) -> Tuple[bool, str, str]:
         """
         Execute a command on a remote host.
-        
+
         Args:
             command: Command to execute
             host_name: Target host (uses active host if not specified)
             timeout: Command timeout in seconds
             capture_output: If True, return stdout/stderr
-        
+
         Returns:
             Tuple of (success, stdout, stderr)
         """
@@ -289,19 +291,16 @@ class PluginAPI:
             return (False, "", str(e))
 
     def upload_file(
-        self,
-        local_path: str,
-        remote_path: str,
-        host_name: str = None
+        self, local_path: str, remote_path: str, host_name: str = None
     ) -> Tuple[bool, str]:
         """
         Upload a file to a remote host.
-        
+
         Args:
             local_path: Local file path
             remote_path: Remote destination path
             host_name: Target host (uses active host if not specified)
-        
+
         Returns:
             Tuple of (success, error_message)
         """
@@ -325,19 +324,16 @@ class PluginAPI:
             return (False, str(e))
 
     def download_file(
-        self,
-        remote_path: str,
-        local_path: str,
-        host_name: str = None
+        self, remote_path: str, local_path: str, host_name: str = None
     ) -> Tuple[bool, str]:
         """
         Download a file from a remote host.
-        
+
         Args:
             remote_path: Remote file path
             local_path: Local destination path
             host_name: Target host (uses active host if not specified)
-        
+
         Returns:
             Tuple of (success, error_message)
         """

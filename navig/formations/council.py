@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
+from concurrent.futures import as_completed
 from typing import Any, Dict, List, Optional
 
 from navig.debug_logger import get_debug_logger
@@ -35,7 +36,7 @@ MAX_ROUNDS = 5
 def _agent_scope_hint(agent: AgentSpec) -> str:
     """Build a short scope reminder from the agent's specialty areas."""
     if agent.scope:
-        areas = ', '.join(agent.scope[:4])
+        areas = ", ".join(agent.scope[:4])
         return f"Your specialty: {areas}."
     return f"Your specialty: {agent.role.lower()}."
 
@@ -129,13 +130,13 @@ def run_council(
     timeout_per_agent: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Run a multi-agent council deliberation.
-    
+
     Args:
         formation: Loaded formation with agents
         question: The question/topic to deliberate
         rounds: Number of deliberation rounds (1-5)
         timeout_per_agent: Per-agent timeout in seconds
-    
+
     Returns:
         Structured result dict with rounds, responses, and final decision.
     """
@@ -145,7 +146,7 @@ def run_council(
     if not formation.loaded_agents:
         return {
             "error": f"Formation '{formation.id}' has no loaded agents. "
-                     f"Check formations/{formation.id}/agents/ directory.",
+            f"Check formations/{formation.id}/agents/ directory.",
             "pack": formation.id,
         }
 
@@ -174,18 +175,20 @@ def run_council(
         for agent_id in formation.agents:
             agent = formation.loaded_agents.get(agent_id)
             if agent is None:
-                round_responses.append({
-                    "agent": agent_id,
-                    "name": agent_id,
-                    "role": "unknown",
-                    "response": "[AGENT NOT LOADED]",
-                    "confidence": 0.0,
-                    "duration_ms": 0,
-                })
+                round_responses.append(
+                    {
+                        "agent": agent_id,
+                        "name": agent_id,
+                        "role": "unknown",
+                        "response": "[AGENT NOT LOADED]",
+                        "confidence": 0.0,
+                        "duration_ms": 0,
+                    }
+                )
             else:
                 # Other roles hint (exclude this agent's own role)
                 others = [r for aid, r in all_roles.items() if aid != agent_id]
-                other_str = ', '.join(others) if others else ''
+                other_str = ", ".join(others) if others else ""
                 agents_to_call.append((agent, other_str))
 
         # ── PARALLEL execution: all agents in a round run simultaneously ──
@@ -193,7 +196,12 @@ def run_council(
             with ThreadPoolExecutor(max_workers=len(agents_to_call)) as executor:
                 future_map = {
                     executor.submit(
-                        _call_agent, agent, question, previous_context, round_num, other_str
+                        _call_agent,
+                        agent,
+                        question,
+                        previous_context,
+                        round_num,
+                        other_str,
                     ): agent.id
                     for agent, other_str in agents_to_call
                 }
@@ -206,7 +214,9 @@ def run_council(
                         results_by_id[agent_id] = result
                     except (FuturesTimeout, TimeoutError):
                         agent = formation.loaded_agents.get(agent_id)
-                        logger.warning(f"[COUNCIL] Agent '{agent_id}' timed out ({timeout}s)")
+                        logger.warning(
+                            f"[COUNCIL] Agent '{agent_id}' timed out ({timeout}s)"
+                        )
                         results_by_id[agent_id] = {
                             "agent": agent_id,
                             "name": agent.name if agent else agent_id,
@@ -232,10 +242,12 @@ def run_council(
                     if agent.id in results_by_id:
                         round_responses.append(results_by_id[agent.id])
 
-        all_rounds.append({
-            "round": round_num,
-            "responses": round_responses,
-        })
+        all_rounds.append(
+            {
+                "round": round_num,
+                "responses": round_responses,
+            }
+        )
 
         # Build context for next round — conversational format
         previous_context = "\n".join(
@@ -245,9 +257,7 @@ def run_council(
         )
 
     # Final decision from default agent
-    final_decision = _generate_final_decision(
-        formation, question, all_rounds, timeout
-    )
+    final_decision = _generate_final_decision(formation, question, all_rounds, timeout)
 
     # Calculate overall confidence
     all_confidences = [

@@ -12,7 +12,7 @@ import (
 // exposing raw Vault data to an external LLM.
 func VaultMatch(analysis *PageAnalysis, v *vault.Vault) map[string]string {
 	fills := make(map[string]string)
-	
+
 	if v == nil || analysis == nil {
 		return fills
 	}
@@ -73,7 +73,7 @@ func matchInputToVault(inp *InputInfo, v *vault.Vault, analysis *PageAnalysis) s
 
 	// --- 2. Address Matches (Defaulting to Shipping for now) ---
 	addr := v.ShippingAddress // Could be enhanced to distinguish Billing vs Shipping based on form container Context
-	
+
 	if containsAny(combined, "address 1", "address line 1", "street address") {
 		return addr.Line1
 	}
@@ -106,7 +106,7 @@ func matchInputToVault(inp *InputInfo, v *vault.Vault, analysis *PageAnalysis) s
 		if containsAny(combined, "cvv", "cvc", "security code") {
 			return card.CVV
 		}
-		
+
 		// Month/Year edge cases (single inputs vs double inputs)
 		if containsAny(combined, "exp month", "expiration month") {
 			return card.ExpiryMonth

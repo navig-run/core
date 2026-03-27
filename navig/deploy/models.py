@@ -15,20 +15,23 @@ from typing import Any, Dict, List, Optional
 # LIFECYCLE PHASES
 # ============================================================================
 
+
 class DeployPhase(str, enum.Enum):
     """Ordered lifecycle phases for a NAVIG deploy run."""
-    PRE_CHECK  = "pre_check"
-    BACKUP     = "backup"
-    PUSH       = "push"
-    APPLY      = "apply"
-    RESTART    = "restart"
-    HEALTH     = "health"
-    CLEANUP    = "cleanup"
+
+    PRE_CHECK = "pre_check"
+    BACKUP = "backup"
+    PUSH = "push"
+    APPLY = "apply"
+    RESTART = "restart"
+    HEALTH = "health"
+    CLEANUP = "cleanup"
 
 
 # ============================================================================
 # PER-PHASE RESULT
 # ============================================================================
+
 
 @dataclass
 class PhaseResult:
@@ -36,18 +39,19 @@ class PhaseResult:
     success: bool
     message: str = ""
     detail: str = ""
-    elapsed: float = 0.0         # seconds
-    skipped: bool = False        # phase was intentionally skipped
+    elapsed: float = 0.0  # seconds
+    skipped: bool = False  # phase was intentionally skipped
 
 
 # ============================================================================
 # DEPLOY CONFIG  (loaded from .navig/deploy.yaml)
 # ============================================================================
 
+
 @dataclass
 class PushConfig:
-    source: str                  # Local path (relative to project root)
-    target: str                  # Remote absolute path
+    source: str  # Local path (relative to project root)
+    target: str  # Remote absolute path
     excludes: List[str] = field(default_factory=list)
 
 
@@ -58,10 +62,10 @@ class ApplyConfig:
 
 @dataclass
 class RestartConfig:
-    adapter: str = "systemd"     # systemd | docker-compose | pm2 | command
+    adapter: str = "systemd"  # systemd | docker-compose | pm2 | command
     service: Optional[str] = None
     compose_file: str = "docker-compose.yml"
-    command: Optional[str] = None   # for adapter=command
+    command: Optional[str] = None  # for adapter=command
 
 
 @dataclass
@@ -79,7 +83,7 @@ class HealthConfig:
 @dataclass
 class BackupConfig:
     enabled: bool = True
-    remote_path: str = "/var/backups"   # base dir on server; app name appended
+    remote_path: str = "/var/backups"  # base dir on server; app name appended
     keep_last: int = 5
 
 
@@ -89,9 +93,12 @@ class DeployConfig:
     Fully merged deploy configuration for one deploy run.
     Source priority: CLI flags > .navig/deploy.yaml > global defaults.
     """
+
     version: str = "1"
 
-    push: PushConfig = field(default_factory=lambda: PushConfig(source="./dist/", target="/var/www/app/"))
+    push: PushConfig = field(
+        default_factory=lambda: PushConfig(source="./dist/", target="/var/www/app/")
+    )
     apply: ApplyConfig = field(default_factory=ApplyConfig)
     restart: RestartConfig = field(default_factory=RestartConfig)
     health: HealthConfig = field(default_factory=HealthConfig)
@@ -104,11 +111,11 @@ class DeployConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DeployConfig":
         """Parse a deploy.yaml dict into a DeployConfig."""
-        raw_push    = data.get("push", {})
-        raw_apply   = data.get("apply", {})
+        raw_push = data.get("push", {})
+        raw_apply = data.get("apply", {})
         raw_restart = data.get("restart", {})
-        raw_health  = data.get("health_check", {})
-        raw_backup  = data.get("backup", {})
+        raw_health = data.get("health_check", {})
+        raw_backup = data.get("backup", {})
 
         push = PushConfig(
             source=raw_push.get("source", "./dist/"),
@@ -166,9 +173,13 @@ class DeployConfig:
         if self.health.retries == 5:
             self.health.retries = int(d.get("default_health_retries", 5))
         if self.health.interval_seconds == 5:
-            self.health.interval_seconds = int(d.get("default_health_interval_seconds", 5))
+            self.health.interval_seconds = int(
+                d.get("default_health_interval_seconds", 5)
+            )
         if self.health.timeout_seconds == 30:
-            self.health.timeout_seconds = int(d.get("default_health_timeout_seconds", 30))
+            self.health.timeout_seconds = int(
+                d.get("default_health_timeout_seconds", 30)
+            )
         if self.backup.keep_last == 5:
             self.backup.keep_last = int(d.get("snapshot_keep_last", 5))
 
@@ -177,19 +188,22 @@ class DeployConfig:
 # SNAPSHOT RECORD
 # ============================================================================
 
+
 @dataclass
 class SnapshotRecord:
-    path: str           # Absolute path on remote host
-    created_at: str     # ISO timestamp
+    path: str  # Absolute path on remote host
+    created_at: str  # ISO timestamp
 
 
 # ============================================================================
 # DEPLOY RESULT
 # ============================================================================
 
+
 @dataclass
 class DeployResult:
     """Final result of a deploy run."""
+
     success: bool
     host: str
     app: str
@@ -232,9 +246,11 @@ class DeployResult:
                 }
                 for p in self.phases
             ],
-            "snapshot": {"path": self.snapshot.path, "created_at": self.snapshot.created_at}
-            if self.snapshot
-            else None,
+            "snapshot": (
+                {"path": self.snapshot.path, "created_at": self.snapshot.created_at}
+                if self.snapshot
+                else None
+            ),
             "rolled_back": self.rolled_back,
             "dry_run": self.dry_run,
             "git_ref": self.git_ref,

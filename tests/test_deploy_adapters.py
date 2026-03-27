@@ -1,13 +1,14 @@
 """Tests for navig.deploy.adapters — command generation per adapter type."""
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
 from navig.deploy.adapters import (
-    SystemdAdapter,
+    CommandAdapter,
     DockerComposeAdapter,
     Pm2Adapter,
-    CommandAdapter,
+    SystemdAdapter,
     build_adapter,
 )
 from navig.deploy.models import RestartConfig
@@ -37,6 +38,7 @@ def _fail_result(stderr="fail"):
 # Adapter command generation
 # ============================================================================
 
+
 class TestSystemdAdapter:
     def test_restart_commands(self):
         adapter = SystemdAdapter(
@@ -51,15 +53,21 @@ class TestSystemdAdapter:
     def test_restart_success(self):
         remote = MagicMock()
         remote.execute_command.return_value = _ok_result()
-        adapter = SystemdAdapter(service="myapp", server_config=SERVER, remote_ops=remote)
+        adapter = SystemdAdapter(
+            service="myapp", server_config=SERVER, remote_ops=remote
+        )
         ok, _ = adapter.restart()
         assert ok is True
-        remote.execute_command.assert_called_once_with("systemctl restart myapp", SERVER)
+        remote.execute_command.assert_called_once_with(
+            "systemctl restart myapp", SERVER
+        )
 
     def test_restart_failure_returns_stderr(self):
         remote = MagicMock()
         remote.execute_command.return_value = _fail_result("Unit not found")
-        adapter = SystemdAdapter(service="myapp", server_config=SERVER, remote_ops=remote)
+        adapter = SystemdAdapter(
+            service="myapp", server_config=SERVER, remote_ops=remote
+        )
         ok, msg = adapter.restart()
         assert ok is False
         assert "Unit not found" in msg
@@ -92,13 +100,17 @@ class TestDockerComposeAdapter:
 
 class TestPm2Adapter:
     def test_restart_commands(self):
-        adapter = Pm2Adapter(service="myapp", server_config=SERVER, remote_ops=MagicMock())
+        adapter = Pm2Adapter(
+            service="myapp", server_config=SERVER, remote_ops=MagicMock()
+        )
         cmds = adapter.restart_commands()
         assert cmds == ["pm2 restart myapp --update-env"]
 
     def test_restart_dry_run_no_remote_call(self):
         remote = MagicMock()
-        adapter = Pm2Adapter(service="myapp", server_config=SERVER, remote_ops=remote, dry_run=True)
+        adapter = Pm2Adapter(
+            service="myapp", server_config=SERVER, remote_ops=remote, dry_run=True
+        )
         ok, _ = adapter.restart()
         assert ok is True
         remote.execute_command.assert_not_called()
@@ -118,6 +130,7 @@ class TestCommandAdapter:
 # ============================================================================
 # build_adapter factory
 # ============================================================================
+
 
 class TestBuildAdapter:
     def _remote(self):

@@ -85,12 +85,12 @@ func main() {
 	agent := scriptengine.New(evalFn, navFn, shotFn, emitter)
 
 	// Since we use the new auto-login flow which looks directly at operatorVault
-	// we will map the vault matches inside the execution flow. 
-	// To do this seamlessly inside `runStep.login`, `scriptengine.Run` needs credentials override 
+	// we will map the vault matches inside the execution flow.
+	// To do this seamlessly inside `runStep.login`, `scriptengine.Run` needs credentials override
 	// but PageIntel automatically matches vault inside native `smartFill` or `vaultMatch`.
 	// For today's demo, the step is "login". The engine extracts the domain and dynamically calls PageIntel.
 	// We inject Vault directly into the Credentials object so it knows the passwords.
-	
+
 	// Dynamically prepare creds if there are any for this run.
 	var creds *pageintel.Credentials
 	if len(operatorVault.Accounts) > 0 {

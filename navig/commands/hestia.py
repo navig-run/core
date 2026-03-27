@@ -3,6 +3,7 @@
 Provides comprehensive HestiaCP management capabilities.
 Requires HestiaCP installed on the remote server.
 """
+
 import json
 import shlex
 from typing import Any, Dict, Optional
@@ -12,14 +13,16 @@ from rich.table import Table
 from navig import console_helper as ch
 
 
-def _execute_hestia_cmd(command: str, server_config: Dict, options: Dict[str, Any]) -> Dict:
+def _execute_hestia_cmd(
+    command: str, server_config: Dict, options: Dict[str, Any]
+) -> Dict:
     """Execute HestiaCP command via API or CLI.
-    
+
     Args:
         command: HestiaCP CLI command
         server_config: Server configuration
         options: Command options
-        
+
     Returns:
         Dict with success status and output/error
     """
@@ -33,22 +36,22 @@ def _execute_hestia_cmd(command: str, server_config: Dict, options: Dict[str, An
     result = remote_ops.execute_command(command, server_config)
 
     return {
-        'success': result.returncode == 0,
-        'output': result.stdout.strip(),
-        'error': result.stderr.strip()
+        "success": result.returncode == 0,
+        "output": result.stdout.strip(),
+        "error": result.stderr.strip(),
     }
 
 
 def list_users_cmd(options: Dict[str, Any]):
     """List HestiaCP users.
-    
+
     Args:
         options: Command options (app, json)
     """
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -60,7 +63,7 @@ def list_users_cmd(options: Dict[str, Any]):
     check_cmd = "command -v v-list-users"
     result = _execute_hestia_cmd(check_cmd, server_config, options)
 
-    if not result['success']:
+    if not result["success"]:
         ch.error(f"HestiaCP not found on server '{server_name}'")
         ch.dim("  The command 'v-list-users' is not available.")
         ch.dim("")
@@ -70,25 +73,25 @@ def list_users_cmd(options: Dict[str, Any]):
         ch.dim("  • Current user lacks permissions to run HestiaCP commands")
         ch.dim("")
         ch.dim("  To verify installation:")
-        ch.dim(f"    navig --host {server_name} run \"command -v v-list-users\"")
+        ch.dim(f'    navig --host {server_name} run "command -v v-list-users"')
         return
 
     # List users
     cmd = "v-list-users json"
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if not result['success']:
+    if not result["success"]:
         ch.error(f"Failed to list HestiaCP users on '{server_name}'")
-        if result['error']:
+        if result["error"]:
             ch.dim(f"  {result['error']}")
         return
 
     try:
-        users_data = json.loads(result['output'])
+        users_data = json.loads(result["output"])
 
-        if options.get('json'):
+        if options.get("json"):
             ch.raw_print(json.dumps({"users": users_data, "count": len(users_data)}))
-        elif options.get('plain'):
+        elif options.get("plain"):
             # Plain text output - one user per line for scripting
             for username in users_data.keys():
                 ch.raw_print(username)
@@ -103,10 +106,10 @@ def list_users_cmd(options: Dict[str, Any]):
             for username, user_info in users_data.items():
                 table.add_row(
                     username,
-                    user_info.get('PACKAGE', 'default'),
-                    user_info.get('CONTACT', ''),
-                    str(user_info.get('U_WEB_DOMAINS', 0)),
-                    str(user_info.get('U_DATABASES', 0))
+                    user_info.get("PACKAGE", "default"),
+                    user_info.get("CONTACT", ""),
+                    str(user_info.get("U_WEB_DOMAINS", 0)),
+                    str(user_info.get("U_DATABASES", 0)),
                 )
 
             ch.console.print(table)
@@ -118,7 +121,7 @@ def list_users_cmd(options: Dict[str, Any]):
 
 def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
     """List HestiaCP domains.
-    
+
     Args:
         user: Optional username to filter domains
         options: Command options (app, json)
@@ -126,7 +129,7 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -142,34 +145,36 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
         users_cmd = "v-list-users json"
         users_result = _execute_hestia_cmd(users_cmd, server_config, options)
 
-        if not users_result['success']:
+        if not users_result["success"]:
             ch.error(f"HestiaCP not found on server '{server_name}'")
             ch.dim("  Unable to list users - HestiaCP may not be installed.")
             ch.dim("")
             ch.dim("  To verify installation:")
-            ch.dim(f"    navig --host {server_name} run \"command -v v-list-users\"")
+            ch.dim(f'    navig --host {server_name} run "command -v v-list-users"')
             return
 
         try:
-            users_data = json.loads(users_result['output'])
+            users_data = json.loads(users_result["output"])
             all_domains = {}
 
             for username in users_data.keys():
                 cmd = f"v-list-web-domains {username} json"
                 domains_result = _execute_hestia_cmd(cmd, server_config, options)
 
-                if domains_result['success']:
+                if domains_result["success"]:
                     try:
-                        user_domains = json.loads(domains_result['output'])
+                        user_domains = json.loads(domains_result["output"])
                         for domain, info in user_domains.items():
-                            info['USER'] = username
+                            info["USER"] = username
                             all_domains[domain] = info
                     except json.JSONDecodeError:
                         pass  # malformed JSON; skip line
 
-            if options.get('json'):
-                ch.raw_print(json.dumps({"domains": all_domains, "count": len(all_domains)}))
-            elif options.get('plain'):
+            if options.get("json"):
+                ch.raw_print(
+                    json.dumps({"domains": all_domains, "count": len(all_domains)})
+                )
+            elif options.get("plain"):
                 # Plain text output - one domain per line for scripting
                 for domain in all_domains.keys():
                     ch.raw_print(domain)
@@ -181,12 +186,9 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
                 table.add_column("SSL", justify="center")
 
                 for domain, info in all_domains.items():
-                    ssl_status = "✓" if info.get('SSL', 'no') == 'yes' else "✗"
+                    ssl_status = "✓" if info.get("SSL", "no") == "yes" else "✗"
                     table.add_row(
-                        domain,
-                        info.get('USER', ''),
-                        info.get('IP', ''),
-                        ssl_status
+                        domain, info.get("USER", ""), info.get("IP", ""), ssl_status
                     )
 
                 ch.console.print(table)
@@ -201,9 +203,9 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
     # Single user domains
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if not result['success']:
+    if not result["success"]:
         ch.error(f"Failed to list domains for user '{user}' on '{server_name}'")
-        if result['error']:
+        if result["error"]:
             ch.dim(f"  {result['error']}")
         ch.dim("")
         ch.dim("  Possible causes:")
@@ -215,11 +217,15 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
         return
 
     try:
-        domains_data = json.loads(result['output'])
+        domains_data = json.loads(result["output"])
 
-        if options.get('json'):
-            ch.raw_print(json.dumps({"user": user, "domains": domains_data, "count": len(domains_data)}))
-        elif options.get('plain'):
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps(
+                    {"user": user, "domains": domains_data, "count": len(domains_data)}
+                )
+            )
+        elif options.get("plain"):
             # Plain text output - one domain per line for scripting
             for domain in domains_data.keys():
                 ch.raw_print(domain)
@@ -231,12 +237,9 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
             table.add_column("PHP", style="yellow")
 
             for domain, info in domains_data.items():
-                ssl_status = "✓" if info.get('SSL', 'no') == 'yes' else "✗"
+                ssl_status = "✓" if info.get("SSL", "no") == "yes" else "✗"
                 table.add_row(
-                    domain,
-                    info.get('IP', ''),
-                    ssl_status,
-                    info.get('BACKEND', '')
+                    domain, info.get("IP", ""), ssl_status, info.get("BACKEND", "")
                 )
 
             ch.console.print(table)
@@ -248,7 +251,7 @@ def list_domains_cmd(user: Optional[str], options: Dict[str, Any]):
 
 def add_user_cmd(username: str, password: str, email: str, options: Dict[str, Any]):
     """Add new HestiaCP user.
-    
+
     Args:
         username: Username to create
         password: User password
@@ -258,7 +261,7 @@ def add_user_cmd(username: str, password: str, email: str, options: Dict[str, An
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -272,9 +275,17 @@ def add_user_cmd(username: str, password: str, email: str, options: Dict[str, An
     cmd = f"printf '%s\\n' {shlex.quote(password)} | v-add-user {shlex.quote(username)} - {shlex.quote(email)}"
 
     # Dry run
-    if options.get('dry_run'):
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": f"v-add-user {username} <password> {email}"}))
+    if options.get("dry_run"):
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps(
+                    {
+                        "success": True,
+                        "dry_run": True,
+                        "action": f"v-add-user {username} <password> {email}",
+                    }
+                )
+            )
         else:
             ch.info(f"[DRY RUN] Would create user: {username} ({email})")
         return True
@@ -282,15 +293,15 @@ def add_user_cmd(username: str, password: str, email: str, options: Dict[str, An
     # Execute
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if result['success']:
-        if options.get('json'):
+    if result["success"]:
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "user": username}))
         else:
             ch.success(f"✓ Created user: {username}")
         return True
     else:
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": False, "error": result['error']}))
+        if options.get("json"):
+            ch.raw_print(json.dumps({"success": False, "error": result["error"]}))
         else:
             ch.error(f"Failed: {result['error']}")
         return False
@@ -298,7 +309,7 @@ def add_user_cmd(username: str, password: str, email: str, options: Dict[str, An
 
 def delete_user_cmd(username: str, options: Dict[str, Any]):
     """Delete HestiaCP user.
-    
+
     Args:
         username: Username to delete
         options: Command options (app, force, dry_run, json)
@@ -306,7 +317,7 @@ def delete_user_cmd(username: str, options: Dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -315,36 +326,40 @@ def delete_user_cmd(username: str, options: Dict[str, Any]):
     server_config = config_manager.load_server_config(server_name)
 
     # Dry run
-    if options.get('dry_run'):
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": True, "dry_run": True, "user": username}))
+    if options.get("dry_run"):
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps({"success": True, "dry_run": True, "user": username})
+            )
         else:
             ch.info(f"[DRY RUN] Would delete user: {username}")
         return True
 
     # Confirmation
-    if not options.get('force'):
-        if not options.get('json'):
+    if not options.get("force"):
+        if not options.get("json"):
             if not ch.confirm_action(f"Delete user {username} and ALL their data?"):
                 ch.warning("Cancelled.")
                 return False
         else:
-            ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
+            ch.raw_print(
+                json.dumps({"success": False, "error": "Use --force in JSON mode"})
+            )
             return False
 
     # Execute
     cmd = f"v-delete-user {username}"
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if result['success']:
-        if options.get('json'):
+    if result["success"]:
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "user": username}))
         else:
             ch.success(f"✓ Deleted user: {username}")
         return True
     else:
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": False, "error": result['error']}))
+        if options.get("json"):
+            ch.raw_print(json.dumps({"success": False, "error": result["error"]}))
         else:
             ch.error(f"Failed: {result['error']}")
         return False
@@ -352,7 +367,7 @@ def delete_user_cmd(username: str, options: Dict[str, Any]):
 
 def add_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
     """Add domain to HestiaCP user.
-    
+
     Args:
         user: Username
         domain: Domain name to add
@@ -361,7 +376,7 @@ def add_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -371,8 +386,8 @@ def add_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
 
     cmd = f"v-add-web-domain {user} {domain}"
 
-    if options.get('dry_run'):
-        if options.get('json'):
+    if options.get("dry_run"):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": cmd}))
         else:
             ch.info(f"[DRY RUN] Would add domain: {domain} to user: {user}")
@@ -380,15 +395,15 @@ def add_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
 
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if result['success']:
-        if options.get('json'):
+    if result["success"]:
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "user": user, "domain": domain}))
         else:
             ch.success(f"✓ Added domain: {domain}")
         return True
     else:
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": False, "error": result['error']}))
+        if options.get("json"):
+            ch.raw_print(json.dumps({"success": False, "error": result["error"]}))
         else:
             ch.error(f"Failed: {result['error']}")
         return False
@@ -396,7 +411,7 @@ def add_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
 
 def delete_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
     """Delete domain from HestiaCP.
-    
+
     Args:
         user: Username
         domain: Domain name to delete
@@ -405,7 +420,7 @@ def delete_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -413,34 +428,38 @@ def delete_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
 
     server_config = config_manager.load_server_config(server_name)
 
-    if options.get('dry_run'):
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": True, "dry_run": True, "domain": domain}))
+    if options.get("dry_run"):
+        if options.get("json"):
+            ch.raw_print(
+                json.dumps({"success": True, "dry_run": True, "domain": domain})
+            )
         else:
             ch.info(f"[DRY RUN] Would delete domain: {domain} from user: {user}")
         return True
 
-    if not options.get('force'):
-        if not options.get('json'):
+    if not options.get("force"):
+        if not options.get("json"):
             if not ch.confirm_action(f"Delete domain {domain}?"):
                 ch.warning("Cancelled.")
                 return False
         else:
-            ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
+            ch.raw_print(
+                json.dumps({"success": False, "error": "Use --force in JSON mode"})
+            )
             return False
 
     cmd = f"v-delete-web-domain {user} {domain}"
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if result['success']:
-        if options.get('json'):
+    if result["success"]:
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "user": user, "domain": domain}))
         else:
             ch.success(f"✓ Deleted domain: {domain}")
         return True
     else:
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": False, "error": result['error']}))
+        if options.get("json"):
+            ch.raw_print(json.dumps({"success": False, "error": result["error"]}))
         else:
             ch.error(f"Failed: {result['error']}")
         return False
@@ -448,7 +467,7 @@ def delete_domain_cmd(user: str, domain: str, options: Dict[str, Any]):
 
 def renew_ssl_cmd(user: str, domain: str, options: Dict[str, Any]):
     """Renew SSL certificate for domain.
-    
+
     Args:
         user: Username
         domain: Domain name
@@ -457,7 +476,7 @@ def renew_ssl_cmd(user: str, domain: str, options: Dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -467,8 +486,8 @@ def renew_ssl_cmd(user: str, domain: str, options: Dict[str, Any]):
 
     cmd = f"v-add-letsencrypt-domain {user} {domain}"
 
-    if options.get('dry_run'):
-        if options.get('json'):
+    if options.get("dry_run"):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": cmd}))
         else:
             ch.info(f"[DRY RUN] Would renew SSL for: {domain}")
@@ -476,15 +495,15 @@ def renew_ssl_cmd(user: str, domain: str, options: Dict[str, Any]):
 
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if result['success']:
-        if options.get('json'):
+    if result["success"]:
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "domain": domain}))
         else:
             ch.success(f"✓ SSL renewed for: {domain}")
         return True
     else:
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": False, "error": result['error']}))
+        if options.get("json"):
+            ch.raw_print(json.dumps({"success": False, "error": result["error"]}))
         else:
             ch.error(f"Failed: {result['error']}")
         return False
@@ -492,7 +511,7 @@ def renew_ssl_cmd(user: str, domain: str, options: Dict[str, Any]):
 
 def rebuild_web_cmd(user: str, options: Dict[str, Any]):
     """Rebuild web configuration for user.
-    
+
     Args:
         user: Username
         options: Command options (app, dry_run, json)
@@ -500,7 +519,7 @@ def rebuild_web_cmd(user: str, options: Dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -510,8 +529,8 @@ def rebuild_web_cmd(user: str, options: Dict[str, Any]):
 
     cmd = f"v-rebuild-web-domains {user}"
 
-    if options.get('dry_run'):
-        if options.get('json'):
+    if options.get("dry_run"):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": cmd}))
         else:
             ch.info(f"[DRY RUN] Would rebuild web config for: {user}")
@@ -519,15 +538,15 @@ def rebuild_web_cmd(user: str, options: Dict[str, Any]):
 
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if result['success']:
-        if options.get('json'):
+    if result["success"]:
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "user": user}))
         else:
             ch.success(f"✓ Web config rebuilt for: {user}")
         return True
     else:
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": False, "error": result['error']}))
+        if options.get("json"):
+            ch.raw_print(json.dumps({"success": False, "error": result["error"]}))
         else:
             ch.error(f"Failed: {result['error']}")
         return False
@@ -535,7 +554,7 @@ def rebuild_web_cmd(user: str, options: Dict[str, Any]):
 
 def backup_user_cmd(user: str, options: Dict[str, Any]):
     """Backup HestiaCP user.
-    
+
     Args:
         user: Username to backup
         options: Command options (app, dry_run, json)
@@ -543,7 +562,7 @@ def backup_user_cmd(user: str, options: Dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
 
     if not server_name:
         ch.error("No active server.")
@@ -553,8 +572,8 @@ def backup_user_cmd(user: str, options: Dict[str, Any]):
 
     cmd = f"v-backup-user {user}"
 
-    if options.get('dry_run'):
-        if options.get('json'):
+    if options.get("dry_run"):
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "dry_run": True, "action": cmd}))
         else:
             ch.info(f"[DRY RUN] Would backup user: {user}")
@@ -563,17 +582,15 @@ def backup_user_cmd(user: str, options: Dict[str, Any]):
     ch.info(f"Creating backup for: {user}")
     result = _execute_hestia_cmd(cmd, server_config, options)
 
-    if result['success']:
-        if options.get('json'):
+    if result["success"]:
+        if options.get("json"):
             ch.raw_print(json.dumps({"success": True, "user": user}))
         else:
             ch.success(f"✓ Backup created for: {user}")
         return True
     else:
-        if options.get('json'):
-            ch.raw_print(json.dumps({"success": False, "error": result['error']}))
+        if options.get("json"):
+            ch.raw_print(json.dumps({"success": False, "error": result["error"]}))
         else:
             ch.error(f"Failed: {result['error']}")
         return False
-
-

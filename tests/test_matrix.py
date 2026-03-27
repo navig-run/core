@@ -16,19 +16,23 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ============================================================================
 # Feature toggle tests
 # ============================================================================
 
+
 class TestMatrixFeatures:
     """Test the feature toggle system."""
 
     def test_defaults_exist(self):
-        from navig.comms.matrix_features import MATRIX_FEATURE_DEFAULTS, FEATURE_DESCRIPTIONS
+        from navig.comms.matrix_features import (
+            FEATURE_DESCRIPTIONS,
+            MATRIX_FEATURE_DEFAULTS,
+        )
 
         assert "messaging" in MATRIX_FEATURE_DEFAULTS
         assert "room_management" in MATRIX_FEATURE_DEFAULTS
@@ -60,9 +64,14 @@ class TestMatrixFeatures:
         assert MATRIX_FEATURE_DEFAULTS["notifications"] is True
 
     def test_get_all_features_returns_all(self):
-        from navig.comms.matrix_features import get_all_features, MATRIX_FEATURE_DEFAULTS
+        from navig.comms.matrix_features import (
+            MATRIX_FEATURE_DEFAULTS,
+            get_all_features,
+        )
 
-        with patch("navig.comms.matrix_features._get_matrix_features_config", return_value={}):
+        with patch(
+            "navig.comms.matrix_features._get_matrix_features_config", return_value={}
+        ):
             features = get_all_features()
             assert set(features.keys()) == set(MATRIX_FEATURE_DEFAULTS.keys())
 
@@ -108,14 +117,17 @@ class TestMatrixFeatures:
 
     def test_require_feature_decorator_blocks(self):
         """Decorated function should raise Exit when feature is disabled."""
-        from navig.comms.matrix_features import require_feature
         from click.exceptions import Exit
+
+        from navig.comms.matrix_features import require_feature
 
         @require_feature("admin_ops")
         def dummy_func():
             return "ok"
 
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             with pytest.raises(Exit):
                 dummy_func()
 
@@ -123,6 +135,7 @@ class TestMatrixFeatures:
 # ============================================================================
 # MatrixConfig tests
 # ============================================================================
+
 
 class TestMatrixConfig:
     """Test the MatrixConfig dataclass."""
@@ -140,12 +153,14 @@ class TestMatrixConfig:
     def test_from_dict(self):
         from navig.comms.matrix import MatrixConfig
 
-        cfg = MatrixConfig.from_dict({
-            "homeserver_url": "https://matrix.org",
-            "user_id": "@bot:matrix.org",
-            "password": "secret",
-            "extra_field": "ignored",
-        })
+        cfg = MatrixConfig.from_dict(
+            {
+                "homeserver_url": "https://matrix.org",
+                "user_id": "@bot:matrix.org",
+                "password": "secret",
+                "extra_field": "ignored",
+            }
+        )
         assert cfg.homeserver_url == "https://matrix.org"
         assert cfg.user_id == "@bot:matrix.org"
         assert cfg.password == "secret"
@@ -160,6 +175,7 @@ class TestMatrixConfig:
 # ============================================================================
 # Vault preset tests
 # ============================================================================
+
 
 class TestVaultPresets:
     """Test that Matrix vault presets are registered."""
@@ -182,6 +198,7 @@ class TestVaultPresets:
 # ============================================================================
 # Channel registry tests
 # ============================================================================
+
 
 class TestChannelRegistry:
     """Test Matrix channel registration."""
@@ -215,8 +232,8 @@ class TestChannelRegistry:
     def test_matrix_capabilities(self):
         from navig.gateway.channels.registry import (
             DEFAULT_CHANNEL_META,
-            ChannelId,
             ChannelCapability,
+            ChannelId,
         )
 
         meta = DEFAULT_CHANNEL_META[ChannelId.MATRIX]
@@ -233,7 +250,7 @@ class TestChannelRegistry:
         assert hasattr(ChannelCapability, "MEDIA")
 
     def test_registry_normalize_mx_alias(self):
-        from navig.gateway.channels.registry import ChannelRegistry, ChannelId
+        from navig.gateway.channels.registry import ChannelId, ChannelRegistry
 
         registry = ChannelRegistry()
         registry.initialize()
@@ -241,7 +258,7 @@ class TestChannelRegistry:
         assert registry.normalize_channel_id("matrix") == ChannelId.MATRIX
 
     def test_registry_get_matrix_channel(self):
-        from navig.gateway.channels.registry import ChannelRegistry, ChannelId
+        from navig.gateway.channels.registry import ChannelId, ChannelRegistry
 
         registry = ChannelRegistry()
         registry.initialize()
@@ -253,6 +270,7 @@ class TestChannelRegistry:
 # ============================================================================
 # Channel adapter tests
 # ============================================================================
+
 
 class TestMatrixChannelAdapter:
     """Test the gateway channel adapter."""
@@ -266,7 +284,9 @@ class TestMatrixChannelAdapter:
     def test_adapter_with_config(self):
         from navig.gateway.channels.matrix import MatrixChannelAdapter
 
-        adapter = MatrixChannelAdapter(config={"homeserver_url": "http://localhost:6167"})
+        adapter = MatrixChannelAdapter(
+            config={"homeserver_url": "http://localhost:6167"}
+        )
         assert adapter._config["homeserver_url"] == "http://localhost:6167"
         assert adapter.is_connected is False
 
@@ -274,6 +294,7 @@ class TestMatrixChannelAdapter:
 # ============================================================================
 # CLI command module tests
 # ============================================================================
+
 
 class TestMatrixCLI:
     """Smoke tests for the CLI module."""
@@ -304,6 +325,7 @@ class TestMatrixCLI:
 # Admin client tests
 # ============================================================================
 
+
 class TestMatrixAdminClient:
     """Test the admin API client."""
 
@@ -328,8 +350,8 @@ class TestMatrixAdminClient:
         assert MatrixAdminClient._parse_duration_ms("invalid") == 7 * 86400000
 
     def test_get_admin_client_singleton(self):
-        from navig.comms.matrix_admin import get_admin_client, _admin_client
         import navig.comms.matrix_admin as admin_mod
+        from navig.comms.matrix_admin import _admin_client, get_admin_client
 
         # Reset singleton
         admin_mod._admin_client = None
@@ -348,6 +370,7 @@ class TestMatrixAdminClient:
 # ============================================================================
 # NavigMatrixBot extension tests
 # ============================================================================
+
 
 class TestNavigMatrixBotExtensions:
     """Test the new query methods added to NavigMatrixBot."""
@@ -401,6 +424,7 @@ class TestNavigMatrixBotExtensions:
 # Phase 2: Matrix Inbox Bridge
 # ============================================================================
 
+
 class TestMatrixInboxBridge:
     """Test the Matrix → NAVIG inbox bridge."""
 
@@ -415,9 +439,9 @@ class TestMatrixInboxBridge:
         )
         assert "---" in md
         assert "type: matrix_message" in md
-        assert "sender: \"@alice:example.com\"" in md
-        assert "room_id: \"!room:example.com\"" in md
-        assert "room_name: \"General\"" in md
+        assert 'sender: "@alice:example.com"' in md
+        assert 'room_id: "!room:example.com"' in md
+        assert 'room_name: "General"' in md
         assert "status: unread" in md
         assert "Hello from Matrix!" in md
 
@@ -515,12 +539,16 @@ class TestMatrixInboxBridge:
 
         bridge = MatrixInboxBridge(project)
         result = await bridge.on_matrix_message(
-            room_id="!room:local", sender="@x:local", body="",
+            room_id="!room:local",
+            sender="@x:local",
+            body="",
         )
         assert result is None
 
         result = await bridge.on_matrix_message(
-            room_id="!room:local", sender="@x:local", body="a",
+            room_id="!room:local",
+            sender="@x:local",
+            body="a",
         )
         assert result is None
 
@@ -584,9 +612,15 @@ class TestMatrixInboxBridge:
 
         bridge = MatrixInboxBridge(project)
         inbox = bridge.inbox_dir
-        (inbox / "u1.md").write_text("---\nstatus: unread\nsender: a\nroom_id: r\nroom_name: R\ncreated: now\n---\n")
-        (inbox / "u2.md").write_text("---\nstatus: unread\nsender: b\nroom_id: r\nroom_name: R\ncreated: now\n---\n")
-        (inbox / "r1.md").write_text("---\nstatus: read\nsender: c\nroom_id: r\nroom_name: R\ncreated: now\n---\n")
+        (inbox / "u1.md").write_text(
+            "---\nstatus: unread\nsender: a\nroom_id: r\nroom_name: R\ncreated: now\n---\n"
+        )
+        (inbox / "u2.md").write_text(
+            "---\nstatus: unread\nsender: b\nroom_id: r\nroom_name: R\ncreated: now\n---\n"
+        )
+        (inbox / "r1.md").write_text(
+            "---\nstatus: read\nsender: c\nroom_id: r\nroom_name: R\ncreated: now\n---\n"
+        )
 
         assert bridge.get_unread_count() == 2
 
@@ -629,6 +663,7 @@ class TestMatrixInboxBridge:
 # Phase 2: Matrix Notifier
 # ============================================================================
 
+
 class TestMatrixNotifier:
     """Test the MatrixNotifier (ChannelNotifier implementation)."""
 
@@ -661,7 +696,9 @@ class TestMatrixNotifier:
         mock_bot.send_message = AsyncMock(return_value="$evt1")
         mock_bot.send_notice = AsyncMock(return_value="$evt2")
 
-        notifier = MatrixNotifier(mock_bot, "!default:local", priority_room_id="!priority:local")
+        notifier = MatrixNotifier(
+            mock_bot, "!default:local", priority_room_id="!priority:local"
+        )
 
         n = Notification(
             type="alert",
@@ -719,7 +756,12 @@ class TestMatrixNotifier:
 
         notifier = MatrixNotifier(mock_bot, "!room:local", batch_window_sec=999)
 
-        n = Notification(type="reminder", title="Low1", message="msg1", priority=NotificationPriority.LOW)
+        n = Notification(
+            type="reminder",
+            title="Low1",
+            message="msg1",
+            priority=NotificationPriority.LOW,
+        )
         await notifier.send(n)
         # Should NOT be sent immediately
         mock_bot.send_notice.assert_not_called()
@@ -735,8 +777,18 @@ class TestMatrixNotifier:
 
         notifier = MatrixNotifier(mock_bot, "!room:local")
         notifier._batch_buffer = [
-            Notification(type="reminder", title="A", message="aaa", priority=NotificationPriority.LOW),
-            Notification(type="reminder", title="B", message="bbb", priority=NotificationPriority.LOW),
+            Notification(
+                type="reminder",
+                title="A",
+                message="aaa",
+                priority=NotificationPriority.LOW,
+            ),
+            Notification(
+                type="reminder",
+                title="B",
+                message="bbb",
+                priority=NotificationPriority.LOW,
+            ),
         ]
 
         await notifier._flush_batch()
@@ -751,6 +803,7 @@ class TestMatrixNotifier:
 # ============================================================================
 # Phase 2: NotificationManager Matrix integration
 # ============================================================================
+
 
 class TestNotificationManagerMatrix:
     """Test that NotificationManager can configure Matrix."""
@@ -774,6 +827,7 @@ class TestNotificationManagerMatrix:
 # ============================================================================
 # Phase 2: File sharing (upload/download) — unit tests
 # ============================================================================
+
 
 class TestFileSharing:
     """Test upload/download on NavigMatrixBot (no-client paths)."""
@@ -819,83 +873,104 @@ class TestFileSharing:
 # Phase 2: Inbox CLI smoke tests
 # ============================================================================
 
+
 class TestMatrixInboxCLI:
     """Smoke tests for navig matrix inbox commands."""
 
     def test_inbox_list_requires_notifications_feature(self):
-        from typer.testing import CliRunner
-        from navig.commands.matrix import matrix_app
         from click.exceptions import Exit
+        from typer.testing import CliRunner
+
+        from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
 
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["inbox", "list"])
             assert result.exit_code != 0
 
     def test_inbox_unread_requires_notifications_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
 
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["inbox", "unread"])
             assert result.exit_code != 0
 
     def test_file_upload_requires_file_sharing_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
 
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["file", "upload", "test.txt"])
             assert result.exit_code != 0
 
     def test_file_download_requires_file_sharing_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
 
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["file", "download", "mxc://x/y"])
             assert result.exit_code != 0
+
 
 # ============================================================================
 # Phase 3: E2EE Tests
 # ============================================================================
+
 
 class TestE2EEDetection:
     """Test E2EE capability detection."""
 
     def test_is_e2ee_available_returns_bool(self):
         from navig.comms.matrix import is_e2ee_available
+
         result = is_e2ee_available()
         assert isinstance(result, bool)
 
     def test_has_olm_constant(self):
         from navig.comms.matrix import HAS_OLM
+
         assert isinstance(HAS_OLM, bool)
 
     def test_matrix_config_e2ee_field(self):
         from navig.comms.matrix import MatrixConfig
+
         cfg = MatrixConfig()
         assert cfg.e2ee is False  # off by default
 
     def test_matrix_config_store_path(self):
         from navig.comms.matrix import MatrixConfig
+
         cfg = MatrixConfig()
         assert cfg.store_path == ""
 
     def test_matrix_config_device_name(self):
         from navig.comms.matrix import MatrixConfig
+
         cfg = MatrixConfig()
         assert cfg.device_name == "NAVIG"
 
     def test_matrix_config_e2ee_from_dict(self):
         from navig.comms.matrix import MatrixConfig
+
         cfg = MatrixConfig.from_dict({"e2ee": True, "store_path": "/tmp/store"})
         assert cfg.e2ee is True
         assert cfg.store_path == "/tmp/store"
@@ -906,12 +981,14 @@ class TestE2EEDataClasses:
 
     def test_device_trust_enum(self):
         from navig.comms.matrix_e2ee import DeviceTrust
+
         assert DeviceTrust.verified.value == "verified"
         assert DeviceTrust.blacklisted.value == "blacklisted"
         assert DeviceTrust.unset.value == "unset"
 
     def test_device_trust_from_nio(self):
         from navig.comms.matrix_e2ee import DeviceTrust
+
         # Simulate nio TrustState
         mock_ts = MagicMock()
         mock_ts.name = "verified"
@@ -925,6 +1002,7 @@ class TestE2EEDataClasses:
 
     def test_device_info(self):
         from navig.comms.matrix_e2ee import DeviceInfo, DeviceTrust
+
         d = DeviceInfo(
             device_id="ABCDEF",
             user_id="@alice:test",
@@ -940,11 +1018,13 @@ class TestE2EEDataClasses:
 
     def test_device_info_empty_key(self):
         from navig.comms.matrix_e2ee import DeviceInfo
+
         d = DeviceInfo(device_id="X")
         assert d.short_key() == ""
 
     def test_verification_session(self):
         from navig.comms.matrix_e2ee import VerificationSession
+
         s = VerificationSession(
             transaction_id="txn123",
             user_id="@alice:test",
@@ -958,6 +1038,7 @@ class TestE2EEDataClasses:
 
     def test_verification_session_with_emoji(self):
         from navig.comms.matrix_e2ee import VerificationSession
+
         s = VerificationSession(
             transaction_id="txn456",
             user_id="@bob:test",
@@ -974,6 +1055,7 @@ class TestE2EEManager:
 
     def _make_mock_bot(self, e2ee=True):
         from navig.comms.matrix import NavigMatrixBot
+
         bot = MagicMock(spec=NavigMatrixBot)
         bot._e2ee_enabled = e2ee
         bot._client = MagicMock()
@@ -983,11 +1065,15 @@ class TestE2EEManager:
         bot.cfg.e2ee = e2ee
         bot.cfg.store_path = "/tmp/test-store"
         bot.e2ee_enabled = e2ee
-        bot.on_verification = MagicMock(side_effect=lambda cb: bot._verification_callbacks.append(cb))
-        bot.get_devices = AsyncMock(return_value=[
-            {"device_id": "DEV1", "display_name": "Phone", "trust": "verified"},
-            {"device_id": "DEV2", "display_name": "Laptop", "trust": "unset"},
-        ])
+        bot.on_verification = MagicMock(
+            side_effect=lambda cb: bot._verification_callbacks.append(cb)
+        )
+        bot.get_devices = AsyncMock(
+            return_value=[
+                {"device_id": "DEV1", "display_name": "Phone", "trust": "verified"},
+                {"device_id": "DEV2", "display_name": "Laptop", "trust": "unset"},
+            ]
+        )
         bot.trust_device = AsyncMock(return_value=True)
         bot.blacklist_device = AsyncMock(return_value=True)
         bot.unverify_device = AsyncMock(return_value=True)
@@ -995,11 +1081,14 @@ class TestE2EEManager:
         bot.accept_verification = AsyncMock(return_value=True)
         bot.confirm_verification = AsyncMock(return_value=True)
         bot.cancel_verification = AsyncMock(return_value=True)
-        bot.get_verification_emoji = AsyncMock(return_value=[("🐶", "Dog"), ("🔑", "Key")])
+        bot.get_verification_emoji = AsyncMock(
+            return_value=[("🐶", "Dog"), ("🔑", "Key")]
+        )
         return bot
 
     def test_manager_creation(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
         assert mgr.e2ee_ok is True
@@ -1007,12 +1096,14 @@ class TestE2EEManager:
 
     def test_manager_rejects_non_bot(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         with pytest.raises(TypeError):
             MatrixE2EEManager("not a bot")
 
     @pytest.mark.asyncio
     async def test_list_devices(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
         devices = await mgr.list_devices("@alice:test")
@@ -1023,6 +1114,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_trust_device(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
         ok = await mgr.trust_device("@alice:test", "DEV1")
@@ -1032,6 +1124,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_blacklist_device(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
         ok = await mgr.blacklist_device("@alice:test", "DEV1")
@@ -1040,6 +1133,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_trust_all_devices(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
         count = await mgr.trust_all_devices("@alice:test")
@@ -1049,6 +1143,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_start_verification_flow(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
@@ -1060,6 +1155,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_accept_verification(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
@@ -1071,6 +1167,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_get_emoji(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
@@ -1082,6 +1179,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_confirm_verification(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
@@ -1094,6 +1192,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_cancel_verification(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
@@ -1106,12 +1205,14 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_verification_callback_start(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
         # Simulate a KeyVerificationStart event
         await mgr._on_verification_event(
-            "KeyVerificationStart", "txn_remote",
+            "KeyVerificationStart",
+            "txn_remote",
             {"sender": "@other:test"},
         )
         session = mgr.get_session("txn_remote")
@@ -1121,16 +1222,19 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_verification_callback_cancel(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
         # Create a session first
         await mgr._on_verification_event(
-            "KeyVerificationStart", "txn_x",
+            "KeyVerificationStart",
+            "txn_x",
             {"sender": "@other:test"},
         )
         await mgr._on_verification_event(
-            "KeyVerificationCancel", "txn_x",
+            "KeyVerificationCancel",
+            "txn_x",
             {"sender": "@other:test"},
         )
         session = mgr.get_session("txn_x")
@@ -1138,6 +1242,7 @@ class TestE2EEManager:
 
     def test_get_active_sessions(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager, VerificationSession
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
 
@@ -1151,6 +1256,7 @@ class TestE2EEManager:
     @pytest.mark.asyncio
     async def test_e2ee_status(self):
         from navig.comms.matrix_e2ee import MatrixE2EEManager
+
         bot = self._make_mock_bot()
         mgr = MatrixE2EEManager(bot)
         status = await mgr.e2ee_status()
@@ -1164,6 +1270,7 @@ class TestNavigMatrixBotE2EE:
 
     def _make_bot(self):
         from navig.comms.matrix import NavigMatrixBot
+
         bot = NavigMatrixBot.__new__(NavigMatrixBot)
         bot.cfg = MagicMock()
         bot.cfg.e2ee = True
@@ -1266,10 +1373,17 @@ class TestNavigMatrixBotE2EE:
         bot._client.devices = AsyncMock(return_value=mock_resp)
 
         # Patch isinstance to accept our mock as DevicesResponse
-        with patch("navig.comms.matrix.NavigMatrixBot.get_devices", new_callable=AsyncMock) as mock_gd:
+        with patch(
+            "navig.comms.matrix.NavigMatrixBot.get_devices", new_callable=AsyncMock
+        ) as mock_gd:
             mock_gd.return_value = [
-                {"device_id": "DEVOWN", "display_name": "Bot Device",
-                 "last_seen_ip": "1.2.3.4", "last_seen_ts": "2025-01-01", "trust": "self"}
+                {
+                    "device_id": "DEVOWN",
+                    "display_name": "Bot Device",
+                    "last_seen_ip": "1.2.3.4",
+                    "last_seen_ts": "2025-01-01",
+                    "trust": "self",
+                }
             ]
             devices = await mock_gd(user_id=None)
             assert isinstance(devices, list)
@@ -1289,78 +1403,111 @@ class TestE2EECLI:
 
     def test_e2ee_status_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["e2ee", "status"])
             assert result.exit_code != 0
 
     def test_e2ee_devices_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["e2ee", "devices"])
             assert result.exit_code != 0
 
     def test_e2ee_trust_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["e2ee", "trust", "@user:test", "DEVID"])
             assert result.exit_code != 0
 
     def test_e2ee_verify_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
-            result = runner.invoke(matrix_app, ["e2ee", "verify", "@user:test", "DEVID"])
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
+            result = runner.invoke(
+                matrix_app, ["e2ee", "verify", "@user:test", "DEVID"]
+            )
             assert result.exit_code != 0
 
     def test_e2ee_keys_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
             result = runner.invoke(matrix_app, ["e2ee", "keys"])
             assert result.exit_code != 0
 
     def test_e2ee_blacklist_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
-            result = runner.invoke(matrix_app, ["e2ee", "blacklist", "@user:test", "DEVID"])
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
+            result = runner.invoke(
+                matrix_app, ["e2ee", "blacklist", "@user:test", "DEVID"]
+            )
             assert result.exit_code != 0
 
     def test_e2ee_export_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
-            result = runner.invoke(matrix_app, ["e2ee", "export-keys", "keys.txt", "--passphrase", "test"])
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
+            result = runner.invoke(
+                matrix_app, ["e2ee", "export-keys", "keys.txt", "--passphrase", "test"]
+            )
             assert result.exit_code != 0
 
     def test_e2ee_import_requires_feature(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
-        with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
-            result = runner.invoke(matrix_app, ["e2ee", "import-keys", "keys.txt", "--passphrase", "test"])
+        with patch(
+            "navig.comms.matrix_features.is_feature_enabled", return_value=False
+        ):
+            result = runner.invoke(
+                matrix_app, ["e2ee", "import-keys", "keys.txt", "--passphrase", "test"]
+            )
             assert result.exit_code != 0
 
     def test_e2ee_subcommand_help(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
@@ -1388,9 +1535,12 @@ class TestMatrixStoreSchema:
             store = MatrixStore(db)
             # check tables exist by querying sqlite_master
             conn = store._get_conn()
-            tables = {r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()}
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
             store.close()
             assert "rooms" in tables
             assert "events" in tables
@@ -1399,7 +1549,7 @@ class TestMatrixStoreSchema:
             assert "schema_version" in tables
 
     def test_schema_version(self):
-        from navig.comms.matrix_store import MatrixStore, SCHEMA_VERSION
+        from navig.comms.matrix_store import SCHEMA_VERSION, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             db = os.path.join(d, "test.db")
@@ -1427,10 +1577,11 @@ class TestMatrixStoreRooms:
 
     def _make_store(self, tmp):
         from navig.comms.matrix_store import MatrixStore
+
         return MatrixStore(os.path.join(tmp, "test.db"))
 
     def test_upsert_and_get(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+        from navig.comms.matrix_store import MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1450,7 +1601,7 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_upsert_updates(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+        from navig.comms.matrix_store import MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1461,7 +1612,7 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_list_rooms_filter(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+        from navig.comms.matrix_store import MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1474,7 +1625,7 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_remove_room(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+        from navig.comms.matrix_store import MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
@@ -1486,14 +1637,16 @@ class TestMatrixStoreRooms:
             store.close()
 
     def test_room_metadata(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixRoom
+        from navig.comms.matrix_store import MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
-            store.upsert_room(MatrixRoom(
-                room_id="!meta:t",
-                metadata={"bridge": "telegram", "channel": "#main"},
-            ))
+            store.upsert_room(
+                MatrixRoom(
+                    room_id="!meta:t",
+                    metadata={"bridge": "telegram", "channel": "#main"},
+                )
+            )
             got = store.get_room("!meta:t")
             assert got.metadata == {"bridge": "telegram", "channel": "#main"}
             store.close()
@@ -1504,22 +1657,25 @@ class TestMatrixStoreEvents:
 
     def _make_store(self, tmp):
         from navig.comms.matrix_store import MatrixStore
+
         return MatrixStore(os.path.join(tmp, "test.db"))
 
     def test_add_and_get(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
-            store.add_event(MatrixEvent(
-                event_id="$ev1",
-                room_id="!r:t",
-                sender="@alice:t",
-                event_type="m.room.message",
-                content={"body": "hello"},
-                origin_ts=1000,
-            ))
+            store.add_event(
+                MatrixEvent(
+                    event_id="$ev1",
+                    room_id="!r:t",
+                    sender="@alice:t",
+                    event_type="m.room.message",
+                    content={"body": "hello"},
+                    origin_ts=1000,
+                )
+            )
             events = store.get_events("!r:t")
             assert len(events) == 1
             assert events[0].sender == "@alice:t"
@@ -1527,94 +1683,124 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_duplicate_event_id_ignored(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
-            ev = MatrixEvent(event_id="$dup", room_id="!r:t", sender="@a:t", event_type="m.room.message")
+            ev = MatrixEvent(
+                event_id="$dup",
+                room_id="!r:t",
+                sender="@a:t",
+                event_type="m.room.message",
+            )
             store.add_event(ev)
             store.add_event(ev)  # should not raise
             assert store.count_events("!r:t") == 1
             store.close()
 
     def test_events_ordered_by_origin_ts(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
             for i in range(5):
-                store.add_event(MatrixEvent(
-                    event_id=f"$e{i}", room_id="!r:t",
-                    sender="@a:t", event_type="m.room.message",
-                    origin_ts=i * 1000,
-                ))
+                store.add_event(
+                    MatrixEvent(
+                        event_id=f"$e{i}",
+                        room_id="!r:t",
+                        sender="@a:t",
+                        event_type="m.room.message",
+                        origin_ts=i * 1000,
+                    )
+                )
             events = store.get_events("!r:t")
             # Store returns DESC order (newest first)
             assert [e.origin_ts for e in events] == [4000, 3000, 2000, 1000, 0]
             store.close()
 
     def test_get_events_limit(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
             for i in range(10):
-                store.add_event(MatrixEvent(
-                    event_id=f"$e{i}", room_id="!r:t",
-                    sender="@a:t", event_type="m.room.message",
-                    origin_ts=i,
-                ))
+                store.add_event(
+                    MatrixEvent(
+                        event_id=f"$e{i}",
+                        room_id="!r:t",
+                        sender="@a:t",
+                        event_type="m.room.message",
+                        origin_ts=i,
+                    )
+                )
             assert len(store.get_events("!r:t", limit=3)) == 3
             store.close()
 
     def test_get_events_since_ts(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
             for i in range(5):
-                store.add_event(MatrixEvent(
-                    event_id=f"$e{i}", room_id="!r:t",
-                    sender="@a:t", event_type="m.room.message",
-                    origin_ts=i * 1000,
-                ))
+                store.add_event(
+                    MatrixEvent(
+                        event_id=f"$e{i}",
+                        room_id="!r:t",
+                        sender="@a:t",
+                        event_type="m.room.message",
+                        origin_ts=i * 1000,
+                    )
+                )
             # since_ts uses > (exclusive), so origin_ts > 2000 => 3000, 4000
             events = store.get_events("!r:t", since_ts=2000)
             assert len(events) == 2  # ts 3000, 4000
             store.close()
 
     def test_get_events_by_type(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
-            store.add_event(MatrixEvent(
-                event_id="$m1", room_id="!r:t", sender="@a:t",
-                event_type="m.room.message",
-            ))
-            store.add_event(MatrixEvent(
-                event_id="$s1", room_id="!r:t", sender="@a:t",
-                event_type="m.room.member",
-            ))
+            store.add_event(
+                MatrixEvent(
+                    event_id="$m1",
+                    room_id="!r:t",
+                    sender="@a:t",
+                    event_type="m.room.message",
+                )
+            )
+            store.add_event(
+                MatrixEvent(
+                    event_id="$s1",
+                    room_id="!r:t",
+                    sender="@a:t",
+                    event_type="m.room.member",
+                )
+            )
             msgs = store.get_events("!r:t", event_type="m.room.message")
             assert len(msgs) == 1
             assert msgs[0].event_id == "$m1"
             store.close()
 
     def test_batch_insert(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
             events = [
-                MatrixEvent(event_id=f"$b{i}", room_id="!r:t", sender="@a:t",
-                            event_type="m.room.message", origin_ts=i)
+                MatrixEvent(
+                    event_id=f"$b{i}",
+                    room_id="!r:t",
+                    sender="@a:t",
+                    event_type="m.room.message",
+                    origin_ts=i,
+                )
                 for i in range(50)
             ]
             store.add_events_batch(events)
@@ -1622,17 +1808,21 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_prune_events(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
             for i in range(100):
-                store.add_event(MatrixEvent(
-                    event_id=f"$p{i}", room_id="!r:t",
-                    sender="@a:t", event_type="m.room.message",
-                    origin_ts=i,
-                ))
+                store.add_event(
+                    MatrixEvent(
+                        event_id=f"$p{i}",
+                        room_id="!r:t",
+                        sender="@a:t",
+                        event_type="m.room.message",
+                        origin_ts=i,
+                    )
+                )
             store.prune_events(max_rows=30)
             remaining = store.count_events()
             assert remaining <= 30
@@ -1642,17 +1832,20 @@ class TestMatrixStoreEvents:
             store.close()
 
     def test_count_unique_senders(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixEvent, MatrixRoom
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
             for sender in ["@a:t", "@b:t", "@a:t", "@c:t"]:
-                store.add_event(MatrixEvent(
-                    event_id=f"$u{sender}_{id(sender)}",
-                    room_id="!r:t", sender=sender,
-                    event_type="m.room.message",
-                ))
+                store.add_event(
+                    MatrixEvent(
+                        event_id=f"$u{sender}_{id(sender)}",
+                        room_id="!r:t",
+                        sender=sender,
+                        event_type="m.room.message",
+                    )
+                )
             assert store.count_unique_senders() == 3
             store.close()
 
@@ -1662,19 +1855,22 @@ class TestMatrixStoreBridges:
 
     def _make_store(self, tmp):
         from navig.comms.matrix_store import MatrixStore
+
         return MatrixStore(os.path.join(tmp, "test.db"))
 
     def test_add_and_get(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixBridge, MatrixRoom
+        from navig.comms.matrix_store import MatrixBridge, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
-            bid = store.add_bridge(MatrixBridge(
-                room_id="!r:t",
-                bridge_type="telegram",
-                config={"channel_id": "-100123", "direction": "both"},
-            ))
+            bid = store.add_bridge(
+                MatrixBridge(
+                    room_id="!r:t",
+                    bridge_type="telegram",
+                    config={"channel_id": "-100123", "direction": "both"},
+                )
+            )
             assert bid > 0
             bridges = store.get_bridges(room_id="!r:t")
             assert len(bridges) == 1
@@ -1683,27 +1879,37 @@ class TestMatrixStoreBridges:
             store.close()
 
     def test_remove_bridge(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixBridge, MatrixRoom
+        from navig.comms.matrix_store import MatrixBridge, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r:t"))
-            bid = store.add_bridge(MatrixBridge(
-                room_id="!r:t", bridge_type="slack", config={"channel_id": "C123"},
-            ))
+            bid = store.add_bridge(
+                MatrixBridge(
+                    room_id="!r:t",
+                    bridge_type="slack",
+                    config={"channel_id": "C123"},
+                )
+            )
             store.remove_bridge(bid)
             assert len(store.get_bridges(room_id="!r:t")) == 0
             store.close()
 
     def test_get_all_bridges(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixBridge, MatrixRoom
+        from navig.comms.matrix_store import MatrixBridge, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = self._make_store(d)
             store.upsert_room(MatrixRoom(room_id="!r1:t"))
             store.upsert_room(MatrixRoom(room_id="!r2:t"))
-            store.add_bridge(MatrixBridge(room_id="!r1:t", bridge_type="telegram", config={"ch": "1"}))
-            store.add_bridge(MatrixBridge(room_id="!r2:t", bridge_type="slack", config={"ch": "2"}))
+            store.add_bridge(
+                MatrixBridge(
+                    room_id="!r1:t", bridge_type="telegram", config={"ch": "1"}
+                )
+            )
+            store.add_bridge(
+                MatrixBridge(room_id="!r2:t", bridge_type="slack", config={"ch": "2"})
+            )
             all_b = store.get_bridges()
             assert len(all_b) == 2
             store.close()
@@ -1714,6 +1920,7 @@ class TestMatrixStoreDeviceTrust:
 
     def _make_store(self, tmp):
         from navig.comms.matrix_store import MatrixStore
+
         return MatrixStore(os.path.join(tmp, "test.db"))
 
     def test_set_and_get(self):
@@ -1767,16 +1974,20 @@ class TestMatrixStoreStats:
             store.close()
 
     def test_stats_populated(self):
-        from navig.comms.matrix_store import MatrixStore, MatrixRoom, MatrixEvent
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         with tempfile.TemporaryDirectory() as d:
             store = MatrixStore(os.path.join(d, "test.db"))
             store.upsert_room(MatrixRoom(room_id="!a:t"))
             store.upsert_room(MatrixRoom(room_id="!b:t"))
-            store.add_event(MatrixEvent(
-                event_id="$1", room_id="!a:t", sender="@x:t",
-                event_type="m.room.message",
-            ))
+            store.add_event(
+                MatrixEvent(
+                    event_id="$1",
+                    room_id="!a:t",
+                    sender="@x:t",
+                    event_type="m.room.message",
+                )
+            )
             s = store.stats()
             assert s["rooms"] == 2
             assert s["events"] == 1
@@ -1788,14 +1999,16 @@ class TestMatrixStoreBotIntegration:
     """Test that NavigMatrixBot correctly initialises and uses the store."""
 
     def test_bot_has_store_attribute(self):
-        from navig.comms.matrix import NavigMatrixBot, MatrixConfig
+        from navig.comms.matrix import MatrixConfig, NavigMatrixBot
+
         bot = NavigMatrixBot(MatrixConfig())
         assert hasattr(bot, "_store")
         assert bot._store is None  # not initialised until start()
         assert bot.store is None
 
     def test_bot_store_property(self):
-        from navig.comms.matrix import NavigMatrixBot, MatrixConfig
+        from navig.comms.matrix import MatrixConfig, NavigMatrixBot
+
         bot = NavigMatrixBot(MatrixConfig())
         # Set a mock store
         bot._store = MagicMock()
@@ -1807,6 +2020,7 @@ class TestMatrixStoreCLI:
 
     def test_store_help(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
@@ -1816,6 +2030,7 @@ class TestMatrixStoreCLI:
 
     def test_store_stats_no_db(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
@@ -1826,20 +2041,25 @@ class TestMatrixStoreCLI:
 
     def test_store_stats_with_db(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
         with tempfile.TemporaryDirectory() as d:
             db_path = os.path.join(d, "matrix.db")
-            with patch("os.path.expanduser", return_value=db_path), \
-                 patch("os.path.exists", return_value=True):
+            with (
+                patch("os.path.expanduser", return_value=db_path),
+                patch("os.path.exists", return_value=True),
+            ):
                 from navig.comms.matrix_store import MatrixStore
+
                 MatrixStore(db_path).close()  # create empty DB
                 result = runner.invoke(matrix_app, ["store", "stats"])
                 assert result.exit_code == 0
 
     def test_store_rooms_help(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
@@ -1848,6 +2068,7 @@ class TestMatrixStoreCLI:
 
     def test_store_prune_help(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()
@@ -1856,6 +2077,7 @@ class TestMatrixStoreCLI:
 
     def test_store_bridges_help(self):
         from typer.testing import CliRunner
+
         from navig.commands.matrix import matrix_app
 
         runner = CliRunner()

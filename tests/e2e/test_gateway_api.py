@@ -1,30 +1,34 @@
 import asyncio
-import pytest
+
 import aiohttp
-from navig.gateway.server import NavigGateway, GatewayConfig
+import pytest
+
+from navig.gateway.server import GatewayConfig, NavigGateway
+
 
 @pytest.fixture
 async def test_gateway():
     """Setup a test gateway bound to a random port."""
     config = GatewayConfig()
     config.host = "127.0.0.1"
-    config.port = 8791 # isolated port
+    config.port = 8791  # isolated port
     config.enabled = True
     config.heartbeat_enabled = False
-    
+
     gateway = NavigGateway(config)
-    
+
     # Run gateway in background task
     task = asyncio.create_task(gateway.start())
-    
+
     # Wait for server to boot
     await asyncio.sleep(1)
-    
+
     yield gateway
-    
+
     # Shutdown
     await gateway.stop()
     await task
+
 
 @pytest.mark.asyncio
 async def test_gateway_health_endpoint(test_gateway):
@@ -36,6 +40,7 @@ async def test_gateway_health_endpoint(test_gateway):
             assert data.get("ok") is True
             assert data["data"]["status"] == "ok"
             assert "timestamp" in data["data"]
+
 
 @pytest.mark.asyncio
 async def test_gateway_status_endpoint(test_gateway):

@@ -21,10 +21,11 @@ def _init_watchdog():
         try:
             from watchdog.events import FileSystemEvent, FileSystemEventHandler
             from watchdog.observers import Observer
+
             _watchdog = {
-                'Observer': Observer,
-                'FileSystemEventHandler': FileSystemEventHandler,
-                'FileSystemEvent': FileSystemEvent,
+                "Observer": Observer,
+                "FileSystemEventHandler": FileSystemEventHandler,
+                "FileSystemEvent": FileSystemEvent,
             }
         except ImportError as _exc:
             raise ImportError(
@@ -36,17 +37,21 @@ def _init_watchdog():
 @dataclass
 class WatchConfig:
     """File watch configuration."""
+
     path: str
     patterns: List[str] = field(default_factory=list)  # e.g., ["*.py", "*.json"]
     ignore_patterns: List[str] = field(default_factory=list)
     recursive: bool = True
-    events: List[str] = field(default_factory=lambda: ["created", "modified", "deleted", "moved"])
+    events: List[str] = field(
+        default_factory=lambda: ["created", "modified", "deleted", "moved"]
+    )
     debounce_seconds: float = 0.5  # Debounce rapid changes
 
 
 @dataclass
 class FileEvent:
     """File system event."""
+
     event_type: str  # created, modified, deleted, moved
     src_path: str
     dest_path: Optional[str] = None  # For moved events
@@ -55,11 +60,11 @@ class FileEvent:
 
     def to_dict(self) -> dict:
         return {
-            'event_type': self.event_type,
-            'src_path': self.src_path,
-            'dest_path': self.dest_path,
-            'is_directory': self.is_directory,
-            'timestamp': self.timestamp.isoformat(),
+            "event_type": self.event_type,
+            "src_path": self.src_path,
+            "dest_path": self.dest_path,
+            "is_directory": self.is_directory,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
@@ -147,15 +152,14 @@ class _NavigFileHandler:
         file_event = FileEvent(
             event_type=event_type,
             src_path=raw_event.src_path,
-            dest_path=getattr(raw_event, 'dest_path', None),
+            dest_path=getattr(raw_event, "dest_path", None),
             is_directory=raw_event.is_directory,
         )
 
         # Call callback in event loop
         if self._loop:
             asyncio.run_coroutine_threadsafe(
-                self._call_callback(file_event),
-                self._loop
+                self._call_callback(file_event), self._loop
             )
         else:
             # Synchronous fallback
@@ -181,22 +185,22 @@ class _NavigFileHandler:
 class FileWatcher:
     """
     File system watcher for reactive automation.
-    
+
     Monitors directories for file changes and triggers callbacks.
-    
+
     Example:
         watcher = FileWatcher()
-        
+
         async def on_change(event):
             print(f"{event.event_type}: {event.src_path}")
-        
+
         await watcher.watch(
             "/path/to/dir",
             on_change,
             patterns=["*.py"],
             events=["modified", "created"],
         )
-        
+
         await watcher.start()
         # ... watcher is running ...
         await watcher.stop()
@@ -229,7 +233,7 @@ class FileWatcher:
     ):
         """
         Add a path to watch.
-        
+
         Args:
             path: Directory path to watch
             callback: Function called on file events (async or sync)
@@ -263,7 +267,7 @@ class FileWatcher:
             pass  # no event loop yet; safe to ignore
 
         # Create watchdog handler wrapper
-        class WatchdogHandler(watchdog['FileSystemEventHandler']):
+        class WatchdogHandler(watchdog["FileSystemEventHandler"]):
             def on_created(self, event):
                 handler.on_created(event)
 
@@ -277,7 +281,7 @@ class FileWatcher:
                 handler.on_moved(event)
 
         # Create observer
-        observer = watchdog['Observer']()
+        observer = watchdog["Observer"]()
         observer.schedule(WatchdogHandler(), path, recursive=recursive)
 
         self._observers[path] = observer
@@ -336,7 +340,9 @@ class FileWatcher:
             "watched_paths": [
                 {
                     "path": path,
-                    "alive": observer.is_alive() if hasattr(observer, 'is_alive') else False,
+                    "alive": (
+                        observer.is_alive() if hasattr(observer, "is_alive") else False
+                    ),
                 }
                 for path, observer in self._observers.items()
             ],

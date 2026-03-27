@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class PackageInfo:
     """Information about an installed package."""
+
     name: str
     version: str
     description: Optional[str] = None
@@ -19,16 +20,17 @@ class PackageInfo:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'name': self.name,
-            'version': self.version,
-            'description': self.description,
-            'source': self.source
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "source": self.source,
         }
 
 
 @dataclass
 class SecurityCheck:
     """Result of a security check."""
+
     category: str  # e.g., 'firewall', 'updates', 'users'
     status: str  # 'ok', 'warning', 'critical'
     message: str
@@ -36,17 +38,17 @@ class SecurityCheck:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'category': self.category,
-            'status': self.status,
-            'message': self.message,
-            'details': self.details
+            "category": self.category,
+            "status": self.status,
+            "message": self.message,
+            "details": self.details,
         }
 
 
 class OSAdapter(ABC):
     """
     Abstract base class for OS-specific operations.
-    
+
     Each OS implementation provides platform-specific commands and paths.
     """
 
@@ -68,7 +70,7 @@ class OSAdapter(ABC):
     def get_package_list_command(self) -> str:
         """
         Get the command to list installed packages.
-        
+
         Returns:
             Command string to execute
         """
@@ -78,10 +80,10 @@ class OSAdapter(ABC):
     def parse_package_list(self, output: str) -> List[PackageInfo]:
         """
         Parse the output of the package list command.
-        
+
         Args:
             output: Raw command output
-            
+
         Returns:
             List of PackageInfo objects
         """

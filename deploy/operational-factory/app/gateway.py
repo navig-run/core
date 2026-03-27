@@ -1,27 +1,31 @@
-from datetime import datetime, timezone
 import json
-import httpx
-from fastapi import FastAPI, HTTPException
-from sqlalchemy import text
+from datetime import datetime, timezone
 
-from app.db import db_session, fetch_one_dict, fetch_all_dict
+import httpx
+from app.audit import write_audit
+from app.db import db_session, fetch_all_dict, fetch_one_dict
 from app.policies import validate_request
 from app.rate_limit import enforce_rate_limit
-from app.audit import write_audit
 from app.sandbox import run_bounded_log_read
 from app.settings import SANDBOX_URL
+from fastapi import FastAPI, HTTPException
+from sqlalchemy import text
 
 app = FastAPI(title="NAVIG Tool Gateway", version="0.1.0")
 
 
 def _tenant_id(session, slug: str):
-    row = fetch_one_dict(session, "SELECT id FROM tenants WHERE slug = :slug", {"slug": slug})
+    row = fetch_one_dict(
+        session, "SELECT id FROM tenants WHERE slug = :slug", {"slug": slug}
+    )
     if not row:
         raise HTTPException(status_code=404, detail=f"Unknown tenant: {slug}")
     return row["id"]
 
 
-def _queue_restricted_action(session, *, tenant_id, actor_id, action_name, params, reason):
+def _queue_restricted_action(
+    session, *, tenant_id, actor_id, action_name, params, reason
+):
     row = fetch_one_dict(
         session,
         """
@@ -44,13 +48,20 @@ def _queue_restricted_action(session, *, tenant_id, actor_id, action_name, param
 
 def _execute_safe(action_name: str, params: dict):
     if action_name == "repo_scan_readonly":
-        resp = httpx.post(f"{SANDBOX_URL}/repo/scan", json={"repo_path": params["repo_path"]}, timeout=60)
+        resp = httpx.post(
+            f"{SANDBOX_URL}/repo/scan",
+            json={"repo_path": params["repo_path"]},
+            timeout=60,
+        )
         resp.raise_for_status()
         return resp.json()
     if action_name == "sandbox_patch_generate":
         resp = httpx.post(
             f"{SANDBOX_URL}/repo/patch",
-            json={"repo_path": params["repo_path"], "instructions": params.get("instructions", "")},
+            json={
+                "repo_path": params["repo_path"],
+                "instructions": params.get("instructions", ""),
+            },
             timeout=120,
         )
         resp.raise_for_status()
@@ -85,7 +96,12 @@ def execute_tool(payload: dict):
     with db_session() as session:
         tenant_id = _tenant_id(session, req.tenant_slug)
 
-        if not enforce_rate_limit(session, actor_id=req.actor_id, action_name=req.action_name, max_frequency=spec.max_frequency):
+        if not enforce_rate_limit(
+            session,
+            actor_id=req.actor_id,
+            action_name=req.action_name,
+            max_frequency=spec.max_frequency,
+        ):
             write_audit(
                 session,
                 tenant_id=tenant_id,
@@ -171,7 +187,9 @@ def decision(action_id: str, payload: dict):
     decided_by = payload.get("decided_by", "owner")
     notes = payload.get("notes", "")
     if decision_value not in {"approved", "rejected"}:
-        raise HTTPException(status_code=400, detail="decision must be approved|rejected")
+        raise HTTPException(
+            status_code=400, detail="decision must be approved|rejected"
+        )
 
     with db_session() as session:
         action = fetch_one_dict(
@@ -183,8 +201,14 @@ def decision(action_id: str, payload: dict):
             raise HTTPException(status_code=404, detail="proposed action not found")
 
         session.execute(
-            text("UPDATE proposed_actions SET status = :status, updated_at = :ts WHERE id = :id"),
-            {"status": decision_value, "ts": datetime.now(timezone.utc), "id": action_id},
+            text(
+                "UPDATE proposed_actions SET status = :status, updated_at = :ts WHERE id = :id"
+            ),
+            {
+                "status": decision_value,
+                "ts": datetime.now(timezone.utc),
+                "id": action_id,
+            },
         )
         session.execute(
             text(
@@ -193,7 +217,13 @@ def decision(action_id: str, payload: dict):
                 VALUES (:aid, :by, :decision, :notes, :ts)
                 """
             ),
-            {"aid": action_id, "by": decided_by, "decision": decision_value, "notes": notes, "ts": datetime.now(timezone.utc)},
+            {
+                "aid": action_id,
+                "by": decided_by,
+                "decision": decision_value,
+                "notes": notes,
+                "ts": datetime.now(timezone.utc),
+            },
         )
 
         write_audit(

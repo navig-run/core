@@ -26,6 +26,7 @@ def _get_paramiko():
     if _paramiko is None:
         try:
             import paramiko
+
             _paramiko = paramiko
         except ImportError:
             _paramiko = False
@@ -73,7 +74,7 @@ class SSHConnection:
     def execute(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
         """
         Execute a command on this connection.
-        
+
         Returns:
             Tuple of (success, stdout, stderr)
         """
@@ -82,9 +83,11 @@ class SSHConnection:
             self.use_count += 1
 
             try:
-                stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
-                stdout_text = stdout.read().decode('utf-8', errors='ignore').strip()
-                stderr_text = stderr.read().decode('utf-8', errors='ignore').strip()
+                stdin, stdout, stderr = self.client.exec_command(
+                    command, timeout=timeout
+                )
+                stdout_text = stdout.read().decode("utf-8", errors="ignore").strip()
+                stderr_text = stderr.read().decode("utf-8", errors="ignore").strip()
                 exit_status = stdout.channel.recv_exit_status()
 
                 return (exit_status == 0, stdout_text, stderr_text)
@@ -102,26 +105,26 @@ class SSHConnection:
 class SSHConnectionPool:
     """
     Thread-safe SSH connection pool.
-    
+
     Maintains a pool of SSH connections that can be reused across
     multiple operations, significantly reducing connection overhead.
-    
+
     Features:
     - Connection reuse for same host/user
     - Automatic connection cleanup (expired/dead connections)
     - Thread-safe operations
     - Configurable pool size and timeouts
     - LRU eviction when pool is full
-    
+
     Usage:
         pool = SSHConnectionPool()
-        
+
         # Get or create a connection
         conn = pool.get_connection(ssh_config)
-        
+
         # Execute commands
         success, stdout, stderr = conn.execute("uptime")
-        
+
         # Connection stays in pool for reuse
         # Or explicitly release
         pool.release(conn)
@@ -146,7 +149,7 @@ class SSHConnectionPool:
     ):
         """
         Initialize the connection pool.
-        
+
         Args:
             max_connections: Maximum number of connections to maintain
             max_age_seconds: Maximum age of a connection before forcing reconnect
@@ -258,13 +261,13 @@ class SSHConnectionPool:
     def get_connection(self, ssh_config: Dict[str, Any]) -> SSHConnection:
         """
         Get a pooled connection or create a new one.
-        
+
         Args:
             ssh_config: SSH configuration with host, port, user, ssh_key/ssh_password
-        
+
         Returns:
             SSHConnection ready for use
-        
+
         Raises:
             RuntimeError: If paramiko is not available
             Exception: On connection failure
@@ -308,7 +311,7 @@ class SSHConnectionPool:
     def release(self, conn: SSHConnection):
         """
         Release a connection back to the pool.
-        
+
         Note: Connections are automatically kept in the pool after use.
         This method is provided for explicit cleanup if needed.
         """
@@ -376,16 +379,16 @@ def execute_ssh_pooled(
 ) -> Tuple[bool, str, str]:
     """
     Execute an SSH command using the connection pool.
-    
+
     This is a convenience function that uses the singleton pool.
     For multiple commands to the same host, get the connection
     explicitly and reuse it.
-    
+
     Args:
         ssh_config: SSH configuration dict
         command: Command to execute
         timeout: Command timeout in seconds
-    
+
     Returns:
         Tuple of (success, stdout, stderr)
     """

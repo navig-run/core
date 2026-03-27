@@ -27,18 +27,18 @@ app = typer.Typer(
 
 #: Mapping from log-level keyword → (label, ANSI colour attr name)
 _SEVERITY_MAP: dict[str, Tuple[str, str]] = {
-    "EMERG":    ("EMERG",   "RED"),
-    "ALERT":    ("ALERT",   "RED"),
-    "CRIT":     ("CRIT",    "RED"),
-    "CRITICAL": ("CRIT",    "RED"),
-    "ERROR":    ("ERROR",   "RED"),
-    "ERR":      ("ERROR",   "RED"),
-    "WARN":     ("WARN",    "YELLOW"),
-    "WARNING":  ("WARN",    "YELLOW"),
-    "NOTICE":   ("NOTICE",  "CYAN"),
-    "INFO":     ("INFO",    "GREEN"),
-    "DEBUG":    ("DEBUG",   "GREY"),
-    "TRACE":    ("TRACE",   "GREY"),
+    "EMERG": ("EMERG", "RED"),
+    "ALERT": ("ALERT", "RED"),
+    "CRIT": ("CRIT", "RED"),
+    "CRITICAL": ("CRIT", "RED"),
+    "ERROR": ("ERROR", "RED"),
+    "ERR": ("ERROR", "RED"),
+    "WARN": ("WARN", "YELLOW"),
+    "WARNING": ("WARN", "YELLOW"),
+    "NOTICE": ("NOTICE", "CYAN"),
+    "INFO": ("INFO", "GREEN"),
+    "DEBUG": ("DEBUG", "GREY"),
+    "TRACE": ("TRACE", "GREY"),
 }
 
 # Compiled regex: matches any severity keyword surrounded by word/bracket boundaries
@@ -154,8 +154,9 @@ def run(
 def logs_cmd(
     service: str = typer.Argument(..., help="Service whose logs to tail"),
     tail: int = typer.Option(20, "--tail", "-n", help="Number of lines to show"),
-    host: Optional[str] = typer.Option(None, "--host", "-H",
-                                       help="Target host (default: production-01)"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-H", help="Target host (default: production-01)"
+    ),
 ) -> None:
     """Tail and colour-code service logs."""
     run(service, tail=tail, host=host or "production-01")

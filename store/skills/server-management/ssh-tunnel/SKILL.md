@@ -124,5 +124,3 @@ navig tunnel stop --all
 - **Port in use**: "Port {port} is already in use. Try: `navig tunnel add {name} -l {alt_port} -r {port}`"
 - **Connection refused**: "Can't establish tunnel. Check if SSH connection works: `navig host test`"
 - **Service not listening**: "Tunnel is open but nothing is listening on remote port {port}."
-
-

@@ -3,6 +3,7 @@
 Resolves user-supplied --host / --group / --all flags into a concrete
 ordered list of UpdateTarget objects.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -13,8 +14,8 @@ from typing import Any, Dict, List, Optional
 class UpdateTarget:
     """Represents a single node to update."""
 
-    node_id: str                         # "local" or hostname
-    type: str = "local"                  # "local" | "ssh"
+    node_id: str  # "local" or hostname
+    type: str = "local"  # "local" | "ssh"
     server_config: Optional[Dict] = field(default=None, repr=False)
 
     @property
@@ -32,6 +33,7 @@ class TargetResolver:
     def __init__(self, config_manager: Any = None):
         if config_manager is None:
             from navig.config import get_config_manager
+
             config_manager = get_config_manager()
         self._cm = config_manager
 
@@ -68,7 +70,9 @@ class TargetResolver:
         for name in host_names:
             cfg = self._load_host(name)
             if cfg:
-                targets.append(UpdateTarget(node_id=name, type="ssh", server_config=cfg))
+                targets.append(
+                    UpdateTarget(node_id=name, type="ssh", server_config=cfg)
+                )
         return targets
 
     def _group_targets(self, group: str) -> List[UpdateTarget]:
@@ -84,7 +88,9 @@ class TargetResolver:
                 continue
             cfg = self._load_host(name)
             if cfg:
-                targets.append(UpdateTarget(node_id=name, type="ssh", server_config=cfg))
+                targets.append(
+                    UpdateTarget(node_id=name, type="ssh", server_config=cfg)
+                )
         return targets
 
     def _host_targets(self, host: str) -> List[UpdateTarget]:

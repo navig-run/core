@@ -116,8 +116,7 @@ class HandoffQueue:
         deadline = now + ttl
         self._queue.append((message, now, deadline))
         logger.debug(
-            f"[handoff] Queued message (queue_depth={len(self._queue)}, "
-            f"ttl={ttl}s)"
+            f"[handoff] Queued message (queue_depth={len(self._queue)}, " f"ttl={ttl}s)"
         )
 
     def is_empty(self) -> bool:

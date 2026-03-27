@@ -82,6 +82,7 @@ def test_default_config():
 def test_temperature_out_of_range():
     """Out-of-range temperature raises ValidationError."""
     from pydantic import ValidationError
+
     from navig.llm_router import LLMModeConfig
 
     with pytest.raises(ValidationError):
@@ -94,6 +95,7 @@ def test_temperature_out_of_range():
 def test_max_tokens_out_of_range():
     """Invalid max_tokens raises ValidationError."""
     from pydantic import ValidationError
+
     from navig.llm_router import LLMModeConfig
 
     with pytest.raises(ValidationError):
@@ -125,7 +127,7 @@ def test_extra_fields_allowed():
 
 def test_mode_get_set():
     """LLMModesConfig.get_mode and set_mode work correctly."""
-    from navig.llm_router import LLMModesConfig, LLMModeConfig
+    from navig.llm_router import LLMModeConfig, LLMModesConfig
 
     modes = LLMModesConfig()
     cfg = modes.get_mode("coding")
@@ -143,6 +145,12 @@ def test_modes_to_dict():
 
     modes = LLMModesConfig()
     d = modes.to_dict()
-    assert set(d.keys()) == {"small_talk", "big_tasks", "coding", "summarize", "research"}
+    assert set(d.keys()) == {
+        "small_talk",
+        "big_tasks",
+        "coding",
+        "summarize",
+        "research",
+    }
     assert "provider" in d["small_talk"]
     assert "model" in d["coding"]

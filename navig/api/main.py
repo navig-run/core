@@ -8,6 +8,7 @@ Usage:
 Or via navig itself (when navig service telemetry is implemented):
   navig service telemetry start
 """
+
 from fastapi import FastAPI
 
 from navig.api.routes.telemetry import router as telemetry_router

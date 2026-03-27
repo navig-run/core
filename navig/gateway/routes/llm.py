@@ -38,7 +38,11 @@ except ImportError as _exc:
     ) from _exc
 
 from navig.debug_logger import get_debug_logger
-from navig.gateway.routes.common import json_error_response, json_ok, require_bearer_auth
+from navig.gateway.routes.common import (
+    json_error_response,
+    json_ok,
+    require_bearer_auth,
+)
 
 logger = get_debug_logger()
 
@@ -52,12 +56,14 @@ _message_log: deque = deque(maxlen=_MESSAGE_LOG_MAX)
 
 def _log_message(msg_id: str, role: str, content: str) -> None:
     """Append a message to the bounded log."""
-    _message_log.append({
-        "msgId": msg_id,
-        "role": role,
-        "content": content,
-        "timestamp": int(time.time() * 1000),
-    })
+    _message_log.append(
+        {
+            "msgId": msg_id,
+            "role": role,
+            "content": content,
+            "timestamp": int(time.time() * 1000),
+        }
+    )
 
 
 def _messages_after(after_id: str) -> list:
@@ -116,7 +122,9 @@ def _chat(gw: "NavigGateway"):
         try:
             body = await request.json()
         except Exception:
-            return json_error_response("Invalid JSON body", status=400, code="invalid_json")
+            return json_error_response(
+                "Invalid JSON body", status=400, code="invalid_json"
+            )
 
         text = (body.get("text") or "").strip()
         if not text:
@@ -132,7 +140,9 @@ def _chat(gw: "NavigGateway"):
         workspace_context = body.get("workspaceContext")
 
         # Synapse: extract correlation ID (body takes precedence over header)
-        msg_id = body.get("msgId") or request.headers.get("X-Msg-Id") or str(_uuid.uuid4())
+        msg_id = (
+            body.get("msgId") or request.headers.get("X-Msg-Id") or str(_uuid.uuid4())
+        )
 
         # ── Build metadata for the channel router ───────────────
         metadata = {
@@ -218,14 +228,17 @@ def _re_detect(gw: "NavigGateway"):
 
         try:
             from navig.agent.ai_client import get_ai_client
+
             client = get_ai_client()
             old_provider = client.provider
             new_provider = client.re_detect_provider()
-            return json_ok({
-                "old_provider": old_provider,
-                "new_provider": new_provider,
-                "changed": old_provider != new_provider,
-            })
+            return json_ok(
+                {
+                    "old_provider": old_provider,
+                    "new_provider": new_provider,
+                    "changed": old_provider != new_provider,
+                }
+            )
         except Exception as exc:
             logger.exception("LLM re-detect error")
             return json_error_response(
@@ -240,50 +253,79 @@ def _re_detect(gw: "NavigGateway"):
 
 def _register_provider():
     """POST /llm/providers/register — register a dynamic LLM provider."""
+
     async def handler(request: "web.Request") -> "web.Response":
         try:
             from navig.providers.bridge_registry import get_bridge_registry
+
             body = await request.json()
-            name     = body.get("name", "")
-            url      = body.get("url", "")
+            name = body.get("name", "")
+            url = body.get("url", "")
             priority = int(body.get("priority", 0))
             if not name or not url:
-                return json_error_response("name and url are required", status=400, code="invalid_request")
+                return json_error_response(
+                    "name and url are required", status=400, code="invalid_request"
+                )
             provider = get_bridge_registry().register(name, url, priority)
-            logger.info("[Bridge] Registered provider '%s' at %s (priority %d)", name, url, priority)
-            return json_ok({"name": provider.name, "url": provider.url, "priority": provider.priority})
+            logger.info(
+                "[Bridge] Registered provider '%s' at %s (priority %d)",
+                name,
+                url,
+                priority,
+            )
+            return json_ok(
+                {
+                    "name": provider.name,
+                    "url": provider.url,
+                    "priority": provider.priority,
+                }
+            )
         except Exception as exc:
             logger.exception("Provider register error")
             return json_error_response(str(exc), status=500, code="register_error")
+
     return handler
 
 
 def _unregister_provider():
     """POST /llm/providers/unregister — unregister a dynamic LLM provider."""
+
     async def handler(request: "web.Request") -> "web.Response":
         try:
             from navig.providers.bridge_registry import get_bridge_registry
+
             body = await request.json()
             name = body.get("name", "")
             if not name:
-                return json_error_response("name is required", status=400, code="invalid_request")
+                return json_error_response(
+                    "name is required", status=400, code="invalid_request"
+                )
             removed = get_bridge_registry().unregister(name)
             logger.info("[Bridge] Unregistered provider '%s' (found=%s)", name, removed)
             return json_ok({"removed": removed})
         except Exception as exc:
             logger.exception("Provider unregister error")
             return json_error_response(str(exc), status=500, code="unregister_error")
+
     return handler
 
 
 def _list_providers():
     """GET /llm/providers — list all dynamically registered providers."""
+
     async def handler(request: "web.Request") -> "web.Response":
         from navig.providers.bridge_registry import get_bridge_registry
+
         providers = get_bridge_registry().all()
-        return json_ok({
-            "providers": [{"name": p.name, "url": p.url, "priority": p.priority} for p in providers]
-        })
+        return json_ok(
+            {
+                "providers": [
+                    {"name": p.name, "url": p.url, "priority": p.priority}
+                    for p in providers
+                ]
+            }
+        )
+
     return handler
 
 
@@ -301,6 +343,7 @@ def _sync():
     Response:
         { ok: true, data: { missed_messages: [{ msgId, role, content, timestamp }] } }
     """
+
     async def handler(request: "web.Request") -> "web.Response":
         after_id = request.rel_url.query.get("after", "").strip()
         if not after_id:

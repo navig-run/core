@@ -16,23 +16,24 @@ from __future__ import annotations
 
 import asyncio
 import json
-import pytest
 from datetime import datetime
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock
 
+import pytest
+
 from navig.event_bridge import (
+    _EVENT_TYPE_TOPIC_MAP,
     EventBridge,
     EventEnvelope,
     Severity,
     SubscriptionFilter,
-    _EVENT_TYPE_TOPIC_MAP,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_envelope(
     topic: str = "agent.heartbeat",
@@ -69,6 +70,7 @@ class FakeWebSocket:
 # EventEnvelope tests
 # ---------------------------------------------------------------------------
 
+
 class TestEventEnvelope:
     def test_to_jsonrpc_notification(self):
         env = _make_envelope(topic="agent.started", source="heart")
@@ -91,6 +93,7 @@ class TestEventEnvelope:
 # ---------------------------------------------------------------------------
 # SubscriptionFilter tests
 # ---------------------------------------------------------------------------
+
 
 class TestSubscriptionFilter:
     def test_accept_all(self):
@@ -126,17 +129,32 @@ class TestSubscriptionFilter:
             sources={"heart"},
         )
         # Must match ALL criteria
-        assert filt.matches(
-            _make_envelope(topic="agent.heartbeat", severity=Severity.WARNING, source="heart")
-        ) is True
+        assert (
+            filt.matches(
+                _make_envelope(
+                    topic="agent.heartbeat", severity=Severity.WARNING, source="heart"
+                )
+            )
+            is True
+        )
         # Wrong severity
-        assert filt.matches(
-            _make_envelope(topic="agent.heartbeat", severity=Severity.INFO, source="heart")
-        ) is False
+        assert (
+            filt.matches(
+                _make_envelope(
+                    topic="agent.heartbeat", severity=Severity.INFO, source="heart"
+                )
+            )
+            is False
+        )
         # Wrong source
-        assert filt.matches(
-            _make_envelope(topic="agent.heartbeat", severity=Severity.WARNING, source="eyes")
-        ) is False
+        assert (
+            filt.matches(
+                _make_envelope(
+                    topic="agent.heartbeat", severity=Severity.WARNING, source="eyes"
+                )
+            )
+            is False
+        )
 
     def test_serialisation_roundtrip(self):
         filt = SubscriptionFilter(
@@ -154,6 +172,7 @@ class TestSubscriptionFilter:
 # ---------------------------------------------------------------------------
 # EventBridge tests
 # ---------------------------------------------------------------------------
+
 
 class TestEventBridge:
     @pytest.mark.asyncio
@@ -319,6 +338,7 @@ class TestEventBridge:
 # Normalisation tests
 # ---------------------------------------------------------------------------
 
+
 class TestNormalisation:
     def test_ns_event_normalisation(self):
         """Simulate NervousSystem Event → EventEnvelope."""
@@ -370,20 +390,21 @@ class TestNormalisation:
         from navig.agent.nervous_system import EventType
 
         for et in EventType:
-            assert et.name in _EVENT_TYPE_TOPIC_MAP, (
-                f"EventType.{et.name} missing from _EVENT_TYPE_TOPIC_MAP"
-            )
+            assert (
+                et.name in _EVENT_TYPE_TOPIC_MAP
+            ), f"EventType.{et.name} missing from _EVENT_TYPE_TOPIC_MAP"
 
 
 # ---------------------------------------------------------------------------
 # Integration: NervousSystem → Bridge
 # ---------------------------------------------------------------------------
 
+
 class TestNervousSystemIntegration:
     @pytest.mark.asyncio
     async def test_ns_event_reaches_bridge_client(self):
         """End-to-end: NervousSystem.emit() → EventBridge → WebSocket client."""
-        from navig.agent.nervous_system import NervousSystem, EventType
+        from navig.agent.nervous_system import EventType, NervousSystem
 
         ns = NervousSystem()
         bridge = EventBridge(debounce_seconds=0)
@@ -407,7 +428,7 @@ class TestNervousSystemIntegration:
     @pytest.mark.asyncio
     async def test_ns_filtered_client_skips_events(self):
         """Client subscribed to 'host.*' should not see agent events."""
-        from navig.agent.nervous_system import NervousSystem, EventType
+        from navig.agent.nervous_system import EventType, NervousSystem
 
         ns = NervousSystem()
         bridge = EventBridge(debounce_seconds=0)
@@ -427,12 +448,14 @@ class TestNervousSystemIntegration:
 # Integration: SystemEventQueue → Bridge
 # ---------------------------------------------------------------------------
 
+
 class TestSystemEventQueueIntegration:
     @pytest.mark.asyncio
     async def test_eq_event_reaches_bridge_client(self):
         """End-to-end: SystemEventQueue.emit() → EventBridge → WebSocket client."""
         import tempfile
         from pathlib import Path
+
         from navig.gateway.system_events import SystemEventQueue
 
         with tempfile.TemporaryDirectory() as tmpdir:

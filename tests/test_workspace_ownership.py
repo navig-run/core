@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from navig.commands import onboard
-from navig.workspace import WorkspaceManager
 from navig import workspace as workspace_module
 from navig import workspace_ownership as own
+from navig.commands import onboard
+from navig.workspace import WorkspaceManager
 
 
 def test_detect_project_workspace_duplicates(tmp_path: Path) -> None:
@@ -43,11 +43,15 @@ def test_resolve_personal_workspace_path_uses_user_workspace_for_all_noncanonica
 
     monkeypatch.setattr(own, "USER_WORKSPACE_DIR", user_ws)
 
-    canonical, legacy = own.resolve_personal_workspace_path(project_ws, project_root=project_root)
+    canonical, legacy = own.resolve_personal_workspace_path(
+        project_ws, project_root=project_root
+    )
     assert canonical == user_ws
     assert legacy == project_ws
 
-    canonical, legacy = own.resolve_personal_workspace_path(custom_ws, project_root=project_root)
+    canonical, legacy = own.resolve_personal_workspace_path(
+        custom_ws, project_root=project_root
+    )
     assert canonical == user_ws
     assert legacy == custom_ws
 
@@ -65,13 +69,17 @@ def test_workspace_manager_prefers_user_workspace_and_uses_legacy_fallback(
     # Redirect module defaults to temp locations.
     monkeypatch.setattr(workspace_module, "DEFAULT_NAVIG_DIR", user_ws.parent)
     monkeypatch.setattr(workspace_module, "DEFAULT_WORKSPACE_DIR", user_ws)
-    monkeypatch.setattr(workspace_module, "DEFAULT_CONFIG_FILE", user_ws.parent / "navig.json")
+    monkeypatch.setattr(
+        workspace_module, "DEFAULT_CONFIG_FILE", user_ws.parent / "navig.json"
+    )
     monkeypatch.setattr(own, "USER_WORKSPACE_DIR", user_ws)
 
     (user_ws / "USER.md").write_text("user copy", encoding="utf-8")
     (project_ws / "USER.md").write_text("project copy", encoding="utf-8")
 
-    wm = WorkspaceManager(workspace_path=project_ws, config_path=tmp_path / "missing.json")
+    wm = WorkspaceManager(
+        workspace_path=project_ws, config_path=tmp_path / "missing.json"
+    )
     assert wm.workspace_path == user_ws
     assert wm.legacy_workspace_path == project_ws
     assert wm.get_file_content("USER.md") == "user copy"
@@ -89,7 +97,9 @@ def test_create_workspace_templates_writes_personal_files_to_user_workspace_only
     project_ws.mkdir(parents=True)
 
     monkeypatch.setattr(onboard, "USER_WORKSPACE_DIR", user_ws)
-    monkeypatch.setattr(onboard, "detect_project_workspace_duplicates", lambda project_root=None: [])
+    monkeypatch.setattr(
+        onboard, "detect_project_workspace_duplicates", lambda project_root=None: []
+    )
 
     onboard.create_workspace_templates(project_ws, console=None)
 

@@ -630,9 +630,9 @@ run_developer_sync() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local www_dir
-    www_dir="$(cd "${script_dir}/../navig-www" 2>/dev/null && pwd || true)"
+    www_dir="$(cd "${script_dir}/../navig-www/public" 2>/dev/null && pwd || true)"
     if [[ -z "$www_dir" || ! -d "$www_dir" ]]; then
-        log_warn "Developer sync skipped — navig-www directory not found at ../navig-www"
+        log_warn "Developer sync skipped — navig-www/public directory not found"
         return 0
     fi
 

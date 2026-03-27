@@ -30,6 +30,7 @@ callable into ``get_approval_gate().backend``::
     async def my_telegram_prompt(req: ApprovalRequest) -> ApprovalDecision: ...
     get_approval_gate().backend = my_telegram_prompt
 """
+
 from __future__ import annotations
 
 import enum
@@ -52,20 +53,23 @@ __all__ = [
 # Types
 # =============================================================================
 
+
 class ApprovalDecision(str, enum.Enum):
     """Outcome returned by the approval backend."""
+
     APPROVED = "approved"
-    DENIED   = "denied"
-    TIMEOUT  = "timeout"      # backend did not respond in time
+    DENIED = "denied"
+    TIMEOUT = "timeout"  # backend did not respond in time
 
 
 @dataclass
 class ApprovalRequest:
     """Payload sent to the approval backend."""
+
     tool_name: str
-    safety_level: str          # SafetyLevel.value string
+    safety_level: str  # SafetyLevel.value string
     parameters: Dict[str, Any] = field(default_factory=dict)
-    reason: str = ""           # agent-supplied justification
+    reason: str = ""  # agent-supplied justification
     context: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -76,6 +80,7 @@ ApprovalBackend = Callable[[ApprovalRequest], Awaitable[ApprovalDecision]]
 # =============================================================================
 # Default backends
 # =============================================================================
+
 
 async def _auto_approve(req: ApprovalRequest) -> ApprovalDecision:
     """Approve everything — used when NAVIG_ALLOW_ALL_COMMANDS=1."""
@@ -101,6 +106,7 @@ async def _log_and_approve(req: ApprovalRequest) -> ApprovalDecision:
 # =============================================================================
 # ApprovalGate
 # =============================================================================
+
 
 class ApprovalGate:
     """

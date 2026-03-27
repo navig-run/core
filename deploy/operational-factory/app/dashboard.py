@@ -1,9 +1,8 @@
-from fastapi import FastAPI, Request, Form
+import httpx
+from app.settings import TOOL_GATEWAY_URL
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-import httpx
-
-from app.settings import TOOL_GATEWAY_URL
 
 app = FastAPI(title="NAVIG Approval Inbox", version="0.1.0")
 templates = Jinja2Templates(directory="/srv/app/app/templates")
@@ -17,7 +16,14 @@ def health():
 @app.get("/", response_class=HTMLResponse)
 def inbox(request: Request):
     data = httpx.get(f"{TOOL_GATEWAY_URL}/approval/inbox", timeout=20).json()
-    return templates.TemplateResponse("inbox.html", {"request": request, "actions": data.get("actions", []), "drafts": data.get("drafts", [])})
+    return templates.TemplateResponse(
+        "inbox.html",
+        {
+            "request": request,
+            "actions": data.get("actions", []),
+            "drafts": data.get("drafts", []),
+        },
+    )
 
 
 @app.post("/approve/{action_id}")

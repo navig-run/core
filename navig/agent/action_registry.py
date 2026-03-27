@@ -199,7 +199,9 @@ def _register_core_actions(reg: ActionRegistry) -> None:
 
     @reg.register("evolve.workflow", requires_params=True)
     async def _evolve_workflow(params: dict[str, Any]) -> str:
-        from navig.core.evolution.workflow import WorkflowEvolver  # type: ignore[import]
+        from navig.core.evolution.workflow import (
+            WorkflowEvolver,  # type: ignore[import]
+        )
 
         return f"Created: {WorkflowEvolver().evolve(params.get('goal', ''))}"
 

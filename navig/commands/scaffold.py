@@ -1,6 +1,7 @@
 """
 Scaffold Commands
 """
+
 import os
 from pathlib import Path
 from typing import List
@@ -14,13 +15,24 @@ from navig.remote import RemoteOperations
 
 app = typer.Typer(help="Scaffold project structures from templates")
 
+
 @app.command("apply")
 def apply(
-    template_path: Path = typer.Argument(..., help="Path to YAML template file", exists=True),
-    target_dir: str = typer.Option(".", "--target-dir", "-d", help="Target directory (local or remote)"),
-    host: str = typer.Option(None, "--host", "-h", help="Remote host to deploy to (defaults to local)"),
-    set_var: List[str] = typer.Option(None, "--set", help="Set variable like key=value"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate without creating files"),
+    template_path: Path = typer.Argument(
+        ..., help="Path to YAML template file", exists=True
+    ),
+    target_dir: str = typer.Option(
+        ".", "--target-dir", "-d", help="Target directory (local or remote)"
+    ),
+    host: str = typer.Option(
+        None, "--host", "-h", help="Remote host to deploy to (defaults to local)"
+    ),
+    set_var: List[str] = typer.Option(
+        None, "--set", help="Set variable like key=value"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Simulate without creating files"
+    ),
 ):
     """
     Generate files/directories from a template.
@@ -39,7 +51,8 @@ def apply(
 
     # 2. Add system variables
     from datetime import datetime
-    variables['scaffold_date'] = datetime.now().strftime('%Y-%m-%d')
+
+    variables["scaffold_date"] = datetime.now().strftime("%Y-%m-%d")
 
     # 3. Load Template
     try:
@@ -48,7 +61,7 @@ def apply(
         ch.error(f"Template error: {e}")
         raise typer.Exit(1) from e
 
-    template_name = template_data.get('meta', {}).get('name', template_path.stem)
+    template_name = template_data.get("meta", {}).get("name", template_path.stem)
     ch.info(f"Applying template: [bold]{template_name}[/bold]")
 
     # 4. Handle Execution
@@ -59,9 +72,9 @@ def apply(
         if dry_run:
             ch.info(f"[DRY RUN] Would generate to: {target_path}")
             ch.info("\nFiles to be created:")
-            for file_spec in template_data.get('files', []):
-                file_path = file_spec.get('path', 'unknown')
-                file_type = file_spec.get('type', 'file')
+            for file_spec in template_data.get("files", []):
+                file_path = file_spec.get("path", "unknown")
+                file_type = file_spec.get("type", "file")
                 ch.info(f"  - {file_path} ({file_type})")
             return
 
@@ -99,7 +112,9 @@ def apply(
             ch.step(f"Uploading to {host}...")
 
             with ch.create_spinner("Uploading..."):
-                success = remote_ops.upload_file(archive_path, remote_archive_path, server_config)
+                success = remote_ops.upload_file(
+                    archive_path, remote_archive_path, server_config
+                )
 
             if not success:
                 ch.error("Upload failed")
@@ -133,13 +148,14 @@ def apply(
             if archive_path.exists():
                 os.unlink(archive_path)
 
+
 @app.command("validate")
 def validate(template_path: Path):
     """Validate a template file syntax."""
     scaffolder = Scaffolder()
     try:
         data = scaffolder.validate_template(template_path)
-        name = data.get('meta', {}).get('name', 'Unknown')
+        name = data.get("meta", {}).get("name", "Unknown")
         ch.success(f"✓ Valid template: {name}")
         ch.info(f"Structure items: {len(data.get('structure', []))}")
     except ValueError as e:

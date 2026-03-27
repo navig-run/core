@@ -10,6 +10,7 @@ Project-local files shadow global ones (same slug → project wins).
 navig-bridge calls `navig brain prompts get <slug>` to fetch a prompt
 without hard-coding prompt strings in TypeScript.
 """
+
 from __future__ import annotations
 
 import sys
@@ -43,6 +44,7 @@ brain_app.add_typer(prompts_app, name="prompts")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _prompt_dirs() -> list[Path]:
     """Return search dirs in priority order: project-local → global."""
@@ -78,6 +80,7 @@ def _resolve(slug: str) -> Path | None:
 # navig brain prompts list
 # ---------------------------------------------------------------------------
 
+
 @prompts_app.command("list")
 def prompts_list(
     json_output: bool = typer.Option(False, "--json", help="Emit JSON array of slugs."),
@@ -94,6 +97,7 @@ def prompts_list(
 
     if json_output:
         import json
+
         typer.echo(json.dumps(sorted(seen.keys())))
         return
 
@@ -102,7 +106,12 @@ def prompts_list(
         return
 
     for slug, filepath in sorted(seen.items()):
-        scope = "project" if ".navig/brain/prompts" in filepath.as_posix() and filepath.is_relative_to(Path(".navig").resolve().parent) else "global"
+        scope = (
+            "project"
+            if ".navig/brain/prompts" in filepath.as_posix()
+            and filepath.is_relative_to(Path(".navig").resolve().parent)
+            else "global"
+        )
         typer.echo(f"  {slug:<30}  ({scope})  {filepath}")
 
 
@@ -110,10 +119,13 @@ def prompts_list(
 # navig brain prompts get
 # ---------------------------------------------------------------------------
 
+
 @prompts_app.command("get")
 def prompts_get(
     slug: str = typer.Argument(..., help="Prompt slug (filename without .md)."),
-    json_output: bool = typer.Option(False, "--json", help="Wrap output in JSON envelope."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Wrap output in JSON envelope."
+    ),
 ) -> None:
     """Output prompt content — intended for programmatic consumption by navig-bridge/CLI."""
     filepath = _resolve(slug)
@@ -125,7 +137,10 @@ def prompts_get(
 
     if json_output:
         import json
-        typer.echo(json.dumps({"slug": slug, "content": content, "path": str(filepath)}))
+
+        typer.echo(
+            json.dumps({"slug": slug, "content": content, "path": str(filepath)})
+        )
     else:
         typer.echo(content, nl=False)
 
@@ -134,11 +149,19 @@ def prompts_get(
 # navig brain prompts set
 # ---------------------------------------------------------------------------
 
+
 @prompts_app.command("set")
 def prompts_set(
     slug: str = typer.Argument(..., help="Prompt slug (filename without .md)."),
-    content: Optional[str] = typer.Option(None, "--content", "-c", help="Prompt text. Reads from stdin if omitted."),
-    global_scope: bool = typer.Option(False, "--global", "-g", help="Write to ~/.navig/brain/prompts/ (default: project-local)."),
+    content: Optional[str] = typer.Option(
+        None, "--content", "-c", help="Prompt text. Reads from stdin if omitted."
+    ),
+    global_scope: bool = typer.Option(
+        False,
+        "--global",
+        "-g",
+        help="Write to ~/.navig/brain/prompts/ (default: project-local).",
+    ),
 ) -> None:
     """Write or overwrite a prompt file."""
     if content is None:
@@ -168,11 +191,13 @@ def prompts_set(
 # navig brain prompts reload
 # ---------------------------------------------------------------------------
 
+
 @prompts_app.command("reload")
 def prompts_reload() -> None:
     """Signal the NAVIG daemon to flush its prompt cache (no-op if daemon is not running)."""
     try:
         from navig.daemon.client import send_command  # type: ignore[import]
+
         send_command({"type": "cache_flush", "target": "prompts"})
         typer.echo("Prompt cache flushed.")
     except Exception:

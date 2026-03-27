@@ -60,8 +60,8 @@ from navig.agent.routing_strategy import RequestTier
 # Module-level constants
 # ---------------------------------------------------------------------------
 
-CACHE_TTL_SECONDS: int = 3_600          # 1 hour
-CACHE_MAX_ENTRIES: int = 1_000          # LRU-by-age eviction at this limit
+CACHE_TTL_SECONDS: int = 3_600  # 1 hour
+CACHE_MAX_ENTRIES: int = 1_000  # LRU-by-age eviction at this limit
 DEFAULT_CONFIDENCE_THRESHOLD: float = 0.7
 
 # Tier scan priority: longest/rarest first to avoid false matches.
@@ -132,7 +132,9 @@ def _read_cache(key: str) -> Optional[RequestTier]:
         return None
 
     tier, inserted_at = entry
-    age = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - inserted_at).total_seconds()
+    age = (
+        datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - inserted_at
+    ).total_seconds()
     if age > CACHE_TTL_SECONDS:
         logger.debug(
             "llm_classifier: cache TTL expired key={} age_s={:.0f}", key[:16], age
@@ -151,7 +153,10 @@ def _write_cache(key: str, tier: RequestTier) -> None:
     """
     if len(_cache) >= CACHE_MAX_ENTRIES:
         _evict_oldest()
-    _cache[key] = (tier, datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+    _cache[key] = (
+        tier,
+        datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+    )
     logger.debug("llm_classifier: cached tier={} key={}", tier, key[:16])
 
 
@@ -194,7 +199,9 @@ async def _call_llm(prompt: str) -> RequestTier:
     """
     client = get_ai_client()
     truncated = prompt[:500]
-    logger.debug("llm_classifier: calling LLM for tier classification ({}chars)", len(truncated))
+    logger.debug(
+        "llm_classifier: calling LLM for tier classification ({}chars)", len(truncated)
+    )
 
     try:
         raw: str = await client.complete(

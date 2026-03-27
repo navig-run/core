@@ -164,7 +164,5 @@ Example:
   - Create container with volume for data
   - Expose port 3001
   - Set up auto-restart
-  
+
   Proceed with deployment?"
-
-

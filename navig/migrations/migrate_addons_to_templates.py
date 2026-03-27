@@ -1,11 +1,11 @@
 """
 Migrate Addons to Templates
 
-This migration script converts the legacy "addons" system to the new "templates" 
+This migration script converts the legacy "addons" system to the new "templates"
 architecture:
 
 1. Repository: addons/<name>/addon.json → templates/<name>/template.yaml
-2. User overrides: ~/.navig/apps/<server>/addons/<name>.json → 
+2. User overrides: ~/.navig/apps/<server>/addons/<name>.json →
                    ~/.navig/apps/<server>/templates/<name>.yaml
 
 The migration is idempotent and safe to run multiple times.
@@ -29,7 +29,7 @@ class AddonToTemplateMigration:
     def __init__(self, dry_run: bool = False, force: bool = False):
         """
         Initialize migration.
-        
+
         Args:
             dry_run: If True, show what would be done without making changes
             force: If True, overwrite existing YAML files
@@ -52,7 +52,7 @@ class AddonToTemplateMigration:
     def run(self) -> bool:
         """
         Run the full migration.
-        
+
         Returns:
             True if migration completed successfully, False if there were errors
         """
@@ -100,7 +100,9 @@ class AddonToTemplateMigration:
             elif yaml_file.exists():
                 source_file = yaml_file
             else:
-                self.skipped.append((str(addon_dir), "No addon.json or addon.yaml found"))
+                self.skipped.append(
+                    (str(addon_dir), "No addon.json or addon.yaml found")
+                )
                 continue
 
             # Target location
@@ -109,7 +111,9 @@ class AddonToTemplateMigration:
 
             # Check if target already exists
             if target_file.exists() and not self.force:
-                self.skipped.append((str(target_file), "Already exists (use --force to overwrite)"))
+                self.skipped.append(
+                    (str(target_file), "Already exists (use --force to overwrite)")
+                )
                 continue
 
             # Load source
@@ -130,7 +134,9 @@ class AddonToTemplateMigration:
                     if readme.exists():
                         shutil.copy2(readme, target_dir / "README.md")
 
-                    ch.success(f"  {addon_name}: addon.{'json' if source_file.suffix == '.json' else 'yaml'} -> template.yaml")
+                    ch.success(
+                        f"  {addon_name}: addon.{'json' if source_file.suffix == '.json' else 'yaml'} -> template.yaml"
+                    )
                 except Exception as e:
                     self.errors.append((str(target_file), str(e)))
                     continue
@@ -205,7 +211,9 @@ class AddonToTemplateMigration:
                     try:
                         templates_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(addon_file, target_file)
-                        ch.success(f"    addons/{addon_name}.yaml -> templates/{addon_name}.yaml")
+                        ch.success(
+                            f"    addons/{addon_name}.yaml -> templates/{addon_name}.yaml"
+                        )
                     except Exception as e:
                         self.errors.append((str(target_file), str(e)))
                         continue
@@ -216,19 +224,25 @@ class AddonToTemplateMigration:
 
     def _load_file(self, path: Path) -> Dict[str, Any]:
         """Load JSON or YAML file."""
-        with open(path, 'r', encoding='utf-8') as f:
-            if path.suffix == '.json':
+        with open(path, "r", encoding="utf-8") as f:
+            if path.suffix == ".json":
                 return json.load(f)
             else:
                 return yaml.safe_load(f) or {}
 
     def _save_yaml(self, path: Path, content: Dict[str, Any]):
         """Save content as YAML with header comment."""
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, "w", encoding="utf-8") as f:
             # Add migration comment
             f.write(f"# Migrated from addons system on {datetime.now().isoformat()}\n")
             f.write("# See templates/README.md for documentation\n\n")
-            yaml.dump(content, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+            yaml.dump(
+                content,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
 
     def _print_summary(self):
         """Print migration summary."""
@@ -264,7 +278,9 @@ class AddonToTemplateMigration:
         if total > 0 and not self.errors:
             ch.newline()
             if self.dry_run:
-                ch.info(f"Would migrate {total} item(s). Run without --dry-run to apply changes.")
+                ch.info(
+                    f"Would migrate {total} item(s). Run without --dry-run to apply changes."
+                )
             else:
                 ch.success(f"Migration complete! {total} item(s) migrated.")
         elif total == 0:
@@ -274,11 +290,11 @@ class AddonToTemplateMigration:
 def migrate_addons_to_templates(dry_run: bool = False, force: bool = False) -> bool:
     """
     Run the addons-to-templates migration.
-    
+
     Args:
         dry_run: If True, show what would be done without making changes
         force: If True, overwrite existing YAML files
-    
+
     Returns:
         True if migration completed successfully
     """
@@ -289,8 +305,8 @@ def migrate_addons_to_templates(dry_run: bool = False, force: bool = False) -> b
 # CLI integration
 def migrate_addons_to_templates_cmd(options: Dict[str, Any]):
     """CLI command handler for addons-to-templates migration."""
-    dry_run = options.get('dry_run', False)
-    force = options.get('force', False)
+    dry_run = options.get("dry_run", False)
+    force = options.get("force", False)
 
     success = migrate_addons_to_templates(dry_run=dry_run, force=force)
 

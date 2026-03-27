@@ -13,6 +13,7 @@ Usage::
     guard.charge("openai_vision", 0.01)
     print(guard.remaining())              # remaining USD this month
 """
+
 from __future__ import annotations
 
 import json
@@ -27,16 +28,16 @@ logger = logging.getLogger(__name__)
 
 # Default cost estimates per call (USD) — conservative upper bounds
 DEFAULT_COSTS: dict[str, float] = {
-    "audd":           0.002,   # AudD API per fingerprint
-    "openai_whisper": 0.006,   # Whisper API per minute (avg 1 min)
-    "openai_vision":  0.015,   # GPT-4o vision per image (~500 tokens out)
-    "spotify":        0.0,     # Spotify API — free tier
-    "lastfm":         0.0,     # Last.fm API — free tier
-    "serpapi":        0.005,   # SerpAPI Google Lens per call
-    "google_vision":  0.0015,  # Google Cloud Vision per image
-    "mutagen":        0.0,     # local — free
-    "tesseract":      0.0,     # local — free
-    "pillow":         0.0,     # local — free
+    "audd": 0.002,  # AudD API per fingerprint
+    "openai_whisper": 0.006,  # Whisper API per minute (avg 1 min)
+    "openai_vision": 0.015,  # GPT-4o vision per image (~500 tokens out)
+    "spotify": 0.0,  # Spotify API — free tier
+    "lastfm": 0.0,  # Last.fm API — free tier
+    "serpapi": 0.005,  # SerpAPI Google Lens per call
+    "google_vision": 0.0015,  # Google Cloud Vision per image
+    "mutagen": 0.0,  # local — free
+    "tesseract": 0.0,  # local — free
+    "pillow": 0.0,  # local — free
 }
 
 

@@ -39,6 +39,3 @@ steps:
     description: "Mark completed tasks as done to close open loops"
     command: task done
     continue_on_error: true
-
-
-

@@ -8,14 +8,16 @@ from typing import List
 
 class ApprovalLevel(Enum):
     """Command approval levels."""
-    SAFE = "safe"           # Auto-approve
-    CONFIRM = "confirm"     # Ask user, timeout = approve
-    DANGEROUS = "dangerous" # Ask user, timeout = deny
-    NEVER = "never"         # Always deny
+
+    SAFE = "safe"  # Auto-approve
+    CONFIRM = "confirm"  # Ask user, timeout = approve
+    DANGEROUS = "dangerous"  # Ask user, timeout = deny
+    NEVER = "never"  # Always deny
 
 
 class ApprovalStatus(Enum):
     """Status of an approval request."""
+
     PENDING = "pending"
     APPROVED = "approved"
     DENIED = "denied"
@@ -74,14 +76,23 @@ DEFAULT_AUTO_EVOLVE_WHITELIST: List[str] = [
 @dataclass
 class ApprovalPolicy:
     """Policy configuration for approvals."""
+
     enabled: bool = True
     timeout_seconds: int = 120
     default_action: str = "deny"
 
-    safe_patterns: List[str] = field(default_factory=lambda: DEFAULT_SAFE_PATTERNS.copy())
-    confirm_patterns: List[str] = field(default_factory=lambda: DEFAULT_CONFIRM_PATTERNS.copy())
-    dangerous_patterns: List[str] = field(default_factory=lambda: DEFAULT_DANGEROUS_PATTERNS.copy())
-    never_patterns: List[str] = field(default_factory=lambda: DEFAULT_NEVER_PATTERNS.copy())
+    safe_patterns: List[str] = field(
+        default_factory=lambda: DEFAULT_SAFE_PATTERNS.copy()
+    )
+    confirm_patterns: List[str] = field(
+        default_factory=lambda: DEFAULT_CONFIRM_PATTERNS.copy()
+    )
+    dangerous_patterns: List[str] = field(
+        default_factory=lambda: DEFAULT_DANGEROUS_PATTERNS.copy()
+    )
+    never_patterns: List[str] = field(
+        default_factory=lambda: DEFAULT_NEVER_PATTERNS.copy()
+    )
 
     # Per-channel settings
     auto_approve_users: List[str] = field(default_factory=list)
@@ -96,7 +107,7 @@ class ApprovalPolicy:
     )
 
     @classmethod
-    def default(cls) -> 'ApprovalPolicy':
+    def default(cls) -> "ApprovalPolicy":
         """Create default policy with standard patterns."""
         return cls()
 
@@ -115,31 +126,31 @@ class ApprovalPolicy:
         return self.classify_command(command)
 
     @classmethod
-    def from_config(cls, config: dict) -> 'ApprovalPolicy':
+    def from_config(cls, config: dict) -> "ApprovalPolicy":
         """Load policy from config dict."""
-        approval_cfg = config.get('approval', {})
-        levels = approval_cfg.get('levels', {})
-        channels = approval_cfg.get('channels', {})
-        auto_evolve_cfg = approval_cfg.get('auto_evolve', {})
+        approval_cfg = config.get("approval", {})
+        levels = approval_cfg.get("levels", {})
+        channels = approval_cfg.get("channels", {})
+        auto_evolve_cfg = approval_cfg.get("auto_evolve", {})
 
         return cls(
-            enabled=approval_cfg.get('enabled', True),
-            timeout_seconds=approval_cfg.get('timeout_seconds', 120),
-            default_action=approval_cfg.get('default_action', 'deny'),
-            safe_patterns=levels.get('safe', DEFAULT_SAFE_PATTERNS.copy()),
-            confirm_patterns=levels.get('confirm', DEFAULT_CONFIRM_PATTERNS.copy()),
-            dangerous_patterns=levels.get('dangerous', DEFAULT_DANGEROUS_PATTERNS.copy()),
-            never_patterns=levels.get('never', DEFAULT_NEVER_PATTERNS.copy()),
-            auto_approve_users=channels.get('auto_approve_users', []),
-            auto_evolve_enabled=auto_evolve_cfg.get('enabled', False),
+            enabled=approval_cfg.get("enabled", True),
+            timeout_seconds=approval_cfg.get("timeout_seconds", 120),
+            default_action=approval_cfg.get("default_action", "deny"),
+            safe_patterns=levels.get("safe", DEFAULT_SAFE_PATTERNS.copy()),
+            confirm_patterns=levels.get("confirm", DEFAULT_CONFIRM_PATTERNS.copy()),
+            dangerous_patterns=levels.get(
+                "dangerous", DEFAULT_DANGEROUS_PATTERNS.copy()
+            ),
+            never_patterns=levels.get("never", DEFAULT_NEVER_PATTERNS.copy()),
+            auto_approve_users=channels.get("auto_approve_users", []),
+            auto_evolve_enabled=auto_evolve_cfg.get("enabled", False),
             auto_evolve_whitelist=auto_evolve_cfg.get(
-                'whitelist', DEFAULT_AUTO_EVOLVE_WHITELIST.copy()
+                "whitelist", DEFAULT_AUTO_EVOLVE_WHITELIST.copy()
             ),
         )
 
-    def is_auto_evolve_allowed(
-        self, command: str, audit_log_live: bool
-    ) -> bool:
+    def is_auto_evolve_allowed(self, command: str, audit_log_live: bool) -> bool:
         """
         Return True if auto-evolve should approve *command* without prompting.
 

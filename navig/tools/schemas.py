@@ -31,8 +31,10 @@ logger = logging.getLogger("navig.tools.schemas")
 # Enums
 # =============================================================================
 
+
 class ActionType(str, Enum):
     """Types of actions an LLM can request."""
+
     TOOL_CALL = "tool_call"
     RESPOND = "respond"
     MULTI_STEP = "multi_step"
@@ -40,6 +42,7 @@ class ActionType(str, Enum):
 
 class ToolResultStatus(str, Enum):
     """Status of a tool execution result."""
+
     SUCCESS = "success"
     ERROR = "error"
     TIMEOUT = "timeout"
@@ -52,6 +55,7 @@ class ToolResultStatus(str, Enum):
 # Action Data Classes
 # =============================================================================
 
+
 @dataclass
 class ToolCallAction:
     """
@@ -63,6 +67,7 @@ class ToolCallAction:
         reason:     Optional LLM-supplied justification for calling this tool.
         request_id: Optional unique ID for tracing.
     """
+
     tool: str
     parameters: Dict[str, Any] = field(default_factory=dict)
     reason: str = ""
@@ -81,6 +86,7 @@ class RespondAction:
     Fields:
         message: The text content to send to the user.
     """
+
     message: str
 
     @property
@@ -97,6 +103,7 @@ class MultiStepAction:
         steps: Ordered list of ToolCallAction to execute in sequence.
         reason: Optional justification for the chain.
     """
+
     steps: List[ToolCallAction] = field(default_factory=list)
     reason: str = ""
 
@@ -118,6 +125,7 @@ class ToolResult:
         latency_ms: Execution time in milliseconds.
         metadata:   Additional metadata (e.g. cached, provider).
     """
+
     tool: str
     status: ToolResultStatus = ToolResultStatus.SUCCESS
     output: Any = None
@@ -232,6 +240,7 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
 # Parser
 # =============================================================================
 
+
 def parse_llm_action(text: str) -> LLMAction:
     """
     Parse an LLM response into a typed action.
@@ -287,11 +296,13 @@ def parse_llm_action(text: str) -> LLMAction:
         steps = []
         for s in raw_steps:
             if isinstance(s, dict) and s.get("tool"):
-                steps.append(ToolCallAction(
-                    tool=s["tool"],
-                    parameters=s.get("parameters", {}),
-                    reason=s.get("reason", ""),
-                ))
+                steps.append(
+                    ToolCallAction(
+                        tool=s["tool"],
+                        parameters=s.get("parameters", {}),
+                        reason=s.get("reason", ""),
+                    )
+                )
         if not steps:
             logger.warning("multi_step action has no valid steps: %s", obj)
             return RespondAction(message=text.strip())

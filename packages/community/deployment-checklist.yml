@@ -7,25 +7,25 @@ version: "1.0.0"
 steps:
   - description: "Run tests locally"
     command: "pytest tests/ -v"
-  
+
   - description: "Check staging environment"
     notes: "Verify staging deployment succeeded and is healthy"
-  
+
   - description: "Review changelog"
     notes: "Confirm all changes are documented in CHANGELOG.md"
-  
+
   - description: "Backup production database"
     command: "navig db backup --verify"
-  
+
   - description: "Deploy to production"
     notes: "Use CI/CD pipeline or manual deployment process"
-  
+
   - description: "Verify health checks"
     command: "navig health"
-  
+
   - description: "Monitor logs for 10 minutes"
     command: "navig logs --follow --lines 100"
-  
+
   - description: "Notify team"
     notes: "Post deployment announcement in team chat"
 

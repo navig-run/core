@@ -32,14 +32,14 @@ if TYPE_CHECKING:
 class ThoughtType(Enum):
     """Types of thoughts the brain can have."""
 
-    OBSERVATION = auto()   # Noting something
-    ANALYSIS = auto()      # Analyzing data
-    PLAN = auto()          # Planning actions
-    DECISION = auto()      # Making a decision
-    REFLECTION = auto()    # Reflecting on past
-    LEARNING = auto()      # Learning something new
-    WARNING = auto()       # Noticing a concern
-    QUESTION = auto()      # Forming a question
+    OBSERVATION = auto()  # Noting something
+    ANALYSIS = auto()  # Analyzing data
+    PLAN = auto()  # Planning actions
+    DECISION = auto()  # Making a decision
+    REFLECTION = auto()  # Reflecting on past
+    LEARNING = auto()  # Learning something new
+    WARNING = auto()  # Noticing a concern
+    QUESTION = auto()  # Forming a question
 
 
 @dataclass
@@ -54,11 +54,11 @@ class Thought:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'type': self.type.name,
-            'content': self.content,
-            'context': self.context,
-            'confidence': self.confidence,
-            'timestamp': self.timestamp.isoformat(),
+            "type": self.type.name,
+            "content": self.content,
+            "context": self.context,
+            "confidence": self.confidence,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
@@ -77,14 +77,14 @@ class Plan:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'goal': self.goal,
-            'steps': self.steps,
-            'reasoning': self.reasoning,
-            'estimated_duration': self.estimated_duration,
-            'priority': self.priority,
-            'status': self.status,
-            'current_step': self.current_step,
-            'created_at': self.created_at.isoformat(),
+            "goal": self.goal,
+            "steps": self.steps,
+            "reasoning": self.reasoning,
+            "estimated_duration": self.estimated_duration,
+            "priority": self.priority,
+            "status": self.status,
+            "current_step": self.current_step,
+            "created_at": self.created_at.isoformat(),
         }
 
 
@@ -101,19 +101,19 @@ class Decision:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'question': self.question,
-            'choice': self.choice,
-            'alternatives': self.alternatives,
-            'reasoning': self.reasoning,
-            'confidence': self.confidence,
-            'timestamp': self.timestamp.isoformat(),
+            "question": self.question,
+            "choice": self.choice,
+            "alternatives": self.alternatives,
+            "reasoning": self.reasoning,
+            "confidence": self.confidence,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
 class Brain(Component):
     """
     AI decision-making component.
-    
+
     The Brain processes information and makes decisions:
     - Analyzes system state from Eyes
     - Processes user requests from Ears
@@ -188,13 +188,12 @@ Guidelines:
 - Use cross-platform automation when the user asks about GUI tasks
 """
 
-
     def __init__(
         self,
         config: BrainConfig,
         nervous_system: Optional[NervousSystem] = None,
         agent_config: Optional[AgentConfig] = None,
-        soul: Optional['Soul'] = None,
+        soul: Optional["Soul"] = None,
     ):
         super().__init__("brain", nervous_system)
         self.config = config
@@ -214,7 +213,7 @@ Guidelines:
         # AI client
         self._ai_client = None
 
-    def set_soul(self, soul: 'Soul') -> None:
+    def set_soul(self, soul: "Soul") -> None:
         """Set the Soul component for personality injection."""
         self._soul = soul
 
@@ -229,6 +228,7 @@ Guidelines:
         # Initialize AI client if possible
         try:
             from navig.ai import get_ai_client
+
             self._ai_client = get_ai_client()
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -236,41 +236,45 @@ Guidelines:
     async def _on_stop(self) -> None:
         """Cleanup brain resources."""
         if self.nervous_system:
-            self.nervous_system.unsubscribe(EventType.MESSAGE_RECEIVED, self._on_message)
+            self.nervous_system.unsubscribe(
+                EventType.MESSAGE_RECEIVED, self._on_message
+            )
             self.nervous_system.unsubscribe(EventType.ALERT_TRIGGERED, self._on_alert)
-            self.nervous_system.unsubscribe(EventType.METRIC_COLLECTED, self._on_metrics)
+            self.nervous_system.unsubscribe(
+                EventType.METRIC_COLLECTED, self._on_metrics
+            )
 
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for brain."""
         return {
-            'thoughts_count': len(self._thoughts),
-            'plans_count': len(self._plans),
-            'decisions_count': len(self._decisions),
-            'thinking': self._thinking,
-            'has_ai_client': self._ai_client is not None,
-            'current_plan': self._current_plan.goal if self._current_plan else None,
+            "thoughts_count": len(self._thoughts),
+            "plans_count": len(self._plans),
+            "decisions_count": len(self._decisions),
+            "thinking": self._thinking,
+            "has_ai_client": self._ai_client is not None,
+            "current_plan": self._current_plan.goal if self._current_plan else None,
         }
 
     async def _on_message(self, event: Event) -> None:
         """Handle incoming message."""
-        message_data = event.data.get('message', {})
-        content = message_data.get('content', '')
-        source = message_data.get('source', 'unknown')
+        message_data = event.data.get("message", {})
+        content = message_data.get("content", "")
+        source = message_data.get("source", "unknown")
 
         # Create observation thought
         thought = Thought(
             type=ThoughtType.OBSERVATION,
             content=f"Received message from {source}: {content[:100]}...",
-            context={'source': source, 'full_content': content},
+            context={"source": source, "full_content": content},
         )
         self._record_thought(thought)
 
         # Process the message
-        await self.think(content, context={'source': source})
+        await self.think(content, context={"source": source})
 
     async def _on_alert(self, event: Event) -> None:
         """Handle system alert."""
-        alert = event.data.get('alert', {})
+        alert = event.data.get("alert", {})
 
         thought = Thought(
             type=ThoughtType.WARNING,
@@ -280,16 +284,15 @@ Guidelines:
         self._record_thought(thought)
 
         # Analyze the alert
-        if alert.get('level') == 'critical':
+        if alert.get("level") == "critical":
             await self.analyze_and_respond(
-                f"Critical alert: {alert.get('message')}",
-                context=alert
+                f"Critical alert: {alert.get('message')}", context=alert
             )
 
     async def _on_metrics(self, event: Event) -> None:
         """Handle collected metrics."""
-        metrics = event.data.get('metrics', {})
-        self._context['last_metrics'] = metrics
+        metrics = event.data.get("metrics", {})
+        self._context["last_metrics"] = metrics
 
     def _record_thought(self, thought: Thought) -> None:
         """Record a thought."""
@@ -306,7 +309,7 @@ Guidelines:
     ) -> Optional[str]:
         """
         Process a prompt and generate a response.
-        
+
         This is the main thinking method that:
         1. Analyzes the input
         2. Considers context
@@ -341,10 +344,10 @@ Guidelines:
                 await self.emit(
                     EventType.THOUGHT,
                     {
-                        'prompt': prompt,
-                        'response': response,
-                        'context': context,
-                    }
+                        "prompt": prompt,
+                        "response": response,
+                        "context": context,
+                    },
                 )
 
             return response
@@ -387,11 +390,13 @@ Guidelines:
         parts = []
 
         # Add system metrics if available
-        if 'last_metrics' in self._context:
-            metrics = self._context['last_metrics']
-            parts.append(f"System Status: CPU {metrics.get('cpu_percent', 0):.1f}%, "
-                        f"Memory {metrics.get('memory_percent', 0):.1f}%, "
-                        f"Disk {metrics.get('disk_percent', 0):.1f}%")
+        if "last_metrics" in self._context:
+            metrics = self._context["last_metrics"]
+            parts.append(
+                f"System Status: CPU {metrics.get('cpu_percent', 0):.1f}%, "
+                f"Memory {metrics.get('memory_percent', 0):.1f}%, "
+                f"Disk {metrics.get('disk_percent', 0):.1f}%"
+            )
 
         # Add recent thoughts
         if self._thoughts:
@@ -412,7 +417,7 @@ Guidelines:
     ) -> Plan:
         """
         Create a plan to achieve a goal.
-        
+
         Uses AI to break down the goal into steps.
         """
         context = context or {}
@@ -424,7 +429,7 @@ Guidelines:
         if self._ai_client:
             try:
                 prompt = f"""Create a step-by-step plan to achieve this goal:
-                
+
 Goal: {goal}
 
 Context: {json.dumps(context, default=str)}
@@ -440,16 +445,19 @@ Respond with a JSON object containing:
                     # Try to parse JSON from response
                     try:
                         # Find JSON in response
-                        start = response.find('{')
-                        end = response.rfind('}') + 1
+                        start = response.find("{")
+                        end = response.rfind("}") + 1
                         if start >= 0 and end > start:
                             data = json.loads(response[start:end])
-                            steps = data.get('steps', [])
-                            reasoning = data.get('reasoning', reasoning)
+                            steps = data.get("steps", [])
+                            reasoning = data.get("reasoning", reasoning)
                     except json.JSONDecodeError:
                         # If not JSON, treat as plain steps
-                        steps = [line.strip() for line in response.split('\n')
-                                if line.strip() and not line.startswith('#')]
+                        steps = [
+                            line.strip()
+                            for line in response.split("\n")
+                            if line.strip() and not line.startswith("#")
+                        ]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -466,10 +474,7 @@ Respond with a JSON object containing:
         self._current_plan = plan
 
         # Emit plan event
-        await self.emit(
-            EventType.PLAN_CREATED,
-            {'plan': plan.to_dict()}
-        )
+        await self.emit(EventType.PLAN_CREATED, {"plan": plan.to_dict()})
 
         return plan
 
@@ -506,14 +511,14 @@ Respond with JSON:
 
                 if response:
                     try:
-                        start = response.find('{')
-                        end = response.rfind('}') + 1
+                        start = response.find("{")
+                        end = response.rfind("}") + 1
                         if start >= 0 and end > start:
                             data = json.loads(response[start:end])
-                            if data.get('choice') in options:
-                                choice = data['choice']
-                            reasoning = data.get('reasoning', reasoning)
-                            confidence = float(data.get('confidence', confidence))
+                            if data.get("choice") in options:
+                                choice = data["choice"]
+                            reasoning = data.get("reasoning", reasoning)
+                            confidence = float(data.get("confidence", confidence))
                     except (json.JSONDecodeError, ValueError):
                         pass
             except Exception:  # noqa: BLE001
@@ -530,10 +535,7 @@ Respond with JSON:
         self._decisions.append(decision)
 
         # Emit decision event
-        await self.emit(
-            EventType.DECISION_MADE,
-            {'decision': decision.to_dict()}
-        )
+        await self.emit(EventType.DECISION_MADE, {"decision": decision.to_dict()})
 
         return decision
 
@@ -544,7 +546,7 @@ Respond with JSON:
     ) -> Optional[str]:
         """
         Analyze a situation and formulate a response.
-        
+
         Used for handling alerts, errors, or complex situations.
         """
         thought = Thought(
@@ -555,8 +557,7 @@ Respond with JSON:
         self._record_thought(thought)
 
         response = await self.think(
-            f"Analyze this situation and recommend action: {situation}",
-            context=context
+            f"Analyze this situation and recommend action: {situation}", context=context
         )
 
         return response

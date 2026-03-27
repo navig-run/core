@@ -24,6 +24,7 @@ Sessions are in-memory by default.  Pass ``persist_path`` to the store
 constructor (or configure ``gateway.session_store_path`` in config) to
 enable JSON persistence across daemon restarts.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,6 +50,7 @@ _IDLE_EXPIRY_SECONDS: float = 3600.0  # 1 hour of inactivity
 # SessionKey — channel-scoped identity
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class SessionKey:
     """
@@ -57,16 +59,22 @@ class SessionKey:
     For the single-operator model this simply tracks *where* the operator
     is currently talking (e.g. ``("telegram", "chat_id_123")``).
     """
-    channel_type: str    # "telegram", "cli", "vscode", "web_ui", …
+
+    channel_type: str  # "telegram", "cli", "vscode", "web_ui", …
     thread_id: str = ""  # chat/thread id within the channel; empty = default
 
     def __str__(self) -> str:
-        return f"{self.channel_type}:{self.thread_id}" if self.thread_id else self.channel_type
+        return (
+            f"{self.channel_type}:{self.thread_id}"
+            if self.thread_id
+            else self.channel_type
+        )
 
 
 # =============================================================================
 # OperatorContext — per-thread state
 # =============================================================================
+
 
 @dataclass
 class OperatorContext:
@@ -80,6 +88,7 @@ class OperatorContext:
         last_active:  Unix timestamp of the last operator interaction.
         turn_count:   Number of completed turns in this context.
     """
+
     key: SessionKey
     meta: Dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
@@ -133,6 +142,7 @@ class OperatorContext:
 # =============================================================================
 # SessionStore
 # =============================================================================
+
 
 class SessionStore:
     """
@@ -254,10 +264,10 @@ def get_session_store() -> SessionStore:
         persist_path: Optional[Path] = None
         try:
             from navig.config import get_config_manager
+
             raw_path = (
                 get_config_manager()
-                .global_config
-                .get("gateway", {})
+                .global_config.get("gateway", {})
                 .get("session_store_path", "")
             )
             if raw_path:

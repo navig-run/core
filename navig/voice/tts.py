@@ -18,10 +18,10 @@ Features:
 
 Usage:
     from navig.voice import speak, TTS
-    
+
     # Simple usage
     audio_path = await speak("Hello world!")
-    
+
     # With provider selection
     tts = TTS(provider="openai")
     result = await tts.synthesize("Hello!", voice="nova")
@@ -45,8 +45,10 @@ from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL  # noqa: F401
 # Types
 # =============================================================================
 
+
 class TTSProvider(str, Enum):
     """Supported TTS providers."""
+
     OPENAI = "openai"
     ELEVENLABS = "elevenlabs"
     EDGE = "edge"
@@ -56,6 +58,7 @@ class TTSProvider(str, Enum):
 
 class TTSVoice(str, Enum):
     """Common voice identifiers."""
+
     # OpenAI voices
     ALLOY = "alloy"
     ECHO = "echo"
@@ -75,6 +78,7 @@ class TTSVoice(str, Enum):
 @dataclass
 class TTSConfig:
     """TTS configuration."""
+
     # Provider
     provider: TTSProvider = TTSProvider.EDGE
     fallback_providers: List[TTSProvider] = field(
@@ -134,6 +138,7 @@ class TTSConfig:
 @dataclass
 class TTSResult:
     """Result from TTS synthesis."""
+
     success: bool
     audio_path: Optional[Path] = None
     audio_data: Optional[bytes] = None
@@ -160,10 +165,11 @@ class TTSResult:
 # TTS Engine
 # =============================================================================
 
+
 class TTS:
     """
     Text-to-Speech engine with multi-provider support.
-    
+
     Supports OpenAI, ElevenLabs, and Edge TTS with automatic fallback.
     """
 
@@ -181,18 +187,18 @@ class TTS:
         provider: Optional[TTSProvider] = None,
         voice: Optional[str] = None,
         output_path: Optional[Path] = None,
-        **kwargs
+        **kwargs,
     ) -> TTSResult:
         """
         Synthesize speech from text.
-        
+
         Args:
             text: Text to convert to speech
             provider: Override provider (uses config default if not specified)
             voice: Override voice
             output_path: Where to save audio (temp file if not specified)
             **kwargs: Additional provider-specific options
-            
+
         Returns:
             TTSResult with audio path or error
         """
@@ -217,7 +223,11 @@ class TTS:
                 )
 
         # Try providers in order
-        providers = [provider] if provider else [self.config.provider] + self.config.fallback_providers
+        providers = (
+            [provider]
+            if provider
+            else [self.config.provider] + self.config.fallback_providers
+        )
 
         last_error = None
         for prov in providers:
@@ -246,14 +256,13 @@ class TTS:
                 continue
 
         return TTSResult(
-            success=False,
-            error=f"All providers failed. Last error: {last_error}"
+            success=False, error=f"All providers failed. Last error: {last_error}"
         )
 
     async def speak(self, text: str, **kwargs) -> Optional[Path]:
         """
         Convenience method - synthesize and return path.
-        
+
         Returns None on failure.
         """
         result = await self.synthesize(text, **kwargs)
@@ -269,7 +278,7 @@ class TTS:
         provider: TTSProvider,
         voice: Optional[str],
         output_path: Optional[Path],
-        **kwargs
+        **kwargs,
     ) -> TTSResult:
         """Dispatch to provider-specific implementation."""
         if provider == TTSProvider.OPENAI:
@@ -279,18 +288,16 @@ class TTS:
         elif provider == TTSProvider.EDGE:
             return await self._synthesize_edge(text, voice, output_path, **kwargs)
         elif provider == TTSProvider.GOOGLE_CLOUD:
-            return await self._synthesize_google_cloud(text, voice, output_path, **kwargs)
+            return await self._synthesize_google_cloud(
+                text, voice, output_path, **kwargs
+            )
         elif provider == TTSProvider.DEEPGRAM:
             return await self._synthesize_deepgram(text, voice, output_path, **kwargs)
         else:
             return TTSResult(success=False, error=f"Unknown provider: {provider}")
 
     async def _synthesize_openai(
-        self,
-        text: str,
-        voice: Optional[str],
-        output_path: Optional[Path],
-        **kwargs
+        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
     ) -> TTSResult:
         """Synthesize using OpenAI TTS API."""
         try:
@@ -324,13 +331,13 @@ class TTS:
                     url,
                     headers=headers,
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+                    timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         return TTSResult(
                             success=False,
-                            error=f"OpenAI API error {response.status}: {error_text}"
+                            error=f"OpenAI API error {response.status}: {error_text}",
                         )
 
                     audio_data = await response.read()
@@ -358,11 +365,7 @@ class TTS:
             return TTSResult(success=False, error=f"OpenAI TTS error: {e}")
 
     async def _synthesize_elevenlabs(
-        self,
-        text: str,
-        voice: Optional[str],
-        output_path: Optional[Path],
-        **kwargs
+        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
     ) -> TTSResult:
         """Synthesize using ElevenLabs API."""
         try:
@@ -388,7 +391,7 @@ class TTS:
             "voice_settings": {
                 "stability": self.config.elevenlabs_stability,
                 "similarity_boost": self.config.elevenlabs_similarity,
-            }
+            },
         }
 
         try:
@@ -397,13 +400,13 @@ class TTS:
                     url,
                     headers=headers,
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds)
+                    timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         return TTSResult(
                             success=False,
-                            error=f"ElevenLabs API error {response.status}: {error_text}"
+                            error=f"ElevenLabs API error {response.status}: {error_text}",
                         )
 
                     audio_data = await response.read()
@@ -430,11 +433,7 @@ class TTS:
             return TTSResult(success=False, error=f"ElevenLabs TTS error: {e}")
 
     async def _synthesize_edge(
-        self,
-        text: str,
-        voice: Optional[str],
-        output_path: Optional[Path],
-        **kwargs
+        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
     ) -> TTSResult:
         """Synthesize using Edge TTS (free, no API key)."""
         try:
@@ -442,7 +441,7 @@ class TTS:
         except ImportError:
             return TTSResult(
                 success=False,
-                error="edge-tts not installed. Install with: pip install edge-tts"
+                error="edge-tts not installed. Install with: pip install edge-tts",
             )
 
         voice = voice or self.config.voice
@@ -474,11 +473,7 @@ class TTS:
             return TTSResult(success=False, error=f"Edge TTS error: {e}")
 
     async def _synthesize_google_cloud(
-        self,
-        text: str,
-        voice: Optional[str],
-        output_path: Optional[Path],
-        **kwargs
+        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
     ) -> TTSResult:
         """Synthesize using Google Cloud Text-to-Speech API."""
         try:
@@ -486,7 +481,9 @@ class TTS:
         except ImportError:
             return TTSResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("GOOGLE_CLOUD_API_KEY") or os.environ.get("GOOGLE_TTS_API_KEY")
+        api_key = os.environ.get("GOOGLE_CLOUD_API_KEY") or os.environ.get(
+            "GOOGLE_TTS_API_KEY"
+        )
         if not api_key:
             return TTSResult(success=False, error="GOOGLE_CLOUD_API_KEY not set")
 
@@ -521,6 +518,7 @@ class TTS:
                         )
 
                     import base64
+
                     data = await response.json()
                     audio_content = data.get("audioContent", "")
                     audio_data = base64.b64decode(audio_content)
@@ -546,11 +544,7 @@ class TTS:
             return TTSResult(success=False, error=f"Google Cloud TTS error: {e}")
 
     async def _synthesize_deepgram(
-        self,
-        text: str,
-        voice: Optional[str],
-        output_path: Optional[Path],
-        **kwargs
+        self, text: str, voice: Optional[str], output_path: Optional[Path], **kwargs
     ) -> TTSResult:
         """Synthesize using Deepgram Aura TTS API."""
         try:
@@ -619,15 +613,12 @@ class TTS:
 
         # Truncate if too long
         if len(text) > self.config.max_text_length:
-            text = text[:self.config.max_text_length] + "..."
+            text = text[: self.config.max_text_length] + "..."
 
         return text
 
     def _get_cache_key(
-        self,
-        text: str,
-        provider: Optional[TTSProvider],
-        voice: Optional[str]
+        self, text: str, provider: Optional[TTSProvider], voice: Optional[str]
     ) -> str:
         """Generate cache key for text+provider+voice combo."""
         prov = provider or self.config.provider
@@ -657,7 +648,10 @@ class TTS:
         """Get a temp file path for audio output."""
         if self.config.cache_enabled:
             cache_dir = self.config.get_cache_dir()
-            return cache_dir / f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{suffix}"
+            return (
+                cache_dir
+                / f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{suffix}"
+            )
         else:
             fd, path = tempfile.mkstemp(suffix=suffix, prefix=f"navig_tts_{prefix}_")
             os.close(fd)
@@ -667,13 +661,15 @@ class TTS:
     # Voice Listing
     # =========================================================================
 
-    async def list_voices(self, provider: Optional[TTSProvider] = None) -> List[Dict[str, str]]:
+    async def list_voices(
+        self, provider: Optional[TTSProvider] = None
+    ) -> List[Dict[str, str]]:
         """
         List available voices for a provider.
-        
+
         Args:
             provider: Provider to list voices for (uses config default if None)
-            
+
         Returns:
             List of voice dicts with id, name, language
         """
@@ -692,6 +688,7 @@ class TTS:
         elif provider == TTSProvider.EDGE:
             try:
                 import edge_tts
+
                 voices = await edge_tts.list_voices()
                 return [
                     {

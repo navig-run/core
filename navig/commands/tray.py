@@ -39,6 +39,7 @@ def _is_tray_running() -> tuple[bool, Optional[int]]:
         pid = int(LOCK_FILE.read_text().strip())
         if sys.platform == "win32":
             import ctypes
+
             kernel32 = ctypes.windll.kernel32
             handle = kernel32.OpenProcess(0x1000, False, pid)
             if handle:
@@ -55,8 +56,10 @@ def _is_tray_running() -> tuple[bool, Optional[int]]:
 @tray_app.command("start")
 def tray_start(
     foreground: bool = typer.Option(
-        False, "--foreground", "-f",
-        help="Run in foreground (default: background/silent)"
+        False,
+        "--foreground",
+        "-f",
+        help="Run in foreground (default: background/silent)",
     ),
 ):
     """
@@ -134,8 +137,9 @@ def tray_stop():
 
     try:
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"],
-                          capture_output=True, check=True)
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=True
+            )
         else:
             os.kill(pid, 15)  # SIGTERM
 
@@ -166,6 +170,7 @@ def tray_status(
 
     if json_output:
         import json as json_mod
+
         ch.console.print(json_mod.dumps({"running": running, "pid": pid}))
         return
 
@@ -179,8 +184,7 @@ def tray_status(
 @tray_app.command("install")
 def tray_install(
     auto_start: bool = typer.Option(
-        False, "--auto-start", "-a",
-        help="Enable auto-start with Windows"
+        False, "--auto-start", "-a", help="Enable auto-start with Windows"
     ),
 ):
     """
@@ -233,10 +237,12 @@ def tray_uninstall():
     # Remove auto-start from registry
     try:
         import winreg
+
         key = winreg.OpenSubKey(
             winreg.HKEY_CURRENT_USER,
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-            0, winreg.KEY_WRITE,
+            0,
+            winreg.KEY_WRITE,
         )
         if key:
             try:

@@ -1,6 +1,7 @@
 """
 navig.tools.pdf_tool — Extract text and metadata from PDF files.
 """
+
 from __future__ import annotations
 
 import logging
@@ -11,14 +12,25 @@ from navig.tools.registry import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
+
 class PdfTool(BaseTool):
     """Extract text from local or remote PDF files."""
 
     name = "pdf_tool"
     description = "Extract text and metadata from a given PDF file path or URL."
     parameters = [
-        {"name": "path", "type": "string", "description": "Local file path or URL to the PDF", "required": True},
-        {"name": "max_pages", "type": "number", "description": "Maximum number of pages to extract", "required": False}
+        {
+            "name": "path",
+            "type": "string",
+            "description": "Local file path or URL to the PDF",
+            "required": True,
+        },
+        {
+            "name": "max_pages",
+            "type": "number",
+            "description": "Maximum number of pages to extract",
+            "required": False,
+        },
     ]
 
     async def run(
@@ -30,8 +42,10 @@ class PdfTool(BaseTool):
         path = args.get("path", "")
         if not path:
             return ToolResult(
-                name=self.name, success=False, error="Missing required argument 'path'",
-                elapsed_ms=(time.monotonic() - t0) * 1000
+                name=self.name,
+                success=False,
+                error="Missing required argument 'path'",
+                elapsed_ms=(time.monotonic() - t0) * 1000,
             )
 
         if on_status:
@@ -41,7 +55,7 @@ class PdfTool(BaseTool):
         # Typically we use PyPDF2, pdfplumber or similar tools here.
         output = {
             "text": f"[Extracted content from {path}]",
-            "metadata": {"pages_read": 1}
+            "metadata": {"pages_read": 1},
         }
 
         return ToolResult(
@@ -49,5 +63,5 @@ class PdfTool(BaseTool):
             success=True,
             output=output,
             elapsed_ms=(time.monotonic() - t0) * 1000,
-            status_events=[f"extracted text from {path}"]
+            status_events=[f"extracted text from {path}"],
         )

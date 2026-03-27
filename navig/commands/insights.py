@@ -28,18 +28,21 @@ from navig import console_helper as ch
 # ENUMS AND DATA CLASSES
 # ============================================================================
 
+
 class InsightType(str, Enum):
     """Types of insights."""
-    USAGE = "usage"             # Usage patterns
-    ERROR = "error"             # Error analysis
-    PERFORMANCE = "performance" # Performance metrics
-    HEALTH = "health"           # Host health
+
+    USAGE = "usage"  # Usage patterns
+    ERROR = "error"  # Error analysis
+    PERFORMANCE = "performance"  # Performance metrics
+    HEALTH = "health"  # Host health
     RECOMMENDATION = "recommendation"  # Suggestions
-    ANOMALY = "anomaly"         # Unusual patterns
+    ANOMALY = "anomaly"  # Unusual patterns
 
 
 class Severity(str, Enum):
     """Insight severity levels."""
+
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
@@ -47,6 +50,7 @@ class Severity(str, Enum):
 
 class TimeRange(str, Enum):
     """Predefined time ranges for analysis."""
+
     TODAY = "today"
     WEEK = "week"
     MONTH = "month"
@@ -56,6 +60,7 @@ class TimeRange(str, Enum):
 @dataclass
 class Insight:
     """A single insight from analysis."""
+
     type: InsightType
     title: str
     description: str
@@ -72,6 +77,7 @@ class Insight:
 @dataclass
 class HostScore:
     """Health score for a host."""
+
     host: str
     score: int  # 0-100
     success_rate: float
@@ -85,6 +91,7 @@ class HostScore:
 @dataclass
 class CommandStats:
     """Statistics for a command."""
+
     command: str
     count: int
     success_rate: float
@@ -96,6 +103,7 @@ class CommandStats:
 @dataclass
 class TimePattern:
     """Time-based usage pattern."""
+
     hour: int
     day_of_week: int
     count: int
@@ -106,6 +114,7 @@ class TimePattern:
 @dataclass
 class AnalyticsReport:
     """Complete analytics report."""
+
     generated_at: str
     time_range: str
     total_operations: int
@@ -123,10 +132,11 @@ class AnalyticsReport:
 # INSIGHTS ENGINE
 # ============================================================================
 
+
 class InsightsEngine:
     """
     Analytics engine for NAVIG operations.
-    
+
     Analyzes history data to provide insights on:
     - Command usage patterns
     - Error frequencies and causes
@@ -137,6 +147,7 @@ class InsightsEngine:
 
     def __init__(self, config_manager=None):
         from navig.config import get_config_manager
+
         self.config_manager = config_manager or get_config_manager()
 
         # History file location
@@ -147,7 +158,9 @@ class InsightsEngine:
         self._operations: List[Dict[str, Any]] = []
         self._loaded = False
 
-    def _load_history(self, time_range: TimeRange = TimeRange.ALL) -> List[Dict[str, Any]]:
+    def _load_history(
+        self, time_range: TimeRange = TimeRange.ALL
+    ) -> List[Dict[str, Any]]:
         """Load operations from history file."""
         operations = []
 
@@ -165,7 +178,7 @@ class InsightsEngine:
             cutoff = now - timedelta(days=30)
 
         try:
-            with open(self.history_file, 'r', encoding='utf-8') as f:
+            with open(self.history_file, "r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
                         try:
@@ -173,7 +186,9 @@ class InsightsEngine:
 
                             # Filter by time range
                             if cutoff:
-                                op_time = datetime.fromisoformat(op.get("timestamp", ""))
+                                op_time = datetime.fromisoformat(
+                                    op.get("timestamp", "")
+                                )
                                 if op_time < cutoff:
                                     continue
 
@@ -206,7 +221,9 @@ class InsightsEngine:
             }
 
         success_count = sum(1 for op in ops if op.get("status") == "success")
-        commands = set(op.get("command", "").split()[0] for op in ops if op.get("command"))
+        commands = set(
+            op.get("command", "").split()[0] for op in ops if op.get("command")
+        )
         hosts = set(op.get("host", "") for op in ops if op.get("host"))
 
         return {
@@ -218,14 +235,22 @@ class InsightsEngine:
             "unique_hosts": len(hosts),
         }
 
-    def get_top_commands(self, limit: int = 10, time_range: TimeRange = TimeRange.WEEK) -> List[CommandStats]:
+    def get_top_commands(
+        self, limit: int = 10, time_range: TimeRange = TimeRange.WEEK
+    ) -> List[CommandStats]:
         """Get most frequently used commands."""
         ops = self._load_history(time_range)
 
         # Group by command
-        command_data: Dict[str, Dict] = defaultdict(lambda: {
-            "count": 0, "success": 0, "durations": [], "last_used": "", "hosts": set()
-        })
+        command_data: Dict[str, Dict] = defaultdict(
+            lambda: {
+                "count": 0,
+                "success": 0,
+                "durations": [],
+                "last_used": "",
+                "hosts": set(),
+            }
+        )
 
         for op in ops:
             cmd = op.get("command", "")
@@ -248,31 +273,47 @@ class InsightsEngine:
         # Convert to CommandStats
         stats = []
         for cmd, data in command_data.items():
-            avg_duration = int(statistics.mean(data["durations"])) if data["durations"] else 0
-            success_rate = round(data["success"] / data["count"] * 100, 1) if data["count"] > 0 else 0
+            avg_duration = (
+                int(statistics.mean(data["durations"])) if data["durations"] else 0
+            )
+            success_rate = (
+                round(data["success"] / data["count"] * 100, 1)
+                if data["count"] > 0
+                else 0
+            )
 
-            stats.append(CommandStats(
-                command=cmd,
-                count=data["count"],
-                success_rate=success_rate,
-                avg_duration_ms=avg_duration,
-                last_used=data["last_used"],
-                hosts_used=list(data["hosts"]),
-            ))
+            stats.append(
+                CommandStats(
+                    command=cmd,
+                    count=data["count"],
+                    success_rate=success_rate,
+                    avg_duration_ms=avg_duration,
+                    last_used=data["last_used"],
+                    hosts_used=list(data["hosts"]),
+                )
+            )
 
         # Sort by count
         stats.sort(key=lambda x: x.count, reverse=True)
         return stats[:limit]
 
-    def get_host_scores(self, time_range: TimeRange = TimeRange.WEEK) -> List[HostScore]:
+    def get_host_scores(
+        self, time_range: TimeRange = TimeRange.WEEK
+    ) -> List[HostScore]:
         """Calculate health scores for each host."""
         ops = self._load_history(time_range)
 
         # Group by host
-        host_data: Dict[str, Dict] = defaultdict(lambda: {
-            "success": 0, "failed": 0, "latencies": [],
-            "last_success": "", "last_error": "", "errors": []
-        })
+        host_data: Dict[str, Dict] = defaultdict(
+            lambda: {
+                "success": 0,
+                "failed": 0,
+                "latencies": [],
+                "last_success": "",
+                "last_error": "",
+                "errors": [],
+            }
+        )
 
         for op in ops:
             host = op.get("host", "")
@@ -300,7 +341,9 @@ class InsightsEngine:
                 continue
 
             success_rate = data["success"] / total
-            avg_latency = int(statistics.mean(data["latencies"])) if data["latencies"] else 0
+            avg_latency = (
+                int(statistics.mean(data["latencies"])) if data["latencies"] else 0
+            )
 
             # Score calculation (0-100)
             # 60% based on success rate, 40% on latency
@@ -310,8 +353,16 @@ class InsightsEngine:
             # Determine trend (simplified - compare first half vs second half)
             mid = len(data["latencies"]) // 2
             if mid > 0:
-                first_half = statistics.mean(data["latencies"][:mid]) if data["latencies"][:mid] else 0
-                second_half = statistics.mean(data["latencies"][mid:]) if data["latencies"][mid:] else 0
+                first_half = (
+                    statistics.mean(data["latencies"][:mid])
+                    if data["latencies"][:mid]
+                    else 0
+                )
+                second_half = (
+                    statistics.mean(data["latencies"][mid:])
+                    if data["latencies"][mid:]
+                    else 0
+                )
                 if second_half < first_half * 0.9:
                     trend = "improving"
                 elif second_half > first_half * 1.1:
@@ -321,29 +372,33 @@ class InsightsEngine:
             else:
                 trend = "stable"
 
-            scores.append(HostScore(
-                host=host,
-                score=score,
-                success_rate=round(success_rate * 100, 1),
-                avg_latency_ms=avg_latency,
-                error_count=data["failed"],
-                last_success=data["last_success"],
-                last_error=data["last_error"],
-                trend=trend,
-            ))
+            scores.append(
+                HostScore(
+                    host=host,
+                    score=score,
+                    success_rate=round(success_rate * 100, 1),
+                    avg_latency_ms=avg_latency,
+                    error_count=data["failed"],
+                    last_success=data["last_success"],
+                    last_error=data["last_error"],
+                    trend=trend,
+                )
+            )
 
         # Sort by score
         scores.sort(key=lambda x: x.score, reverse=True)
         return scores
 
-    def get_time_patterns(self, time_range: TimeRange = TimeRange.WEEK) -> List[TimePattern]:
+    def get_time_patterns(
+        self, time_range: TimeRange = TimeRange.WEEK
+    ) -> List[TimePattern]:
         """Analyze time-based usage patterns."""
         ops = self._load_history(time_range)
 
         # Group by hour
-        hour_data: Dict[int, Dict] = defaultdict(lambda: {
-            "count": 0, "success": 0, "commands": []
-        })
+        hour_data: Dict[int, Dict] = defaultdict(
+            lambda: {"count": 0, "success": 0, "commands": []}
+        )
 
         for op in ops:
             try:
@@ -361,19 +416,25 @@ class InsightsEngine:
 
         patterns = []
         for hour, data in sorted(hour_data.items()):
-            success_rate = round(data["success"] / data["count"] * 100, 1) if data["count"] > 0 else 0
+            success_rate = (
+                round(data["success"] / data["count"] * 100, 1)
+                if data["count"] > 0
+                else 0
+            )
 
             # Get most common commands
             cmd_counts = Counter(data["commands"])
             top_cmds = [cmd for cmd, _ in cmd_counts.most_common(3)]
 
-            patterns.append(TimePattern(
-                hour=hour,
-                day_of_week=0,  # Simplified
-                count=data["count"],
-                success_rate=success_rate,
-                most_common_commands=top_cmds,
-            ))
+            patterns.append(
+                TimePattern(
+                    hour=hour,
+                    day_of_week=0,  # Simplified
+                    count=data["count"],
+                    success_rate=success_rate,
+                    most_common_commands=top_cmds,
+                )
+            )
 
         return patterns
 
@@ -390,38 +451,53 @@ class InsightsEngine:
         older_ops = ops[:-50] if len(ops) >= 50 else []
 
         if older_ops:
-            recent_error_rate = sum(1 for op in recent_ops if op.get("status") != "success") / len(recent_ops)
-            older_error_rate = sum(1 for op in older_ops if op.get("status") != "success") / len(older_ops)
+            recent_error_rate = sum(
+                1 for op in recent_ops if op.get("status") != "success"
+            ) / len(recent_ops)
+            older_error_rate = sum(
+                1 for op in older_ops if op.get("status") != "success"
+            ) / len(older_ops)
 
             if recent_error_rate > older_error_rate * 2 and recent_error_rate > 0.1:
-                anomalies.append(Insight(
-                    type=InsightType.ANOMALY,
-                    title="Error Rate Spike Detected",
-                    description=f"Recent error rate ({recent_error_rate:.1%}) is significantly higher than historical ({older_error_rate:.1%})",
-                    severity=Severity.WARNING,
-                    data={"recent_rate": recent_error_rate, "historical_rate": older_error_rate},
-                    recommendations=[
-                        "Check recent host connectivity",
-                        "Review error logs with: navig history --status failed",
-                        "Run health checks with: navig heartbeat trigger",
-                    ],
-                ))
+                anomalies.append(
+                    Insight(
+                        type=InsightType.ANOMALY,
+                        title="Error Rate Spike Detected",
+                        description=f"Recent error rate ({recent_error_rate:.1%}) is significantly higher than historical ({older_error_rate:.1%})",
+                        severity=Severity.WARNING,
+                        data={
+                            "recent_rate": recent_error_rate,
+                            "historical_rate": older_error_rate,
+                        },
+                        recommendations=[
+                            "Check recent host connectivity",
+                            "Review error logs with: navig history --status failed",
+                            "Run health checks with: navig heartbeat trigger",
+                        ],
+                    )
+                )
 
         # Check for unusual command patterns
-        cmd_counts = Counter(op.get("command", "").split()[0] for op in ops if op.get("command"))
+        cmd_counts = Counter(
+            op.get("command", "").split()[0] for op in ops if op.get("command")
+        )
         if cmd_counts:
             avg_count = statistics.mean(cmd_counts.values())
-            std_count = statistics.stdev(cmd_counts.values()) if len(cmd_counts) > 1 else 0
+            std_count = (
+                statistics.stdev(cmd_counts.values()) if len(cmd_counts) > 1 else 0
+            )
 
             for cmd, count in cmd_counts.items():
                 if count > avg_count + 2 * std_count and count > 10:
-                    anomalies.append(Insight(
-                        type=InsightType.ANOMALY,
-                        title=f"Unusual Command Frequency: {cmd}",
-                        description=f"Command '{cmd}' was used {count} times, significantly more than average ({avg_count:.0f})",
-                        severity=Severity.INFO,
-                        data={"command": cmd, "count": count, "average": avg_count},
-                    ))
+                    anomalies.append(
+                        Insight(
+                            type=InsightType.ANOMALY,
+                            title=f"Unusual Command Frequency: {cmd}",
+                            description=f"Command '{cmd}' was used {count} times, significantly more than average ({avg_count:.0f})",
+                            severity=Severity.INFO,
+                            data={"command": cmd, "count": count, "average": avg_count},
+                        )
+                    )
 
         # Check for host going silent
         host_last_seen = {}
@@ -436,23 +512,33 @@ class InsightsEngine:
                 last_dt = datetime.fromisoformat(last_seen)
                 days_ago = (now - last_dt).days
                 if days_ago > 3:
-                    anomalies.append(Insight(
-                        type=InsightType.ANOMALY,
-                        title=f"Host Inactive: {host}",
-                        description=f"No operations on '{host}' for {days_ago} days",
-                        severity=Severity.WARNING if days_ago > 7 else Severity.INFO,
-                        data={"host": host, "last_seen": last_seen, "days_inactive": days_ago},
-                        recommendations=[
-                            f"Test connectivity: navig host test {host}",
-                            f"Check host status: navig host show {host}",
-                        ],
-                    ))
+                    anomalies.append(
+                        Insight(
+                            type=InsightType.ANOMALY,
+                            title=f"Host Inactive: {host}",
+                            description=f"No operations on '{host}' for {days_ago} days",
+                            severity=(
+                                Severity.WARNING if days_ago > 7 else Severity.INFO
+                            ),
+                            data={
+                                "host": host,
+                                "last_seen": last_seen,
+                                "days_inactive": days_ago,
+                            },
+                            recommendations=[
+                                f"Test connectivity: navig host test {host}",
+                                f"Check host status: navig host show {host}",
+                            ],
+                        )
+                    )
             except ValueError:
                 continue
 
         return anomalies
 
-    def get_error_analysis(self, time_range: TimeRange = TimeRange.WEEK) -> List[Insight]:
+    def get_error_analysis(
+        self, time_range: TimeRange = TimeRange.WEEK
+    ) -> List[Insight]:
         """Analyze error patterns."""
         ops = self._load_history(time_range)
         insights = []
@@ -476,7 +562,9 @@ class InsightsEngine:
 
         for error_type, ops_list in error_types.items():
             if len(ops_list) >= 3:
-                hosts_affected = set(op.get("host", "") for op in ops_list if op.get("host"))
+                hosts_affected = set(
+                    op.get("host", "") for op in ops_list if op.get("host")
+                )
 
                 recommendations = []
                 if error_type == "Connection":
@@ -498,62 +586,86 @@ class InsightsEngine:
                         "Test network latency",
                     ]
 
-                insights.append(Insight(
-                    type=InsightType.ERROR,
-                    title=f"Recurring {error_type} Errors",
-                    description=f"{len(ops_list)} {error_type.lower()} errors across {len(hosts_affected)} host(s)",
-                    severity=Severity.WARNING if len(ops_list) > 5 else Severity.INFO,
-                    data={
-                        "error_type": error_type,
-                        "count": len(ops_list),
-                        "hosts": list(hosts_affected),
-                    },
-                    recommendations=recommendations,
-                ))
+                insights.append(
+                    Insight(
+                        type=InsightType.ERROR,
+                        title=f"Recurring {error_type} Errors",
+                        description=f"{len(ops_list)} {error_type.lower()} errors across {len(hosts_affected)} host(s)",
+                        severity=(
+                            Severity.WARNING if len(ops_list) > 5 else Severity.INFO
+                        ),
+                        data={
+                            "error_type": error_type,
+                            "count": len(ops_list),
+                            "hosts": list(hosts_affected),
+                        },
+                        recommendations=recommendations,
+                    )
+                )
 
         return insights
 
-    def generate_recommendations(self, time_range: TimeRange = TimeRange.WEEK) -> List[str]:
+    def generate_recommendations(
+        self, time_range: TimeRange = TimeRange.WEEK
+    ) -> List[str]:
         """Generate personalized recommendations."""
         ops = self._load_history(time_range)
         recommendations = []
 
         if not ops:
-            recommendations.append("Start using NAVIG commands to build your operations history")
+            recommendations.append(
+                "Start using NAVIG commands to build your operations history"
+            )
             return recommendations
 
         # Check for hosts without recent health checks
         hosts = set(op.get("host", "") for op in ops if op.get("host"))
         for host in hosts:
             host_ops = [op for op in ops if op.get("host") == host]
-            has_health_check = any("health" in op.get("command", "").lower() or "heartbeat" in op.get("command", "").lower() for op in host_ops)
+            has_health_check = any(
+                "health" in op.get("command", "").lower()
+                or "heartbeat" in op.get("command", "").lower()
+                for op in host_ops
+            )
             if not has_health_check:
-                recommendations.append(f"Consider setting up health checks for '{host}': navig heartbeat configure")
+                recommendations.append(
+                    f"Consider setting up health checks for '{host}': navig heartbeat configure"
+                )
 
         # Check for manual repetitive tasks
         cmd_counts = Counter(op.get("command", "") for op in ops if op.get("command"))
         for cmd, count in cmd_counts.most_common(5):
             if count >= 5 and len(cmd.split()) > 2:
-                recommendations.append(f"Frequently used command could be a quick action: navig quick add myaction \"{cmd}\"")
+                recommendations.append(
+                    f'Frequently used command could be a quick action: navig quick add myaction "{cmd}"'
+                )
                 break
 
         # Check for missing triggers
         error_ops = [op for op in ops if op.get("status") != "success"]
         if len(error_ops) > 5:
-            recommendations.append("Set up auto-remediation triggers: navig trigger add --type health")
+            recommendations.append(
+                "Set up auto-remediation triggers: navig trigger add --type health"
+            )
 
         # Check for workflow opportunities
         if len(ops) > 50:
-            recommendations.append("Consider creating workflows for complex operations: navig flow add")
+            recommendations.append(
+                "Consider creating workflows for complex operations: navig flow add"
+            )
 
         # Check dashboard usage
         has_dashboard = any("dashboard" in op.get("command", "").lower() for op in ops)
         if not has_dashboard:
-            recommendations.append("Try the operations dashboard for real-time monitoring: navig dashboard")
+            recommendations.append(
+                "Try the operations dashboard for real-time monitoring: navig dashboard"
+            )
 
         return recommendations[:5]  # Limit to 5 recommendations
 
-    def generate_report(self, time_range: TimeRange = TimeRange.WEEK) -> AnalyticsReport:
+    def generate_report(
+        self, time_range: TimeRange = TimeRange.WEEK
+    ) -> AnalyticsReport:
         """Generate a complete analytics report."""
         ops = self._load_history(time_range)
 
@@ -589,7 +701,10 @@ class InsightsEngine:
 # CLI DISPLAY FUNCTIONS
 # ============================================================================
 
-def show_insights_summary(time_range: str = "week", plain: bool = False, json_out: bool = False):
+
+def show_insights_summary(
+    time_range: str = "week", plain: bool = False, json_out: bool = False
+):
     """Show insights summary."""
     from rich.panel import Panel
 
@@ -600,6 +715,7 @@ def show_insights_summary(time_range: str = "week", plain: bool = False, json_ou
 
     if json_out:
         import json as json_module
+
         data = {
             "generated_at": report.generated_at,
             "time_range": report.time_range,
@@ -607,7 +723,10 @@ def show_insights_summary(time_range: str = "week", plain: bool = False, json_ou
             "success_rate": report.overall_success_rate,
             "unique_hosts": report.unique_hosts,
             "unique_commands": report.unique_commands,
-            "insights": [{"type": i.type.value, "title": i.title, "severity": i.severity.value} for i in report.insights],
+            "insights": [
+                {"type": i.type.value, "title": i.title, "severity": i.severity.value}
+                for i in report.insights
+            ],
             "recommendations": report.recommendations,
         }
         print(json_module.dumps(data, indent=2))
@@ -642,8 +761,16 @@ def show_insights_summary(time_range: str = "week", plain: bool = False, json_ou
     if report.insights:
         ch.console.print("\n[bold]Insights & Alerts[/bold]")
         for insight in report.insights:
-            icon = "!" if insight.severity == Severity.WARNING else "!!" if insight.severity == Severity.CRITICAL else "i"
-            color = "yellow" if insight.severity == Severity.WARNING else "red" if insight.severity == Severity.CRITICAL else "blue"
+            icon = (
+                "!"
+                if insight.severity == Severity.WARNING
+                else "!!" if insight.severity == Severity.CRITICAL else "i"
+            )
+            color = (
+                "yellow"
+                if insight.severity == Severity.WARNING
+                else "red" if insight.severity == Severity.CRITICAL else "blue"
+            )
             ch.console.print(f"  [{color}][{icon}][/{color}] {insight.title}")
             ch.console.print(f"      [dim]{insight.description}[/dim]")
 
@@ -654,7 +781,9 @@ def show_insights_summary(time_range: str = "week", plain: bool = False, json_ou
             ch.console.print(f"  {i}. {rec}")
 
 
-def show_host_health(time_range: str = "week", plain: bool = False, json_out: bool = False):
+def show_host_health(
+    time_range: str = "week", plain: bool = False, json_out: bool = False
+):
     """Show host health scores."""
     from rich.table import Table
 
@@ -669,14 +798,18 @@ def show_host_health(time_range: str = "week", plain: bool = False, json_out: bo
 
     if json_out:
         import json as json_module
-        data = [{
-            "host": s.host,
-            "score": s.score,
-            "success_rate": s.success_rate,
-            "avg_latency_ms": s.avg_latency_ms,
-            "error_count": s.error_count,
-            "trend": s.trend,
-        } for s in scores]
+
+        data = [
+            {
+                "host": s.host,
+                "score": s.score,
+                "success_rate": s.success_rate,
+                "avg_latency_ms": s.avg_latency_ms,
+                "error_count": s.error_count,
+                "trend": s.trend,
+            }
+            for s in scores
+        ]
         print(json_module.dumps(data, indent=2))
         return
 
@@ -722,7 +855,12 @@ def show_host_health(time_range: str = "week", plain: bool = False, json_out: bo
     ch.console.print(table)
 
 
-def show_top_commands(limit: int = 10, time_range: str = "week", plain: bool = False, json_out: bool = False):
+def show_top_commands(
+    limit: int = 10,
+    time_range: str = "week",
+    plain: bool = False,
+    json_out: bool = False,
+):
     """Show most used commands."""
     from rich.table import Table
 
@@ -737,12 +875,16 @@ def show_top_commands(limit: int = 10, time_range: str = "week", plain: bool = F
 
     if json_out:
         import json as json_module
-        data = [{
-            "command": s.command,
-            "count": s.count,
-            "success_rate": s.success_rate,
-            "avg_duration_ms": s.avg_duration_ms,
-        } for s in stats]
+
+        data = [
+            {
+                "command": s.command,
+                "count": s.count,
+                "success_rate": s.success_rate,
+                "avg_duration_ms": s.avg_duration_ms,
+            }
+            for s in stats
+        ]
         print(json_module.dumps(data, indent=2))
         return
 
@@ -772,7 +914,9 @@ def show_top_commands(limit: int = 10, time_range: str = "week", plain: bool = F
     ch.console.print(table)
 
 
-def show_time_patterns(time_range: str = "week", plain: bool = False, json_out: bool = False):
+def show_time_patterns(
+    time_range: str = "week", plain: bool = False, json_out: bool = False
+):
     """Show time-based usage patterns."""
 
     engine = InsightsEngine()
@@ -786,12 +930,16 @@ def show_time_patterns(time_range: str = "week", plain: bool = False, json_out: 
 
     if json_out:
         import json as json_module
-        data = [{
-            "hour": p.hour,
-            "count": p.count,
-            "success_rate": p.success_rate,
-            "top_commands": p.most_common_commands,
-        } for p in patterns]
+
+        data = [
+            {
+                "hour": p.hour,
+                "count": p.count,
+                "success_rate": p.success_rate,
+                "top_commands": p.most_common_commands,
+            }
+            for p in patterns
+        ]
         print(json_module.dumps(data, indent=2))
         return
 
@@ -810,10 +958,14 @@ def show_time_patterns(time_range: str = "week", plain: bool = False, json_out: 
         bar_len = int((p.count / max_count) * 30)
         bar = "#" * bar_len
         cmds = ", ".join(p.most_common_commands[:2]) if p.most_common_commands else ""
-        ch.console.print(f"  {p.hour:02d}:00 |[cyan]{bar}[/cyan] {p.count} ({p.success_rate}%) [dim]{cmds}[/dim]")
+        ch.console.print(
+            f"  {p.hour:02d}:00 |[cyan]{bar}[/cyan] {p.count} ({p.success_rate}%) [dim]{cmds}[/dim]"
+        )
 
 
-def show_anomalies(time_range: str = "week", plain: bool = False, json_out: bool = False):
+def show_anomalies(
+    time_range: str = "week", plain: bool = False, json_out: bool = False
+):
     """Show detected anomalies."""
     engine = InsightsEngine()
     tr = TimeRange(time_range)
@@ -826,13 +978,17 @@ def show_anomalies(time_range: str = "week", plain: bool = False, json_out: bool
 
     if json_out:
         import json as json_module
-        data = [{
-            "type": a.type.value,
-            "title": a.title,
-            "description": a.description,
-            "severity": a.severity.value,
-            "recommendations": a.recommendations,
-        } for a in anomalies]
+
+        data = [
+            {
+                "type": a.type.value,
+                "title": a.title,
+                "description": a.description,
+                "severity": a.severity.value,
+                "recommendations": a.recommendations,
+            }
+            for a in anomalies
+        ]
         print(json_module.dumps(data, indent=2))
         return
 
@@ -863,7 +1019,9 @@ def show_anomalies(time_range: str = "week", plain: bool = False, json_out: bool
                 ch.console.print(f"     - {rec}")
 
 
-def show_recommendations(time_range: str = "week", plain: bool = False, json_out: bool = False):
+def show_recommendations(
+    time_range: str = "week", plain: bool = False, json_out: bool = False
+):
     """Show personalized recommendations."""
     engine = InsightsEngine()
     tr = TimeRange(time_range)
@@ -876,6 +1034,7 @@ def show_recommendations(time_range: str = "week", plain: bool = False, json_out
 
     if json_out:
         import json as json_module
+
         print(json_module.dumps({"recommendations": recommendations}, indent=2))
         return
 
@@ -919,14 +1078,16 @@ def generate_report(
                     "score": s.score,
                     "success_rate": s.success_rate,
                     "trend": s.trend,
-                } for s in report.host_scores
+                }
+                for s in report.host_scores
             ],
             "top_commands": [
                 {
                     "command": c.command,
                     "count": c.count,
                     "success_rate": c.success_rate,
-                } for c in report.top_commands
+                }
+                for c in report.top_commands
             ],
             "insights": [
                 {
@@ -935,13 +1096,14 @@ def generate_report(
                     "description": i.description,
                     "severity": i.severity.value,
                     "recommendations": i.recommendations,
-                } for i in report.insights
+                }
+                for i in report.insights
             ],
             "recommendations": report.recommendations,
         }
 
         if output_file:
-            with open(output_file, 'w', encoding='utf-8') as f:
+            with open(output_file, "w", encoding="utf-8") as f:
                 json_module.dump(data, f, indent=2)
             ch.success(f"Report saved to: {output_file}")
         else:

@@ -16,9 +16,12 @@ Add to navig/commands/ahk.py before the Workflows section (line ~1438)
 
 # ==================== Process Management ====================
 
+
 @ahk_app.command("processes")
 def ahk_processes(
-    filter_name: Optional[str] = typer.Option(None, "--filter", help="Filter by process name"),
+    filter_name: Optional[str] = typer.Option(
+        None, "--filter", help="Filter by process name"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all running processes."""
@@ -28,12 +31,15 @@ def ahk_processes(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     processes = adapter.get_processes()
 
     if filter_name:
-        processes = [p for p in processes if filter_name.lower() in p.get('name', '').lower()]
+        processes = [
+            p for p in processes if filter_name.lower() in p.get("name", "").lower()
+        ]
 
     if json_output:
         print(json.dumps(processes, indent=2))
@@ -45,13 +51,9 @@ def ahk_processes(
     table.add_column("Name", style="green")
     table.add_column("Memory (MB)", style="yellow")
 
-    for proc in sorted(processes, key=lambda x: x.get('memory', 0), reverse=True)[:50]:
-        mem_mb = proc.get('memory', 0) / (1024 * 1024)
-        table.add_row(
-            str(proc.get('pid', '')),
-            proc.get('name', ''),
-            f"{mem_mb:.1f}"
-        )
+    for proc in sorted(processes, key=lambda x: x.get("memory", 0), reverse=True)[:50]:
+        mem_mb = proc.get("memory", 0) / (1024 * 1024)
+        table.add_row(str(proc.get("pid", "")), proc.get("name", ""), f"{mem_mb:.1f}")
 
     console.print(table)
 
@@ -63,11 +65,13 @@ def ahk_kill(
 ):
     """Kill a process by name or PID."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     if not force:
         ch.warning(f"About to kill process: {identifier}")
         import typer
+
         if not typer.confirm("Are you sure?"):
             ch.info("Cancelled")
             return
@@ -87,7 +91,8 @@ def ahk_start(
 ):
     """Start a new process."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.start_process(executable, args, wait)
     if result.success:
@@ -110,7 +115,8 @@ def ahk_monitors(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     monitors = adapter.get_monitors()
 
@@ -130,15 +136,9 @@ def ahk_monitors(
         resolution = f"{mon['width']}x{mon['height']}"
         position = f"({mon['left']}, {mon['top']})"
         work_area = f"{mon['work_width']}x{mon['work_height']}"
-        primary = "✓" if mon['primary'] else ""
+        primary = "✓" if mon["primary"] else ""
 
-        table.add_row(
-            str(mon['index']),
-            resolution,
-            position,
-            work_area,
-            primary
-        )
+        table.add_row(str(mon["index"]), resolution, position, work_area, primary)
 
     console.print(table)
 
@@ -150,7 +150,8 @@ def ahk_move_to_monitor(
 ):
     """Move window to specific monitor."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.move_window_to_monitor(window, monitor)
     if result.success:
@@ -169,7 +170,8 @@ def ahk_transparency(
 ):
     """Set window transparency."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.set_window_transparency(window, opacity)
     if result.success:
@@ -190,7 +192,8 @@ def ahk_window_state(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     state = adapter.get_window_state(window)
 
@@ -200,7 +203,7 @@ def ahk_window_state(
 
     console = Console()
 
-    if not state.get('exists'):
+    if not state.get("exists"):
         ch.error(f"Window not found: {window}")
         return
 
@@ -225,7 +228,8 @@ def ahk_active_window(
     from rich.panel import Panel
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     window = adapter.get_active_window()
 
@@ -261,7 +265,8 @@ def ahk_find(
     from rich.table import Table
 
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     windows = adapter.find_windows(title, class_name)
 
@@ -283,10 +288,7 @@ def ahk_find(
 
     for win in windows:
         table.add_row(
-            win.title[:50],
-            win.class_name,
-            str(win.pid),
-            f"{win.width}x{win.height}"
+            win.title[:50], win.class_name, str(win.pid), f"{win.width}x{win.height}"
         )
 
     console.print(table)
@@ -303,7 +305,8 @@ def ahk_notify(
 ):
     """Show Windows notification."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.show_notification(title, message, duration)
     if result.success:
@@ -317,11 +320,14 @@ def ahk_notify(
 
 @ahk_app.command("volume")
 def ahk_volume(
-    level: Optional[int] = typer.Argument(None, help="Volume level 0-100 (omit to show current)"),
+    level: Optional[int] = typer.Argument(
+        None, help="Volume level 0-100 (omit to show current)"
+    ),
 ):
     """Get or set system volume."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     if level is None:
         # Get current volume
@@ -342,7 +348,8 @@ def ahk_mute(
 ):
     """Mute or unmute system audio."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     result = adapter.mute(not unmute)
     if result.success:
@@ -356,7 +363,8 @@ def ahk_mute(
 def ahk_is_muted():
     """Check if system audio is muted."""
     adapter = _get_adapter()
-    if not adapter: return
+    if not adapter:
+        return
 
     muted = adapter.is_muted()
     if muted:
@@ -376,7 +384,7 @@ navig ahk start calc.exe                # Launch calculator
 
 Multi-Monitor:
 --------------
-navig ahk monitors                      # List monitors  
+navig ahk monitors                      # List monitors
 navig ahk move-to-monitor "Chrome" 2    # Move to second monitor
 
 Window Effects:

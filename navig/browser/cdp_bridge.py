@@ -55,6 +55,7 @@ class CDPBridge(BrowserController):
             return
 
         from navig.browser.controller import _get_playwright
+
         async_playwright = _get_playwright()
         self._playwright = await async_playwright().start()
 
@@ -80,9 +81,7 @@ class CDPBridge(BrowserController):
             if pages:
                 idx = min(self.tab_index, len(pages) - 1)
                 self._page = pages[idx]
-                logger.info(
-                    "[CDPBridge] Attached to tab %d: %s", idx, self._page.url
-                )
+                logger.info("[CDPBridge] Attached to tab %d: %s", idx, self._page.url)
             else:
                 self._page = await self._context.new_page()
                 logger.info("[CDPBridge] No open tabs — created new page")
@@ -136,7 +135,11 @@ class CDPBridge(BrowserController):
             return False
         pages = self._context.pages
         if index < 0 or index >= len(pages):
-            logger.warning("[CDPBridge] Tab index %d out of range (have %d tabs)", index, len(pages))
+            logger.warning(
+                "[CDPBridge] Tab index %d out of range (have %d tabs)",
+                index,
+                len(pages),
+            )
             return False
         self._page = pages[index]
         await self._page.bring_to_front()
@@ -151,6 +154,7 @@ def auto_detect_cdp_port() -> Optional[int]:
     Returns the first responding port, or None.
     """
     import socket
+
     for port in (9222, 9223, 9229):
         try:
             with socket.create_connection(("localhost", port), timeout=0.5):

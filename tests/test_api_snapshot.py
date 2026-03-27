@@ -30,10 +30,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ═══════════════════════════════════════════════════════════════
 # 1. ApiToolResult & ApiSource
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestApiSource:
     """Tests for ApiSource dataclass."""
@@ -49,7 +49,11 @@ class TestApiSource:
     def test_custom_values(self):
         from navig.tools.api_schema import ApiSource
 
-        src = ApiSource(tool="foo", endpoint="https://api.example.com/v1", timestamp="2025-01-01T00:00:00Z")
+        src = ApiSource(
+            tool="foo",
+            endpoint="https://api.example.com/v1",
+            timestamp="2025-01-01T00:00:00Z",
+        )
         assert src.tool == "foo"
         assert src.endpoint == "https://api.example.com/v1"
         assert src.timestamp == "2025-01-01T00:00:00Z"
@@ -65,7 +69,9 @@ class TestApiToolResult:
             status="ok",
             raw_json={"full": "payload"},
             normalized={"price": 42000.0, "symbol": "BTC/USD"},
-            source=ApiSource(tool="trading.fetch.ohlc", endpoint="https://exchange.io/api"),
+            source=ApiSource(
+                tool="trading.fetch.ohlc", endpoint="https://exchange.io/api"
+            ),
         )
         defaults.update(kwargs)
         return ApiToolResult(**defaults)
@@ -124,7 +130,9 @@ class TestApiToolResult:
     def test_from_error_factory(self):
         from navig.tools.api_schema import ApiToolResult
 
-        r = ApiToolResult.from_error("web.api.get_json", "Connection refused", "https://bad.api")
+        r = ApiToolResult.from_error(
+            "web.api.get_json", "Connection refused", "https://bad.api"
+        )
         assert r.status == "error"
         assert r.error == "Connection refused"
         assert r.source.tool == "web.api.get_json"
@@ -153,6 +161,7 @@ class TestApiToolResult:
 # ═══════════════════════════════════════════════════════════════
 # 2. redact_sensitive
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestRedactSensitive:
     """Tests for the redact_sensitive utility."""
@@ -215,16 +224,26 @@ class TestRedactSensitive:
         from navig.tools.api_schema import redact_sensitive
 
         keys_to_test = [
-            "api_key", "API_KEY", "apiKey",
-            "secret", "Secret_value",
-            "token", "access_token", "auth_token",
-            "password", "passwd",
-            "credential", "Credentials",
-            "private_key", "privateKey",
+            "api_key",
+            "API_KEY",
+            "apiKey",
+            "secret",
+            "Secret_value",
+            "token",
+            "access_token",
+            "auth_token",
+            "password",
+            "passwd",
+            "credential",
+            "Credentials",
+            "private_key",
+            "privateKey",
             "session_id",
-            "credit_card", "card_number",
+            "credit_card",
+            "card_number",
             "cvv",
-            "email", "phone",
+            "email",
+            "phone",
         ]
         data = {k: f"val_{k}" for k in keys_to_test}
         result = redact_sensitive(data)
@@ -235,6 +254,7 @@ class TestRedactSensitive:
 # ═══════════════════════════════════════════════════════════════
 # 3. validate_api_result
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestValidateApiResult:
     """Tests for validate_api_result."""
@@ -298,6 +318,7 @@ class TestValidateApiResult:
 # ═══════════════════════════════════════════════════════════════
 # 4. SnapshotPolicy & _parse_retention
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestSnapshotPolicy:
     """Tests for SnapshotPolicy and retention parsing."""
@@ -404,6 +425,7 @@ class TestShouldStore:
 # 5. SnapshotWriter
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestSnapshotWriter:
     """Tests for the SnapshotWriter class."""
 
@@ -423,7 +445,9 @@ class TestSnapshotWriter:
         }
         return SnapshotWriter(snapshot_dir=snap_dir, policies=policies)
 
-    def _make_tool_result(self, tool: str = "allowed.tool", **overrides) -> Dict[str, Any]:
+    def _make_tool_result(
+        self, tool: str = "allowed.tool", **overrides
+    ) -> Dict[str, Any]:
         from navig.tools.api_schema import ApiSource, ApiToolResult
 
         r = ApiToolResult(
@@ -509,6 +533,7 @@ class TestSnapshotWriter:
 # 6. load_snapshots
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestLoadSnapshots:
     """Tests for load_snapshots reader."""
 
@@ -518,10 +543,42 @@ class TestLoadSnapshots:
         d.mkdir()
         now = datetime.now(timezone.utc)
         entries = [
-            {"tool": "tool.a", "normalized": {"v": 1}, "source_endpoint": "", "timestamp": (now - timedelta(minutes=10)).isoformat(), "workspace": "ws", "lane": "", "host": ""},
-            {"tool": "tool.b", "normalized": {"v": 2}, "source_endpoint": "", "timestamp": (now - timedelta(minutes=5)).isoformat(), "workspace": "ws", "lane": "", "host": ""},
-            {"tool": "tool.a", "normalized": {"v": 3}, "source_endpoint": "", "timestamp": now.isoformat(), "workspace": "ws", "lane": "", "host": ""},
-            {"tool": "tool.a", "normalized": {"v": 0}, "source_endpoint": "", "timestamp": (now - timedelta(hours=2)).isoformat(), "workspace": "ws", "lane": "", "host": ""},
+            {
+                "tool": "tool.a",
+                "normalized": {"v": 1},
+                "source_endpoint": "",
+                "timestamp": (now - timedelta(minutes=10)).isoformat(),
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
+            {
+                "tool": "tool.b",
+                "normalized": {"v": 2},
+                "source_endpoint": "",
+                "timestamp": (now - timedelta(minutes=5)).isoformat(),
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
+            {
+                "tool": "tool.a",
+                "normalized": {"v": 3},
+                "source_endpoint": "",
+                "timestamp": now.isoformat(),
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
+            {
+                "tool": "tool.a",
+                "normalized": {"v": 0},
+                "source_endpoint": "",
+                "timestamp": (now - timedelta(hours=2)).isoformat(),
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
         ]
         f = d / "ws.jsonl"
         with open(f, "w", encoding="utf-8") as fh:
@@ -535,19 +592,25 @@ class TestLoadSnapshots:
         entries = load_snapshots(workspace="ws", snapshot_dir=populated_dir)
         assert len(entries) == 4  # all entries
         # Most recent first
-        assert entries[0].normalized == {"v": 0}  # reversed order: last line in file comes first
+        assert entries[0].normalized == {
+            "v": 0
+        }  # reversed order: last line in file comes first
 
     def test_filter_by_tool(self, populated_dir):
         from navig.memory.snapshot import load_snapshots
 
-        entries = load_snapshots(workspace="ws", tool="tool.a", snapshot_dir=populated_dir)
+        entries = load_snapshots(
+            workspace="ws", tool="tool.a", snapshot_dir=populated_dir
+        )
         assert all(e.tool == "tool.a" for e in entries)
         assert len(entries) == 3
 
     def test_filter_by_max_age(self, populated_dir):
         from navig.memory.snapshot import load_snapshots
 
-        entries = load_snapshots(workspace="ws", max_age_minutes=30, snapshot_dir=populated_dir)
+        entries = load_snapshots(
+            workspace="ws", max_age_minutes=30, snapshot_dir=populated_dir
+        )
         # Only entries within last 30 minutes (v=1, v=2, v=3)
         assert len(entries) == 3
 
@@ -568,6 +631,7 @@ class TestLoadSnapshots:
 # 7. is_stale
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestIsStale:
     """Tests for the is_stale helper."""
 
@@ -576,7 +640,15 @@ class TestIsStale:
         d = tmp_path / "snapshots"
         d.mkdir()
         now = datetime.now(timezone.utc)
-        entry = {"tool": "my.tool", "normalized": {"ok": True}, "source_endpoint": "", "timestamp": now.isoformat(), "workspace": "ws", "lane": "", "host": ""}
+        entry = {
+            "tool": "my.tool",
+            "normalized": {"ok": True},
+            "source_endpoint": "",
+            "timestamp": now.isoformat(),
+            "workspace": "ws",
+            "lane": "",
+            "host": "",
+        }
         f = d / "ws.jsonl"
         f.write_text(json.dumps(entry) + "\n", encoding="utf-8")
         return d
@@ -584,14 +656,19 @@ class TestIsStale:
     def test_fresh_is_not_stale(self, fresh_dir):
         from navig.memory.snapshot import is_stale
 
-        assert is_stale("ws", "my.tool", max_age_minutes=60, snapshot_dir=fresh_dir) is False
+        assert (
+            is_stale("ws", "my.tool", max_age_minutes=60, snapshot_dir=fresh_dir)
+            is False
+        )
 
     def test_stale_when_no_snapshot(self, tmp_path):
         from navig.memory.snapshot import is_stale
 
         d = tmp_path / "empty_snaps"
         d.mkdir()
-        assert is_stale("ws", "missing.tool", max_age_minutes=60, snapshot_dir=d) is True
+        assert (
+            is_stale("ws", "missing.tool", max_age_minutes=60, snapshot_dir=d) is True
+        )
 
     def test_stale_when_old(self, tmp_path):
         from navig.memory.snapshot import is_stale
@@ -599,7 +676,15 @@ class TestIsStale:
         d = tmp_path / "snapshots"
         d.mkdir()
         old = datetime.now(timezone.utc) - timedelta(hours=3)
-        entry = {"tool": "my.tool", "normalized": {}, "source_endpoint": "", "timestamp": old.isoformat(), "workspace": "ws", "lane": "", "host": ""}
+        entry = {
+            "tool": "my.tool",
+            "normalized": {},
+            "source_endpoint": "",
+            "timestamp": old.isoformat(),
+            "workspace": "ws",
+            "lane": "",
+            "host": "",
+        }
         (d / "ws.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
         assert is_stale("ws", "my.tool", max_age_minutes=60, snapshot_dir=d) is True
 
@@ -607,6 +692,7 @@ class TestIsStale:
 # ═══════════════════════════════════════════════════════════════
 # 8. prune_snapshots
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestPruneSnapshots:
     """Tests for retention-based snapshot pruning."""
@@ -620,8 +706,28 @@ class TestPruneSnapshots:
         old_ts = (now - timedelta(days=10)).isoformat()
         fresh_ts = now.isoformat()
         lines = [
-            json.dumps({"tool": "t", "normalized": {"old": True}, "source_endpoint": "", "timestamp": old_ts, "workspace": "ws", "lane": "", "host": ""}),
-            json.dumps({"tool": "t", "normalized": {"fresh": True}, "source_endpoint": "", "timestamp": fresh_ts, "workspace": "ws", "lane": "", "host": ""}),
+            json.dumps(
+                {
+                    "tool": "t",
+                    "normalized": {"old": True},
+                    "source_endpoint": "",
+                    "timestamp": old_ts,
+                    "workspace": "ws",
+                    "lane": "",
+                    "host": "",
+                }
+            ),
+            json.dumps(
+                {
+                    "tool": "t",
+                    "normalized": {"fresh": True},
+                    "source_endpoint": "",
+                    "timestamp": fresh_ts,
+                    "workspace": "ws",
+                    "lane": "",
+                    "host": "",
+                }
+            ),
         ]
         (d / "ws.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -639,7 +745,17 @@ class TestPruneSnapshots:
         d = tmp_path / "snaps"
         d.mkdir()
         now = datetime.now(timezone.utc).isoformat()
-        line = json.dumps({"tool": "t", "normalized": {"ok": 1}, "source_endpoint": "", "timestamp": now, "workspace": "ws", "lane": "", "host": ""})
+        line = json.dumps(
+            {
+                "tool": "t",
+                "normalized": {"ok": 1},
+                "source_endpoint": "",
+                "timestamp": now,
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            }
+        )
         (d / "ws.jsonl").write_text(line + "\n", encoding="utf-8")
 
         policies = {"t": SnapshotPolicy(store=True, retention="7d")}
@@ -655,6 +771,7 @@ class TestPruneSnapshots:
 # ═══════════════════════════════════════════════════════════════
 # 9. clear_snapshots
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestClearSnapshots:
     """Tests for clear_snapshots."""
@@ -672,9 +789,33 @@ class TestClearSnapshots:
         d = tmp_path / "snaps"
         now = datetime.now(timezone.utc).isoformat()
         entries = [
-            {"tool": "a", "normalized": {}, "source_endpoint": "", "timestamp": now, "workspace": "ws", "lane": "", "host": ""},
-            {"tool": "b", "normalized": {}, "source_endpoint": "", "timestamp": now, "workspace": "ws", "lane": "", "host": ""},
-            {"tool": "a", "normalized": {}, "source_endpoint": "", "timestamp": now, "workspace": "ws", "lane": "", "host": ""},
+            {
+                "tool": "a",
+                "normalized": {},
+                "source_endpoint": "",
+                "timestamp": now,
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
+            {
+                "tool": "b",
+                "normalized": {},
+                "source_endpoint": "",
+                "timestamp": now,
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
+            {
+                "tool": "a",
+                "normalized": {},
+                "source_endpoint": "",
+                "timestamp": now,
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
         ]
         self._write_entries(d, entries)
         removed = clear_snapshots("ws", tool="a", snapshot_dir=d)
@@ -689,8 +830,24 @@ class TestClearSnapshots:
         d = tmp_path / "snaps"
         now = datetime.now(timezone.utc)
         entries = [
-            {"tool": "a", "normalized": {}, "source_endpoint": "", "timestamp": (now - timedelta(days=10)).isoformat(), "workspace": "ws", "lane": "", "host": ""},
-            {"tool": "a", "normalized": {}, "source_endpoint": "", "timestamp": now.isoformat(), "workspace": "ws", "lane": "", "host": ""},
+            {
+                "tool": "a",
+                "normalized": {},
+                "source_endpoint": "",
+                "timestamp": (now - timedelta(days=10)).isoformat(),
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
+            {
+                "tool": "a",
+                "normalized": {},
+                "source_endpoint": "",
+                "timestamp": now.isoformat(),
+                "workspace": "ws",
+                "lane": "",
+                "host": "",
+            },
         ]
         self._write_entries(d, entries)
         removed = clear_snapshots("ws", older_than="7d", snapshot_dir=d)
@@ -705,6 +862,7 @@ class TestClearSnapshots:
 # ═══════════════════════════════════════════════════════════════
 # 10. SnapshotEntry serialization
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestSnapshotEntry:
     """Tests for SnapshotEntry to_line / from_line."""
@@ -751,6 +909,7 @@ class TestSnapshotEntry:
 # 11. api_pack registration
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestApiPackRegistration:
     """Test that api_pack registers 6 tools with correct metadata."""
 
@@ -759,6 +918,7 @@ class TestApiPackRegistration:
 
         registry = ToolRegistry()
         from navig.tools.domains.api_pack import register_tools
+
         register_tools(registry)
 
         expected_names = [
@@ -778,6 +938,7 @@ class TestApiPackRegistration:
 
         registry = ToolRegistry()
         from navig.tools.domains.api_pack import register_tools
+
         register_tools(registry)
 
         web_tools = ["web.api.get_json", "web.api.post_json"]
@@ -808,6 +969,7 @@ class TestApiPackRegistration:
 # 12. Integration: tool → snapshot → ContextBuilder
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestIntegrationSnapshot:
     """End-to-end: write snapshot, load it via ContextBuilder adapter."""
 
@@ -831,7 +993,9 @@ class TestIntegrationSnapshot:
         )
 
         # 2. Write via SnapshotWriter
-        policies = {"infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")}
+        policies = {
+            "infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")
+        }
         writer = SnapshotWriter(snapshot_dir=integration_dir, policies=policies)
         assert writer.write_from_api_result(result, workspace="project") is True
 
@@ -861,20 +1025,30 @@ class TestIntegrationSnapshot:
             normalized={"uptime_hours": 720},
             source=ApiSource(tool="infra.metrics.node_status"),
         )
-        policies = {"infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")}
+        policies = {
+            "infra.metrics.node_status": SnapshotPolicy(store=True, retention="24h")
+        }
         writer = SnapshotWriter(snapshot_dir=snap_dir, policies=policies)
         writer.write_from_api_result(result, workspace="default")
 
         # Patch _load_api_snapshots to use our directory
         with patch("navig.memory.context_builder._load_api_snapshots") as mock_load:
             mock_load.return_value = (
-                [{"tool": "infra.metrics.node_status", "data": {"uptime_hours": 720}, "fetched_at": datetime.now(timezone.utc).isoformat()}],
+                [
+                    {
+                        "tool": "infra.metrics.node_status",
+                        "data": {"uptime_hours": 720},
+                        "fetched_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                ],
                 [],  # no stale
             )
 
             from navig.memory.context_builder import ContextBuilder
 
-            builder = ContextBuilder(config={"enabled": True, "include_api_snapshots": True})
+            builder = ContextBuilder(
+                config={"enabled": True, "include_api_snapshots": True}
+            )
             ctx = builder.build_context("What is the server status?")
 
             assert len(ctx["api_snapshots"]) == 1
@@ -888,7 +1062,9 @@ class TestIntegrationSnapshot:
 
             from navig.memory.context_builder import ContextBuilder
 
-            builder = ContextBuilder(config={"enabled": True, "include_api_snapshots": True})
+            builder = ContextBuilder(
+                config={"enabled": True, "include_api_snapshots": True}
+            )
             ctx = builder.build_context("Check server health")
 
             assert ctx["api_snapshots"] == []
@@ -898,6 +1074,7 @@ class TestIntegrationSnapshot:
 # ═══════════════════════════════════════════════════════════════
 # 13. Config schema — api_snapshot_policies field
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestConfigSchemaSnapshotPolicies:
     """Verify MemoryConfig accepts api_snapshot_policies."""
@@ -911,12 +1088,14 @@ class TestConfigSchemaSnapshotPolicies:
     def test_custom_policies(self):
         from navig.core.config_schema import GlobalConfig
 
-        cfg = GlobalConfig(memory={
-            "api_snapshot_policies": {
-                "trading.fetch.ohlc": {"store": True, "retention": "7d"},
-                "web.api.get_json": {"store": False},
+        cfg = GlobalConfig(
+            memory={
+                "api_snapshot_policies": {
+                    "trading.fetch.ohlc": {"store": True, "retention": "7d"},
+                    "web.api.get_json": {"store": False},
+                }
             }
-        })
+        )
         assert cfg.memory.api_snapshot_policies["trading.fetch.ohlc"]["store"] is True
         assert cfg.memory.api_snapshot_policies["web.api.get_json"]["store"] is False
 
@@ -924,6 +1103,7 @@ class TestConfigSchemaSnapshotPolicies:
 # ═══════════════════════════════════════════════════════════════
 # 14. Singleton management
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestSnapshotSingleton:
     """Tests for get_snapshot_writer / reset_snapshot_writer."""

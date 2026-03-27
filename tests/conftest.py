@@ -29,21 +29,21 @@ def temp_dir():
 def mock_config():
     """Mock NAVIG configuration."""
     return {
-        'current_host': 'test-server',
-        'hosts': {
-            'test-server': {
-                'host': 'test.example.com',
-                'user': 'testuser',
-                'port': 22,
-                'key_file': None,
-                'password': None,
+        "current_host": "test-server",
+        "hosts": {
+            "test-server": {
+                "host": "test.example.com",
+                "user": "testuser",
+                "port": 22,
+                "key_file": None,
+                "password": None,
             }
         },
-        'settings': {
-            'auto_confirm': False,
-            'color_output': True,
-            'verbose': False,
-        }
+        "settings": {
+            "auto_confirm": False,
+            "color_output": True,
+            "verbose": False,
+        },
     }
 
 
@@ -51,7 +51,7 @@ def mock_config():
 def mock_config_file(temp_dir, mock_config):
     """Create a temporary config file with mock data."""
     config_file = temp_dir / "config.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(mock_config, f)
     return config_file
 
@@ -79,12 +79,12 @@ def mock_ssh_client():
 def sample_host_config() -> Dict[str, Any]:
     """Sample host configuration."""
     return {
-        'host': '10.0.0.10',
-        'user': 'admin',
-        'port': 22,
-        'key_file': '/path/to/key.pem',
-        'password': None,
-        'tunnel_port': 3307,
+        "host": "10.0.0.10",
+        "user": "admin",
+        "port": 22,
+        "key_file": "/path/to/key.pem",
+        "password": None,
+        "tunnel_port": 3307,
     }
 
 
@@ -92,13 +92,13 @@ def sample_host_config() -> Dict[str, Any]:
 def sample_app_config() -> Dict[str, Any]:
     """Sample application configuration."""
     return {
-        'name': 'test-app',
-        'host': 'test-server',
-        'domain': 'test-app.example.com',
-        'path': '/var/www/test-app',
-        'type': 'php',
-        'database': 'test_app_db',
-        'db_user': 'test_app_user',
+        "name": "test-app",
+        "host": "test-server",
+        "domain": "test-app.example.com",
+        "path": "/var/www/test-app",
+        "type": "php",
+        "database": "test_app_db",
+        "db_user": "test_app_user",
     }
 
 
@@ -109,10 +109,10 @@ def mock_subprocess_run(monkeypatch):
     mock_result.returncode = 0
     mock_result.stdout = "Command executed successfully"
     mock_result.stderr = ""
-    
+
     mock_run = Mock(return_value=mock_result)
-    monkeypatch.setattr('subprocess.run', mock_run)
-    
+    monkeypatch.setattr("subprocess.run", mock_run)
+
     return mock_run
 
 
@@ -120,26 +120,26 @@ def mock_subprocess_run(monkeypatch):
 def mock_paramiko_client(monkeypatch):
     """Mock paramiko SSHClient for remote operation tests."""
     mock_client = MagicMock()
-    
+
     # Mock exec_command to return stdin, stdout, stderr
     mock_stdout = Mock()
     mock_stdout.read = Mock(return_value=b"Command output")
     mock_stdout.channel.recv_exit_status = Mock(return_value=0)
-    
+
     mock_stderr = Mock()
     mock_stderr.read = Mock(return_value=b"")
-    
+
     mock_stdin = Mock()
-    
+
     mock_client.exec_command = Mock(return_value=(mock_stdin, mock_stdout, mock_stderr))
     mock_client.connect = Mock()
     mock_client.close = Mock()
-    
+
     def mock_ssh_client_factory():
         return mock_client
-    
-    monkeypatch.setattr('paramiko.SSHClient', mock_ssh_client_factory)
-    
+
+    monkeypatch.setattr("paramiko.SSHClient", mock_ssh_client_factory)
+
     return mock_client
 
 
@@ -147,9 +147,9 @@ def mock_paramiko_client(monkeypatch):
 def mock_env_vars(monkeypatch):
     """Mock environment variables for testing."""
     test_env = {
-        'NAVIG_CONFIG_DIR': '/tmp/navig-test',
-        'NAVIG_AUTO_CONFIRM': 'false',
-        'OPENROUTER_API_KEY': 'test-api-key',
+        "NAVIG_CONFIG_DIR": "/tmp/navig-test",
+        "NAVIG_AUTO_CONFIRM": "false",
+        "OPENROUTER_API_KEY": "test-api-key",
     }
     for key, value in test_env.items():
         monkeypatch.setenv(key, value)
@@ -173,11 +173,11 @@ files:
       # Application config
       APP_NAME={{ app_name }}
       APP_ENV={{ app_env }}
-  
+
   - path: scripts
     type: directory
     mode: "0755"
-  
+
   - path: scripts/setup.sh
     type: file
     mode: "0755"
@@ -191,10 +191,10 @@ files:
 def capture_output(monkeypatch):
     """Capture printed output for assertion."""
     output = []
-    
+
     def mock_print(*args, **kwargs):
-        output.append(' '.join(str(arg) for arg in args))
-    
-    monkeypatch.setattr('builtins.print', mock_print)
-    
+        output.append(" ".join(str(arg) for arg in args))
+
+    monkeypatch.setattr("builtins.print", mock_print)
+
     return output

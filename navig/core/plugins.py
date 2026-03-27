@@ -13,7 +13,7 @@ Features:
 
 Usage:
     from navig.core.plugins import PluginRegistry, Plugin, plugin
-    
+
     # Define a plugin
     @plugin(
         name="my-plugin",
@@ -23,11 +23,11 @@ Usage:
     class MyPlugin(Plugin):
         def on_load(self):
             print("Plugin loaded!")
-        
+
         def on_enable(self):
             # Register commands, hooks, etc.
             pass
-    
+
     # Use the registry
     registry = PluginRegistry()
     registry.discover_plugins()
@@ -51,29 +51,33 @@ from typing import Any, Callable, Dict, List, Optional, Type
 # Types
 # =============================================================================
 
+
 class PluginState(str, Enum):
     """Plugin lifecycle states."""
-    DISCOVERED = "discovered"   # Found but not loaded
-    LOADED = "loaded"           # Loaded but not enabled
-    ENABLED = "enabled"         # Active and running
-    DISABLED = "disabled"       # Loaded but disabled
-    ERROR = "error"             # Failed to load/enable
-    UNLOADED = "unloaded"       # Explicitly unloaded
+
+    DISCOVERED = "discovered"  # Found but not loaded
+    LOADED = "loaded"  # Loaded but not enabled
+    ENABLED = "enabled"  # Active and running
+    DISABLED = "disabled"  # Loaded but disabled
+    ERROR = "error"  # Failed to load/enable
+    UNLOADED = "unloaded"  # Explicitly unloaded
 
 
 class PluginType(str, Enum):
     """Plugin types."""
-    COMMAND = "command"         # Adds CLI commands
-    CHANNEL = "channel"         # Messaging channel adapter
-    PROVIDER = "provider"       # AI/service provider
-    TOOL = "tool"               # Agent tool
-    HOOK = "hook"               # Hook handlers only
-    EXTENSION = "extension"     # General extension
+
+    COMMAND = "command"  # Adds CLI commands
+    CHANNEL = "channel"  # Messaging channel adapter
+    PROVIDER = "provider"  # AI/service provider
+    TOOL = "tool"  # Agent tool
+    HOOK = "hook"  # Hook handlers only
+    EXTENSION = "extension"  # General extension
 
 
 @dataclass
 class PluginMetadata:
     """Plugin metadata definition."""
+
     name: str
     version: str
     description: str = ""
@@ -102,19 +106,20 @@ class PluginMetadata:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'name': self.name,
-            'version': self.version,
-            'description': self.description,
-            'author': self.author,
-            'type': self.type.value,
-            'tags': self.tags,
-            'dependencies': self.dependencies,
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "author": self.author,
+            "type": self.type.value,
+            "tags": self.tags,
+            "dependencies": self.dependencies,
         }
 
 
 @dataclass
 class PluginInfo:
     """Runtime plugin information."""
+
     metadata: PluginMetadata
     state: PluginState = PluginState.DISCOVERED
     error: Optional[str] = None
@@ -124,7 +129,7 @@ class PluginInfo:
     module_name: Optional[str] = None
 
     # Runtime
-    instance: Optional['Plugin'] = None
+    instance: Optional["Plugin"] = None
     loaded_at: Optional[datetime] = None
     enabled_at: Optional[datetime] = None
 
@@ -143,17 +148,21 @@ class PluginInfo:
         return self.state == PluginState.ENABLED
 
     def is_loaded(self) -> bool:
-        return self.state in (PluginState.LOADED, PluginState.ENABLED, PluginState.DISABLED)
+        return self.state in (
+            PluginState.LOADED,
+            PluginState.ENABLED,
+            PluginState.DISABLED,
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             **self.metadata.to_dict(),
-            'state': self.state.value,
-            'error': self.error,
-            'source_path': str(self.source_path) if self.source_path else None,
-            'loaded_at': self.loaded_at.isoformat() if self.loaded_at else None,
-            'enabled_at': self.enabled_at.isoformat() if self.enabled_at else None,
+            "state": self.state.value,
+            "error": self.error,
+            "source_path": str(self.source_path) if self.source_path else None,
+            "loaded_at": self.loaded_at.isoformat() if self.loaded_at else None,
+            "enabled_at": self.enabled_at.isoformat() if self.enabled_at else None,
         }
 
 
@@ -161,10 +170,11 @@ class PluginInfo:
 # Plugin Base Class
 # =============================================================================
 
+
 class Plugin(ABC):
     """
     Base class for NAVIG plugins.
-    
+
     Plugins should inherit from this class and implement lifecycle methods.
     """
 
@@ -172,7 +182,7 @@ class Plugin(ABC):
     metadata: PluginMetadata
 
     def __init__(self):
-        self._registry: Optional['PluginRegistry'] = None
+        self._registry: Optional["PluginRegistry"] = None
         self._config: Dict[str, Any] = {}
         self._hooks: List[str] = []  # Registered hook IDs for cleanup
 
@@ -187,7 +197,7 @@ class Plugin(ABC):
     def configure(self, config: Dict[str, Any]) -> None:
         """
         Configure the plugin.
-        
+
         Called before on_load with user configuration merged with defaults.
         """
         self._config = {**self.metadata.default_config, **config}
@@ -199,7 +209,7 @@ class Plugin(ABC):
     def on_load(self) -> None:
         """
         Called when plugin is loaded.
-        
+
         Use for initialization that doesn't require the plugin to be active.
         """
         pass
@@ -207,7 +217,7 @@ class Plugin(ABC):
     def on_enable(self) -> None:
         """
         Called when plugin is enabled.
-        
+
         Use for registering commands, hooks, and starting services.
         """
         pass
@@ -215,7 +225,7 @@ class Plugin(ABC):
     def on_disable(self) -> None:
         """
         Called when plugin is disabled.
-        
+
         Use for cleanup while keeping the plugin loaded.
         """
         pass
@@ -223,7 +233,7 @@ class Plugin(ABC):
     def on_unload(self) -> None:
         """
         Called when plugin is unloaded.
-        
+
         Use for final cleanup and resource release.
         """
         pass
@@ -233,18 +243,16 @@ class Plugin(ABC):
     # =========================================================================
 
     def register_hook(
-        self,
-        event_key: str,
-        handler: Callable,
-        priority: int = 100
+        self, event_key: str, handler: Callable, priority: int = 100
     ) -> str:
         """
         Register a hook handler.
-        
+
         Automatically tracks for cleanup on disable/unload.
         """
         try:
             from navig.core.hooks import register_hook
+
             register_hook(event_key, handler, priority)
             hook_id = f"{event_key}:{id(handler)}"
             self._hooks.append(hook_id)
@@ -257,10 +265,11 @@ class Plugin(ABC):
         """Unregister all hooks registered by this plugin."""
         try:
             from navig.core.hooks import unregister_hook
+
             for hook_id in self._hooks:
                 # Parse hook ID and unregister
-                if ':' in hook_id:
-                    event_key = hook_id.split(':')[0]
+                if ":" in hook_id:
+                    event_key = hook_id.split(":")[0]
                     # Note: Full unregister would need handler reference
             self._hooks.clear()
         except ImportError:
@@ -271,28 +280,25 @@ class Plugin(ABC):
 # Plugin Decorator
 # =============================================================================
 
+
 def plugin(
-    name: str,
-    version: str,
-    description: str = "",
-    **kwargs
+    name: str, version: str, description: str = "", **kwargs
 ) -> Callable[[Type[Plugin]], Type[Plugin]]:
     """
     Decorator to define plugin metadata.
-    
+
     Usage:
         @plugin(name="my-plugin", version="1.0.0")
         class MyPlugin(Plugin):
             pass
     """
+
     def decorator(cls: Type[Plugin]) -> Type[Plugin]:
         cls.metadata = PluginMetadata(
-            name=name,
-            version=version,
-            description=description,
-            **kwargs
+            name=name, version=version, description=description, **kwargs
         )
         return cls
+
     return decorator
 
 
@@ -300,10 +306,11 @@ def plugin(
 # Plugin Registry
 # =============================================================================
 
+
 class PluginRegistry:
     """
     Central registry for NAVIG plugins.
-    
+
     Handles plugin discovery, lifecycle, and management.
     """
 
@@ -337,7 +344,7 @@ class PluginRegistry:
     def discover_plugins(self) -> List[PluginInfo]:
         """
         Discover plugins from all configured directories.
-        
+
         Returns list of discovered plugin info.
         """
         if not self._initialized:
@@ -357,7 +364,11 @@ class PluginRegistry:
                         discovered.append(info)
 
                 # Also support single-file plugins
-                elif item.is_file() and item.suffix == ".py" and not item.name.startswith("_"):
+                elif (
+                    item.is_file()
+                    and item.suffix == ".py"
+                    and not item.name.startswith("_")
+                ):
                     info = self._discover_plugin_file(item)
                     if info:
                         discovered.append(info)
@@ -370,8 +381,7 @@ class PluginRegistry:
             # Load the module
             module_name = f"navig_plugins.{path.name}"
             spec = importlib.util.spec_from_file_location(
-                module_name,
-                path / "__init__.py"
+                module_name, path / "__init__.py"
             )
             if spec is None or spec.loader is None:
                 return None
@@ -383,7 +393,7 @@ class PluginRegistry:
             # Find Plugin subclass
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Plugin) and obj is not Plugin:
-                    if hasattr(obj, 'metadata'):
+                    if hasattr(obj, "metadata"):
                         info = PluginInfo(
                             metadata=obj.metadata,
                             source_path=path,
@@ -421,7 +431,7 @@ class PluginRegistry:
             # Find Plugin subclass
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Plugin) and obj is not Plugin:
-                    if hasattr(obj, 'metadata'):
+                    if hasattr(obj, "metadata"):
                         info = PluginInfo(
                             metadata=obj.metadata,
                             source_path=path,
@@ -447,14 +457,16 @@ class PluginRegistry:
     # Lifecycle Management
     # =========================================================================
 
-    def load_plugin(self, name: str, config: Optional[Dict[str, Any]] = None) -> PluginInfo:
+    def load_plugin(
+        self, name: str, config: Optional[Dict[str, Any]] = None
+    ) -> PluginInfo:
         """
         Load a discovered plugin.
-        
+
         Args:
             name: Plugin name
             config: Optional configuration to merge with defaults
-            
+
         Returns:
             Updated plugin info
         """
@@ -478,7 +490,7 @@ class PluginRegistry:
             plugin_cls = None
             for obj_name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Plugin) and obj is not Plugin:
-                    if hasattr(obj, 'metadata') and obj.metadata.name == name:
+                    if hasattr(obj, "metadata") and obj.metadata.name == name:
                         plugin_cls = obj
                         break
 
@@ -607,15 +619,14 @@ class PluginRegistry:
     # Batch Operations
     # =========================================================================
 
-    def load_all(self, config: Optional[Dict[str, Dict]] = None) -> Dict[str, PluginInfo]:
+    def load_all(
+        self, config: Optional[Dict[str, Dict]] = None
+    ) -> Dict[str, PluginInfo]:
         """Load all discovered plugins."""
         results = {}
 
         # Sort by priority
-        plugins = sorted(
-            self._plugins.values(),
-            key=lambda p: p.metadata.priority
-        )
+        plugins = sorted(self._plugins.values(), key=lambda p: p.metadata.priority)
 
         for info in plugins:
             if info.state == PluginState.DISCOVERED:
@@ -669,7 +680,7 @@ class PluginRegistry:
     def list_plugins(
         self,
         state: Optional[PluginState] = None,
-        plugin_type: Optional[PluginType] = None
+        plugin_type: Optional[PluginType] = None,
     ) -> List[PluginInfo]:
         """List plugins with optional filtering."""
         plugins = list(self._plugins.values())
@@ -694,10 +705,10 @@ class PluginRegistry:
             states[state] = states.get(state, 0) + 1
 
         return {
-            'total': len(self._plugins),
-            'states': states,
-            'load_order': self._load_order.copy(),
-            'plugin_dirs': [str(p) for p in self._plugin_dirs],
+            "total": len(self._plugins),
+            "states": states,
+            "load_order": self._load_order.copy(),
+            "plugin_dirs": [str(p) for p in self._plugin_dirs],
         }
 
     # =========================================================================
@@ -708,7 +719,8 @@ class PluginRegistry:
         """Trigger a hook event if hooks system is available."""
         try:
             from navig.core.hooks import trigger_hook_sync
-            trigger_hook_sync(event.split(':')[0], event.split(':')[1], data)
+
+            trigger_hook_sync(event.split(":")[0], event.split(":")[1], data)
         except ImportError:
             pass  # optional dependency not installed; feature disabled
 

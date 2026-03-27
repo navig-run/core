@@ -20,6 +20,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from navig.tools.router import (
+    SafetyLevel,
+    ToolDomain,
+    ToolMeta,
+    ToolRegistry,
+    ToolRouter,
+    ToolStatus,
+    reset_globals,
+)
 from navig.tools.schemas import (
     ActionType,
     LLMAction,
@@ -31,20 +40,11 @@ from navig.tools.schemas import (
     format_tool_result_for_llm,
     parse_llm_action,
 )
-from navig.tools.router import (
-    SafetyLevel,
-    ToolDomain,
-    ToolMeta,
-    ToolRegistry,
-    ToolRouter,
-    ToolStatus,
-    reset_globals,
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _fresh_registry() -> ToolRegistry:
     """Create a clean registry without loading builtin packs."""
@@ -63,13 +63,19 @@ def _failing_handler(**kwargs):
     raise RuntimeError("intentional failure")
 
 
-def _register_echo(registry: ToolRegistry, name: str = "echo_tool",
-                    domain: ToolDomain = ToolDomain.GENERAL,
-                    safety: SafetyLevel = SafetyLevel.SAFE) -> ToolMeta:
+def _register_echo(
+    registry: ToolRegistry,
+    name: str = "echo_tool",
+    domain: ToolDomain = ToolDomain.GENERAL,
+    safety: SafetyLevel = SafetyLevel.SAFE,
+) -> ToolMeta:
     """Register a simple echo tool and return its meta."""
     meta = ToolMeta(
-        name=name, domain=domain, description="Test echo tool",
-        safety=safety, status=ToolStatus.AVAILABLE,
+        name=name,
+        domain=domain,
+        description="Test echo tool",
+        safety=safety,
+        status=ToolStatus.AVAILABLE,
     )
     registry.register(meta, handler=_echo_handler)
     return meta
@@ -78,6 +84,7 @@ def _register_echo(registry: ToolRegistry, name: str = "echo_tool",
 # ===========================================================================
 # Test 1: Schema Parser
 # ===========================================================================
+
 
 class TestSchemaParser:
     """parse_llm_action() with various input patterns."""
@@ -101,14 +108,16 @@ class TestSchemaParser:
 
     def test_multi_step_json(self):
         """JSON with action=multi_step parses to MultiStepAction."""
-        text = json.dumps({
-            "action": "multi_step",
-            "steps": [
-                {"tool": "web_search", "parameters": {"query": "test"}},
-                {"tool": "web_fetch", "parameters": {"url": "http://example.com"}},
-            ],
-            "reason": "research chain",
-        })
+        text = json.dumps(
+            {
+                "action": "multi_step",
+                "steps": [
+                    {"tool": "web_search", "parameters": {"query": "test"}},
+                    {"tool": "web_fetch", "parameters": {"url": "http://example.com"}},
+                ],
+                "reason": "research chain",
+            }
+        )
         action = parse_llm_action(text)
         assert isinstance(action, MultiStepAction)
         assert len(action.steps) == 2
@@ -155,6 +164,7 @@ class TestSchemaParser:
 # Test 2: Tool Registry
 # ===========================================================================
 
+
 class TestToolRegistry:
     """ToolRegistry registration, lookup, alias normalization."""
 
@@ -169,10 +179,15 @@ class TestToolRegistry:
     def test_alias_lookup(self):
         """Aliases resolve to canonical tool names."""
         reg = _fresh_registry()
-        reg.register(ToolMeta(
-            name="web_search", domain=ToolDomain.WEB,
-            description="Search", status=ToolStatus.AVAILABLE,
-        ), handler=_echo_handler)
+        reg.register(
+            ToolMeta(
+                name="web_search",
+                domain=ToolDomain.WEB,
+                description="Search",
+                status=ToolStatus.AVAILABLE,
+            ),
+            handler=_echo_handler,
+        )
         # "search" and "google" are aliases for "web_search"
         assert reg.normalize_tool_name("search") == "web_search"
         assert reg.normalize_tool_name("google") == "web_search"
@@ -197,10 +212,13 @@ class TestToolRegistry:
         """list_tools(available_only=True) excludes unavailable tools."""
         reg = _fresh_registry()
         _register_echo(reg, "active")
-        reg.register(ToolMeta(
-            name="disabled", domain=ToolDomain.GENERAL,
-            status=ToolStatus.DISABLED,
-        ))
+        reg.register(
+            ToolMeta(
+                name="disabled",
+                domain=ToolDomain.GENERAL,
+                status=ToolStatus.DISABLED,
+            )
+        )
         available = reg.list_tools(available_only=True)
         assert len(available) == 1
         assert available[0].name == "active"
@@ -208,12 +226,15 @@ class TestToolRegistry:
     def test_handler_lazy_load(self):
         """Handler is lazy-loaded from module_path + handler_name."""
         reg = _fresh_registry()
-        reg.register(ToolMeta(
-            name="system_info", domain=ToolDomain.SYSTEM,
-            module_path="navig.tools.domains.system_pack",
-            handler_name="_system_info",
-            status=ToolStatus.AVAILABLE,
-        ))
+        reg.register(
+            ToolMeta(
+                name="system_info",
+                domain=ToolDomain.SYSTEM,
+                module_path="navig.tools.domains.system_pack",
+                handler_name="_system_info",
+                status=ToolStatus.AVAILABLE,
+            )
+        )
         handler = reg.get_handler("system_info")
         assert handler is not None
         result = handler()
@@ -235,7 +256,9 @@ class TestToolRegistry:
         reg = _fresh_registry()
         _register_echo(reg, "a")
         _register_echo(reg, "b")
-        reg.register(ToolMeta(name="c", domain=ToolDomain.GENERAL, status=ToolStatus.DISABLED))
+        reg.register(
+            ToolMeta(name="c", domain=ToolDomain.GENERAL, status=ToolStatus.DISABLED)
+        )
         summary = reg.get_status_summary()
         assert summary["total"] == 3
         assert summary["available"] == 2
@@ -244,6 +267,7 @@ class TestToolRegistry:
 # ===========================================================================
 # Test 3: Tool Router Execution
 # ===========================================================================
+
 
 class TestToolRouter:
     """ToolRouter execute() with various scenarios."""
@@ -299,7 +323,8 @@ class TestToolRouter:
         """Handler raising an exception returns ERROR result."""
         reg = _fresh_registry()
         meta = ToolMeta(
-            name="bad_tool", domain=ToolDomain.GENERAL,
+            name="bad_tool",
+            domain=ToolDomain.GENERAL,
             status=ToolStatus.AVAILABLE,
         )
         reg.register(meta, handler=_failing_handler)
@@ -314,7 +339,9 @@ class TestToolRouter:
         reg = _fresh_registry()
         _register_echo(reg)
         router = ToolRouter(registry=reg, safety_policy={"max_calls_per_turn": 2})
-        actions = [ToolCallAction(tool="echo_tool", parameters={"i": i}) for i in range(5)]
+        actions = [
+            ToolCallAction(tool="echo_tool", parameters={"i": i}) for i in range(5)
+        ]
         results = router.execute_multi(actions)
         assert len(results) == 3  # 2 executed + 1 denied
         assert results[0].success
@@ -326,8 +353,10 @@ class TestToolRouter:
         """Dangerous tool with destructive params is denied by safety guard."""
         reg = _fresh_registry()
         meta = ToolMeta(
-            name="danger_tool", domain=ToolDomain.CODE,
-            safety=SafetyLevel.DANGEROUS, status=ToolStatus.AVAILABLE,
+            name="danger_tool",
+            domain=ToolDomain.CODE,
+            safety=SafetyLevel.DANGEROUS,
+            status=ToolStatus.AVAILABLE,
         )
         reg.register(meta, handler=_echo_handler)
         router = ToolRouter(registry=reg)
@@ -341,6 +370,7 @@ class TestToolRouter:
 # Test 4: Tool Packs Registration
 # ===========================================================================
 
+
 class TestToolPacks:
     """Builtin packs register the expected tools."""
 
@@ -348,6 +378,7 @@ class TestToolPacks:
         """Web pack registers web_search, web_fetch, docs_search."""
         reg = _fresh_registry()
         from navig.tools.domains.web_pack import register_tools
+
         register_tools(reg)
         assert reg.get_tool("web_search") is not None
         assert reg.get_tool("web_fetch") is not None
@@ -357,6 +388,7 @@ class TestToolPacks:
         """Image pack registers image_generate."""
         reg = _fresh_registry()
         from navig.tools.domains.image_pack import register_tools
+
         register_tools(reg)
         tool = reg.get_tool("image_generate")
         assert tool is not None
@@ -366,6 +398,7 @@ class TestToolPacks:
         """Code pack registers code_sandbox as DANGEROUS."""
         reg = _fresh_registry()
         from navig.tools.domains.code_pack import register_tools
+
         register_tools(reg)
         tool = reg.get_tool("code_sandbox")
         assert tool is not None
@@ -375,6 +408,7 @@ class TestToolPacks:
         """System pack registers system_info and file_read."""
         reg = _fresh_registry()
         from navig.tools.domains.system_pack import register_tools
+
         register_tools(reg)
         assert reg.get_tool("system_info") is not None
         assert reg.get_tool("file_read") is not None
@@ -383,6 +417,7 @@ class TestToolPacks:
         """Data pack registers json_parse."""
         reg = _fresh_registry()
         from navig.tools.domains.data_pack import register_tools
+
         register_tools(reg)
         assert reg.get_tool("json_parse") is not None
 
@@ -390,6 +425,7 @@ class TestToolPacks:
         """system_info handler returns valid platform data."""
         reg = _fresh_registry()
         from navig.tools.domains.system_pack import register_tools
+
         register_tools(reg)
         handler = reg.get_handler("system_info")
         result = handler()
@@ -401,6 +437,7 @@ class TestToolPacks:
         """json_parse handler parses valid JSON."""
         reg = _fresh_registry()
         from navig.tools.domains.data_pack import register_tools
+
         register_tools(reg)
         handler = reg.get_handler("json_parse")
         result = handler(text='{"key": "value"}')
@@ -410,6 +447,7 @@ class TestToolPacks:
         """json_parse handler returns error for invalid JSON."""
         reg = _fresh_registry()
         from navig.tools.domains.data_pack import register_tools
+
         register_tools(reg)
         handler = reg.get_handler("json_parse")
         result = handler(text="not json")
@@ -419,6 +457,7 @@ class TestToolPacks:
 # ===========================================================================
 # Test 5: ToolResult Formatting
 # ===========================================================================
+
 
 class TestToolResultFormatting:
     """format_tool_result_for_llm() output."""
@@ -450,8 +489,10 @@ class TestToolResultFormatting:
     def test_tool_result_to_dict(self):
         """ToolResult.to_dict() is JSON-serializable."""
         result = ToolResult(
-            tool="test", status=ToolResultStatus.SUCCESS,
-            output={"data": 42}, latency_ms=15,
+            tool="test",
+            status=ToolResultStatus.SUCCESS,
+            output={"data": 42},
+            latency_ms=15,
         )
         d = result.to_dict()
         assert d["tool"] == "test"
@@ -463,6 +504,7 @@ class TestToolResultFormatting:
 # Test 6: Integration — Parse -> Route -> Execute -> Format
 # ===========================================================================
 
+
 class TestIntegration:
     """End-to-end: LLM output -> parsed action -> router execution -> formatted result."""
 
@@ -473,7 +515,9 @@ class TestIntegration:
         _register_echo(reg)
         router = ToolRouter(registry=reg)
 
-        llm_text = '{"action": "tool_call", "tool": "echo_tool", "parameters": {"x": 42}}'
+        llm_text = (
+            '{"action": "tool_call", "tool": "echo_tool", "parameters": {"x": 42}}'
+        )
         action = parse_llm_action(llm_text)
         assert isinstance(action, ToolCallAction)
 
@@ -499,13 +543,15 @@ class TestIntegration:
         _register_echo(reg, "tool_b")
         router = ToolRouter(registry=reg)
 
-        llm_text = json.dumps({
-            "action": "multi_step",
-            "steps": [
-                {"tool": "tool_a", "parameters": {"step": 1}},
-                {"tool": "tool_b", "parameters": {"step": 2}},
-            ],
-        })
+        llm_text = json.dumps(
+            {
+                "action": "multi_step",
+                "steps": [
+                    {"tool": "tool_a", "parameters": {"step": 1}},
+                    {"tool": "tool_b", "parameters": {"step": 2}},
+                ],
+            }
+        )
         action = parse_llm_action(llm_text)
         assert isinstance(action, MultiStepAction)
 
@@ -517,6 +563,7 @@ class TestIntegration:
         """End-to-end: system_info tool with real handler."""
         reg = _fresh_registry()
         from navig.tools.domains.system_pack import register_tools
+
         register_tools(reg)
         router = ToolRouter(registry=reg)
 
@@ -530,6 +577,7 @@ class TestIntegration:
         """ToolsConfig in config_schema.py has correct defaults."""
         try:
             from navig.core.config_schema import ToolsConfig
+
             cfg = ToolsConfig()
             assert cfg.enabled is True
             assert cfg.max_calls_per_turn == 10

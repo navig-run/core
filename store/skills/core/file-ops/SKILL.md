@@ -36,5 +36,3 @@ examples:
 # File Operations
 
 Standard filesystem manipulation capabilities.
-
-

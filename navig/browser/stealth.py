@@ -29,11 +29,13 @@ def _get_patchright():
     if _patchright is None:
         try:
             from patchright.async_api import async_playwright as _pw
+
             _patchright = _pw
             logger.info("Stealth engine: patchright loaded")
         except ImportError:
             try:
                 from playwright.async_api import async_playwright as _pw
+
                 _patchright = _pw
                 logger.warning(
                     "Patchright not installed — falling back to vanilla Playwright. "
@@ -54,7 +56,8 @@ class StealthConfig:
     Best practice (per Patchright docs): use persistent context + channel='chrome'
     + no_viewport=True. Do NOT set custom user_agent or extra headers.
     """
-    headless: bool = False   # headless=False is harder to detect for most CAPTCHAs
+
+    headless: bool = False  # headless=False is harder to detect for most CAPTCHAs
     channel: str = "chrome"  # use installed Chrome, not Chromium build
     user_data_dir: str = "~/.navig/browser/profiles/stealth"
     timeout_ms: int = 30000
@@ -64,16 +67,18 @@ class StealthConfig:
     blocked_domains: List[str] = field(default_factory=list)
 
     @classmethod
-    def from_config(cls, config: dict) -> 'StealthConfig':
-        stealth_cfg = config.get('browser_stealth', config.get('browser', {}))
+    def from_config(cls, config: dict) -> "StealthConfig":
+        stealth_cfg = config.get("browser_stealth", config.get("browser", {}))
         return cls(
-            headless=stealth_cfg.get('headless', False),
-            channel=stealth_cfg.get('channel', 'chrome'),
-            user_data_dir=stealth_cfg.get('user_data_dir', '~/.navig/browser/profiles/stealth'),
-            timeout_ms=stealth_cfg.get('timeout_seconds', 30) * 1000,
-            proxy=stealth_cfg.get('proxy'),
-            allowed_domains=stealth_cfg.get('allowed_domains', []),
-            blocked_domains=stealth_cfg.get('blocked_domains', []),
+            headless=stealth_cfg.get("headless", False),
+            channel=stealth_cfg.get("channel", "chrome"),
+            user_data_dir=stealth_cfg.get(
+                "user_data_dir", "~/.navig/browser/profiles/stealth"
+            ),
+            timeout_ms=stealth_cfg.get("timeout_seconds", 30) * 1000,
+            proxy=stealth_cfg.get("proxy"),
+            allowed_domains=stealth_cfg.get("allowed_domains", []),
+            blocked_domains=stealth_cfg.get("blocked_domains", []),
         )
 
 
@@ -95,7 +100,7 @@ class StealthController:
     def __init__(self, config: Optional[StealthConfig] = None):
         self.config = config or StealthConfig()
         self._playwright = None
-        self._context = None   # persistent context (browser + cookies combined)
+        self._context = None  # persistent context (browser + cookies combined)
         self._page = None
 
         self._screenshot_dir = Path(self.config.screenshot_dir).expanduser()
@@ -121,7 +126,7 @@ class StealthController:
         launch_kwargs: Dict[str, Any] = {
             "channel": self.config.channel,
             "headless": self.config.headless,
-            "no_viewport": True,          # critical stealth setting
+            "no_viewport": True,  # critical stealth setting
             # Do NOT add custom user_agent or extra_http_headers — detectable
         }
 
@@ -134,7 +139,11 @@ class StealthController:
         )
 
         # Reuse existing page or open a new one
-        self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+        self._page = (
+            self._context.pages[0]
+            if self._context.pages
+            else await self._context.new_page()
+        )
         self._page.set_default_timeout(self.config.timeout_ms)
 
         logger.info("Stealth browser ready")
@@ -157,17 +166,23 @@ class StealthController:
 
     def _check_domain(self, url: str) -> bool:
         from urllib.parse import urlparse
+
         domain = urlparse(url).netloc.lower()
         for blocked in self.config.blocked_domains:
-            if blocked.lower().replace('*', '') in domain:
+            if blocked.lower().replace("*", "") in domain:
                 return False
         if self.config.allowed_domains:
-            return any(a.lower().replace('*', '') in domain for a in self.config.allowed_domains)
+            return any(
+                a.lower().replace("*", "") in domain
+                for a in self.config.allowed_domains
+            )
         return True
 
     # ── Core navigation ────────────────────────────────────────────────────────
 
-    async def navigate(self, url: str, wait_until: str = "domcontentloaded") -> Dict[str, Any]:
+    async def navigate(
+        self, url: str, wait_until: str = "domcontentloaded"
+    ) -> Dict[str, Any]:
         await self._ensure_started()
         if not self._check_domain(url):
             raise ValueError(f"Domain not allowed: {url}")
@@ -202,13 +217,17 @@ class StealthController:
         await self._ensure_started()
         return await self._page.evaluate(script)
 
-    async def screenshot(self, name: Optional[str] = None, full_page: bool = False,
-                         selector: Optional[str] = None) -> str:
+    async def screenshot(
+        self,
+        name: Optional[str] = None,
+        full_page: bool = False,
+        selector: Optional[str] = None,
+    ) -> str:
         await self._ensure_started()
         if not name:
             name = f"stealth_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        if not name.endswith('.png'):
-            name += '.png'
+        if not name.endswith(".png"):
+            name += ".png"
         path = self._screenshot_dir / name
         if selector:
             el = await self._page.query_selector(selector)
@@ -248,9 +267,9 @@ class StealthController:
         await self._ensure_started()
         await self._context.add_cookies(cookies)
 
-    async def wait_for_selector(self, selector: str,
-                                timeout: Optional[int] = None,
-                                state: str = "visible") -> bool:
+    async def wait_for_selector(
+        self, selector: str, timeout: Optional[int] = None, state: str = "visible"
+    ) -> bool:
         await self._ensure_started()
         try:
             await self._page.wait_for_selector(selector, timeout=timeout, state=state)
@@ -273,6 +292,7 @@ class StealthController:
     async def screenshot_base64(self, quality: int = 60) -> str:
         """Return screenshot as base64 JPEG string."""
         import base64
+
         await self._ensure_started()
         data = await self._page.screenshot(type="jpeg", quality=quality)
         return base64.b64encode(data).decode("utf-8")
@@ -312,7 +332,9 @@ class StealthController:
             if stripped.startswith("- "):
                 rest = stripped[2:]
                 m = _re.match(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?', rest)
-                role = m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
+                role = (
+                    m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
+                )
                 name = (m.group(2) or m.group(3) or "").strip() if m else ""
                 ref_map[ref_id] = {"role": role, "name": name, "raw_line": line}
                 indent = line[: len(line) - len(stripped)]
@@ -325,7 +347,8 @@ class StealthController:
     async def get_interactive_elements_fast(self, limit: int = 50) -> list:
         """Single-JS-eval interactive element scan."""
         try:
-            return await self._page.evaluate(f"""() => {{
+            return await self._page.evaluate(
+                f"""() => {{
                 const SEL = 'a[href],button,input,textarea,select,[role="button"],[role="textbox"]';
                 return Array.from(document.querySelectorAll(SEL))
                     .filter(el => el.offsetParent !== null).slice(0, {limit})
@@ -337,7 +360,8 @@ class StealthController:
                             x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2),
                             w: Math.round(r.width), h: Math.round(r.height)}};
                     }});
-            }}""")
+            }}"""
+            )
         except Exception:
             return []
 
@@ -366,8 +390,14 @@ class StealthController:
             return {"ok": True}
         except Exception as exc:
             err = str(exc)
-            return {"ok": False, "error": type(exc).__name__, "detail": err[:200],
-                    "suggestion": "scroll into view" if "not visible" in err else "check selector"}
+            return {
+                "ok": False,
+                "error": type(exc).__name__,
+                "detail": err[:200],
+                "suggestion": (
+                    "scroll into view" if "not visible" in err else "check selector"
+                ),
+            }
 
     async def safe_fill(self, selector: str, text: str, timeout: int = 5000) -> dict:
         """Fill with AI-readable structured error."""

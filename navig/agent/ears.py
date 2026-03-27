@@ -42,12 +42,12 @@ class InputMessage:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'source': self.source,
-            'content': self.content,
-            'user_id': self.user_id,
-            'channel_id': self.channel_id,
-            'metadata': self.metadata,
-            'timestamp': self.timestamp.isoformat(),
+            "source": self.source,
+            "content": self.content,
+            "user_id": self.user_id,
+            "channel_id": self.channel_id,
+            "metadata": self.metadata,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
@@ -92,7 +92,7 @@ class TelegramListener(InputListener):
 
     async def start(self) -> None:
         """Start Telegram bot polling."""
-        if not self.config.get('enabled'):
+        if not self.config.get("enabled"):
             return
 
         try:
@@ -101,11 +101,11 @@ class TelegramListener(InputListener):
             # Create callback to emit messages
             async def message_handler(text: str, user_id: int, chat_id: int):
                 msg = InputMessage(
-                    source='telegram',
+                    source="telegram",
                     content=text,
                     user_id=str(user_id),
                     channel_id=str(chat_id),
-                    metadata={'platform': 'telegram'},
+                    metadata={"platform": "telegram"},
                 )
                 await self.on_message(msg)
 
@@ -137,11 +137,11 @@ class MCPListener(InputListener):
 
     async def start(self) -> None:
         """Start MCP server."""
-        if not self.config.get('enabled', True):
+        if not self.config.get("enabled", True):
             return
 
-        port = self.config.get('port', 8765)
-        host = self.config.get('host', '127.0.0.1')
+        port = self.config.get("port", 8765)
+        host = self.config.get("host", "127.0.0.1")
 
         try:
             # Integration with existing MCP server
@@ -172,9 +172,9 @@ class APIListener(InputListener):
             from aiohttp import web
 
             self._app = web.Application()
-            self._app.router.add_post('/message', self._handle_message)
-            self._app.router.add_post('/command', self._handle_command)
-            self._app.router.add_get('/health', self._handle_health)
+            self._app.router.add_post("/message", self._handle_message)
+            self._app.router.add_post("/command", self._handle_command)
+            self._app.router.add_get("/health", self._handle_health)
 
             runner = web.AppRunner(self._app)
             await runner.setup()
@@ -201,16 +201,17 @@ class APIListener(InputListener):
 
             data = await request.json()
             msg = InputMessage(
-                source='api',
-                content=data.get('message', ''),
-                user_id=data.get('user_id'),
-                metadata=data.get('metadata', {}),
+                source="api",
+                content=data.get("message", ""),
+                user_id=data.get("user_id"),
+                metadata=data.get("metadata", {}),
             )
             await self.on_message(msg)
-            return web.json_response({'status': 'ok'})
+            return web.json_response({"status": "ok"})
         except Exception as e:
             from aiohttp import web
-            return web.json_response({'error': str(e)}, status=400)
+
+            return web.json_response({"error": str(e)}, status=400)
 
     async def _handle_command(self, request) -> Any:
         """Handle incoming command."""
@@ -219,34 +220,36 @@ class APIListener(InputListener):
 
             data = await request.json()
             msg = InputMessage(
-                source='api',
-                content=data.get('command', ''),
-                user_id=data.get('user_id'),
-                metadata={'type': 'command', **data.get('metadata', {})},
+                source="api",
+                content=data.get("command", ""),
+                user_id=data.get("user_id"),
+                metadata={"type": "command", **data.get("metadata", {})},
             )
             await self.on_message(msg)
-            return web.json_response({'status': 'ok'})
+            return web.json_response({"status": "ok"})
         except Exception as e:
             from aiohttp import web
-            return web.json_response({'error': str(e)}, status=400)
+
+            return web.json_response({"error": str(e)}, status=400)
 
     async def _handle_health(self, request) -> Any:
         """Health check endpoint."""
         from aiohttp import web
-        return web.json_response({'status': 'healthy', 'listener': 'api'})
+
+        return web.json_response({"status": "healthy", "listener": "api"})
 
 
 class EmailListener(InputListener):
     """Email inbox listener using IMAP. Polls for unread messages."""
 
     def __init__(self, account_config: dict):
-        label = account_config.get('label', account_config.get('address', 'email'))
+        label = account_config.get("label", account_config.get("address", "email"))
         super().__init__(f"email:{label}")
         self.account = account_config
         self._task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
-        if not self.account.get('enabled', True):
+        if not self.account.get("enabled", True):
             return
         self._running = True
         self._task = asyncio.create_task(self._poll_loop())
@@ -262,39 +265,42 @@ class EmailListener(InputListener):
 
     async def _poll_loop(self) -> None:
         """Poll for new unread emails on a timer."""
-        interval = self.account.get('check_interval', 60)
+        interval = self.account.get("check_interval", 60)
         seen_ids: set = set()
 
         while self._running:
             try:
                 from navig.agent.proactive.imap_email import get_email_provider
+
                 provider = get_email_provider(
-                    self.account.get('provider', 'gmail'),
-                    self.account['address'],
-                    self.account['password'],
-                    host=self.account.get('imap_host'),
-                    port=self.account.get('imap_port'),
+                    self.account.get("provider", "gmail"),
+                    self.account["address"],
+                    self.account["password"],
+                    host=self.account.get("imap_host"),
+                    port=self.account.get("imap_port"),
                 )
                 messages = await provider.list_unread(limit=10)
                 for msg in messages:
                     if msg.id in seen_ids:
                         continue
                     seen_ids.add(msg.id)
-                    await self.on_message(InputMessage(
-                        source='email',
-                        content=f"[{msg.sender}] {msg.subject}: {msg.snippet}",
-                        user_id=msg.sender,
-                        channel_id=self.account.get('address'),
-                        metadata={
-                            'type': 'email',
-                            'label': self.account.get('label', ''),
-                            'category': self.account.get('category', ''),
-                            'subject': msg.subject,
-                            'sender': msg.sender,
-                            'email_id': msg.id,
-                            'account': self.account.get('address'),
-                        },
-                    ))
+                    await self.on_message(
+                        InputMessage(
+                            source="email",
+                            content=f"[{msg.sender}] {msg.subject}: {msg.snippet}",
+                            user_id=msg.sender,
+                            channel_id=self.account.get("address"),
+                            metadata={
+                                "type": "email",
+                                "label": self.account.get("label", ""),
+                                "category": self.account.get("category", ""),
+                                "subject": msg.subject,
+                                "sender": msg.sender,
+                                "email_id": msg.id,
+                                "account": self.account.get("address"),
+                            },
+                        )
+                    )
             except Exception:
                 pass  # Silently retry on next interval
 
@@ -312,17 +318,17 @@ class WebhookListener(InputListener):
 
     async def start(self) -> None:
         """Start webhook server."""
-        if not self.config.get('enabled'):
+        if not self.config.get("enabled"):
             return
 
         try:
             from aiohttp import web
 
-            port = self.config.get('port', 9000)
-            host = self.config.get('host', '127.0.0.1')
+            port = self.config.get("port", 9000)
+            host = self.config.get("host", "127.0.0.1")
 
             self._app = web.Application()
-            self._app.router.add_post('/webhook/{service}', self._handle_webhook)
+            self._app.router.add_post("/webhook/{service}", self._handle_webhook)
 
             runner = web.AppRunner(self._app)
             await runner.setup()
@@ -346,28 +352,29 @@ class WebhookListener(InputListener):
         try:
             from aiohttp import web
 
-            service = request.match_info['service']
+            service = request.match_info["service"]
             data = await request.json()
 
             msg = InputMessage(
-                source='webhook',
+                source="webhook",
                 content=json.dumps(data),
                 metadata={
-                    'service': service,
-                    'headers': dict(request.headers),
+                    "service": service,
+                    "headers": dict(request.headers),
                 },
             )
             await self.on_message(msg)
-            return web.json_response({'status': 'ok'})
+            return web.json_response({"status": "ok"})
         except Exception as e:
             from aiohttp import web
-            return web.json_response({'error': str(e)}, status=400)
+
+            return web.json_response({"error": str(e)}, status=400)
 
 
 class Ears(Component):
     """
     Input listener component.
-    
+
     The Ears manage multiple input sources and normalize
     all incoming messages into events for the Brain.
     """
@@ -393,46 +400,52 @@ class Ears(Component):
         """Start all configured listeners."""
         # Initialize listeners based on config
         if self.config.telegram.enabled:
-            telegram = TelegramListener({
-                'enabled': True,
-                'bot_token': self.config.telegram.bot_token,
-                'allowed_users': self.config.telegram.allowed_users,
-            })
+            telegram = TelegramListener(
+                {
+                    "enabled": True,
+                    "bot_token": self.config.telegram.bot_token,
+                    "allowed_users": self.config.telegram.allowed_users,
+                }
+            )
             telegram.set_callback(self._on_message_received)
-            self._listeners['telegram'] = telegram
+            self._listeners["telegram"] = telegram
 
         if self.config.mcp.enabled:
-            mcp = MCPListener({
-                'enabled': True,
-                'port': self.config.mcp.port,
-                'host': self.config.mcp.host,
-            })
+            mcp = MCPListener(
+                {
+                    "enabled": True,
+                    "port": self.config.mcp.port,
+                    "host": self.config.mcp.host,
+                }
+            )
             mcp.set_callback(self._on_message_received)
-            self._listeners['mcp'] = mcp
+            self._listeners["mcp"] = mcp
 
         if self.config.api_enabled:
             api = APIListener(
                 port=self.config.api_port,
-                host='127.0.0.1',
+                host="127.0.0.1",
             )
             api.set_callback(self._on_message_received)
-            self._listeners['api'] = api
+            self._listeners["api"] = api
 
         if self.config.webhooks.enabled:
-            webhook = WebhookListener({
-                'enabled': True,
-                'port': self.config.webhooks.port,
-                'host': self.config.webhooks.host,
-                'secret': self.config.webhooks.secret,
-            })
+            webhook = WebhookListener(
+                {
+                    "enabled": True,
+                    "port": self.config.webhooks.port,
+                    "host": self.config.webhooks.host,
+                    "secret": self.config.webhooks.secret,
+                }
+            )
             webhook.set_callback(self._on_message_received)
-            self._listeners['webhook'] = webhook
+            self._listeners["webhook"] = webhook
 
         # Email listeners (multi-account)
-        for acct in getattr(self.config, 'email_accounts', []):
-            if not getattr(acct, 'enabled', True):
+        for acct in getattr(self.config, "email_accounts", []):
+            if not getattr(acct, "enabled", True):
                 continue
-            acct_dict = acct.to_dict() if hasattr(acct, 'to_dict') else acct.__dict__
+            acct_dict = acct.to_dict() if hasattr(acct, "to_dict") else acct.__dict__
             email_listener = EmailListener(acct_dict)
             email_listener.set_callback(self._on_message_received)
             key = f"email:{acct_dict.get('label', acct_dict.get('address', 'unknown'))}"
@@ -456,12 +469,11 @@ class Ears(Component):
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for ears."""
         return {
-            'listeners': {
-                name: listener._running
-                for name, listener in self._listeners.items()
+            "listeners": {
+                name: listener._running for name, listener in self._listeners.items()
             },
-            'message_counts': self._message_counts,
-            'queue_size': self._message_queue.qsize(),
+            "message_counts": self._message_counts,
+            "queue_size": self._message_queue.qsize(),
         }
 
     async def _on_message_received(self, message: InputMessage) -> None:
@@ -477,18 +489,19 @@ class Ears(Component):
         await self.emit(
             EventType.MESSAGE_RECEIVED,
             {
-                'message': message.to_dict(),
-                'source': source,
-            }
+                "message": message.to_dict(),
+                "source": source,
+            },
         )
 
-    async def get_next_message(self, timeout: Optional[float] = None) -> Optional[InputMessage]:
+    async def get_next_message(
+        self, timeout: Optional[float] = None
+    ) -> Optional[InputMessage]:
         """Get next message from queue."""
         try:
             if timeout:
                 return await asyncio.wait_for(
-                    self._message_queue.get(),
-                    timeout=timeout
+                    self._message_queue.get(), timeout=timeout
                 )
             else:
                 return self._message_queue.get_nowait()
@@ -501,7 +514,4 @@ class Ears(Component):
 
     def get_listener_status(self) -> Dict[str, bool]:
         """Get status of all listeners."""
-        return {
-            name: listener._running
-            for name, listener in self._listeners.items()
-        }
+        return {name: listener._running for name, listener in self._listeners.items()}

@@ -27,51 +27,150 @@ from typing import Dict, List, Optional, Tuple
 
 _CATEGORY_KEYWORDS: Dict[str, List[str]] = {
     "wiki/technical": [
-        "api", "endpoint", "function", "class", "method", "algorithm",
-        "architecture", "design", "database", "schema", "migration",
-        "docker", "nginx", "deployment", "server", "service", "protocol",
-        "troubleshoot", "debug", "error", "fix", "patch", "issue",
-        "decision", "adr", "why", "trade-off", "refactor",
+        "api",
+        "endpoint",
+        "function",
+        "class",
+        "method",
+        "algorithm",
+        "architecture",
+        "design",
+        "database",
+        "schema",
+        "migration",
+        "docker",
+        "nginx",
+        "deployment",
+        "server",
+        "service",
+        "protocol",
+        "troubleshoot",
+        "debug",
+        "error",
+        "fix",
+        "patch",
+        "issue",
+        "decision",
+        "adr",
+        "why",
+        "trade-off",
+        "refactor",
     ],
     "wiki/knowledge": [
-        "concept", "definition", "guide", "tutorial", "how to",
-        "howto", "explanation", "overview", "introduction", "primer",
-        "domain", "terminology", "glossary", "example",
-        "resource", "reference", "link", "research",
+        "concept",
+        "definition",
+        "guide",
+        "tutorial",
+        "how to",
+        "howto",
+        "explanation",
+        "overview",
+        "introduction",
+        "primer",
+        "domain",
+        "terminology",
+        "glossary",
+        "example",
+        "resource",
+        "reference",
+        "link",
+        "research",
     ],
     "hub/tasks": [
-        "task", "todo", "to-do", "in progress", "done", "blocked",
-        "sprint", "backlog", "next action", "follow up", "followup",
-        "priority", "assign", "ticket",
+        "task",
+        "todo",
+        "to-do",
+        "in progress",
+        "done",
+        "blocked",
+        "sprint",
+        "backlog",
+        "next action",
+        "follow up",
+        "followup",
+        "priority",
+        "assign",
+        "ticket",
     ],
     "hub/roadmap": [
-        "roadmap", "milestone", "release", "version", "plan",
-        "q1", "q2", "q3", "q4", "2025", "2026", "2027",
-        "phase", "objective", "goal", "strategy",
+        "roadmap",
+        "milestone",
+        "release",
+        "version",
+        "plan",
+        "q1",
+        "q2",
+        "q3",
+        "q4",
+        "2025",
+        "2026",
+        "2027",
+        "phase",
+        "objective",
+        "goal",
+        "strategy",
     ],
     "hub/changelog": [
-        "changelog", "release notes", "released", "shipped", "v0.",
-        "v1.", "v2.", "fixed", "added", "changed", "deprecated",
-        "removed", "security", "breaking change",
+        "changelog",
+        "release notes",
+        "released",
+        "shipped",
+        "v0.",
+        "v1.",
+        "v2.",
+        "fixed",
+        "added",
+        "changed",
+        "deprecated",
+        "removed",
+        "security",
+        "breaking change",
     ],
     "external/business": [
-        "investor", "pitch", "roi", "revenue", "growth", "market",
-        "acquisition", "valuation", "equity", "fundraise", "deck",
-        "executive", "stakeholder",
+        "investor",
+        "pitch",
+        "roi",
+        "revenue",
+        "growth",
+        "market",
+        "acquisition",
+        "valuation",
+        "equity",
+        "fundraise",
+        "deck",
+        "executive",
+        "stakeholder",
     ],
     "external/marketing": [
-        "campaign", "social media", "twitter", "linkedin", "newsletter",
-        "copywriting", "brand", "landing page", "seo", "content calendar",
-        "press", "announcement", "launch",
+        "campaign",
+        "social media",
+        "twitter",
+        "linkedin",
+        "newsletter",
+        "copywriting",
+        "brand",
+        "landing page",
+        "seo",
+        "content calendar",
+        "press",
+        "announcement",
+        "launch",
     ],
     "archive": [
-        "old", "outdated", "deprecated", "obsolete", "legacy",
-        "archive", "historical", "past version",
+        "old",
+        "outdated",
+        "deprecated",
+        "obsolete",
+        "legacy",
+        "archive",
+        "historical",
+        "past version",
     ],
 }
 
 
 # ── BM25 implementation ───────────────────────────────────────
+
 
 class _BM25:
     """Minimal BM25 scorer over category keyword documents."""
@@ -129,16 +228,18 @@ _SCORER = _BM25(_CATEGORY_KEYWORDS)
 
 # ── Result dataclass ─────────────────────────────────────────
 
+
 @dataclass
 class ClassifyResult:
     category: str
-    confidence: float            # 0.0 – 1.0
+    confidence: float  # 0.0 – 1.0
     alternatives: List[Tuple[str, float]] = field(default_factory=list)
-    method: str = "bm25"         # "bm25" | "llm"
+    method: str = "bm25"  # "bm25" | "llm"
     explanation: str = ""
 
 
 # ── Classifier ───────────────────────────────────────────────
+
 
 class Classifier:
     """
@@ -230,11 +331,12 @@ class Classifier:
             f"Classify the following document into exactly ONE of these categories:\n"
             f"{categories_fmt}\n\n"
             f"Respond ONLY with a JSON object: "
-            f'{{\"category\": \"<category>\", \"confidence\": 0.0-1.0, \"explanation\": \"<short>\"}}\n\n'
+            f'{{"category": "<category>", "confidence": 0.0-1.0, "explanation": "<short>"}}\n\n'
             f"Filename: {filename}{extra}\n\nContent:\n{snippet}"
         )
 
         import json as _json
+
         text = generate_text(prompt, timeout=self.llm_timeout)
         # Extract JSON from response
         match = re.search(r"\{[^{}]+\}", text, re.DOTALL)

@@ -102,11 +102,11 @@ class TaskDecomposer:
 
         chunk_size = max(1, len(sentences) // n)
         chunks = [
-            ". ".join(sentences[i * chunk_size: (i + 1) * chunk_size])
+            ". ".join(sentences[i * chunk_size : (i + 1) * chunk_size])
             for i in range(n)
         ]
         # Append any remainder to the last chunk
-        remainder = sentences[n * chunk_size:]
+        remainder = sentences[n * chunk_size :]
         if remainder and chunks:
             chunks[-1] += ". " + ". ".join(remainder)
         return chunks
@@ -139,6 +139,7 @@ class SubtaskDispatcher:
         }
         try:
             import aiohttp as _aio
+
             async with _aio.ClientSession() as session:
                 async with session.post(
                     url,
@@ -156,7 +157,9 @@ class SubtaskDispatcher:
                     return await resp.json()
 
         except Exception as exc:
-            logger.warning("[collective] Subtask dispatch error to %s: %s", target_url, exc)
+            logger.warning(
+                "[collective] Subtask dispatch error to %s: %s", target_url, exc
+            )
             return None
 
 
@@ -229,6 +232,7 @@ class MeshCollective:
         """Enable collective mode if config flag is set."""
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager()
             mesh_cfg = cfg.global_config.get("mesh", {})
             self._enabled = bool(mesh_cfg.get("collective_enabled", False))
@@ -238,7 +242,9 @@ class MeshCollective:
         if self._enabled:
             logger.info("[collective] MeshCollective enabled")
         else:
-            logger.debug("[collective] MeshCollective disabled (mesh.collective_enabled=false)")
+            logger.debug(
+                "[collective] MeshCollective disabled (mesh.collective_enabled=false)"
+            )
 
     async def stop(self) -> None:
         self._enabled = False
@@ -270,7 +276,11 @@ class MeshCollective:
             # Only the leader distributes — standbys process directly
             return await self._run_local(task, local_fn)
 
-        peers = [p for p in self._registry.list_peers() if not p.is_self and p.role != "yielding"]
+        peers = [
+            p
+            for p in self._registry.list_peers()
+            if not p.is_self and p.role != "yielding"
+        ]
         if not peers:
             return await self._run_local(task, local_fn)
 
@@ -291,7 +301,9 @@ class MeshCollective:
                     self._dispatch_one(subtask, task_id, sid, peer, context, local_fn)
                 )
 
-            partial_results = await asyncio.gather(*dispatch_coros, return_exceptions=True)
+            partial_results = await asyncio.gather(
+                *dispatch_coros, return_exceptions=True
+            )
 
             # Feed into aggregator
             for res in partial_results:
@@ -299,7 +311,9 @@ class MeshCollective:
                     aggregator.on_partial(res)
 
             results = await aggregator.wait()
-            return LeaderAggregator.assemble(results, task) or await self._run_local(task, local_fn)
+            return LeaderAggregator.assemble(results, task) or await self._run_local(
+                task, local_fn
+            )
 
         finally:
             self._bus.unsubscribe(task_id)

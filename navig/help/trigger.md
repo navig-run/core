@@ -220,5 +220,3 @@ Health triggers automatically integrate with NAVIG's heartbeat system.
 - `navig help cron` - Scheduled jobs
 - `navig help heartbeat` - Health monitoring
 - `navig help history` - Command history
-
-

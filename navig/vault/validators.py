@@ -66,7 +66,8 @@ class OpenAIValidator(CredentialValidator):
             else:
                 error = response.json().get("error", {}).get("message", "Unknown error")
                 return TestResult(
-                    success=False, message=f"API error: {response.status_code} - {error}"
+                    success=False,
+                    message=f"API error: {response.status_code} - {error}",
                 )
         except ImportError:
             return TestResult(
@@ -111,11 +112,10 @@ class AnthropicValidator(CredentialValidator):
                     success=False, message="Rate limited - key may be valid"
                 )
             else:
-                error = (
-                    response.json().get("error", {}).get("message", "Unknown")
-                )
+                error = response.json().get("error", {}).get("message", "Unknown")
                 return TestResult(
-                    success=False, message=f"API error: {response.status_code} - {error}"
+                    success=False,
+                    message=f"API error: {response.status_code} - {error}",
                 )
         except ImportError:
             return TestResult(
@@ -337,9 +337,7 @@ class EmailValidator(CredentialValidator):
                     message="Authentication failed - check password or enable app passwords",
                 )
             elif "SSL" in error_msg.upper() or "CERTIFICATE" in error_msg.upper():
-                return TestResult(
-                    success=False, message=f"SSL/TLS error: {error_msg}"
-                )
+                return TestResult(success=False, message=f"SSL/TLS error: {error_msg}")
             else:
                 return TestResult(success=False, message=f"IMAP error: {error_msg}")
 
@@ -418,9 +416,7 @@ class GenericValidator(CredentialValidator):
     def validate(self, credential: Credential) -> TestResult:
         if credential.data:
             # Check if there's at least one non-empty value
-            has_value = any(
-                v for v in credential.data.values() if v and str(v).strip()
-            )
+            has_value = any(v for v in credential.data.values() if v and str(v).strip())
             if has_value:
                 return TestResult(
                     success=True,
@@ -466,7 +462,8 @@ class GitHubModelsValidator(CredentialValidator):
                 return TestResult(success=False, message="Invalid or expired token")
             elif response.status_code == 429:
                 return TestResult(
-                    success=False, message="Rate limited — token may be valid but quota exhausted"
+                    success=False,
+                    message="Rate limited — token may be valid but quota exhausted",
                 )
             else:
                 return TestResult(

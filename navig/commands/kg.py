@@ -9,6 +9,7 @@ Commands:
     navig kg forget <fact-id>                           — Delete a fact
     navig kg status                                     — Show DB stats
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -20,7 +21,9 @@ from navig.lazy_loader import lazy_import
 _ch = lazy_import("navig.console_helper")
 _kg_mod = lazy_import("navig.memory.knowledge_graph")
 
-kg_app = typer.Typer(name="kg", help="Knowledge graph — remember facts, routines, and habits")
+kg_app = typer.Typer(
+    name="kg", help="Knowledge graph — remember facts, routines, and habits"
+)
 
 
 def _kg():
@@ -31,36 +34,67 @@ def _kg():
 def kg_remember(
     subject: str = typer.Argument(..., help="Entity (e.g. 'user', 'github.com')"),
     predicate: str = typer.Argument(..., help="Relation (e.g. 'pays_bills_on')"),
-    object_: str = typer.Argument(..., metavar="OBJECT", help="Value (e.g. '15th of month')"),
+    object_: str = typer.Argument(
+        ..., metavar="OBJECT", help="Value (e.g. '15th of month')"
+    ),
     confidence: float = typer.Option(1.0, "--confidence", "-c", min=0.0, max=1.0),
     source: str = typer.Option("user_statement", "--source", "-s"),
-    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Replace existing fact with same subject+predicate"),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        "-o",
+        help="Replace existing fact with same subject+predicate",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ):
     """Store a fact triple in the knowledge graph."""
     import json
+
     kg = _kg()
-    fid = kg.remember_fact(subject, predicate, object_, confidence=confidence, source=source, overwrite=overwrite)
+    fid = kg.remember_fact(
+        subject,
+        predicate,
+        object_,
+        confidence=confidence,
+        source=source,
+        overwrite=overwrite,
+    )
     if json_output:
         from rich import print as rprint
-        rprint(json.dumps({"id": fid, "subject": subject, "predicate": predicate, "object": object_}))
+
+        rprint(
+            json.dumps(
+                {
+                    "id": fid,
+                    "subject": subject,
+                    "predicate": predicate,
+                    "object": object_,
+                }
+            )
+        )
     else:
-        _ch.success(f"Fact stored: [cyan]{subject}[/cyan] → [yellow]{predicate}[/yellow] → [green]{object_}[/green] (ID: {fid})")
+        _ch.success(
+            f"Fact stored: [cyan]{subject}[/cyan] → [yellow]{predicate}[/yellow] → [green]{object_}[/green] (ID: {fid})"
+        )
 
 
 @kg_app.command("recall")
 def kg_recall(
     subject: str = typer.Argument(..., help="Subject entity to recall facts about"),
-    predicate: Optional[str] = typer.Option(None, "--predicate", "-p", help="Filter by predicate"),
+    predicate: Optional[str] = typer.Option(
+        None, "--predicate", "-p", help="Filter by predicate"
+    ),
     min_confidence: float = typer.Option(0.0, "--min-confidence"),
     json_output: bool = typer.Option(False, "--json"),
 ):
     """Recall all facts about a subject."""
     import json
+
     kg = _kg()
     facts = kg.recall(subject, predicate=predicate, min_confidence=min_confidence)
     if json_output:
         from rich import print as rprint
+
         rprint(json.dumps([f.to_dict() for f in facts], default=str))
         return
     if not facts:
@@ -68,6 +102,7 @@ def kg_recall(
         return
     from rich.console import Console
     from rich.table import Table
+
     table = Table(title=f"Facts: {subject}", show_lines=False)
     table.add_column("ID", style="dim", no_wrap=True)
     table.add_column("Predicate", style="yellow")
@@ -87,20 +122,25 @@ def kg_search(
 ):
     """Full-text search across all facts (subject, predicate, object)."""
     import json
+
     kg = _kg()
     facts = kg.search_facts(query, limit=limit)
     if json_output:
         from rich import print as rprint
+
         rprint(json.dumps([f.to_dict() for f in facts], default=str))
         return
     if not facts:
         _ch.warning(f"No facts matching '{query}'.")
         return
     from rich.console import Console
+
     con = Console()
-    con.print(f"[bold]Found {len(facts)} fact(s) for[/bold] \"{query}\":\n")
+    con.print(f'[bold]Found {len(facts)} fact(s) for[/bold] "{query}":\n')
     for f in facts:
-        con.print(f"  [dim]{f.id}[/dim] [cyan]{f.subject}[/cyan] → [yellow]{f.predicate}[/yellow] → [green]{f.object}[/green] ({f.confidence:.0%})")
+        con.print(
+            f"  [dim]{f.id}[/dim] [cyan]{f.subject}[/cyan] → [yellow]{f.predicate}[/yellow] → [green]{f.object}[/green] ({f.confidence:.0%})"
+        )
 
 
 @kg_app.command("forget")
@@ -127,10 +167,12 @@ def kg_routines(
 ):
     """List all registered routines."""
     import json
+
     kg = _kg()
     routines = kg.get_routines(enabled_only=enabled_only)
     if json_output:
         from rich import print as rprint
+
         rprint(json.dumps([r.to_dict() for r in routines], default=str))
         return
     if not routines:
@@ -138,6 +180,7 @@ def kg_routines(
         return
     from rich.console import Console
     from rich.table import Table
+
     table = Table(title="NAVIG Routines", show_lines=False)
     table.add_column("ID", style="dim")
     table.add_column("Name", style="cyan")
@@ -158,6 +201,7 @@ def kg_status():
     fact_count = con.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
     routine_count = con.execute("SELECT COUNT(*) FROM routines").fetchone()[0]
     from rich.console import Console
+
     Console().print(
         f"[bold]Knowledge Graph Status[/bold]\n"
         f"  Facts:    [cyan]{fact_count}[/cyan]\n"

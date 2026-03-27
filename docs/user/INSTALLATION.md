@@ -254,7 +254,7 @@ $env:PATH += ";$env:APPDATA\Python\Python312\Scripts"
 
 ### Issue: Changes not reflected
 
-**Solution**: 
+**Solution**:
 - Editable mode should reflect changes immediately
 - If not, try reinstalling: `pip install -e . --force-reinstall --no-deps`
 
@@ -340,6 +340,3 @@ Update secrets and email settings before production use.
 - Restricted actions are approval-gated (send email, merge PR, deploy, payment, delete, mass message)
 - All tool calls are audited with sanitized inputs/outputs
 - No credentials are embedded in prompts
-
-
-

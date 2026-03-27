@@ -91,5 +91,3 @@ For critical bug fixes or security patches:
 ---
 
 **Next Release**: TBD
-
-

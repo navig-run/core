@@ -4,18 +4,18 @@ Test Autonomous Agent System
 
 Verifies all components are working:
 1. Gateway server
-2. Heartbeat monitoring  
+2. Heartbeat monitoring
 3. Cron scheduler
 4. AI integration
 5. Session management
 """
 
-import time
-import requests
 import json
-import pytest
+import time
 from datetime import datetime
 
+import pytest
+import requests
 
 BASE_URL = "http://localhost:8789"
 
@@ -63,11 +63,11 @@ def test_cron_list():
         resp = requests.get(f"{BASE_URL}/cron/jobs", timeout=5)
         if resp.status_code == 200:
             data = resp.json()
-            jobs = data.get('jobs', [])
+            jobs = data.get("jobs", [])
             print(f"[+] Cron service active")
             print(f"   Jobs configured: {len(jobs)}")
             for job in jobs:
-                status = "[+]" if job.get('enabled') else "[-]"
+                status = "[+]" if job.get("enabled") else "[-]"
                 print(f"   {status} {job.get('name')}")
                 print(f"      Schedule: {job.get('schedule')}")
                 print(f"      Next run: {job.get('next_run', 'N/A')}")
@@ -95,16 +95,16 @@ def test_cron_add():
                 "name": "Test Health Check",
                 "schedule": "every 5 minutes",
                 "command": "Check system health and report issues",
-                "enabled": True
+                "enabled": True,
             },
-            timeout=5
+            timeout=5,
         )
         if resp.status_code == 200:
             data = resp.json()
             print(f"[+] Created test job: {data.get('id')}")
             print(f"   Next run: {data.get('next_run')}")
             # Store the job_id for cleanup
-            _test_job_id = data.get('id')
+            _test_job_id = data.get("id")
             assert _test_job_id is not None
         else:
             print(f"[-] Failed to create job: {resp.status_code}")
@@ -119,7 +119,7 @@ def test_cron_delete():
     global _test_job_id
     if not _test_job_id:
         pytest.skip("No job_id from previous test")
-    
+
     print(f"\n=== Testing Cron Job Deletion ===")
     try:
         resp = requests.delete(f"{BASE_URL}/cron/jobs/{_test_job_id}", timeout=5)
@@ -138,28 +138,28 @@ def test_heartbeat_trigger():
     """Test manual heartbeat trigger."""
     print("\n=== Testing Heartbeat Trigger ===")
     print("[...] Running heartbeat check (may take 30-60 seconds)...")
-    
+
     try:
         start_time = time.time()
         resp = requests.post(f"{BASE_URL}/heartbeat/trigger", timeout=120)
         duration = time.time() - start_time
-        
+
         if resp.status_code == 200:
             data = resp.json()
             print(f"[+] Heartbeat completed in {duration:.1f}s")
-            
-            if data.get('suppressed'):
+
+            if data.get("suppressed"):
                 print("   Status: HEARTBEAT_OK - All systems healthy")
             else:
-                issues = data.get('issues', [])
+                issues = data.get("issues", [])
                 print(f"   Status: Issues detected ({len(issues)})")
                 for issue in issues[:3]:  # Show first 3
                     print(f"   [!] {issue}")
-            
+
             print(f"\n   Response preview:")
-            response_text = data.get('response', '')[:200]
+            response_text = data.get("response", "")[:200]
             print(f"   {response_text}...")
-            
+
             assert True
         else:
             print(f"[-] Heartbeat failed: {resp.status_code}")
@@ -179,18 +179,18 @@ def test_heartbeat_history():
         resp = requests.get(f"{BASE_URL}/heartbeat/history?limit=5", timeout=5)
         if resp.status_code == 200:
             data = resp.json()
-            history = data.get('history', [])
+            history = data.get("history", [])
             print(f"[+] Retrieved {len(history)} history entries")
-            
+
             for entry in history:
-                timestamp = entry.get('timestamp', 'unknown')
-                success = "[+]" if entry.get('success') else "[-]"
-                suppressed = entry.get('suppressed', False)
-                issues = entry.get('issues_count', 0)
-                
+                timestamp = entry.get("timestamp", "unknown")
+                success = "[+]" if entry.get("success") else "[-]"
+                suppressed = entry.get("suppressed", False)
+                issues = entry.get("issues_count", 0)
+
                 status = "OK" if suppressed else f"{issues} issues"
                 print(f"   {success} {timestamp[:19]} - {status}")
-            
+
             assert True
         else:
             print(f"[-] History retrieval failed: {resp.status_code}")
@@ -205,21 +205,24 @@ def test_ai_config():
     print("\n=== Testing AI Configuration ===")
     try:
         from navig.config import get_config_manager
+
         config = get_config_manager()
-        
-        api_key = config.global_config.get('openrouter_api_key')
+
+        api_key = config.global_config.get("openrouter_api_key")
         if api_key:
-            masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
+            masked_key = (
+                f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
+            )
             print(f"[+] OpenRouter API key configured: {masked_key}")
-            
-            models = config.global_config.get('ai_model_preference', [])
+
+            models = config.global_config.get("ai_model_preference", [])
             if models:
                 print(f"   Preferred models:")
                 for model in models[:3]:
                     print(f"   - {model}")
             else:
                 print("   [!] No model preference set, will use default")
-            
+
             assert True
         else:
             print("[-] OpenRouter API key not configured")
@@ -234,14 +237,14 @@ def test_workspace_files():
     """Check if workspace files exist."""
     print("\n=== Testing Workspace Configuration ===")
     from pathlib import Path
-    
+
     workspace = Path.home() / ".navig" / "workspace"
     files_to_check = [
         ("HEARTBEAT.md", "Heartbeat instructions"),
         ("SOUL.md", "Agent personality"),
         ("AGENTS.md", "Operating instructions"),
     ]
-    
+
     all_exist = True
     for filename, description in files_to_check:
         filepath = workspace / filename
@@ -251,7 +254,7 @@ def test_workspace_files():
         else:
             print(f"[-] {filename} missing - {description}")
             all_exist = False
-    
+
     assert all_exist, "Some workspace files are missing"
 
 

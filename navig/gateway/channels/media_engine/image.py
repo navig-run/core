@@ -20,6 +20,7 @@ Each external call is:
 Dependencies: Pillow, httpx
 Optional:     pytesseract, google-cloud-vision
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,9 +47,11 @@ _RETRIES = 2
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _env(*keys: str) -> Optional[str]:
     try:
         from navig.vault.resolver import resolve_secret
+
         return resolve_secret(list(keys))
     except Exception:
         for k in keys:
@@ -61,6 +64,7 @@ def _env(*keys: str) -> Optional[str]:
 def _json_env(*keys: str) -> Optional[str]:
     try:
         from navig.vault.resolver import resolve_json_str
+
         return resolve_json_str(list(keys))
     except Exception:
         for k in keys:
@@ -84,11 +88,18 @@ async def _with_retry(coro_func, retries: int = _RETRIES):
 
 # ── Stage implementations ─────────────────────────────────────────────────────
 
+
 def _stage_classify(file_bytes: bytes) -> dict:
     """Extract image metadata with Pillow (synchronous)."""
     result: dict = {
-        "width": None, "height": None, "format": None, "mode": None,
-        "exif": {}, "gps": None, "camera": None, "taken_at": None,
+        "width": None,
+        "height": None,
+        "format": None,
+        "mode": None,
+        "exif": {},
+        "gps": None,
+        "camera": None,
+        "taken_at": None,
     }
     try:
         from PIL import Image  # type: ignore
@@ -120,15 +131,21 @@ def _stage_classify(file_bytes: bytes) -> dict:
 
             # Convert GPS rational to decimal degrees
             if gps_raw.get("GPSLatitude") and gps_raw.get("GPSLongitude"):
+
                 def _to_deg(vals, ref):
                     d, m, s = [float(v) for v in vals]
                     deg = d + m / 60 + s / 3600
                     if ref in ("S", "W"):
                         deg = -deg
                     return round(deg, 6)
+
                 try:
-                    lat = _to_deg(gps_raw["GPSLatitude"], gps_raw.get("GPSLatitudeRef", "N"))
-                    lon = _to_deg(gps_raw["GPSLongitude"], gps_raw.get("GPSLongitudeRef", "E"))
+                    lat = _to_deg(
+                        gps_raw["GPSLatitude"], gps_raw.get("GPSLatitudeRef", "N")
+                    )
+                    lon = _to_deg(
+                        gps_raw["GPSLongitude"], gps_raw.get("GPSLongitudeRef", "E")
+                    )
                     result["gps"] = {"lat": lat, "lon": lon}
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
@@ -191,9 +208,13 @@ async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> Optional[str]
         async def _call():
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 r = await client.post(
-                    _PRUL.get("openai", {}).get("chat", "https://api.openai.com/v1/chat/completions"),
-                    headers={"Authorization": f"Bearer {api_key}",
-                             "Content-Type": "application/json"},
+                    _PRUL.get("openai", {}).get(
+                        "chat", "https://api.openai.com/v1/chat/completions"
+                    ),
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
                     json=payload,
                 )
                 r.raise_for_status()
@@ -231,7 +252,9 @@ def _stage_ocr(file_bytes: bytes) -> Optional[str]:
     return None
 
 
-async def _stage_serpapi(file_bytes: bytes, budget: BudgetGuard) -> Optional[list[dict]]:
+async def _stage_serpapi(
+    file_bytes: bytes, budget: BudgetGuard
+) -> Optional[list[dict]]:
     """Reverse image search via SerpAPI Google Lens."""
     api_key = _env("SERPAPI_KEY", "SERPAPI_API_KEY")
     if not api_key:
@@ -248,7 +271,9 @@ async def _stage_serpapi(file_bytes: bytes, budget: BudgetGuard) -> Optional[lis
         async def _call():
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 r = await client.get(
-                    _PRUL.get("serpapi", {}).get("search", "https://serpapi.com/search"),
+                    _PRUL.get("serpapi", {}).get(
+                        "search", "https://serpapi.com/search"
+                    ),
                     params={
                         "engine": "google_lens",
                         "url": data_url,
@@ -278,7 +303,9 @@ async def _stage_serpapi(file_bytes: bytes, budget: BudgetGuard) -> Optional[lis
     return None
 
 
-async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> Optional[list[dict]]:
+async def _stage_landmark(
+    file_bytes: bytes, budget: BudgetGuard
+) -> Optional[list[dict]]:
     """Detect landmarks using Google Cloud Vision (optional)."""
     creds_raw = _json_env("GOOGLE_APPLICATION_CREDENTIALS")
     if not creds_raw:
@@ -299,11 +326,17 @@ async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> Optional[li
             )
         except Exception:
             try:
-                credentials = service_account.Credentials.from_service_account_file(creds_raw)
+                credentials = service_account.Credentials.from_service_account_file(
+                    creds_raw
+                )
             except Exception:
                 credentials = None
 
-        client = vision.ImageAnnotatorClient(credentials=credentials) if credentials else vision.ImageAnnotatorClient()
+        client = (
+            vision.ImageAnnotatorClient(credentials=credentials)
+            if credentials
+            else vision.ImageAnnotatorClient()
+        )
         image = vision.Image(content=file_bytes)
 
         loop = asyncio.get_event_loop()
@@ -317,11 +350,13 @@ async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> Optional[li
             if lm.locations:
                 ll = lm.locations[0].lat_lng
                 loc = {"lat": ll.latitude, "lon": ll.longitude}
-            landmarks.append({
-                "name": lm.description,
-                "score": round(lm.score, 3),
-                "location": loc,
-            })
+            landmarks.append(
+                {
+                    "name": lm.description,
+                    "score": round(lm.score, 3),
+                    "location": loc,
+                }
+            )
         if landmarks:
             budget.charge("google_vision")
             return landmarks
@@ -337,6 +372,7 @@ async def _stage_landmark(file_bytes: bytes, budget: BudgetGuard) -> Optional[li
 
 
 # ── Card builder ──────────────────────────────────────────────────────────────
+
 
 def _build_image_card(
     classify: dict,
@@ -384,7 +420,7 @@ def _build_image_card(
     # ---- OCR
     if ocr_text:
         snippet = ocr_text[:200] + ("…" if len(ocr_text) > 200 else "")
-        parts.append(f'\n📝 <i>Text detected:</i>\n<code>{snippet}</code>')
+        parts.append(f"\n📝 <i>Text detected:</i>\n<code>{snippet}</code>")
 
     # ---- Landmarks
     if landmarks and len(landmarks) > 0:
@@ -404,7 +440,9 @@ def _build_image_card(
             title = (m.get("title") or "")[:50]
             link = m.get("link", "")
             source = m.get("source", "")
-            entry = f'• <a href="{link}">{title or source}</a>' if link else f"• {title}"
+            entry = (
+                f'• <a href="{link}">{title or source}</a>' if link else f"• {title}"
+            )
             if source and link:
                 entry += f" <i>({source})</i>"
             parts.append(entry)
@@ -416,6 +454,7 @@ def _build_image_card(
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 class ImageEngine:
     """

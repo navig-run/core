@@ -98,6 +98,3 @@ volumes:
 1. **Identify Containers**: Use `navig docker ps` first to get the exact container name.
 2. **Resource Check**: Run `navig docker stats --no-stream` to check CPU/Memory usage if a container is unresponsive.
 3. **Pruning**: Periodically run `navig docker system prune -f` (via `navig run`) to clear space, but ask user first.
-
-
-

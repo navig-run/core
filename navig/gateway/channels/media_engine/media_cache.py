@@ -18,6 +18,7 @@ Usage::
         result = run_expensive_analysis(file_bytes)
         cache.put(key, result)
 """
+
 from __future__ import annotations
 
 import hashlib

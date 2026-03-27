@@ -18,6 +18,7 @@ from navig.core.connection import CommandResult, LocalConnection
 @dataclass
 class LocalSystemInfo:
     """System information for the local machine."""
+
     hostname: str
     os_name: str
     os_display_name: str
@@ -27,19 +28,19 @@ class LocalSystemInfo:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'hostname': self.hostname,
-            'os_name': self.os_name,
-            'os_display_name': self.os_display_name,
-            'is_admin': self.is_admin,
-            'home_directory': str(self.home_directory),
-            'config_directory': str(self.config_directory)
+            "hostname": self.hostname,
+            "os_name": self.os_name,
+            "os_display_name": self.os_display_name,
+            "is_admin": self.is_admin,
+            "home_directory": str(self.home_directory),
+            "config_directory": str(self.config_directory),
         }
 
 
 class LocalOperations:
     """
     High-level interface for local machine operations.
-    
+
     Combines ConnectionAdapter (for command execution) with
     OSAdapter (for OS-specific commands) to provide a unified API.
     """
@@ -47,7 +48,7 @@ class LocalOperations:
     def __init__(self, working_directory: Optional[Path] = None):
         """
         Initialize LocalOperations.
-        
+
         Args:
             working_directory: Optional working directory for command execution
         """
@@ -80,7 +81,7 @@ class LocalOperations:
         try:
             hostname = socket.gethostname()
         except Exception:
-            hostname = 'localhost'
+            hostname = "localhost"
 
         return LocalSystemInfo(
             hostname=hostname,
@@ -88,7 +89,7 @@ class LocalOperations:
             os_display_name=self.os_adapter.display_name,
             is_admin=self.os_adapter.check_admin_privileges(),
             home_directory=self.os_adapter.get_home_directory(),
-            config_directory=self.os_adapter.get_config_directory()
+            config_directory=self.os_adapter.get_config_directory(),
         )
 
     def get_resource_usage(self) -> CommandResult:
@@ -101,7 +102,7 @@ class LocalOperations:
     def list_packages(self) -> List[PackageInfo]:
         """
         List all installed packages.
-        
+
         Returns:
             List of PackageInfo objects
         """
@@ -117,19 +118,19 @@ class LocalOperations:
     def install_package(self, package: str) -> CommandResult:
         """
         Install a package.
-        
+
         Args:
             package: Package name or ID
-            
+
         Returns:
             Command result
         """
         if not self.os_adapter.check_admin_privileges():
             return CommandResult(
-                stdout='',
-                stderr='Administrator/root privileges required for package installation',
+                stdout="",
+                stderr="Administrator/root privileges required for package installation",
                 exit_code=1,
-                duration=0.0
+                duration=0.0,
             )
 
         cmd = self.os_adapter.get_package_install_command(package)
@@ -139,10 +140,10 @@ class LocalOperations:
         """Remove a package."""
         if not self.os_adapter.check_admin_privileges():
             return CommandResult(
-                stdout='',
-                stderr='Administrator/root privileges required for package removal',
+                stdout="",
+                stderr="Administrator/root privileges required for package removal",
                 exit_code=1,
-                duration=0.0
+                duration=0.0,
             )
 
         cmd = self.os_adapter.get_package_remove_command(package)
@@ -152,10 +153,10 @@ class LocalOperations:
         """Update all packages."""
         if not self.os_adapter.check_admin_privileges():
             return CommandResult(
-                stdout='',
-                stderr='Administrator/root privileges required for package updates',
+                stdout="",
+                stderr="Administrator/root privileges required for package updates",
                 exit_code=1,
-                duration=0.0
+                duration=0.0,
             )
 
         cmd = self.os_adapter.get_package_update_command()
@@ -170,7 +171,7 @@ class LocalOperations:
     def read_hosts_file(self) -> str:
         """
         Read the contents of the hosts file.
-        
+
         Returns:
             Contents of the hosts file
         """
@@ -189,7 +190,7 @@ class LocalOperations:
     def open_hosts_in_editor(self) -> CommandResult:
         """
         Open the hosts file in the default editor.
-        
+
         Note: May require admin privileges.
         """
         hosts_path = self.get_hosts_file_path()
@@ -216,7 +217,7 @@ class LocalOperations:
     def run_security_audit(self) -> List[SecurityCheck]:
         """
         Run a basic security audit.
-        
+
         Returns:
             List of SecurityCheck results
         """
@@ -224,50 +225,68 @@ class LocalOperations:
 
         # Check admin privileges
         is_admin = self.os_adapter.check_admin_privileges()
-        checks.append(SecurityCheck(
-            category='privileges',
-            status='warning' if is_admin else 'ok',
-            message='Running with admin privileges' if is_admin else 'Running as normal user',
-            details={'is_admin': is_admin}
-        ))
+        checks.append(
+            SecurityCheck(
+                category="privileges",
+                status="warning" if is_admin else "ok",
+                message=(
+                    "Running with admin privileges"
+                    if is_admin
+                    else "Running as normal user"
+                ),
+                details={"is_admin": is_admin},
+            )
+        )
 
         # Check firewall
         firewall_result = self.get_firewall_status()
         if firewall_result.exit_code == 0:
             # Try to detect if firewall is enabled
             output_lower = firewall_result.stdout.lower()
-            if 'off' in output_lower or 'disabled' in output_lower or 'inactive' in output_lower:
-                checks.append(SecurityCheck(
-                    category='firewall',
-                    status='warning',
-                    message='Firewall appears to be disabled',
-                    details={'output': firewall_result.stdout[:500]}
-                ))
+            if (
+                "off" in output_lower
+                or "disabled" in output_lower
+                or "inactive" in output_lower
+            ):
+                checks.append(
+                    SecurityCheck(
+                        category="firewall",
+                        status="warning",
+                        message="Firewall appears to be disabled",
+                        details={"output": firewall_result.stdout[:500]},
+                    )
+                )
             else:
-                checks.append(SecurityCheck(
-                    category='firewall',
-                    status='ok',
-                    message='Firewall is active',
-                    details={'output': firewall_result.stdout[:500]}
-                ))
+                checks.append(
+                    SecurityCheck(
+                        category="firewall",
+                        status="ok",
+                        message="Firewall is active",
+                        details={"output": firewall_result.stdout[:500]},
+                    )
+                )
         else:
-            checks.append(SecurityCheck(
-                category='firewall',
-                status='warning',
-                message='Could not determine firewall status',
-                details={'error': firewall_result.stderr}
-            ))
+            checks.append(
+                SecurityCheck(
+                    category="firewall",
+                    status="warning",
+                    message="Could not determine firewall status",
+                    details={"error": firewall_result.stderr},
+                )
+            )
 
         # Check open ports
         ports_result = self.get_open_ports()
         if ports_result.exit_code == 0:
-            port_count = len([l for l in ports_result.stdout.split('\n') if l.strip()])
-            checks.append(SecurityCheck(
-                category='ports',
-                status='ok' if port_count < 20 else 'warning',
-                message=f'{port_count} listening ports detected',
-                details={'port_count': port_count}
-            ))
+            port_count = len([l for l in ports_result.stdout.split("\n") if l.strip()])
+            checks.append(
+                SecurityCheck(
+                    category="ports",
+                    status="ok" if port_count < 20 else "warning",
+                    message=f"{port_count} listening ports detected",
+                    details={"port_count": port_count},
+                )
+            )
 
         return checks
 
@@ -302,14 +321,16 @@ class LocalOperations:
 
     # ==================== Raw Command Execution ====================
 
-    def run_command(self, command: str, timeout: Optional[float] = None) -> CommandResult:
+    def run_command(
+        self, command: str, timeout: Optional[float] = None
+    ) -> CommandResult:
         """
         Execute a raw command on the local machine.
-        
+
         Args:
             command: Command to execute
             timeout: Optional timeout in seconds
-            
+
         Returns:
             CommandResult with stdout, stderr, exit_code, duration
         """
@@ -326,10 +347,10 @@ class LocalOperations:
 def get_local_ops(working_directory: Optional[Path] = None) -> LocalOperations:
     """
     Get a LocalOperations instance.
-    
+
     Args:
         working_directory: Optional working directory
-        
+
     Returns:
         LocalOperations instance
     """

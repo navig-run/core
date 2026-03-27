@@ -47,5 +47,3 @@ navig skills list --dir C:/path/to/skills
 - Skills can declare `navig-commands` (mapped to CLI commands) and/or an `entrypoint` (.py/.js script).
 - Use `--plain` for scripting and `--json` for structured output.
 - Risky commands (destructive/moderate) require confirmation unless `--yes` is passed.
-
-

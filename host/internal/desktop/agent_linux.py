@@ -42,6 +42,7 @@ if platform.system() != "Linux":
 
 try:
     import pyatspi  # type: ignore
+
     _has_atspi = True
 except ImportError:
     pyatspi = None  # type: ignore[assignment]
@@ -69,6 +70,7 @@ def _register(obj: Any) -> str:
 def _resolve(handle: str) -> Optional[Any]:
     return _handle_registry.get(handle)
 
+
 # ─────────────────────────── helpers ─────────────────────────────────────────
 
 
@@ -77,8 +79,12 @@ def _get_bounding_box(acc: Any) -> Dict[str, int]:
     try:
         comp = acc.queryComponent()
         ext = comp.getExtents(pyatspi.DESKTOP_COORDS)
-        return {"left": ext.x, "top": ext.y,
-                "right": ext.x + ext.width, "bottom": ext.y + ext.height}
+        return {
+            "left": ext.x,
+            "top": ext.y,
+            "right": ext.x + ext.width,
+            "bottom": ext.y + ext.height,
+        }
     except Exception:
         return {"left": 0, "top": 0, "right": 0, "bottom": 0}
 
@@ -99,7 +105,11 @@ def _acc_to_dict(acc: Any, register: bool = True) -> Dict[str, Any]:
         app = ""
 
     handle = _register(acc) if register else ""
-    rect = _get_bounding_box(acc) if _has_atspi else {"left": 0, "top": 0, "right": 0, "bottom": 0}
+    rect = (
+        _get_bounding_box(acc)
+        if _has_atspi
+        else {"left": 0, "top": 0, "right": 0, "bottom": 0}
+    )
 
     return {
         "handle": handle,
@@ -142,6 +152,7 @@ def _xdotool(*args: str) -> subprocess.CompletedProcess:
         timeout=10,
     )
 
+
 # ─────────────────────────── method implementations ──────────────────────────
 
 
@@ -167,7 +178,11 @@ def _method_find_element(params: _Params) -> _Result:
             match = True
             if name and acc.name != name:
                 match = False
-            if match and role_filter and acc.getRoleName().lower() != role_filter.lower():
+            if (
+                match
+                and role_filter
+                and acc.getRoleName().lower() != role_filter.lower()
+            ):
                 match = False
             if match and (name or role_filter):
                 results.append(_acc_to_dict(acc))
@@ -266,6 +281,7 @@ def _method_run_script(params: _Params) -> _Result:
         raise ValueError("script must be a non-empty string")
 
     import tempfile
+
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".sh", prefix="navig_desktop_")
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
@@ -295,7 +311,7 @@ def _method_run_script(params: _Params) -> _Result:
 def _method_get_action_tree(params: _Params) -> _Result:
     """
     Return a compact numbered Markdown action tree for LLM consumption.
-    
+
     Only includes interactive elements (buttons, inputs, links, menus).
     Each element is assigned a sequential integer ID.
     The LLM emits {"action": "click", "target": 3} to reference element [3].
@@ -308,9 +324,22 @@ def _method_get_action_tree(params: _Params) -> _Result:
 
     # Interactive AT-SPI2 roles we care about
     INTERACTIVE_ROLES = {
-        "push button", "button", "toggle button", "check box", "radio button",
-        "text", "entry", "password text", "combo box", "list item", "menu item",
-        "menu", "link", "tree item", "spin button", "slider",
+        "push button",
+        "button",
+        "toggle button",
+        "check box",
+        "radio button",
+        "text",
+        "entry",
+        "password text",
+        "combo box",
+        "list item",
+        "menu item",
+        "menu",
+        "link",
+        "tree item",
+        "spin button",
+        "slider",
     }
 
     desktop = pyatspi.Registry.getDesktop(0)
@@ -327,7 +356,7 @@ def _method_get_action_tree(params: _Params) -> _Result:
             if role == "frame" or role == "window" or role == "dialog":
                 if window_filter and window_filter.lower() not in name.lower():
                     return
-                lines.append(f"\n# Window: \"{name}\"")
+                lines.append(f'\n# Window: "{name}"')
             elif role in INTERACTIVE_ROLES and (name or role):
                 rect = _get_bounding_box(acc)
                 handle = _register(acc)
@@ -338,9 +367,11 @@ def _method_get_action_tree(params: _Params) -> _Result:
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
 
-                detail = f" value=\"{value}\"" if value else ""
+                detail = f' value="{value}"' if value else ""
                 detail += f" (rect: {rect['left']},{rect['top']} - {rect['right']},{rect['bottom']})"
-                lines.append(f"[{idx[0]}] {role} \"{name}\"{detail}  <!-- handle:{handle} -->")
+                lines.append(
+                    f'[{idx[0]}] {role} "{name}"{detail}  <!-- handle:{handle} -->'
+                )
                 idx[0] += 1
 
         except Exception:  # noqa: BLE001
@@ -360,6 +391,7 @@ def _method_get_action_tree(params: _Params) -> _Result:
         "markdown": "\n".join(lines),
         "element_count": idx[0] - 1,
     }
+
 
 # ─────────────────────────── dispatch table ──────────────────────────────────
 

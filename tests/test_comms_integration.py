@@ -1,19 +1,25 @@
 """Integration tests for the unified comms + identity stack."""
+
 import asyncio
 import tempfile
-import pytest
 from pathlib import Path
 
-from navig.comms.types import (
-    CommsChannel, DeliveryPriority, DeliveryResult, FanoutResult,
-    NotificationOptions, NotificationTarget,
-)
+import pytest
+
 from navig.comms import dispatch
-from navig.identity.models import UserProfile, SocialLink
+from navig.comms.types import (
+    CommsChannel,
+    DeliveryPriority,
+    DeliveryResult,
+    FanoutResult,
+    NotificationOptions,
+    NotificationTarget,
+)
+from navig.identity.models import SocialLink, UserProfile
 from navig.identity.store import IdentityStore, get_user_preferred_channel
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────
+
 
 @pytest.fixture()
 def tmp_db(tmp_path):
@@ -26,6 +32,7 @@ def store(tmp_db):
 
 
 # ── Identity Store Tests ──────────────────────────────────────────────
+
 
 class TestIdentityStore:
     def test_get_nonexistent(self, store):
@@ -86,6 +93,7 @@ class TestIdentityStore:
 
 # ── Comms Dispatch Tests (stubbed backends) ───────────────────────────
 
+
 class FakeTelegramNotifier:
     def __init__(self):
         self.sent = []
@@ -106,9 +114,7 @@ class TestCommsDispatch:
     @pytest.mark.asyncio
     async def test_send_telegram(self):
         target = NotificationTarget.telegram(chat_id=123)
-        result = await dispatch.send_user_notification(
-            "telegram", target, "Hello test"
-        )
+        result = await dispatch.send_user_notification("telegram", target, "Hello test")
         assert isinstance(result, DeliveryResult)
         assert result.ok
         assert result.channel == "telegram"
@@ -116,27 +122,21 @@ class TestCommsDispatch:
     @pytest.mark.asyncio
     async def test_send_none(self):
         target = NotificationTarget(telegram_chat_id=123)
-        result = await dispatch.send_user_notification(
-            "none", target, "noop"
-        )
+        result = await dispatch.send_user_notification("none", target, "noop")
         assert result.ok
         assert result.channel == "none"
 
     @pytest.mark.asyncio
     async def test_send_matrix_not_configured(self):
         target = NotificationTarget.matrix(room_id="!room:test")
-        result = await dispatch.send_user_notification(
-            "matrix", target, "hello matrix"
-        )
+        result = await dispatch.send_user_notification("matrix", target, "hello matrix")
         assert not result.ok
         assert "not configured" in result.error
 
     @pytest.mark.asyncio
     async def test_fanout_partial(self):
         target = NotificationTarget(telegram_chat_id=123, matrix_room_id="!r:t")
-        result = await dispatch.send_user_notification(
-            "both", target, "broadcast"
-        )
+        result = await dispatch.send_user_notification("both", target, "broadcast")
         assert isinstance(result, FanoutResult)
         # Only telegram succeeds (matrix not configured)
         assert result.any_ok
@@ -144,14 +144,13 @@ class TestCommsDispatch:
     @pytest.mark.asyncio
     async def test_auto_resolves_to_default(self):
         target = NotificationTarget.telegram(chat_id=456)
-        result = await dispatch.send_user_notification(
-            "auto", target, "Auto msg"
-        )
+        result = await dispatch.send_user_notification("auto", target, "Auto msg")
         assert result.ok
         assert result.channel == "telegram"
 
 
 # ── UserProfile Serialization Tests ────────────────────────────────
+
 
 class TestUserProfileSerialization:
     def test_to_dict_and_back(self):

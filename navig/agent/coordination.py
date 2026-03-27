@@ -7,6 +7,7 @@ Enables multi-agent orchestration with:
 - Task delegation and coordination
 - Shared context and memory
 """
+
 import asyncio
 import uuid
 from dataclasses import dataclass, field
@@ -21,26 +22,29 @@ logger = get_debug_logger()
 
 class AgentRole(Enum):
     """Agent roles in the multi-agent system."""
+
     COORDINATOR = "coordinator"  # Orchestrates other agents
-    SPECIALIST = "specialist"    # Domain-specific expert
-    WORKER = "worker"           # Executes tasks
-    MONITOR = "monitor"         # Watches and reports
+    SPECIALIST = "specialist"  # Domain-specific expert
+    WORKER = "worker"  # Executes tasks
+    MONITOR = "monitor"  # Watches and reports
 
 
 class MessageType(Enum):
     """Types of inter-agent messages."""
-    REQUEST = "request"         # Task request
-    RESPONSE = "response"       # Task response
-    BROADCAST = "broadcast"     # Broadcast to all agents
-    HEARTBEAT = "heartbeat"     # Health check
-    HANDOFF = "handoff"         # Transfer conversation/task
-    CONTEXT = "context"         # Shared context update
-    ERROR = "error"             # Error notification
+
+    REQUEST = "request"  # Task request
+    RESPONSE = "response"  # Task response
+    BROADCAST = "broadcast"  # Broadcast to all agents
+    HEARTBEAT = "heartbeat"  # Health check
+    HANDOFF = "handoff"  # Transfer conversation/task
+    CONTEXT = "context"  # Shared context update
+    ERROR = "error"  # Error notification
 
 
 @dataclass
 class AgentInfo:
     """Information about a registered agent."""
+
     agent_id: str
     name: str
     role: AgentRole
@@ -54,6 +58,7 @@ class AgentInfo:
 @dataclass
 class AgentMessage:
     """Message between agents."""
+
     message_id: str
     message_type: MessageType
     from_agent: str
@@ -79,7 +84,7 @@ class AgentMessage:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'AgentMessage':
+    def from_dict(cls, data: Dict[str, Any]) -> "AgentMessage":
         """Create from dictionary."""
         return cls(
             message_id=data["message_id"],
@@ -97,6 +102,7 @@ class AgentMessage:
 @dataclass
 class TaskRequest:
     """A task delegation request."""
+
     task_id: str
     task_type: str
     description: str
@@ -120,6 +126,7 @@ class TaskRequest:
 @dataclass
 class TaskResult:
     """Result of a delegated task."""
+
     task_id: str
     success: bool
     result: Any
@@ -139,7 +146,7 @@ class TaskResult:
 class AgentRegistry:
     """
     Registry for agent discovery and management.
-    
+
     Maintains list of available agents and their capabilities.
     """
 
@@ -207,7 +214,7 @@ class AgentRegistry:
 class MessageBus:
     """
     Async message bus for agent communication.
-    
+
     Handles message routing, delivery, and acknowledgment.
     """
 
@@ -238,12 +245,12 @@ class MessageBus:
     ) -> Optional[AgentMessage]:
         """
         Send a message to an agent.
-        
+
         Args:
             message: Message to send
             wait_response: Whether to wait for a response
             timeout: Response timeout in seconds
-            
+
         Returns:
             Response message if wait_response=True, else None
         """
@@ -305,7 +312,10 @@ class MessageBus:
                         response = await handler(message)
 
                         # Check if this is a response to a pending request
-                        if message.reply_to and message.reply_to in self._pending_responses:
+                        if (
+                            message.reply_to
+                            and message.reply_to in self._pending_responses
+                        ):
                             future = self._pending_responses.pop(message.reply_to)
                             if not future.done():
                                 future.set_result(response)
@@ -333,7 +343,7 @@ class MessageBus:
 class AgentCoordinator:
     """
     Coordinates multi-agent interactions.
-    
+
     Features:
     - Task delegation based on capabilities
     - Load balancing across agents
@@ -387,12 +397,12 @@ class AgentCoordinator:
     ) -> Optional[TaskResult]:
         """
         Delegate a task to an agent.
-        
+
         Args:
             task: Task to delegate
             from_agent: Requesting agent ID
             to_agent: Target agent ID (auto-select if None)
-            
+
         Returns:
             Task result or None if failed
         """
@@ -448,13 +458,13 @@ class AgentCoordinator:
     ) -> bool:
         """
         Hand off a conversation to another agent.
-        
+
         Args:
             from_agent: Current agent ID
             to_agent: Target agent ID
             conversation_context: Context to transfer
             reason: Reason for handoff
-            
+
         Returns:
             True if handoff successful
         """
@@ -501,17 +511,21 @@ class AgentCoordinator:
         This task can run concurrently while the model router is deciding the tier,
         ensuring context is ready exactly when the LLM begins generation.
         """
+
         async def _fetch_context():
             try:
                 # Memory search is synchronous, so push to thread pool
                 # to avoid blocking the event loop during route selection
                 from navig.memory.manager import get_memory_manager
+
                 manager = get_memory_manager()
 
                 loop = asyncio.get_running_loop()
                 return await loop.run_in_executor(
                     None,
-                    lambda: manager.get_context(query, max_tokens=max_tokens, limit=limit)
+                    lambda: manager.get_context(
+                        query, max_tokens=max_tokens, limit=limit
+                    ),
                 )
             except Exception as e:
                 logger.error(f"Speculative context gather failed: {e}")

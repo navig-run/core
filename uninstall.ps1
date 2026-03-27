@@ -10,6 +10,8 @@
 .PARAMETER NoConfirm
     Skip all prompts including the vault deletion gate.
 .EXAMPLE
+    & ([scriptblock]::Create((irm https://navig.run/uninstall.ps1)))
+    & ([scriptblock]::Create((irm https://navig.run/uninstall.ps1))) -NoConfirm
     .\uninstall.ps1
     .\uninstall.ps1 -NoConfirm
     .\uninstall.ps1 -EnvFile "C:\projects\myapp\.env"
@@ -169,9 +171,9 @@ try {
 # Copies uninstall scripts to the sibling navig-www project.
 # NOT triggered when piped from curl/irm.
 if ($env:NAVIG_DEV_SYNC -eq "1") {
-    $wwwDir = Join-Path $PSScriptRoot "..\navig-www"
+    $wwwDir = Join-Path $PSScriptRoot "..\navig-www\public"
     if (-not (Test-Path $wwwDir)) {
-        Log 'FAIL' "Developer sync — navig-www not found at: $wwwDir"
+        Log 'FAIL' "Developer sync — navig-www/public not found at: $wwwDir"
     } else {
         foreach ($f in @("uninstall.ps1", "uninstall.sh")) {
             $src = Join-Path $PSScriptRoot $f

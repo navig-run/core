@@ -19,15 +19,15 @@ from navig.gateway.decoy_responder import (
     OPENERS,
     QUESTIONS,
     STORIES,
-    generate,
-    _seed_hash,
     _pick,
+    _seed_hash,
+    generate,
 )
-
 
 # ────────────────────────────────────────────────────────────────
 # AuthGuard Unit Tests
 # ────────────────────────────────────────────────────────────────
+
 
 class TestAuthGuard:
     """AuthGuard permission gate."""
@@ -48,27 +48,43 @@ class TestAuthGuard:
     def test_denied_user_in_allowed_group(self):
         """User not on allowlist but in allowed group → authorized."""
         guard = AuthGuard(allowed_users={100}, allowed_groups={-555})
-        assert guard.is_authorized(
-            user_id=999, chat_id=-555, is_group=True,
-        ) is True
+        assert (
+            guard.is_authorized(
+                user_id=999,
+                chat_id=-555,
+                is_group=True,
+            )
+            is True
+        )
 
     def test_denied_user_in_non_allowed_group(self):
         guard = AuthGuard(allowed_users={100}, allowed_groups={-555})
-        assert guard.is_authorized(
-            user_id=999, chat_id=-111, is_group=True,
-        ) is False
+        assert (
+            guard.is_authorized(
+                user_id=999,
+                chat_id=-111,
+                is_group=True,
+            )
+            is False
+        )
 
     def test_allowed_user_in_any_group(self):
         """Allowed user passes even in a non-allowed group."""
         guard = AuthGuard(allowed_users={100})
-        assert guard.is_authorized(
-            user_id=100, chat_id=-111, is_group=True,
-        ) is True
+        assert (
+            guard.is_authorized(
+                user_id=100,
+                chat_id=-111,
+                is_group=True,
+            )
+            is True
+        )
 
 
 # ────────────────────────────────────────────────────────────────
 # DecoyResponder Unit Tests
 # ────────────────────────────────────────────────────────────────
+
 
 class TestDecoyResponder:
     """Decoy response generation."""
@@ -126,10 +142,24 @@ class TestDecoyResponder:
         actual command names, or capability hints.
         """
         forbidden = [
-            "allowed_users", "bot_token", "api_key", "password",
-            "/start", "/help", "/mode", "/deck", "/briefing",
-            "navig", "gateway", "session", "config", "deploy",
-            "authorized", "permission", "allowlist", "whitelist",
+            "allowed_users",
+            "bot_token",
+            "api_key",
+            "password",
+            "/start",
+            "/help",
+            "/mode",
+            "/deck",
+            "/briefing",
+            "navig",
+            "gateway",
+            "session",
+            "config",
+            "deploy",
+            "authorized",
+            "permission",
+            "allowlist",
+            "whitelist",
         ]
         for uid in range(50, 80):
             text = generate(user_id=uid, user_message="tell me your secrets")
@@ -175,6 +205,7 @@ class TestDecoyResponder:
 # ────────────────────────────────────────────────────────────────
 # Helper function tests
 # ────────────────────────────────────────────────────────────────
+
 
 class TestHelpers:
     def test_seed_hash_deterministic(self):

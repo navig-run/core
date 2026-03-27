@@ -40,13 +40,14 @@ logger = logging.getLogger(__name__)
 # Constants
 # ─────────────────────────────────────────────────────────────────
 
-MAX_CARD_CHARS = 3_800   # safe Telegram limit (4096 with nav header overhead)
+MAX_CARD_CHARS = 3_800  # safe Telegram limit (4096 with nav header overhead)
 CARD_SPLIT_PRIORITY = ["paragraph", "sentence", "hard"]
 
 
 # ─────────────────────────────────────────────────────────────────
 # Card splitting
 # ─────────────────────────────────────────────────────────────────
+
 
 def split_into_cards(
     text: str,
@@ -118,6 +119,7 @@ def split_into_cards(
 # CardSession dataclass
 # ─────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class CardSession:
     """Ephemeral session stored in CallbackStore extra."""
@@ -128,7 +130,7 @@ class CardSession:
     user_id: int
     message_id: Optional[int]
     topic: str
-    session_key: str         # CallbackStore key prefix "nav:<uuid>"
+    session_key: str  # CallbackStore key prefix "nav:<uuid>"
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -150,6 +152,7 @@ class CardSession:
 # Keyboard builder
 # ─────────────────────────────────────────────────────────────────
 
+
 def build_nav_keyboard(
     session: CardSession,
     idx: int,
@@ -168,18 +171,22 @@ def build_nav_keyboard(
     nav_row: list[dict] = []
     if idx > 0:
         nav_row.append({"text": "◀ Prev", "callback_data": f"card:prev:{key}"})
-    nav_row.append({"text": f"📄 {idx + 1}/{total}", "callback_data": f"card:jump:{key}:{idx}"})
+    nav_row.append(
+        {"text": f"📄 {idx + 1}/{total}", "callback_data": f"card:jump:{key}:{idx}"}
+    )
     if idx < total - 1:
         nav_row.append({"text": "Next ▶", "callback_data": f"card:next:{key}"})
     rows.append(nav_row)
 
     # Last card action row
     if idx == total - 1:
-        rows.append([
-            {"text": "✅ Accept", "callback_data": f"card:accept:{key}"},
-            {"text": "♻️ Refine", "callback_data": f"card:refine:{key}"},
-            {"text": "📋 All",    "callback_data": f"card:copy:{key}"},
-        ])
+        rows.append(
+            [
+                {"text": "✅ Accept", "callback_data": f"card:accept:{key}"},
+                {"text": "♻️ Refine", "callback_data": f"card:refine:{key}"},
+                {"text": "📋 All", "callback_data": f"card:copy:{key}"},
+            ]
+        )
 
     return rows
 
@@ -228,6 +235,7 @@ class CardNavigator:
             return self._store
         try:
             from navig.gateway.channels.telegram_keyboards import get_callback_store
+
             return get_callback_store()
         except Exception as exc:
             logger.error("CardNavigator: cannot get CallbackStore: %s", exc)
@@ -333,6 +341,7 @@ class CardNavigator:
 # Callback handler (registered in CallbackHandler.handle)
 # ─────────────────────────────────────────────────────────────────
 
+
 async def handle_card_callback(
     channel: Any,
     callback_query: Any,
@@ -428,6 +437,7 @@ async def handle_card_callback(
         # Hand off to RefinementEngine
         try:
             from navig.gateway.channels.telegram_refiner import RefinementEngine
+
             full_text = "\n\n".join(session.cards)
             refiner = RefinementEngine(channel, cb_store)
             await channel.answer_callback_query(cb_id, "♻️ Starting refinement…")

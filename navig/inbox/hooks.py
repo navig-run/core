@@ -36,11 +36,11 @@ class HookEvent:
     """Payload passed to every hook."""
 
     # Which pipeline stage fired this hook
-    stage: str           # "before_classify" | "after_classify" | "before_route" | "after_route"
-    source_path: str     # file path or URL
-    source_type: str     # "file" | "url" | "telegram"
+    stage: str  # "before_classify" | "after_classify" | "before_route" | "after_route"
+    source_path: str  # file path or URL
+    source_type: str  # "file" | "url" | "telegram"
     filename: str
-    content: str         # raw text (may be empty for binary files)
+    content: str  # raw text (may be empty for binary files)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # Set by classifier stage
@@ -100,13 +100,16 @@ class HookSystem:
             hooks.register("before_classify", my_fn)
         """
         if stage not in self.STAGES:
-            raise ValueError(f"Unknown hook stage: {stage!r}. Valid: {sorted(self.STAGES)}")
+            raise ValueError(
+                f"Unknown hook stage: {stage!r}. Valid: {sorted(self.STAGES)}"
+            )
 
         if fn is None:
             # Used as decorator factory
             def _decorator(f: HookFn) -> HookFn:
                 self._hooks[stage].append(f)
                 return f
+
             return _decorator
 
         self._hooks[stage].append(fn)

@@ -32,7 +32,7 @@ if WinExist("A") {
     title := WinGetTitle("A")
     class := WinGetClass("A")
     pid := WinGetPID("A")
-    
+
     FileAppend("  Active Window: " title "`n", "*", "UTF-8")
     FileAppend("  Class: " class "`n", "*", "UTF-8")
     FileAppend("  PID: " pid "`n", "*", "UTF-8")
@@ -73,19 +73,19 @@ for hwnd in windows {
     title := WinGetTitle("ahk_id " hwnd)
     if (title = "")
         continue
-    
+
     class := WinGetClass("ahk_id " hwnd)
     if (class = "Shell_TrayWnd" || class = "Progman")
         continue
-    
+
     count++
     if (count > 5)
         break
-    
+
     ; Truncate title
     if (StrLen(title) > 40)
         title := SubStr(title, 1, 37) "..."
-    
+
     FileAppend("  " count ". " title "`n", "*", "UTF-8")
 }
 

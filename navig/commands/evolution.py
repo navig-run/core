@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from typing import Optional
 
@@ -14,10 +13,13 @@ evolution_app = typer.Typer(
     no_args_is_help=True,
 )
 
+
 @evolution_app.command("skill")
 def evolve_skill(
     goal: str = typer.Argument(..., help="Description of the skill to create"),
-    skills_root: Optional[Path] = typer.Option(None, "--root", "-r", help="Root directory for skills"),
+    skills_root: Optional[Path] = typer.Option(
+        None, "--root", "-r", help="Root directory for skills"
+    ),
     retries: int = typer.Option(3, "--retries", "-n", help="Max evolution attempts"),
 ):
     """Generate and refine a new skill definition (SKILL.md)."""
@@ -26,7 +28,7 @@ def evolve_skill(
     if not skills_root:
         # Default to navig/skills if exists, else ~/.navig/skills
         # For now assume local project skills
-        skills_root = Path("skills") # Relative to CWD
+        skills_root = Path("skills")  # Relative to CWD
 
     evolver = SkillEvolver(skills_root)
     evolver.max_retries = retries
@@ -39,6 +41,7 @@ def evolve_skill(
         # Could print path
     else:
         ch.error(f"Skill evolution failed: {result.error}")
+
 
 @evolution_app.command("workflow")
 def evolve_workflow(
@@ -103,8 +106,15 @@ def evolve_script(
 @evolution_app.command("fix")
 def evolve_fix(
     file_path: Path = typer.Argument(..., help="Path to the file to fix"),
-    instruction: str = typer.Argument(..., help="Description of the bug or improvement"),
-    check: Optional[str] = typer.Option(None, "--check", "-c", help="Command to run for validation (use {file} as placeholder)"),
+    instruction: str = typer.Argument(
+        ..., help="Description of the bug or improvement"
+    ),
+    check: Optional[str] = typer.Option(
+        None,
+        "--check",
+        "-c",
+        help="Command to run for validation (use {file} as placeholder)",
+    ),
 ):
     """Attempt to fix or improve an existing file."""
     if not file_path.exists():
@@ -128,9 +138,12 @@ def evolve_fix(
 # QUANTUM VELOCITY K6 — Auto-Evolutive Profiler Commands
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @evolution_app.command("status")
 def evolve_status(
-    days: int = typer.Option(7, "--days", "-d", help="Number of days of history to analyze"),
+    days: int = typer.Option(
+        7, "--days", "-d", help="Number of days of history to analyze"
+    ),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show performance trends and regression alerts from the auto-profiler."""
@@ -145,14 +158,20 @@ def evolve_status(
 
     if json_out:
         import json as _json
+
         regressions = detect_regressions(samples)
         suggestions = suggest_optimizations(samples)
-        ch.raw_print(_json.dumps({
-            "samples_loaded": len(samples),
-            "days": days,
-            "regressions": regressions,
-            "suggestions": suggestions,
-        }, indent=2))
+        ch.raw_print(
+            _json.dumps(
+                {
+                    "samples_loaded": len(samples),
+                    "days": days,
+                    "regressions": regressions,
+                    "suggestions": suggestions,
+                },
+                indent=2,
+            )
+        )
         return
 
     ch.header("🧬 NAVIG Auto-Evolutive Profiler Status")
@@ -161,7 +180,9 @@ def evolve_status(
     ch.dim("")
 
     if not samples:
-        ch.warning("No profile data yet. NAVIG samples 1-in-100 CLI calls automatically.")
+        ch.warning(
+            "No profile data yet. NAVIG samples 1-in-100 CLI calls automatically."
+        )
         ch.dim("Run a few commands and come back. The system is watching.")
         return
 
@@ -189,11 +210,17 @@ def evolve_status(
 
 @evolution_app.command("optimize")
 def evolve_optimize(
-    days: int = typer.Option(7, "--days", "-d", help="Number of days of history to analyze"),
+    days: int = typer.Option(
+        7, "--days", "-d", help="Number of days of history to analyze"
+    ),
 ):
     """Analyze profile data and propose the next optimization target."""
     from navig.ipc_pipe import get_pipe_status
-    from navig.perf.profiler import detect_regressions, load_recent_samples, suggest_optimizations
+    from navig.perf.profiler import (
+        detect_regressions,
+        load_recent_samples,
+        suggest_optimizations,
+    )
 
     samples = load_recent_samples(days=days)
     suggestions = suggest_optimizations(samples)
@@ -228,4 +255,3 @@ def evolve_optimize(
         ch.dim("")
         ch.warning(f"⚠️  {len(regressions)} regression(s) require immediate attention.")
         ch.dim("Run `navig evolve status` for details.")
-

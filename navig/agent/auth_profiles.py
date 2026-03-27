@@ -33,6 +33,7 @@ Usage
     except AuthError:
         pool.mark_failure(profile.name)
 """
+
 from __future__ import annotations
 
 import math
@@ -59,19 +60,22 @@ _MAX_COOLDOWN_SECONDS: float = 300.0
 # Data types
 # =============================================================================
 
+
 @dataclass
 class AuthProfile:
     """A single named credential entry."""
+
     name: str
     api_key: str
     provider: str = "openai"
-    weight: int = 1            # higher weight = picked more often in round-robin
+    weight: int = 1  # higher weight = picked more often in round-robin
     extra: Dict[str, Any] = field(default_factory=dict)  # provider-specific extras
 
 
 @dataclass
 class ProfileCooldown:
     """Per-profile failure state used to compute exponential back-off."""
+
     failure_count: int = 0
     last_failure_ts: float = 0.0
     cooldown_seconds: float = 0.0
@@ -97,12 +101,15 @@ class ProfileCooldown:
         """Seconds until this profile becomes available again (0 if ready)."""
         if not self.is_on_cooldown():
             return 0.0
-        return max(0.0, self.cooldown_seconds - (time.monotonic() - self.last_failure_ts))
+        return max(
+            0.0, self.cooldown_seconds - (time.monotonic() - self.last_failure_ts)
+        )
 
 
 # =============================================================================
 # AuthProfilePool
 # =============================================================================
+
 
 class AuthProfilePool:
     """
@@ -115,7 +122,9 @@ class AuthProfilePool:
     def __init__(self, profiles: List[AuthProfile]) -> None:
         self._lock = threading.Lock()
         self._profiles: Dict[str, AuthProfile] = {p.name: p for p in profiles}
-        self._cooldowns: Dict[str, ProfileCooldown] = {p.name: ProfileCooldown() for p in profiles}
+        self._cooldowns: Dict[str, ProfileCooldown] = {
+            p.name: ProfileCooldown() for p in profiles
+        }
 
         # Build weighted rotation list (name → popped in order)
         self._rotation: List[str] = []
@@ -198,23 +207,23 @@ class AuthProfilePool:
             rows = []
             for name, profile in self._profiles.items():
                 cd = self._cooldowns[name]
-                rows.append({
-                    "name": name,
-                    "provider": profile.provider,
-                    "weight": profile.weight,
-                    "healthy": not cd.is_on_cooldown(),
-                    "failure_count": cd.failure_count,
-                    "cooldown_remaining_s": round(cd.remaining_seconds(), 1),
-                })
+                rows.append(
+                    {
+                        "name": name,
+                        "provider": profile.provider,
+                        "weight": profile.weight,
+                        "healthy": not cd.is_on_cooldown(),
+                        "failure_count": cd.failure_count,
+                        "cooldown_remaining_s": round(cd.remaining_seconds(), 1),
+                    }
+                )
             return rows
 
     def __len__(self) -> int:
         return len(self._profiles)
 
     def healthy_count(self) -> int:
-        return sum(
-            1 for name, cd in self._cooldowns.items() if not cd.is_on_cooldown()
-        )
+        return sum(1 for name, cd in self._cooldowns.items() if not cd.is_on_cooldown())
 
 
 # =============================================================================
@@ -243,11 +252,9 @@ def get_profile_pool() -> AuthProfilePool:
         profiles: List[AuthProfile] = []
         try:
             from navig.config import get_config_manager
+
             raw_profiles = (
-                get_config_manager()
-                .global_config
-                .get("auth", {})
-                .get("profiles", [])
+                get_config_manager().global_config.get("auth", {}).get("profiles", [])
             )
             for entry in raw_profiles:
                 if not isinstance(entry, dict):
@@ -255,7 +262,9 @@ def get_profile_pool() -> AuthProfilePool:
                 key = entry.get("api_key", "")
                 name = entry.get("name", "")
                 if not key or not name:
-                    logger.warning("auth_profiles: skipping profile with missing name/api_key")
+                    logger.warning(
+                        "auth_profiles: skipping profile with missing name/api_key"
+                    )
                     continue
                 profiles.append(
                     AuthProfile(
@@ -263,12 +272,17 @@ def get_profile_pool() -> AuthProfilePool:
                         api_key=key,
                         provider=entry.get("provider", "openai"),
                         weight=int(entry.get("weight", 1)),
-                        extra={k: v for k, v in entry.items()
-                               if k not in {"name", "api_key", "provider", "weight"}},
+                        extra={
+                            k: v
+                            for k, v in entry.items()
+                            if k not in {"name", "api_key", "provider", "weight"}
+                        },
                     )
                 )
         except Exception as exc:
-            logger.warning("auth_profiles: failed to load profiles from config: %s", exc)
+            logger.warning(
+                "auth_profiles: failed to load profiles from config: %s", exc
+            )
 
         _pool_instance = AuthProfilePool(profiles)
         logger.debug(

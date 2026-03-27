@@ -45,5 +45,3 @@ Automation:
 - Combine with `--yes` to skip confirmations
 
 Storage: `~/.navig/history/operations.jsonl`
-
-

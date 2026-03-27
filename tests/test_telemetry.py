@@ -9,6 +9,7 @@ Coverage:
   - network failure is silently swallowed
   - marker is written regardless of network success/failure
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -20,12 +21,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────
+
 
 def _reload_module():
     """Force a fresh import so module-level constants are re-evaluated."""
     import navig.onboarding.telemetry as t
+
     importlib.reload(t)
     return t
 
@@ -40,6 +42,7 @@ class TestOptOut:
         marker = tmp_path / ".pinged"
 
         import navig.onboarding.telemetry as t
+
         with patch.object(t, "_PINGED_MARKER", marker):
             t.ping_install_if_first_time()
 
@@ -49,6 +52,7 @@ class TestOptOut:
         monkeypatch.setenv("NAVIG_NO_TELEMETRY", "1")
 
         import navig.onboarding.telemetry as t
+
         mock_requests = MagicMock()
         with patch.dict(sys.modules, {"requests": mock_requests}):
             t.ping_install_if_first_time()
@@ -64,6 +68,7 @@ class TestMarker:
         marker.touch()
 
         import navig.onboarding.telemetry as t
+
         mock_requests = MagicMock()
         with (
             patch.object(t, "_PINGED_MARKER", marker),
@@ -79,6 +84,7 @@ class TestMarker:
         marker = tmp_path / ".pinged"
 
         import navig.onboarding.telemetry as t
+
         mock_requests = MagicMock()
         mock_requests.post.return_value.status_code = 200
 
@@ -96,6 +102,7 @@ class TestMarker:
         marker = tmp_path / ".pinged"
 
         import navig.onboarding.telemetry as t
+
         mock_requests = MagicMock()
         mock_requests.post.side_effect = ConnectionError("unreachable")
 
@@ -112,23 +119,29 @@ class TestAnonId:
     def test_anon_id_length(self):
         """anon_id must be exactly 16 hex characters."""
         import navig.onboarding.telemetry as t
+
         anon_id = t._build_anon_id()
         assert len(anon_id) == 16, f"Expected 16 chars, got {len(anon_id)}"
 
     def test_anon_id_is_hex(self):
         """anon_id must be a valid hex string."""
         import navig.onboarding.telemetry as t
+
         anon_id = t._build_anon_id()
-        assert all(c in "0123456789abcdef" for c in anon_id), f"Non-hex chars in: {anon_id}"
+        assert all(
+            c in "0123456789abcdef" for c in anon_id
+        ), f"Non-hex chars in: {anon_id}"
 
     def test_anon_id_is_deterministic(self):
         """Same machine should produce the same anon_id across calls."""
         import navig.onboarding.telemetry as t
+
         assert t._build_anon_id() == t._build_anon_id()
 
     def test_anon_id_fallback_when_machine_id_unavailable(self, monkeypatch):
         """Should still produce a valid 16-char ID when machine_id returns None."""
         import navig.onboarding.telemetry as t
+
         with patch.object(t, "_machine_id", return_value=None):
             anon_id = t._build_anon_id()
         assert len(anon_id) == 16
@@ -139,6 +152,7 @@ class TestMachineId:
     def test_machine_id_never_raises(self):
         """_machine_id() must never raise, regardless of platform failures."""
         import navig.onboarding.telemetry as t
+
         # Should return a string or None, never an exception
         result = t._machine_id()
         assert result is None or isinstance(result, str)
@@ -153,8 +167,9 @@ class TestMachineId:
 
     def test_machine_id_timeout_returns_none(self):
         """Subprocess timeout should be handled without raising."""
-        import navig.onboarding.telemetry as t
         import subprocess
+
+        import navig.onboarding.telemetry as t
 
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("wmic", 5)):
             result = t._machine_id()
@@ -168,6 +183,7 @@ class TestNetworkFailure:
         marker = tmp_path / ".pinged"
 
         import navig.onboarding.telemetry as t
+
         # Remove requests from sys.modules and mock ImportError
         with (
             patch.object(t, "_PINGED_MARKER", marker),
@@ -185,6 +201,7 @@ class TestNetworkFailure:
         marker = tmp_path / ".pinged"
 
         import navig.onboarding.telemetry as t
+
         mock_requests = MagicMock()
         mock_requests.post.side_effect = ConnectionError("no internet")
 

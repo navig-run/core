@@ -22,6 +22,7 @@ Usage
     # Thread-safe global instance used by ToolRegistry
     from navig.engine.hooks import global_hooks
 """
+
 from __future__ import annotations
 
 import inspect
@@ -37,10 +38,10 @@ logger = logging.getLogger(__name__)
 class HookPhase(str, Enum):
     """Lifecycle phases for an execution hook."""
 
-    BEFORE = "before"   # fired before tool.run(); result not yet available
-    AFTER = "after"     # fired after tool.run(); result available
-    ERROR = "error"     # fired when tool.run() raises (unexpected; should not happen)
-    STATUS = "status"   # fired for each on_status callback emitted during a run
+    BEFORE = "before"  # fired before tool.run(); result not yet available
+    AFTER = "after"  # fired after tool.run(); result available
+    ERROR = "error"  # fired when tool.run() raises (unexpected; should not happen)
+    STATUS = "status"  # fired for each on_status callback emitted during a run
 
 
 @dataclass
@@ -132,9 +133,7 @@ class ExecutionHooks:
     # Registration API
     # ------------------------------------------------------------------
 
-    def on(
-        self, phase: HookPhase
-    ) -> Callable[[HookHandler], HookHandler]:
+    def on(self, phase: HookPhase) -> Callable[[HookHandler], HookHandler]:
         """Decorator / callable to register a handler for *phase*.
 
         Works for both sync and async functions::
@@ -144,6 +143,7 @@ class ExecutionHooks:
 
             hooks.on(HookPhase.BEFORE)(sync_fn)
         """
+
         def decorator(fn: HookHandler) -> HookHandler:
             self._handlers[phase].append(fn)
             return fn

@@ -4,6 +4,7 @@ Storage: ~/.navig/blackbox/events.jsonl
 Format : One JSON object per line (JSONL).
 Rotation: File rotated when it exceeds 50 MB (old renamed to events.jsonl.1).
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,7 @@ from .types import BlackboxEvent, EventType
 __all__ = ["BlackboxRecorder", "get_recorder"]
 
 _MAX_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
-_EVENTS_FILE    = "events.jsonl"
+_EVENTS_FILE = "events.jsonl"
 
 
 class BlackboxRecorder:
@@ -30,7 +31,7 @@ class BlackboxRecorder:
     def __init__(self, blackbox_dir: Path) -> None:
         self.blackbox_dir = blackbox_dir
         self._events_path = blackbox_dir / _EVENTS_FILE
-        self._enabled     = True
+        self._enabled = True
 
     # ── Control ──────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ class BlackboxRecorder:
             if not line:
                 continue
             try:
-                data  = json.loads(line)
+                data = json.loads(line)
                 event = BlackboxEvent.from_dict(data)
             except (json.JSONDecodeError, KeyError, ValueError):
                 continue
@@ -171,6 +172,7 @@ def get_recorder(blackbox_dir: Optional[Path] = None) -> BlackboxRecorder:
     if _recorder is None:
         if blackbox_dir is None:
             from navig.platform.paths import blackbox_dir as _bbdir
+
             blackbox_dir = _bbdir()
         _recorder = BlackboxRecorder(blackbox_dir)
     return _recorder

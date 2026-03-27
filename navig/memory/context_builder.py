@@ -50,6 +50,7 @@ _DEFAULTS: Dict[str, Any] = {
     "max_context_chars": 32_000,
 }
 
+
 class _EmptyContextDict(dict):
     """Compatibility view for legacy `key_facts` access on empty contexts."""
 
@@ -70,20 +71,23 @@ class _EmptyContextDict(dict):
 # AUDIT self-check: Correct implementation? yes - preserves both old/new empty-context contracts.
 # AUDIT self-check: Break callers? no - key visibility is additive for legacy checks.
 # AUDIT self-check: Simpler alternative? yes - a tiny compatibility dict avoids broader refactors.
-EMPTY_CONTEXT: Dict[str, Any] = _EmptyContextDict({
-    "conversation_history": [],
-    "workspace_notes": [],
-    "kb_snippets": [],
-    "project_files": [],
-    "api_snapshots": [],
-    "stale_sources": [],
-    "metadata": {},
-})
+EMPTY_CONTEXT: Dict[str, Any] = _EmptyContextDict(
+    {
+        "conversation_history": [],
+        "workspace_notes": [],
+        "kb_snippets": [],
+        "project_files": [],
+        "api_snapshots": [],
+        "stale_sources": [],
+        "metadata": {},
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Adapter helpers -- thin wrappers over existing memory APIs
 # ---------------------------------------------------------------------------
+
 
 def _retrieve_key_facts(user_input: str, max_tokens: int = 600) -> str:
     """
@@ -243,11 +247,13 @@ def _load_api_snapshots(
             )
             if entries:
                 e = entries[0]
-                snap_dicts.append({
-                    "tool": e.tool,
-                    "data": e.normalized,
-                    "fetched_at": e.timestamp,
-                })
+                snap_dicts.append(
+                    {
+                        "tool": e.tool,
+                        "data": e.normalized,
+                        "fetched_at": e.timestamp,
+                    }
+                )
             else:
                 stale.append(tool_name)
 
@@ -269,7 +275,12 @@ def _parse_rag_knowledge(context: str, top_k: int) -> List[Dict[str, Any]]:
                 snippets.append(current)
                 if len(snippets) >= top_k:
                     break
-            current = {"key": line[4:].strip(), "content": "", "source": "rag", "score": 1.0}
+            current = {
+                "key": line[4:].strip(),
+                "content": "",
+                "source": "rag",
+                "score": 1.0,
+            }
         elif current:
             current["content"] += line + "\n"
 
@@ -409,6 +420,7 @@ def _collect_metadata(project_root: Optional[Path] = None) -> Dict[str, Any]:
     # Active host / app from ConfigManager
     try:
         from navig.config import get_config_manager
+
         cm = get_config_manager()
         meta["active_host"] = cm.get_active_host() or None
         meta["active_app"] = cm.get_active_app() or None
@@ -421,6 +433,7 @@ def _collect_metadata(project_root: Optional[Path] = None) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # ContextBuilder
 # ---------------------------------------------------------------------------
+
 
 class ContextBuilder:
     """
@@ -607,7 +620,13 @@ class ContextBuilder:
             return ctx
 
         # Trim workspace_notes first, then key_facts, then project_files, then kb_snippets, then history
-        for key in ("workspace_notes", "key_facts", "project_files", "kb_snippets", "conversation_history"):
+        for key in (
+            "workspace_notes",
+            "key_facts",
+            "project_files",
+            "kb_snippets",
+            "conversation_history",
+        ):
             if total <= max_chars:
                 break
             section = ctx.get(key)
@@ -634,6 +653,7 @@ class ContextBuilder:
         """Attempt to read ``context_builder`` section from NAVIG config."""
         try:
             from navig.config import get_config_manager
+
             cm = get_config_manager()
             raw = cm.global_config or {}
             return raw.get("context_builder", {})

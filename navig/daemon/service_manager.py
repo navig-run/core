@@ -58,6 +58,7 @@ def _ensure_dirs() -> None:
 # Detection helpers
 # ---------------------------------------------------------------------------
 
+
 def has_nssm() -> bool:
     return shutil.which("nssm") is not None
 
@@ -78,6 +79,7 @@ def is_admin() -> bool:
 # NSSM backend
 # ---------------------------------------------------------------------------
 
+
 def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
     """Install the daemon as a Windows service via NSSM."""
     _ensure_dirs()
@@ -89,7 +91,8 @@ def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
         # Install
         subprocess.run(
             ["nssm", "install", SERVICE_NAME, python, args],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         # Set working directory
         subprocess.run(
@@ -98,7 +101,13 @@ def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
         )
         # Description
         subprocess.run(
-            ["nssm", "set", SERVICE_NAME, "Description", "NAVIG persistent daemon (bot + gateway + scheduler)"],
+            [
+                "nssm",
+                "set",
+                SERVICE_NAME,
+                "Description",
+                "NAVIG persistent daemon (bot + gateway + scheduler)",
+            ],
             capture_output=True,
         )
         # Auto-start
@@ -108,11 +117,23 @@ def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
         )
         # Stdout / Stderr logs
         subprocess.run(
-            ["nssm", "set", SERVICE_NAME, "AppStdout", str(LOG_DIR / "service.stdout.log")],
+            [
+                "nssm",
+                "set",
+                SERVICE_NAME,
+                "AppStdout",
+                str(LOG_DIR / "service.stdout.log"),
+            ],
             capture_output=True,
         )
         subprocess.run(
-            ["nssm", "set", SERVICE_NAME, "AppStderr", str(LOG_DIR / "service.stderr.log")],
+            [
+                "nssm",
+                "set",
+                SERVICE_NAME,
+                "AppStderr",
+                str(LOG_DIR / "service.stderr.log"),
+            ],
             capture_output=True,
         )
         # Restart on crash
@@ -128,7 +149,9 @@ def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
         )
 
         if start_now:
-            subprocess.run(["nssm", "start", SERVICE_NAME], check=True, capture_output=True)
+            subprocess.run(
+                ["nssm", "start", SERVICE_NAME], check=True, capture_output=True
+            )
             return True, f"Service '{SERVICE_NAME}' installed and started via NSSM"
         return True, f"Service '{SERVICE_NAME}' installed via NSSM (not started)"
 
@@ -140,7 +163,9 @@ def nssm_install(start_now: bool = True) -> Tuple[bool, str]:
 def nssm_uninstall() -> Tuple[bool, str]:
     try:
         subprocess.run(["nssm", "stop", SERVICE_NAME], capture_output=True)
-        subprocess.run(["nssm", "remove", SERVICE_NAME, "confirm"], check=True, capture_output=True)
+        subprocess.run(
+            ["nssm", "remove", SERVICE_NAME, "confirm"], check=True, capture_output=True
+        )
         return True, "Service removed via NSSM"
     except subprocess.CalledProcessError as e:
         err = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
@@ -161,6 +186,7 @@ def nssm_status() -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Task Scheduler backend (no admin required for "on login")
 # ---------------------------------------------------------------------------
+
 
 def _schtasks_xml() -> str:
     """Generate a Task Scheduler XML definition."""
@@ -218,12 +244,14 @@ def task_scheduler_install(start_now: bool = True) -> Tuple[bool, str]:
     try:
         subprocess.run(
             ["schtasks", "/create", "/tn", TASK_NAME, "/xml", str(xml_path), "/f"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         if start_now:
             subprocess.run(
                 ["schtasks", "/run", "/tn", TASK_NAME],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             return True, f"Task '{TASK_NAME}' created and started"
         return True, f"Task '{TASK_NAME}' created (will start on next login)"
@@ -240,7 +268,8 @@ def task_scheduler_uninstall() -> Tuple[bool, str]:
         )
         subprocess.run(
             ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         return True, "Scheduled task removed"
     except subprocess.CalledProcessError as e:
@@ -252,7 +281,8 @@ def task_scheduler_status() -> Tuple[bool, str]:
     try:
         result = subprocess.run(
             ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST", "/v"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         running = "Running" in result.stdout
         return running, result.stdout.strip()
@@ -263,6 +293,7 @@ def task_scheduler_status() -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # systemd backend (Linux)
 # ---------------------------------------------------------------------------
+
 
 def has_systemd() -> bool:
     """Check if systemd is available on this system."""
@@ -303,6 +334,7 @@ Environment=NAVIG_HOME={home}
 """
     if not user:
         import getpass
+
         username = getpass.getuser()
         unit += f"User={username}\n"
         unit += f"Group={username}\n"
@@ -331,11 +363,13 @@ def systemd_install(start_now: bool = True) -> Tuple[bool, str]:
             unit_path.write_text(unit_content, encoding="utf-8")
             subprocess.run(
                 ["systemctl", "--user", "daemon-reload"],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             subprocess.run(
                 ["systemctl", "--user", "enable", SYSTEMD_UNIT],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             # Enable lingering so user services run without login
             subprocess.run(
@@ -345,7 +379,8 @@ def systemd_install(start_now: bool = True) -> Tuple[bool, str]:
             if start_now:
                 subprocess.run(
                     ["systemctl", "--user", "start", SYSTEMD_UNIT],
-                    check=True, capture_output=True,
+                    check=True,
+                    capture_output=True,
                 )
                 return True, f"User service '{SYSTEMD_UNIT}' installed and started"
             return True, f"User service '{SYSTEMD_UNIT}' installed (not started)"
@@ -354,16 +389,19 @@ def systemd_install(start_now: bool = True) -> Tuple[bool, str]:
             unit_path.write_text(unit_content, encoding="utf-8")
             subprocess.run(
                 ["systemctl", "daemon-reload"],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             subprocess.run(
                 ["systemctl", "enable", SYSTEMD_UNIT],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             if start_now:
                 subprocess.run(
                     ["systemctl", "start", SYSTEMD_UNIT],
-                    check=True, capture_output=True,
+                    check=True,
+                    capture_output=True,
                 )
                 return True, f"System service '{SYSTEMD_UNIT}' installed and started"
             return True, f"System service '{SYSTEMD_UNIT}' installed (not started)"
@@ -392,10 +430,16 @@ def systemd_uninstall() -> Tuple[bool, str]:
             subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
             return True, f"System service '{SYSTEMD_UNIT}' removed"
         elif user_unit.exists():
-            subprocess.run(["systemctl", "--user", "stop", SYSTEMD_UNIT], capture_output=True)
-            subprocess.run(["systemctl", "--user", "disable", SYSTEMD_UNIT], capture_output=True)
+            subprocess.run(
+                ["systemctl", "--user", "stop", SYSTEMD_UNIT], capture_output=True
+            )
+            subprocess.run(
+                ["systemctl", "--user", "disable", SYSTEMD_UNIT], capture_output=True
+            )
             user_unit.unlink(missing_ok=True)
-            subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+            subprocess.run(
+                ["systemctl", "--user", "daemon-reload"], capture_output=True
+            )
             return True, f"User service '{SYSTEMD_UNIT}' removed"
         else:
             return False, f"No systemd unit found for '{SYSTEMD_UNIT}'"
@@ -409,24 +453,28 @@ def systemd_status() -> Tuple[bool, str]:
         # Try system-wide first
         result = subprocess.run(
             ["systemctl", "is-active", SYSTEMD_UNIT],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             detail = subprocess.run(
                 ["systemctl", "status", SYSTEMD_UNIT, "--no-pager", "-l"],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             return True, detail.stdout.strip()
 
         # Try user service
         result = subprocess.run(
             ["systemctl", "--user", "is-active", SYSTEMD_UNIT],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             detail = subprocess.run(
                 ["systemctl", "--user", "status", SYSTEMD_UNIT, "--no-pager", "-l"],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             return True, detail.stdout.strip()
 
@@ -438,6 +486,7 @@ def systemd_status() -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Unified API
 # ---------------------------------------------------------------------------
+
 
 def detect_best_method() -> str:
     """Pick the best available installation method for the current platform."""
@@ -457,9 +506,15 @@ def install(method: Optional[str] = None, start_now: bool = True) -> Tuple[bool,
     method = method or detect_best_method()
     if method == "nssm":
         if not has_nssm():
-            return False, "NSSM not found. Install from https://nssm.cc/download or use --method task"
+            return (
+                False,
+                "NSSM not found. Install from https://nssm.cc/download or use --method task",
+            )
         if not is_admin():
-            return False, "NSSM requires administrator privileges. Run as admin or use --method task"
+            return (
+                False,
+                "NSSM requires administrator privileges. Run as admin or use --method task",
+            )
         return nssm_install(start_now)
     elif method == "task":
         return task_scheduler_install(start_now)
@@ -508,7 +563,9 @@ def status(method: Optional[str] = None) -> Tuple[bool, str]:
     if state and daemon_running:
         for child in state.get("children", []):
             status_str = "ALIVE" if child.get("alive") else "DEAD"
-            lines.append(f"  {child['name']}: {status_str} (pid={child.get('pid', '?')}, restarts={child.get('restart_count', 0)})")
+            lines.append(
+                f"  {child['name']}: {status_str} (pid={child.get('pid', '?')}, restarts={child.get('restart_count', 0)})"
+            )
 
     # Platform-specific service checks
     if sys.platform == "win32":
@@ -521,14 +578,18 @@ def status(method: Optional[str] = None) -> Tuple[bool, str]:
         try:
             running_ts, detail_ts = task_scheduler_status()
             if "ERROR" not in detail_ts:
-                lines.append(f"\nTask Scheduler: {'Active' if running_ts else 'Inactive'}")
+                lines.append(
+                    f"\nTask Scheduler: {'Active' if running_ts else 'Inactive'}"
+                )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
     else:
         # Linux / macOS — check systemd
         if has_systemd():
             running_sd, detail_sd = systemd_status()
-            lines.append(f"\nsystemd unit ({SYSTEMD_UNIT}): {'Active' if running_sd else 'Inactive'}")
+            lines.append(
+                f"\nsystemd unit ({SYSTEMD_UNIT}): {'Active' if running_sd else 'Inactive'}"
+            )
             for line in detail_sd.split("\n")[:8]:
                 lines.append(f"  {line}")
 

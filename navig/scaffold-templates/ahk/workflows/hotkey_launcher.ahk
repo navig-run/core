@@ -95,7 +95,7 @@ RunWithOutput(command) {
     ; Get script directory to find tiler script
     scriptsDir := A_ScriptDir
     tilerScript := scriptsDir "\window_tiler.ahk"
-    
+
     if FileExist(tilerScript) {
         Run(A_AhkPath ' "' tilerScript '"')
     } else {
@@ -108,7 +108,7 @@ RunWithOutput(command) {
 TileWindowsQuick() {
     windows := WinGetList()
     visibleWindows := []
-    
+
     for hwnd in windows {
         if !WinExist("ahk_id " hwnd)
             continue
@@ -122,16 +122,16 @@ TileWindowsQuick() {
             continue
         visibleWindows.Push(hwnd)
     }
-    
+
     if (visibleWindows.Length = 0)
         return
-    
+
     MonitorGetWorkArea(, &x, &y, &w, &h)
     cols := Ceil(Sqrt(visibleWindows.Length))
     rows := Ceil(visibleWindows.Length / cols)
     cellW := w // cols
     cellH := h // rows
-    
+
     for i, hwnd in visibleWindows {
         col := Mod(i - 1, cols)
         row := (i - 1) // cols
@@ -139,7 +139,7 @@ TileWindowsQuick() {
             WinRestore("ahk_id " hwnd)
         WinMove(x + col * cellW, y + row * cellH, cellW, cellH, "ahk_id " hwnd)
     }
-    
+
     ToolTip("Tiled " visibleWindows.Length " windows")
     SetTimer(() => ToolTip(), -2000)
 }

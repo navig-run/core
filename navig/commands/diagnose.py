@@ -51,10 +51,10 @@ def run(service: str, host: str = "production-01") -> None:
     print(f"  {service} health metrics\n")
 
     metrics = [
-        ("cpu_usage",      61,  100, "%"),
-        ("memory_usage",   74,  100, "%"),
-        ("disk_io",        45,  100, "%"),
-        ("error_rate",      2,  100, "%"),
+        ("cpu_usage", 61, 100, "%"),
+        ("memory_usage", 74, 100, "%"),
+        ("disk_io", 45, 100, "%"),
+        ("error_rate", 2, 100, "%"),
         ("p99_latency_ms", 210, 500, "ms"),
     ]
 
@@ -63,8 +63,9 @@ def run(service: str, host: str = "production-01") -> None:
 
     for name, value, total, unit in metrics:
         t = resolve(name)
-        renderMetric(name, value, total, unit=unit,
-                     warn_pct=t.warn_pct, crit_pct=t.crit_pct)
+        renderMetric(
+            name, value, total, unit=unit, warn_pct=t.warn_pct, crit_pct=t.crit_pct
+        )
         pct = value / total * 100 if total > 0 else 0
         if pct >= t.crit_pct:
             critical += 1
@@ -96,8 +97,9 @@ def run(service: str, host: str = "production-01") -> None:
 @app.command()
 def diagnose_cmd(
     service: str = typer.Argument(..., help="Service name to diagnose"),
-    host: Optional[str] = typer.Option(None, "--host", "-H",
-                                       help="Target host (default: production-01)"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-H", help="Target host (default: production-01)"
+    ),
 ) -> None:
     """Run a deep health diagnostic for a named service."""
     run(service, host=host or "production-01")

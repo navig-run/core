@@ -1,4 +1,5 @@
 """Unified comms types — channel-agnostic notification primitives."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ CommsChannel = Literal["telegram", "matrix", "both", "none", "auto"]
 
 # ---- Delivery target ----------------------------------------------------
 
+
 @dataclass
 class NotificationTarget:
     """Where to send the notification.
@@ -25,7 +27,7 @@ class NotificationTarget:
 
     telegram_chat_id: Optional[int] = None
     matrix_room_id: Optional[str] = None
-    user_id: Optional[str] = None          # opaque identity key for "auto"
+    user_id: Optional[str] = None  # opaque identity key for "auto"
     extra: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -43,6 +45,7 @@ class NotificationTarget:
 
 # ---- Delivery options ---------------------------------------------------
 
+
 class DeliveryPriority(Enum):
     LOW = "low"
     NORMAL = "normal"
@@ -55,28 +58,31 @@ class NotificationOptions:
     """Knobs for the send path."""
 
     priority: DeliveryPriority = DeliveryPriority.NORMAL
-    silent: bool = False            # Telegram silent / Matrix low-priority
-    ttl_seconds: int = 0            # 0 = forever
-    retry_count: int = 2            # max retries on transient failure
-    parse_mode: str = "Markdown"    # Telegram parse mode
+    silent: bool = False  # Telegram silent / Matrix low-priority
+    ttl_seconds: int = 0  # 0 = forever
+    retry_count: int = 2  # max retries on transient failure
+    parse_mode: str = "Markdown"  # Telegram parse mode
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 # ---- Delivery result ----------------------------------------------------
+
 
 @dataclass
 class DeliveryResult:
     """Outcome of a notification dispatch."""
 
     ok: bool
-    channel: str                     # which channel actually delivered
+    channel: str  # which channel actually delivered
     timestamp: datetime = field(default_factory=datetime.utcnow)
     message_id: Optional[str] = None
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def success(cls, channel: str, message_id: Optional[str] = None) -> "DeliveryResult":
+    def success(
+        cls, channel: str, message_id: Optional[str] = None
+    ) -> "DeliveryResult":
         return cls(ok=True, channel=channel, message_id=message_id)
 
     @classmethod
@@ -85,6 +91,7 @@ class DeliveryResult:
 
 
 # ---- Fan-out result (for "both") ----------------------------------------
+
 
 @dataclass
 class FanoutResult:

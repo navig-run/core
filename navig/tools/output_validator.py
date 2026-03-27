@@ -24,6 +24,7 @@ Usage
     if not ok:
         logger.warning("Output schema violation: %s", msg)
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,6 +42,7 @@ class OutputValidationError(ValueError):
 # =============================================================================
 # Core validator
 # =============================================================================
+
 
 def validate_output(
     output: Any,
@@ -75,6 +77,7 @@ def _validate(output: Any, schema: Dict[str, Any]) -> Tuple[bool, Optional[str]]
     # 1. Try jsonschema
     try:
         import jsonschema  # type: ignore[import]
+
         try:
             jsonschema.validate(instance=output, schema=schema)
             return True, None
@@ -124,13 +127,13 @@ def _naive_check(output: Any, schema: Dict[str, Any]) -> Tuple[bool, Optional[st
 
 
 _TYPE_MAP = {
-    "object":  dict,
-    "array":   list,
-    "string":  str,
-    "number":  (int, float),
+    "object": dict,
+    "array": list,
+    "string": str,
+    "number": (int, float),
     "integer": int,
     "boolean": bool,
-    "null":    type(None),
+    "null": type(None),
 }
 
 

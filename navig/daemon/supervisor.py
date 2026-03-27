@@ -49,7 +49,9 @@ def _ensure_dirs() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _make_logger(name: str, log_file: Path, level: int = logging.INFO) -> logging.Logger:
+def _make_logger(
+    name: str, log_file: Path, level: int = logging.INFO
+) -> logging.Logger:
     """Create a rotating-file logger."""
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -93,7 +95,9 @@ class ChildProcess:
         self.env_extra = env_extra or {}
         self.cwd = cwd
         self.enabled = enabled
-        self.critical = critical  # supervisor exits if a critical child fails permanently
+        self.critical = (
+            critical  # supervisor exits if a critical child fails permanently
+        )
 
         self.process: Optional[subprocess.Popen] = None
         self.restart_count = 0
@@ -153,7 +157,8 @@ class ChildProcess:
                 # Use taskkill /T to kill the process tree (catches any grandchildren)
                 subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T", "/F"],
-                    capture_output=True, timeout=5,
+                    capture_output=True,
+                    timeout=5,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 self.process.wait(timeout=timeout)
@@ -184,7 +189,9 @@ class ChildProcess:
             self.last_exit_code = rc
         return rc
 
-    def drain_output(self, logger: logging.Logger, child_logger: logging.Logger) -> None:
+    def drain_output(
+        self, logger: logging.Logger, child_logger: logging.Logger
+    ) -> None:
         """No-op — child output goes directly to log files now."""
         pass
 
@@ -237,7 +244,9 @@ class NavigDaemon:
     def __init__(self, *, health_port: int = 0):
         _ensure_dirs()
         self.logger = _make_logger("navig.daemon", LOG_DIR / "daemon.log")
-        self.child_logger = _make_logger("navig.daemon.children", LOG_DIR / "children.log")
+        self.child_logger = _make_logger(
+            "navig.daemon.children", LOG_DIR / "children.log"
+        )
         self.children: List[ChildProcess] = []
         self._running = False
         self._health_port = health_port
@@ -271,7 +280,9 @@ class NavigDaemon:
             return
 
         if bot_script is not None and not bot_script.exists():
-            self.logger.warning("Telegram bot script not found, skipping registration: %s", bot_script)
+            self.logger.warning(
+                "Telegram bot script not found, skipping registration: %s", bot_script
+            )
             return
 
         self.add_child(
@@ -295,7 +306,15 @@ class NavigDaemon:
         self.add_child(
             ChildProcess(
                 name="gateway",
-                command=[python, "-m", "navig", "gateway", "start", "--port", str(port)],
+                command=[
+                    python,
+                    "-m",
+                    "navig",
+                    "gateway",
+                    "start",
+                    "--port",
+                    str(port),
+                ],
                 env_extra={},
             )
         )
@@ -339,6 +358,7 @@ class NavigDaemon:
         try:
             if sys.platform == "win32":
                 import ctypes
+
                 kernel32 = ctypes.windll.kernel32
                 handle = kernel32.OpenProcess(0x100000, False, pid)  # SYNCHRONIZE
                 if handle:
@@ -357,9 +377,14 @@ class NavigDaemon:
         try:
             if sys.platform == "win32":
                 result = subprocess.run(
-                    ["powershell", "-Command",
-                     f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine"],
-                    capture_output=True, text=True, timeout=5,
+                    [
+                        "powershell",
+                        "-Command",
+                        f'(Get-CimInstance Win32_Process -Filter "ProcessId={pid}").CommandLine',
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 cmdline = result.stdout.strip()
@@ -401,6 +426,7 @@ class NavigDaemon:
     async def _start_health_server(self) -> None:
         if self._health_port <= 0:
             return
+
         async def handler(reader, writer):
             state = {
                 "status": "ok",
@@ -417,7 +443,10 @@ class NavigDaemon:
             writer.write(response.encode())
             await writer.drain()
             writer.close()
-        self._health_server = await asyncio.start_server(handler, "127.0.0.1", self._health_port)
+
+        self._health_server = await asyncio.start_server(
+            handler, "127.0.0.1", self._health_port
+        )
         self.logger.info("Health-check listening on 127.0.0.1:%d", self._health_port)
 
     # -- main loop ---------------------------------------------------------
@@ -428,11 +457,18 @@ class NavigDaemon:
             pid = self.read_pid()
             # Double-check: verify the PID is actually a navig daemon, not a stale PID
             if self._verify_daemon_pid(pid):
-                self.logger.error("Daemon already running (pid=%s). Use 'navig service stop' first.", pid)
-                print(f"ERROR: Daemon already running (pid={pid}). Stop it first with: navig service stop")
+                self.logger.error(
+                    "Daemon already running (pid=%s). Use 'navig service stop' first.",
+                    pid,
+                )
+                print(
+                    f"ERROR: Daemon already running (pid={pid}). Stop it first with: navig service stop"
+                )
                 return
             else:
-                self.logger.warning("Stale PID file (pid=%s) — removing and starting fresh", pid)
+                self.logger.warning(
+                    "Stale PID file (pid=%s) — removing and starting fresh", pid
+                )
                 self._remove_pid()
 
         self._running = True
@@ -533,7 +569,9 @@ class NavigDaemon:
                     return True
             # Force kill
             if sys.platform == "win32":
-                subprocess.run(["taskkill", "/F", "/PID", str(pid), "/T"], capture_output=True)
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid), "/T"], capture_output=True
+                )
             else:
                 os.kill(pid, signal.SIGKILL)
             # Clean up PID file

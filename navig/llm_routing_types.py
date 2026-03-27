@@ -17,24 +17,18 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    AsyncIterator,
-    Dict,
-    List,
-    Optional,
-    Protocol,
-    runtime_checkable,
-)
+from typing import Any, AsyncIterator, Dict, List, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger("navig.llm_routing_types")
 
 
 # ---- Shared data structures ----
 
+
 @dataclass
 class ModelSelection:
     """Output of model routing - everything needed to dispatch an LLM call."""
+
     provider_name: str
     model_name: str
     temperature: float = 0.7
@@ -56,6 +50,7 @@ class ModelSelection:
 @dataclass
 class LLMResult:
     """Unified response from any LLM provider."""
+
     content: str
     model: str = ""
     provider: str = ""
@@ -76,6 +71,7 @@ class LLMResult:
 @dataclass
 class LLMChunk:
     """A single chunk from a streaming LLM response."""
+
     content: str
     model: str = ""
     provider: str = ""
@@ -86,6 +82,7 @@ class LLMChunk:
 @dataclass
 class RoutingContext:
     """Context passed through the routing pipeline."""
+
     user_input: str = ""
     messages: List[Dict[str, str]] = field(default_factory=list)
     mode_hint: Optional[str] = None
@@ -101,6 +98,7 @@ class RoutingContext:
 
 
 # ---- Layer 1 Protocol: Mode Router ----
+
 
 @runtime_checkable
 class ModeRouterProtocol(Protocol):
@@ -121,6 +119,7 @@ class ModeRouterProtocol(Protocol):
 
 # ---- Layer 2 Protocol: Model Router ----
 
+
 @runtime_checkable
 class ModelRouterProtocol(Protocol):
     """
@@ -136,6 +135,7 @@ class ModelRouterProtocol(Protocol):
 
 
 # ---- Layer 3 Protocol: LLM Client ----
+
 
 @runtime_checkable
 class LLMClientProtocol(Protocol):
@@ -171,6 +171,7 @@ class LLMClientProtocol(Protocol):
 
 # ---- Provider Factory Protocol ----
 
+
 @runtime_checkable
 class ProviderFactoryProtocol(Protocol):
     """Creates LLM client instances by provider name."""
@@ -182,22 +183,32 @@ class ProviderFactoryProtocol(Protocol):
 
 # ---- Adapter: LLMProvider (aiohttp) -> LLMClientProtocol ----
 
+
 class LLMProviderAdapter:
     """Wraps navig.agent.llm_providers.LLMProvider to LLMClientProtocol."""
 
     def __init__(self, provider):
         self._provider = provider
 
-    async def complete(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+    async def complete(
+        self, messages, model, temperature=0.7, max_tokens=4096, **kwargs
+    ):
         resp = await self._provider.chat(
-            model=model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens, **kwargs,
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
         )
         return LLMResult(
-            content=resp.content, model=resp.model, provider=resp.provider,
-            latency_ms=resp.latency_ms, prompt_tokens=resp.prompt_tokens,
+            content=resp.content,
+            model=resp.model,
+            provider=resp.provider,
+            latency_ms=resp.latency_ms,
+            prompt_tokens=resp.prompt_tokens,
             completion_tokens=resp.completion_tokens,
-            finish_reason=resp.finish_reason, raw=resp.raw,
+            finish_reason=resp.finish_reason,
+            raw=resp.raw,
         )
 
     async def stream(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
@@ -212,22 +223,29 @@ class LLMProviderAdapter:
 
 # ---- Adapter: BaseProviderClient (httpx) -> LLMClientProtocol ----
 
+
 class ProviderClientAdapter:
     """Wraps navig.providers.clients.BaseProviderClient to LLMClientProtocol."""
 
     def __init__(self, client):
         self._client = client
 
-    async def complete(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+    async def complete(
+        self, messages, model, temperature=0.7, max_tokens=4096, **kwargs
+    ):
         from navig.providers.clients import CompletionRequest, Message
+
         msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
         request = CompletionRequest(
-            messages=msgs, model=model,
-            temperature=temperature, max_tokens=max_tokens,
+            messages=msgs,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
         resp = await self._client.complete(request)
         return LLMResult(
-            content=resp.content or "", model=resp.model or model,
+            content=resp.content or "",
+            model=resp.model or model,
             provider=getattr(self._client, "name", "unknown"),
             prompt_tokens=resp.prompt_tokens,
             completion_tokens=resp.completion_tokens,
@@ -245,6 +263,7 @@ class ProviderClientAdapter:
 
 
 # ---- Unified provider factory ----
+
 
 class UnifiedProviderFactory:
     """
@@ -266,6 +285,7 @@ class UnifiedProviderFactory:
     def _create_client(self, provider_name: str, **kwargs: Any) -> Any:
         try:
             from navig.agent.llm_providers import _PROVIDER_MAP, create_provider
+
             if provider_name.lower() in _PROVIDER_MAP:
                 provider = create_provider(provider_name, **kwargs)
                 return LLMProviderAdapter(provider)
@@ -274,20 +294,29 @@ class UnifiedProviderFactory:
         try:
             from navig.providers.auth import resolve_auth
             from navig.providers.clients import create_client, get_builtin_provider
+
             config = get_builtin_provider(provider_name)
             if config is None:
                 from navig.llm_router import PROVIDER_BASE_URLS
                 from navig.providers.types import ModelApi, ProviderConfig
+
                 url = kwargs.get("base_url") or PROVIDER_BASE_URLS.get(
-                    provider_name, "https://openrouter.ai/api/v1")
-                config = ProviderConfig(name=provider_name, base_url=url, api=ModelApi.OPENAI_COMPLETIONS)
+                    provider_name, "https://openrouter.ai/api/v1"
+                )
+                config = ProviderConfig(
+                    name=provider_name, base_url=url, api=ModelApi.OPENAI_COMPLETIONS
+                )
             api_key = kwargs.get("api_key", "")
             if not api_key:
                 api_key, _ = resolve_auth(provider_name)
-            client = create_client(config, api_key=api_key, timeout=kwargs.get("timeout", 120.0))
+            client = create_client(
+                config, api_key=api_key, timeout=kwargs.get("timeout", 120.0)
+            )
             return ProviderClientAdapter(client)
         except (ImportError, ValueError) as e:
-            raise ValueError(f"Cannot create client for provider {provider_name!r}: {e}") from e
+            raise ValueError(
+                f"Cannot create client for provider {provider_name!r}: {e}"
+            ) from e
 
     async def close_all(self):
         for client in self._cache.values():

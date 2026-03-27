@@ -38,7 +38,7 @@ JSON_RESULTS="["
 check() {
     local name="$1" result="$2" detail="${3:-}"
     CHECKS=$((CHECKS + 1))
-    
+
     if [[ "$result" == "pass" ]]; then
         PASSED=$((PASSED + 1))
         [[ "$OUTPUT_MODE" == "human" ]] && printf "  ${PASS} %-45s %s\n" "$name" "$detail"

@@ -1,4 +1,5 @@
 """Defines the StatusEvent dataclass used by ConversationalAgent to emit structured lifecycle events."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

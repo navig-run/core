@@ -83,19 +83,18 @@ def _mcp_bridge_config() -> dict:
             or bridge_cfg.get("mcp_url")
             or f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
         ),
-        "token": (
-            os.getenv("NAVIG_BRIDGE_LLM_TOKEN")
-            or bridge_cfg.get("token", "")
-        ),
+        "token": (os.getenv("NAVIG_BRIDGE_LLM_TOKEN") or bridge_cfg.get("token", "")),
         "auto_connect": bridge_cfg.get("mcp_auto_connect", True),
         "reconnect_interval": bridge_cfg.get("mcp_reconnect_interval", 60),
     }
 
 
-async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: dict) -> None:
+async def _start_gateway_http(
+    gateway: NavigGateway, tg_config: dict, deck_cfg: dict
+) -> None:
     """
     Start ONLY the HTTP server portion of the gateway (no blocking loop).
-    
+
     This configures deck auth and starts aiohttp without entering the
     gateway's own while-loop, since our _run() manages the event loop.
     """
@@ -112,12 +111,14 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
 
     # Register full gateway routes for parity with standard gateway startup
     from navig.gateway.routes import register_all_routes
+
     register_all_routes(gateway._app, gateway)
 
     # Register deck routes with full auth config
     if deck_cfg.get("enabled", True):
         try:
             from navig.gateway.deck import register_deck_routes
+
             register_deck_routes(
                 gateway._app,
                 bot_token=tg_config.get("bot_token", ""),
@@ -141,13 +142,18 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
     site = web.TCPSite(gateway._runner, host, port)
     await site.start()
 
-    logger.info("Gateway HTTP server started on %s:%d (Deck: %s)",
-                host, port, "enabled" if deck_cfg.get("enabled") else "disabled")
+    logger.info(
+        "Gateway HTTP server started on %s:%d (Deck: %s)",
+        host,
+        port,
+        "enabled" if deck_cfg.get("enabled") else "disabled",
+    )
 
 
 async def _stop_gateway_http(gateway: NavigGateway) -> None:
     """Stop the HTTP server cleanly."""
     import logging
+
     logger = logging.getLogger(__name__)
 
     gateway.running = False
@@ -163,6 +169,7 @@ async def _mcp_reconnect_loop(
 ) -> None:
     """Background task: keep MCP Bridge connection alive."""
     import logging
+
     logger = logging.getLogger(__name__)
     interval = mcp_cfg.get("reconnect_interval", 60)
     name = "vscode-copilot"
@@ -197,6 +204,7 @@ async def _mcp_reconnect_loop(
 
 async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     import logging
+
     logger = logging.getLogger(__name__)
 
     _load_env()
@@ -236,6 +244,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     if mcp_cfg.get("auto_connect"):
         try:
             from navig.mcp import MCPClientManager
+
             gateway.mcp_client_manager = MCPClientManager()
             try:
                 await gateway.mcp_client_manager.add_client(
@@ -262,10 +271,15 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
         "enabled" if deck_cfg.get("enabled") else "disabled",
         gateway.config.port,
         "active" if matrix_adapter else "off",
-        "connected" if (gateway.mcp_client_manager and
-                        gateway.mcp_client_manager.clients.get("vscode-copilot", None) and
-                        gateway.mcp_client_manager.clients["vscode-copilot"].connected)
-        else "pending",
+        (
+            "connected"
+            if (
+                gateway.mcp_client_manager
+                and gateway.mcp_client_manager.clients.get("vscode-copilot", None)
+                and gateway.mcp_client_manager.clients["vscode-copilot"].connected
+            )
+            else "pending"
+        ),
     )
 
     stop_event = asyncio.Event()
@@ -309,8 +323,17 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run NAVIG Telegram worker")
-    parser.add_argument("--port", type=int, default=None, help="Override gateway port when gateway is enabled")
-    parser.add_argument("--no-gateway", action="store_true", help="Run Telegram bot without gateway HTTP server")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Override gateway port when gateway is enabled",
+    )
+    parser.add_argument(
+        "--no-gateway",
+        action="store_true",
+        help="Run Telegram bot without gateway HTTP server",
+    )
     args = parser.parse_args()
     asyncio.run(_run(port=args.port, enable_gateway=not args.no_gateway))
 

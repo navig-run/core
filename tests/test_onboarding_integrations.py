@@ -25,7 +25,9 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    def __init__(self, response: _FakeResponse | None = None, exc: Exception | None = None) -> None:
+    def __init__(
+        self, response: _FakeResponse | None = None, exc: Exception | None = None
+    ) -> None:
         self._response = response
         self._exc = exc
 
@@ -156,11 +158,13 @@ def test_validate_smtp_success_and_timeout(monkeypatch) -> None:
 def test_matrix_step_writes_config_and_vault(monkeypatch, tmp_path: Path) -> None:
     fake_vault = _FakeVault()
     step = next(step for step in _registry(tmp_path) if step.id == "matrix")
-    prompts = iter([
-        "https://matrix.org",
-        "matrix-token",
-        "!room:matrix.org",
-    ])
+    prompts = iter(
+        [
+            "https://matrix.org",
+            "matrix-token",
+            "!room:matrix.org",
+        ]
+    )
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
@@ -184,7 +188,9 @@ def test_matrix_step_writes_config_and_vault(monkeypatch, tmp_path: Path) -> Non
     assert config["matrix"]["default_room_id"] == "!room:matrix.org"
 
 
-def test_review_step_returns_jump_target_when_user_declines(monkeypatch, tmp_path: Path) -> None:
+def test_review_step_returns_jump_target_when_user_declines(
+    monkeypatch, tmp_path: Path
+) -> None:
     artifact = tmp_path / "onboarding.json"
     artifact.write_text(
         json.dumps(
@@ -195,8 +201,22 @@ def test_review_step_returns_jump_target_when_user_declines(monkeypatch, tmp_pat
                 "completedAt": "",
                 "engineVersion": "2.0.0",
                 "steps": [
-                    {"id": "core-navig", "title": "Core", "status": "completed", "completed_at": "", "duration_ms": 1, "output": {}},
-                    {"id": "matrix", "title": "Matrix", "status": "skipped", "completed_at": "", "duration_ms": 1, "output": {}},
+                    {
+                        "id": "core-navig",
+                        "title": "Core",
+                        "status": "completed",
+                        "completed_at": "",
+                        "duration_ms": 1,
+                        "output": {},
+                    },
+                    {
+                        "id": "matrix",
+                        "title": "Matrix",
+                        "status": "skipped",
+                        "completed_at": "",
+                        "duration_ms": 1,
+                        "output": {},
+                    },
                 ],
             }
         ),

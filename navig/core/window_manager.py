@@ -3,6 +3,7 @@ Window Manager Module
 
 Handles higher-level window management, layout saving/restoring, and dashboard data.
 """
+
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -33,11 +34,16 @@ class WindowManager:
         layout_data = []
         for w in windows:
             # Filter out system windows or unlikely targets
-            if w.title and w.title != "Program Manager" and w.width > 0 and w.height > 0:
+            if (
+                w.title
+                and w.title != "Program Manager"
+                and w.width > 0
+                and w.height > 0
+            ):
                 layout_data.append(asdict(w))
 
         file_path = self.layout_dir / f"{name}.json"
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             json.dump(layout_data, f, indent=2)
         info(f"Saved layout '{name}' with {len(layout_data)} windows")
 
@@ -53,7 +59,7 @@ class WindowManager:
             return
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 layout_data = json.load(f)
         except Exception as e:
             error(f"Failed to load layout: {e}")
@@ -66,9 +72,9 @@ class WindowManager:
         current_windows = self.get_windows()
 
         for saved_win in layout_data:
-            target_title = saved_win.get('title')
-            target_class = saved_win.get('class_name')
-            target_proc = saved_win.get('process_name')
+            target_title = saved_win.get("title")
+            target_class = saved_win.get("class_name")
+            target_proc = saved_win.get("process_name")
 
             if not target_title:
                 continue
@@ -91,17 +97,22 @@ class WindowManager:
                 # Restore state
                 selector = f"ahk_id {match.id}"
 
-                if saved_win.get('is_maximized'):
+                if saved_win.get("is_maximized"):
                     self.ahk.maximize_window(selector)
-                elif saved_win.get('is_minimized'):
+                elif saved_win.get("is_minimized"):
                     self.ahk.minimize_window(selector)
                 else:
                     # Restore position
-                    x, y, w, h = saved_win['x'], saved_win['y'], saved_win['width'], saved_win['height']
+                    x, y, w, h = (
+                        saved_win["x"],
+                        saved_win["y"],
+                        saved_win["width"],
+                        saved_win["height"],
+                    )
 
                     # Ensure window is restored (not minimized/maximized) before moving
                     if match.is_maximized or match.is_minimized:
-                         self.ahk.restore_window(selector)
+                        self.ahk.restore_window(selector)
 
                     self.ahk.move_window(selector, x, y, width=w, height=h)
             else:

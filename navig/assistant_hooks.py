@@ -11,39 +11,37 @@ from navig import console_helper as ch
 
 
 def pre_execution_check(
-    ctx_obj: Dict[str, Any],
-    command: str,
-    args: Dict[str, Any]
+    ctx_obj: Dict[str, Any], command: str, args: Dict[str, Any]
 ) -> bool:
     """
     Check for pre-execution warnings before running a command.
-    
+
     Args:
         ctx_obj: Context object with assistant and flags
         command: Command name (e.g., 'delete', 'sql', 'restart')
         args: Command arguments
-        
+
     Returns:
         True if should proceed, False if user cancelled
     """
-    if not ctx_obj.get('assistant_enabled'):
+    if not ctx_obj.get("assistant_enabled"):
         return True
 
-    assistant = ctx_obj.get('assistant')
+    assistant = ctx_obj.get("assistant")
     if not assistant:
         return True
 
     # Skip warnings if --yes flag is set
     # void: --yes bypasses all safety checks. use with extreme caution.
-    if ctx_obj.get('yes'):
+    if ctx_obj.get("yes"):
         return True
 
     # Check for pre-execution warnings
     try:
-        should_proceed, warnings = assistant.proactive_display.check_pre_execution_warnings(
-            command=command,
-            args=args,
-            context=ctx_obj
+        should_proceed, warnings = (
+            assistant.proactive_display.check_pre_execution_warnings(
+                command=command, args=args, context=ctx_obj
+            )
         )
 
         if warnings:
@@ -52,17 +50,17 @@ def pre_execution_check(
                 ch.warning(f"⚠️  {warning}")
 
             # If confirmation required and not auto-confirmed
-            if not should_proceed and not ctx_obj.get('yes'):
+            if not should_proceed and not ctx_obj.get("yes"):
                 ch.warning("\n⚠️  This operation requires confirmation")
                 confirm = input("Type 'yes' to proceed: ")
-                return confirm.lower() == 'yes'
+                return confirm.lower() == "yes"
 
         return should_proceed
 
     except Exception as e:
         # Don't block execution if assistant fails
         # void: the AI is helpful until it breaks. then we fall back to human judgment.
-        if ctx_obj.get('verbose'):
+        if ctx_obj.get("verbose"):
             ch.dim(f"Assistant warning check failed: {e}")
         return True
 
@@ -73,11 +71,11 @@ def post_execution_log(
     exit_code: int,
     stdout: str = "",
     stderr: str = "",
-    duration: float = 0.0
+    duration: float = 0.0,
 ):
     """
     Log command execution and analyze errors if needed.
-    
+
     Args:
         ctx_obj: Context object with assistant
         command: Command that was executed
@@ -86,10 +84,10 @@ def post_execution_log(
         stderr: Standard error
         duration: Execution time in seconds
     """
-    if not ctx_obj.get('assistant_enabled'):
+    if not ctx_obj.get("assistant_enabled"):
         return
 
-    assistant = ctx_obj.get('assistant')
+    assistant = ctx_obj.get("assistant")
     if not assistant:
         return
 
@@ -102,9 +100,9 @@ def post_execution_log(
             stdout=stdout,
             duration=duration,
             context={
-                'dry_run': ctx_obj.get('dry_run', False),
-                'verbose': ctx_obj.get('verbose', False)
-            }
+                "dry_run": ctx_obj.get("dry_run", False),
+                "verbose": ctx_obj.get("verbose", False),
+            },
         )
 
         # If command failed and auto-analysis is enabled
@@ -113,29 +111,26 @@ def post_execution_log(
 
     except Exception as e:
         # Don't crash if logging fails
-        if ctx_obj.get('verbose'):
+        if ctx_obj.get("verbose"):
             ch.dim(f"Assistant logging failed: {e}")
 
 
 def analyze_and_suggest_solutions(
-    ctx_obj: Dict[str, Any],
-    command: str,
-    exit_code: int,
-    error_message: str
+    ctx_obj: Dict[str, Any], command: str, exit_code: int, error_message: str
 ):
     """
     Analyze error and display suggested solutions.
-    
+
     Args:
         ctx_obj: Context object with assistant
         command: Failed command
         exit_code: Exit code
         error_message: Error message
     """
-    if not ctx_obj.get('assistant_enabled'):
+    if not ctx_obj.get("assistant_enabled"):
         return
 
-    assistant = ctx_obj.get('assistant')
+    assistant = ctx_obj.get("assistant")
     if not assistant:
         return
 
@@ -145,7 +140,7 @@ def analyze_and_suggest_solutions(
             command=command,
             exit_code=exit_code,
             error_message=error_message,
-            context=ctx_obj
+            context=ctx_obj,
         )
 
         if solutions:
@@ -158,7 +153,7 @@ def analyze_and_suggest_solutions(
 
     except Exception as e:
         # Don't crash if analysis fails
-        if ctx_obj.get('verbose'):
+        if ctx_obj.get("verbose"):
             ch.dim(f"Assistant error analysis failed: {e}")
 
 
@@ -176,4 +171,3 @@ class CommandTimer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.duration = time.time() - self.start_time
         return False
-

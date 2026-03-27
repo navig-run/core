@@ -38,8 +38,10 @@ from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL  # noqa: F401
 # Types
 # =============================================================================
 
+
 class STTProvider(str, Enum):
     """Supported STT providers."""
+
     DEEPGRAM = "deepgram"
     WHISPER_API = "whisper_api"
     WHISPER_LOCAL = "whisper_local"
@@ -48,6 +50,7 @@ class STTProvider(str, Enum):
 @dataclass
 class STTConfig:
     """STT configuration."""
+
     provider: STTProvider = STTProvider.WHISPER_API
     fallback_providers: List[STTProvider] = field(
         default_factory=lambda: [STTProvider.WHISPER_LOCAL]
@@ -77,6 +80,7 @@ class STTConfig:
 @dataclass
 class STTResult:
     """Result from STT transcription."""
+
     success: bool
     text: Optional[str] = None
 
@@ -101,6 +105,7 @@ class STTResult:
 # STT Engine
 # =============================================================================
 
+
 class STT:
     """
     Speech-to-Text engine with multi-provider support.
@@ -122,6 +127,7 @@ class STT:
         """
         try:
             from navig.vault import get_vault_v2
+
             key = get_vault_v2().get_secret(vault_label)
             if key:
                 return key
@@ -162,12 +168,13 @@ class STT:
                 error=(
                     f"Audio file too large: {size_mb:.1f}MB"
                     f" (max {self.config.max_audio_size_mb}MB)"
-                )
+                ),
             )
 
         lang = language or self.config.language
         providers = (
-            [provider] if provider
+            [provider]
+            if provider
             else [self.config.provider] + self.config.fallback_providers
         )
 
@@ -176,7 +183,9 @@ class STT:
             if prov is None:
                 continue
             try:
-                result = await self._transcribe_with_provider(audio_path, prov, lang, **kwargs)
+                result = await self._transcribe_with_provider(
+                    audio_path, prov, lang, **kwargs
+                )
                 if result.success:
                     result.latency_ms = int(
                         (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -267,7 +276,8 @@ class STT:
                     text = alt.get("transcript", "")
                     confidence = alt.get("confidence", 0.0)
                     detected_lang = (
-                        data.get("results", {}).get("channels", [{}])[0]
+                        data.get("results", {})
+                        .get("channels", [{}])[0]
                         .get("detected_language", language)
                     )
 
@@ -408,20 +418,34 @@ class STT:
 
         if prov == STTProvider.DEEPGRAM:
             return [
-                {"id": "nova-2", "name": "Nova 2", "description": "Latest, most accurate"},
+                {
+                    "id": "nova-2",
+                    "name": "Nova 2",
+                    "description": "Latest, most accurate",
+                },
                 {"id": "nova", "name": "Nova", "description": "Fast and accurate"},
                 {"id": "enhanced", "name": "Enhanced", "description": "High accuracy"},
                 {"id": "base", "name": "Base", "description": "Standard quality"},
             ]
         elif prov == STTProvider.WHISPER_API:
-            return [{"id": "whisper-1", "name": "Whisper v1", "description": "OpenAI Whisper"}]
+            return [
+                {
+                    "id": "whisper-1",
+                    "name": "Whisper v1",
+                    "description": "OpenAI Whisper",
+                }
+            ]
         elif prov == STTProvider.WHISPER_LOCAL:
             return [
                 {"id": "tiny", "name": "Tiny", "description": "39M params, fastest"},
                 {"id": "base", "name": "Base", "description": "74M params"},
                 {"id": "small", "name": "Small", "description": "244M params"},
                 {"id": "medium", "name": "Medium", "description": "769M params"},
-                {"id": "large", "name": "Large", "description": "1550M params, most accurate"},
+                {
+                    "id": "large",
+                    "name": "Large",
+                    "description": "1550M params, most accurate",
+                },
             ]
         return []
 
@@ -433,7 +457,9 @@ class STT:
 _default_stt: Optional[STT] = None
 
 
-def _resolve_audio_file_params(filename: str, *, is_voice: bool = False) -> tuple[str, str]:
+def _resolve_audio_file_params(
+    filename: str, *, is_voice: bool = False
+) -> tuple[str, str]:
     """Return a normalized upload filename and MIME type for an audio file.
 
     Voice messages are normalized to Telegram's preferred ``.oga`` filename

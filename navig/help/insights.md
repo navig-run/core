@@ -215,5 +215,3 @@ navig trigger add "High Error Rate" \
 
 4. **Follow recommendations**: The system learns from your patterns and provides
    increasingly relevant suggestions over time.
-
-

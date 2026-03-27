@@ -26,6 +26,7 @@ Key design decisions:
 - All SSH operations are async (asyncio.create_subprocess_exec)
 - No raw stack traces to the user — all exception handling sanitizes output
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,24 +48,25 @@ if TYPE_CHECKING:
 
 class FailureClass(str, Enum):
     """Every command failure is assigned one of these before any action is taken."""
-    SSH_AUTH_FAIL       = "SSH_AUTH_FAIL"        # publickey / password rejected
+
+    SSH_AUTH_FAIL = "SSH_AUTH_FAIL"  # publickey / password rejected
     SSH_HOSTKEY_UNKNOWN = "SSH_HOSTKEY_UNKNOWN"  # strict host key check failed
-    SSH_TRANSPORT_FAIL  = "SSH_TRANSPORT_FAIL"   # exit 255, connection refused / hung
-    DB_PERMISSION_DENY  = "DB_PERMISSION_DENY"   # DB auth / ACL failure
-    CMD_NOT_FOUND       = "CMD_NOT_FOUND"        # missing binary on remote
-    TIMEOUT             = "TIMEOUT"              # command hung or timed out
-    UNKNOWN             = "UNKNOWN"              # unclassified — escalate
+    SSH_TRANSPORT_FAIL = "SSH_TRANSPORT_FAIL"  # exit 255, connection refused / hung
+    DB_PERMISSION_DENY = "DB_PERMISSION_DENY"  # DB auth / ACL failure
+    CMD_NOT_FOUND = "CMD_NOT_FOUND"  # missing binary on remote
+    TIMEOUT = "TIMEOUT"  # command hung or timed out
+    UNKNOWN = "UNKNOWN"  # unclassified — escalate
 
 
 # Human-readable badge for each class
 _CLASS_BADGE: Dict[FailureClass, str] = {
-    FailureClass.SSH_AUTH_FAIL:       "🔐 SSH_AUTH_FAIL",
+    FailureClass.SSH_AUTH_FAIL: "🔐 SSH_AUTH_FAIL",
     FailureClass.SSH_HOSTKEY_UNKNOWN: "🔑 SSH_HOSTKEY_UNKNOWN",
-    FailureClass.SSH_TRANSPORT_FAIL:  "📡 SSH_TRANSPORT_FAIL",
-    FailureClass.DB_PERMISSION_DENY:  "🛢 DB_PERMISSION_DENY",
-    FailureClass.CMD_NOT_FOUND:       "🔍 CMD_NOT_FOUND",
-    FailureClass.TIMEOUT:             "⌛ TIMEOUT",
-    FailureClass.UNKNOWN:             "❓ UNKNOWN",
+    FailureClass.SSH_TRANSPORT_FAIL: "📡 SSH_TRANSPORT_FAIL",
+    FailureClass.DB_PERMISSION_DENY: "🛢 DB_PERMISSION_DENY",
+    FailureClass.CMD_NOT_FOUND: "🔍 CMD_NOT_FOUND",
+    FailureClass.TIMEOUT: "⌛ TIMEOUT",
+    FailureClass.UNKNOWN: "❓ UNKNOWN",
 }
 
 # One-liner cause explanation shown to user in any mode
@@ -108,22 +110,24 @@ _CLASS_EXPLANATION: Dict[FailureClass, str] = {
 @dataclass
 class FailureContext:
     """All information captured at the point of failure."""
-    original_cmd: str       # raw navig command string (without leading "navig ")
+
+    original_cmd: str  # raw navig command string (without leading "navig ")
     chat_id: int
     user_id: int
     failure_class: FailureClass
-    stderr: str             # raw stderr / error text from the failed operation
+    stderr: str  # raw stderr / error text from the failed operation
     exit_code: int
-    host: Optional[str]     # extracted from cmd if parseable, else None
+    host: Optional[str]  # extracted from cmd if parseable, else None
     attempt_count: int = 0  # number of fix attempts already made this session
 
 
 @dataclass
 class HealEvent:
     """Serialisable record stored in session.heal_history (last 5)."""
+
     timestamp: str
     failure_class: str
-    status: str             # "resolved" | "partial" | "failed"
+    status: str  # "resolved" | "partial" | "failed"
     cmd: str
 
     def to_dict(self) -> Dict[str, Any]:
@@ -242,9 +246,7 @@ def _exit_code_from_response(response: str) -> int:
     return int(m.group(1)) if m else 0
 
 
-def detect_failure_in_response(
-    response: str, cmd: str
-) -> Optional[FailureContext]:
+def detect_failure_in_response(response: str, cmd: str) -> Optional[FailureContext]:
     """Scan the output of on_message() for SSH / connection error signatures.
 
     Args:
@@ -261,7 +263,11 @@ def detect_failure_in_response(
     exit_code = _exit_code_from_response(response)
 
     # Trigger autoheal if explicit ssh failure OR non-zero exit OR generic command failed
-    has_failed = "Command failed" in response or "command not found" in response or "Permission denied" in response
+    has_failed = (
+        "Command failed" in response
+        or "command not found" in response
+        or "Permission denied" in response
+    )
     if not (matched or exit_code != 0 or has_failed):
         return None
 
@@ -372,9 +378,7 @@ class AutoHealMixin:
             parse_mode="Markdown",
         )
 
-    async def _send_autoheal_status(
-        self, chat_id: int, user_id: int, sm: Any
-    ) -> None:
+    async def _send_autoheal_status(self, chat_id: int, user_id: int, sm: Any) -> None:
         """Render current settings and last 5 heal events."""
         autoheal_on = False
         hive_on = False
@@ -448,9 +452,7 @@ class AutoHealMixin:
                 ctx.chat_id,
                 f"🔧 Auto-Heal running for *{_CLASS_BADGE[ctx.failure_class]}*…",
             )
-            task = asyncio.create_task(
-                self._autofix_with_report(ctx, progress_msg)
-            )
+            task = asyncio.create_task(self._autofix_with_report(ctx, progress_msg))
             self._active_heals[dedup_key] = task
         else:
             # Manual mode: show error badge + 3-button keyboard
@@ -499,6 +501,7 @@ class AutoHealMixin:
         ctx.attempt_count += 1
         # Lazy-import to keep the mixin loading fast
         from navig.selfheal.ssh_healer import SSHHealer
+
         healer = SSHHealer()
         host = ctx.host or "unknown"
 
@@ -576,6 +579,7 @@ class AutoHealMixin:
         # Hive Mind enabled → attempt PR submission
         try:
             from navig.selfheal.heal_pr_submitter import HealPRSubmitter
+
             submitter = HealPRSubmitter()
             patch_text = f"# Observed error\n{ctx.stderr[:1000]}"
             pr_url = submitter.submit_heal_pr(
@@ -607,6 +611,7 @@ class AutoHealMixin:
             # Fallback: store patch locally
             try:
                 from navig.selfheal.heal_pr_submitter import HealPRSubmitter
+
                 submitter = HealPRSubmitter()
                 patch_path = submitter.store_pending_patch(
                     failure_class=ctx.failure_class.value,
@@ -655,6 +660,7 @@ class AutoHealMixin:
         # Optionally enrich with ErrorResolution analysis
         try:
             from navig.modules.error_resolution import analyze_error
+
             solutions = analyze_error(ctx.original_cmd, ctx.exit_code, ctx.stderr)
             if solutions:
                 lines += ["", "─── *Suggested solutions* ───"]
@@ -664,13 +670,18 @@ class AutoHealMixin:
             pass  # Best-effort enrichment — never block the report
 
         # Append TCP probe for SSH classes
-        if ctx.failure_class in (
-            FailureClass.SSH_AUTH_FAIL,
-            FailureClass.SSH_HOSTKEY_UNKNOWN,
-            FailureClass.SSH_TRANSPORT_FAIL,
-        ) and ctx.host:
+        if (
+            ctx.failure_class
+            in (
+                FailureClass.SSH_AUTH_FAIL,
+                FailureClass.SSH_HOSTKEY_UNKNOWN,
+                FailureClass.SSH_TRANSPORT_FAIL,
+            )
+            and ctx.host
+        ):
             try:
                 from navig.selfheal.ssh_healer import SSHHealer
+
                 healer = SSHHealer()
                 reachable = await healer._tcp_probe(ctx.host, 22)
                 ssh_status = "✅ reachable" if reachable else "❌ unreachable"
@@ -735,11 +746,11 @@ class AutoHealMixin:
         )
 
         keyboard = self._build_heal_keyboard(ctx)
-        await self.send_message(ctx.chat_id, text, keyboard=keyboard, parse_mode="Markdown")
+        await self.send_message(
+            ctx.chat_id, text, keyboard=keyboard, parse_mode="Markdown"
+        )
 
-    def _build_heal_keyboard(
-        self, ctx: FailureContext
-    ) -> List[List[Dict[str, str]]]:
+    def _build_heal_keyboard(self, ctx: FailureContext) -> List[List[Dict[str, str]]]:
         """Build the 3-button heal keyboard using the CallbackStore pattern."""
         from navig.gateway.channels.telegram_keyboards import (
             CallbackEntry,
@@ -782,14 +793,15 @@ class AutoHealMixin:
 
     async def _dispatch_heal_callback(
         self,
-        action: str,         # "heal_fix", "heal_diag", or "heal_explain"
-        cb_key: str,         # full "heal_fix:<hash>" string
+        action: str,  # "heal_fix", "heal_diag", or "heal_explain"
+        cb_key: str,  # full "heal_fix:<hash>" string
         chat_id: int,
         user_id: int,
-        cb_id: str,          # Telegram callback_query id for answering
+        cb_id: str,  # Telegram callback_query id for answering
     ) -> None:
         """Called by CallbackHandler.handle() for heal_* prefixed callbacks."""
         from navig.gateway.channels.telegram_keyboards import get_callback_store
+
         store = get_callback_store()
         entry = store.get(cb_key)
 
@@ -809,7 +821,7 @@ class AutoHealMixin:
             chat_id=chat_id,
             user_id=user_id,
             failure_class=fc,
-            stderr=entry.ai_response,   # stored in ai_response field
+            stderr=entry.ai_response,  # stored in ai_response field
             exit_code=entry.extra.get("exit_code", 0),
             host=entry.extra.get("host") or None,
         )
@@ -862,7 +874,9 @@ class AutoHealMixin:
                             metadata=None,
                         )
                         if response:
-                            await self.send_message(ctx.chat_id, response, parse_mode=None)
+                            await self.send_message(
+                                ctx.chat_id, response, parse_mode=None
+                            )
                     except Exception:
                         logger.exception("autoheal: retry failed")
                         await self.send_message(
@@ -930,8 +944,9 @@ class AutoHealMixin:
     async def _answer_callback(self, cb_id: str, text: str) -> None:
         """Answer a callback_query (shows toast notification)."""
         try:
-            await self._api_call("answerCallbackQuery",
-                                  callback_query_id=cb_id, text=text[:200])
+            await self._api_call(
+                "answerCallbackQuery", callback_query_id=cb_id, text=text[:200]
+            )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -940,6 +955,7 @@ class AutoHealMixin:
         try:
             if hasattr(self, "_has_feature") and self._has_feature("sessions"):
                 from navig.gateway.channels.telegram_features import get_session_manager
+
                 return get_session_manager()
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -959,7 +975,7 @@ class AutoHealMixin:
                 cmd=ctx.original_cmd[:80],
             ).to_dict()
             history = getattr(session, "heal_history", [])
-            history = (history + [event])[-5:]   # keep last 5
+            history = (history + [event])[-5:]  # keep last 5
             sm.update_settings(ctx.chat_id, ctx.user_id, heal_history=history)
         except Exception:
             logger.exception("autoheal: _record_heal_event failed")
@@ -969,6 +985,7 @@ class AutoHealMixin:
         """Return a human-readable path hint for NAVIG config."""
         try:
             from navig.platform.paths import config_dir
+
             return str(config_dir() / "config.yaml")
         except Exception:
             return "config.yaml"

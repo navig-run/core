@@ -25,7 +25,11 @@ except ImportError as _exc:
     ) from _exc
 
 from navig.debug_logger import get_debug_logger
-from navig.gateway.routes.common import json_error_response, json_ok, require_bearer_auth
+from navig.gateway.routes.common import (
+    json_error_response,
+    json_ok,
+    require_bearer_auth,
+)
 from navig.mesh.registry import get_registry
 
 logger = get_debug_logger()
@@ -42,15 +46,18 @@ def register(app: "web.Application", gateway: "NavigGateway") -> None:
 
 # ─────────────────────────── GET /mesh/peers ─────────────────────────
 
+
 def _peers(gw: "NavigGateway"):
     async def h(r: "web.Request") -> "web.Response":
         # Light auth: optional — mesh data is low-sensitivity on LAN
         registry = get_registry(gw.storage_dir)
         return json_ok(registry.to_api_dict())
+
     return h
 
 
 # ─────────────────────────── POST /mesh/ping ─────────────────────────
+
 
 def _ping(gw: "NavigGateway"):
     """
@@ -60,6 +67,7 @@ def _ping(gw: "NavigGateway"):
     Useful when UDP multicast is blocked (e.g., some corporate networks).
     The server fetches /health + /mesh/peers from the given URL to bootstrap.
     """
+
     async def h(r: "web.Request") -> "web.Response":
         auth = require_bearer_auth(r, gw)
         if auth is not None:
@@ -93,12 +101,16 @@ async def _bootstrap_peer(url: str, gw: "NavigGateway") -> dict | None:
 
         async with aiohttp.ClientSession() as session:
             # Quick health check
-            async with session.get(f"{url}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(
+                f"{url}/health", timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
                 if resp.status != 200:
                     return None
 
             # Fetch their peer data to get their self record
-            async with session.get(f"{url}/mesh/peers", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(
+                f"{url}/mesh/peers", timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -120,6 +132,7 @@ async def _bootstrap_peer(url: str, gw: "NavigGateway") -> dict | None:
 
 # ─────────────────────────── POST /mesh/route ────────────────────────
 
+
 def _route(gw: "NavigGateway"):
     """
     Proxy a ChatRequest to the best available mesh peer.
@@ -128,6 +141,7 @@ def _route(gw: "NavigGateway"):
     Returns the peer's /llm/chat response with added `routed_via` metadata.
     Falls back to local processing if no peer is available.
     """
+
     async def h(r: "web.Request") -> "web.Response":
         auth = require_bearer_auth(r, gw)
         if auth is not None:
@@ -142,7 +156,10 @@ def _route(gw: "NavigGateway"):
         capability = body.pop("capability", None)
 
         from navig.mesh.router import route_to_best_peer
-        result = await route_to_best_peer(body, capability=capability, target_node_id=target_node_id)
+
+        result = await route_to_best_peer(
+            body, capability=capability, target_node_id=target_node_id
+        )
 
         if result is not None:
             return json_ok(result)
@@ -157,8 +174,13 @@ def _route(gw: "NavigGateway"):
             response_text = await gw.router.route_message(
                 channel="http", user_id="bridge", message=text, metadata=metadata
             )
-            return json_ok({"text": response_text or "", "routed_via": None,
-                            "metadata": {"provider": "local"}})
+            return json_ok(
+                {
+                    "text": response_text or "",
+                    "routed_via": None,
+                    "metadata": {"provider": "local"},
+                }
+            )
         except Exception as e:
             return json_error_response(f"Local fallback failed: {e}", status=500)
 
@@ -167,12 +189,14 @@ def _route(gw: "NavigGateway"):
 
 # ─────────────────────────── POST /mesh/target ───────────────────────
 
+
 def _set_target(gw: "NavigGateway"):
     """
     Set the active routing target for this session.
     Body: { "node_id": "<node_id>" }
     The target is stored in-memory on the gateway (not persisted).
     """
+
     async def h(r: "web.Request") -> "web.Response":
         try:
             body = await r.json()
@@ -202,27 +226,34 @@ def _set_target(gw: "NavigGateway"):
 
 # ─────────────────────────── DELETE /mesh/target ─────────────────────
 
+
 def _clear_target(gw: "NavigGateway"):
     """Clear the active routing target — commands run locally."""
+
     async def h(r: "web.Request") -> "web.Response":
         registry = get_registry(gw.storage_dir)
         registry.clear_target()  # type: ignore[attr-defined]
         logger.info("[mesh.routes] Routing target cleared")
         return json_ok({"cleared": True})
+
     return h
 
 
 # ─────────────────────────── POST /mesh/discovery/scan ───────────────
+
 
 def _scan(gw: "NavigGateway"):
     """
     Trigger an immediate LAN discovery scan (UDP multicast + active probing).
     Non-blocking — returns immediately; listen on /mesh/peers for results.
     """
+
     async def h(r: "web.Request") -> "web.Response":
         import asyncio
+
         try:
             from navig.mesh.discovery import NavigDiscovery
+
             registry = get_registry(gw.storage_dir)
             discovery = NavigDiscovery(registry)
 

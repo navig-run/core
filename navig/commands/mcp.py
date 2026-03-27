@@ -1,4 +1,5 @@
 """MCP Management Commands"""
+
 from typing import Any, Dict
 
 from navig import console_helper as ch
@@ -18,15 +19,11 @@ def search_mcp_cmd(query: str, options: Dict[str, Any]):
     table = ch.create_table(
         title=f"🔍 MCP Server Search Results: {query}",
         columns=["Name", "Type", "Description"],
-        show_header=True
+        show_header=True,
     )
 
     for server in results:
-        table.add_row(
-            server['name'],
-            server['type'].upper(),
-            server['description']
-        )
+        table.add_row(server["name"], server["type"].upper(), server["description"])
 
     ch.print_table(table)
     ch.newline()
@@ -35,7 +32,7 @@ def search_mcp_cmd(query: str, options: Dict[str, Any]):
 
 def install_mcp_cmd(name: str, options: Dict[str, Any]):
     """Install an MCP server."""
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.dim(f"Would install MCP server: {name}")
         return
 
@@ -52,7 +49,7 @@ def install_mcp_cmd(name: str, options: Dict[str, Any]):
     # Use first exact match or first result
     server_info = None
     for result in results:
-        if result['name'] == name:
+        if result["name"] == name:
             server_info = result
             break
 
@@ -61,21 +58,21 @@ def install_mcp_cmd(name: str, options: Dict[str, Any]):
 
     # Install
     mcp_manager.install_server(
-        name=server_info['name'],
-        package=server_info['package'],
-        server_type=server_info['type']
+        name=server_info["name"],
+        package=server_info["package"],
+        server_type=server_info["type"],
     )
 
 
 def uninstall_mcp_cmd(name: str, options: Dict[str, Any]):
     """Uninstall an MCP server."""
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.dim(f"Would uninstall MCP server: {name}")
         return
 
     mcp_manager = MCPManager()
 
-    if not options.get('yes'):
+    if not options.get("yes"):
         confirm = ch.confirm(f"Uninstall MCP server '{name}'?")
         if not confirm:
             ch.warning("Cancelled")
@@ -95,7 +92,7 @@ def list_mcp_cmd(options: Dict[str, Any]):
         ch.dim("Search and install servers with: navig mcp search <query>")
         return
 
-    if options.get('plain'):
+    if options.get("plain"):
         # Plain text output - one server per line for scripting
         for server in servers:
             ch.raw_print(server.name)
@@ -105,18 +102,23 @@ def list_mcp_cmd(options: Dict[str, Any]):
     table = ch.create_table(
         title="📦 Installed MCP Servers",
         columns=["Name", "Type", "Status", "Running"],
-        show_header=True
+        show_header=True,
     )
 
     for server in servers:
-        status = ch.status_text("Enabled", "success") if server.is_enabled() else ch.status_text("Disabled", "dim")
-        running = ch.status_text("Yes", "success") if server.is_running() else ch.status_text("No", "dim")
+        status = (
+            ch.status_text("Enabled", "success")
+            if server.is_enabled()
+            else ch.status_text("Disabled", "dim")
+        )
+        running = (
+            ch.status_text("Yes", "success")
+            if server.is_running()
+            else ch.status_text("No", "dim")
+        )
 
         table.add_row(
-            server.name,
-            server.config.get('type', 'unknown').upper(),
-            status,
-            running
+            server.name, server.config.get("type", "unknown").upper(), status, running
         )
 
     ch.print_table(table)
@@ -124,7 +126,7 @@ def list_mcp_cmd(options: Dict[str, Any]):
 
 def enable_mcp_cmd(name: str, options: Dict[str, Any]):
     """Enable an MCP server."""
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.dim(f"Would enable MCP server: {name}")
         return
 
@@ -134,7 +136,7 @@ def enable_mcp_cmd(name: str, options: Dict[str, Any]):
 
 def disable_mcp_cmd(name: str, options: Dict[str, Any]):
     """Disable an MCP server."""
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.dim(f"Would disable MCP server: {name}")
         return
 
@@ -144,13 +146,13 @@ def disable_mcp_cmd(name: str, options: Dict[str, Any]):
 
 def start_mcp_cmd(name: str, options: Dict[str, Any]):
     """Start an MCP server."""
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.dim(f"Would start MCP server: {name}")
         return
 
     mcp_manager = MCPManager()
 
-    if name == 'all':
+    if name == "all":
         mcp_manager.start_all_enabled()
     else:
         mcp_manager.start_server(name)
@@ -158,13 +160,13 @@ def start_mcp_cmd(name: str, options: Dict[str, Any]):
 
 def stop_mcp_cmd(name: str, options: Dict[str, Any]):
     """Stop an MCP server."""
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.dim(f"Would stop MCP server: {name}")
         return
 
     mcp_manager = MCPManager()
 
-    if name == 'all':
+    if name == "all":
         mcp_manager.stop_all()
     else:
         mcp_manager.stop_server(name)
@@ -172,7 +174,7 @@ def stop_mcp_cmd(name: str, options: Dict[str, Any]):
 
 def restart_mcp_cmd(name: str, options: Dict[str, Any]):
     """Restart an MCP server."""
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.dim(f"Would restart MCP server: {name}")
         return
 
@@ -199,10 +201,14 @@ def status_mcp_cmd(name: str, options: Dict[str, Any]):
     ch.info(f"Type: {status['type'].upper()}")
     ch.info(f"Command: {status['command']}")
 
-    enabled_status = ch.status_text("Enabled", "success") if status['enabled'] else ch.status_text("Disabled", "dim")
+    enabled_status = (
+        ch.status_text("Enabled", "success")
+        if status["enabled"]
+        else ch.status_text("Disabled", "dim")
+    )
     ch.info(f"Status: {enabled_status}")
 
-    if status['running']:
+    if status["running"]:
         ch.success(f"✓ Running (PID: {status['pid']})")
     else:
         ch.warning("○ Not running")

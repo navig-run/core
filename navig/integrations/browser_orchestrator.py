@@ -29,6 +29,7 @@ Usage:
         ]
     })
 """
+
 from __future__ import annotations
 
 import logging
@@ -70,7 +71,9 @@ async def run_browser_task(
 
     for attempt in range(max_hitl_retries + 1):
         if attempt > 0:
-            logger.info("Browser task %s: retry %d/%d", task_id, attempt, max_hitl_retries)
+            logger.info(
+                "Browser task %s: retry %d/%d", task_id, attempt, max_hitl_retries
+            )
 
         # POST task to Go daemon
         try:
@@ -89,7 +92,9 @@ async def run_browser_task(
             screenshot = result["artifacts"]["screenshotPaths"][-1]
 
         if on_progress:
-            await on_progress("step_complete", {"attempt": attempt, "needs_human": needs_human})
+            await on_progress(
+                "step_complete", {"attempt": attempt, "needs_human": needs_human}
+            )
 
         # ── No human needed: done ─────────────────────────────────────────────
         if not needs_human:
@@ -130,7 +135,7 @@ async def run_browser_task(
     await comms.send_task_complete(
         task_spec.get("intent", task_id),
         success=False,
-        screenshot_path=screenshot if 'screenshot' in dir() else None,
+        screenshot_path=screenshot if "screenshot" in dir() else None,
     )
     return result
 
@@ -140,7 +145,7 @@ def _inject_2fa_steps(task_spec: Dict[str, Any], code: str) -> None:
     Best-effort 2FA code injection: add a fill step for common 2FA selectors
     before the existing steps list. The existing steps stay intact so the
     navigation they accomplished (logged in, redirected) isn't repeated.
-    
+
     In production this would be smarter (DOM tree inspection), but this
     handles the 90% case for major services (GitHub, Google, etc).
     """
@@ -159,7 +164,13 @@ def _inject_2fa_steps(task_spec: Dict[str, Any], code: str) -> None:
     for sel in common_2fa_selectors:
         inject.append({"fill": {"target": sel, "value": code}})
     # Try to submit
-    inject.append({"click": {"target": "button[type=submit], input[type=submit], [data-action*=verify]"}})
+    inject.append(
+        {
+            "click": {
+                "target": "button[type=submit], input[type=submit], [data-action*=verify]"
+            }
+        }
+    )
     inject.append({"wait": {"kind": "dom_ready"}})
 
     # Prepend inject steps (after any goto step at position 0)

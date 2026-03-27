@@ -33,9 +33,9 @@ class HealthChecker:
         remote_ops: Any,
         dry_run: bool = False,
     ):
-        self._cfg     = config
-        self._server  = server_config
-        self._remote  = remote_ops
+        self._cfg = config
+        self._server = server_config
+        self._remote = remote_ops
         self._dry_run = dry_run
 
     def check(self) -> tuple[bool, str]:
@@ -61,7 +61,13 @@ class HealthChecker:
                 suffix = f"attempt {attempt}/{retries}"
                 return True, f"{msg} ({suffix})"
             if attempt < retries:
-                logger.debug("Health check attempt %d/%d failed: %s — retrying in %ds", attempt, retries, msg, interval)
+                logger.debug(
+                    "Health check attempt %d/%d failed: %s — retrying in %ds",
+                    attempt,
+                    retries,
+                    msg,
+                    interval,
+                )
                 time.sleep(interval)
 
         return False, f"All {retries} health check attempts failed. Last: {msg}"
@@ -74,7 +80,7 @@ class HealthChecker:
 
     def _run_http_check(self) -> tuple[bool, str]:
         """Check by running curl on the remote and inspecting HTTP status code."""
-        url    = self._cfg.url
+        url = self._cfg.url
         method = self._cfg.method.upper()
         expect = self._cfg.expected_status
         timeout = self._cfg.timeout_seconds

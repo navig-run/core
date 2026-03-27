@@ -8,6 +8,7 @@ Every submission requires explicit prior user approval — this module never
 auto-submits.  The calling layer (CLI command or Telegram flow) is solely
 responsible for obtaining that approval before calling :func:`submit_pr`.
 """
+
 from __future__ import annotations
 
 import os
@@ -16,7 +17,11 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from navig.selfheal.git_manager import UPSTREAM_REPO, _github_request, get_github_username
+from navig.selfheal.git_manager import (
+    UPSTREAM_REPO,
+    _github_request,
+    get_github_username,
+)
 from navig.selfheal.scanner import ScanFinding
 
 # ---------------------------------------------------------------------------
@@ -25,9 +30,9 @@ from navig.selfheal.scanner import ScanFinding
 
 _SEVERITY_EMOJI: dict[str, str] = {
     "critical": "🔴",
-    "high":     "🟠",
-    "medium":   "🟡",
-    "low":      "🔵",
+    "high": "🟠",
+    "medium": "🟡",
+    "low": "🔵",
 }
 
 
@@ -160,6 +165,7 @@ def _resolve_token(config: dict[str, Any]) -> str:
     # 1. Try vault (deferred import so startup stays fast).
     try:
         from navig.vault import get_vault  # noqa: PLC0415
+
         vault = get_vault()
         token = vault.get_api_key("github_contribute")
         if token:
@@ -218,6 +224,7 @@ def submit_pr(
     if version is None:
         try:
             from navig import __version__ as _v  # noqa: PLC0415
+
             version = _v
         except Exception:  # noqa: BLE001
             version = "unknown"

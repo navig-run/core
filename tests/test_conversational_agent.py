@@ -1,4 +1,5 @@
 """Tests for the StatusEvent system, ConversationalAgent refactor, and ConsoleStatusRenderer."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,10 +12,10 @@ from navig.agent.conv.console_renderer import ConsoleStatusRenderer
 from navig.agent.conv.executor import ExecutionStep, Task, TaskExecutor
 from navig.agent.conv.status_event import StatusEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_agent(**kwargs) -> ConversationalAgent:
     """Build a ConversationalAgent with minimal real dependencies."""
@@ -30,6 +31,7 @@ def _make_agent(**kwargs) -> ConversationalAgent:
 def _make_executor(events: list[StatusEvent]) -> TaskExecutor:
     async def cb(e: StatusEvent) -> None:
         events.append(e)
+
     return TaskExecutor(on_status_update=cb, max_attempts=1)
 
 
@@ -42,6 +44,7 @@ def _make_task(*descriptions: str) -> Task:
 # 1. StatusEvent dataclass
 # ---------------------------------------------------------------------------
 
+
 def test_status_event_required_fields() -> None:
     ts = datetime.now()
     e = StatusEvent(type="thinking", task_id="abc", message="hello", timestamp=ts)
@@ -52,15 +55,21 @@ def test_status_event_required_fields() -> None:
 
 
 def test_status_event_optional_defaults() -> None:
-    e = StatusEvent(type="task_start", task_id="x", message="m", timestamp=datetime.now())
+    e = StatusEvent(
+        type="task_start", task_id="x", message="m", timestamp=datetime.now()
+    )
     assert e.step_index is None
     assert e.total_steps is None
     assert e.metadata == {}
 
 
 def test_status_event_metadata_instances_are_independent() -> None:
-    e1 = StatusEvent(type="task_start", task_id="a", message="m", timestamp=datetime.now())
-    e2 = StatusEvent(type="task_done", task_id="b", message="n", timestamp=datetime.now())
+    e1 = StatusEvent(
+        type="task_start", task_id="a", message="m", timestamp=datetime.now()
+    )
+    e2 = StatusEvent(
+        type="task_done", task_id="b", message="n", timestamp=datetime.now()
+    )
     e1.metadata["key"] = "value"
     assert "key" not in e2.metadata
 
@@ -85,6 +94,7 @@ def test_status_event_with_all_fields() -> None:
 # 2 & 3. _emit_event on ConversationalAgent
 # ---------------------------------------------------------------------------
 
+
 async def test_emit_event_sync_callback() -> None:
     received: list[StatusEvent] = []
 
@@ -92,7 +102,9 @@ async def test_emit_event_sync_callback() -> None:
         received.append(event)
 
     agent = _make_agent(on_status_update=cb)
-    event = StatusEvent(type="thinking", task_id="1", message="hi", timestamp=datetime.now())
+    event = StatusEvent(
+        type="thinking", task_id="1", message="hi", timestamp=datetime.now()
+    )
     await agent._emit_event(event)
     assert received == [event]
 
@@ -104,7 +116,9 @@ async def test_emit_event_async_callback() -> None:
         received.append(event)
 
     agent = _make_agent(on_status_update=cb)
-    event = StatusEvent(type="thinking", task_id="1", message="hi", timestamp=datetime.now())
+    event = StatusEvent(
+        type="thinking", task_id="1", message="hi", timestamp=datetime.now()
+    )
     await agent._emit_event(event)
     assert received == [event]
 
@@ -113,7 +127,9 @@ async def test_emit_event_none_callback_is_noop() -> None:
     agent = _make_agent()  # no callback
     # Must not raise
     await agent._emit_event(
-        StatusEvent(type="task_start", task_id="1", message="m", timestamp=datetime.now())
+        StatusEvent(
+            type="task_start", task_id="1", message="m", timestamp=datetime.now()
+        )
     )
 
 
@@ -131,6 +147,7 @@ async def test_emit_event_swallows_callback_exception() -> None:
 # ---------------------------------------------------------------------------
 # 5. Backward-compatibility shim
 # ---------------------------------------------------------------------------
+
 
 async def test_backward_compat_sync_str_callback() -> None:
     """Legacy callback with ``str`` annotation gets event.message."""
@@ -170,7 +187,9 @@ async def test_backward_compat_no_annotation_single_param() -> None:
         messages.append(msg)
 
     agent = _make_agent(on_status_update=send_status)
-    event = StatusEvent(type="task_done", task_id="1", message="Done!", timestamp=datetime.now())
+    event = StatusEvent(
+        type="task_done", task_id="1", message="Done!", timestamp=datetime.now()
+    )
     await agent._emit_event(event)
     assert messages == ["Done!"]
 
@@ -185,13 +204,16 @@ async def test_post_init_callback_assignment_is_shimmed() -> None:
     agent = _make_agent()
     agent.on_status_update = send_status  # post-init, like channel_router does it
 
-    event = StatusEvent(type="task_done", task_id="1", message="Post-init", timestamp=datetime.now())
+    event = StatusEvent(
+        type="task_done", task_id="1", message="Post-init", timestamp=datetime.now()
+    )
     await agent._emit_event(event)
     assert messages == ["Post-init"]
 
 
 async def test_on_status_update_syncs_to_executor() -> None:
     """Setting on_status_update after init propagates to executor._notify_cb."""
+
     async def new_cb(event: StatusEvent) -> None:
         pass
 
@@ -204,17 +226,27 @@ async def test_on_status_update_syncs_to_executor() -> None:
 # 4. Lifecycle emissions from TaskExecutor
 # ---------------------------------------------------------------------------
 
+
 async def test_lifecycle_task_start_emitted_by_execute_plan() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
-         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
-        await executor.execute_plan({
-            "understanding": "Do something",
-            "plan": [{"action": "wait", "description": "Wait"}],
-            "message": "Working",
-            "confirmation_needed": False,
-        })
+    with (
+        patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
+        await executor.execute_plan(
+            {
+                "understanding": "Do something",
+                "plan": [{"action": "wait", "description": "Wait"}],
+                "message": "Working",
+                "confirmation_needed": False,
+            }
+        )
     types = [e.type for e in events]
     assert "task_start" in types
     task_start_evt = next(e for e in events if e.type == "task_start")
@@ -226,8 +258,15 @@ async def test_lifecycle_step_start_and_step_done() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("My step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="done")), \
-         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(executor, "_execute_step", new=AsyncMock(return_value="done")),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     types = [e.type for e in events]
@@ -248,9 +287,17 @@ async def test_lifecycle_step_failed_with_error_metadata() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("Failing step")
-    with patch.object(
-        executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("boom"))
-    ), patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(
+            executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("boom"))
+        ),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     failed = [e for e in events if e.type == "step_failed"]
@@ -263,8 +310,15 @@ async def test_lifecycle_task_done_emitted() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("A step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
-         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     types = [e.type for e in events]
@@ -278,9 +332,17 @@ async def test_lifecycle_step_done_not_emitted_on_failure() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("Bad step")
-    with patch.object(
-        executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("kaboom"))
-    ), patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(
+            executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("kaboom"))
+        ),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     step_done_events = [e for e in events if e.type == "step_done"]
@@ -292,8 +354,15 @@ async def test_lifecycle_ordering() -> None:
     events: list[StatusEvent] = []
     executor = _make_executor(events)
     task = _make_task("Step one")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
-         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     types = [e.type for e in events]
@@ -306,6 +375,7 @@ async def test_lifecycle_ordering() -> None:
 # ---------------------------------------------------------------------------
 # thinking + streaming_token emissions from ConversationalAgent
 # ---------------------------------------------------------------------------
+
 
 async def test_thinking_emitted_before_llm_call() -> None:
     events: list[StatusEvent] = []
@@ -321,8 +391,10 @@ async def test_thinking_emitted_before_llm_call() -> None:
 
     with (
         patch.object(agent, "_build_system_prompt", return_value="sys"),
-        patch("navig.agent.conv.agent.ConversationalAgent._get_ai_response",
-              wraps=agent._get_ai_response),
+        patch(
+            "navig.agent.conv.agent.ConversationalAgent._get_ai_response",
+            wraps=agent._get_ai_response,
+        ),
         patch("navig.routing.router.get_router", side_effect=ImportError("no router")),
     ):
         await agent._get_ai_response("hi there")
@@ -361,6 +433,7 @@ async def test_streaming_token_emitted_when_chat_stream_present() -> None:
 # ---------------------------------------------------------------------------
 # 6. ConsoleStatusRenderer
 # ---------------------------------------------------------------------------
+
 
 def test_console_renderer_registers_as_callback() -> None:
     agent = _make_agent()
@@ -408,9 +481,9 @@ async def test_console_renderer_task_done_prints_elapsed() -> None:
     renderer._task_start_time = t0
 
     with patch.object(renderer._console, "print") as mock_print:
-        await renderer(StatusEvent(
-            type="task_done", task_id="abc", message="done", timestamp=t1
-        ))
+        await renderer(
+            StatusEvent(type="task_done", task_id="abc", message="done", timestamp=t1)
+        )
     output: str = mock_print.call_args[0][0]
     assert "5.00s" in output
 
@@ -420,13 +493,15 @@ async def test_console_renderer_streaming_token_updates_live() -> None:
     renderer = ConsoleStatusRenderer(agent)
 
     for token in ["Tok", "en", "s"]:
-        await renderer(StatusEvent(
-            type="streaming_token",
-            task_id="s",
-            message="",
-            timestamp=datetime.now(),
-            metadata={"token": token},
-        ))
+        await renderer(
+            StatusEvent(
+                type="streaming_token",
+                task_id="s",
+                message="",
+                timestamp=datetime.now(),
+                metadata={"token": token},
+            )
+        )
 
     assert renderer._token_buffer == "Tokens"
     assert renderer._live is not None
@@ -438,6 +513,7 @@ async def test_console_renderer_streaming_token_updates_live() -> None:
 # Bug-fix coverage: callable-instance detection (B1)
 # ---------------------------------------------------------------------------
 
+
 async def test_emit_event_callable_class_instance() -> None:
     """ConsoleStatusRenderer (callable class) must be called — not skipped because
     asyncio.iscoroutinefunction(instance) would return False."""
@@ -448,7 +524,9 @@ async def test_emit_event_callable_class_instance() -> None:
             received.append(event)
 
     agent = _make_agent(on_status_update=AsyncCallable())
-    event = StatusEvent(type="thinking", task_id="1", message="hi", timestamp=datetime.now())
+    event = StatusEvent(
+        type="thinking", task_id="1", message="hi", timestamp=datetime.now()
+    )
     await agent._emit_event(event)
     assert received == [event]
 
@@ -463,8 +541,15 @@ async def test_executor_emit_event_callable_class_instance() -> None:
 
     executor = TaskExecutor(on_status_update=SyncCallable(), max_attempts=1)
     task = _make_task("step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
-         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     assert any(e.type == "task_start" for e in received)
@@ -473,6 +558,7 @@ async def test_executor_emit_event_callable_class_instance() -> None:
 # ---------------------------------------------------------------------------
 # Bug-fix coverage: task_done emitted BEFORE current_task = None (B2)
 # ---------------------------------------------------------------------------
+
 
 async def test_task_done_emitted_before_current_task_cleared() -> None:
     """task_done callback must see current_task still populated, not None."""
@@ -485,8 +571,15 @@ async def test_task_done_emitted_before_current_task_cleared() -> None:
 
     executor._notify_cb = cb
     task = _make_task("step")
-    with patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")), \
-         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(executor, "_execute_step", new=AsyncMock(return_value="ok")),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     assert len(seen_current_task_at_task_done) == 1
@@ -498,14 +591,23 @@ async def test_task_done_emitted_before_current_task_cleared() -> None:
 # Bug-fix coverage: step_failed carries attempt + is_final metadata (B3)
 # ---------------------------------------------------------------------------
 
+
 async def test_step_failed_final_attempt_is_final_true() -> None:
     """With max_attempts=1 the only failure must have is_final=True, attempt=0."""
     events: list[StatusEvent] = []
     executor = _make_executor(events)  # max_attempts=1
     task = _make_task("fail step")
-    with patch.object(
-        executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("x"))
-    ), patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))):
+    with (
+        patch.object(
+            executor, "_execute_step", new=AsyncMock(side_effect=RuntimeError("x"))
+        ),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+    ):
         await executor.execute(task)
 
     failed = [e for e in events if e.type == "step_failed"]
@@ -534,9 +636,16 @@ async def test_step_failed_retry_attempt_is_final_false() -> None:
         return "ok"
 
     task = _make_task("flaky")
-    with patch.object(executor, "_execute_step", side_effect=flaky_step), \
-         patch("navig.agent.conv.executor.asyncio.to_thread", new=AsyncMock(return_value=MagicMock(content='{"achieved": true, "confidence": 100}'))), \
-         patch("asyncio.sleep", new=AsyncMock()):
+    with (
+        patch.object(executor, "_execute_step", side_effect=flaky_step),
+        patch(
+            "navig.agent.conv.executor.asyncio.to_thread",
+            new=AsyncMock(
+                return_value=MagicMock(content='{"achieved": true, "confidence": 100}')
+            ),
+        ),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
         await executor.execute(task)
 
     failed = [e for e in events if e.type == "step_failed"]
@@ -551,6 +660,7 @@ async def test_step_failed_retry_attempt_is_final_false() -> None:
 # Bug-fix coverage: no deprecation warning for asyncio.iscoroutinefunction (B6)
 # ---------------------------------------------------------------------------
 
+
 async def test_no_asyncio_iscoroutinefunction_deprecation_warning() -> None:
     """Neither agent nor executor _emit_event should trigger DeprecationWarning
     for asyncio.iscoroutinefunction (deprecated in 3.14)."""
@@ -560,7 +670,9 @@ async def test_no_asyncio_iscoroutinefunction_deprecation_warning() -> None:
         pass
 
     agent = _make_agent(on_status_update=cb)
-    event = StatusEvent(type="thinking", task_id="1", message="hi", timestamp=datetime.now())
+    event = StatusEvent(
+        type="thinking", task_id="1", message="hi", timestamp=datetime.now()
+    )
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)

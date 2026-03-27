@@ -10,5 +10,3 @@ Typical flow:
 
 Automation:
 - Use global `--json` for structured output where supported.
-
-

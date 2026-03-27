@@ -36,13 +36,13 @@ class AIMessage:
 class AIClient:
     """
     AI client for NAVIG that uses the existing providers system.
-    
+
     Uses settings from ~/.navig/config.yaml:
     - openrouter_api_key
     - ai_model_preference[]
     - airllm_model_path (for local inference)
     - airllm_compression
-    
+
     Prioritizes:
     1. OpenRouter if API key is set
     2. AirLLM for local inference if configured
@@ -81,6 +81,7 @@ class AIClient:
         try:
             from navig.agent.model_router import HybridRouter
             from navig.config import get_config_manager
+
             config = get_config_manager()
             self._model_router = HybridRouter.from_config(
                 config.global_config, default_model=self.model
@@ -115,12 +116,14 @@ class AIClient:
 
         try:
             from navig.config import get_config_manager
+
             config = get_config_manager()
 
             # Try vault first (updates last_used_at for auditing)
             api_key = None
             try:
                 from navig.vault import get_vault
+
                 vault = get_vault()
                 secret = vault.get_secret("openrouter", "api_key", caller="ai_client")
                 if secret:
@@ -130,17 +133,18 @@ class AIClient:
 
             # Fall back to config
             if not api_key:
-                api_key = config.global_config.get('openrouter_api_key', '')
+                api_key = config.global_config.get("openrouter_api_key", "")
             if api_key and api_key.strip():
                 self._navig_api_key = api_key.strip()
 
             # Get model preference
-            models = config.global_config.get('ai_model_preference', [])
+            models = config.global_config.get("ai_model_preference", [])
 
             # Handle JSON string format
             if isinstance(models, str):
                 try:
                     import json
+
                     models = json.loads(models)
                 except Exception:
                     models = [models]  # Treat as single model string
@@ -149,21 +153,23 @@ class AIClient:
                 self._navig_model = models[0]
 
             # Get AirLLM config
-            airllm_model = config.global_config.get('airllm_model_path')
-            airllm_compression = config.global_config.get('airllm_compression')
+            airllm_model = config.global_config.get("airllm_model_path")
+            airllm_compression = config.global_config.get("airllm_compression")
             if airllm_model:
                 self._airllm_config = {
-                    'model_path': airllm_model,
-                    'compression': airllm_compression,
+                    "model_path": airllm_model,
+                    "compression": airllm_compression,
                 }
 
         except Exception:
             # Fall back to env vars
-            self._navig_api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+            self._navig_api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv(
+                "OPENAI_API_KEY"
+            )
 
     def _detect_best_provider(self) -> str:
         """Detect the best available provider.
-        
+
         Priority: mcp_bridge → github_models → openrouter → airllm → local → none
         """
         # ⓪ MCP Bridge — VS Code Copilot via MCP WebSocket (preferred)
@@ -173,8 +179,15 @@ class AIClient:
                 import socket
                 from urllib.parse import urlparse
 
-                from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT as _BDP
-                parsed = urlparse(mcp_bridge_url.replace("ws://", "http://").replace("wss://", "https://"))
+                from navig.providers.bridge_grid_reader import (
+                    BRIDGE_DEFAULT_PORT as _BDP,
+                )
+
+                parsed = urlparse(
+                    mcp_bridge_url.replace("ws://", "http://").replace(
+                        "wss://", "https://"
+                    )
+                )
                 host = parsed.hostname or "127.0.0.1"
                 port = parsed.port or _BDP
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -199,6 +212,7 @@ class AIClient:
         if self._airllm_config:
             try:
                 from navig.providers import is_airllm_available
+
                 if is_airllm_available():
                     return "airllm"
             except ImportError:
@@ -207,8 +221,9 @@ class AIClient:
         # Check for Ollama/local
         try:
             import socket
+
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            result = sock.connect_ex(('localhost', 11434))
+            result = sock.connect_ex(("localhost", 11434))
             sock.close()
             if result == 0:
                 return "local"
@@ -229,7 +244,11 @@ class AIClient:
         """
         # ① Live port from navig-bridge heartbeat file (most reliable)
         try:
-            from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT, get_llm_port
+            from navig.providers.bridge_grid_reader import (
+                BRIDGE_DEFAULT_PORT,
+                get_llm_port,
+            )
+
             live_port = get_llm_port()
             if live_port:
                 return f"ws://127.0.0.1:{live_port}"
@@ -244,6 +263,7 @@ class AIClient:
         # ③ Config file
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager().global_config or {}
             bridge_cfg = cfg.get("bridge", {})
             url = bridge_cfg.get("mcp_url")
@@ -254,6 +274,7 @@ class AIClient:
 
         try:
             from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
+
             return f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
         except Exception:
             return "ws://127.0.0.1:42070"
@@ -265,6 +286,7 @@ class AIClient:
             return env_tok
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager().global_config or {}
             return cfg.get("bridge", {}).get("token", "")
         except Exception:
@@ -279,10 +301,15 @@ class AIClient:
         # ② Vault
         try:
             from navig.vault import get_vault
+
             vault = get_vault()
             secret = vault.get_secret("github_models", "token", caller="ai_client")
             if secret:
-                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
+                val = (
+                    secret.reveal().strip()
+                    if hasattr(secret, "reveal")
+                    else str(secret).strip()
+                )
                 if val:
                     return val
         except Exception:  # noqa: BLE001
@@ -290,6 +317,7 @@ class AIClient:
         # ③ Config file
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager().global_config or {}
             return cfg.get("github_models", {}).get("token", "")
         except Exception:
@@ -300,6 +328,7 @@ class AIClient:
         if self._fallback_manager is None:
             try:
                 from navig.providers import FallbackManager
+
                 self._fallback_manager = FallbackManager()
             except ImportError:
                 pass  # optional dependency not installed; feature disabled
@@ -317,6 +346,7 @@ class AIClient:
         global aiohttp
         if aiohttp is None:
             import aiohttp as _aiohttp
+
             aiohttp = _aiohttp
 
         if self._session is None:
@@ -346,7 +376,13 @@ class AIClient:
         """
 
         # Try using the full provider system first
-        if self.provider in ("openrouter", "openai", "airllm", "mcp_bridge", "github_models"):
+        if self.provider in (
+            "openrouter",
+            "openai",
+            "airllm",
+            "mcp_bridge",
+            "github_models",
+        ):
             fallback_mgr = self._get_fallback_manager()
             if fallback_mgr:
                 try:
@@ -356,7 +392,9 @@ class AIClient:
                 except Exception:
                     if self.provider == "airllm":
                         # AirLLM error - try direct
-                        return await self._chat_airllm(messages, temperature, max_tokens)
+                        return await self._chat_airllm(
+                            messages, temperature, max_tokens
+                        )
 
         # Direct API call for OpenRouter/OpenAI
         if self.provider in ("openrouter", "openai") and self.api_key:
@@ -374,11 +412,15 @@ class AIClient:
 
         # MCP Bridge — VS Code Copilot via MCP WebSocket (preferred)
         if self.provider == "mcp_bridge":
-            return await self._chat_mcp_bridge(messages, temperature, max_tokens, model=model)
+            return await self._chat_mcp_bridge(
+                messages, temperature, max_tokens, model=model
+            )
 
         # GitHub Models — free tier via GitHub PAT
         if self.provider == "github_models":
-            return await self._chat_github_models(messages, temperature, max_tokens, model=model)
+            return await self._chat_github_models(
+                messages, temperature, max_tokens, model=model
+            )
 
         # No provider available
         raise RuntimeError(
@@ -435,14 +477,15 @@ class AIClient:
 
         logger.info(
             "Route: tier=%s provider=%s model=%s reason=%s",
-            decision.tier, decision.provider, decision.model, decision.reason,
+            decision.tier,
+            decision.provider,
+            decision.model,
+            decision.reason,
         )
 
         # ── Execute via provider ──
         try:
-            response_text = await self._execute_routed(
-                messages, decision, temperature
-            )
+            response_text = await self._execute_routed(messages, decision, temperature)
         except Exception as exc:
             logger.error("Routed call failed (%s), falling back to default chat", exc)
             return await self.chat(messages, temperature, max_tokens)
@@ -452,8 +495,10 @@ class AIClient:
             fb_decision = router.fallback_decision(decision, msg_text)
             logger.info(
                 "Fallback: %s → %s (%s/%s)",
-                decision.tier, fb_decision.tier,
-                fb_decision.provider, fb_decision.model,
+                decision.tier,
+                fb_decision.tier,
+                fb_decision.provider,
+                fb_decision.model,
             )
             telemetry.fallback_occurred = True
             telemetry.fallback_reason = f"{decision.tier}_low_quality"
@@ -481,8 +526,11 @@ class AIClient:
         telemetry.latency_ms = int((time.monotonic() - t0) * 1000)
         logger.info(
             "Telemetry: tier=%s provider=%s model=%s latency=%dms fallback=%s",
-            telemetry.selected_tier, telemetry.provider, telemetry.model,
-            telemetry.latency_ms, telemetry.fallback_occurred,
+            telemetry.selected_tier,
+            telemetry.provider,
+            telemetry.model,
+            telemetry.latency_ms,
+            telemetry.fallback_occurred,
         )
 
         return response_text
@@ -525,9 +573,13 @@ class AIClient:
             )
         elif provider == "mcp_bridge":
             # Map routing tier to purpose hint for navig-bridge model selection
-            tier = getattr(decision, 'tier', '')
-            purpose_map = {'small': 'small_talk', 'big': 'big_tasks', 'coder_big': 'coding'}
-            purpose = purpose_map.get(tier, '')
+            tier = getattr(decision, "tier", "")
+            purpose_map = {
+                "small": "small_talk",
+                "big": "big_tasks",
+                "coder_big": "coding",
+            }
+            purpose = purpose_map.get(tier, "")
             return await self._chat_mcp_bridge(
                 messages,
                 temperature=decision.temperature,
@@ -551,9 +603,7 @@ class AIClient:
         model: Optional[str] = None,
     ) -> str:
         """Convenience wrapper used by the LLM-based router."""
-        return await self._chat_local(
-            messages, temperature, max_tokens, model=model
-        )
+        return await self._chat_local(messages, temperature, max_tokens, model=model)
 
     @staticmethod
     def _extract_user_message(messages: List[Dict[str, str]]) -> str:
@@ -575,8 +625,7 @@ class AIClient:
 
         # Convert messages
         provider_messages = [
-            Message(role=m["role"], content=m["content"])
-            for m in messages
+            Message(role=m["role"], content=m["content"]) for m in messages
         ]
 
         request = CompletionRequest(
@@ -639,13 +688,17 @@ class AIClient:
                     ) as retry_response:
                         if retry_response.status != 200:
                             error_text = await retry_response.text()
-                            raise RuntimeError(f"AI API error ({retry_response.status}): {error_text}")
+                            raise RuntimeError(
+                                f"AI API error ({retry_response.status}): {error_text}"
+                            )
                         data = await retry_response.json()
                         return data["choices"][0]["message"]["content"]
 
                 if response.status != 200:
                     error_text = await response.text()
-                    raise RuntimeError(f"AI API error ({response.status}): {error_text}")
+                    raise RuntimeError(
+                        f"AI API error ({response.status}): {error_text}"
+                    )
 
                 data = await response.json()
                 return data["choices"][0]["message"]["content"]
@@ -666,16 +719,15 @@ class AIClient:
 
             # Create config from NAVIG settings
             config = AirLLMConfig(
-                model_path=self._airllm_config.get('model_path'),
-                compression=self._airllm_config.get('compression'),
+                model_path=self._airllm_config.get("model_path"),
+                compression=self._airllm_config.get("compression"),
             )
 
             client = AirLLMClient(airllm_config=config)
 
             # Convert messages
             provider_messages = [
-                Message(role=m["role"], content=m["content"])
-                for m in messages
+                Message(role=m["role"], content=m["content"]) for m in messages
             ]
 
             request = CompletionRequest(
@@ -774,7 +826,9 @@ class AIClient:
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
-                    raise RuntimeError(f"Local AI error ({response.status}): {error_text}")
+                    raise RuntimeError(
+                        f"Local AI error ({response.status}): {error_text}"
+                    )
 
                 data = await response.json()
                 return data["choices"][0]["message"]["content"]
@@ -783,10 +837,7 @@ class AIClient:
             raise RuntimeError(f"Local AI request failed: {e}") from e
 
     async def complete(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        **kwargs
+        self, prompt: str, system_prompt: Optional[str] = None, **kwargs
     ) -> str:
         """Simple completion with optional system prompt."""
         messages = []

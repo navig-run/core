@@ -7,6 +7,7 @@ Plays only on first run, only on real TTY terminals (≥60 cols, UTF-8 capable).
 Public API:
     play_boot_animation(node_id, name="", born_date="")  ->  None
 """
+
 from __future__ import annotations
 
 import random
@@ -14,19 +15,19 @@ import sys
 import time
 
 # ── Constants ──────────────────────────────────────────────────────────────
-_HEX   = "0123456789ABCDEF"
+_HEX = "0123456789ABCDEF"
 _RUNIC = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ"
 
-_ROWS        = 11
-_FPS         = 22
-_TOTAL_SECS  = 2.6
-_TOTAL_F     = int(_TOTAL_SECS * _FPS)    # ~57 frames
-_ACT1_END    = int(_TOTAL_F * 0.25)       # sparse drift
-_ACT2_END    = int(_TOTAL_F * 0.82)       # rain + reveal
+_ROWS = 11
+_FPS = 22
+_TOTAL_SECS = 2.6
+_TOTAL_F = int(_TOTAL_SECS * _FPS)  # ~57 frames
+_ACT1_END = int(_TOTAL_F * 0.25)  # sparse drift
+_ACT2_END = int(_TOTAL_F * 0.82)  # rain + reveal
 # Act 3: hold / identity card (remaining frames)
 
-_MIN_COLS    = 60
-_MARGIN      = 0   # full-width — no padding
+_MIN_COLS = 60
+_MARGIN = 0  # full-width — no padding
 
 
 def play_boot_animation(
@@ -49,6 +50,7 @@ def play_boot_animation(
         return
     try:
         import shutil as _sh
+
         term_cols = _sh.get_terminal_size().columns
         if term_cols < _MIN_COLS:
             return
@@ -66,17 +68,17 @@ def play_boot_animation(
 
     # Stable seed from node_id so consistent per-machine but not random per run
     seed = int.from_bytes(node_id.encode()[:4], "big") if node_id else 42
-    rng  = random.Random(seed)
+    rng = random.Random(seed)
 
     # ── Simulation state ──────────────────────────────────────────────────
-    heads   = [rng.randint(0, _ROWS - 1) for _ in range(draw_w)]
-    frozen: dict[int, list[str]] = {}   # col -> list[char per row]
+    heads = [rng.randint(0, _ROWS - 1) for _ in range(draw_w)]
+    frozen: dict[int, list[str]] = {}  # col -> list[char per row]
 
-    target  = f" {node_id} " if node_id else " NAVIG "
-    trow    = _ROWS // 2
-    tcol    = max(0, (draw_w - len(target)) // 2)
+    target = f" {node_id} " if node_id else " NAVIG "
+    trow = _ROWS // 2
+    tcol = max(0, (draw_w - len(target)) // 2)
 
-    sub_line  = ""
+    sub_line = ""
     if name or born_date:
         sub_line = f" {name} " + (f"· {born_date}" if born_date else "")
         sub_line = sub_line.strip()
@@ -95,14 +97,14 @@ def play_boot_animation(
         # bright:     #5bc4f0  (sky highlight)
         # frozen:     #0f3d52  (deep frozen)
         # node text:  bold #5bc4f0
-        _C_DEEP    = "#0d2e3f"
-        _C_MID     = "#1a5c7c"
+        _C_DEEP = "#0d2e3f"
+        _C_MID = "#1a5c7c"
         _C_PRIMARY = "#2c8bb7"
-        _C_BRIGHT  = "#5bc4f0"
-        _C_FROZEN  = "#0f3d52"
-        _C_NODE    = "bold #5bc4f0"
-        _C_SEP     = "#1a5c7c"
-        _C_SUB     = "#2c8bb7"
+        _C_BRIGHT = "#5bc4f0"
+        _C_FROZEN = "#0f3d52"
+        _C_NODE = "bold #5bc4f0"
+        _C_SEP = "#1a5c7c"
+        _C_SUB = "#2c8bb7"
 
         if f < _ACT1_END:
             # ── Phase 1: sparse drift ──────────────────────────────────
@@ -120,7 +122,7 @@ def play_boot_animation(
             n_freeze = 0
             if prog > 0.55:
                 freeze_prog = (prog - 0.55) / 0.45
-                n_freeze    = int(draw_w * freeze_prog * 0.7)
+                n_freeze = int(draw_w * freeze_prog * 0.7)
                 freeze_cols = sorted(
                     range(draw_w),
                     key=lambda c: heads[c],
@@ -193,7 +195,7 @@ def play_boot_animation(
                 sep_r_top = trow - 1
                 sep_r_bot = trow + (2 if sub_line else 1)
                 sep_start = max(0, tcol - 2)
-                sep_end   = min(draw_w, tcol + len(target) + 2)
+                sep_end = min(draw_w, tcol + len(target) + 2)
                 for c in range(sep_start, sep_end):
                     if 0 <= sep_r_top < _ROWS:
                         cells[(sep_r_top, c)] = (sep_char, _C_SEP)
@@ -224,7 +226,7 @@ def play_boot_animation(
             t0 = time.monotonic()
             for f in range(_TOTAL_F):
                 target_t = (f + 1) / _FPS
-                sleep_s  = target_t - (time.monotonic() - t0)
+                sleep_s = target_t - (time.monotonic() - t0)
                 if sleep_s > 0.001:
                     time.sleep(sleep_s)
                 live.update(_build(f))

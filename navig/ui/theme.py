@@ -8,6 +8,7 @@ SAFE_MODE activates when:
 Import `console` and style constants from here — never create
 a new Console() in command modules.
 """
+
 from __future__ import annotations
 
 import os

@@ -14,10 +14,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build a ContextBuilder with config overrides, no real file I/O
 # ---------------------------------------------------------------------------
+
 
 def _make_builder(
     config: Optional[Dict[str, Any]] = None,
@@ -37,16 +37,23 @@ def _make_builder(
     }
     if config:
         defaults.update(config)
-    return ContextBuilder(config=defaults, project_root=project_root or Path("/tmp/fake"))
+    return ContextBuilder(
+        config=defaults, project_root=project_root or Path("/tmp/fake")
+    )
 
 
 # Synthetic data factories
+
 
 def _fake_messages(n: int = 3) -> List[Dict[str, Any]]:
     """Return n synthetic conversation messages."""
     roles = ["user", "assistant"]
     return [
-        {"role": roles[i % 2], "content": f"Message {i}", "timestamp": f"2025-01-01T00:0{i}:00"}
+        {
+            "role": roles[i % 2],
+            "content": f"Message {i}",
+            "timestamp": f"2025-01-01T00:0{i}:00",
+        }
         for i in range(n)
     ]
 
@@ -54,7 +61,13 @@ def _fake_messages(n: int = 3) -> List[Dict[str, Any]]:
 def _fake_snippets(n: int = 2) -> List[Dict[str, Any]]:
     """Return n synthetic KB snippets."""
     return [
-        {"content": f"Knowledge item {i}", "source": "test", "key": f"kb-{i}", "tags": [], "score": 0.9}
+        {
+            "content": f"Knowledge item {i}",
+            "source": "test",
+            "key": f"kb-{i}",
+            "tags": [],
+            "score": 0.9,
+        }
         for i in range(n)
     ]
 
@@ -62,6 +75,7 @@ def _fake_snippets(n: int = 2) -> List[Dict[str, Any]]:
 # ===========================================================================
 # Test 1: Unit -- basic assembly
 # ===========================================================================
+
 
 class TestBasicAssembly:
     """Mock get_recent_messages and search, verify context dict shape."""
@@ -125,7 +139,9 @@ class TestBasicAssembly:
     def test_disabled_builder(self, mock_meta, mock_msgs, mock_kb):
         """When enabled=False, should return empty context."""
         builder = _make_builder({"enabled": False})
-        ctx = builder.build_context("How do I deploy?", {"enable_kb": True}, "session-1")
+        ctx = builder.build_context(
+            "How do I deploy?", {"enable_kb": True}, "session-1"
+        )
 
         assert ctx["conversation_history"] == []
         assert ctx["kb_snippets"] == []
@@ -136,6 +152,7 @@ class TestBasicAssembly:
 # ===========================================================================
 # Test 2: Unit -- KB skipped for short input
 # ===========================================================================
+
 
 class TestKBSkipped:
     """KB search should be skipped when user_input is shorter than kb_min_input_length."""
@@ -168,7 +185,9 @@ class TestKBSkipped:
         mock_meta.return_value = {}
 
         builder = _make_builder({"kb_min_input_length": 5})
-        ctx = builder.build_context("How do I configure SSH tunnels?", {"enable_kb": True}, None)
+        ctx = builder.build_context(
+            "How do I configure SSH tunnels?", {"enable_kb": True}, None
+        )
 
         assert len(ctx["kb_snippets"]) == 2
         mock_kb.assert_called_once()
@@ -197,6 +216,7 @@ class TestKBSkipped:
 # Test 3: Integration -- full pipeline pass-through
 # ===========================================================================
 
+
 class TestFullPipeline:
     """
     Mock the provider complete() and run the full path:
@@ -224,14 +244,23 @@ class TestFullPipeline:
         # Patch _call_provider to capture its arguments and return fake content.
         captured_calls: List[Dict[str, Any]] = []
 
-        def fake_call_provider(provider, model, messages, temperature=0.7,
-                               max_tokens=4096, timeout=120.0, base_url=None):
-            captured_calls.append({
-                "provider": provider,
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-            })
+        def fake_call_provider(
+            provider,
+            model,
+            messages,
+            temperature=0.7,
+            max_tokens=4096,
+            timeout=120.0,
+            base_url=None,
+        ):
+            captured_calls.append(
+                {
+                    "provider": provider,
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                }
+            )
             return "Mocked LLM response"
 
         with patch("navig.llm_generate._call_provider", side_effect=fake_call_provider):
@@ -254,8 +283,14 @@ class TestFullPipeline:
 
                     result = run_llm(
                         messages=[
-                            {"role": "system", "content": "You are a helpful assistant."},
-                            {"role": "user", "content": "How do I deploy to production?"},
+                            {
+                                "role": "system",
+                                "content": "You are a helpful assistant.",
+                            },
+                            {
+                                "role": "user",
+                                "content": "How do I deploy to production?",
+                            },
                         ],
                         user_input="How do I deploy to production?",
                         caller_info={"enable_kb": True},
@@ -270,9 +305,9 @@ class TestFullPipeline:
         # The enriched messages should contain a system context message
         # with conversation history
         all_content = " ".join(m.get("content", "") for m in call_messages)
-        assert "Message 0" in all_content or "Recent Conversation" in all_content, (
-            "Expected conversation history in prompt"
-        )
+        assert (
+            "Message 0" in all_content or "Recent Conversation" in all_content
+        ), "Expected conversation history in prompt"
 
         # (c) result is valid LLMResult
         assert result.content == "Mocked LLM response"
@@ -320,14 +355,21 @@ class TestFullPipeline:
 # Test 4: ContextBuilder internals
 # ===========================================================================
 
+
 class TestContextBuilderInternals:
     """Test helper methods and edge cases."""
 
     def test_empty_context_constant(self):
         from navig.memory.context_builder import EMPTY_CONTEXT
+
         assert set(EMPTY_CONTEXT.keys()) == {
-            "conversation_history", "workspace_notes", "kb_snippets", "metadata",
-            "project_files", "api_snapshots", "stale_sources",
+            "conversation_history",
+            "workspace_notes",
+            "kb_snippets",
+            "metadata",
+            "project_files",
+            "api_snapshots",
+            "stale_sources",
         }
         # Must be JSON-serializable
         json.dumps(EMPTY_CONTEXT)
@@ -368,8 +410,8 @@ class TestContextBuilderInternals:
 
     def test_build_context_convenience_function(self):
         """The module-level build_context should return a valid dict."""
-        from navig.memory.context_builder import build_context
         import navig.memory.context_builder as cb_mod
+        from navig.memory.context_builder import build_context
 
         # Reset singleton
         cb_mod._builder_instance = None
@@ -389,11 +431,13 @@ class TestContextBuilderInternals:
 # Test 5: _enrich_messages_with_context
 # ===========================================================================
 
+
 class TestEnrichMessages:
     """Test the message enrichment helper in llm_generate."""
 
     def test_empty_context_no_change(self):
         from navig.llm_generate import _enrich_messages_with_context
+
         msgs = [{"role": "user", "content": "hello"}]
         empty = {
             "conversation_history": [],
@@ -406,10 +450,15 @@ class TestEnrichMessages:
 
     def test_context_injected_as_system_message(self):
         from navig.llm_generate import _enrich_messages_with_context
+
         msgs = [{"role": "user", "content": "hello"}]
         ctx = {
             "conversation_history": [
-                {"role": "user", "content": "prev msg", "timestamp": "2025-01-01T00:00:00"}
+                {
+                    "role": "user",
+                    "content": "prev msg",
+                    "timestamp": "2025-01-01T00:00:00",
+                }
             ],
             "workspace_notes": [],
             "kb_snippets": [],
@@ -423,12 +472,15 @@ class TestEnrichMessages:
 
     def test_context_inserted_after_existing_system(self):
         from navig.llm_generate import _enrich_messages_with_context
+
         msgs = [
             {"role": "system", "content": "You are helpful"},
             {"role": "user", "content": "hello"},
         ]
         ctx = {
-            "conversation_history": [{"role": "user", "content": "old msg", "timestamp": "t"}],
+            "conversation_history": [
+                {"role": "user", "content": "old msg", "timestamp": "t"}
+            ],
             "workspace_notes": [],
             "kb_snippets": [],
             "metadata": {},

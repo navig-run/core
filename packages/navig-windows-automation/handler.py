@@ -5,6 +5,7 @@ Lifecycle + command registration for the Windows Automation pack.
 Uses AHKAdapter from src/ahk_engine.py for all AHK interactions.
 Windows-only: commands silently no-op on other platforms.
 """
+
 from __future__ import annotations
 
 import platform
@@ -16,10 +17,12 @@ _IS_WIN = platform.system() == "Windows"
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
 
+
 def on_load(ctx: dict) -> None:
     """Register commands into CommandRegistry on pack activation."""
     try:
         from navig.commands._registry import CommandRegistry
+
         CommandRegistry.register("ahk_run", cmd_ahk_run)
         CommandRegistry.register("ahk_type", cmd_ahk_type)
         CommandRegistry.register("ahk_click", cmd_ahk_click)
@@ -31,6 +34,7 @@ def on_unload(ctx: dict) -> None:
     """Deregister commands on pack deactivation."""
     try:
         from navig.commands._registry import CommandRegistry
+
         for name in ("ahk_run", "ahk_type", "ahk_click"):
             CommandRegistry.deregister(name)
     except ImportError:
@@ -43,14 +47,17 @@ def on_event(event: str, ctx: dict) -> dict | None:
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
 def _get_adapter():
     """Lazy import of AHKAdapter — deferred so startup is instant."""
     if not _IS_WIN:
         raise RuntimeError("navig-windows-automation requires Windows")
     plugin_dir = sys.modules[__name__].__file__
     import pathlib
+
     src = pathlib.Path(plugin_dir).parent / "src" / "ahk_engine.py"
     import importlib.util
+
     spec = importlib.util.spec_from_file_location("ahk_engine", src)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load ahk_engine from {src}")
@@ -60,6 +67,7 @@ def _get_adapter():
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────
+
 
 def cmd_ahk_run(args: dict, ctx: Any = None) -> dict:
     """

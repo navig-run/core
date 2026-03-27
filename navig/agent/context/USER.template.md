@@ -6,7 +6,7 @@ auto_update: true
 ---
 # USER.md — Your Profile & Operating Parameters
 
-This file teaches NAVIG who you are, how you work, and what "good help" looks like for you.  
+This file teaches NAVIG who you are, how you work, and what "good help" looks like for you.
 Fill in only what you're comfortable sharing — everything is optional and editable anytime.
 
 ---
@@ -43,9 +43,9 @@ Helps NAVIG time notifications, deep‑work blocks, and maintenance windows.
 
 Tell NAVIG how to talk to you and how much detail you want.
 
-- **Verbosity**: normal  
-  - `minimal`  = Short, command‑style answers  
-  - `normal`   = Balanced, with brief explanations  
+- **Verbosity**: normal
+  - `minimal`  = Short, command‑style answers
+  - `normal`   = Balanced, with brief explanations
   - `detailed` = Deep dives, trade‑offs, background
 
 - **Tone**: (e.g. direct, technical, casual, friendly, formal, playful)
@@ -54,8 +54,8 @@ Tell NAVIG how to talk to you and how much detail you want.
   - Primary: (e.g. English, French)
   - Secondary: (other languages NAVIG may use)
 
-- **Confirm Destructive Actions**: yes  
-  - `yes`  = Always ask before risky/irreversible changes  
+- **Confirm Destructive Actions**: yes
+  - `yes`  = Always ask before risky/irreversible changes
   - `no`   = I explicitly accept higher automation risk
 
 - **Notification Channels** (if configured):
@@ -82,8 +82,8 @@ Helps NAVIG choose tools, commands, and examples that match your stack.
   - Voice/TTS: Enabled / Disabled (Multi-provider)
 
 - **Risk Tolerance for Automation**:
-  - `low`    = Prefer read‑only checks and suggestions  
-  - `medium` = Safe defaults, occasional auto‑fixes with logs  
+  - `low`    = Prefer read‑only checks and suggestions
+  - `medium` = Safe defaults, occasional auto‑fixes with logs
   - `high`   = Aggressive automation once patterns are verified
 
 ---

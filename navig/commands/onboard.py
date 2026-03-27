@@ -12,6 +12,7 @@ Run:
     navig onboard                    # auto-selects best mode
     python -m navig.commands.onboard
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,6 +35,7 @@ from navig.workspace_ownership import (
 
 if TYPE_CHECKING:
     from rich.console import Console as RichConsole
+
     ConsoleType = Optional[RichConsole]
 else:
     ConsoleType = Any
@@ -140,6 +142,7 @@ def _store_in_vault(
         return None
     try:
         from navig.vault import get_vault  # lazy import — keep startup fast
+
         vault = get_vault()
         cred_id = vault.add(
             provider=provider,
@@ -151,8 +154,12 @@ def _store_in_vault(
         return cred_id
     except Exception as exc:  # vault init can fail on locked-down systems
         if console:
-            exc_text = str(exc).replace("[", "\\[")  # escape Rich markup in exception messages
-            provider_safe = provider.replace("[", "\\[")  # provider may be user-typed in manual flow
+            exc_text = str(exc).replace(
+                "[", "\\["
+            )  # escape Rich markup in exception messages
+            provider_safe = provider.replace(
+                "[", "\\["
+            )  # provider may be user-typed in manual flow
             console.print(
                 f"[yellow]⚠ Could not store {provider_safe} secret in vault ({exc_text}). "
                 "Key not saved.[/yellow]"
@@ -187,11 +194,7 @@ def print_banner(console: ConsoleType) -> None:
 
 def detect_environment() -> Dict[str, str]:
     """Return a snapshot of the local operator environment."""
-    shell = (
-        os.environ.get("SHELL")
-        or os.environ.get("COMSPEC")
-        or "unknown"
-    )
+    shell = os.environ.get("SHELL") or os.environ.get("COMSPEC") or "unknown"
     return {
         "hostname": socket.gethostname(),
         "shell": shell,
@@ -247,6 +250,7 @@ def check_ollama_reachable(host: str = "http://localhost:11434") -> bool:
     """True if Ollama HTTP endpoint responds within 2 s."""
     try:
         import httpx  # already a core dep
+
         resp = httpx.get(host, timeout=2.0)
         return resp.status_code < 500
     except Exception:
@@ -265,6 +269,7 @@ def check_api_key_in_env(provider: str) -> bool:
         return False
     try:
         from navig.config import get as _cfg_get  # lazy
+
         return bool(_cfg_get(env_var, ""))
     except Exception:
         return bool(os.environ.get(env_var))
@@ -364,7 +369,9 @@ if _TEXTUAL_AVAILABLE:
             step_num = self.current_step + 1
             labels = ["Identity", "Provider", "Runtime", "Packs", "Shell"]
             label = labels[min(self.current_step, len(labels) - 1)]
-            return f"  {' '.join(dots)}   Step {step_num} / {self.total_steps} — {label}"
+            return (
+                f"  {' '.join(dots)}   Step {step_num} / {self.total_steps} — {label}"
+            )
 
     class SummaryPanel(Static):
         """Live config summary panel."""
@@ -564,8 +571,12 @@ if _TEXTUAL_AVAILABLE:
 
                 # Phase 3: identity block
                 env = detect_environment()
-                log.write("[dim #64748b]NAVIG mesh detected:[/dim #64748b]  [#22d3ee]0 nodes[/#22d3ee]")
-                log.write("[dim #64748b]Operator identity:[/dim #64748b]   [yellow]not registered[/yellow]")
+                log.write(
+                    "[dim #64748b]NAVIG mesh detected:[/dim #64748b]  [#22d3ee]0 nodes[/#22d3ee]"
+                )
+                log.write(
+                    "[dim #64748b]Operator identity:[/dim #64748b]   [yellow]not registered[/yellow]"
+                )
                 log.write("")
                 log.write(f"[dim]Machine :[/dim]  [#22d3ee]{env['hostname']}[/#22d3ee]")
                 log.write(f"[dim]Shell   :[/dim]  {env['shell']}")
@@ -646,7 +657,9 @@ if _TEXTUAL_AVAILABLE:
                 )
                 yield Label("")
                 with Horizontal(id="welcome-btns"):
-                    yield Button("Advanced Setup  →", variant="primary", id="btn-advanced")
+                    yield Button(
+                        "Advanced Setup  →", variant="primary", id="btn-advanced"
+                    )
                     yield Button("Quickstart", variant="default", id="btn-quickstart")
 
         @on(Button.Pressed, "#btn-advanced")
@@ -659,6 +672,7 @@ if _TEXTUAL_AVAILABLE:
 
         async def _do_quickstart(self) -> None:
             import functools
+
             console = get_console()
             cfg_dict = await asyncio.get_event_loop().run_in_executor(
                 None, functools.partial(run_quickstart, console)
@@ -747,12 +761,20 @@ if _TEXTUAL_AVAILABLE:
                 yield Label("System Checks", id="checks-title")
                 for label, *_ in self._CHECK_DEFS:
                     import re as _re
-                    _safe_id = _re.sub(r'[^a-zA-Z0-9_-]', '', label[:24].replace(' ', '_'))
+
+                    _safe_id = _re.sub(
+                        r"[^a-zA-Z0-9_-]", "", label[:24].replace(" ", "_")
+                    )
                     row = CheckRow(label, id=f"check-{_safe_id or str(id(label))}")
                     yield row
                 yield Label("")
                 with Horizontal(id="checks-footer"):
-                    yield Button("Continue  →", variant="primary", id="btn-continue", disabled=True)
+                    yield Button(
+                        "Continue  →",
+                        variant="primary",
+                        id="btn-continue",
+                        disabled=True,
+                    )
                     yield Button("← Back", variant="default", id="btn-back")
 
         def on_mount(self) -> None:
@@ -824,11 +846,14 @@ if _TEXTUAL_AVAILABLE:
             self.call_after_refresh(lambda: self.add_class("visible"))
 
     class Step1IdentityWidget(_WizardStepBase):
-        DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+        DEFAULT_CSS = (
+            _WizardStepBase.DEFAULT_CSS
+            + """
         Step1IdentityWidget { height: auto; padding: 1 2; }
         Step1IdentityWidget Label { color: #94a3b8; margin-bottom: 0; }
         Step1IdentityWidget Input { margin-bottom: 1; }
         """
+        )
 
         def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
             super().__init__(**kwargs)
@@ -836,9 +861,17 @@ if _TEXTUAL_AVAILABLE:
 
         def compose(self) -> ComposeResult:
             yield Label("Operator name (display)")
-            yield Input(value=self._cfg.profile_name, id="inp-profile-name", placeholder="operator")
+            yield Input(
+                value=self._cfg.profile_name,
+                id="inp-profile-name",
+                placeholder="operator",
+            )
             yield Label("Workspace root")
-            yield Input(value=self._cfg.workspace_root, id="inp-workspace", placeholder=str(DEFAULT_WORKSPACE_DIR))
+            yield Input(
+                value=self._cfg.workspace_root,
+                id="inp-workspace",
+                placeholder=str(DEFAULT_WORKSPACE_DIR),
+            )
             yield Label("Theme")
             yield Select(
                 [("Dark", "dark"), ("Light", "light"), ("System", "system")],
@@ -869,12 +902,15 @@ if _TEXTUAL_AVAILABLE:
                 pass  # widget not present; skip
 
     class Step2ProviderWidget(_WizardStepBase):
-        DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+        DEFAULT_CSS = (
+            _WizardStepBase.DEFAULT_CSS
+            + """
         Step2ProviderWidget { height: auto; padding: 1 2; }
         Step2ProviderWidget Label { color: #94a3b8; margin-bottom: 0; }
         Step2ProviderWidget RadioSet { margin-bottom: 1; }
         Step2ProviderWidget Input { margin-bottom: 1; }
         """
+        )
 
         _PROVIDERS = ["openrouter", "openai", "anthropic", "groq", "ollama", "none"]
 
@@ -887,7 +923,9 @@ if _TEXTUAL_AVAILABLE:
             with RadioSet(id="radio-provider"):
                 for p in self._PROVIDERS:
                     yield RadioButton(p, value=(p == self._cfg.ai_provider))
-            yield Label("API Key  [dim](stored in vault — not echoed)[/dim]", markup=True)
+            yield Label(
+                "API Key  [dim](stored in vault — not echoed)[/dim]", markup=True
+            )
             yield Input(
                 value="",
                 placeholder="sk-… or leave blank",
@@ -918,11 +956,14 @@ if _TEXTUAL_AVAILABLE:
                 pass  # widget not present; skip
 
     class Step3RuntimeWidget(_WizardStepBase):
-        DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+        DEFAULT_CSS = (
+            _WizardStepBase.DEFAULT_CSS
+            + """
         Step3RuntimeWidget { height: auto; padding: 1 2; }
         Step3RuntimeWidget Label { color: #94a3b8; }
         Step3RuntimeWidget Input { margin-top: 1; }
         """
+        )
 
         def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
             super().__init__(**kwargs)
@@ -953,10 +994,13 @@ if _TEXTUAL_AVAILABLE:
             self._cfg.local_runtime_host = event.value
 
     class Step4PacksWidget(_WizardStepBase):
-        DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+        DEFAULT_CSS = (
+            _WizardStepBase.DEFAULT_CSS
+            + """
         Step4PacksWidget { height: auto; padding: 1 2; }
         Step4PacksWidget Label { color: #94a3b8; margin-bottom: 1; }
         """
+        )
 
         _PACKS = [("DevOps", "devops"), ("SysOps", "sysops"), ("LifeOps", "lifeops")]
 
@@ -967,7 +1011,9 @@ if _TEXTUAL_AVAILABLE:
         def compose(self) -> ComposeResult:
             yield Label("Capability packs to activate")
             for display, key in self._PACKS:
-                yield Checkbox(display, value=(key in self._cfg.capability_packs), id=f"cb-{key}")
+                yield Checkbox(
+                    display, value=(key in self._cfg.capability_packs), id=f"cb-{key}"
+                )
 
         @on(Checkbox.Changed)
         def _pack_toggled(self, event: Checkbox.Changed) -> None:
@@ -976,18 +1022,23 @@ if _TEXTUAL_AVAILABLE:
                 if key not in self._cfg.capability_packs:
                     self._cfg.capability_packs.append(key)
             else:
-                self._cfg.capability_packs = [p for p in self._cfg.capability_packs if p != key]
+                self._cfg.capability_packs = [
+                    p for p in self._cfg.capability_packs if p != key
+                ]
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
                 pass  # widget not present; skip
 
     class Step5ShellWidget(_WizardStepBase):
-        DEFAULT_CSS = _WizardStepBase.DEFAULT_CSS + """
+        DEFAULT_CSS = (
+            _WizardStepBase.DEFAULT_CSS
+            + """
         Step5ShellWidget { height: auto; padding: 1 2; }
         Step5ShellWidget .sw-label { color: #94a3b8; }
         Step5ShellWidget .sw-desc  { color: #334155; margin-bottom: 1; }
         """
+        )
 
         def __init__(self, cfg: "NavigConfig", **kwargs: Any) -> None:
             super().__init__(**kwargs)
@@ -995,10 +1046,30 @@ if _TEXTUAL_AVAILABLE:
 
         def compose(self) -> ComposeResult:
             items = [
-                ("sw-shell",    "Shell integration", "Adds `navig` to $PATH and sets up completions", "shell_integration"),
-                ("sw-update",   "Auto-update",        "Automatically install patch updates",            "auto_update"),
-                ("sw-git",      "Git hooks",          "Run pre-commit safety checks via navig",         "git_hooks"),
-                ("sw-telemetry","Telemetry",          "Send anonymous usage stats to improve NAVIG",    "telemetry"),
+                (
+                    "sw-shell",
+                    "Shell integration",
+                    "Adds `navig` to $PATH and sets up completions",
+                    "shell_integration",
+                ),
+                (
+                    "sw-update",
+                    "Auto-update",
+                    "Automatically install patch updates",
+                    "auto_update",
+                ),
+                (
+                    "sw-git",
+                    "Git hooks",
+                    "Run pre-commit safety checks via navig",
+                    "git_hooks",
+                ),
+                (
+                    "sw-telemetry",
+                    "Telemetry",
+                    "Send anonymous usage stats to improve NAVIG",
+                    "telemetry",
+                ),
             ]
             for sw_id, title, desc, attr in items:
                 yield Label(title, classes="sw-label")
@@ -1008,9 +1079,9 @@ if _TEXTUAL_AVAILABLE:
         @on(Switch.Changed)
         def _sw_changed(self, event: Switch.Changed) -> None:
             mapping = {
-                "sw-shell":     "shell_integration",
-                "sw-update":    "auto_update",
-                "sw-git":       "git_hooks",
+                "sw-shell": "shell_integration",
+                "sw-update": "auto_update",
+                "sw-git": "git_hooks",
                 "sw-telemetry": "telemetry",
             }
             attr = mapping.get(event.switch.id or "")
@@ -1122,7 +1193,10 @@ if _TEXTUAL_AVAILABLE:
                     self.notify("Operator name cannot be empty.", severity="warning")
                     return False
             if self._step == 1:
-                if self._cfg.ai_provider not in ("ollama", "none") and not self._cfg.api_key:
+                if (
+                    self._cfg.ai_provider not in ("ollama", "none")
+                    and not self._cfg.api_key
+                ):
                     self.notify(
                         "No API key entered. You can add one later via `navig ai providers`.",
                         severity="warning",
@@ -1172,7 +1246,9 @@ if _TEXTUAL_AVAILABLE:
                 yield SummaryPanel(self._cfg, id="review-summary")
                 yield Label("")
                 with Horizontal(id="review-btns"):
-                    yield Button("Confirm & Install  ✔", variant="primary", id="btn-confirm")
+                    yield Button(
+                        "Confirm & Install  ✔", variant="primary", id="btn-confirm"
+                    )
                     yield Button("← Edit", variant="default", id="btn-back")
 
         def on_mount(self) -> None:
@@ -1232,9 +1308,10 @@ if _TEXTUAL_AVAILABLE:
 
         def compose(self) -> ComposeResult:
             env = detect_environment()
-            packs_str = "  ".join(
-                f"{p.capitalize()} ✔" for p in self._cfg.capability_packs
-            ) or "—"
+            packs_str = (
+                "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs)
+                or "—"
+            )
             summary_text = (
                 f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
                 f"\n"
@@ -1248,10 +1325,17 @@ if _TEXTUAL_AVAILABLE:
             with Vertical(id="final-outer"):
                 with Vertical(id="final-panel"):
                     yield Static(summary_text, id="final-summary", markup=True)
-                    yield RichLog(id="final-log", markup=True, highlight=False, wrap=False)
+                    yield RichLog(
+                        id="final-log", markup=True, highlight=False, wrap=False
+                    )
                     with Horizontal(id="final-footer"):
                         yield Button("Exit", variant="primary", id="btn-exit")
-                        yield Button("Retry write", variant="warning", id="btn-retry", display=False)
+                        yield Button(
+                            "Retry write",
+                            variant="warning",
+                            id="btn-retry",
+                            display=False,
+                        )
 
         def on_mount(self) -> None:
             self._run_registration()
@@ -1304,9 +1388,10 @@ if _TEXTUAL_AVAILABLE:
                 await asyncio.sleep(0.5)
                 summary_widget: Static = self.query_one("#final-summary", Static)
                 env = detect_environment()
-                packs_str = "  ".join(
-                    f"{p.capitalize()} ✔" for p in self._cfg.capability_packs
-                ) or "—"
+                packs_str = (
+                    "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs)
+                    or "—"
+                )
                 summary_widget.update(
                     f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
                     f"\n"
@@ -1411,18 +1496,36 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         return
 
     print_banner(console)
-    console.print("[dim]────────────────────────────────────────────────────────────[/dim]")
-    console.print("[#2c8bb7]▸[/#2c8bb7] [bold]Connect[/bold] to any server via SSH with a single command")
-    console.print("[#2c8bb7]▸[/#2c8bb7] [bold]Run[/bold] remote commands, transfer files, and manage databases")
-    console.print("[#2c8bb7]▸[/#2c8bb7] [bold]Automate[/bold] workflows and repeat tasks with flows and skills")
-    console.print("[#2c8bb7]▸[/#2c8bb7] [bold]Converse[/bold] with an AI assistant that knows your infrastructure")
-    console.print("[#2c8bb7]▸[/#2c8bb7] [bold]Monitor[/bold] servers, logs, and health from one terminal")
-    console.print("[dim]────────────────────────────────────────────────────────────[/dim]")
-    console.print("[dim]Press Ctrl+C at any time to cancel · Run with --skip to exit immediately[/dim]\n")
+    console.print(
+        "[dim]────────────────────────────────────────────────────────────[/dim]"
+    )
+    console.print(
+        "[#2c8bb7]▸[/#2c8bb7] [bold]Connect[/bold] to any server via SSH with a single command"
+    )
+    console.print(
+        "[#2c8bb7]▸[/#2c8bb7] [bold]Run[/bold] remote commands, transfer files, and manage databases"
+    )
+    console.print(
+        "[#2c8bb7]▸[/#2c8bb7] [bold]Automate[/bold] workflows and repeat tasks with flows and skills"
+    )
+    console.print(
+        "[#2c8bb7]▸[/#2c8bb7] [bold]Converse[/bold] with an AI assistant that knows your infrastructure"
+    )
+    console.print(
+        "[#2c8bb7]▸[/#2c8bb7] [bold]Monitor[/bold] servers, logs, and health from one terminal"
+    )
+    console.print(
+        "[dim]────────────────────────────────────────────────────────────[/dim]"
+    )
+    console.print(
+        "[dim]Press Ctrl+C at any time to cancel · Run with --skip to exit immediately[/dim]\n"
+    )
 
     try:
         if DEFAULT_CONFIG_FILE.exists():
-            console.print(f"[yellow]⚠ Configuration already exists at {DEFAULT_CONFIG_FILE}[/yellow]")
+            console.print(
+                f"[yellow]⚠ Configuration already exists at {DEFAULT_CONFIG_FILE}[/yellow]"
+            )
             if not Confirm.ask("Overwrite existing configuration?", default=False):
                 console.print("[dim]Onboarding cancelled.[/dim]")
                 return
@@ -1448,9 +1551,15 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         else:
             if flow == "auto":
                 console.print("How would you like to set up NAVIG?")
-                console.print("  [bold green]1. Quickstart[/bold green] - Get started quickly with sensible defaults")
-                console.print("  [bold blue]2. Advanced[/bold blue] - Full configuration with all options")
-                choice = Prompt.ask("Select setup mode", choices=["1", "2"], default="1")
+                console.print(
+                    "  [bold green]1. Quickstart[/bold green] - Get started quickly with sensible defaults"
+                )
+                console.print(
+                    "  [bold blue]2. Advanced[/bold blue] - Full configuration with all options"
+                )
+                choice = Prompt.ask(
+                    "Select setup mode", choices=["1", "2"], default="1"
+                )
                 flow = "quickstart" if choice == "1" else "manual"
 
             if flow == "quickstart":
@@ -1469,27 +1578,42 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         sync_to_env(config, console)
 
         console.print()
-        console.rule("[bold #2c8bb7]✅ Onboarding Complete![/bold #2c8bb7]", style="#2c8bb7")
+        console.rule(
+            "[bold #2c8bb7]✅ Onboarding Complete![/bold #2c8bb7]", style="#2c8bb7"
+        )
 
-        summary = Table(title="Configuration Summary", show_header=False, border_style="#2c8bb7")
+        summary = Table(
+            title="Configuration Summary", show_header=False, border_style="#2c8bb7"
+        )
         summary.add_column("Setting", style="#2c8bb7")
         summary.add_column("Value", style="white")
         summary.add_row("Config File", str(DEFAULT_CONFIG_FILE))
         summary.add_row("Workspace", config["agents"]["defaults"]["workspace"])
         summary.add_row("AI Provider", config["agents"]["defaults"]["model"])
-        summary.add_row("Typing Mode", config["agents"]["defaults"].get("typing_mode", "instant"))
+        summary.add_row(
+            "Typing Mode", config["agents"]["defaults"].get("typing_mode", "instant")
+        )
         telegram_cfg = config.get("channels", {}).get("telegram", {})
         if telegram_cfg.get("enabled"):
             summary.add_row("Telegram", "Enabled ✓")
         console.print(summary)
 
         console.print("\n[bold]Next Steps:[/bold]")
-        console.print("  1. Add a host:        [#2c8bb7]navig host add myserver[/#2c8bb7]")
-        console.print("  2. Configure AI:      [#2c8bb7]navig ai providers --add openrouter[/#2c8bb7]")
+        console.print(
+            "  1. Add a host:        [#2c8bb7]navig host add myserver[/#2c8bb7]"
+        )
+        console.print(
+            "  2. Configure AI:      [#2c8bb7]navig ai providers --add openrouter[/#2c8bb7]"
+        )
         console.print("  3. Start interactive: [#2c8bb7]navig menu[/#2c8bb7]")
         console.print()
 
-        cheat = Table(title="Quick Reference", border_style="#2c8bb7", show_lines=False, expand=False)
+        cheat = Table(
+            title="Quick Reference",
+            border_style="#2c8bb7",
+            show_lines=False,
+            expand=False,
+        )
         cheat.add_column("Command", style="#2c8bb7", no_wrap=True, width=22)
         cheat.add_column("What it does", style="white")
         cheat.add_column("Example", style="dim", no_wrap=True)
@@ -1504,11 +1628,21 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
 
         console.print()
         console.rule("[dim]Tips[/dim]", style="dim")
-        console.print("[dim]▸ Run [/dim][#2c8bb7]navig <command> --help[/#2c8bb7][dim] for full options on any command.[/dim]")
-        console.print("[dim]▸ Use [/dim][#2c8bb7]navig menu[/#2c8bb7][dim] for an interactive point-and-click interface.[/dim]")
-        console.print("[dim]▸ Run [/dim][#2c8bb7]navig doctor[/#2c8bb7][dim] if anything looks wrong.[/dim]")
-        console.print("[dim]▸ Settings live in [/dim][#2c8bb7]~/.navig/navig.json[/#2c8bb7][dim] — edit anytime.[/dim]")
-        console.print("[dim]▸ Press Ctrl+C during any prompt to cancel without saving.[/dim]\n")
+        console.print(
+            "[dim]▸ Run [/dim][#2c8bb7]navig <command> --help[/#2c8bb7][dim] for full options on any command.[/dim]"
+        )
+        console.print(
+            "[dim]▸ Use [/dim][#2c8bb7]navig menu[/#2c8bb7][dim] for an interactive point-and-click interface.[/dim]"
+        )
+        console.print(
+            "[dim]▸ Run [/dim][#2c8bb7]navig doctor[/#2c8bb7][dim] if anything looks wrong.[/dim]"
+        )
+        console.print(
+            "[dim]▸ Settings live in [/dim][#2c8bb7]~/.navig/navig.json[/#2c8bb7][dim] — edit anytime.[/dim]"
+        )
+        console.print(
+            "[dim]▸ Press Ctrl+C during any prompt to cancel without saving.[/dim]\n"
+        )
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Onboarding cancelled.[/yellow]")
@@ -1542,14 +1676,14 @@ def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
                 "typing_mode": "instant",
             }
         },
-        "auth": {
-            "profiles": {}
-        },
+        "auth": {"profiles": {}},
         "channels": {},
     }
 
     # Step 1: AI Provider
-    console.print("[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[1/3][/#2c8bb7] [bold]AI Provider[/bold]")
+    console.print(
+        "[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[1/3][/#2c8bb7] [bold]AI Provider[/bold]"
+    )
     console.print("Which AI provider do you want to use?")
     console.print("  1. OpenRouter (recommended - access to many models)")
     console.print("  2. OpenAI")
@@ -1558,9 +1692,7 @@ def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
     console.print("  5. Skip for now")
 
     provider_choice = Prompt.ask(
-        "Select provider",
-        choices=["1", "2", "3", "4", "5"],
-        default="1"
+        "Select provider", choices=["1", "2", "3", "4", "5"], default="1"
     )
 
     provider_map = {
@@ -1579,22 +1711,28 @@ def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
             api_key = Prompt.ask(
                 f"Enter {provider} API key (or press Enter to skip)",
                 password=True,
-                default=""
+                default="",
             )
             if api_key:
-                vault_id = _store_in_vault(provider, "api_key", api_key, "api_key", console)
+                vault_id = _store_in_vault(
+                    provider, "api_key", api_key, "api_key", console
+                )
                 profile: Dict[str, Any] = {"type": "api-key"}
                 if vault_id:
                     profile["vault_id"] = vault_id
                     console.print(f"[green]✓ {provider} API key saved to vault[/green]")
                 else:
-                    console.print(f"[yellow]⚠ {provider} API key could not be vaulted — skipped[/yellow]")
+                    console.print(
+                        f"[yellow]⚠ {provider} API key could not be vaulted — skipped[/yellow]"
+                    )
                 config["auth"]["profiles"][provider] = profile
         else:
             console.print("[dim]Ollama uses local models, no API key needed[/dim]")
 
     # Step 2: Telegram Bot (optional)
-    console.print("\n[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[2/3][/#2c8bb7] [bold]Telegram Bot (optional)[/bold]")
+    console.print(
+        "\n[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[2/3][/#2c8bb7] [bold]Telegram Bot (optional)[/bold]"
+    )
     setup_telegram = Confirm.ask("Do you want to set up a Telegram bot?", default=False)
 
     if setup_telegram:
@@ -1609,21 +1747,29 @@ def run_quickstart(console: ConsoleType) -> Dict[str, Any]:
                 "enabled": True,
                 "allowed_users": [int(user_id)] if user_id.isdigit() else [],
             }
-            vault_id = _store_in_vault("telegram", "bot_token", bot_token, "token", console)
+            vault_id = _store_in_vault(
+                "telegram", "bot_token", bot_token, "token", console
+            )
             if vault_id:
                 tg_cfg["bot_token_vault_id"] = vault_id
                 console.print("[green]✓ Telegram token saved to vault[/green]")
             else:
-                console.print("[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]")
+                console.print(
+                    "[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]"
+                )
             config["channels"]["telegram"] = tg_cfg
 
     # Step 3: Workspace
-    console.print("\n[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[3/3][/#2c8bb7] [bold]Workspace[/bold]")
+    console.print(
+        "\n[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[3/3][/#2c8bb7] [bold]Workspace[/bold]"
+    )
     console.print(f"Default workspace: [#2c8bb7]{DEFAULT_WORKSPACE_DIR}[/#2c8bb7]")
 
     use_default = Confirm.ask("Use default workspace location?", default=True)
     if not use_default:
-        requested_workspace = Prompt.ask("Enter workspace path", default=str(DEFAULT_WORKSPACE_DIR))
+        requested_workspace = Prompt.ask(
+            "Enter workspace path", default=str(DEFAULT_WORKSPACE_DIR)
+        )
         console.print(
             "[yellow]Personal/state workspace files are always managed at "
             f"{DEFAULT_WORKSPACE_DIR}[/yellow]"
@@ -1659,9 +1805,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
                 "max_history": 20,
             }
         },
-        "auth": {
-            "profiles": {}
-        },
+        "auth": {"profiles": {}},
         "channels": {},
         "commands": {
             "confirm_destructive": True,
@@ -1671,14 +1815,16 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
 
     # Section 1: Workspace Configuration
     if not non_interactive:
-        console.print("[dim][1/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
+        console.print(
+            "[dim][1/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
+        )
         input()
-    console.print(Panel("[bold]Section 1: Workspace Configuration[/bold]",
-                        border_style="#2c8bb7"))
+    console.print(
+        Panel("[bold]Section 1: Workspace Configuration[/bold]", border_style="#2c8bb7")
+    )
 
     requested_workspace = Prompt.ask(
-        "Workspace directory",
-        default=str(DEFAULT_WORKSPACE_DIR)
+        "Workspace directory", default=str(DEFAULT_WORKSPACE_DIR)
     )
     if requested_workspace != str(DEFAULT_WORKSPACE_DIR):
         console.print(
@@ -1691,10 +1837,15 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
 
     # Section 2: AI Provider Configuration
     if not non_interactive:
-        console.print("[dim][2/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
+        console.print(
+            "[dim][2/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
+        )
         input()
-    console.print(Panel("[bold]Section 2: AI Provider Configuration[/bold]",
-                        border_style="#2c8bb7"))
+    console.print(
+        Panel(
+            "[bold]Section 2: AI Provider Configuration[/bold]", border_style="#2c8bb7"
+        )
+    )
 
     providers = ["openrouter", "openai", "anthropic", "groq", "ollama"]
     console.print("Available providers:")
@@ -1702,9 +1853,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
         console.print(f"  {i}. {p}")
 
     primary_choice = Prompt.ask(
-        "Primary AI provider",
-        choices=["1", "2", "3", "4", "5"],
-        default="1"
+        "Primary AI provider", choices=["1", "2", "3", "4", "5"], default="1"
     )
     primary_provider = providers[int(primary_choice) - 1]
     config["agents"]["defaults"]["model"] = primary_provider
@@ -1720,13 +1869,19 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
             if provider_name != "ollama":
                 api_key = Prompt.ask(f"{provider_name} API key", password=True)
                 if api_key:
-                    vault_id = _store_in_vault(provider_name, "api_key", api_key, "api_key", console)
+                    vault_id = _store_in_vault(
+                        provider_name, "api_key", api_key, "api_key", console
+                    )
                     profile_entry: Dict[str, Any] = {"type": "api-key"}
                     if vault_id:
                         profile_entry["vault_id"] = vault_id
-                        console.print(f"[green]✓ {provider_name} API key saved to vault[/green]")
+                        console.print(
+                            f"[green]✓ {provider_name} API key saved to vault[/green]"
+                        )
                     else:
-                        console.print(f"[yellow]⚠ {provider_name} API key could not be vaulted — skipped[/yellow]")
+                        console.print(
+                            f"[yellow]⚠ {provider_name} API key could not be vaulted — skipped[/yellow]"
+                        )
                     config["auth"]["profiles"][provider_name] = profile_entry
             else:
                 console.print("[dim]Ollama uses local models[/dim]")
@@ -1735,31 +1890,30 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
 
     # Section 3: Agent Settings
     if not non_interactive:
-        console.print("[dim][3/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
+        console.print(
+            "[dim][3/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
+        )
         input()
-    console.print(Panel("[bold]Section 3: Agent Settings[/bold]",
-                        border_style="#2c8bb7"))
+    console.print(
+        Panel("[bold]Section 3: Agent Settings[/bold]", border_style="#2c8bb7")
+    )
 
     typing_mode = Prompt.ask(
         "Typing indicator mode",
         choices=["instant", "message", "never"],
-        default="instant"
+        default="instant",
     )
     config["agents"]["defaults"]["typing_mode"] = typing_mode
 
     typing_interval = Prompt.ask(
-        "Typing indicator refresh interval (seconds)",
-        default="4.0"
+        "Typing indicator refresh interval (seconds)", default="4.0"
     )
     try:
         config["agents"]["defaults"]["typing_interval"] = float(typing_interval)
     except ValueError:
         config["agents"]["defaults"]["typing_interval"] = 4.0
 
-    max_history = Prompt.ask(
-        "Max conversation history messages",
-        default="20"
-    )
+    max_history = Prompt.ask("Max conversation history messages", default="20")
     try:
         config["agents"]["defaults"]["max_history"] = int(max_history)
     except ValueError:
@@ -1767,10 +1921,13 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
 
     # Section 4: Channel Configuration
     if not non_interactive:
-        console.print("[dim][4/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
+        console.print(
+            "[dim][4/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
+        )
         input()
-    console.print(Panel("[bold]Section 4: Channel Configuration[/bold]",
-                        border_style="#2c8bb7"))
+    console.print(
+        Panel("[bold]Section 4: Channel Configuration[/bold]", border_style="#2c8bb7")
+    )
 
     # Telegram
     setup_telegram = Confirm.ask("Configure Telegram bot?", default=False)
@@ -1780,7 +1937,9 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
 
         tg_cfg_manual: Dict[str, Any] = {
             "enabled": True,
-            "allowed_users": [int(uid.strip()) for uid in user_ids.split(",") if uid.strip().isdigit()],
+            "allowed_users": [
+                int(uid.strip()) for uid in user_ids.split(",") if uid.strip().isdigit()
+            ],
             "typing_mode": typing_mode,
         }
         vault_id = _store_in_vault("telegram", "bot_token", bot_token, "token", console)
@@ -1788,7 +1947,9 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
             tg_cfg_manual["bot_token_vault_id"] = vault_id
             console.print("[green]✓ Telegram token saved to vault[/green]")
         else:
-            console.print("[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]")
+            console.print(
+                "[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]"
+            )
         config["channels"]["telegram"] = tg_cfg_manual
 
     # Discord (placeholder)
@@ -1799,14 +1960,16 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
 
     # Section 5: Command Settings
     if not non_interactive:
-        console.print("[dim][5/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
+        console.print(
+            "[dim][5/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
+        )
         input()
-    console.print(Panel("[bold]Section 5: Command Settings[/bold]",
-                        border_style="#2c8bb7"))
+    console.print(
+        Panel("[bold]Section 5: Command Settings[/bold]", border_style="#2c8bb7")
+    )
 
     confirm_destructive = Confirm.ask(
-        "Confirm destructive operations (delete, restart, etc.)?",
-        default=True
+        "Confirm destructive operations (delete, restart, etc.)?", default=True
     )
     config["commands"]["confirm_destructive"] = confirm_destructive
 
@@ -1819,7 +1982,9 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> Dict[str,
     return config
 
 
-def create_workspace_templates(workspace_path: Path, console: ConsoleType = None) -> None:
+def create_workspace_templates(
+    workspace_path: Path, console: ConsoleType = None
+) -> None:
     """Create workspace template files (Agent-style bootstrap files)."""
     templates = {
         "AGENTS.md": """---
@@ -1861,7 +2026,6 @@ Store important context here as you learn about the user's environment:
 - Common tasks: (patterns you notice)
 - User preferences: (learned over time)
 """,
-
         "BOOTSTRAP.md": """---
 summary: First-run setup ritual (deleted after completion)
 read_when: First session only
@@ -1902,7 +2066,6 @@ This is your first time using NAVIG. Let me help you get started.
 ---
 *This file will be removed after your first successful interaction.*
 """,
-
         "IDENTITY.md": """---
 summary: Agent name, personality, and visual identity
 read_when: Every session start
@@ -1932,7 +2095,6 @@ status: active
 - Technical when needed, plain language otherwise
 - Lead with impact, not process
 """,
-
         "SOUL.md": """---
 summary: Persona, boundaries, and ethical guidelines
 read_when: Every session start
@@ -1975,7 +2137,6 @@ status: active
 - Don't pretend to have access you don't have
 - Recommend security best practices
 """,
-
         "TOOLS.md": """---
 summary: Available tools and usage conventions
 read_when: When executing commands
@@ -2019,7 +2180,6 @@ status: active
 3. Chain commands logically (switch host → run command → parse output)
 4. Handle errors gracefully and inform the user
 """,
-
         "USER.md": """---
 summary: User profile and preferences
 read_when: Every session start
@@ -2054,7 +2214,6 @@ Add any personal notes or preferences here:
 - Common workflows
 - Server naming conventions
 """,
-
         "HEARTBEAT.md": """---
 summary: Background task instructions
 read_when: For scheduled/automated tasks
@@ -2140,13 +2299,19 @@ See documentation for enabling automated monitoring.
                     console.print(f"  [green]✓[/green] Created {filename}")
             except OSError as exc:
                 if console:
-                    console.print(f"  [yellow]⚠[/yellow] Could not create {filename}: {exc}")
+                    console.print(
+                        f"  [yellow]⚠[/yellow] Could not create {filename}: {exc}"
+                    )
 
     if console:
-        console.print(f"\n[green]Workspace initialized at:[/green] {canonical_workspace}")
+        console.print(
+            f"\n[green]Workspace initialized at:[/green] {canonical_workspace}"
+        )
 
 
-def save_config(config: Dict[str, Any], config_path: Path, console: ConsoleType = None) -> None:
+def save_config(
+    config: Dict[str, Any], config_path: Path, console: ConsoleType = None
+) -> None:
     """Save configuration to JSON file."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2189,8 +2354,12 @@ def sync_to_env(config: Dict[str, Any], console: ConsoleType = None) -> None:
     telegram_config = config.get("channels", {}).get("telegram", {})
 
     updates = {
-        "NAVIG_AI_MODEL": config.get("agents", {}).get("defaults", {}).get("model", "openrouter"),
-        "TYPING_MODE": config.get("agents", {}).get("defaults", {}).get("typing_mode", "instant"),
+        "NAVIG_AI_MODEL": config.get("agents", {})
+        .get("defaults", {})
+        .get("model", "openrouter"),
+        "TYPING_MODE": config.get("agents", {})
+        .get("defaults", {})
+        .get("typing_mode", "instant"),
     }
 
     if telegram_config:
@@ -2200,6 +2369,7 @@ def sync_to_env(config: Dict[str, Any], console: ConsoleType = None) -> None:
         if bot_token_vault_id:
             try:
                 from navig.vault import get_vault  # lazy import
+
                 _vault = get_vault()
                 _cred = _vault.get_by_id(bot_token_vault_id, caller="sync_to_env")
                 if _cred:
@@ -2211,7 +2381,9 @@ def sync_to_env(config: Dict[str, Any], console: ConsoleType = None) -> None:
         elif telegram_config.get("bot_token"):  # legacy / manual config
             updates["TELEGRAM_BOT_TOKEN"] = telegram_config["bot_token"]
         if telegram_config.get("allowed_users"):
-            updates["ALLOWED_TELEGRAM_USERS"] = ",".join(str(u) for u in telegram_config["allowed_users"])
+            updates["ALLOWED_TELEGRAM_USERS"] = ",".join(
+                str(u) for u in telegram_config["allowed_users"]
+            )
 
     # Merge updates into env_lines
     for key, value in updates.items():
@@ -2263,7 +2435,9 @@ def _auto_install_textual() -> bool:
                 try:
                     importlib.import_module("textual")
                     if console:
-                        console.print("[bold green]✓[/bold green] textual installed — launching TUI…\n")
+                        console.print(
+                            "[bold green]✓[/bold green] textual installed — launching TUI…\n"
+                        )
                     return True
                 except ImportError:
                     pass  # optional dependency not installed; feature disabled
@@ -2273,7 +2447,15 @@ def _auto_install_textual() -> bool:
     # --- fall back to pip ---
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", pkg, "-q", "--disable-pip-version-check"],
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                pkg,
+                "-q",
+                "--disable-pip-version-check",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=90,
@@ -2281,23 +2463,31 @@ def _auto_install_textual() -> bool:
         if result.returncode != 0:
             err = result.stderr.decode(errors="replace").strip()
             if console and err:
-                console.print(f"[dim yellow]textual install warning: {err[:200]}[/dim yellow]")
+                console.print(
+                    f"[dim yellow]textual install warning: {err[:200]}[/dim yellow]"
+                )
             return False
     except (OSError, subprocess.TimeoutExpired):
         if console:
-            console.print("[dim yellow]TUI install timed out — using text mode[/dim yellow]")
+            console.print(
+                "[dim yellow]TUI install timed out — using text mode[/dim yellow]"
+            )
         return False
 
     try:
         importlib.import_module("textual")
         if console:
-            console.print("[bold green]✓[/bold green] textual installed — launching TUI…\n")
+            console.print(
+                "[bold green]✓[/bold green] textual installed — launching TUI…\n"
+            )
         return True
     except ImportError:
         return False
 
 
-def run_onboard(flow: str = "auto", non_interactive: bool = False, skip: bool = False) -> None:
+def run_onboard(
+    flow: str = "auto", non_interactive: bool = False, skip: bool = False
+) -> None:
     """
     Run the NAVIG onboarding wizard.
 
@@ -2318,7 +2508,9 @@ def run_onboard(flow: str = "auto", non_interactive: bool = False, skip: bool = 
     if skip:
         if console:
             print_banner(console)
-            console.print("[dim]Onboarding skipped. Run 'navig onboard' to configure.[/dim]")
+            console.print(
+                "[dim]Onboarding skipped. Run 'navig onboard' to configure.[/dim]"
+            )
         else:
             print("Onboarding skipped. Run 'navig onboard' to configure.")
         return
@@ -2332,6 +2524,7 @@ def run_onboard(flow: str = "auto", non_interactive: bool = False, skip: bool = 
             # Re-run the module-level Textual import after successful install
             try:
                 from textual.app import App, ComposeResult  # noqa: F401
+
                 _TEXTUAL_AVAILABLE = True
             except ImportError:
                 _TEXTUAL_AVAILABLE = False
@@ -2348,6 +2541,7 @@ def run_onboard(flow: str = "auto", non_interactive: bool = False, skip: bool = 
                 import importlib
 
                 import navig.commands.onboard as _self
+
                 importlib.reload(_self)
                 _self.NavigOnboardingApp().run()
             except Exception:

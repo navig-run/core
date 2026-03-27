@@ -44,6 +44,7 @@ logger = logging.getLogger("navig.integrations.telegram_voice_bot")
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class VoiceBotConfig:
     """Configuration for TelegramVoiceBot."""
@@ -55,11 +56,11 @@ class VoiceBotConfig:
     allowed_chat_ids: Set[int] = field(default_factory=set)
 
     # STT provider preference
-    stt_provider: str = "deepgram"       # "deepgram" | "whisper_api" | "whisper_local"
+    stt_provider: str = "deepgram"  # "deepgram" | "whisper_api" | "whisper_local"
     stt_fallback: str = "whisper_api"
 
     # TTS provider preference
-    tts_provider: str = "edge"           # "edge" | "openai" | "elevenlabs" | "deepgram"
+    tts_provider: str = "edge"  # "edge" | "openai" | "elevenlabs" | "deepgram"
     tts_voice: Optional[str] = None
 
     # Language for STT / TTS
@@ -92,6 +93,7 @@ class VoiceBotConfig:
 # Bot
 # ---------------------------------------------------------------------------
 
+
 class TelegramVoiceBot:
     """
     Full-featured Telegram bot with voice message support.
@@ -107,9 +109,9 @@ class TelegramVoiceBot:
     """
 
     def __init__(self, config: Optional[VoiceBotConfig] = None):
-        self.config   = config or VoiceBotConfig()
-        self._token:  Optional[str] = None
-        self._app:    Optional[object] = None  # telegram.ext.Application
+        self.config = config or VoiceBotConfig()
+        self._token: Optional[str] = None
+        self._app: Optional[object] = None  # telegram.ext.Application
 
     # ------------------------------------------------------------------ #
     # Startup — fail-fast vault check
@@ -119,6 +121,7 @@ class TelegramVoiceBot:
         """Load bot token from VaultV2. Raises RuntimeError if not set."""
         try:
             from navig.vault import get_vault_v2
+
             token = get_vault_v2().get_secret(self.config.token_vault_label)
             if not token:
                 raise KeyError("empty token")
@@ -150,12 +153,13 @@ class TelegramVoiceBot:
         app = builder.build()
 
         # ── Command handlers ──────────────────────────────────────────
-        app.add_handler(CommandHandler("start",  self._cmd_start))
-        app.add_handler(CommandHandler("help",   self._cmd_help))
+        app.add_handler(CommandHandler("start", self._cmd_start))
+        app.add_handler(CommandHandler("help", self._cmd_help))
         app.add_handler(CommandHandler("status", self._cmd_status))
 
         # ── Voice / video note ────────────────────────────────────────
         from telegram.ext import filters as F
+
         app.add_handler(MessageHandler(F.VOICE | F.VIDEO_NOTE, self._handle_voice))
 
         # ── Text (non-command) via IntentParser ───────────────────────
@@ -173,7 +177,7 @@ class TelegramVoiceBot:
     async def run_polling(self) -> None:
         """Start the bot in long-polling mode (development)."""
         self._token = self._load_token()
-        self._app   = self._build_application(self._token)
+        self._app = self._build_application(self._token)
 
         logger.info("TelegramVoiceBot starting (polling mode)")
         async with self._app:
@@ -182,7 +186,9 @@ class TelegramVoiceBot:
                 allowed_updates=["message", "callback_query"],
                 drop_pending_updates=True,
             )
-            logger.info("🤖 NAVIG Telegram bot is running (polling). Press Ctrl+C to stop.")
+            logger.info(
+                "🤖 NAVIG Telegram bot is running (polling). Press Ctrl+C to stop."
+            )
             # Run until cancelled
             await asyncio.Event().wait()
             await self._app.updater.stop()
@@ -191,12 +197,12 @@ class TelegramVoiceBot:
     async def run_webhook(
         self,
         listen: str = "0.0.0.0",
-        port:   int = 8443,
+        port: int = 8443,
         url_path: Optional[str] = None,
     ) -> None:
         """Start the bot in webhook mode (production)."""
         self._token = self._load_token()
-        self._app   = self._build_application(self._token)
+        self._app = self._build_application(self._token)
 
         if not self.config.webhook_url:
             raise ValueError(
@@ -208,7 +214,8 @@ class TelegramVoiceBot:
 
         logger.info(
             "TelegramVoiceBot starting (webhook mode) — %s%s",
-            self.config.webhook_url, webhook_path,
+            self.config.webhook_url,
+            webhook_path,
         )
 
         async with self._app:
@@ -235,9 +242,10 @@ class TelegramVoiceBot:
 
         try:
             from navig.bot.start_menu import build_main_menu
+
             text, markup = build_main_menu()
         except Exception:
-            text  = "👋 Welcome to **NAVIG**!\n\nI'm your AI assistant. Send me a voice message or text to get started."
+            text = "👋 Welcome to **NAVIG**!\n\nI'm your AI assistant. Send me a voice message or text to get started."
             markup = None
 
         await update.message.reply_text(
@@ -253,6 +261,7 @@ class TelegramVoiceBot:
 
         try:
             from navig.bot.help_system import format_main_help
+
             text = format_main_help()
         except Exception:
             text = (
@@ -273,13 +282,17 @@ class TelegramVoiceBot:
         lines = ["📊 *NAVIG Status*\n"]
         try:
             from navig.voice.pipeline import get_pipeline
+
             p = get_pipeline()
-            lines.append(f"• Voice pipeline: {'🟢 running' if p._running else '🔴 stopped'}")
+            lines.append(
+                f"• Voice pipeline: {'🟢 running' if p._running else '🔴 stopped'}"
+            )
         except Exception:
             lines.append("• Voice pipeline: ⚪ unavailable")
 
         try:
             from navig.mesh.registry import get_registry
+
             reg = get_registry()
             peers = reg.live_peers()
             lines.append(f"• Mesh peers: {len(peers)} live")
@@ -345,7 +358,9 @@ class TelegramVoiceBot:
             )
         except Exception as exc:
             logger.error("Failed to download voice note: %s", exc)
-            await msg.reply_text("⚠️ Failed to download your voice message. Please try again.")
+            await msg.reply_text(
+                "⚠️ Failed to download your voice message. Please try again."
+            )
             return
 
         try:
@@ -380,12 +395,14 @@ class TelegramVoiceBot:
             # Try intent parser first to trigger real actions from voice
             try:
                 from navig.bot import NLP_AVAILABLE, IntentParser
+
                 if NLP_AVAILABLE and IntentParser is not None:
                     parser = IntentParser()
                     intent = await parser.parse(transcript)
                     if intent and intent.command:
                         # Execute the parsed command
                         from navig.bot import COMMAND_HANDLER_MAP
+
                         handler = COMMAND_HANDLER_MAP.get(intent.command)
                         if handler:
                             result = await handler(intent)
@@ -394,13 +411,17 @@ class TelegramVoiceBot:
                                 # Skip general LLM since action was handled
                                 goto_tts = True
             except Exception as intent_exc:
-                logger.debug("Voice intent parser error (falling back to LLM): %s", intent_exc)
+                logger.debug(
+                    "Voice intent parser error (falling back to LLM): %s", intent_exc
+                )
 
             # ── 4. Generative LLM fallback ────────────────────────────
             if "goto_tts" not in locals():
                 response_text = await self._call_llm(transcript)
                 if not response_text:
-                    await msg.reply_text("⚠️ I couldn't generate a response. Please try again.")
+                    await msg.reply_text(
+                        "⚠️ I couldn't generate a response. Please try again."
+                    )
                     return
 
             # ── 5. TTS Output ─────────────────────────────────────────
@@ -413,7 +434,9 @@ class TelegramVoiceBot:
                     await context.bot.send_voice(
                         chat_id=msg.chat_id,
                         voice=audio_fh,
-                        caption=response_text[:1024] if len(response_text) <= 1024 else None,
+                        caption=(
+                            response_text[:1024] if len(response_text) <= 1024 else None
+                        ),
                     )
                 # If response is longer than caption limit, send full text separately
                 if len(response_text) > 1024:
@@ -452,12 +475,14 @@ class TelegramVoiceBot:
         # Try intent parser first (navig.bot.IntentParser)
         try:
             from navig.bot import NLP_AVAILABLE, IntentParser
+
             if NLP_AVAILABLE and IntentParser is not None:
                 parser = IntentParser()
                 intent = await parser.parse(text)
                 if intent and intent.command:
                     # Execute the parsed command
                     from navig.bot import COMMAND_HANDLER_MAP
+
                     handler = COMMAND_HANDLER_MAP.get(intent.command)
                     if handler:
                         result = await handler(intent)
@@ -472,7 +497,9 @@ class TelegramVoiceBot:
         if response:
             await update.message.reply_text(response)
         else:
-            await update.message.reply_text("⚠️ I couldn't process that request right now.")
+            await update.message.reply_text(
+                "⚠️ I couldn't process that request right now."
+            )
 
     # ------------------------------------------------------------------ #
     # Callback query handler (inline keyboards)
@@ -488,6 +515,7 @@ class TelegramVoiceBot:
         # TelegramBridge callback pattern (correlation:value)
         if ":" in data:
             from navig.integrations.telegram_bridge import _bridge_instance
+
             if _bridge_instance is not None:
                 _bridge_instance.resolve_callback(data)
                 return
@@ -495,9 +523,12 @@ class TelegramVoiceBot:
         # Menu action routing
         try:
             from navig.bot.start_menu import get_action_info
+
             info = get_action_info(data)
             if info:
-                await query.edit_message_text(info["description"], parse_mode="Markdown")
+                await query.edit_message_text(
+                    info["description"], parse_mode="Markdown"
+                )
                 return
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -508,13 +539,15 @@ class TelegramVoiceBot:
     # STT, LLM, TTS helpers (delegate to pipeline components)
     # ------------------------------------------------------------------ #
 
-    async def _transcribe(self, audio_path: Path, *, is_voice: bool = True) -> Optional[str]:
+    async def _transcribe(
+        self, audio_path: Path, *, is_voice: bool = True
+    ) -> Optional[str]:
         """Transcribe an audio file using vault-keyed STT providers."""
         from navig.voice.stt import STT, STTConfig, STTProvider
 
         _map = {
-            "deepgram":     STTProvider.DEEPGRAM,
-            "whisper_api":  STTProvider.WHISPER_API,
+            "deepgram": STTProvider.DEEPGRAM,
+            "whisper_api": STTProvider.WHISPER_API,
             "whisper_local": STTProvider.WHISPER_LOCAL,
         }
         config = STTConfig(
@@ -532,7 +565,8 @@ class TelegramVoiceBot:
 
         logger.warning(
             "STT failed (provider=%s): %s",
-            result.provider, result.error,
+            result.provider,
+            result.error,
         )
         return None
 
@@ -540,10 +574,11 @@ class TelegramVoiceBot:
         """Route text through navig-core's UnifiedRouter."""
         try:
             from navig.routing.router import RouteRequest, get_router
+
             router = get_router()
             messages = [
                 {"role": "system", "content": self.config.system_prompt},
-                {"role": "user",   "content": text},
+                {"role": "user", "content": text},
             ]
             request = RouteRequest(messages=messages, entrypoint="telegram_voice_bot")
             response_text, _trace = await router.run(request)
@@ -558,11 +593,11 @@ class TelegramVoiceBot:
             from navig.voice.tts import TTS, TTSConfig, TTSProvider
 
             _map = {
-                "openai":       TTSProvider.OPENAI,
-                "elevenlabs":   TTSProvider.ELEVENLABS,
-                "edge":         TTSProvider.EDGE,
+                "openai": TTSProvider.OPENAI,
+                "elevenlabs": TTSProvider.ELEVENLABS,
+                "edge": TTSProvider.EDGE,
                 "google_cloud": TTSProvider.GOOGLE_CLOUD,
-                "deepgram":     TTSProvider.DEEPGRAM,
+                "deepgram": TTSProvider.DEEPGRAM,
             }
             config = TTSConfig(
                 provider=_map.get(self.config.tts_provider, TTSProvider.EDGE),

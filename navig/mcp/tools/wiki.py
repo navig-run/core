@@ -3,61 +3,63 @@ from typing import Any, Dict, List
 
 def register(server: Any) -> None:
     """Register wiki manipulation tools."""
-    server.tools.update({
-        "navig_search_wiki": {
-            "name": "navig_search_wiki",
-            "description": "Search the NAVIG wiki knowledge base for relevant documentation, guides, and notes.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query"
+    server.tools.update(
+        {
+            "navig_search_wiki": {
+                "name": "navig_search_wiki",
+                "description": "Search the NAVIG wiki knowledge base for relevant documentation, guides, and notes.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum results to return",
+                            "default": 10,
+                        },
                     },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum results to return",
-                        "default": 10
-                    }
+                    "required": ["query"],
                 },
-                "required": ["query"]
-            }
-        },
-        "navig_list_wiki_pages": {
-            "name": "navig_list_wiki_pages",
-            "description": "List all pages in the NAVIG wiki knowledge base.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "folder": {
-                        "type": "string",
-                        "description": "Filter by folder (knowledge, technical, hub, external)"
-                    }
+            },
+            "navig_list_wiki_pages": {
+                "name": "navig_list_wiki_pages",
+                "description": "List all pages in the NAVIG wiki knowledge base.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "folder": {
+                            "type": "string",
+                            "description": "Filter by folder (knowledge, technical, hub, external)",
+                        }
+                    },
+                    "required": [],
                 },
-                "required": []
-            }
-        },
-        "navig_read_wiki_page": {
-            "name": "navig_read_wiki_page",
-            "description": "Read the content of a specific wiki page.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Wiki page path (e.g., 'knowledge/concepts/overview')"
-                    }
+            },
+            "navig_read_wiki_page": {
+                "name": "navig_read_wiki_page",
+                "description": "Read the content of a specific wiki page.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Wiki page path (e.g., 'knowledge/concepts/overview')",
+                        }
+                    },
+                    "required": ["path"],
                 },
-                "required": ["path"]
-            }
+            },
         }
-    })
+    )
 
-    server._tool_handlers.update({
-        "navig_search_wiki": _tool_search_wiki,
-        "navig_list_wiki_pages": _tool_list_wiki_pages,
-        "navig_read_wiki_page": _tool_read_wiki_page,
-    })
+    server._tool_handlers.update(
+        {
+            "navig_search_wiki": _tool_search_wiki,
+            "navig_list_wiki_pages": _tool_list_wiki_pages,
+            "navig_read_wiki_page": _tool_read_wiki_page,
+        }
+    )
+
 
 def _tool_search_wiki(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Search wiki pages."""
@@ -72,6 +74,7 @@ def _tool_search_wiki(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]
 
     results = search_wiki(wiki_path, query)
     return results[:limit]
+
 
 def _tool_list_wiki_pages(server: Any, args: Dict[str, Any]) -> List[Dict[str, Any]]:
     """List wiki pages."""
@@ -89,10 +92,15 @@ def _tool_list_wiki_pages(server: Any, args: Dict[str, Any]) -> List[Dict[str, A
             "path": p["path"],
             "title": p["title"],
             "folder": p["folder"],
-            "modified": p["modified"].isoformat() if hasattr(p["modified"], "isoformat") else str(p["modified"])
+            "modified": (
+                p["modified"].isoformat()
+                if hasattr(p["modified"], "isoformat")
+                else str(p["modified"])
+            ),
         }
         for p in pages
     ]
+
 
 def _tool_read_wiki_page(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Read a wiki page."""
@@ -109,7 +117,4 @@ def _tool_read_wiki_page(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": f"Page not found: {page_path}"}
 
     content = resolved.read_text(encoding="utf-8")
-    return {
-        "path": str(resolved.relative_to(wiki_path)),
-        "content": content
-    }
+    return {"path": str(resolved.relative_to(wiki_path)), "content": content}

@@ -4,6 +4,7 @@ navig.ui.formatters — KV diagnostic pairs and command row alignment.
   render_kv_diagnostics(pairs)       — aligned key→value diagnostic block
   render_command_row(label, command) — left-padded label + cyan command
 """
+
 from __future__ import annotations
 
 import sys

@@ -32,9 +32,11 @@ FileCB = Callable[[Path], None]  # called for each detected file
 
 # ── Watched paths helpers ─────────────────────────────────────
 
+
 def _global_inbox_dir() -> Path:
     try:
         from navig.platform.paths import navig_data_dir
+
         return navig_data_dir() / "inbox"
     except Exception:
         return Path.home() / ".navig" / "inbox"
@@ -46,6 +48,7 @@ def _project_inbox_dir(project_root: Optional[Path] = None) -> Path:
 
 
 # ── WatchfilesBackend ─────────────────────────────────────────
+
 
 class _WatchfilesBackend:
     """Watcher using watchfiles library (async-friendly)."""
@@ -76,6 +79,7 @@ class _WatchfilesBackend:
 
 
 # ── PollingBackend ────────────────────────────────────────────
+
 
 class _PollingBackend:
     """Fallback polling watcher when watchfiles is unavailable."""
@@ -125,6 +129,7 @@ class _PollingBackend:
 
 # ── InboxWatcher (public API) ─────────────────────────────────
 
+
 class InboxWatcher:
     """
     Monitor inbox directories and invoke a callback for each new file.
@@ -168,6 +173,7 @@ class InboxWatcher:
         """Start the watcher in a background thread."""
         try:
             import watchfiles  # noqa: F401
+
             self._backend = _WatchfilesBackend(self._dirs, self._callback)
         except ImportError:
             self._backend = _PollingBackend(

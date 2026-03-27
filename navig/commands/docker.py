@@ -3,14 +3,20 @@
 These commands provide convenient shortcuts for common Docker operations,
 eliminating the need for complex shell escaping and multi-command sequences.
 """
+
 from typing import Any, Dict, List, Optional
 
 from navig import console_helper as ch
 
 
-def docker_ps(options: Dict[str, Any], all: bool = False, filter: Optional[str] = None, format: str = "table"):
+def docker_ps(
+    options: Dict[str, Any],
+    all: bool = False,
+    filter: Optional[str] = None,
+    format: str = "table",
+):
     """List Docker containers on remote host.
-    
+
     Args:
         options: CLI context options
         all: Show all containers (including stopped)
@@ -23,7 +29,7 @@ def docker_ps(options: Dict[str, Any], all: bool = False, filter: Optional[str] 
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -36,7 +42,9 @@ def docker_ps(options: Dict[str, Any], all: bool = False, filter: Optional[str] 
     elif format == "names":
         docker_format = '--format "{{.Names}}"'
     else:
-        docker_format = '--format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"'
+        docker_format = (
+            '--format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"'
+        )
 
     cmd = f"docker ps {docker_format}"
     if all:
@@ -45,7 +53,7 @@ def docker_ps(options: Dict[str, Any], all: bool = False, filter: Optional[str] 
     if filter:
         cmd = f"{cmd} | grep -E '{filter}'"
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         ch.info(f"Containers on {host_name}:")
 
     result = remote_ops.execute_command(cmd, host_config, capture_output=False)
@@ -62,7 +70,7 @@ def docker_logs(
     since: Optional[str] = None,
 ):
     """View Docker container logs.
-    
+
     Args:
         container: Container name or ID
         options: CLI context options
@@ -76,7 +84,7 @@ def docker_logs(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -103,7 +111,7 @@ def docker_logs(
     # Add stderr redirect for combined output
     cmd = f"{cmd} 2>&1"
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         ch.info(f"Logs for {container}:")
 
     result = remote_ops.execute_command(cmd, host_config, capture_output=False)
@@ -121,7 +129,7 @@ def docker_exec(
     workdir: Optional[str] = None,
 ):
     """Execute command in Docker container.
-    
+
     Args:
         container: Container name or ID
         command: Command to execute inside container
@@ -136,7 +144,7 @@ def docker_exec(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -159,7 +167,7 @@ def docker_exec(
     cmd_parts.append(command)
     cmd = " ".join(cmd_parts)
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         ch.info(f"Executing in {container}: {command}")
 
     result = remote_ops.execute_command(cmd, host_config, capture_output=False)
@@ -178,7 +186,7 @@ def docker_compose(
     pull: bool = False,
 ):
     """Run docker compose commands.
-    
+
     Args:
         action: Compose action (up, down, restart, stop, start, pull, build, logs)
         options: CLI context options
@@ -194,16 +202,29 @@ def docker_compose(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
 
     host_config = config_manager.load_host_config(host_name)
 
-    valid_actions = ['up', 'down', 'restart', 'stop', 'start', 'pull', 'build', 'logs', 'ps', 'config']
+    valid_actions = [
+        "up",
+        "down",
+        "restart",
+        "stop",
+        "start",
+        "pull",
+        "build",
+        "logs",
+        "ps",
+        "config",
+    ]
     if action not in valid_actions:
-        ch.error(f"Invalid action: {action}", f"Valid actions: {', '.join(valid_actions)}")
+        ch.error(
+            f"Invalid action: {action}", f"Valid actions: {', '.join(valid_actions)}"
+        )
         return
 
     # Build compose command
@@ -216,14 +237,14 @@ def docker_compose(
     cmd_parts.append(action)
 
     # Action-specific options
-    if action == 'up':
+    if action == "up":
         if detach:
             cmd_parts.append("-d")
         if build:
             cmd_parts.append("--build")
         if pull:
             cmd_parts.append("--pull always")
-    elif action == 'logs':
+    elif action == "logs":
         cmd_parts.append("--tail 50")
 
     # Add specific services if provided
@@ -233,19 +254,19 @@ def docker_compose(
     cmd = " ".join(cmd_parts)
 
     # Confirm for destructive operations
-    if action in ['down', 'restart', 'stop']:
+    if action in ["down", "restart", "stop"]:
         if not ch.confirm_operation(
             operation_name=f"Docker Compose {action}",
-            operation_type='standard',
+            operation_type="standard",
             host=host_name,
             details=f"Path: {path or 'current directory'}",
-            auto_confirm=options.get('yes', False),
-            force_confirm=options.get('confirm', False),
+            auto_confirm=options.get("yes", False),
+            force_confirm=options.get("confirm", False),
         ):
             ch.warning("Cancelled.")
             return
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         ch.info(f"Running: docker compose {action}")
 
     result = remote_ops.execute_command(cmd, host_config, capture_output=False)
@@ -262,7 +283,7 @@ def docker_inspect(
     format: Optional[str] = None,
 ):
     """Inspect Docker container.
-    
+
     Args:
         container: Container name or ID
         options: CLI context options
@@ -274,7 +295,7 @@ def docker_inspect(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -298,7 +319,7 @@ def docker_restart(
     timeout: int = 10,
 ):
     """Restart Docker container.
-    
+
     Args:
         container: Container name or ID
         options: CLI context options
@@ -310,7 +331,7 @@ def docker_restart(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -320,17 +341,17 @@ def docker_restart(
     # Confirm restart
     if not ch.confirm_operation(
         operation_name=f"Restart container: {container}",
-        operation_type='standard',
+        operation_type="standard",
         host=host_name,
-        auto_confirm=options.get('yes', False),
-        force_confirm=options.get('confirm', False),
+        auto_confirm=options.get("yes", False),
+        force_confirm=options.get("confirm", False),
     ):
         ch.warning("Cancelled.")
         return
 
     cmd = f"docker restart -t {timeout} {container}"
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         with ch.create_spinner(f"Restarting {container}..."):
             result = remote_ops.execute_command(cmd, host_config)
     else:
@@ -350,7 +371,7 @@ def docker_stop(container: str, options: Dict[str, Any], timeout: int = 10):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -359,15 +380,17 @@ def docker_stop(container: str, options: Dict[str, Any], timeout: int = 10):
 
     if not ch.confirm_operation(
         operation_name=f"Stop container: {container}",
-        operation_type='standard',
+        operation_type="standard",
         host=host_name,
-        auto_confirm=options.get('yes', False),
-        force_confirm=options.get('confirm', False),
+        auto_confirm=options.get("yes", False),
+        force_confirm=options.get("confirm", False),
     ):
         ch.warning("Cancelled.")
         return
 
-    result = remote_ops.execute_command(f"docker stop -t {timeout} {container}", host_config)
+    result = remote_ops.execute_command(
+        f"docker stop -t {timeout} {container}", host_config
+    )
 
     if result.returncode == 0:
         ch.success(f"✓ Container {container} stopped")
@@ -383,7 +406,7 @@ def docker_start(container: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -398,7 +421,9 @@ def docker_start(container: str, options: Dict[str, Any]):
         ch.error(f"Failed to start container: {container}")
 
 
-def docker_stats(options: Dict[str, Any], container: Optional[str] = None, no_stream: bool = True):
+def docker_stats(
+    options: Dict[str, Any], container: Optional[str] = None, no_stream: bool = True
+):
     """Show Docker container resource usage statistics."""
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
@@ -406,7 +431,7 @@ def docker_stats(options: Dict[str, Any], container: Optional[str] = None, no_st
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -419,7 +444,7 @@ def docker_stats(options: Dict[str, Any], container: Optional[str] = None, no_st
     if container:
         cmd += f" {container}"
 
-    if not options.get('quiet'):
+    if not options.get("quiet"):
         ch.info("Container resource usage:")
 
     remote_ops.execute_command(cmd, host_config, capture_output=False)
@@ -452,9 +477,15 @@ def _docker_callback(ctx: _t.Context):
 @docker_app.command("ps")
 def _docker_ps_cmd(
     ctx: _t.Context,
-    all: bool = _t.Option(False, "--all", "-a", help="Show all containers (including stopped)"),
-    filter: _Opt[str] = _t.Option(None, "--filter", "-f", help="Filter by name (grep pattern)"),
-    format: str = _t.Option("table", "--format", help="Output format: table, json, names"),
+    all: bool = _t.Option(
+        False, "--all", "-a", help="Show all containers (including stopped)"
+    ),
+    filter: _Opt[str] = _t.Option(
+        None, "--filter", "-f", help="Filter by name (grep pattern)"
+    ),
+    format: str = _t.Option(
+        "table", "--format", help="Output format: table, json, names"
+    ),
 ):
     """
     List Docker containers on remote host.
@@ -474,7 +505,9 @@ def _docker_logs_cmd(
     container: str = _t.Argument(..., help="Container name or ID"),
     tail: _Opt[int] = _t.Option(None, "--tail", "-n", help="Number of lines to show"),
     follow: bool = _t.Option(False, "--follow", "-f", help="Follow log output"),
-    since: _Opt[str] = _t.Option(None, "--since", help="Show logs since (e.g., 10m, 1h)"),
+    since: _Opt[str] = _t.Option(
+        None, "--since", help="Show logs since (e.g., 10m, 1h)"
+    ),
 ):
     """
     View Docker container logs.
@@ -494,7 +527,9 @@ def _docker_exec_cmd(
     ctx: _t.Context,
     container: str = _t.Argument(..., help="Container name or ID"),
     command: str = _t.Argument(..., help="Command to execute"),
-    interactive: bool = _t.Option(False, "--interactive", "-i", help="Interactive mode with TTY"),
+    interactive: bool = _t.Option(
+        False, "--interactive", "-i", help="Interactive mode with TTY"
+    ),
     user: _Opt[str] = _t.Option(None, "--user", "-u", help="Run as specific user"),
     workdir: _Opt[str] = _t.Option(None, "--workdir", "-w", help="Working directory"),
 ):
@@ -507,17 +542,29 @@ def _docker_exec_cmd(
         navig docker exec postgres "psql -U postgres -c 'SELECT 1'"
         navig docker exec app "php artisan migrate" -u www-data
     """
-    docker_exec(container, command, ctx.obj, interactive=interactive, user=user, workdir=workdir)
+    docker_exec(
+        container, command, ctx.obj, interactive=interactive, user=user, workdir=workdir
+    )
 
 
 @docker_app.command("compose")
 def _docker_compose_cmd(
     ctx: _t.Context,
-    action: str = _t.Argument(..., help="Action: up, down, restart, stop, start, pull, build, logs, ps"),
-    path: _Opt[str] = _t.Option(None, "--path", "-p", help="Path to docker-compose.yml directory"),
-    services: _Opt[str] = _t.Option(None, "--services", "-s", help="Comma-separated list of services"),
-    detach: bool = _t.Option(True, "--detach/--no-detach", "-d", help="Run in background (for 'up')"),
-    build: bool = _t.Option(False, "--build", "-b", help="Build images before starting"),
+    action: str = _t.Argument(
+        ..., help="Action: up, down, restart, stop, start, pull, build, logs, ps"
+    ),
+    path: _Opt[str] = _t.Option(
+        None, "--path", "-p", help="Path to docker-compose.yml directory"
+    ),
+    services: _Opt[str] = _t.Option(
+        None, "--services", "-s", help="Comma-separated list of services"
+    ),
+    detach: bool = _t.Option(
+        True, "--detach/--no-detach", "-d", help="Run in background (for 'up')"
+    ),
+    build: bool = _t.Option(
+        False, "--build", "-b", help="Build images before starting"
+    ),
     pull: bool = _t.Option(False, "--pull", help="Pull images before starting"),
 ):
     """
@@ -531,7 +578,15 @@ def _docker_compose_cmd(
         navig docker compose logs --path /app
     """
     service_list = services.split(",") if services else None
-    docker_compose(action, ctx.obj, path=path, services=service_list, detach=detach, build=build, pull=pull)
+    docker_compose(
+        action,
+        ctx.obj,
+        path=path,
+        services=service_list,
+        detach=detach,
+        build=build,
+        pull=pull,
+    )
 
 
 @docker_app.command("restart")

@@ -3,6 +3,7 @@ navig.ui.bars — Metric bars and sparklines using block characters.
 
 Characters: █ (fill) ░ (empty) — ASCII fallback: # .
 """
+
 from __future__ import annotations
 
 import sys

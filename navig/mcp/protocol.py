@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 class MCPMethod(str, Enum):
     """MCP JSON-RPC methods."""
+
     INITIALIZE = "initialize"
     INITIALIZED = "notifications/initialized"
     TOOLS_LIST = "tools/list"
@@ -24,6 +25,7 @@ class MCPMethod(str, Enum):
 @dataclass
 class JSONRPCRequest:
     """JSON-RPC 2.0 request."""
+
     method: str
     params: Dict[str, Any] = field(default_factory=dict)
     id: Optional[Union[str, int]] = None
@@ -57,13 +59,14 @@ class JSONRPCRequest:
 @dataclass
 class JSONRPCResponse:
     """JSON-RPC 2.0 response."""
+
     id: Optional[Union[str, int]]
     result: Optional[Any] = None
     error: Optional[Dict[str, Any]] = None
     jsonrpc: str = "2.0"
 
     @classmethod
-    def from_json(cls, data: str) -> 'JSONRPCResponse':
+    def from_json(cls, data: str) -> "JSONRPCResponse":
         """Parse from JSON string."""
         parsed = json.loads(data)
         return cls(
@@ -74,7 +77,7 @@ class JSONRPCResponse:
         )
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'JSONRPCResponse':
+    def from_dict(cls, data: dict) -> "JSONRPCResponse":
         """Parse from dictionary."""
         return cls(
             id=data.get("id"),
@@ -98,6 +101,7 @@ class JSONRPCResponse:
 @dataclass
 class MCPTool:
     """Tool definition from MCP server."""
+
     name: str
     description: str
     input_schema: Dict[str, Any]
@@ -113,7 +117,7 @@ class MCPTool:
         }
 
     @classmethod
-    def from_dict(cls, data: dict, server_id: str = "") -> 'MCPTool':
+    def from_dict(cls, data: dict, server_id: str = "") -> "MCPTool":
         """Create from dictionary."""
         return cls(
             name=data["name"],
@@ -126,6 +130,7 @@ class MCPTool:
 @dataclass
 class MCPResource:
     """Resource definition from MCP server."""
+
     uri: str
     name: str
     description: Optional[str] = None
@@ -143,7 +148,7 @@ class MCPResource:
         }
 
     @classmethod
-    def from_dict(cls, data: dict, server_id: str = "") -> 'MCPResource':
+    def from_dict(cls, data: dict, server_id: str = "") -> "MCPResource":
         """Create from dictionary."""
         return cls(
             uri=data["uri"],
@@ -157,6 +162,7 @@ class MCPResource:
 @dataclass
 class MCPPrompt:
     """Prompt definition from MCP server."""
+
     name: str
     description: Optional[str] = None
     arguments: List[Dict[str, Any]] = field(default_factory=list)
@@ -175,12 +181,13 @@ class MCPPrompt:
 @dataclass
 class MCPCapabilities:
     """Server capabilities."""
+
     tools: bool = False
     resources: bool = False
     prompts: bool = False
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'MCPCapabilities':
+    def from_dict(cls, data: dict) -> "MCPCapabilities":
         """Parse capabilities from server response."""
         caps = data.get("capabilities", {})
         return cls(

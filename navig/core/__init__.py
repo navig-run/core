@@ -6,7 +6,7 @@ This module contains essential commands that form the stable foundation of NAVIG
 
 Command Groups:
 - host: Host management
-- app: Application management  
+- app: Application management
 - tunnel: SSH tunnel management
 - db: Database operations
 - remote: Remote command execution
@@ -34,12 +34,14 @@ def get_security():
         substitute_env_vars,
         validate_command_safety,
     )
+
     return {
-        'redact_sensitive_text': redact_sensitive_text,
-        'substitute_env_vars': substitute_env_vars,
-        'validate_command_safety': validate_command_safety,
-        'run_security_audit': run_security_audit,
+        "redact_sensitive_text": redact_sensitive_text,
+        "substitute_env_vars": substitute_env_vars,
+        "validate_command_safety": validate_command_safety,
+        "run_security_audit": run_security_audit,
     }
+
 
 def get_hooks():
     """Get hooks module (event system)."""
@@ -49,12 +51,13 @@ def get_hooks():
         trigger_hook,
         trigger_hook_sync,
     )
+
     return {
-        'register_hook': register_hook,
-        'trigger_hook': trigger_hook,
-        'trigger_hook_sync': trigger_hook_sync,
-        'HookEvent': HookEvent,
+        "register_hook": register_hook,
+        "trigger_hook": trigger_hook,
+        "trigger_hook_sync": trigger_hook_sync,
+        "HookEvent": HookEvent,
     }
 
-__all__ = ['Config', 'get_security', 'get_hooks']
 
+__all__ = ["Config", "get_security", "get_hooks"]

@@ -26,33 +26,36 @@ logger = get_debug_logger()
 
 class OperatorState(Enum):
     """Current operator state inference."""
+
     UNKNOWN = "unknown"
-    ACTIVE = "active"              # Interacting right now
-    IDLE = "idle"                  # No recent activity (<2h)
-    AWAY = "away"                  # No activity for hours
-    DEEP_WORK = "deep_work"        # Long session, minimal chat
+    ACTIVE = "active"  # Interacting right now
+    IDLE = "idle"  # No recent activity (<2h)
+    AWAY = "away"  # No activity for hours
+    DEEP_WORK = "deep_work"  # Long session, minimal chat
     JUST_ARRIVED = "just_arrived"  # First message after long gap
     WINDING_DOWN = "winding_down"  # Late hours, decreasing activity
 
 
 class TimeOfDay(Enum):
     """Time-of-day classification."""
+
     EARLY_MORNING = "early_morning"  # 05:00-08:00
-    MORNING = "morning"              # 08:00-12:00
-    AFTERNOON = "afternoon"          # 12:00-17:00
-    EVENING = "evening"              # 17:00-21:00
-    NIGHT = "night"                  # 21:00-00:00
-    LATE_NIGHT = "late_night"        # 00:00-05:00
+    MORNING = "morning"  # 08:00-12:00
+    AFTERNOON = "afternoon"  # 12:00-17:00
+    EVENING = "evening"  # 17:00-21:00
+    NIGHT = "night"  # 21:00-00:00
+    LATE_NIGHT = "late_night"  # 00:00-05:00
 
 
 @dataclass
 class UserPreferences:
     """Per-user preferences persisted across sessions."""
-    chat_mode: str = "work"           # work, deep-focus, planning, creative, relax, sleep
-    verbosity: str = "normal"         # brief, normal, detailed
-    voice_enabled: bool = False       # Whether voice responses are on
-    quiet_hours_start: int = 23       # 24h format  (hour to START quiet)
-    quiet_hours_end: int = 7          # 24h format  (hour to END quiet)
+
+    chat_mode: str = "work"  # work, deep-focus, planning, creative, relax, sleep
+    verbosity: str = "normal"  # brief, normal, detailed
+    voice_enabled: bool = False  # Whether voice responses are on
+    quiet_hours_start: int = 23  # 24h format  (hour to START quiet)
+    quiet_hours_end: int = 7  # 24h format  (hour to END quiet)
     autonomy_level: str = "balanced"  # cautious, balanced, autonomous
     notifications_enabled: bool = True
 
@@ -65,6 +68,7 @@ class UserPreferences:
 @dataclass
 class InteractionRecord:
     """A single interaction event."""
+
     timestamp: float
     message_type: str  # 'command', 'chat', 'greeting', 'question'
     command: Optional[str] = None
@@ -75,6 +79,7 @@ class InteractionRecord:
 @dataclass
 class UsageStats:
     """Aggregated usage statistics."""
+
     total_messages: int = 0
     total_commands: int = 0
     command_counts: Dict[str, int] = field(default_factory=dict)
@@ -94,7 +99,7 @@ class UsageStats:
 class UserStateTracker:
     """
     Tracks and infers operator state for proactive engagement decisions.
-    
+
     This is the sensory layer — it observes interaction patterns and maintains
     a live model of the user's current state, without initiating any actions.
     The EngagementCoordinator reads this state to decide what proactive
@@ -112,9 +117,9 @@ class UserStateTracker:
         self.preferences = UserPreferences()
 
         # Active hours configuration (24h format)
-        self.active_hours_start = 8   # 8 AM
-        self.active_hours_end = 23    # 11 PM
-        self.timezone_offset = 0      # Hours from UTC
+        self.active_hours_start = 8  # 8 AM
+        self.active_hours_end = 23  # 11 PM
+        self.timezone_offset = 0  # Hours from UTC
 
         # Load persisted state
         self._load_state()
@@ -140,7 +145,7 @@ class UserStateTracker:
 
         # Trim old interactions
         if len(self._interactions) > self._max_interactions:
-            self._interactions = self._interactions[-self._max_interactions:]
+            self._interactions = self._interactions[-self._max_interactions :]
 
         # Update stats
         self.stats.total_messages += 1
@@ -150,11 +155,15 @@ class UserStateTracker:
 
         if message_type == "command" and command:
             self.stats.total_commands += 1
-            self.stats.command_counts[command] = self.stats.command_counts.get(command, 0) + 1
+            self.stats.command_counts[command] = (
+                self.stats.command_counts.get(command, 0) + 1
+            )
 
             # Track feature usage (group by command category)
             feature = command.split()[0] if command else "unknown"
-            self.stats.features_used[feature] = self.stats.features_used.get(feature, 0) + 1
+            self.stats.features_used[feature] = (
+                self.stats.features_used.get(feature, 0) + 1
+            )
 
         # Track peak hours
         hour = datetime.fromtimestamp(now).hour
@@ -187,11 +196,13 @@ class UserStateTracker:
 
     def record_feedback(self, feedback: str, rating: Optional[int] = None):
         """Record user feedback from self-improvement dialogue."""
-        self.stats.feedback_responses.append({
-            "timestamp": time.time(),
-            "feedback": feedback,
-            "rating": rating,
-        })
+        self.stats.feedback_responses.append(
+            {
+                "timestamp": time.time(),
+                "feedback": feedback,
+                "rating": rating,
+            }
+        )
         # Keep last 20 feedback entries
         if len(self.stats.feedback_responses) > 20:
             self.stats.feedback_responses = self.stats.feedback_responses[-20:]
@@ -283,7 +294,8 @@ class UserStateTracker:
 
         # Also find features used < 3 times
         rarely_used = [
-            f for f, count in self.stats.features_used.items()
+            f
+            for f, count in self.stats.features_used.items()
             if count < 3 and f in known_features
         ]
 
@@ -292,9 +304,7 @@ class UserStateTracker:
     def get_frequent_commands(self, top_n: int = 5) -> List[tuple]:
         """Get most frequently used commands."""
         sorted_cmds = sorted(
-            self.stats.command_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
+            self.stats.command_counts.items(), key=lambda x: x[1], reverse=True
         )
         return sorted_cmds[:top_n]
 

@@ -1,4 +1,5 @@
 """Unit tests for navig.selfheal.patcher."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,10 +10,10 @@ import pytest
 from navig.selfheal.patcher import build_patch
 from navig.selfheal.scanner import ScanFinding
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_finding(
     severity: str = "critical",
@@ -94,10 +95,12 @@ class TestPatchIncludesNavigHealComment:
     def test_multiple_findings_each_annotated(self, tmp_repo: Path) -> None:
         """Every changed hunk must carry at least one NAVIG-HEAL annotation."""
         findings = [
-            _make_finding(severity="critical", line=1,
-                          suggested_fix="x = 1  # NAVIG-HEAL: fixed"),
-            _make_finding(severity="high",     line=2,
-                          suggested_fix="y = 2  # NAVIG-HEAL: fixed"),
+            _make_finding(
+                severity="critical", line=1, suggested_fix="x = 1  # NAVIG-HEAL: fixed"
+            ),
+            _make_finding(
+                severity="high", line=2, suggested_fix="y = 2  # NAVIG-HEAL: fixed"
+            ),
         ]
         source_path = tmp_repo / "navig" / "commands" / "example.py"
         source_path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,7 +122,7 @@ class TestPatchIncludesNavigHealComment:
         patch_str = build_patch([finding], tmp_repo)
         if "NAVIG-HEAL" in patch_str:
             idx = patch_str.index("NAVIG-HEAL")
-            comment = patch_str[idx:idx + 60]
+            comment = patch_str[idx : idx + 60]
             assert len(comment.strip()) > len("NAVIG-HEAL")  # has text after marker
 
 
@@ -135,9 +138,9 @@ class TestPatchIsValidUnifiedDiff:
 
         patch_str = build_patch([finding], tmp_repo)
         if patch_str.strip():
-            assert patch_str.lstrip().startswith("---"), (
-                "Unified diff must begin with '--- <filename>' header"
-            )
+            assert patch_str.lstrip().startswith(
+                "---"
+            ), "Unified diff must begin with '--- <filename>' header"
 
     def test_patch_contains_plus_plus_header(self, tmp_repo: Path) -> None:
         """A non-empty patch must contain a '+++ ' header line."""

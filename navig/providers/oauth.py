@@ -4,6 +4,7 @@ NAVIG AI Providers - OAuth Authentication
 OAuth PKCE flow implementation for providers like OpenAI Codex.
 Based on standard authentication patterns.
 """
+
 import asyncio
 import base64
 import hashlib
@@ -20,6 +21,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 try:
     import httpx
+
     HTTPX_AVAILABLE = True
 except ImportError:
     httpx = None
@@ -30,10 +32,11 @@ except ImportError:
 # PKCE Utilities
 # ============================================================================
 
+
 def generate_pkce_pair() -> Tuple[str, str]:
     """
     Generate PKCE code_verifier and code_challenge.
-    
+
     Returns:
         Tuple of (verifier, challenge)
     """
@@ -41,8 +44,8 @@ def generate_pkce_pair() -> Tuple[str, str]:
     verifier = secrets.token_hex(32)
 
     # SHA256 hash the verifier, then base64url encode
-    digest = hashlib.sha256(verifier.encode('ascii')).digest()
-    challenge = base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
     return verifier, challenge
 
@@ -56,9 +59,11 @@ def generate_state() -> str:
 # OAuth Credentials
 # ============================================================================
 
+
 @dataclass
 class OAuthCredentials:
     """OAuth credentials returned from authentication."""
+
     access: str
     refresh: str
     expires: int  # Unix timestamp in milliseconds
@@ -101,9 +106,11 @@ class OAuthCredentials:
 # OAuth Provider Configuration
 # ============================================================================
 
+
 @dataclass
 class OAuthProviderConfig:
     """Configuration for an OAuth provider."""
+
     name: str
     authorize_url: str
     token_url: str
@@ -154,6 +161,7 @@ OAUTH_PROVIDERS: Dict[str, OAuthProviderConfig] = {
 # OAuth Callback Server
 # ============================================================================
 
+
 class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
     """HTTP handler for OAuth callback."""
 
@@ -176,7 +184,9 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 self._send_response("Authentication failed. You can close this window.")
             elif code and state:
                 self.server.oauth_result = {"code": code, "state": state}
-                self._send_response("Authentication successful! You can close this window.")
+                self._send_response(
+                    "Authentication successful! You can close this window."
+                )
             else:
                 self.server.oauth_result = {"error": "Missing code or state"}
                 self._send_response("Invalid callback. Missing code or state.")
@@ -265,9 +275,11 @@ class OAuthCallbackServer:
 # OAuth Flow
 # ============================================================================
 
+
 @dataclass
 class OAuthFlowResult:
     """Result of an OAuth flow."""
+
     success: bool
     credentials: Optional[OAuthCredentials] = None
     error: Optional[str] = None
@@ -280,12 +292,12 @@ async def exchange_code_for_tokens(
 ) -> OAuthCredentials:
     """
     Exchange authorization code for tokens.
-    
+
     Args:
         provider: OAuth provider configuration
         code: Authorization code from callback
         code_verifier: PKCE code verifier
-    
+
     Returns:
         OAuth credentials
     """
@@ -354,11 +366,11 @@ async def refresh_oauth_tokens(
 ) -> OAuthCredentials:
     """
     Refresh OAuth tokens using the refresh token.
-    
+
     Args:
         provider: OAuth provider configuration
         credentials: Existing credentials with refresh token
-    
+
     Returns:
         New OAuth credentials
     """
@@ -407,17 +419,17 @@ def run_oauth_flow_interactive(
 ) -> OAuthFlowResult:
     """
     Run the OAuth flow interactively.
-    
+
     This handles:
     1. Starting a local callback server (if possible)
     2. Opening the browser to the authorization URL
     3. Capturing the callback or prompting for manual input
     4. Exchanging the code for tokens
-    
+
     Args:
         provider_name: Name of the OAuth provider (e.g., "openai-codex")
         on_progress: Optional callback for progress updates
-    
+
     Returns:
         OAuthFlowResult with credentials or error
     """
@@ -520,15 +532,15 @@ def run_oauth_flow_headless(
 ) -> OAuthFlowResult:
     """
     Run the OAuth flow in headless/VPS mode.
-    
+
     This is for environments where a browser can't be opened automatically.
     The caller must display the URL and get the callback input.
-    
+
     Args:
         provider_name: Name of the OAuth provider
         on_auth_url: Callback to display the auth URL
         get_callback_input: Callback to get the redirect URL/code
-    
+
     Returns:
         OAuthFlowResult with credentials or error
     """

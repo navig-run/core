@@ -26,15 +26,15 @@ from navig.inbox.classifier import ClassifyResult
 # ── Category → default destination mapping ───────────────────
 
 _CATEGORY_DEST: Dict[str, str] = {
-    "wiki/knowledge":     ".navig/wiki/knowledge/inbox",
-    "wiki/technical":     ".navig/wiki/technical/inbox",
-    "hub/tasks":          ".navig/wiki/hub/tasks",
-    "hub/roadmap":        ".navig/wiki/hub/roadmap",
-    "hub/changelog":      ".navig/wiki/hub/changelog",
-    "external/business":  ".navig/wiki/external/business",
+    "wiki/knowledge": ".navig/wiki/knowledge/inbox",
+    "wiki/technical": ".navig/wiki/technical/inbox",
+    "hub/tasks": ".navig/wiki/hub/tasks",
+    "hub/roadmap": ".navig/wiki/hub/roadmap",
+    "hub/changelog": ".navig/wiki/hub/changelog",
+    "external/business": ".navig/wiki/external/business",
     "external/marketing": ".navig/wiki/external/marketing",
-    "archive":            ".navig/wiki/archive",
-    "ignore":             "",   # not routed
+    "archive": ".navig/wiki/archive",
+    "ignore": "",  # not routed
 }
 
 
@@ -45,19 +45,20 @@ class RouteMode(str, Enum):
 
 
 class ConflictStrategy(str, Enum):
-    RENAME    = "rename"
-    SKIP      = "skip"
+    RENAME = "rename"
+    SKIP = "skip"
     OVERWRITE = "overwrite"
 
 
 # ── Result ────────────────────────────────────────────────────
+
 
 @dataclass
 class RouteResult:
     source: str
     destination: Optional[str]
     mode: str
-    status: str         # "routed" | "skipped" | "ignored" | "error"
+    status: str  # "routed" | "skipped" | "ignored" | "error"
     result_path: Optional[str] = None
     error: Optional[str] = None
     category: str = ""
@@ -65,6 +66,7 @@ class RouteResult:
 
 
 # ── Router ────────────────────────────────────────────────────
+
 
 class InboxRouter:
     """
@@ -280,6 +282,7 @@ class InboxRouter:
 
 
 # ── Helpers ───────────────────────────────────────────────────
+
 
 def _unique_path(path: Path) -> Path:
     """Return a non-conflicting path by appending _1, _2 … before the suffix."""

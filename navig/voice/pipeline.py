@@ -40,7 +40,9 @@ logger = logging.getLogger("navig.voice.pipeline")
 # ---------------------------------------------------------------------------
 
 from dataclasses import dataclass, field
+
 from navig.config import ConfigManager
+
 
 def _get_voice_setting(key: str, default: Any) -> Any:
     # Safe fetch from global config at instantiation time
@@ -51,21 +53,32 @@ def _get_voice_setting(key: str, default: Any) -> Any:
     except Exception:
         return default
 
+
 @dataclass
 class PipelineConfig:
     """Unified configuration for the VoicePipeline."""
 
     # Wake word
-    keyword:   str   = field(default_factory=lambda: _get_voice_setting("keyword", "hey_jarvis"))
-    threshold: float = field(default_factory=lambda: _get_voice_setting("threshold", 0.45))
+    keyword: str = field(
+        default_factory=lambda: _get_voice_setting("keyword", "hey_jarvis")
+    )
+    threshold: float = field(
+        default_factory=lambda: _get_voice_setting("threshold", 0.45)
+    )
 
     # STT
-    stt_primary:  str = field(default_factory=lambda: _get_voice_setting("stt_primary", "deepgram"))
-    stt_fallback: str = field(default_factory=lambda: _get_voice_setting("stt_fallback", "whisper_api"))
-    language:     str = field(default_factory=lambda: _get_voice_setting("language", "en"))
+    stt_primary: str = field(
+        default_factory=lambda: _get_voice_setting("stt_primary", "deepgram")
+    )
+    stt_fallback: str = field(
+        default_factory=lambda: _get_voice_setting("stt_fallback", "whisper_api")
+    )
+    language: str = field(default_factory=lambda: _get_voice_setting("language", "en"))
 
     # LLM
-    llm_model:   Optional[str] = field(default_factory=lambda: _get_voice_setting("llm_model", None))
+    llm_model: Optional[str] = field(
+        default_factory=lambda: _get_voice_setting("llm_model", None)
+    )
     llm_system_prompt: Optional[str] = (
         "You are NAVIG, an intelligent voice assistant. "
         "Be concise — responses are spoken aloud. "
@@ -73,12 +86,18 @@ class PipelineConfig:
     )
 
     # TTS
-    tts_provider: str = field(default_factory=lambda: _get_voice_setting("tts_provider", "edge"))
-    tts_voice:    Optional[str] = field(default=None)
+    tts_provider: str = field(
+        default_factory=lambda: _get_voice_setting("tts_provider", "edge")
+    )
+    tts_voice: Optional[str] = field(default=None)
 
     # Session settings
-    silence_timeout:    float = field(default_factory=lambda: _get_voice_setting("silence_timeout", 2.0))
-    max_listen_seconds: float = field(default_factory=lambda: _get_voice_setting("max_listen_seconds", 30.0))
+    silence_timeout: float = field(
+        default_factory=lambda: _get_voice_setting("silence_timeout", 2.0)
+    )
+    max_listen_seconds: float = field(
+        default_factory=lambda: _get_voice_setting("max_listen_seconds", 30.0)
+    )
 
     # navig-echo bridge (optional)
     echo_bridge_url: Optional[str] = None
@@ -91,14 +110,16 @@ class PipelineConfig:
 # Pipeline result
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PipelineResult:
     """Result from a single pipeline invocation."""
-    transcript:    Optional[str]
+
+    transcript: Optional[str]
     response_text: Optional[str]
-    audio_path:    Optional[str]
-    duration_ms:   Optional[float] = None
-    error:         Optional[str] = None
+    audio_path: Optional[str]
+    duration_ms: Optional[float] = None
+    error: Optional[str] = None
 
     def __bool__(self) -> bool:
         return self.error is None
@@ -107,6 +128,7 @@ class PipelineResult:
 # ---------------------------------------------------------------------------
 # VoicePipeline
 # ---------------------------------------------------------------------------
+
 
 class VoicePipeline:
     """
@@ -124,7 +146,7 @@ class VoicePipeline:
     def __init__(self, config: Optional[PipelineConfig] = None):
         self.config = config or PipelineConfig()
         self._session_mgr: Optional[Any] = None
-        self._wake_engine:  Optional[Any] = None
+        self._wake_engine: Optional[Any] = None
         self._running = False
 
     # ------------------------------------------------------------------ #
@@ -139,9 +161,14 @@ class VoicePipeline:
         from navig.voice.session_manager import SessionConfig, VoiceSessionManager
 
         # ── Build STT callables ───────────────────────────────────────
-        from navig.voice.streaming_stt import StreamingProvider, StreamingSTT, StreamingSTTConfig
+        from navig.voice.streaming_stt import (
+            StreamingProvider,
+            StreamingSTT,
+            StreamingSTTConfig,
+        )
         from navig.voice.wake_word import WakeWordConfig, WakeWordEngine
-        _primary  = StreamingProvider(self.config.stt_primary)
+
+        _primary = StreamingProvider(self.config.stt_primary)
         _fallback = StreamingProvider(self.config.stt_fallback)
 
         stt_config = StreamingSTTConfig(
@@ -154,6 +181,7 @@ class VoicePipeline:
         async def _stt_fn(session) -> Optional[str]:
             """Transcribe buffered session audio."""
             from navig.voice.streaming_stt import transcribe_session_audio
+
             return await transcribe_session_audio(session, config=stt_config)
 
         # ── Build LLM callable ────────────────────────────────────────
@@ -240,13 +268,16 @@ class VoicePipeline:
         # ── STT ───────────────────────────────────────────────────────
         try:
             from navig.voice.stt import STT, STTConfig, STTProvider
+
             _provider_map = {
-                "deepgram":     STTProvider.DEEPGRAM,
-                "whisper_api":  STTProvider.WHISPER_API,
+                "deepgram": STTProvider.DEEPGRAM,
+                "whisper_api": STTProvider.WHISPER_API,
                 "whisper_local": STTProvider.WHISPER_LOCAL,
             }
             stt_config = STTConfig(
-                provider=_provider_map.get(self.config.stt_primary, STTProvider.DEEPGRAM),
+                provider=_provider_map.get(
+                    self.config.stt_primary, STTProvider.DEEPGRAM
+                ),
                 fallback_providers=[
                     _provider_map.get(self.config.stt_fallback, STTProvider.WHISPER_API)
                 ],
@@ -256,7 +287,9 @@ class VoicePipeline:
             result = await stt.transcribe(audio_path, is_voice=is_voice)
             if result.success and result.text:
                 transcript = result.text
-                logger.info("STT result (%.0fms): %r", result.latency_ms or 0, transcript[:80])
+                logger.info(
+                    "STT result (%.0fms): %r", result.latency_ms or 0, transcript[:80]
+                )
             else:
                 logger.warning("STT produced no transcript: %s", result.error)
         except Exception as exc:
@@ -276,7 +309,9 @@ class VoicePipeline:
             try:
                 out_audio_path = await self._call_tts(response_text)
             except Exception as exc:
-                logger.warning("TTS error: %s", exc)  # Non-fatal: text response still useful
+                logger.warning(
+                    "TTS error: %s", exc
+                )  # Non-fatal: text response still useful
 
         duration_ms = (time.monotonic() - t0) * 1000
         logger.info(
@@ -302,20 +337,28 @@ class VoicePipeline:
         """Route transcript through navig-core's UnifiedRouter."""
         try:
             from navig.routing.router import RouteRequest, get_router
+
             router = get_router()
 
             messages = []
             if self.config.llm_system_prompt:
-                messages.append({"role": "system", "content": self.config.llm_system_prompt})
+                messages.append(
+                    {"role": "system", "content": self.config.llm_system_prompt}
+                )
             messages.append({"role": "user", "content": transcript})
 
             kwargs: dict = {}
             if self.config.llm_model:
                 kwargs["model_override"] = self.config.llm_model
 
-            request = RouteRequest(messages=messages, entrypoint="voice_pipeline", **kwargs)
+            request = RouteRequest(
+                messages=messages, entrypoint="voice_pipeline", **kwargs
+            )
             response_text, _trace = await router.run(request)
-            return response_text or "I'm sorry, I couldn't process that request right now. Please try again."
+            return (
+                response_text
+                or "I'm sorry, I couldn't process that request right now. Please try again."
+            )
 
         except Exception as exc:
             logger.error("LLM routing error: %s", exc)
@@ -332,11 +375,11 @@ class VoicePipeline:
             from navig.voice.tts import TTS, TTSConfig, TTSProvider
 
             _provider_map = {
-                "openai":     TTSProvider.OPENAI,
+                "openai": TTSProvider.OPENAI,
                 "elevenlabs": TTSProvider.ELEVENLABS,
-                "edge":       TTSProvider.EDGE,
+                "edge": TTSProvider.EDGE,
                 "google_cloud": TTSProvider.GOOGLE_CLOUD,
-                "deepgram":   TTSProvider.DEEPGRAM,
+                "deepgram": TTSProvider.DEEPGRAM,
             }
             config = TTSConfig(
                 provider=_provider_map.get(self.config.tts_provider, TTSProvider.EDGE),
@@ -369,4 +412,3 @@ def get_pipeline(config: Optional[PipelineConfig] = None) -> VoicePipeline:
     if _pipeline is None:
         _pipeline = VoicePipeline(config=config)
     return _pipeline
-

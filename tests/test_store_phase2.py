@@ -7,10 +7,9 @@ from __future__ import annotations
 import json
 import struct
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ── VectorIndex tests ─────────────────────────────────────────
 
@@ -26,7 +25,7 @@ class TestVectorHelpers:
         assert len(blob) == 12  # 3 × 4 bytes
 
     def test_blob_to_floats(self):
-        from navig.memory.vector import floats_to_blob, blob_to_floats
+        from navig.memory.vector import blob_to_floats, floats_to_blob
 
         original = [1.0, 2.0, 3.0, 4.0]
         blob = floats_to_blob(original)
@@ -34,7 +33,7 @@ class TestVectorHelpers:
         assert result == original
 
     def test_roundtrip_large(self):
-        from navig.memory.vector import floats_to_blob, blob_to_floats
+        from navig.memory.vector import blob_to_floats, floats_to_blob
 
         original = [float(i) for i in range(1536)]
         blob = floats_to_blob(original)
@@ -48,6 +47,7 @@ class TestVectorIndexUnavailable:
 
     def test_graceful_degradation(self, tmp_path):
         import sqlite3
+
         from navig.memory import vector
 
         # Force unavailable
@@ -68,6 +68,7 @@ class TestVectorIndexUnavailable:
 
     def test_repr(self, tmp_path):
         import sqlite3
+
         from navig.memory import vector
 
         old = vector._VEC_AVAILABLE
@@ -217,7 +218,7 @@ class TestMatrixStoreBaseStore:
         assert issubclass(MatrixStore, BaseStore)
 
     def test_crud_operations(self, tmp_path):
-        from navig.comms.matrix_store import MatrixStore, MatrixRoom, MatrixEvent
+        from navig.comms.matrix_store import MatrixEvent, MatrixRoom, MatrixStore
 
         store = MatrixStore(tmp_path / "matrix.db")
 

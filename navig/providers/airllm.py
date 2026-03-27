@@ -17,16 +17,12 @@ from .clients import (
     Message,
     ProviderError,
 )
-from .types import (
-    ModelApi,
-    ModelCost,
-    ModelDefinition,
-    ProviderConfig,
-)
+from .types import ModelApi, ModelCost, ModelDefinition, ProviderConfig
 
 # Check if AirLLM is available
 try:
     from airllm import AutoModel
+
     AIRLLM_AVAILABLE = True
 except ImportError:
     AutoModel = None
@@ -89,9 +85,11 @@ class AirLLMConfig:
             max_vram_gb=float(os.environ.get("AIRLLM_MAX_VRAM_GB", "8")),
             compression=os.environ.get("AIRLLM_COMPRESSION"),
             layer_shards_path=os.environ.get("AIRLLM_LAYER_SHARDS_PATH"),
-            hf_token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"),
+            hf_token=os.environ.get("HF_TOKEN")
+            or os.environ.get("HUGGING_FACE_HUB_TOKEN"),
             prefetching=os.environ.get("AIRLLM_PREFETCHING", "true").lower() == "true",
-            delete_original=os.environ.get("AIRLLM_DELETE_ORIGINAL", "false").lower() == "true",
+            delete_original=os.environ.get("AIRLLM_DELETE_ORIGINAL", "false").lower()
+            == "true",
             max_length=int(os.environ.get("AIRLLM_MAX_LENGTH", "4096")),
             max_new_tokens=int(os.environ.get("AIRLLM_MAX_NEW_TOKENS", "2048")),
             device=os.environ.get("AIRLLM_DEVICE", "cuda"),
@@ -116,13 +114,13 @@ class AirLLMConfig:
 class AirLLMClient(BaseProviderClient):
     """
     Client for AirLLM - memory-efficient large model inference.
-    
+
     Features:
     - Run 70B+ models on 4-8GB VRAM via layer sharding
     - Support for 4bit/8bit quantization
     - HuggingFace model loading
     - Compatible with Llama, Qwen, Mistral, ChatGLM, Baichuan, etc.
-    
+
     Note: This is a local inference provider - no API key required.
     """
 
@@ -155,10 +153,10 @@ class AirLLMClient(BaseProviderClient):
     def _load_model(self, model_path: str) -> Any:
         """
         Load a model using AirLLM.
-        
+
         Args:
             model_path: HuggingFace model ID or local path
-        
+
         Returns:
             Loaded AirLLM model
         """
@@ -176,9 +174,11 @@ class AirLLMClient(BaseProviderClient):
 
             # Force garbage collection to free VRAM
             import gc
+
             gc.collect()
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except ImportError:
@@ -191,7 +191,9 @@ class AirLLMClient(BaseProviderClient):
             model_kwargs["compression"] = self.airllm_config.compression
 
         if self.airllm_config.layer_shards_path:
-            model_kwargs["layer_shards_saving_path"] = self.airllm_config.layer_shards_path
+            model_kwargs["layer_shards_saving_path"] = (
+                self.airllm_config.layer_shards_path
+            )
 
         if self.airllm_config.hf_token:
             model_kwargs["hf_token"] = self.airllm_config.hf_token
@@ -217,7 +219,7 @@ class AirLLMClient(BaseProviderClient):
     def _format_prompt(self, messages: List[Message]) -> str:
         """
         Format messages into a prompt string.
-        
+
         Uses a simple chat template compatible with most models.
         """
         parts = []
@@ -241,7 +243,7 @@ class AirLLMClient(BaseProviderClient):
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """
         Execute a chat completion using AirLLM.
-        
+
         Note: AirLLM is synchronous, so we run in a thread pool.
         """
         self._ensure_airllm()
@@ -287,27 +289,29 @@ class AirLLMClient(BaseProviderClient):
             if device == "cuda":
                 try:
                     import torch
+
                     if torch.cuda.is_available():
-                        input_ids = input_tokens['input_ids'].cuda()
+                        input_ids = input_tokens["input_ids"].cuda()
                     else:
-                        input_ids = input_tokens['input_ids']
+                        input_ids = input_tokens["input_ids"]
                         device = "cpu"
                 except ImportError:
-                    input_ids = input_tokens['input_ids']
+                    input_ids = input_tokens["input_ids"]
                     device = "cpu"
             elif device == "mps":
                 try:
                     import torch
+
                     if torch.backends.mps.is_available():
-                        input_ids = input_tokens['input_ids'].to("mps")
+                        input_ids = input_tokens["input_ids"].to("mps")
                     else:
-                        input_ids = input_tokens['input_ids']
+                        input_ids = input_tokens["input_ids"]
                         device = "cpu"
                 except ImportError:
-                    input_ids = input_tokens['input_ids']
+                    input_ids = input_tokens["input_ids"]
                     device = "cpu"
             else:
-                input_ids = input_tokens['input_ids']
+                input_ids = input_tokens["input_ids"]
 
             # Generate
             generation_output = model.generate(
@@ -335,11 +339,13 @@ class AirLLMClient(BaseProviderClient):
                     response_text = output_text
             else:
                 # Just return everything after the input
-                response_text = output_text[len(prompt_text):].strip()
+                response_text = output_text[len(prompt_text) :].strip()
 
             # Calculate token counts
             input_token_count = input_ids.shape[-1]
-            output_token_count = generation_output.sequences[0].shape[-1] - input_token_count
+            output_token_count = (
+                generation_output.sequences[0].shape[-1] - input_token_count
+            )
 
             return response_text, {
                 "prompt_tokens": input_token_count,
@@ -394,7 +400,7 @@ class AirLLMClient(BaseProviderClient):
     def get_available_models(self) -> List[ModelDefinition]:
         """
         Get list of suggested models for AirLLM.
-        
+
         These are popular models known to work well with AirLLM.
         Users can use any HuggingFace model ID or local path.
         """
@@ -439,7 +445,7 @@ class AirLLMClient(BaseProviderClient):
     async def list_local_models(self) -> List[str]:
         """
         List models in the configured layer_shards_path.
-        
+
         Returns list of model directory names that have been sharded.
         """
         models = []
@@ -450,8 +456,10 @@ class AirLLMClient(BaseProviderClient):
                 item_path = os.path.join(shards_path, item)
                 if os.path.isdir(item_path):
                     # Check if it looks like a sharded model
-                    if any(f.endswith(".safetensors") or f.endswith(".bin")
-                           for f in os.listdir(item_path)):
+                    if any(
+                        f.endswith(".safetensors") or f.endswith(".bin")
+                        for f in os.listdir(item_path)
+                    ):
                         models.append(item)
 
         return models
@@ -465,10 +473,12 @@ class AirLLMClient(BaseProviderClient):
 
             # Force garbage collection
             import gc
+
             gc.collect()
 
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except ImportError:
@@ -481,11 +491,11 @@ def create_airllm_client(
 ) -> AirLLMClient:
     """
     Create an AirLLM client with the given configuration.
-    
+
     Args:
         airllm_config: AirLLM-specific configuration
         timeout: Request timeout in seconds (default 300s for local inference)
-    
+
     Returns:
         Configured AirLLM client
     """

@@ -40,7 +40,8 @@ service_app = typer.Typer(
 def service_install(
     method: Optional[str] = typer.Option(
         None,
-        "--method", "-m",
+        "--method",
+        "-m",
         help="Installation method: 'systemd' (Linux), 'nssm' (Windows service), or 'task' (Task Scheduler). Auto-detected if omitted.",
     ),
     no_start: bool = typer.Option(
@@ -49,9 +50,15 @@ def service_install(
         help="Install but don't start the daemon yet",
     ),
     bot: bool = typer.Option(True, "--bot/--no-bot", help="Include Telegram bot"),
-    gateway: bool = typer.Option(False, "--gateway/--no-gateway", help="Include gateway server"),
-    scheduler: bool = typer.Option(False, "--scheduler/--no-scheduler", help="Include cron scheduler"),
-    health_port: int = typer.Option(0, "--health-port", help="TCP health-check port (0 = disabled)"),
+    gateway: bool = typer.Option(
+        False, "--gateway/--no-gateway", help="Include gateway server"
+    ),
+    scheduler: bool = typer.Option(
+        False, "--scheduler/--no-scheduler", help="Include cron scheduler"
+    ),
+    health_port: int = typer.Option(
+        0, "--health-port", help="TCP health-check port (0 = disabled)"
+    ),
 ):
     """
     Install NAVIG daemon as a persistent service.
@@ -72,6 +79,7 @@ def service_install(
 
     from navig.daemon import service_manager as sm
     from navig.daemon.entry import save_default_config
+
     config_path = save_default_config()
     cfg = json.loads(config_path.read_text(encoding="utf-8"))
     cfg["telegram_bot"] = bot
@@ -112,7 +120,8 @@ def service_install(
 def service_start(
     foreground: bool = typer.Option(
         False,
-        "--foreground", "-f",
+        "--foreground",
+        "-f",
         help="Run in foreground (blocks terminal)",
     ),
 ):
@@ -136,11 +145,13 @@ def service_start(
     if foreground:
         ch.info("Starting NAVIG daemon in foreground (Ctrl+C to stop)...")
         from navig.daemon.entry import main as daemon_main
+
         daemon_main()
     else:
         import subprocess
 
         from navig.daemon.service_manager import _pythonw_exe
+
         # Use pythonw.exe on Windows — completely invisible, no console window
         exe = _pythonw_exe()
         cmd = [exe, "-m", "navig.daemon.entry"]
@@ -148,7 +159,8 @@ def service_start(
         if sys.platform == "win32":
             subprocess.Popen(
                 cmd,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -160,6 +172,7 @@ def service_start(
                 stderr=subprocess.DEVNULL,
             )
         import time
+
         time.sleep(2)
         if NavigDaemon.is_running():
             ch.success(f"Daemon started (pid={NavigDaemon.read_pid()})")
@@ -219,12 +232,14 @@ def service_restart():
 
     ch.info("Starting daemon...")
     from navig.daemon.service_manager import _pythonw_exe
+
     exe = _pythonw_exe()
     cmd = [exe, "-m", "navig.daemon.entry"]
     if sys.platform == "win32":
         subprocess.Popen(
             cmd,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.CREATE_NO_WINDOW,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -289,7 +304,9 @@ def service_status(
 # =========================================================================
 @service_app.command("uninstall")
 def service_uninstall(
-    method: Optional[str] = typer.Option(None, "--method", "-m", help="nssm, task, or systemd"),
+    method: Optional[str] = typer.Option(
+        None, "--method", "-m", help="nssm, task, or systemd"
+    ),
 ):
     """
     Remove NAVIG daemon service.
@@ -323,7 +340,9 @@ def service_uninstall(
 def service_logs(
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
-    child: Optional[str] = typer.Option(None, "--child", "-c", help="Show specific child log (e.g. 'children')"),
+    child: Optional[str] = typer.Option(
+        None, "--child", "-c", help="Show specific child log (e.g. 'children')"
+    ),
 ):
     """
     Show NAVIG daemon logs.
@@ -349,6 +368,7 @@ def service_logs(
     if follow:
         ch.info(f"Following {log_file.name} (Ctrl+C to stop)...")
         import time
+
         with open(log_file, "r", encoding="utf-8", errors="replace") as f:
             # Go to end
             f.seek(0, 2)
@@ -364,7 +384,9 @@ def service_logs(
     else:
         # Read last N lines
         try:
-            all_lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            all_lines = log_file.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines()
             for line in all_lines[-lines:]:
                 print(line)
         except Exception as e:
@@ -403,7 +425,10 @@ def service_config(
     else:
         # Open in editor
         import subprocess
-        editor = "code" if sys.platform == "win32" else (os.environ.get("EDITOR", "nano"))
+
+        editor = (
+            "code" if sys.platform == "win32" else (os.environ.get("EDITOR", "nano"))
+        )
         try:
             subprocess.run([editor, str(config_path)])
         except Exception:

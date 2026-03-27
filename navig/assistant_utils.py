@@ -90,19 +90,19 @@ def ensure_navig_directory() -> Path:
 def _initialize_json_files(navig_dir: Path):
     """Initialize JSON storage files with proper schemas."""
 
-    ai_context_dir = navig_dir / 'ai_context'
+    ai_context_dir = navig_dir / "ai_context"
 
     # Define initial schemas for each JSON file
     json_files = {
-        'command_history.json': [],
-        'error_log.json': [],
-        'error_patterns.json': _get_default_error_patterns(),
-        'solutions.json': _get_default_solutions(),
-        'performance_baselines.json': {},
-        'workflow_patterns.json': {},
-        'detected_issues.json': [],
-        'config_rules.json': _get_default_config_rules(),
-        'assistant_audit.log': ''  # Text file, not JSON
+        "command_history.json": [],
+        "error_log.json": [],
+        "error_patterns.json": _get_default_error_patterns(),
+        "solutions.json": _get_default_solutions(),
+        "performance_baselines.json": {},
+        "workflow_patterns.json": {},
+        "detected_issues.json": [],
+        "config_rules.json": _get_default_config_rules(),
+        "assistant_audit.log": "",  # Text file, not JSON
     }
 
     for filename, default_content in json_files.items():
@@ -110,12 +110,12 @@ def _initialize_json_files(navig_dir: Path):
 
         if not file_path.exists():
             try:
-                if filename.endswith('.log'):
+                if filename.endswith(".log"):
                     # Text file
                     file_path.write_text(default_content)
                 else:
                     # JSON file
-                    with open(file_path, 'w') as f:
+                    with open(file_path, "w") as f:
                         json.dump(default_content, f, indent=2)
 
                 if not _IS_WINDOWS:
@@ -128,46 +128,34 @@ def _initialize_json_files(navig_dir: Path):
 def _get_default_error_patterns() -> list:
     """Get default error pattern definitions."""
     return [
-        {
-            "pattern": "Connection refused",
-            "category": "network",
-            "severity": "high"
-        },
+        {"pattern": "Connection refused", "category": "network", "severity": "high"},
         {
             "pattern": "Access denied.*MySQL",
             "category": "permission",
-            "severity": "high"
+            "severity": "high",
         },
         {
             "pattern": "Permission denied",
             "category": "permission",
-            "severity": "medium"
+            "severity": "medium",
         },
         {
             "pattern": "No such file or directory",
             "category": "file",
-            "severity": "medium"
+            "severity": "medium",
         },
         {
             "pattern": "Disk.*full|No space left",
             "category": "resource_exhaustion",
-            "severity": "critical"
+            "severity": "critical",
         },
         {
             "pattern": "Out of memory|OOM",
             "category": "resource_exhaustion",
-            "severity": "critical"
+            "severity": "critical",
         },
-        {
-            "pattern": "Timeout|timed out",
-            "category": "network",
-            "severity": "medium"
-        },
-        {
-            "pattern": "Syntax error",
-            "category": "syntax",
-            "severity": "low"
-        }
+        {"pattern": "Timeout|timed out", "category": "network", "severity": "medium"},
+        {"pattern": "Syntax error", "category": "syntax", "severity": "low"},
     ]
 
 
@@ -179,4 +167,3 @@ def _get_default_solutions() -> list:
 def _get_default_config_rules() -> list:
     """Get default configuration anti-patterns."""
     return []  # Will be populated by Module 1
-

@@ -12,14 +12,19 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from navig import console_helper as ch
-from navig.agent.proactive.providers import CalendarProvider, EmailProvider, MockCalendar, MockEmail
+from navig.agent.proactive.providers import (
+    CalendarProvider,
+    EmailProvider,
+    MockCalendar,
+    MockEmail,
+)
 from navig.core.hooks import HookEvent, register_hook, trigger_hook
 
 
 class ProactiveEngine:
     """
     Engine for proactive assistance.
-    
+
     Responsibilities:
     1. Polling registered providers (Calendar, Email, etc.)
     2. Analyzing context (schedule, unread messages)
@@ -35,6 +40,7 @@ class ProactiveEngine:
 
         # Initialize TriggerManager
         from navig.commands.triggers import TriggerManager
+
         self.trigger_manager = TriggerManager()
 
         # State tracking
@@ -92,7 +98,9 @@ class ProactiveEngine:
                 self.provider_status["calendar"] = "checking"
                 try:
                     now = datetime.now()
-                    events = await self.calendar.list_events(now, now + timedelta(hours=2))
+                    events = await self.calendar.list_events(
+                        now, now + timedelta(hours=2)
+                    )
                     self.provider_status["calendar"] = "ok"
                     if events:
                         for evt in events:
@@ -104,7 +112,7 @@ class ProactiveEngine:
                                 messages=[
                                     f"Upcoming event: {evt.title} at "
                                     f"{evt.start.strftime('%H:%M')}"
-                                ]
+                                ],
                             )
 
                             # 2. Fire TriggerManager event (for configured automation)
@@ -119,7 +127,7 @@ class ProactiveEngine:
                                         "end": evt.end.isoformat(),
                                         "location": evt.location,
                                         "attendees": evt.attendees or [],
-                                    }
+                                    },
                                 )
                                 self.trigger_manager.process_event(te)
                             except Exception as e:
@@ -145,10 +153,12 @@ class ProactiveEngine:
                     self.provider_status[prov_key] = "ok"
                     if messages:
                         for msg in messages:
-                            if msg.read: continue
+                            if msg.read:
+                                continue
 
                             # 1. Fire hook
-                            await trigger_hook("proactive:alert",
+                            await trigger_hook(
+                                "proactive:alert",
                                 action="notify",
                                 context={
                                     "source": "email",
@@ -158,7 +168,7 @@ class ProactiveEngine:
                                 messages=[
                                     f"[{label}] Unread email from "
                                     f"{msg.sender}: {msg.subject}"
-                                ]
+                                ],
                             )
 
                             # 2. Fire TriggerManager event
@@ -173,7 +183,7 @@ class ProactiveEngine:
                                         "received_at": msg.received_at.isoformat(),
                                         "id": msg.id,
                                         "account": label,
-                                    }
+                                    },
                                 )
                                 self.trigger_manager.process_event(te)
                             except Exception as e:
@@ -208,6 +218,7 @@ class ProactiveEngine:
             if result:
                 # Schedule as a tracked task so it cannot be silently GC'd.
                 import asyncio
+
                 loop = asyncio.get_event_loop()
                 task = loop.create_task(
                     trigger_hook(
@@ -232,20 +243,24 @@ class ProactiveEngine:
         """Lazy-load the engagement coordinator."""
         if self._engagement is None:
             from navig.agent.proactive.engagement import EngagementCoordinator
+
             self._engagement = EngagementCoordinator()
         return self._engagement
 
-    def record_user_message(self, message_type: str = "chat", command: Optional[str] = None):
+    def record_user_message(
+        self, message_type: str = "chat", command: Optional[str] = None
+    ):
         """
         Record a user interaction for engagement tracking.
         Call from message handlers to keep the state tracker updated.
         """
         try:
             coordinator = self._get_engagement_coordinator()
-            coordinator.state.record_interaction(message_type=message_type, command=command)
+            coordinator.state.record_interaction(
+                message_type=message_type, command=command
+            )
         except Exception:
             pass  # Non-critical
-
 
     def init_providers(self):
         """Initialize providers from configuration."""
@@ -258,19 +273,19 @@ class ProactiveEngine:
         cm = get_config_manager()
 
         # Calendar
-        cal_conf = cm.global_config.get('calendar', {})
-        provider_name = cal_conf.get('provider')
-        if provider_name == 'google':
+        cal_conf = cm.global_config.get("calendar", {})
+        provider_name = cal_conf.get("provider")
+        if provider_name == "google":
             try:
                 self.calendar = GoogleCalendar()
             except Exception as e:
                 ch.warning(f"Failed to init Google Calendar: {e}")
 
         # Email (single provider from global config)
-        email_conf = cm.global_config.get('email', {})
-        email_provider_name = email_conf.get('provider')
+        email_conf = cm.global_config.get("email", {})
+        email_provider_name = email_conf.get("provider")
         if email_provider_name:
-            addr = email_conf.get('address') or os.environ.get('NAVIG_EMAIL_ADDRESS')
+            addr = email_conf.get("address") or os.environ.get("NAVIG_EMAIL_ADDRESS")
             pwd = None
             provider_key = str(email_provider_name).strip().lower()
 
@@ -281,10 +296,11 @@ class ProactiveEngine:
             try:
                 if provider_key:
                     from navig.vault import get_vault
+
                     secret = get_vault().get_secret(
                         provider_key,
-                        key='password',
-                        caller='proactive.engine',
+                        key="password",
+                        caller="proactive.engine",
                     )
                     if secret:
                         pwd = secret.reveal()
@@ -293,9 +309,9 @@ class ProactiveEngine:
                 pwd = None
 
             if not pwd:
-                pwd = os.environ.get('NAVIG_EMAIL_PASSWORD')
+                pwd = os.environ.get("NAVIG_EMAIL_PASSWORD")
             if not pwd:
-                pwd = email_conf.get('password')
+                pwd = email_conf.get("password")
                 if pwd:
                     ch.warning(
                         "Using legacy plaintext email password from config. "
@@ -308,8 +324,8 @@ class ProactiveEngine:
                         email_provider_name,
                         addr,
                         pwd,
-                        host=email_conf.get('host'),
-                        port=email_conf.get('port')
+                        host=email_conf.get("host"),
+                        port=email_conf.get("port"),
                     )
                 except Exception as e:
                     ch.warning(f"Failed to init Email Provider: {e}")
@@ -317,6 +333,7 @@ class ProactiveEngine:
         # Multi-account email from agent config
         try:
             from navig.agent.config import AgentConfig
+
             agent_cfg = AgentConfig.load()
             for acct in agent_cfg.ears.email_accounts:
                 if not acct.enabled:
@@ -326,15 +343,18 @@ class ProactiveEngine:
                 if not addr or not pwd:
                     continue
                 # Resolve env vars in password
-                if pwd.startswith('${') and pwd.endswith('}'):
-                    pwd = os.environ.get(pwd[2:-1], '')
+                if pwd.startswith("${") and pwd.endswith("}"):
+                    pwd = os.environ.get(pwd[2:-1], "")
                 if not pwd:
                     ch.warning(f"Email password not set for {acct.label or addr}")
                     continue
                 try:
                     provider = get_email_provider(
-                        acct.provider, addr, pwd,
-                        host=acct.imap_host, port=acct.imap_port
+                        acct.provider,
+                        addr,
+                        pwd,
+                        host=acct.imap_host,
+                        port=acct.imap_port,
                     )
                     label = acct.label or addr
                     self.email_providers[label] = provider
@@ -346,9 +366,11 @@ class ProactiveEngine:
         except Exception:
             pass  # Agent config not available
 
+
 # Singleton instance
 _engine = ProactiveEngine()
 _initialized = False
+
 
 def get_proactive_engine() -> ProactiveEngine:
     global _initialized

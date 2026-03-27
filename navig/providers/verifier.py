@@ -17,6 +17,7 @@ Usage::
         if not r.ok:
             print(f"❌ {r.display_name}: {', '.join(r.issues)}")
 """
+
 from __future__ import annotations
 
 import os
@@ -70,9 +71,13 @@ def _check_factory(provider_id: str) -> bool:
     """Return True if ``create_provider(provider_id)`` would succeed (key present in map)."""
     try:
         from navig.agent.llm_providers import _PROVIDER_MAP
+
         ids_to_check = {provider_id, provider_id.replace("_", "").replace("-", "")}
         for key in _PROVIDER_MAP:
-            if key in ids_to_check or key.replace("_", "").replace("-", "") in ids_to_check:
+            if (
+                key in ids_to_check
+                or key.replace("_", "").replace("-", "") in ids_to_check
+            ):
                 return True
         # Also accept exact match on class .name attribute
         for cls in _PROVIDER_MAP.values():
@@ -87,6 +92,7 @@ def _check_config(provider_id: str) -> bool:
     """Return True if BUILTIN_PROVIDERS has an entry for this provider."""
     try:
         from navig.providers.types import BUILTIN_PROVIDERS
+
         return provider_id in BUILTIN_PROVIDERS
     except ImportError:
         return False
@@ -105,6 +111,7 @@ def _check_key(manifest: ProviderManifest) -> bool:
             return True
     try:
         from navig.vault import get_vault_v2
+
         vault = get_vault_v2()
         if vault is not None:
             for vk in manifest.vault_keys:
@@ -157,7 +164,9 @@ def verify_provider(manifest: ProviderManifest) -> ProviderVerificationResult:
         )
     elif not factory_ok and not manifest.enabled:
         # Log at debug; not an error for opt-in providers
-        logger.debug("Provider '{}' is disabled and not in factory (expected)", manifest.id)
+        logger.debug(
+            "Provider '{}' is disabled and not in factory (expected)", manifest.id
+        )
 
     # 3. Config check (local/proxy providers are excluded — they don't need a ProviderConfig)
     config_ok = True
@@ -175,7 +184,11 @@ def verify_provider(manifest: ProviderManifest) -> ProviderVerificationResult:
         key_detected = _check_key(manifest)
         if not key_detected and manifest.enabled:
             env_hint = " or ".join(manifest.env_vars) or "(no env var defined)"
-            vault_hint = manifest.vault_keys[0] if manifest.vault_keys else "(no vault key defined)"
+            vault_hint = (
+                manifest.vault_keys[0]
+                if manifest.vault_keys
+                else "(no vault key defined)"
+            )
             issues.append(
                 f"no API key found — set {env_hint} or store in vault under '{vault_hint}'"
             )
@@ -225,13 +238,17 @@ def verify_all_providers(
     List of ``ProviderVerificationResult`` — one per provider checked.
     All failures are already logged as warnings by ``verify_provider``.
     """
-    providers = ALL_PROVIDERS if include_disabled else [p for p in ALL_PROVIDERS if p.enabled]
+    providers = (
+        ALL_PROVIDERS if include_disabled else [p for p in ALL_PROVIDERS if p.enabled]
+    )
     results: list[ProviderVerificationResult] = []
     for manifest in providers:
         try:
             result = verify_provider(manifest)
         except Exception as exc:
-            logger.error("Unexpected error verifying provider '{}': {}", manifest.id, exc)
+            logger.error(
+                "Unexpected error verifying provider '{}': {}", manifest.id, exc
+            )
             result = ProviderVerificationResult(
                 id=manifest.id,
                 display_name=manifest.display_name,

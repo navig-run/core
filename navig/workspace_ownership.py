@@ -64,7 +64,11 @@ def classify_workspace_file(file_name: str) -> str:
     Returns:
         "generated_default" or "personal_customized"
     """
-    return "generated_default" if file_name in GENERATED_DEFAULT_FILES else "personal_customized"
+    return (
+        "generated_default"
+        if file_name in GENERATED_DEFAULT_FILES
+        else "personal_customized"
+    )
 
 
 def is_project_workspace_path(path: Path, project_root: Optional[Path] = None) -> bool:
@@ -142,7 +146,11 @@ def detect_project_workspace_duplicates(
 
         user_file = user_ws / file_name
         if user_file.exists():
-            status = "duplicate_identical" if _sha256(project_file) == _sha256(user_file) else "duplicate_conflict"
+            status = (
+                "duplicate_identical"
+                if _sha256(project_file) == _sha256(user_file)
+                else "duplicate_conflict"
+            )
             duplicates.append(
                 WorkspaceDuplicate(
                     file_name=file_name,

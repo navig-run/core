@@ -17,6 +17,7 @@ logger = get_debug_logger()
 
 class TaskStatus(str, Enum):
     """Task execution status."""
+
     PENDING = "pending"
     QUEUED = "queued"
     RUNNING = "running"
@@ -28,6 +29,7 @@ class TaskStatus(str, Enum):
 
 class TaskPriority(int, Enum):
     """Task priority levels (lower = higher priority)."""
+
     CRITICAL = 0
     HIGH = 10
     NORMAL = 50
@@ -39,7 +41,7 @@ class TaskPriority(int, Enum):
 class Task:
     """
     Task definition with priority, dependencies, and retry configuration.
-    
+
     Attributes:
         id: Unique task identifier
         name: Human-readable task name
@@ -59,6 +61,7 @@ class Task:
         retry_count: Current retry attempt number
         meta: Additional metadata
     """
+
     name: str
     handler: str
     params: Dict[str, Any] = field(default_factory=dict)
@@ -79,7 +82,7 @@ class Task:
     retry_count: int = 0
     meta: Dict[str, Any] = field(default_factory=dict)
 
-    def __lt__(self, other: 'Task') -> bool:
+    def __lt__(self, other: "Task") -> bool:
         """Compare by priority for heap ordering."""
         if self.priority != other.priority:
             return self.priority < other.priority
@@ -88,53 +91,55 @@ class Task:
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
         return {
-            'id': self.id,
-            'name': self.name,
-            'handler': self.handler,
-            'params': self.params,
-            'priority': self.priority,
-            'dependencies': self.dependencies,
-            'max_retries': self.max_retries,
-            'retry_delay': self.retry_delay,
-            'timeout': self.timeout,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'status': self.status.value,
-            'result': str(self.result) if self.result else None,
-            'error': self.error,
-            'retry_count': self.retry_count,
-            'meta': self.meta,
+            "id": self.id,
+            "name": self.name,
+            "handler": self.handler,
+            "params": self.params,
+            "priority": self.priority,
+            "dependencies": self.dependencies,
+            "max_retries": self.max_retries,
+            "retry_delay": self.retry_delay,
+            "timeout": self.timeout,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": (
+                self.completed_at.isoformat() if self.completed_at else None
+            ),
+            "status": self.status.value,
+            "result": str(self.result) if self.result else None,
+            "error": self.error,
+            "retry_count": self.retry_count,
+            "meta": self.meta,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Task':
+    def from_dict(cls, data: dict) -> "Task":
         """Deserialize from dictionary."""
         task = cls(
-            id=data.get('id', str(uuid.uuid4())[:8]),
-            name=data['name'],
-            handler=data['handler'],
-            params=data.get('params', {}),
-            priority=data.get('priority', TaskPriority.NORMAL.value),
-            dependencies=data.get('dependencies', []),
-            max_retries=data.get('max_retries', 0),
-            retry_delay=data.get('retry_delay', 5.0),
-            timeout=data.get('timeout'),
-            meta=data.get('meta', {}),
+            id=data.get("id", str(uuid.uuid4())[:8]),
+            name=data["name"],
+            handler=data["handler"],
+            params=data.get("params", {}),
+            priority=data.get("priority", TaskPriority.NORMAL.value),
+            dependencies=data.get("dependencies", []),
+            max_retries=data.get("max_retries", 0),
+            retry_delay=data.get("retry_delay", 5.0),
+            timeout=data.get("timeout"),
+            meta=data.get("meta", {}),
         )
 
-        if data.get('created_at'):
-            task.created_at = datetime.fromisoformat(data['created_at'])
-        if data.get('started_at'):
-            task.started_at = datetime.fromisoformat(data['started_at'])
-        if data.get('completed_at'):
-            task.completed_at = datetime.fromisoformat(data['completed_at'])
-        if data.get('status'):
-            task.status = TaskStatus(data['status'])
+        if data.get("created_at"):
+            task.created_at = datetime.fromisoformat(data["created_at"])
+        if data.get("started_at"):
+            task.started_at = datetime.fromisoformat(data["started_at"])
+        if data.get("completed_at"):
+            task.completed_at = datetime.fromisoformat(data["completed_at"])
+        if data.get("status"):
+            task.status = TaskStatus(data["status"])
 
-        task.result = data.get('result')
-        task.error = data.get('error')
-        task.retry_count = data.get('retry_count', 0)
+        task.result = data.get("result")
+        task.error = data.get("error")
+        task.retry_count = data.get("retry_count", 0)
 
         return task
 
@@ -142,17 +147,17 @@ class Task:
 class TaskQueue:
     """
     Priority-based task queue with dependency management.
-    
+
     Features:
     - Priority-based ordering (heap)
     - Task dependencies (DAG)
     - Persistence to disk
     - Task status tracking
     - Retry support
-    
+
     Example:
         queue = TaskQueue()
-        
+
         # Add tasks
         task1 = await queue.add(Task(
             name="backup-db",
@@ -160,16 +165,16 @@ class TaskQueue:
             params={"host": "prod-db"},
             priority=TaskPriority.HIGH.value,
         ))
-        
+
         task2 = await queue.add(Task(
             name="notify",
             handler="send_notification",
             dependencies=[task1.id],  # Wait for backup
         ))
-        
+
         # Get next ready task
         task = await queue.get_next()
-        
+
         # Mark complete
         await queue.complete(task.id, result={"size": "1.2GB"})
     """
@@ -177,7 +182,7 @@ class TaskQueue:
     def __init__(self, persist_path: Optional[str] = None):
         """
         Initialize task queue.
-        
+
         Args:
             persist_path: Optional path to persist queue state
         """
@@ -205,10 +210,10 @@ class TaskQueue:
     async def add(self, task: Task) -> Task:
         """
         Add task to queue.
-        
+
         Args:
             task: Task to add
-        
+
         Returns:
             Added task with ID
         """
@@ -227,8 +232,7 @@ class TaskQueue:
             if task.dependencies:
                 # Check if dependencies are met
                 deps_met = all(
-                    dep_id in self._completed
-                    for dep_id in task.dependencies
+                    dep_id in self._completed for dep_id in task.dependencies
                 )
                 task.status = TaskStatus.QUEUED if deps_met else TaskStatus.WAITING
             else:
@@ -247,10 +251,12 @@ class TaskQueue:
 
             return task
 
-    async def get_next(self, wait: bool = False, timeout: Optional[float] = None) -> Optional[Task]:
+    async def get_next(
+        self, wait: bool = False, timeout: Optional[float] = None
+    ) -> Optional[Task]:
         """
         Get next ready task from queue.
-        
+
         If wait=True, waits until a task is available or timeout occurs.
         """
         start_time = datetime.now()
@@ -265,8 +271,7 @@ class TaskQueue:
 
                     # Check dependencies again
                     deps_met = all(
-                        dep_id in self._completed
-                        for dep_id in task.dependencies
+                        dep_id in self._completed for dep_id in task.dependencies
                     )
 
                     if deps_met:
@@ -290,7 +295,9 @@ class TaskQueue:
 
             try:
                 if timeout:
-                    await asyncio.wait_for(self._task_added_event.wait(), timeout - elapsed)
+                    await asyncio.wait_for(
+                        self._task_added_event.wait(), timeout - elapsed
+                    )
                 else:
                     await self._task_added_event.wait()
             except asyncio.TimeoutError:
@@ -303,11 +310,11 @@ class TaskQueue:
     ) -> Task:
         """
         Mark task as completed.
-        
+
         Args:
             task_id: Task ID
             result: Task result
-        
+
         Returns:
             Completed task
         """
@@ -338,12 +345,12 @@ class TaskQueue:
     ) -> Task:
         """
         Mark task as failed.
-        
+
         Args:
             task_id: Task ID
             error: Error message
             retry: Whether to retry if possible
-        
+
         Returns:
             Failed task
         """
@@ -360,7 +367,9 @@ class TaskQueue:
                 task.status = TaskStatus.QUEUED
                 # Re-add to heap after delay
                 asyncio.create_task(self._delayed_requeue(task))
-                logger.debug(f"Task retry scheduled: {task_id} (attempt {task.retry_count})")
+                logger.debug(
+                    f"Task retry scheduled: {task_id} (attempt {task.retry_count})"
+                )
             else:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now()
@@ -380,10 +389,10 @@ class TaskQueue:
     async def cancel(self, task_id: str) -> Task:
         """
         Cancel a pending task.
-        
+
         Args:
             task_id: Task ID
-        
+
         Returns:
             Cancelled task
         """
@@ -414,11 +423,11 @@ class TaskQueue:
     ) -> List[Task]:
         """
         List tasks with optional status filter.
-        
+
         Args:
             status: Filter by status
             limit: Maximum tasks to return
-        
+
         Returns:
             List of tasks
         """
@@ -435,10 +444,10 @@ class TaskQueue:
     async def clear_completed(self, older_than_hours: int = 24) -> int:
         """
         Clear old completed tasks.
-        
+
         Args:
             older_than_hours: Only clear tasks older than this
-        
+
         Returns:
             Number of tasks cleared
         """
@@ -448,7 +457,11 @@ class TaskQueue:
 
             to_remove = []
             for task_id, task in self._tasks.items():
-                if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+                if task.status in (
+                    TaskStatus.COMPLETED,
+                    TaskStatus.FAILED,
+                    TaskStatus.CANCELLED,
+                ):
                     if task.completed_at:
                         age_hours = (cutoff - task.completed_at).total_seconds() / 3600
                         if age_hours > older_than_hours:
@@ -467,8 +480,7 @@ class TaskQueue:
         for task in self._tasks.values():
             if task.status == TaskStatus.WAITING:
                 deps_met = all(
-                    dep_id in self._completed
-                    for dep_id in task.dependencies
+                    dep_id in self._completed for dep_id in task.dependencies
                 )
                 if deps_met:
                     task.status = TaskStatus.QUEUED
@@ -482,14 +494,13 @@ class TaskQueue:
 
         try:
             data = {
-                'tasks': {
-                    task_id: task.to_dict()
-                    for task_id, task in self._tasks.items()
+                "tasks": {
+                    task_id: task.to_dict() for task_id, task in self._tasks.items()
                 },
-                'completed': list(self._completed),
+                "completed": list(self._completed),
             }
 
-            with open(self._persist_path, 'w') as f:
+            with open(self._persist_path, "w") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to persist task queue: {e}")
@@ -503,14 +514,18 @@ class TaskQueue:
             with open(self._persist_path) as f:
                 data = json.load(f)
 
-            self._completed = set(data.get('completed', []))
+            self._completed = set(data.get("completed", []))
 
-            for task_id, task_data in data.get('tasks', {}).items():
+            for task_id, task_data in data.get("tasks", {}).items():
                 task = Task.from_dict(task_data)
                 self._tasks[task_id] = task
 
                 # Re-queue pending tasks
-                if task.status in (TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.WAITING):
+                if task.status in (
+                    TaskStatus.PENDING,
+                    TaskStatus.QUEUED,
+                    TaskStatus.WAITING,
+                ):
                     if task.status != TaskStatus.WAITING:
                         heapq.heappush(self._heap, task)
 
@@ -522,7 +537,9 @@ class TaskQueue:
         """Get queue statistics."""
         status_counts = {}
         for task in self._tasks.values():
-            status_counts[task.status.value] = status_counts.get(task.status.value, 0) + 1
+            status_counts[task.status.value] = (
+                status_counts.get(task.status.value, 0) + 1
+            )
 
         return {
             "total_tasks": len(self._tasks),

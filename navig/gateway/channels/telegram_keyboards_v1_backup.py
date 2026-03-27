@@ -45,6 +45,7 @@ MAX_CALLBACK_DATA = 64  # Telegram limit
 
 class ContentCategory(str, Enum):
     """Categories used to decide which buttons to attach."""
+
     INFORMATIONAL = "info"
     COMPARISON = "compare"
     HOWTO = "howto"
@@ -173,13 +174,15 @@ def _short_hash(text: str, length: int = 6) -> str:
 # Callback data store (in-memory, bounded)
 # ────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class CallbackEntry:
     """Stored context for a callback button."""
+
     action: str
-    user_message: str       # original user message
-    ai_response: str        # full AI response text
-    category: str           # ContentCategory value
+    user_message: str  # original user message
+    ai_response: str  # full AI response text
+    category: str  # ContentCategory value
     extra: Dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
 
@@ -223,6 +226,7 @@ def get_callback_store() -> CallbackStore:
 # ────────────────────────────────────────────────────────────────
 # ResponseKeyboardBuilder
 # ────────────────────────────────────────────────────────────────
+
 
 class ResponseKeyboardBuilder:
     """
@@ -293,7 +297,9 @@ class ResponseKeyboardBuilder:
 
         # 3. Structured Navigation (for comparisons / lists)
         if category in (ContentCategory.COMPARISON, ContentCategory.LIST):
-            nav_row = self._build_navigation(category, msg_hash, user_message, ai_response)
+            nav_row = self._build_navigation(
+                category, msg_hash, user_message, ai_response
+            )
             if nav_row:
                 rows.append(nav_row)
 
@@ -335,13 +341,16 @@ class ResponseKeyboardBuilder:
             cb_key = cb_key[:MAX_CALLBACK_DATA]
 
         # Store context
-        self.store.put(cb_key, CallbackEntry(
-            action=action,
-            user_message=user_message,
-            ai_response=ai_response[:3000],  # cap stored response
-            category=classify_response(ai_response).value,
-            extra=extra or {},
-        ))
+        self.store.put(
+            cb_key,
+            CallbackEntry(
+                action=action,
+                user_message=user_message,
+                ai_response=ai_response[:3000],  # cap stored response
+                category=classify_response(ai_response).value,
+                extra=extra or {},
+            ),
+        )
 
         return {"text": label, "callback_data": cb_key}
 
@@ -353,7 +362,9 @@ class ResponseKeyboardBuilder:
         msg_hash: str,
     ) -> List[Dict[str, str]]:
         """Generate 2-3 follow-up suggestion buttons."""
-        templates = _FOLLOWUP_TEMPLATES.get(category, _FOLLOWUP_TEMPLATES[ContentCategory.CONVERSATIONAL])
+        templates = _FOLLOWUP_TEMPLATES.get(
+            category, _FOLLOWUP_TEMPLATES[ContentCategory.CONVERSATIONAL]
+        )
         # Pick 2-3 most relevant
         picks = templates[:3]
 
@@ -469,7 +480,9 @@ class ResponseKeyboardBuilder:
         return [
             self._make_button("👍", "fb_up", msg_hash, user_message, ai_response),
             self._make_button("👎", "fb_down", msg_hash, user_message, ai_response),
-            self._make_button("💡 Improve", "fb_improve", msg_hash, user_message, ai_response),
+            self._make_button(
+                "💡 Improve", "fb_improve", msg_hash, user_message, ai_response
+            ),
         ]
 
 
@@ -480,13 +493,12 @@ class ResponseKeyboardBuilder:
 # Action → AI prompt template
 _ACTION_PROMPTS: Dict[str, str] = {
     "regen": (
-        "The user asked: \"{user_message}\"\n"
+        'The user asked: "{user_message}"\n'
         "Your previous answer was not satisfactory. "
         "Please provide a better, more complete answer."
     ),
     "summarize": (
-        "Summarize the following response in 2-3 concise sentences:\n\n"
-        "{ai_response}"
+        "Summarize the following response in 2-3 concise sentences:\n\n" "{ai_response}"
     ),
     "translate": (
         "Translate the following text to the user's other language "
@@ -494,8 +506,8 @@ _ACTION_PROMPTS: Dict[str, str] = {
         "{ai_response}"
     ),
     "elaborate": (
-        "The user asked: \"{user_message}\"\n"
-        "Your previous answer was: \"{ai_response_short}\"\n"
+        'The user asked: "{user_message}"\n'
+        'Your previous answer was: "{ai_response_short}"\n'
         "Please elaborate with more detail, examples, and depth."
     ),
     "copy_code": None,  # special handler — extracts code blocks
@@ -534,10 +546,10 @@ _ACTION_PROMPTS: Dict[str, str] = {
         "{ai_response}"
     ),
     # Feedback
-    "fb_up": None,     # acknowledgement only
-    "fb_down": None,    # acknowledgement only
+    "fb_up": None,  # acknowledgement only
+    "fb_down": None,  # acknowledgement only
     "fb_improve": (
-        "The user asked: \"{user_message}\"\n"
+        'The user asked: "{user_message}"\n'
         "Your previous answer was rated poorly. "
         "Please provide a significantly improved, more accurate and detailed answer."
     ),
@@ -592,7 +604,9 @@ class CallbackHandler:
         if action.startswith("fup"):
             followup_text = entry.extra.get("followup_text", "Tell me more")
             # Strip emoji prefix for cleaner AI prompt
-            clean_followup = re.sub(r"^[\U0001f300-\U0001f9ff\u2600-\u27bf]+\s*", "", followup_text)
+            clean_followup = re.sub(
+                r"^[\U0001f300-\U0001f9ff\u2600-\u27bf]+\s*", "", followup_text
+            )
             await self._answer_callback(cb_id, f"💬 {followup_text}")
             await self._send_as_new_message(chat_id, user_id, clean_followup)
             return
@@ -614,8 +628,7 @@ class CallbackHandler:
             if code_blocks:
                 # Send just the code, stripped of fences
                 code_text = "\n\n".join(
-                    block.strip("`").strip()
-                    for block in code_blocks
+                    block.strip("`").strip() for block in code_blocks
                 )
                 await self._answer_callback(cb_id, "📋 Code extracted")
                 # Send as plain monospaced
@@ -642,9 +655,7 @@ class CallbackHandler:
             await self._answer_callback(cb_id, "⏳ Working on it...")
 
             # Start typing indicator
-            typing_task = asyncio.create_task(
-                self.channel._keep_typing(chat_id)
-            )
+            typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
             try:
                 ai_response_short = entry.ai_response[:500]
                 prompt = prompt_template.format(
@@ -681,24 +692,23 @@ class CallbackHandler:
 
     async def _answer_callback(self, callback_id: str, text: str) -> None:
         """Answer a callback query (dismisses the loading spinner on the button)."""
-        await self.channel._api_call("answerCallbackQuery", {
-            "callback_query_id": callback_id,
-            "text": text,
-            "show_alert": False,
-        })
+        await self.channel._api_call(
+            "answerCallbackQuery",
+            {
+                "callback_query_id": callback_id,
+                "text": text,
+                "show_alert": False,
+            },
+        )
 
-    async def _send_as_new_message(
-        self, chat_id: int, user_id: int, text: str
-    ) -> None:
+    async def _send_as_new_message(self, chat_id: int, user_id: int, text: str) -> None:
         """
         Route a followup as if the user typed a new message.
 
         This goes through the full gateway pipeline (routing, sessions, etc.)
         """
         if self.channel.on_message:
-            typing_task = asyncio.create_task(
-                self.channel._keep_typing(chat_id)
-            )
+            typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
             try:
                 response = await self.channel.on_message(
                     channel="telegram",
@@ -717,9 +727,7 @@ class CallbackHandler:
                     )
             except Exception as e:
                 logger.error("Followup failed: %s", e)
-                await self.channel.send_message(
-                    chat_id, f"😅 Follow-up failed: {e}"
-                )
+                await self.channel.send_message(chat_id, f"😅 Follow-up failed: {e}")
             finally:
                 typing_task.cancel()
                 try:

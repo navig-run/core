@@ -117,13 +117,13 @@ apps:
       name: myapp_db
       user: myapp_user
       password: secret
-    
+
     webserver:
       type: nginx  # ← REQUIRED field (extracted from services.web)
-    
+
     services:
       php: 8.2
-    
+
     paths:
       web_root: /var/www/myapp
       log_path: /var/log/myapp
@@ -180,11 +180,11 @@ apps:
   myapp:          # Production
     webserver:
       type: apache2
-  
+
   myapp-staging:  # Staging
     webserver:
       type: apache2
-  
+
   myapp-dev:      # Development
     webserver:
       type: apache2
@@ -261,5 +261,3 @@ navig config migrate --dry-run
 - [Configuration Schema](CONFIG_SCHEMA.md) - Complete field reference
 - [Architecture Summary](ARCHITECTURE_SUMMARY.md) - Design overview
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions
-
-

@@ -12,6 +12,7 @@ Color policy: encodes state ONLY, never decoration.
   cyan    = in-progress / active
   dim     = secondary / metadata
 """
+
 from __future__ import annotations
 
 import os
@@ -22,6 +23,7 @@ from typing import Optional
 from .engine import EngineState, StepRecord
 
 # ── ANSI helpers ───────────────────────────────────────────────────────────
+
 
 def _tc() -> bool:
     """True if terminal supports 24-bit color."""
@@ -45,68 +47,70 @@ def _uni() -> bool:
 
 # Build color codes once at module import
 _TRUECOLOR = _tc()
-_UNICODE   = _uni()
+_UNICODE = _uni()
+
 
 def _rgb(r: int, g: int, b: int) -> str:
     if _TRUECOLOR:
         return f"\x1b[38;2;{r};{g};{b}m"
-    return ""   # fall through to named codes
+    return ""  # fall through to named codes
+
 
 # Named codes (work on all 16-color+ terminals)
-_G     = "\x1b[32m"         # green
-_Y     = "\x1b[33m"         # yellow
-_R     = "\x1b[1;31m"       # bold red
-_C     = "\x1b[36m"         # cyan
-_B     = "\x1b[34m"         # blue
-_M     = "\x1b[35m"         # magenta
-_BOLD  = "\x1b[1m"
-_DIM   = "\x1b[2m"
+_G = "\x1b[32m"  # green
+_Y = "\x1b[33m"  # yellow
+_R = "\x1b[1;31m"  # bold red
+_C = "\x1b[36m"  # cyan
+_B = "\x1b[34m"  # blue
+_M = "\x1b[35m"  # magenta
+_BOLD = "\x1b[1m"
+_DIM = "\x1b[2m"
 _RESET = "\x1b[0m"
-_CLEAR = "\x1b[2K\r"          # clear current line, carriage return
-_UP1   = "\x1b[1A"           # cursor up 1 line
-_HIDE  = "\x1b[?25l"          # hide cursor
-_SHOW  = "\x1b[?25h"          # show cursor
-_SAVE  = "\x1b[s"
-_REST  = "\x1b[u"
+_CLEAR = "\x1b[2K\r"  # clear current line, carriage return
+_UP1 = "\x1b[1A"  # cursor up 1 line
+_HIDE = "\x1b[?25l"  # hide cursor
+_SHOW = "\x1b[?25h"  # show cursor
+_SAVE = "\x1b[s"
+_REST = "\x1b[u"
 
 # Accent: electric cyan for primary UI chrome
 _ACCENT = _rgb(34, 211, 238) or _C
 
 # Truecolor named pairs (r g b, fallback ANSI code)
-_GREEN_TC  = _rgb(74, 222, 128) or _G
-_RED_TC    = _rgb(244, 63, 94)  or _R
-_AMBER_TC  = _rgb(251, 191, 36) or _Y
-_DIM_CYAN  = _rgb(103, 232, 249) or _C
+_GREEN_TC = _rgb(74, 222, 128) or _G
+_RED_TC = _rgb(244, 63, 94) or _R
+_AMBER_TC = _rgb(251, 191, 36) or _Y
+_DIM_CYAN = _rgb(103, 232, 249) or _C
 
 # Icons — Unicode when supported, ASCII fallback
 if _UNICODE:
-    _ICON_OK      = "✓"
-    _ICON_SKIP    = "⊘"
-    _ICON_FAIL    = "✗"
-    _ICON_DOT     = "·"
-    _ICON_ARROW   = "→"
-    _ICON_BULLET  = "●"
+    _ICON_OK = "✓"
+    _ICON_SKIP = "⊘"
+    _ICON_FAIL = "✗"
+    _ICON_DOT = "·"
+    _ICON_ARROW = "→"
+    _ICON_BULLET = "●"
     _ICON_DIAMOND = "◆"
-    _ICON_SPARK   = "✦"
-    _BAR_FULL     = "█"
-    _BAR_HALF     = "▓"
-    _BAR_EMPTY    = "░"
-    _SEP          = "═"
-    _SEP_THIN     = "─"
+    _ICON_SPARK = "✦"
+    _BAR_FULL = "█"
+    _BAR_HALF = "▓"
+    _BAR_EMPTY = "░"
+    _SEP = "═"
+    _SEP_THIN = "─"
 else:
-    _ICON_OK      = "+"
-    _ICON_SKIP    = "-"
-    _ICON_FAIL    = "x"
-    _ICON_DOT     = "."
-    _ICON_ARROW   = "->"
-    _ICON_BULLET  = "*"
+    _ICON_OK = "+"
+    _ICON_SKIP = "-"
+    _ICON_FAIL = "x"
+    _ICON_DOT = "."
+    _ICON_ARROW = "->"
+    _ICON_BULLET = "*"
     _ICON_DIAMOND = "<>"
-    _ICON_SPARK   = "*"
-    _BAR_FULL     = "#"
-    _BAR_HALF     = "="
-    _BAR_EMPTY    = "-"
-    _SEP          = "="
-    _SEP_THIN     = "-"
+    _ICON_SPARK = "*"
+    _BAR_FULL = "#"
+    _BAR_HALF = "="
+    _BAR_EMPTY = "-"
+    _SEP = "="
+    _SEP_THIN = "-"
 
 
 def _strip_ansi(s: str) -> str:
@@ -123,17 +127,17 @@ def _pad_to(content: str, width: int, fill: str = " ") -> str:
 
 _STEP_LABELS: dict[str, str] = {
     # Phase 1 — bootstrap
-    "workspace-init":      "workspace",
+    "workspace-init": "workspace",
     "workspace-templates": "identity files",
-    "config-file":         "config",
-    "configure-ssh":       "ssh key",
-    "verify-network":      "network",
+    "config-file": "config",
+    "configure-ssh": "ssh key",
+    "verify-network": "network",
     # Phase 2 — configuration
-    "ai-provider":         "ai provider",
-    "vault-init":          "vault",
-    "first-host":          "first host",
-    "telegram-bot":        "telegram",
-    "skills-activation":   "skills",
+    "ai-provider": "ai provider",
+    "vault-init": "vault",
+    "first-host": "first host",
+    "telegram-bot": "telegram",
+    "skills-activation": "skills",
 }
 
 _LABEL_W = 18  # visual column width for step labels
@@ -146,6 +150,7 @@ def _label(step_id: str, fallback: str) -> str:
 def _format_detail(step_id: str, output: dict, error: Optional[str] = None) -> str:
     """Return a compact one-liner describing what a step did."""
     from pathlib import Path as _P
+
     home = str(_P.home())
 
     def _sh(p: str) -> str:
@@ -174,7 +179,11 @@ def _format_detail(step_id: str, output: dict, error: Optional[str] = None) -> s
         return f"{p}  {_DIM}({kt}){_RESET}" if kt else p
 
     if step_id == "verify-network":
-        return "online" if output.get("networkReachable") == "true" else f"{_DIM}offline{_RESET}"
+        return (
+            "online"
+            if output.get("networkReachable") == "true"
+            else f"{_DIM}offline{_RESET}"
+        )
 
     if step_id == "ai-provider":
         provider = output.get("provider", "")
@@ -197,7 +206,11 @@ def _format_detail(step_id: str, output: dict, error: Optional[str] = None) -> s
         return f"{_DIM}{output.get('reason', 'run navig host add')}{_RESET}"
 
     if step_id == "telegram-bot":
-        return f"{_DIM}bot token saved{_RESET}" if output.get("configured") == "true" else f"{_DIM}{output.get('reason', 'optional — skipped')}{_RESET}"
+        return (
+            f"{_DIM}bot token saved{_RESET}"
+            if output.get("configured") == "true"
+            else f"{_DIM}{output.get('reason', 'optional — skipped')}{_RESET}"
+        )
 
     if step_id == "skills-activation":
         packs = output.get("activatedPacks", "")
@@ -208,12 +221,16 @@ def _format_detail(step_id: str, output: dict, error: Optional[str] = None) -> s
     if error:
         return error[:70]
 
-    vals = [str(v) for v in list(output.values())[:2]
-            if v and str(v) not in ("true", "false", "1", "True")]
+    vals = [
+        str(v)
+        for v in list(output.values())[:2]
+        if v and str(v) not in ("true", "false", "1", "True")
+    ]
     return "  ".join(vals)
 
 
 # ── Progress indicator ─────────────────────────────────────────────────────
+
 
 def render_progress(
     current: int,
@@ -234,18 +251,23 @@ def render_progress(
 
 # ── Step results (all use _CLEAR to overwrite the progress line) ────────────
 
+
 def render_step_success(record: StepRecord) -> str:
-    """  ✓  workspace          ~/.navig/workspace/"""
-    label  = _label(record.id, record.title)
+    """✓  workspace          ~/.navig/workspace/"""
+    label = _label(record.id, record.title)
     detail = _format_detail(record.id, record.output)
-    dur    = f"  {_DIM}({record.duration_ms}ms){_RESET}" if record.duration_ms > 500 else ""
+    dur = (
+        f"  {_DIM}({record.duration_ms}ms){_RESET}" if record.duration_ms > 500 else ""
+    )
     detail_s = f"  {detail}" if detail else ""
-    return f"{_CLEAR}  {_GREEN_TC}{_ICON_OK}{_RESET}  {label:<{_LABEL_W}}{detail_s}{dur}"
+    return (
+        f"{_CLEAR}  {_GREEN_TC}{_ICON_OK}{_RESET}  {label:<{_LABEL_W}}{detail_s}{dur}"
+    )
 
 
 def render_step_skipped(record: StepRecord) -> str:
-    """  ·  ai provider        set NAVIG_LLM_PROVIDER to enable"""
-    label  = _label(record.id, record.title)
+    """·  ai provider        set NAVIG_LLM_PROVIDER to enable"""
+    label = _label(record.id, record.title)
     detail = _format_detail(record.id, record.output, record.error)
     return f"{_CLEAR}  {_DIM}{_ICON_DOT}  {label:<{_LABEL_W}}  {detail}{_RESET}"
 
@@ -257,10 +279,10 @@ def render_step_already_done(record: StepRecord) -> str:
 
 
 def render_step_failure(record: StepRecord, fix_hint: str = "") -> str:
-    """  ✗  ssh key            Permission denied\n       fix:  navig init --step configure-ssh"""
+    """✗  ssh key            Permission denied\n       fix:  navig init --step configure-ssh"""
     label = _label(record.id, record.title)
     error = (record.error or "unknown error")[:80]
-    fix   = fix_hint or f"navig init --step {record.id}"
+    fix = fix_hint or f"navig init --step {record.id}"
     return (
         f"{_CLEAR}  {_RED_TC}{_ICON_FAIL}{_RESET}  {label:<{_LABEL_W}}  {_RED_TC}{error}{_RESET}\n"
         f"       {_DIM}fix:{_RESET}  {_AMBER_TC}{fix}{_RESET}"
@@ -274,6 +296,7 @@ def render_step_in_progress(title: str) -> str:
 
 # ── Dry-run plan ───────────────────────────────────────────────────────────
 
+
 def render_dry_run_plan(steps: list, node_id: str) -> str:
     """Print planned steps without executing."""
     w = 60
@@ -286,11 +309,11 @@ def render_dry_run_plan(steps: list, node_id: str) -> str:
         "",
     ]
     for i, step in enumerate(steps, 1):
-        s_id    = getattr(step, "id", "")
-        lbl     = _label(s_id, step.title)
-        o_fail  = getattr(step, "on_failure", "abort")
-        pc      = _AMBER_TC if o_fail == "skip" else _DIM
-        policy  = f"{pc}[{o_fail}]{_RESET}"
+        s_id = getattr(step, "id", "")
+        lbl = _label(s_id, step.title)
+        o_fail = getattr(step, "on_failure", "abort")
+        pc = _AMBER_TC if o_fail == "skip" else _DIM
+        policy = f"{pc}[{o_fail}]{_RESET}"
         lines.append(
             f"  {_DIM}{i:>2}.{_RESET}  {lbl:<{_LABEL_W}}  {_DIM}{s_id}{_RESET}  {policy}"
         )
@@ -302,11 +325,11 @@ def render_dry_run_plan(steps: list, node_id: str) -> str:
 
 # Priority-ordered list of Phase 2 step IDs and their recovery commands
 _GAP_COMMANDS: dict[str, tuple[str, str]] = {
-    "ai-provider":       ("navig config ai",          "connect an AI provider"),
-    "vault-init":        ("navig vault init",           "secure your credentials"),
-    "first-host":        ("navig host add",             "connect your first server"),
-    "telegram-bot":      ("navig service telegram",     "enable Telegram notifications"),
-    "skills-activation": ("navig skills activate",      "enable capability packs"),
+    "ai-provider": ("navig config ai", "connect an AI provider"),
+    "vault-init": ("navig vault init", "secure your credentials"),
+    "first-host": ("navig host add", "connect your first server"),
+    "telegram-bot": ("navig service telegram", "enable Telegram notifications"),
+    "skills-activation": ("navig skills activate", "enable capability packs"),
 }
 _PHASE2_STEP_IDS = list(_GAP_COMMANDS.keys())
 
@@ -323,23 +346,22 @@ def _detect_config_gaps(navig_dir: "Path") -> list[str]:
         Ordered list of unconfigured Phase 2 step IDs.
     """
     from pathlib import Path as _Path
+
     artifact = _Path(navig_dir) / "onboarding.json"
     if not artifact.exists():
         return list(_PHASE2_STEP_IDS)
     try:
         import json as _json
+
         raw = _json.loads(artifact.read_text(encoding="utf-8"))
-        done = {
-            s["id"]
-            for s in raw.get("steps", [])
-            if s.get("status") == "completed"
-        }
+        done = {s["id"] for s in raw.get("steps", []) if s.get("status") == "completed"}
         return [sid for sid in _PHASE2_STEP_IDS if sid not in done]
     except Exception:  # noqa: BLE001
         return list(_PHASE2_STEP_IDS)
 
 
 # ── Completion summary ─────────────────────────────────────────────────────
+
 
 def render_completion_summary(
     state: EngineState,
@@ -365,17 +387,17 @@ def render_completion_summary(
     from pathlib import Path as _Path
 
     completed = sum(1 for s in state.steps if s.status == "completed")
-    failed    = sum(1 for s in state.steps if s.status == "failed")
-    total     = len(state.steps)
-    secs      = total_ms / 1000
+    failed = sum(1 for s in state.steps if s.status == "failed")
+    total = len(state.steps)
+    secs = total_ms / 1000
 
-    w   = 62
+    w = 62
     sep = f"  {_DIM}{_SEP_THIN * w}{_RESET}"
 
-    node_s   = f"{_ACCENT}{state.node_id or ''}{_RESET}"
+    node_s = f"{_ACCENT}{state.node_id or ''}{_RESET}"
     counts_s = f"{_GREEN_TC}{completed}{_RESET}{_DIM}/{total}{_RESET}"
-    secs_s   = f"{_DIM}{secs:.1f}s{_RESET}"
-    dot      = f"  {_DIM}{_ICON_DOT}{_RESET}  "
+    secs_s = f"{_DIM}{secs:.1f}s{_RESET}"
+    dot = f"  {_DIM}{_ICON_DOT}{_RESET}  "
 
     if failed:
         status_s = f"{_AMBER_TC}{_BOLD}partial{_RESET}"
@@ -412,7 +434,8 @@ def render_completion_summary(
         if gaps:
             # Count Phase 2 steps already completed
             p2_done = sum(
-                1 for s in state.steps
+                1
+                for s in state.steps
                 if s.id in _PHASE2_STEP_IDS and s.status == "completed"
             )
             lines.append("")
@@ -432,6 +455,7 @@ def render_completion_summary(
 
 
 # ── Init header ────────────────────────────────────────────────────────────
+
 
 def render_init_header(
     node_id: str,
@@ -461,12 +485,12 @@ def render_init_header(
 
     node_s = f"{_ACCENT}{node_id}{_RESET}"
     name_s = f"  {_DIM}({name}){_RESET}" if name else ""
-    dot    = f"  {_DIM}{_ICON_DOT}{_RESET}  "
+    dot = f"  {_DIM}{_ICON_DOT}{_RESET}  "
 
     header = f"\n  {cmd_s}{dot}{node_s}{name_s}\n"
 
     if maxim:
-        header += f"  {_DIM}\"{maxim}\"{_RESET}\n"
+        header += f'  {_DIM}"{maxim}"{_RESET}\n'
 
     return header
 

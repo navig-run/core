@@ -3,6 +3,7 @@ Deck API Authentication
 
 Middleware and utilities for verifying Telegram WebApp initData.
 """
+
 import hashlib
 import hmac
 import json
@@ -26,6 +27,7 @@ _deck_config: Dict[str, Any] = {
     "auth_max_age": 86400,
 }
 
+
 def configure_deck_auth(
     bot_token: str,
     allowed_users: List[int],
@@ -41,10 +43,15 @@ def configure_deck_auth(
     _deck_config["auth_max_age"] = auth_max_age
     logger.info(
         "Deck auth configured: require_auth=%s, allowed_users=%d, dev_mode=%s",
-        require_auth, len(_deck_config["allowed_users"]), dev_mode,
+        require_auth,
+        len(_deck_config["allowed_users"]),
+        dev_mode,
     )
 
-def validate_init_data(init_data: str, bot_token: str, max_age: int = 3600) -> Optional[Dict[str, Any]]:
+
+def validate_init_data(
+    init_data: str, bot_token: str, max_age: int = 3600
+) -> Optional[Dict[str, Any]]:
     if not init_data or not bot_token:
         return None
 
@@ -62,8 +69,12 @@ def validate_init_data(init_data: str, bot_token: str, max_age: int = 3600) -> O
         items.sort()
         data_check_string = "\n".join(items)
 
-        secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
-        computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        secret_key = hmac.new(
+            b"WebAppData", bot_token.encode(), hashlib.sha256
+        ).digest()
+        computed_hash = hmac.new(
+            secret_key, data_check_string.encode(), hashlib.sha256
+        ).hexdigest()
 
         if not hmac.compare_digest(computed_hash, received_hash):
             return None
@@ -102,7 +113,9 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> Optional[int]:
 
     return None
 
+
 if web:
+
     @web.middleware
     async def deck_auth_middleware(request: "web.Request", handler):
         path = request.path
@@ -116,9 +129,14 @@ if web:
         user_id = _get_user_id(request)
 
         if user_id is None:
-            logger.warning("Deck API unauthorized: no valid user from %s %s", request.method, path)
+            logger.warning(
+                "Deck API unauthorized: no valid user from %s %s", request.method, path
+            )
             return web.json_response(
-                {"error": "unauthorized", "detail": "Valid Telegram WebApp initData required"},
+                {
+                    "error": "unauthorized",
+                    "detail": "Valid Telegram WebApp initData required",
+                },
                 status=401,
             )
 

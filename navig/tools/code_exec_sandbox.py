@@ -4,6 +4,7 @@ CodeExecSandboxTool — Sandboxed Python code execution.
 Runs Python via asyncio subprocess with a 10-second timeout.
 No network access. stdout/stderr captured and returned.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +26,12 @@ class CodeExecSandboxTool(BaseTool):
     name = "code_exec_sandbox"
     description = "Execute a Python code snippet safely. Returns stdout, stderr, exit code. 10s timeout."
     parameters = [
-        {"name": "code", "type": "string", "description": "Python code snippet to execute", "required": True}
+        {
+            "name": "code",
+            "type": "string",
+            "description": "Python code snippet to execute",
+            "required": True,
+        }
     ]
 
     async def run(
@@ -105,7 +111,9 @@ class CodeExecSandboxTool(BaseTool):
                     "stderr": stderr,
                     "exit_code": exit_code,
                 },
-                error=f"process exited with code {exit_code}" if exit_code != 0 else None,
+                error=(
+                    f"process exited with code {exit_code}" if exit_code != 0 else None
+                ),
             )
 
         except Exception as exc:

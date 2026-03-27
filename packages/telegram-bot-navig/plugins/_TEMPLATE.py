@@ -38,10 +38,9 @@ from __future__ import annotations
 # from telegram.ext import ContextTypes
 import logging
 
+from plugin_base import BotPlugin, PluginContext, PluginEvent, PluginMeta
 from telegram import Update
 from telegram.ext import ContextTypes
-
-from plugin_base import BotPlugin, PluginContext, PluginEvent, PluginMeta
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +53,7 @@ class MyPlugin(BotPlugin):
     @property
     def meta(self) -> PluginMeta:
         return PluginMeta(
-            name="myplugin",            # unique, lowercase, used for /activate
+            name="myplugin",  # unique, lowercase, used for /activate
             description="Does something useful.",
             version="1.0.0",
         )
@@ -105,6 +104,7 @@ class MyPlugin(BotPlugin):
 # ---------------------------------------------------------------------------
 # Required factory — always name this function `create`
 # ---------------------------------------------------------------------------
+
 
 def create() -> MyPlugin:
     """Return a fresh plugin instance.  Called once at bot startup (or hot-reload)."""

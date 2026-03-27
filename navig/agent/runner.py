@@ -30,7 +30,7 @@ from navig.agent.soul import Soul
 class Agent:
     """
     The complete autonomous agent.
-    
+
     Combines all components into a unified system:
     - NervousSystem: Event coordination
     - Heart: Component orchestration
@@ -84,11 +84,11 @@ class Agent:
         self.brain.set_soul(self.soul)
 
         # Register components with heart
-        self.heart.register_component('brain', self.brain)
-        self.heart.register_component('eyes', self.eyes)
-        self.heart.register_component('ears', self.ears)
-        self.heart.register_component('hands', self.hands)
-        self.heart.register_component('soul', self.soul)
+        self.heart.register_component("brain", self.brain)
+        self.heart.register_component("eyes", self.eyes)
+        self.heart.register_component("ears", self.ears)
+        self.heart.register_component("hands", self.hands)
+        self.heart.register_component("soul", self.soul)
 
         # Create and attach goal planner
         self.goal_planner = GoalPlanner(
@@ -161,10 +161,13 @@ class Agent:
         source = message.source
 
         # Get response from brain
-        response = await self.brain.think(content, context={
-            'source': source,
-            'user_id': message.user_id,
-        })
+        response = await self.brain.think(
+            content,
+            context={
+                "source": source,
+                "user_id": message.user_id,
+            },
+        )
 
         if response:
             # Format with personality
@@ -173,25 +176,26 @@ class Agent:
             # Emit response event
             await self.nervous_system.emit(
                 EventType.RESPONSE_GENERATED,
-                source='agent',
+                source="agent",
                 data={
-                    'response': formatted,
-                    'original_message': message.to_dict(),
-                }
+                    "response": formatted,
+                    "original_message": message.to_dict(),
+                },
             )
 
     def get_status(self) -> Dict[str, Any]:
         """Get agent status."""
         return {
-            'running': self._running,
-            'started_at': self._started_at.isoformat() if self._started_at else None,
-            'uptime_seconds': (
+            "running": self._running,
+            "started_at": self._started_at.isoformat() if self._started_at else None,
+            "uptime_seconds": (
                 (datetime.now() - self._started_at).total_seconds()
-                if self._started_at else 0
+                if self._started_at
+                else 0
             ),
-            'mode': self.config.mode,
-            'personality': self.config.personality.profile,
-            'components': self.heart.get_component_states(),
+            "mode": self.config.mode,
+            "personality": self.config.personality.profile,
+            "components": self.heart.get_component_states(),
         }
 
     @property
@@ -202,7 +206,7 @@ class Agent:
 async def run_agent(config: Optional[AgentConfig] = None) -> None:
     """
     Run the agent as a foreground process.
-    
+
     Sets up signal handlers for graceful shutdown.
     """
     agent = Agent(config)
@@ -214,7 +218,7 @@ async def run_agent(config: Optional[AgentConfig] = None) -> None:
         print("\nShutting down agent...")
         asyncio.create_task(agent.stop())
 
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, signal_handler)
 
@@ -255,5 +259,5 @@ def main():
         pass  # user interrupted; clean exit
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

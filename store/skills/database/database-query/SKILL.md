@@ -110,7 +110,7 @@ If the server has Laravel installed (detected via templates/hestiacp or artisan)
 ### Get Recent Data
 
 **User:** "Show last 5 users"
-**Command:** 
+**Command:**
 ```bash
 navig run "php artisan tinker --execute='User::latest()->take(5)->get()->each(fn(\$u) => print \$u->email . \"\n\");'"
 ```
@@ -127,7 +127,7 @@ navig run "php artisan tinker --execute='User::latest()->take(5)->get()->each(fn
 **User:** "Show user registration trends by month"
 **SQL:**
 ```sql
-SELECT 
+SELECT
   DATE_FORMAT(created_at, '%Y-%m') as month,
   COUNT(*) as registrations
 FROM users
@@ -149,9 +149,9 @@ LIMIT 12
 ### Database Size Analysis
 
 **User:** "What's using the most database space?"
-**Command:** 
+**Command:**
 ```sql
-SELECT 
+SELECT
   table_name,
   ROUND(((data_length + index_length) / 1024 / 1024), 2) AS size_mb
 FROM information_schema.TABLES
@@ -232,11 +232,9 @@ navig run "v-backup-database admin myapp_prod"  # Backup specific DB
   1. Create a backup first
   2. Show you how many records will be affected
   3. Ask for final confirmation
-  
+
   Proceed?"
 - **Action:**
   1. `navig db dump myapp_prod -o backup_before_delete.sql.gz`
   2. `navig db query "SELECT COUNT(*) FROM users WHERE status='inactive'" -d myapp_prod`
   3. Show: "This will affect 89 users. Type 'CONFIRM DELETE' to proceed."
-
-

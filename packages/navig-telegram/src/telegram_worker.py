@@ -10,6 +10,7 @@ Reads bot token from:
   2. ~/.navig/config.yaml key "telegram_bot_token"
   3. env var TELEGRAM_BOT_TOKEN
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -35,6 +36,7 @@ def _get_token(config: dict[str, Any]) -> str:
     # 2. Global YAML config (~/.navig/config.yaml)
     try:
         import yaml  # noqa: PLC0415
+
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
             data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
@@ -84,9 +86,11 @@ def _load_pack_handlers(app: Any, pack_dir: Path) -> int:
         # Fallback: auto-discover all cmd_* functions
         for attr in dir(module):
             if attr.startswith("cmd_"):
-                command = attr[len("cmd_"):]
+                command = attr[len("cmd_") :]
                 app.add_handler(CommandHandler(command, getattr(module, attr)))
-                logger.info("Telegram: auto-registered /%s from %s", command, pack_dir.name)
+                logger.info(
+                    "Telegram: auto-registered /%s from %s", command, pack_dir.name
+                )
                 count += 1
 
     return count
@@ -106,7 +110,9 @@ def load_all_handlers(app: Any, store_plugins_root: Path) -> int:
     return total
 
 
-def run_worker(config: dict[str, Any], store_plugins_root: Path, stop_event: threading.Event) -> None:
+def run_worker(
+    config: dict[str, Any], store_plugins_root: Path, stop_event: threading.Event
+) -> None:
     """Main worker function - run in a background thread via on_load."""
     from telegram.ext import Application  # noqa: PLC0415
 
@@ -131,6 +137,7 @@ def run_worker(config: dict[str, Any], store_plugins_root: Path, stop_event: thr
             await app.stop()
 
     import asyncio  # noqa: PLC0415
+
     asyncio.run(_run())
 
 

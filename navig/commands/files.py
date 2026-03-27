@@ -1,4 +1,5 @@
 """File Operation Commands"""
+
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -14,7 +15,7 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
@@ -23,12 +24,12 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
         ch.error(f"Local file not found: {local}")
         return
 
-    json_enabled = options.get('json', False)
+    json_enabled = options.get("json", False)
 
     # Smart path detection
     if remote is None:
         server_config = config_manager.load_server_config(server_name)
-        web_root = server_config.get('paths', {}).get('web_root', '/tmp')
+        web_root = server_config.get("paths", {}).get("web_root", "/tmp")
         remote = f"{web_root}/{local.name}"
         if not json_enabled:
             ch.dim(f"Auto-detected remote path: {remote}")
@@ -36,11 +37,11 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
     # Check if upload requires confirmation (uploads are state-changing)
     if not ch.confirm_operation(
         operation_name=f"Upload: {local.name} → {remote}",
-        operation_type='standard',
+        operation_type="standard",
         host=server_name,
         details=f"Size: {local.stat().st_size:,} bytes",
-        auto_confirm=options.get('yes', False),
-        force_confirm=options.get('confirm', False),
+        auto_confirm=options.get("yes", False),
+        force_confirm=options.get("confirm", False),
     ):
         ch.warning("Cancelled.")
         return
@@ -59,9 +60,20 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
 
     if success:
         if json_enabled:
-            ch.raw_print(json.dumps({"success": True, "local": str(local), "remote": remote, "size_bytes": local.stat().st_size}))
+            ch.raw_print(
+                json.dumps(
+                    {
+                        "success": True,
+                        "local": str(local),
+                        "remote": remote,
+                        "size_bytes": local.stat().st_size,
+                    }
+                )
+            )
         else:
-            ch.success("Upload complete. No traces left.")  # void: except in logs. always in logs.
+            ch.success(
+                "Upload complete. No traces left."
+            )  # void: except in logs. always in logs.
     else:
         if json_enabled:
             ch.raw_print(json.dumps({"success": False, "error": "Upload failed"}))
@@ -70,7 +82,7 @@ def upload_file_cmd(local: Path, remote: Optional[str], options: Dict[str, Any])
         ch.info("")
         ch.info("Common causes:")
         ch.info("  1. Permission denied: Check remote directory ownership")
-        ch.info("     Fix: navig run \"chown -R $(whoami) /remote/path\"")
+        ch.info('     Fix: navig run "chown -R $(whoami) /remote/path"')
         ch.info("  2. Directory not found: Create it first")
         ch.info("     Fix: navig mkdir /remote/path --parents")
         ch.info("  3. Disk full: Check space with 'df -h'")
@@ -85,7 +97,7 @@ def download_file_cmd(remote: str, local: Optional[Path], options: Dict[str, Any
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
@@ -110,8 +122,10 @@ def download_file_cmd(remote: str, local: Optional[Path], options: Dict[str, Any
         ch.info("Common causes:")
         ch.info("  1. File not found: Check path with 'navig list /path'")
         ch.info("  2. Permission denied: Check file permissions")
-        ch.info("     Fix: navig run \"chmod 644 /remote/file\"")
-        ch.info("  3. Local disk full: Check space with 'df -h' (Unix) or 'dir' (Windows)")
+        ch.info('     Fix: navig run "chmod 644 /remote/file"')
+        ch.info(
+            "  3. Local disk full: Check space with 'df -h' (Unix) or 'dir' (Windows)"
+        )
         ch.info("  4. Network timeout: Check connection with 'navig tunnel status'")
 
 
@@ -123,7 +137,7 @@ def list_remote_directory(remote_path: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
@@ -135,8 +149,6 @@ def list_remote_directory(remote_path: str, options: Dict[str, Any]):
         ch.raw_print(result.stdout)
     else:
         ch.error(f"Error: {result.stderr}")
-
-
 
 
 from pathlib import Path
@@ -165,19 +177,29 @@ def file_callback(ctx: typer.Context):
 def file_add(
     ctx: typer.Context,
     local: Path = typer.Argument(..., help="Local file/directory path"),
-    remote: Optional[str] = typer.Argument(None, help="Remote path (auto-detected if omitted)"),
-    dir: bool = typer.Option(False, "--dir", "-d", help="Create directory instead of upload"),
-    mode: str = typer.Option("755", "--mode", "-m", help="Permission mode for directories"),
-    parents: bool = typer.Option(True, "--parents", "-p", help="Create parent directories"),
+    remote: Optional[str] = typer.Argument(
+        None, help="Remote path (auto-detected if omitted)"
+    ),
+    dir: bool = typer.Option(
+        False, "--dir", "-d", help="Create directory instead of upload"
+    ),
+    mode: str = typer.Option(
+        "755", "--mode", "-m", help="Permission mode for directories"
+    ),
+    parents: bool = typer.Option(
+        True, "--parents", "-p", help="Create parent directories"
+    ),
 ):
     """Add file/directory to remote (upload or mkdir)."""
     if dir:
         from navig.commands.files_advanced import mkdir_cmd
-        ctx.obj['parents'] = parents
-        ctx.obj['mode'] = mode
+
+        ctx.obj["parents"] = parents
+        ctx.obj["mode"] = mode
         mkdir_cmd(str(local), ctx.obj)
     else:
         from navig.commands.files import upload_file_cmd
+
         upload_file_cmd(local, remote, ctx.obj)
 
 
@@ -188,7 +210,9 @@ def file_list(
     all: bool = typer.Option(False, "--all", "-a", help="Show hidden files"),
     tree: bool = typer.Option(False, "--tree", "-t", help="Show tree structure"),
     depth: int = typer.Option(2, "--depth", "-d", help="Tree depth (with --tree)"),
-    tables: bool = typer.Option(False, "--tables", help="Show database tables (for db list)"),
+    tables: bool = typer.Option(
+        False, "--tables", help="Show database tables (for db list)"
+    ),
     containers: bool = typer.Option(False, "--containers", help="Show containers"),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
@@ -197,9 +221,11 @@ def file_list(
         ctx.obj["json"] = True
     if tree:
         from navig.commands.files_advanced import tree_cmd
+
         tree_cmd(remote_path, ctx.obj, depth=depth, dirs_only=False)
     else:
         from navig.commands.files_advanced import list_dir_cmd
+
         list_dir_cmd(remote_path, ctx.obj, all=all, long=True, human=True)
 
 
@@ -207,8 +233,12 @@ def file_list(
 def file_show(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path"),
-    download: Optional[Path] = typer.Option(None, "--download", "-d", help="Download to local path"),
-    lines: Optional[str] = typer.Option(None, "--lines", "-n", help="Number of lines or range (e.g., 50 or 100-200)"),
+    download: Optional[Path] = typer.Option(
+        None, "--download", "-d", help="Download to local path"
+    ),
+    lines: Optional[str] = typer.Option(
+        None, "--lines", "-n", help="Number of lines or range (e.g., 50 or 100-200)"
+    ),
     head: bool = typer.Option(False, "--head", help="Show first N lines"),
     tail: bool = typer.Option(False, "--tail", "-t", help="Show last N lines"),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
@@ -218,9 +248,11 @@ def file_show(
         ctx.obj["json"] = True
     if download:
         from navig.commands.files import download_file_cmd
+
         download_file_cmd(remote, download, ctx.obj)
     else:
         from navig.commands.files_advanced import cat_file_cmd
+
         cat_file_cmd(remote, ctx.obj, lines=lines, head=head, tail=tail)
 
 
@@ -228,25 +260,42 @@ def file_show(
 def file_edit(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote file path"),
-    content: Optional[str] = typer.Option(None, "--content", "-c", help="Content to write"),
+    content: Optional[str] = typer.Option(
+        None, "--content", "-c", help="Content to write"
+    ),
     mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Set permissions"),
     owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Set ownership"),
-    append: bool = typer.Option(False, "--append", "-a", help="Append instead of overwrite"),
+    append: bool = typer.Option(
+        False, "--append", "-a", help="Append instead of overwrite"
+    ),
     stdin: bool = typer.Option(False, "--stdin", "-s", help="Read from stdin"),
-    from_file: Optional[Path] = typer.Option(None, "--from-file", "-f", help="Read from local file"),
+    from_file: Optional[Path] = typer.Option(
+        None, "--from-file", "-f", help="Read from local file"
+    ),
 ):
     """Edit remote file (write content, change permissions/owner)."""
     if content or stdin or from_file:
         from navig.commands.files_advanced import write_file_cmd
-        write_file_cmd(remote, content, ctx.obj, stdin=stdin, local_file=from_file,
-                       append=append, mode=mode, owner=owner)
+
+        write_file_cmd(
+            remote,
+            content,
+            ctx.obj,
+            stdin=stdin,
+            local_file=from_file,
+            append=append,
+            mode=mode,
+            owner=owner,
+        )
     elif mode:
         from navig.commands.files_advanced import chmod_cmd
-        ctx.obj['recursive'] = False
+
+        ctx.obj["recursive"] = False
         chmod_cmd(remote, mode, ctx.obj)
     elif owner:
         from navig.commands.files_advanced import chown_cmd
-        ctx.obj['recursive'] = False
+
+        ctx.obj["recursive"] = False
         chown_cmd(remote, owner, ctx.obj)
     else:
         ch.error("Specify --content, --mode, or --owner")
@@ -260,6 +309,7 @@ def file_get(
 ):
     """Download file from remote."""
     from navig.commands.files import download_file_cmd
+
     download_file_cmd(remote, local, ctx.obj)
 
 
@@ -267,13 +317,16 @@ def file_get(
 def file_remove(
     ctx: typer.Context,
     remote: str = typer.Argument(..., help="Remote path to delete"),
-    recursive: bool = typer.Option(False, "--recursive", "-r", help="Delete directories recursively"),
+    recursive: bool = typer.Option(
+        False, "--recursive", "-r", help="Delete directories recursively"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Remove remote file or directory."""
     from navig.commands.files_advanced import delete_file_cmd
-    ctx.obj['recursive'] = recursive
-    ctx.obj['force'] = force
+
+    ctx.obj["recursive"] = recursive
+    ctx.obj["force"] = force
     delete_file_cmd(remote, ctx.obj)
 
 

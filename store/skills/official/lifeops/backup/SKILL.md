@@ -59,6 +59,3 @@ restic -r /mnt/backup/repo forget --keep-daily 7 --keep-weekly 4 --prune
 1. **Environment Variables**: Always use `RESTIC_PASSWORD` env var instead of typing passwords.
 2. **Automation**: Run `forget --prune` regularly to reclaim space.
 3. **Verification**: Run `check` weekly to ensure data integrity.
-
-
-

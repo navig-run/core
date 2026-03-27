@@ -36,8 +36,24 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────
 
 SYMBOL_POOL: list[str] = [
-    "■", "◼", "▪", "▪️", "▫", "▫️", "◻", "◾", "◽",
-    "🔹", "🔸", "🔶", "🔷", "•", "◼️", "˙", "∘", "·",
+    "■",
+    "◼",
+    "▪",
+    "▪️",
+    "▫",
+    "▫️",
+    "◻",
+    "◾",
+    "◽",
+    "🔹",
+    "🔸",
+    "🔶",
+    "🔷",
+    "•",
+    "◼️",
+    "˙",
+    "∘",
+    "·",
 ]
 
 # Default heading symbols matching the spec table
@@ -50,22 +66,40 @@ _DEFAULT_BLOCKQUOTE = "❝"
 _DEFAULT_HR = "─────────────"
 
 # Numbered list style options
-NUMBERED_STYLE_EMOJI = "emoji"       # 1️⃣ 2️⃣ …
-NUMBERED_STYLE_PLAIN = "plain"       # 1. 2. …
-NUMBERED_STYLE_ROMAN = "roman"       # i. ii. …
+NUMBERED_STYLE_EMOJI = "emoji"  # 1️⃣ 2️⃣ …
+NUMBERED_STYLE_PLAIN = "plain"  # 1. 2. …
+NUMBERED_STYLE_ROMAN = "roman"  # i. ii. …
 
 OUTPUT_FORMAT_MDV2 = "mdv2"
 OUTPUT_FORMAT_PLAIN = "plain"
 OUTPUT_FORMAT_HTML = "html"
 
 _EMOJI_DIGITS: dict[int, str] = {
-    1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣",
-    6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟",
+    1: "1️⃣",
+    2: "2️⃣",
+    3: "3️⃣",
+    4: "4️⃣",
+    5: "5️⃣",
+    6: "6️⃣",
+    7: "7️⃣",
+    8: "8️⃣",
+    9: "9️⃣",
+    10: "🔟",
 }
 _ROMAN: list[tuple[int, str]] = [
-    (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
-    (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
-    (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i"),
+    (1000, "m"),
+    (900, "cm"),
+    (500, "d"),
+    (400, "cd"),
+    (100, "c"),
+    (90, "xc"),
+    (50, "l"),
+    (40, "xl"),
+    (10, "x"),
+    (9, "ix"),
+    (5, "v"),
+    (4, "iv"),
+    (1, "i"),
 ]
 
 
@@ -82,6 +116,7 @@ def _to_roman(n: int) -> str:
 # FormatterPrefs dataclass
 # ─────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class FormatterPrefs:
     """Per-user formatting preferences."""
@@ -91,8 +126,8 @@ class FormatterPrefs:
     h3_symbol: str = _DEFAULT_H3
     h4_symbol: str = _DEFAULT_H4
     bullet_style: str = _DEFAULT_BULLET
-    numbered_style: str = NUMBERED_STYLE_EMOJI   # emoji | plain | roman
-    output_format: str = OUTPUT_FORMAT_PLAIN     # plain | mdv2 | html
+    numbered_style: str = NUMBERED_STYLE_EMOJI  # emoji | plain | roman
+    output_format: str = OUTPUT_FORMAT_PLAIN  # plain | mdv2 | html
     blockquote_symbol: str = _DEFAULT_BLOCKQUOTE
     hr_symbol: str = _DEFAULT_HR
 
@@ -103,7 +138,9 @@ class FormatterPrefs:
     def from_json(cls, raw: str) -> "FormatterPrefs":
         try:
             data = json.loads(raw)
-            return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+            return cls(
+                **{k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+            )
         except Exception:
             return cls()
 
@@ -143,9 +180,11 @@ class FormatterStore:
     def _connect(self):
         try:
             from navig.storage.engine import Engine
+
             return Engine().connect(self._db_path)
         except Exception:
             import sqlite3
+
             return sqlite3.connect(self._db_path, check_same_thread=False)
 
     def _ensure_schema(self) -> None:
@@ -333,6 +372,7 @@ class MarkdownFormatter:
 # Settings keyboard helpers
 # ─────────────────────────────────────────────────────────────────
 
+
 def build_formatter_settings_keyboard(
     prefs: FormatterPrefs,
 ) -> list[list[dict]]:
@@ -345,18 +385,22 @@ def build_formatter_settings_keyboard(
     rows: list[list[dict]] = []
 
     # Row: Heading symbols
-    rows.append([
-        {"text": f"H1: {prefs.h1_symbol}", "callback_data": "fmt:h1"},
-        {"text": f"H2: {prefs.h2_symbol}", "callback_data": "fmt:h2"},
-        {"text": f"H3: {prefs.h3_symbol}", "callback_data": "fmt:h3"},
-        {"text": f"H4: {prefs.h4_symbol}", "callback_data": "fmt:h4"},
-    ])
+    rows.append(
+        [
+            {"text": f"H1: {prefs.h1_symbol}", "callback_data": "fmt:h1"},
+            {"text": f"H2: {prefs.h2_symbol}", "callback_data": "fmt:h2"},
+            {"text": f"H3: {prefs.h3_symbol}", "callback_data": "fmt:h3"},
+            {"text": f"H4: {prefs.h4_symbol}", "callback_data": "fmt:h4"},
+        ]
+    )
 
     # Row: Bullet + numbered style
-    rows.append([
-        {"text": f"Bullet: {prefs.bullet_style}", "callback_data": "fmt:bullet"},
-        {"text": f"Nums: {prefs.numbered_style}", "callback_data": "fmt:nums"},
-    ])
+    rows.append(
+        [
+            {"text": f"Bullet: {prefs.bullet_style}", "callback_data": "fmt:bullet"},
+            {"text": f"Nums: {prefs.numbered_style}", "callback_data": "fmt:nums"},
+        ]
+    )
 
     # Row: Output format
     fmt_labels = {
@@ -364,17 +408,20 @@ def build_formatter_settings_keyboard(
         OUTPUT_FORMAT_MDV2: "✏️ MDv2",
         OUTPUT_FORMAT_HTML: "🌐 HTML",
     }
-    rows.append([
-        {"text": f"Format: {fmt_labels.get(prefs.output_format, prefs.output_format)}", "callback_data": "fmt:outfmt"},
-        {"text": "✅ Done", "callback_data": "fmt:done"},
-    ])
+    rows.append(
+        [
+            {
+                "text": f"Format: {fmt_labels.get(prefs.output_format, prefs.output_format)}",
+                "callback_data": "fmt:outfmt",
+            },
+            {"text": "✅ Done", "callback_data": "fmt:done"},
+        ]
+    )
 
     return rows
 
 
-def build_symbol_picker_keyboard(
-    heading_level: str, current: str
-) -> list[list[dict]]:
+def build_symbol_picker_keyboard(heading_level: str, current: str) -> list[list[dict]]:
     """
     Build a symbol picker keyboard for heading level *heading_level*
     (``h1`` / ``h2`` / ``h3`` / ``h4``).
@@ -383,10 +430,12 @@ def build_symbol_picker_keyboard(
     row: list[dict] = []
     for sym in SYMBOL_POOL:
         marker = "✓ " if sym == current else ""
-        row.append({
-            "text": f"{marker}{sym}",
-            "callback_data": f"fmt:sym:{heading_level}:{sym}",
-        })
+        row.append(
+            {
+                "text": f"{marker}{sym}",
+                "callback_data": f"fmt:sym:{heading_level}:{sym}",
+            }
+        )
         if len(row) == 5:
             rows.append(row)
             row = []
@@ -413,7 +462,10 @@ def build_numbered_picker_keyboard(current: str) -> list[list[dict]]:
         (NUMBERED_STYLE_ROMAN, "i. Roman"),
     ]
     row = [
-        {"text": ("✓ " if val == current else "") + label, "callback_data": f"fmt:numstyle:{val}"}
+        {
+            "text": ("✓ " if val == current else "") + label,
+            "callback_data": f"fmt:numstyle:{val}",
+        }
         for val, label in options
     ]
     return [row, [{"text": "⬅ Back", "callback_data": "fmt:back"}]]
@@ -426,7 +478,10 @@ def build_outfmt_picker_keyboard(current: str) -> list[list[dict]]:
         (OUTPUT_FORMAT_HTML, "🌐 HTML"),
     ]
     row = [
-        {"text": ("✓ " if val == current else "") + label, "callback_data": f"fmt:of:{val}"}
+        {
+            "text": ("✓ " if val == current else "") + label,
+            "callback_data": f"fmt:of:{val}",
+        }
         for val, label in options
     ]
     return [row, [{"text": "⬅ Back", "callback_data": "fmt:back"}]]

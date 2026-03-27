@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, List, Optional
@@ -11,6 +10,7 @@ class EvolutionResult:
     error: str = ""
     history: List[str] = None
     attempts: int = 0
+
 
 class BaseEvolver(ABC):
     """Abstract base class for evolving artifacts."""
@@ -36,14 +36,20 @@ class BaseEvolver(ABC):
         for attempt in range(1, self.max_retries + 1):
             # Generate / Refine
             try:
-                new_artifact = self._generate(goal, current_artifact, current_error, context)
+                new_artifact = self._generate(
+                    goal, current_artifact, current_error, context
+                )
             except Exception as e:
-                return EvolutionResult(False, error=f"Generation failed: {e}", attempts=attempt)
+                return EvolutionResult(
+                    False, error=f"Generation failed: {e}", attempts=attempt
+                )
 
             if not new_artifact:
-                 return EvolutionResult(False, error="Generator returned empty artifact", attempts=attempt)
+                return EvolutionResult(
+                    False, error="Generator returned empty artifact", attempts=attempt
+                )
 
-            self.history.append(str(new_artifact)[:500]) # Store snippet
+            self.history.append(str(new_artifact)[:500])  # Store snippet
 
             # Validate / Test
             validation_error = self._validate(new_artifact, context)
@@ -51,19 +57,25 @@ class BaseEvolver(ABC):
             if not validation_error:
                 # Success!
                 self._save(goal, new_artifact)
-                return EvolutionResult(True, artifact=new_artifact, attempts=attempt, history=self.history)
+                return EvolutionResult(
+                    True, artifact=new_artifact, attempts=attempt, history=self.history
+                )
 
             current_artifact = new_artifact
             current_error = validation_error
 
-        return EvolutionResult(False, error=current_error, attempts=self.max_retries, history=self.history)
+        return EvolutionResult(
+            False, error=current_error, attempts=self.max_retries, history=self.history
+        )
 
     def _check_cache(self, goal: str) -> Optional[Any]:
         """Override to check existing libraries."""
         return None
 
     @abstractmethod
-    def _generate(self, goal: str, previous_artifact: Any, error: str, context: Any) -> Any:
+    def _generate(
+        self, goal: str, previous_artifact: Any, error: str, context: Any
+    ) -> Any:
         """Generate or refine the artifact."""
         pass
 

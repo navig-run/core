@@ -47,7 +47,7 @@ examples:
   - user: "Click close button at 1900, 10"
     thought: "User specified coordinates."
     command: "navig windows click 1900 10"
-    
+
   - user: "Type 'Hello World'"
     thought: "User wants to send keystrokes."
     command: "navig windows type 'Hello World'"
@@ -60,5 +60,3 @@ Powered by AutoHotkey v2. Allows low-level UI interaction.
 ## Prerequisites
 - Windows OS
 - AutoHotkey v2 installed (Plugin will attempt detection)
-
-

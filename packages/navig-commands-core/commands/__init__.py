@@ -7,6 +7,7 @@ to its async handle(args, ctx) coroutine.
 The pack scanner and channel adapters (Telegram, Discord, CLI) all import
 COMMANDS from here - adding a new command means adding one entry to this dict.
 """
+
 from __future__ import annotations
 
 from .checkdomain import handle as _checkdomain_handle

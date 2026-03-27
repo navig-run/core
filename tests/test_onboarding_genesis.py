@@ -1,6 +1,7 @@
 """
 Tests for navig.onboarding.genesis — GenesisData creation, determinism, immutability.
 """
+
 from __future__ import annotations
 
 import json
@@ -8,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-
 # ── 1. Node ID is deterministic given same inputs ────────────────────────────
+
 
 def test_node_id_is_deterministic(tmp_path: Path) -> None:
     from navig.onboarding.genesis import _derive_node_id
@@ -23,6 +24,7 @@ def test_node_id_is_deterministic(tmp_path: Path) -> None:
 
 # ── 2. Avatar seed is deterministic ──────────────────────────────────────────
 
+
 def test_avatar_seed_is_deterministic() -> None:
     from navig.onboarding.genesis import _derive_avatar_seed
 
@@ -34,6 +36,7 @@ def test_avatar_seed_is_deterministic() -> None:
 
 
 # ── 3. load_or_create is idempotent — second call returns same genesis ────────
+
 
 def test_load_or_create_is_idempotent(tmp_path: Path) -> None:
     from navig.onboarding.genesis import load_or_create
@@ -50,6 +53,7 @@ def test_load_or_create_is_idempotent(tmp_path: Path) -> None:
 
 # ── 4. genesis.json is immutable — second call with different name keeps original ─
 
+
 def test_genesis_json_immutable_after_first_write(tmp_path: Path) -> None:
     from navig.onboarding.genesis import load_or_create
 
@@ -63,8 +67,13 @@ def test_genesis_json_immutable_after_first_write(tmp_path: Path) -> None:
 
 # ── 5. render_qr_terminal and render_genesis_banner never raise ──────────────
 
+
 def test_render_functions_never_raise(tmp_path: Path) -> None:
-    from navig.onboarding.genesis import load_or_create, render_genesis_banner, render_qr_terminal
+    from navig.onboarding.genesis import (
+        load_or_create,
+        render_genesis_banner,
+        render_qr_terminal,
+    )
 
     genesis = load_or_create(tmp_path, "test-node")
 

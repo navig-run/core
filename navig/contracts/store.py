@@ -40,8 +40,8 @@ class RuntimeStore:
 
     def __init__(self, store_dir: Optional[Path] = None) -> None:
         self._dir = Path(store_dir) if store_dir else _DEFAULT_STORE_DIR
-        self._nodes:    Dict[str, Node]             = {}
-        self._missions: Dict[str, Mission]          = {}
+        self._nodes: Dict[str, Node] = {}
+        self._missions: Dict[str, Mission] = {}
         self._receipts: Dict[str, ExecutionReceipt] = {}
         self._load()
 
@@ -187,9 +187,13 @@ class RuntimeStore:
         """Write current state to disk."""
         try:
             self._dir.mkdir(parents=True, exist_ok=True)
-            self._write_file("nodes.json",    [n.to_dict() for n in self._nodes.values()])
-            self._write_file("missions.json", [m.to_dict() for m in self._missions.values()])
-            self._write_file("receipts.json", [r.to_dict() for r in self._receipts.values()])
+            self._write_file("nodes.json", [n.to_dict() for n in self._nodes.values()])
+            self._write_file(
+                "missions.json", [m.to_dict() for m in self._missions.values()]
+            )
+            self._write_file(
+                "receipts.json", [r.to_dict() for r in self._receipts.values()]
+            )
         except Exception as e:
             logger.warning(f"[RuntimeStore] Flush failed: {e}")
 
@@ -233,7 +237,7 @@ class RuntimeStore:
 
     def stats(self) -> dict:
         return {
-            "nodes":    len(self._nodes),
+            "nodes": len(self._nodes),
             "missions": len(self._missions),
             "receipts": len(self._receipts),
         }
@@ -263,6 +267,7 @@ def reset_runtime_store(store_dir: Optional[Path] = None) -> RuntimeStore:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()

@@ -29,6 +29,7 @@ logger = logging.getLogger("navig.skills_renderer")
 
 try:
     from pydantic import BaseModel, Field
+
     PYDANTIC_OK = True
 except ImportError:
     PYDANTIC_OK = False
@@ -37,12 +38,14 @@ if PYDANTIC_OK:
 
     class SkillCommand(BaseModel):
         """A single command exposed by a skill."""
+
         name: str = ""
         signature: str = ""
         description: str = ""
 
     class SkillManifest(BaseModel):
         """JSON skill manifest (skills/<skill_id>.json)."""
+
         id: str = ""
         name: str = ""
         summary: str = ""
@@ -73,6 +76,7 @@ Commands:
 # Path Resolution
 # ─────────────────────────────────────────────────────────────
 
+
 def _get_skills_dirs() -> List[Path]:
     """Get all directories where skills may live.
 
@@ -82,6 +86,7 @@ def _get_skills_dirs() -> List[Path]:
     """
     try:
         from navig.skills.loader import get_skill_dirs
+
         return get_skill_dirs()
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -90,6 +95,7 @@ def _get_skills_dirs() -> List[Path]:
     dirs: list[Path] = []
     try:
         from navig.platform.paths import builtin_store_dir
+
         d = builtin_store_dir() / "skills"
         if d.exists():
             dirs.append(d)
@@ -147,6 +153,7 @@ def _find_skill_md(skill_id: str) -> Optional[Path]:
 # Loaders
 # ─────────────────────────────────────────────────────────────
 
+
 def _load_skill_json(skill_id: str) -> Optional[Dict[str, Any]]:
     """Load a skill JSON manifest and return as dict."""
     path = _find_skill_json(skill_id)
@@ -186,10 +193,12 @@ def _load_skill_md(skill_id: str, max_lines: int = 50) -> Optional[str]:
 # Renderer
 # ─────────────────────────────────────────────────────────────
 
+
 def _get_context_skills_mode() -> str:
     """Get the configured context_skills.mode from config. Default: 'auto'."""
     try:
         from navig.config import get_config_manager
+
         cm = get_config_manager()
         raw = cm.global_config or {}
         ctx = raw.get("context_skills", {})
@@ -230,13 +239,15 @@ def render_skills_prompt(
         elif mode == "md":
             md = _load_skill_md(sid)
             if md:
-                skills_data.append({
-                    "id": sid,
-                    "name": sid,
-                    "summary": "",
-                    "commands": [],
-                    "_md_content": md,
-                })
+                skills_data.append(
+                    {
+                        "id": sid,
+                        "name": sid,
+                        "summary": "",
+                        "commands": [],
+                        "_md_content": md,
+                    }
+                )
 
         else:  # "auto" — prefer JSON, fall back to .md
             data = _load_skill_json(sid)
@@ -245,13 +256,15 @@ def render_skills_prompt(
             else:
                 md = _load_skill_md(sid)
                 if md:
-                    skills_data.append({
-                        "id": sid,
-                        "name": sid,
-                        "summary": "",
-                        "commands": [],
-                        "_md_content": md,
-                    })
+                    skills_data.append(
+                        {
+                            "id": sid,
+                            "name": sid,
+                            "summary": "",
+                            "commands": [],
+                            "_md_content": md,
+                        }
+                    )
 
     if not skills_data:
         return ""
@@ -267,6 +280,7 @@ def render_skills_prompt(
         template = template_str or _load_template() or DEFAULT_SKILLS_TEMPLATE
         try:
             from jinja2 import Template
+
             tmpl = Template(template)
             rendered = tmpl.render(skills=json_skills)
             parts.append(rendered.strip())
@@ -306,7 +320,9 @@ def _manual_render(skills: List[Dict[str, Any]]) -> str:
     """Render skills prompt without Jinja2."""
     lines = ["You have access to the following tools/skills:", ""]
     for s in skills:
-        lines.append(f"[{s.get('id', '?')}] {s.get('name', '')} — {s.get('summary', '')}")
+        lines.append(
+            f"[{s.get('id', '?')}] {s.get('name', '')} — {s.get('summary', '')}"
+        )
         lines.append("Commands:")
         for cmd in s.get("commands", []):
             lines.append(f"- {cmd.get('signature', '')} : {cmd.get('description', '')}")

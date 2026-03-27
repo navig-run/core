@@ -21,6 +21,7 @@ def _get_playwright():
     if _playwright is None:
         try:
             from playwright.async_api import async_playwright
+
             _playwright = async_playwright
         except ImportError as _exc:
             raise ImportError(
@@ -32,6 +33,7 @@ def _get_playwright():
 @dataclass
 class BrowserConfig:
     """Browser configuration."""
+
     enabled: bool = True
     headless: bool = True
     timeout_ms: int = 30000
@@ -47,44 +49,44 @@ class BrowserConfig:
     blocked_domains: List[str] = field(default_factory=list)
 
     @classmethod
-    def from_config(cls, config: dict) -> 'BrowserConfig':
+    def from_config(cls, config: dict) -> "BrowserConfig":
         """Load from navig config dict."""
-        browser_cfg = config.get('browser', {})
-        viewport = browser_cfg.get('viewport', {})
+        browser_cfg = config.get("browser", {})
+        viewport = browser_cfg.get("viewport", {})
 
         return cls(
-            enabled=browser_cfg.get('enabled', True),
-            headless=browser_cfg.get('headless', True),
-            timeout_ms=browser_cfg.get('timeout_seconds', 30) * 1000,
-            viewport_width=viewport.get('width', 1280),
-            viewport_height=viewport.get('height', 720),
-            user_data_dir=browser_cfg.get('user_data_dir'),
-            screenshot_dir=browser_cfg.get('screenshot_dir', '~/.navig/screenshots'),
-            proxy=browser_cfg.get('proxy'),
-            ignore_https_errors=browser_cfg.get('ignore_https_errors', False),
-            allowed_domains=browser_cfg.get('allowed_domains', []),
-            blocked_domains=browser_cfg.get('blocked_domains', []),
+            enabled=browser_cfg.get("enabled", True),
+            headless=browser_cfg.get("headless", True),
+            timeout_ms=browser_cfg.get("timeout_seconds", 30) * 1000,
+            viewport_width=viewport.get("width", 1280),
+            viewport_height=viewport.get("height", 720),
+            user_data_dir=browser_cfg.get("user_data_dir"),
+            screenshot_dir=browser_cfg.get("screenshot_dir", "~/.navig/screenshots"),
+            proxy=browser_cfg.get("proxy"),
+            ignore_https_errors=browser_cfg.get("ignore_https_errors", False),
+            allowed_domains=browser_cfg.get("allowed_domains", []),
+            blocked_domains=browser_cfg.get("blocked_domains", []),
         )
 
 
 class BrowserController:
     """
     Playwright-based browser automation controller.
-    
+
     Provides high-level browser operations for autonomous agent use.
-    
+
     Example:
         controller = BrowserController()
         await controller.start()
-        
+
         result = await controller.navigate("https://example.com")
         print(result['title'])
-        
+
         await controller.fill("#search", "query")
         await controller.click("#submit")
-        
+
         path = await controller.screenshot()
-        
+
         await controller.stop()
     """
 
@@ -142,10 +144,13 @@ class BrowserController:
             user_data.mkdir(parents=True, exist_ok=True)
 
             self._context = await self._playwright.chromium.launch_persistent_context(
-                user_data_path=str(user_data),
-                **{**launch_opts, **context_opts}
+                user_data_path=str(user_data), **{**launch_opts, **context_opts}
             )
-            self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+            self._page = (
+                self._context.pages[0]
+                if self._context.pages
+                else await self._context.new_page()
+            )
         else:
             self._browser = await self._playwright.chromium.launch(**launch_opts)
             self._context = await self._browser.new_context(**context_opts)
@@ -185,14 +190,14 @@ class BrowserController:
 
         # Check blocked domains
         for blocked in self.config.blocked_domains:
-            pattern = blocked.lower().replace('*', '')
+            pattern = blocked.lower().replace("*", "")
             if pattern in domain:
                 return False
 
         # Check allowed domains (if specified)
         if self.config.allowed_domains:
             for allowed in self.config.allowed_domains:
-                pattern = allowed.lower().replace('*', '')
+                pattern = allowed.lower().replace("*", "")
                 if pattern in domain:
                     return True
             return False
@@ -200,17 +205,15 @@ class BrowserController:
         return True
 
     async def navigate(
-        self,
-        url: str,
-        wait_until: str = "domcontentloaded"
+        self, url: str, wait_until: str = "domcontentloaded"
     ) -> Dict[str, Any]:
         """
         Navigate to URL.
-        
+
         Args:
             url: URL to navigate to
             wait_until: Wait condition (domcontentloaded, load, networkidle)
-        
+
         Returns:
             Dict with page info (title, url, status)
         """
@@ -265,16 +268,16 @@ class BrowserController:
         self,
         name: Optional[str] = None,
         full_page: bool = False,
-        selector: Optional[str] = None
+        selector: Optional[str] = None,
     ) -> str:
         """
         Take screenshot of current page.
-        
+
         Args:
             name: Filename (auto-generated if not provided)
             full_page: Capture full scrollable page
             selector: Capture specific element only
-        
+
         Returns:
             Path to saved screenshot
         """
@@ -283,8 +286,8 @@ class BrowserController:
         if not name:
             name = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
 
-        if not name.endswith('.png'):
-            name += '.png'
+        if not name.endswith(".png"):
+            name += ".png"
 
         path = self._screenshot_dir / name
 
@@ -303,9 +306,10 @@ class BrowserController:
     async def screenshot_base64(self, quality: int = 60) -> str:
         """Take screenshot of current page and return as base64 string."""
         import base64
+
         await self._ensure_started()
         screenshot_bytes = await self._page.screenshot(type="jpeg", quality=quality)
-        return base64.b64encode(screenshot_bytes).decode('utf-8')
+        return base64.b64encode(screenshot_bytes).decode("utf-8")
 
     # ──────────────────────────────────────────────────────────────────────────
     # A11Y INTELLIGENCE — Phase 1+2 additions
@@ -313,7 +317,7 @@ class BrowserController:
 
     async def get_a11y_tree(self) -> str:
         """Return Playwright ARIA snapshot as text (Playwright 1.46+).
-        
+
         Returns empty string on any failure (canvas page, PDF viewer, etc.).
         This replaces the deprecated page.accessibility API removed in PW 1.57.
         """
@@ -354,7 +358,9 @@ class BrowserController:
                 rest = stripped[2:]
                 # Extract role (first word) and name (quoted string if present)
                 m = _re.match(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?', rest)
-                role = m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
+                role = (
+                    m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
+                )
                 name = (m.group(2) or m.group(3) or "").strip() if m else ""
 
                 ref_map[ref_id] = {"role": role, "name": name, "raw_line": line}
@@ -366,7 +372,9 @@ class BrowserController:
 
         return "\n".join(annotated_lines), ref_map
 
-    async def click_by_ref(self, ref_id: int, ref_map: dict, timeout: int = 5000) -> dict:
+    async def click_by_ref(
+        self, ref_id: int, ref_map: dict, timeout: int = 5000
+    ) -> dict:
         """Click an element by its ARIA ref ID.
 
         Uses get_by_role(role, name=name) for maximum cross-browser reliability.
@@ -415,13 +423,18 @@ class BrowserController:
             )
             return {"ok": True}
         except Exception as exc:
-            logger.debug("[fill_fast] JS inject failed, falling back to fill(): %s", exc)
+            logger.debug(
+                "[fill_fast] JS inject failed, falling back to fill(): %s", exc
+            )
             try:
                 await self._page.fill(selector, text, timeout=timeout)
                 return {"ok": True}
             except Exception as exc2:
-                return {"ok": False, "error": str(exc2)[:200],
-                        "suggestion": "Element may not be visible or interactable"}
+                return {
+                    "ok": False,
+                    "error": str(exc2)[:200],
+                    "suggestion": "Element may not be visible or interactable",
+                }
 
     async def wait_for_stable(self, timeout_ms: int = 3000) -> None:
         """Wait for the page to settle: network idle + short DOM-settle pause.
@@ -441,7 +454,8 @@ class BrowserController:
         This is ~10x faster than calling query_selector_all repeatedly.
         """
         try:
-            return await self._page.evaluate(f"""() => {{
+            return await self._page.evaluate(
+                f"""() => {{
                 const SELECTOR = [
                     'a[href]', 'button', 'input', 'textarea', 'select',
                     '[role="button"]', '[role="link"]', '[role="textbox"]',
@@ -466,7 +480,8 @@ class BrowserController:
                             h: Math.round(r.height),
                         }};
                     }});
-            }}""")
+            }}"""
+            )
         except Exception as exc:
             logger.debug("[interactive_elements] JS eval failed: %s", exc)
             return []
@@ -478,11 +493,13 @@ class BrowserController:
         Call this once after start(), before navigating to the target URL.
         """
         blocked = {"image", "font", "media"}
+
         async def _handler(route, request):
             if request.resource_type in blocked:
                 await route.abort()
             else:
                 await route.continue_()
+
         await self._page.route("**/*", _handler)
 
     async def safe_click(self, selector: str, timeout: int = 5000) -> dict:
@@ -493,12 +510,17 @@ class BrowserController:
         except Exception as exc:
             err = str(exc)
             suggestion = (
-                "scroll into view" if "not visible" in err else
-                "wait for element" if "timeout"     in err else
-                "check selector syntax"
+                "scroll into view"
+                if "not visible" in err
+                else "wait for element" if "timeout" in err else "check selector syntax"
             )
-            return {"ok": False, "error": type(exc).__name__,
-                    "selector": selector, "detail": err[:200], "suggestion": suggestion}
+            return {
+                "ok": False,
+                "error": type(exc).__name__,
+                "selector": selector,
+                "detail": err[:200],
+                "suggestion": suggestion,
+            }
 
     async def safe_fill(self, selector: str, text: str, timeout: int = 5000) -> dict:
         """Fill with AI-readable structured error output."""
@@ -507,9 +529,13 @@ class BrowserController:
             return {"ok": True}
         except Exception as exc:
             err = str(exc)
-            return {"ok": False, "error": type(exc).__name__,
-                    "selector": selector, "detail": err[:200],
-                    "suggestion": "Element may be hidden or read-only"}
+            return {
+                "ok": False,
+                "error": type(exc).__name__,
+                "selector": selector,
+                "detail": err[:200],
+                "suggestion": "Element may be hidden or read-only",
+            }
 
     async def get_content(self) -> str:
         """Get page HTML content."""
@@ -548,30 +574,23 @@ class BrowserController:
         return await self._page.evaluate(script)
 
     async def wait_for_selector(
-        self,
-        selector: str,
-        timeout: Optional[int] = None,
-        state: str = "visible"
+        self, selector: str, timeout: Optional[int] = None, state: str = "visible"
     ) -> bool:
         """
         Wait for element to appear.
-        
+
         Args:
             selector: CSS selector
             timeout: Timeout in ms (uses default if not specified)
             state: visible, hidden, attached, detached
-        
+
         Returns:
             True if element found, False if timeout
         """
         await self._ensure_started()
 
         try:
-            await self._page.wait_for_selector(
-                selector,
-                timeout=timeout,
-                state=state
-            )
+            await self._page.wait_for_selector(selector, timeout=timeout, state=state)
             return True
         except Exception:
             return False
@@ -610,7 +629,9 @@ class BrowserController:
         await self._page.hover(selector)
         return True
 
-    async def scroll(self, selector: Optional[str] = None, x: int = 0, y: int = 0) -> bool:
+    async def scroll(
+        self, selector: Optional[str] = None, x: int = 0, y: int = 0
+    ) -> bool:
         """Scroll page or element."""
         await self._ensure_started()
 
@@ -669,7 +690,7 @@ class BrowserController:
     async def pdf(self, path: Optional[str] = None) -> str:
         """
         Save page as PDF (only works in headless mode).
-        
+
         Returns path to saved PDF.
         """
         await self._ensure_started()
@@ -678,7 +699,10 @@ class BrowserController:
             raise RuntimeError("PDF generation only works in headless mode")
 
         if not path:
-            path = str(self._screenshot_dir / f"page_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+            path = str(
+                self._screenshot_dir
+                / f"page_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            )
 
         await self._page.pdf(path=path)
         return path
@@ -686,7 +710,7 @@ class BrowserController:
     async def query_selector_all(self, selector: str) -> List[Dict[str, Any]]:
         """
         Query all matching elements and return their basic info.
-        
+
         Returns list of dicts with tag, text, and common attributes.
         """
         await self._ensure_started()
@@ -702,13 +726,15 @@ class BrowserController:
             id_attr = await el.get_attribute("id")
             class_attr = await el.get_attribute("class")
 
-            results.append({
-                "tag": tag,
-                "text": text,
-                "href": href,
-                "src": src,
-                "id": id_attr,
-                "class": class_attr,
-            })
+            results.append(
+                {
+                    "tag": tag,
+                    "text": text,
+                    "href": href,
+                    "src": src,
+                    "id": id_attr,
+                    "class": class_attr,
+                }
+            )
 
         return results

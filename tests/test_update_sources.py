@@ -1,4 +1,5 @@
 """Tests for navig.update.sources — update source adapters."""
+
 from __future__ import annotations
 
 import json
@@ -16,10 +17,10 @@ from navig.update.sources import (
     build_source,
 )
 
-
 # ---------------------------------------------------------------------------
 # PyPISource
 # ---------------------------------------------------------------------------
+
 
 class TestPyPISource:
     def _mock_urlopen(self, body: dict):
@@ -59,6 +60,7 @@ class TestPyPISource:
 # GitHubSource
 # ---------------------------------------------------------------------------
 
+
 class TestGitHubSource:
     def _mock_urlopen(self, tag: str):
         cm = MagicMock()
@@ -93,6 +95,7 @@ class TestGitHubSource:
 # ArtifactURLSource
 # ---------------------------------------------------------------------------
 
+
 class TestArtifactURLSource:
     def _mock_urlopen(self, body: str):
         cm = MagicMock()
@@ -103,20 +106,22 @@ class TestArtifactURLSource:
 
     def test_json_response(self):
         source = ArtifactURLSource(url="http://example.com/version.json")
-        with patch("urllib.request.urlopen",
-                   return_value=self._mock_urlopen('{"version": "3.0.0"}')):
+        with patch(
+            "urllib.request.urlopen",
+            return_value=self._mock_urlopen('{"version": "3.0.0"}'),
+        ):
             assert source.latest_version() == "3.0.0"
 
     def test_plain_text_fallback(self):
         source = ArtifactURLSource(url="http://example.com/version.txt")
-        with patch("urllib.request.urlopen",
-                   return_value=self._mock_urlopen("3.1.2")):
+        with patch("urllib.request.urlopen", return_value=self._mock_urlopen("3.1.2")):
             assert source.latest_version() == "3.1.2"
 
     def test_unparseable_raises(self):
         source = ArtifactURLSource(url="http://example.com/bad")
-        with patch("urllib.request.urlopen",
-                   return_value=self._mock_urlopen("no version here")):
+        with patch(
+            "urllib.request.urlopen", return_value=self._mock_urlopen("no version here")
+        ):
             with pytest.raises(SourceError):
                 source.latest_version()
 
@@ -124,6 +129,7 @@ class TestArtifactURLSource:
 # ---------------------------------------------------------------------------
 # LocalFileSource
 # ---------------------------------------------------------------------------
+
 
 class TestLocalFileSource:
     def test_reads_version(self, tmp_path):
@@ -144,6 +150,7 @@ class TestLocalFileSource:
 # ---------------------------------------------------------------------------
 # build_source factory
 # ---------------------------------------------------------------------------
+
 
 class TestBuildSource:
     def test_pypi(self):

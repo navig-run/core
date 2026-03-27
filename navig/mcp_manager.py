@@ -17,7 +17,7 @@ class MCPServer:
 
     def __init__(self, name: str, config: Dict[str, Any]):
         """Initialize MCP server.
-        
+
         Args:
             name: Server name (unique identifier)
             config: Server configuration dict with:
@@ -34,7 +34,7 @@ class MCPServer:
 
     def is_enabled(self) -> bool:
         """Check if server is enabled."""
-        return self.config.get('enabled', False)
+        return self.config.get("enabled", False)
 
     def is_running(self) -> bool:
         """Check if server process is running."""
@@ -49,9 +49,9 @@ class MCPServer:
             return True
 
         try:
-            command = self.config.get('command')
-            args = self.config.get('args', [])
-            env_overrides = self.config.get('env', {})
+            command = self.config.get("command")
+            args = self.config.get("args", [])
+            env_overrides = self.config.get("env", {})
 
             full_command = [command] + args
 
@@ -59,6 +59,7 @@ class MCPServer:
             # Previously: env=env stripped all parent environment variables
             # Now: Start with full environment and apply custom overrides
             import os
+
             full_env = os.environ.copy()
             full_env.update(env_overrides)
 
@@ -69,7 +70,7 @@ class MCPServer:
                 full_command,
                 env=full_env,  # Use merged environment instead of only custom env
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
             )
 
             ch.success(f"MCP server '{self.name}' started (PID: {self.process.pid})")
@@ -111,12 +112,12 @@ class MCPServer:
     def get_status(self) -> Dict[str, Any]:
         """Get server status information."""
         return {
-            'name': self.name,
-            'enabled': self.is_enabled(),
-            'running': self.is_running(),
-            'pid': self.process.pid if self.is_running() else None,
-            'type': self.config.get('type'),
-            'command': self.config.get('command')
+            "name": self.name,
+            "enabled": self.is_enabled(),
+            "running": self.is_running(),
+            "pid": self.process.pid if self.is_running() else None,
+            "type": self.config.get("type"),
+            "command": self.config.get("command"),
         }
 
 
@@ -127,17 +128,17 @@ class MCPManager:
 
     def __init__(self, config_dir: Optional[Path] = None):
         """Initialize MCP manager.
-        
+
         Args:
             config_dir: Configuration directory (default: ~/.navig/mcp/)
         """
         if config_dir is None:
-            config_dir = Path.home() / '.navig' / 'mcp'
+            config_dir = Path.home() / ".navig" / "mcp"
 
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        self.servers_file = self.config_dir / 'servers.json'
+        self.servers_file = self.config_dir / "servers.json"
         self.servers: Dict[str, MCPServer] = {}
 
         self._load_servers()
@@ -149,7 +150,7 @@ class MCPManager:
             return
 
         try:
-            with open(self.servers_file, 'r') as f:
+            with open(self.servers_file, "r") as f:
                 servers_config = json.load(f)
 
             for name, config in servers_config.items():
@@ -165,11 +166,10 @@ class MCPManager:
         """Save MCP servers to configuration file."""
         try:
             servers_config = {
-                name: server.config
-                for name, server in self.servers.items()
+                name: server.config for name, server in self.servers.items()
             }
 
-            with open(self.servers_file, 'w') as f:
+            with open(self.servers_file, "w") as f:
                 json.dump(servers_config, f, indent=2)
 
             ch.dim(f"Saved {len(self.servers)} MCP server(s)")
@@ -179,10 +179,10 @@ class MCPManager:
 
     def search_directory(self, query: str) -> List[Dict[str, Any]]:
         """Search MCP directory for servers.
-        
+
         Args:
             query: Search query string
-            
+
         Returns:
             List of matching server metadata
         """
@@ -195,77 +195,79 @@ class MCPManager:
             # Reference: https://github.com/modelcontextprotocol/servers
             common_servers = [
                 {
-                    'name': 'filesystem',
-                    'description': 'Access local filesystem with configurable allowed directories',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-filesystem'
+                    "name": "filesystem",
+                    "description": "Access local filesystem with configurable allowed directories",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-filesystem",
                 },
                 {
-                    'name': 'github',
-                    'description': 'GitHub API integration for repositories, issues, PRs',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-github'
+                    "name": "github",
+                    "description": "GitHub API integration for repositories, issues, PRs",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-github",
                 },
                 {
-                    'name': 'sqlite',
-                    'description': 'SQLite database access and querying',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-sqlite'
+                    "name": "sqlite",
+                    "description": "SQLite database access and querying",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-sqlite",
                 },
                 {
-                    'name': 'brave-search',
-                    'description': 'Web search via Brave Search API',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-brave-search'
+                    "name": "brave-search",
+                    "description": "Web search via Brave Search API",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-brave-search",
                 },
                 {
-                    'name': 'memory',
-                    'description': 'Persistent knowledge graph memory for context',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-memory'
+                    "name": "memory",
+                    "description": "Persistent knowledge graph memory for context",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-memory",
                 },
                 {
-                    'name': 'puppeteer',
-                    'description': 'Browser automation for web scraping and interaction',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-puppeteer'
+                    "name": "puppeteer",
+                    "description": "Browser automation for web scraping and interaction",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-puppeteer",
                 },
                 {
-                    'name': 'fetch',
-                    'description': 'HTTP fetch capabilities for web content retrieval',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-fetch'
+                    "name": "fetch",
+                    "description": "HTTP fetch capabilities for web content retrieval",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-fetch",
                 },
                 {
-                    'name': 'slack',
-                    'description': 'Slack workspace integration for channels and messages',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-slack'
+                    "name": "slack",
+                    "description": "Slack workspace integration for channels and messages",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-slack",
                 },
                 {
-                    'name': 'postgres',
-                    'description': 'PostgreSQL database access with schema inspection',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-postgres'
+                    "name": "postgres",
+                    "description": "PostgreSQL database access with schema inspection",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-postgres",
                 },
                 {
-                    'name': 'google-drive',
-                    'description': 'Google Drive file access and search',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-gdrive'
+                    "name": "google-drive",
+                    "description": "Google Drive file access and search",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-gdrive",
                 },
                 {
-                    'name': 'google-maps',
-                    'description': 'Google Maps API for location services',
-                    'type': 'npm',
-                    'package': '@modelcontextprotocol/server-google-maps'
-                }
+                    "name": "google-maps",
+                    "description": "Google Maps API for location services",
+                    "type": "npm",
+                    "package": "@modelcontextprotocol/server-google-maps",
+                },
             ]
 
             # Filter by query
             results = [
-                s for s in common_servers
-                if query.lower() in s['name'].lower() or query.lower() in s['description'].lower()
+                s
+                for s in common_servers
+                if query.lower() in s["name"].lower()
+                or query.lower() in s["description"].lower()
             ]
 
             ch.success(f"Found {len(results)} matching server(s)")
@@ -275,14 +277,14 @@ class MCPManager:
             ch.error(f"Failed to search MCP directory: {e}")
             return []
 
-    def install_server(self, name: str, package: str, server_type: str = 'npm') -> bool:
+    def install_server(self, name: str, package: str, server_type: str = "npm") -> bool:
         """Install an MCP server.
-        
+
         Args:
             name: Server name
             package: Package name or URL
             server_type: Installation type ('npm', 'python', 'standalone')
-            
+
         Returns:
             True if installation successful
         """
@@ -291,13 +293,11 @@ class MCPManager:
         ch.info(f"Package: {package}")
 
         try:
-            if server_type == 'npm':
+            if server_type == "npm":
                 # Install via npm globally
                 ch.step("Installing npm package...")
                 result = subprocess.run(
-                    ['npm', 'install', '-g', package],
-                    capture_output=True,
-                    text=True
+                    ["npm", "install", "-g", package], capture_output=True, text=True
                 )
 
                 if result.returncode != 0:
@@ -305,26 +305,24 @@ class MCPManager:
                     return False
 
                 # Configure server
-                command = 'npx'
+                command = "npx"
                 args = [package]
 
-            elif server_type == 'python':
+            elif server_type == "python":
                 # Install via pip
                 ch.step("Installing Python package...")
                 result = subprocess.run(
-                    ['pip', 'install', package],
-                    capture_output=True,
-                    text=True
+                    ["pip", "install", package], capture_output=True, text=True
                 )
 
                 if result.returncode != 0:
                     ch.error(f"pip install failed: {result.stderr}")
                     return False
 
-                command = 'python'
-                args = ['-m', package]
+                command = "python"
+                args = ["-m", package]
 
-            elif server_type == 'standalone':
+            elif server_type == "standalone":
                 ch.warning("Standalone servers must be configured manually")
                 command = package
                 args = []
@@ -335,12 +333,12 @@ class MCPManager:
 
             # Add server to configuration
             config = {
-                'type': server_type,
-                'package': package,
-                'command': command,
-                'args': args,
-                'env': {},
-                'enabled': False
+                "type": server_type,
+                "package": package,
+                "command": command,
+                "args": args,
+                "env": {},
+                "enabled": False,
             }
 
             self.servers[name] = MCPServer(name, config)
@@ -356,10 +354,10 @@ class MCPManager:
 
     def uninstall_server(self, name: str) -> bool:
         """Uninstall an MCP server.
-        
+
         Args:
             name: Server name
-            
+
         Returns:
             True if uninstallation successful
         """
@@ -378,7 +376,9 @@ class MCPManager:
         self._save_servers()
 
         ch.success(f"✓ MCP server '{name}' uninstalled")
-        ch.warning("Package may still be installed globally - remove manually if needed")
+        ch.warning(
+            "Package may still be installed globally - remove manually if needed"
+        )
         return True
 
     def enable_server(self, name: str) -> bool:
@@ -387,7 +387,7 @@ class MCPManager:
             ch.error(f"MCP server '{name}' not found")
             return False
 
-        self.servers[name].config['enabled'] = True
+        self.servers[name].config["enabled"] = True
         self._save_servers()
         ch.success(f"✓ MCP server '{name}' enabled")
         return True
@@ -404,7 +404,7 @@ class MCPManager:
         if server.is_running():
             server.stop()
 
-        server.config['enabled'] = False
+        server.config["enabled"] = False
         self._save_servers()
         ch.success(f"✓ MCP server '{name}' disabled")
         return True
@@ -433,13 +433,15 @@ class MCPManager:
 
         return self.servers[name].restart()
 
-    def list_servers(self, enabled_only: bool = False, running_only: bool = False) -> List[MCPServer]:
+    def list_servers(
+        self, enabled_only: bool = False, running_only: bool = False
+    ) -> List[MCPServer]:
         """List MCP servers.
-        
+
         Args:
             enabled_only: Only return enabled servers
             running_only: Only return running servers
-            
+
         Returns:
             List of MCPServer instances
         """
@@ -459,7 +461,7 @@ class MCPManager:
 
     def start_all_enabled(self) -> int:
         """Start all enabled MCP servers.
-        
+
         Returns:
             Number of servers started
         """
@@ -481,7 +483,7 @@ class MCPManager:
 
     def stop_all(self) -> int:
         """Stop all running MCP servers.
-        
+
         Returns:
             Number of servers stopped
         """

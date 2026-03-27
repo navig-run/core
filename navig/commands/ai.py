@@ -1,4 +1,5 @@
 """AI Assistant Commands"""
+
 import logging
 import subprocess
 from typing import Any, Dict, Optional
@@ -6,6 +7,7 @@ from typing import Any, Dict, Optional
 from navig import console_helper as ch
 
 logger = logging.getLogger(__name__)
+
 
 def ask_ai(question: str, model: Optional[str], options: Dict[str, Any]):
     """Ask AI about server, get context-aware answers."""
@@ -16,7 +18,7 @@ def ask_ai(question: str, model: Optional[str], options: Dict[str, Any]):
     config_manager = get_config_manager()
     ai = AIAssistant(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server. AI needs context.")
         return
@@ -28,18 +30,17 @@ def ask_ai(question: str, model: Optional[str], options: Dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     context = {
-        'server': server_config,
-        'directory': '/',
+        "server": server_config,
+        "directory": "/",
     }
 
     # Gather running processes (optional, can fail gracefully)
     try:
         result = remote_ops.execute_command(
-            "ps aux | grep -E 'nginx|php|mysql' | grep -v grep",
-            server_config
+            "ps aux | grep -E 'nginx|php|mysql' | grep -v grep", server_config
         )
         if result.returncode == 0:
-            context['processes'] = result.stdout.strip().split('\n')
+            context["processes"] = result.stdout.strip().split("\n")
     except (OSError, subprocess.SubprocessError) as e:
         logger.warning(f"Failed to gather process context: {e}")
         # Continue without process info - not critical
@@ -57,5 +58,3 @@ def ask_ai(question: str, model: Optional[str], options: Dict[str, Any]):
         ch.error(str(e))
     except Exception as e:
         ch.error(f"AI communication failed: {e}")
-
-

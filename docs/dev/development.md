@@ -310,5 +310,3 @@ python -X importtime -c "import navig.cli" 2>&1 | grep -E "(paramiko|rich|reques
 - Use PowerShell or Windows Terminal (not cmd.exe)
 - Some Unicode symbols may not render in legacy consoles
 - Use `python -m navig` if `navig` command isn't found
-
-

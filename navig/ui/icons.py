@@ -9,36 +9,37 @@ Usage:
     icon("ok")      # "✓" or "[ok]" in safe mode
     icon("daemon")  # "◉" or "[~]"
 """
+
 from __future__ import annotations
 
 from navig.ui.theme import SAFE_MODE
 
 # (rich_icon, safe_icon)
 _ICONS: dict[str, tuple[str, str]] = {
-    "ok":        ("✓", "[ok]"),
-    "fail":      ("✗", "[!!]"),
-    "warn":      ("⚠", "[!]"),
-    "info":      ("ℹ", "[i]"),
-    "daemon":    ("◉", "[~]"),
-    "offline":   ("○", "[ ]"),
-    "node":      ("⬡", "[n]"),
-    "host":      ("⬛", "[h]"),
-    "app":       ("▣", "[a]"),
-    "vault":     ("🔑", "[k]"),
-    "arrow":     ("→", "->"),
-    "bullet":    ("•", "-"),
-    "flag":      ("⚑", ">>"),
-    "spinner":   ("◌", "..."),
-    "ai":        ("✦", "[ai]"),
-    "check":     ("☑", "[x]"),
-    "cross":     ("☒", "[ ]"),
-    "add":       ("+", "+"),
-    "remove":    ("-", "-"),
-    "context":   ("│", "|"),
-    "git":       ("⎇", "[git]"),
-    "cloud":     ("☁", "[cld]"),
-    "lock":      ("🔒", "[lk]"),
-    "debug":     ("⊙", "[dbg]"),
+    "ok": ("✓", "[ok]"),
+    "fail": ("✗", "[!!]"),
+    "warn": ("⚠", "[!]"),
+    "info": ("ℹ", "[i]"),
+    "daemon": ("◉", "[~]"),
+    "offline": ("○", "[ ]"),
+    "node": ("⬡", "[n]"),
+    "host": ("⬛", "[h]"),
+    "app": ("▣", "[a]"),
+    "vault": ("🔑", "[k]"),
+    "arrow": ("→", "->"),
+    "bullet": ("•", "-"),
+    "flag": ("⚑", ">>"),
+    "spinner": ("◌", "..."),
+    "ai": ("✦", "[ai]"),
+    "check": ("☑", "[x]"),
+    "cross": ("☒", "[ ]"),
+    "add": ("+", "+"),
+    "remove": ("-", "-"),
+    "context": ("│", "|"),
+    "git": ("⎇", "[git]"),
+    "cloud": ("☁", "[cld]"),
+    "lock": ("🔒", "[lk]"),
+    "debug": ("⊙", "[dbg]"),
 }
 
 _FALLBACK = ("?", "?")

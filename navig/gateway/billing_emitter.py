@@ -22,6 +22,7 @@ Usage::
     emitter = BillingEmitter()
     emitter.emit(actor="telegram:user", action="mission.create")
 """
+
 from __future__ import annotations
 
 import json
@@ -32,23 +33,25 @@ from typing import Any, Dict, List, Optional
 
 
 def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + \
-           f"{datetime.now(tz=timezone.utc).microsecond // 1000:03d}Z"
+    return (
+        datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.")
+        + f"{datetime.now(tz=timezone.utc).microsecond // 1000:03d}Z"
+    )
 
 
 # Map action slugs → billing event_type + units
 # Unknown actions default to event_type==action, units==1
 _ACTION_MAP: Dict[str, tuple[str, int]] = {
-    "mission.create":         ("mission.create",     1),
-    "mission.advance.start":  ("mission.start",      1),
-    "mission.advance.retry":  ("mission.retry",      1),
-    "mission.complete":       ("mission.complete",   1),
-    "node.register":          ("node.register",      1),
-    "formation.start":        ("formation.start",    2),
-    "daemon.stop":            ("daemon.stop",        0),  # ops action, 0 units
-    "task.add":               ("task.add",           1),
-    "mesh.route":             ("mesh.route",         1),
-    "run.shell":              ("run.shell",          1),
+    "mission.create": ("mission.create", 1),
+    "mission.advance.start": ("mission.start", 1),
+    "mission.advance.retry": ("mission.retry", 1),
+    "mission.complete": ("mission.complete", 1),
+    "node.register": ("node.register", 1),
+    "formation.start": ("formation.start", 2),
+    "daemon.stop": ("daemon.stop", 0),  # ops action, 0 units
+    "task.add": ("task.add", 1),
+    "mesh.route": ("mesh.route", 1),
+    "run.shell": ("run.shell", 1),
 }
 
 
@@ -78,11 +81,11 @@ class BillingEmitter:
         """Write one billing record (non-blocking, thread-safe)."""
         event_type, units = _ACTION_MAP.get(action, (action, 1))
         record: Dict[str, Any] = {
-            "ts":         _now_iso(),
-            "actor":      actor,
-            "action":     action,
+            "ts": _now_iso(),
+            "actor": actor,
+            "action": action,
             "event_type": event_type,
-            "units":      units,
+            "units": units,
         }
         if metadata:
             record["metadata"] = metadata
@@ -97,7 +100,9 @@ class BillingEmitter:
         if not self._path.exists():
             return []
         with self._lock:
-            lines = self._path.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = self._path.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines()
         records = []
         for line in lines:
             line = line.strip()

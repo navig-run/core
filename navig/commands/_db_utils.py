@@ -4,6 +4,7 @@ Shared database utility helpers for NAVIG command modules.
 Keep this module import-light — it is imported from database.py,
 database_advanced.py, and backup.py at command-dispatch time.
 """
+
 import os
 import tempfile
 

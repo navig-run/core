@@ -15,6 +15,7 @@ Usage::
     for s in skills:
         print(s.id, s.safety, s.tags)
 """
+
 from __future__ import annotations
 
 import re
@@ -28,20 +29,24 @@ from loguru import logger
 # Security
 # ---------------------------------------------------------------------------
 
+
 class SkillSecurityError(ValueError):
     """Raised when a SKILL.md install spec fails security validation."""
+
     def __init__(self, field_name: str, value: str, reason: str) -> None:
-        super().__init__(f"Skill security violation in '{field_name}': {reason} (value={value!r})")
+        super().__init__(
+            f"Skill security violation in '{field_name}': {reason} (value={value!r})"
+        )
         self.field_name = field_name
         self.value = value
         self.reason = reason
 
 
 # Safe pattern for brew/apt package names (no version specifiers)
-_SAFE_PACKAGE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9@+._/\-]*$')
+_SAFE_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@+._/\-]*$")
 # Safe pattern for pip/npm/cargo — allows PEP 440 / semver version specifiers
 _SAFE_VERSIONED_RE = re.compile(
-    r'^[A-Za-z0-9][A-Za-z0-9@+._/\-]*([ \t]*[!<>=~^]{1,2}[A-Za-z0-9._*+-]*)*$'
+    r"^[A-Za-z0-9][A-Za-z0-9@+._/\-]*([ \t]*[!<>=~^]{1,2}[A-Za-z0-9._*+-]*)*$"
 )
 
 
@@ -60,7 +65,8 @@ def _validate_install_spec(spec: dict[str, Any]) -> None:
         if pkg and isinstance(pkg, str):
             if not _SAFE_PACKAGE_RE.match(pkg):
                 raise SkillSecurityError(
-                    f"install.{mgr}", pkg,
+                    f"install.{mgr}",
+                    pkg,
                     "package name contains disallowed characters",
                 )
 
@@ -69,7 +75,8 @@ def _validate_install_spec(spec: dict[str, Any]) -> None:
         if pkg and isinstance(pkg, str):
             if not _SAFE_VERSIONED_RE.match(pkg):
                 raise SkillSecurityError(
-                    f"install.{mgr}", pkg,
+                    f"install.{mgr}",
+                    pkg,
                     "package name contains disallowed characters",
                 )
 
@@ -77,7 +84,8 @@ def _validate_install_spec(spec: dict[str, Any]) -> None:
     if go_pkg and isinstance(go_pkg, str):
         if "://" in go_pkg:
             raise SkillSecurityError(
-                "install.go", go_pkg,
+                "install.go",
+                go_pkg,
                 "Go module path must not contain a URL scheme (://)",
             )
 
@@ -86,7 +94,8 @@ def _validate_install_spec(spec: dict[str, Any]) -> None:
         url = dl.get("url", "")
         if url and not str(url).startswith("https://"):
             raise SkillSecurityError(
-                "install.download.url", str(url),
+                "install.download.url",
+                str(url),
                 "download URL must use https://",
             )
 
@@ -95,9 +104,11 @@ def _validate_install_spec(spec: dict[str, Any]) -> None:
 # Public data contract
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Skill:
     """Canonical internal representation of a NAVIG skill."""
+
     id: str
     name: str
     version: str
@@ -105,9 +116,9 @@ class Skill:
     tags: list[str]
     platforms: list[str]
     tools: list[str]
-    safety: str           # safe | elevated | destructive
-    body_markdown: str    # raw Markdown body (after the frontmatter)
-    examples: list[str]   # extracted fenced bash blocks from Examples section
+    safety: str  # safe | elevated | destructive
+    body_markdown: str  # raw Markdown body (after the frontmatter)
+    examples: list[str]  # extracted fenced bash blocks from Examples section
     source_path: Path
 
     # Optional enrichment fields (absent in legacy format = empty string)
@@ -117,6 +128,7 @@ class Skill:
     def to_spec(self) -> "SkillSpec":
         """Convert this loaded text-definition into a typed runtime pipeline abstraction."""
         from navig.tools.interfaces import SkillSpec
+
         return SkillSpec(
             id=self.id,
             name=self.name,
@@ -124,10 +136,13 @@ class Skill:
             description=self.description,
             # For now tools are just defined as strings,
             # we'd instantiate actual ToolSpecs if we parsed them
-            tools=[]
+            tools=[],
         )
+
+
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Return (frontmatter_dict, body_markdown) from a SKILL.md string.
@@ -159,7 +174,9 @@ def _load_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 def _extract_examples(body: str) -> list[str]:
     """Pull fenced ```bash ... ``` blocks (or bare ``` ... ```) from an Examples section."""
     # Find the Examples section
-    section_match = re.search(r"^#+ Examples?\s*\n(.*?)(?=^#+ |\Z)", body, re.MULTILINE | re.DOTALL)
+    section_match = re.search(
+        r"^#+ Examples?\s*\n(.*?)(?=^#+ |\Z)", body, re.MULTILINE | re.DOTALL
+    )
     if not section_match:
         return []
 
@@ -176,6 +193,7 @@ def _slug(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Full frontmatter → Skill (format 1)
 # ---------------------------------------------------------------------------
+
 
 def _from_full_fm(fm: dict[str, Any], body: str, path: Path) -> Skill:
     """Parse format-1 SKILL.md: id, name, version, category, tags, platforms, tools, safety."""
@@ -209,6 +227,7 @@ def _from_full_fm(fm: dict[str, Any], body: str, path: Path) -> Skill:
 # ---------------------------------------------------------------------------
 # Legacy frontmatter → Skill (format 2)
 # ---------------------------------------------------------------------------
+
 
 def _from_legacy_fm(fm: dict[str, Any], body: str, path: Path) -> Skill:
     """Parse format-2 SKILL.md: name, description, category, risk-level, navig-commands."""
@@ -247,6 +266,7 @@ def _from_legacy_fm(fm: dict[str, Any], body: str, path: Path) -> Skill:
 # No frontmatter → Skill (format 3)
 # ---------------------------------------------------------------------------
 
+
 def _from_plain_md(body: str, path: Path) -> Skill:
     """Parse format-3 SKILL.md: plain markdown, no frontmatter block."""
     folder_slug = _slug(path.parent.name)
@@ -273,6 +293,7 @@ def _from_plain_md(body: str, path: Path) -> Skill:
 # ---------------------------------------------------------------------------
 # Public: parse a single SKILL.md file
 # ---------------------------------------------------------------------------
+
 
 def parse_skill_file(path: Path) -> Skill | None:
     """Parse a SKILL.md file into a ``Skill``.  Returns None on unrecoverable parse error."""
@@ -315,6 +336,7 @@ def parse_skill_file(path: Path) -> Skill | None:
 # Public: discover skill directories
 # ---------------------------------------------------------------------------
 
+
 def get_skill_dirs() -> list[Path]:
     """Return all skill directory roots to scan, deduped and validated.
 
@@ -333,6 +355,7 @@ def get_skill_dirs() -> list[Path]:
             packages_dir,
             store_dir,
         )
+
         for root_fn in (builtin_store_dir, store_dir):
             try:
                 d = root_fn() / "skills"
@@ -368,6 +391,7 @@ def get_skill_dirs() -> list[Path]:
     # Project-local skills
     try:
         from navig.platform.paths import project_root
+
         local_skills = project_root() / ".navig" / "skills"
         if local_skills.exists():
             candidates.append(local_skills)
@@ -389,6 +413,7 @@ def get_skill_dirs() -> list[Path]:
 # ---------------------------------------------------------------------------
 # Public: load all skills
 # ---------------------------------------------------------------------------
+
 
 def load_all_skills(dirs: list[Path] | None = None) -> list[Skill]:
     """Scan ``dirs`` (or auto-discover) and return all parsed ``Skill`` objects.
@@ -422,13 +447,16 @@ def load_all_skills(dirs: list[Path] | None = None) -> list[Skill]:
             seen_ids.add(skill.id)
             skills.append(skill)
 
-    logger.debug("skills.loader: loaded {} skills from {} dir(s)", len(skills), len(dirs))
+    logger.debug(
+        "skills.loader: loaded {} skills from {} dir(s)", len(skills), len(dirs)
+    )
     return skills
 
 
 # ---------------------------------------------------------------------------
 # Convenience: index by id
 # ---------------------------------------------------------------------------
+
 
 def skills_by_id(skills: list[Skill] | None = None) -> dict[str, Skill]:
     """Return {skill.id: skill} mapping."""

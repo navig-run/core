@@ -4,6 +4,7 @@ NAVIG Workspace Manager
 Manages the workspace directory containing agent context files (bootstrap files).
 Inspired by advanced workspace and agent template systems.
 """
+
 import json
 import logging
 import re
@@ -31,7 +32,7 @@ DEFAULT_CONFIG_FILE = DEFAULT_NAVIG_DIR / "navig.json"
 class WorkspaceManager:
     """
     Manages NAVIG workspace and context injection.
-    
+
     The workspace contains markdown files that define the agent's
     personality, capabilities, and user preferences. These are
     injected into the AI context at session start.
@@ -39,13 +40,13 @@ class WorkspaceManager:
 
     # Bootstrap files in priority order
     BOOTSTRAP_FILES = [
-        "IDENTITY.md",    # Agent identity (name, emoji, personality)
-        "SOUL.md",        # Persona, boundaries, ethics
-        "AGENTS.md",      # Operating instructions
-        "TOOLS.md",       # Available tools and conventions
-        "USER.md",        # User profile and preferences
-        "HEARTBEAT.md",   # Background task instructions (optional)
-        "BOOTSTRAP.md",   # First-run only (deleted after)
+        "IDENTITY.md",  # Agent identity (name, emoji, personality)
+        "SOUL.md",  # Persona, boundaries, ethics
+        "AGENTS.md",  # Operating instructions
+        "TOOLS.md",  # Available tools and conventions
+        "USER.md",  # User profile and preferences
+        "HEARTBEAT.md",  # Background task instructions (optional)
+        "BOOTSTRAP.md",  # First-run only (deleted after)
     ]
 
     def __init__(
@@ -55,7 +56,7 @@ class WorkspaceManager:
     ):
         """
         Initialize the workspace manager.
-        
+
         Args:
             workspace_path: Custom workspace directory (default: ~/.navig/workspace)
             config_path: Custom config file path (default: ~/.navig/navig.json)
@@ -75,10 +76,14 @@ class WorkspaceManager:
                 explicit_path.name == "workspace"
                 and explicit_path.parent.name == ".navig"
             )
-            if explicit_is_project_style or is_project_workspace_path(explicit_path, project_root=Path.cwd()):
-                self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
-                    explicit_path,
-                    project_root=Path.cwd(),
+            if explicit_is_project_style or is_project_workspace_path(
+                explicit_path, project_root=Path.cwd()
+            ):
+                self.workspace_path, self.legacy_workspace_path = (
+                    resolve_personal_workspace_path(
+                        explicit_path,
+                        project_root=Path.cwd(),
+                    )
                 )
             else:
                 self.workspace_path = explicit_path
@@ -86,17 +91,19 @@ class WorkspaceManager:
         else:
             if self.config:
                 requested_workspace = Path(
-                    self.config.get("agents", {}).get("defaults", {}).get(
-                        "workspace", str(DEFAULT_WORKSPACE_DIR)
-                    )
+                    self.config.get("agents", {})
+                    .get("defaults", {})
+                    .get("workspace", str(DEFAULT_WORKSPACE_DIR))
                 )
             else:
                 requested_workspace = DEFAULT_WORKSPACE_DIR
 
             # Personal/state files are now canonical at ~/.navig/workspace.
-            self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
-                requested_workspace,
-                project_root=Path.cwd(),
+            self.workspace_path, self.legacy_workspace_path = (
+                resolve_personal_workspace_path(
+                    requested_workspace,
+                    project_root=Path.cwd(),
+                )
             )
 
         if self.legacy_workspace_path:
@@ -164,17 +171,19 @@ class WorkspaceManager:
     def is_initialized(self) -> bool:
         """Check if workspace has been initialized."""
         for ws_path in self._candidate_workspace_paths():
-            if ws_path.exists() and any((ws_path / f).exists() for f in self.BOOTSTRAP_FILES):
+            if ws_path.exists() and any(
+                (ws_path / f).exists() for f in self.BOOTSTRAP_FILES
+            ):
                 return True
         return False
 
     def get_bootstrap_content(self, include_first_run: bool = True) -> str:
         """
         Get combined content from all bootstrap files.
-        
+
         Args:
             include_first_run: Include BOOTSTRAP.md if it exists
-            
+
         Returns:
             Combined markdown content from all bootstrap files
         """
@@ -214,11 +223,11 @@ class WorkspaceManager:
     def update_file(self, filename: str, content: str) -> bool:
         """
         Update a workspace file.
-        
+
         Args:
             filename: Name of the file to update
             content: New content
-            
+
         Returns:
             True if successful
         """
@@ -234,10 +243,10 @@ class WorkspaceManager:
     def complete_bootstrap(self) -> bool:
         """
         Complete the first-run bootstrap.
-        
+
         Removes BOOTSTRAP.md after the first successful interaction,
         as it's only meant for initial setup.
-        
+
         Returns:
             True if BOOTSTRAP.md was removed
         """
@@ -254,12 +263,15 @@ class WorkspaceManager:
 
     def has_bootstrap_pending(self) -> bool:
         """Check if BOOTSTRAP.md exists (first-run not completed)."""
-        return any((ws_path / "BOOTSTRAP.md").exists() for ws_path in self._candidate_workspace_paths())
+        return any(
+            (ws_path / "BOOTSTRAP.md").exists()
+            for ws_path in self._candidate_workspace_paths()
+        )
 
     def get_agent_identity(self) -> Dict[str, str]:
         """
         Extract agent identity from IDENTITY.md.
-        
+
         Returns:
             Dict with name, emoji, and personality traits
         """
@@ -284,10 +296,10 @@ class WorkspaceManager:
     def get_user_preferences(self) -> Dict[str, Any]:
         """
         Extract user preferences from USER.md.
-        
+
         Parses markdown fields using regex to handle variations like
         '**Preferred Editor**' vs '**Preferred Editor/IDE**'.
-        
+
         Returns:
             Dict with user preferences including identity, work patterns,
             communication style, and technical stack details.
@@ -413,10 +425,12 @@ class WorkspaceManager:
             for pattern, key in field_patterns:
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
-                    raw_value = line[match.end():].strip()
+                    raw_value = line[match.end() :].strip()
 
                     # Handle empty values or placeholders
-                    if not raw_value or (raw_value.startswith("(") and raw_value.endswith(")")):
+                    if not raw_value or (
+                        raw_value.startswith("(") and raw_value.endswith(")")
+                    ):
                         continue
 
                     # Cleanup comments
@@ -428,15 +442,28 @@ class WorkspaceManager:
                         preferences[key] = "yes" in raw_value.lower()
                     elif key == "verbosity":
                         preferences[key] = raw_value.split()[0].lower()
-                    elif key in ("primary_languages", "other_languages", "shell", "package_managers", "learning_targets"):
-                        preferences[key] = [l.strip() for l in raw_value.split(",") if l.strip()]
+                    elif key in (
+                        "primary_languages",
+                        "other_languages",
+                        "shell",
+                        "package_managers",
+                        "learning_targets",
+                    ):
+                        preferences[key] = [
+                            l.strip() for l in raw_value.split(",") if l.strip()
+                        ]
                     elif key == "risk_tolerance":
                         lower_val = raw_value.lower()
-                        if "low" in lower_val: preferences[key] = "low"
-                        elif "high" in lower_val: preferences[key] = "high"
-                        elif "medium" in lower_val: preferences[key] = "medium"
+                        if "low" in lower_val:
+                            preferences[key] = "low"
+                        elif "high" in lower_val:
+                            preferences[key] = "high"
+                        elif "medium" in lower_val:
+                            preferences[key] = "medium"
                     elif key in ("proactive_assistance", "daily_logs", "voice_tts"):
-                        preferences[key] = "enabled" in raw_value.lower() or "yes" in raw_value.lower()
+                        preferences[key] = (
+                            "enabled" in raw_value.lower() or "yes" in raw_value.lower()
+                        )
                     elif key == "notification_telegram":
                         preferences["notification_channels"]["telegram"] = raw_value
                     elif key == "notification_email":
@@ -458,7 +485,7 @@ class WorkspaceManager:
     def is_do_not_disturb(self) -> bool:
         """
         Check if current time is within Do Not Disturb hours.
-        
+
         Returns:
             True if notifications should be suppressed
         """
@@ -481,7 +508,11 @@ class WorkspaceManager:
                 end_hour = int(m24.group(3))
             else:
                 # Match 12h: 11 PM - 7 AM
-                match = re.search(r"(\d{1,2})\s*(AM|PM)?\s*-\s*(\d{1,2})\s*(AM|PM)?", dnd, re.IGNORECASE)
+                match = re.search(
+                    r"(\d{1,2})\s*(AM|PM)?\s*-\s*(\d{1,2})\s*(AM|PM)?",
+                    dnd,
+                    re.IGNORECASE,
+                )
                 if not match:
                     return False
 
@@ -491,8 +522,10 @@ class WorkspaceManager:
                 p2 = (match.group(4) or "").upper()
 
                 def to_24(h, p):
-                    if p == "PM" and h != 12: return h + 12
-                    if p == "AM" and h == 12: return 0
+                    if p == "PM" and h != 12:
+                        return h + 12
+                    if p == "AM" and h == 12:
+                        return 0
                     return h
 
                 start_hour = to_24(h1, p1)
@@ -511,10 +544,10 @@ class WorkspaceManager:
     def build_system_prompt(self, base_prompt: str = "") -> str:
         """
         Build a complete system prompt with workspace context.
-        
+
         Args:
             base_prompt: Base system prompt to extend
-            
+
         Returns:
             Complete system prompt with injected workspace context
         """
@@ -535,11 +568,11 @@ class WorkspaceManager:
     def add_memory(self, key: str, value: str) -> bool:
         """
         Add a memory entry to AGENTS.md.
-        
+
         Args:
             key: Memory key (e.g., "servers", "preferences")
             value: Memory value
-            
+
         Returns:
             True if successful
         """
@@ -575,10 +608,10 @@ class WorkspaceManager:
     def sync_to_user_profile(self) -> bool:
         """
         Sync USER.md preferences to the UserProfile system.
-        
+
         This bridges the human-editable markdown file (USER.md) with the
         programmatic JSON profile (~/.navig/memory/user_profile.json).
-        
+
         Returns:
             True if sync was successful
         """
@@ -615,16 +648,24 @@ class WorkspaceManager:
         if prefs.get("os"):
             updates["technical_context.preferences"] = [prefs["os"]]
         if prefs.get("shell"):
-            shells = prefs["shell"] if isinstance(prefs["shell"], list) else [prefs["shell"]]
+            shells = (
+                prefs["shell"] if isinstance(prefs["shell"], list) else [prefs["shell"]]
+            )
             for shell in shells:
                 if shell and not shell.startswith("("):
-                    updates.setdefault("technical_context.preferences", []).append(shell)
+                    updates.setdefault("technical_context.preferences", []).append(
+                        shell
+                    )
 
         # Preferences
         if prefs.get("communication_style"):
             updates["preferences.communication_style"] = prefs["communication_style"]
         if prefs.get("confirm_destructive"):
-            updates["preferences.confirmation_required_for"] = ["delete", "drop", "truncate"]
+            updates["preferences.confirmation_required_for"] = [
+                "delete",
+                "drop",
+                "truncate",
+            ]
 
         # Goals
         if prefs.get("goals"):

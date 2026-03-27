@@ -26,6 +26,7 @@ def _inbox_db() -> Path:
         return _DEFAULT_DB
     try:
         from navig.platform.paths import navig_data_dir
+
         return navig_data_dir() / "inbox.db"
     except Exception:
         return Path.home() / ".navig" / "runtime" / "inbox.db"
@@ -33,18 +34,19 @@ def _inbox_db() -> Path:
 
 # ── Dataclasses ──────────────────────────────────────────────
 
+
 @dataclass
 class InboxEvent:
     id: Optional[int] = None
     created_at: float = field(default_factory=time.time)
-    source_path: str = ""          # original path or URL
-    source_type: str = "file"      # "file" | "url" | "telegram"
+    source_path: str = ""  # original path or URL
+    source_type: str = "file"  # "file" | "url" | "telegram"
     filename: str = ""
     size_bytes: int = 0
-    content_hash: str = ""         # sha256 of content (empty if not computed)
-    status: str = "pending"        # pending | routed | ignored | error
+    content_hash: str = ""  # sha256 of content (empty if not computed)
+    status: str = "pending"  # pending | routed | ignored | error
     error: Optional[str] = None
-    metadata: str = "{}"           # JSON blob
+    metadata: str = "{}"  # JSON blob
 
 
 @dataclass
@@ -52,15 +54,15 @@ class RoutingDecision:
     id: Optional[int] = None
     event_id: int = 0
     decided_at: float = field(default_factory=time.time)
-    category: str = ""             # wiki/knowledge, technical, hub, external …
+    category: str = ""  # wiki/knowledge, technical, hub, external …
     confidence: float = 0.0
-    mode: str = "copy"             # copy | move | link
+    mode: str = "copy"  # copy | move | link
     destination: str = ""
     conflict_strategy: str = "rename"  # rename | skip | overwrite
     executed: bool = False
     result_path: Optional[str] = None
     error: Optional[str] = None
-    classifier: str = "bm25"       # bm25 | llm | manual
+    classifier: str = "bm25"  # bm25 | llm | manual
 
 
 # ── Schema SQL ───────────────────────────────────────────────
@@ -103,6 +105,7 @@ _DDL = [
 
 
 # ── Store ────────────────────────────────────────────────────
+
 
 class InboxStore:
     """
@@ -174,9 +177,11 @@ class InboxStore:
         conn.commit()
 
     def get_event(self, event_id: int) -> Optional[InboxEvent]:
-        row = self._connect().execute(
-            "SELECT * FROM inbox_events WHERE id=?", (event_id,)
-        ).fetchone()
+        row = (
+            self._connect()
+            .execute("SELECT * FROM inbox_events WHERE id=?", (event_id,))
+            .fetchone()
+        )
         return _row_to_event(row) if row else None
 
     def list_events(
@@ -235,10 +240,14 @@ class InboxStore:
         conn.commit()
 
     def decisions_for_event(self, event_id: int) -> List[RoutingDecision]:
-        rows = self._connect().execute(
-            "SELECT * FROM routing_decisions WHERE event_id=? ORDER BY decided_at",
-            (event_id,),
-        ).fetchall()
+        rows = (
+            self._connect()
+            .execute(
+                "SELECT * FROM routing_decisions WHERE event_id=? ORDER BY decided_at",
+                (event_id,),
+            )
+            .fetchall()
+        )
         return [_row_to_decision(r) for r in rows]
 
     # ── Stats ────────────────────────────────────────
@@ -271,6 +280,7 @@ class InboxStore:
 
 
 # ── Helpers ──────────────────────────────────────────────────
+
 
 def _row_to_event(row: sqlite3.Row) -> InboxEvent:
     d = dict(row)

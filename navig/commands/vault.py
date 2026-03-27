@@ -25,36 +25,39 @@ profile_app = typer.Typer(name="profile", help="Manage credential profiles")
 # Maps provider aliases → (canonical_provider, credential_type, data_key, default_label)
 PROVIDER_DEFAULTS = {
     # AI providers
-    "openai":        ("openai",        "api_key", "api_key", "OpenAI"),
-    "openrouter":    ("openrouter",    "api_key", "api_key", "OpenRouter"),
-    "anthropic":     ("anthropic",     "api_key", "api_key", "Anthropic"),
-    "groq":          ("groq",          "api_key", "api_key", "Groq"),
-    "github_models": ("github_models", "token",   "token",   "GitHub Models"),
-    "github-models": ("github_models", "token",   "token",   "GitHub Models"),
-    "copilot":       ("github_models", "token",   "token",   "GitHub Copilot Models"),
+    "openai": ("openai", "api_key", "api_key", "OpenAI"),
+    "openrouter": ("openrouter", "api_key", "api_key", "OpenRouter"),
+    "anthropic": ("anthropic", "api_key", "api_key", "Anthropic"),
+    "groq": ("groq", "api_key", "api_key", "Groq"),
+    "github_models": ("github_models", "token", "token", "GitHub Models"),
+    "github-models": ("github_models", "token", "token", "GitHub Models"),
+    "copilot": ("github_models", "token", "token", "GitHub Copilot Models"),
     # VCS
-    "github":        ("github",        "token",   "token",   "GitHub"),
-    "gitlab":        ("gitlab",        "token",   "token",   "GitLab"),
+    "github": ("github", "token", "token", "GitHub"),
+    "gitlab": ("gitlab", "token", "token", "GitLab"),
     # Generic
-    "telegram":      ("telegram",      "token",   "token",   "Telegram Bot"),
+    "telegram": ("telegram", "token", "token", "Telegram Bot"),
 }
 
 
 def _console():
     """Return a Rich Console instance (created on first call)."""
     from rich.console import Console
+
     return Console()
 
 
 def _rprint(*args, **kwargs):
     """Rich print (loaded on first call)."""
     from rich import print as _rp
+
     _rp(*args, **kwargs)
 
 
 def _Table(*args, **kwargs):
     """Rich Table constructor (loaded on first call)."""
     from rich.table import Table
+
     return Table(*args, **kwargs)
 
 
@@ -62,11 +65,18 @@ def _Table(*args, **kwargs):
 # CREDENTIAL COMMANDS
 # ============================================================================
 
+
 @cred_app.command("list")
 def list_credentials(
-    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="Filter by provider"),
-    profile: Optional[str] = typer.Option(None, "--profile", "-P", help="Filter by profile ID"),
-    show_disabled: bool = typer.Option(False, "--disabled", "-d", help="Show disabled credentials"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider", "-p", help="Filter by provider"
+    ),
+    profile: Optional[str] = typer.Option(
+        None, "--profile", "-P", help="Filter by profile ID"
+    ),
+    show_disabled: bool = typer.Option(
+        False, "--disabled", "-d", help="Show disabled credentials"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
     """List credentials in the vault."""
@@ -78,6 +88,7 @@ def list_credentials(
 
     if json_output:
         import dataclasses
+
         _rprint(json.dumps([dataclasses.asdict(c) for c in creds], default=str))
         return
 
@@ -109,7 +120,7 @@ def list_credentials(
             c.profile_id,
             c.credential_type.value,
             c.label,
-            last_used
+            last_used,
         )
 
     con = _console()
@@ -121,16 +132,24 @@ def list_credentials(
 
 @cred_app.command("add")
 def add_credential(
-    provider: str = typer.Argument(..., help="Provider name (openai, github_models, openrouter, etc.)"),
-    credential_type: str = typer.Option(None, "--type", "-t", help="Credential type (auto-detected if omitted)"),
+    provider: str = typer.Argument(
+        ..., help="Provider name (openai, github_models, openrouter, etc.)"
+    ),
+    credential_type: str = typer.Option(
+        None, "--type", "-t", help="Credential type (auto-detected if omitted)"
+    ),
     profile: str = typer.Option("default", "--profile", "-P", help="Profile namespace"),
     label: str = typer.Option(None, "--label", "-l", help="Human-readable label"),
     api_key: str = typer.Option(None, "--key", help="API key value"),
     token: str = typer.Option(None, "--token", help="Token value"),
     password: str = typer.Option(None, "--password", help="Password value"),
     email: str = typer.Option(None, "--email", help="Email address (for metadata)"),
-    from_stdin: bool = typer.Option(False, "--stdin", help="Read secret from stdin (pipe-friendly, no history)"),
-    interactive: bool = typer.Option(True, "--interactive/--no-interactive", "-i/-I", help="Prompt for secrets"),
+    from_stdin: bool = typer.Option(
+        False, "--stdin", help="Read secret from stdin (pipe-friendly, no history)"
+    ),
+    interactive: bool = typer.Option(
+        True, "--interactive/--no-interactive", "-i/-I", help="Prompt for secrets"
+    ),
 ):
     """Add a new credential to the vault.
 
@@ -165,7 +184,9 @@ def add_credential(
         if not sys.stdin.isatty():
             secret = sys.stdin.read().strip()
         else:
-            _ch.error("--stdin requires piped input (e.g. echo TOKEN | navig cred add provider --stdin)")
+            _ch.error(
+                "--stdin requires piped input (e.g. echo TOKEN | navig cred add provider --stdin)"
+            )
             raise typer.Exit(1)
         if not secret:
             _ch.error("No data received from stdin.")
@@ -200,7 +221,9 @@ def add_credential(
         data["password"] = password
 
     if not data:
-        _ch.error("No secret data provided. Use --key, --token, --password, --stdin, or interactive mode.")
+        _ch.error(
+            "No secret data provided. Use --key, --token, --password, --stdin, or interactive mode."
+        )
         raise typer.Exit(1)
 
     # Metadata
@@ -215,12 +238,16 @@ def add_credential(
             data=data,
             profile_id=profile,
             label=label,
-            metadata=metadata
+            metadata=metadata,
         )
         _ch.success(f"Credential added successfully! ID: {cred_id}")
 
         # Ask to test immediately (skip in non-interactive / stdin mode)
-        if interactive and not from_stdin and _ch.confirm_action("Test this credential now?"):
+        if (
+            interactive
+            and not from_stdin
+            and _ch.confirm_action("Test this credential now?")
+        ):
             test_credential(cred_id)
 
     except Exception as e:
@@ -231,7 +258,9 @@ def add_credential(
 @cred_app.command("show")
 def show_credential(
     credential_id: str = typer.Argument(..., help="Credential ID"),
-    reveal: bool = typer.Option(False, "--reveal", help="Reveal secret values (DANGER!)"),
+    reveal: bool = typer.Option(
+        False, "--reveal", help="Reveal secret values (DANGER!)"
+    ),
 ):
     """Show details of a credential."""
     vault = _vault_mod.get_vault()
@@ -322,7 +351,9 @@ def delete_credential(
 @cred_app.command("test")
 def test_credential(
     target: str = typer.Argument(..., help="Credential ID OR Provider Name"),
-    profile: Optional[str] = typer.Option(None, "--profile", "-P", help="Profile (if target is provider)"),
+    profile: Optional[str] = typer.Option(
+        None, "--profile", "-P", help="Profile (if target is provider)"
+    ),
 ):
     """Test a credential against the provider API."""
     vault = _vault_mod.get_vault()
@@ -413,15 +444,21 @@ def show_audit_log(
     table.add_column("Accessed By")
 
     for log in logs:
-        action_style = "green" if log["action"] in ("created", "enabled") else \
-                       "red" if log["action"] in ("deleted", "disabled") else \
-                       "yellow" if log["action"] == "updated" else "white"
+        action_style = (
+            "green"
+            if log["action"] in ("created", "enabled")
+            else (
+                "red"
+                if log["action"] in ("deleted", "disabled")
+                else "yellow" if log["action"] == "updated" else "white"
+            )
+        )
 
         table.add_row(
             log["timestamp"],
             log["credential_id"],
             f"[{action_style}]{log['action']}[/{action_style}]",
-            log["accessed_by"]
+            log["accessed_by"],
         )
 
     _console().print(table)
@@ -430,6 +467,7 @@ def show_audit_log(
 # ============================================================================
 # PROFILE COMMANDS
 # ============================================================================
+
 
 @profile_app.command("list")
 def list_profiles():

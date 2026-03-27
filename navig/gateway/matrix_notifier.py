@@ -23,15 +23,15 @@ logger = logging.getLogger(__name__)
 def _format_for_matrix(notification: Notification) -> str:
     """Format a Notification for Matrix (plain text with unicode icons)."""
     emoji_map = {
-        "alert": "\u26a0\ufe0f",       # ⚠️
-        "briefing": "\U0001f4ca",       # 📊
-        "routine": "\u2600\ufe0f",      # ☀️
-        "heartbeat": "\U0001f493",      # 💓
-        "reminder": "\u23f0",           # ⏰
+        "alert": "\u26a0\ufe0f",  # ⚠️
+        "briefing": "\U0001f4ca",  # 📊
+        "routine": "\u2600\ufe0f",  # ☀️
+        "heartbeat": "\U0001f493",  # 💓
+        "reminder": "\u23f0",  # ⏰
     }
     priority_prefix = {
         NotificationPriority.CRITICAL: "\U0001f534 ",  # 🔴
-        NotificationPriority.HIGH: "\U0001f7e1 ",       # 🟡
+        NotificationPriority.HIGH: "\U0001f7e1 ",  # 🟡
         NotificationPriority.NORMAL: "",
         NotificationPriority.LOW: "",
     }
@@ -152,10 +152,7 @@ class MatrixNotifier(ChannelNotifier):
         for n in items:
             parts.append(f"• {n.title}: {n.message}")
 
-        combined = (
-            f"\U0001f4e5 **Notifications** ({len(items)})\n\n"
-            + "\n".join(parts)
-        )
+        combined = f"\U0001f4e5 **Notifications** ({len(items)})\n\n" + "\n".join(parts)
         try:
             await self.bot.send_notice(self.room_id, combined)
         except Exception:

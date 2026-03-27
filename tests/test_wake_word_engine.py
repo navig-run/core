@@ -1,7 +1,10 @@
-import pytest
 import asyncio
-from unittest.mock import patch, MagicMock
-from navig.voice.wake_word import WakeWordEngine, WakeWordConfig, WakeWordDetection
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from navig.voice.wake_word import WakeWordConfig, WakeWordDetection, WakeWordEngine
+
 
 @pytest.fixture
 def engine():
@@ -12,15 +15,14 @@ def engine():
     )
     return WakeWordEngine(config=config)
 
+
 @pytest.mark.asyncio
 async def test_wake_word_notify_bridge(engine):
     with patch("navig.gateway.routes.voice.PENDING_WAKES", []) as mock_queue:
         engine.config.echo_bridge_url = None
         detection = WakeWordDetection(keyword="echo", score=0.9, timestamp=100.0)
         await engine._notify_bridge(detection)
-        
+
         assert len(mock_queue) == 1
         assert mock_queue[0].keyword == "echo"
         assert mock_queue[0].score == 0.9
-
-

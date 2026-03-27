@@ -245,7 +245,7 @@ func (p *Inspector) Analyze() (*PageAnalysis, error) {
 	return &analysis, nil
 }
 
-// SemanticMap is a token-optimized, human-readable summary of the page 
+// SemanticMap is a token-optimized, human-readable summary of the page
 // designed specifically for ingestion by an LLM in the Cognitive Engine.
 type SemanticMap struct {
 	Title       string   `json:"title"`

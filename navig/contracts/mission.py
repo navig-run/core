@@ -23,44 +23,54 @@ from typing import Any, Dict, List, Optional
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
+
 class MissionStatus(str, Enum):
-    QUEUED     = "queued"
-    RUNNING    = "running"
-    SUCCEEDED  = "succeeded"
-    FAILED     = "failed"
-    CANCELLED  = "cancelled"
-    TIMED_OUT  = "timed_out"
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
 
 
 class MissionPriority(int, Enum):
     CRITICAL = 0
-    HIGH     = 10
-    NORMAL   = 50
-    LOW      = 100
+    HIGH = 10
+    NORMAL = 50
+    LOW = 100
 
 
 # ── Terminal states ────────────────────────────────────────────────────────────
 
-TERMINAL_STATES = frozenset({
-    MissionStatus.SUCCEEDED,
-    MissionStatus.FAILED,
-    MissionStatus.CANCELLED,
-    MissionStatus.TIMED_OUT,
-})
+TERMINAL_STATES = frozenset(
+    {
+        MissionStatus.SUCCEEDED,
+        MissionStatus.FAILED,
+        MissionStatus.CANCELLED,
+        MissionStatus.TIMED_OUT,
+    }
+)
 
 # Valid state transitions  (from_state → set of allowed to_states)
 ALLOWED_TRANSITIONS: Dict[MissionStatus, frozenset] = {
-    MissionStatus.QUEUED:    frozenset({MissionStatus.RUNNING, MissionStatus.CANCELLED}),
-    MissionStatus.RUNNING:   frozenset({MissionStatus.SUCCEEDED, MissionStatus.FAILED,
-                                        MissionStatus.CANCELLED, MissionStatus.TIMED_OUT}),
+    MissionStatus.QUEUED: frozenset({MissionStatus.RUNNING, MissionStatus.CANCELLED}),
+    MissionStatus.RUNNING: frozenset(
+        {
+            MissionStatus.SUCCEEDED,
+            MissionStatus.FAILED,
+            MissionStatus.CANCELLED,
+            MissionStatus.TIMED_OUT,
+        }
+    ),
     MissionStatus.SUCCEEDED: frozenset(),
-    MissionStatus.FAILED:    frozenset({MissionStatus.QUEUED}),   # retry
+    MissionStatus.FAILED: frozenset({MissionStatus.QUEUED}),  # retry
     MissionStatus.CANCELLED: frozenset(),
-    MissionStatus.TIMED_OUT: frozenset({MissionStatus.QUEUED}),   # retry after timeout
+    MissionStatus.TIMED_OUT: frozenset({MissionStatus.QUEUED}),  # retry after timeout
 }
 
 
 # ── Model ──────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class Mission:
@@ -90,29 +100,29 @@ class Mission:
     title: str
 
     # Identity
-    mission_id: str             = field(default_factory=lambda: str(uuid.uuid4()))
-    node_id: Optional[str]      = None
-    capability: str             = ""
-    payload: Dict[str, Any]     = field(default_factory=dict)
-    priority: int               = MissionPriority.NORMAL.value
+    mission_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    node_id: Optional[str] = None
+    capability: str = ""
+    payload: Dict[str, Any] = field(default_factory=dict)
+    priority: int = MissionPriority.NORMAL.value
 
     # State
-    status: MissionStatus       = MissionStatus.QUEUED
+    status: MissionStatus = MissionStatus.QUEUED
 
     # Output
-    result: Optional[Any]       = None
-    error: Optional[str]        = None
+    result: Optional[Any] = None
+    error: Optional[str] = None
 
     # Timestamps
-    created_at: str             = field(default_factory=lambda: _now_iso())
-    queued_at: Optional[str]    = None
-    started_at: Optional[str]   = None
+    created_at: str = field(default_factory=lambda: _now_iso())
+    queued_at: Optional[str] = None
+    started_at: Optional[str] = None
     completed_at: Optional[str] = None
 
     # Config
     timeout_secs: Optional[float] = None
-    tags: List[str]               = field(default_factory=list)
-    metadata: Dict[str, Any]      = field(default_factory=dict)
+    tags: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     # ── State machine ─────────────────────────────────────────────────
 
@@ -157,11 +167,11 @@ class Mission:
     def retry(self) -> None:
         """Re-queue a failed or timed-out mission."""
         self._transition(MissionStatus.QUEUED)
-        self.error       = None
-        self.result      = None
-        self.started_at  = None
+        self.error = None
+        self.result = None
+        self.started_at = None
         self.completed_at = None
-        self.queued_at   = _now_iso()
+        self.queued_at = _now_iso()
 
     @property
     def is_terminal(self) -> bool:
@@ -172,7 +182,7 @@ class Mission:
         """Wall-clock duration from start to completion, or None if not complete."""
         if self.started_at and self.completed_at:
             start = datetime.fromisoformat(self.started_at)
-            end   = datetime.fromisoformat(self.completed_at)
+            end = datetime.fromisoformat(self.completed_at)
             return (end - start).total_seconds()
         return None
 
@@ -180,7 +190,7 @@ class Mission:
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
-        d["status"]   = self.status.value
+        d["status"] = self.status.value
         return d
 
     def to_json(self) -> str:
@@ -201,6 +211,7 @@ class Mission:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()

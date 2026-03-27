@@ -59,7 +59,7 @@ def register_deck_routes(
 ):
     """
     Register all Deck API and static file routes on the gateway app.
-    
+
     Args:
         app: aiohttp Application to mount routes on
         bot_token: Telegram bot token for initData HMAC validation
@@ -102,18 +102,24 @@ def register_deck_routes(
         app.router.add_get("/api/deck/vault", handle_deck_vault_list)
         app.router.add_post("/api/deck/vault", handle_deck_vault_add)
         app.router.add_delete("/api/deck/vault/{cred_id}", handle_deck_vault_delete)
-        app.router.add_post("/api/deck/vault/{cred_id}/toggle", handle_deck_vault_toggle)
+        app.router.add_post(
+            "/api/deck/vault/{cred_id}/toggle", handle_deck_vault_toggle
+        )
         app.router.add_post("/api/deck/vault/{cred_id}/test", handle_deck_vault_test)
 
         # Static file serving for Deck SPA
         static_dir = _find_deck_static_dir(deck_cfg.get("static_dir"))
         if static_dir:
             # Serve assets (JS, CSS, etc.)
-            app.router.add_static("/deck/assets", static_dir / "assets", show_index=False)
+            app.router.add_static(
+                "/deck/assets", static_dir / "assets", show_index=False
+            )
             # Serve other static files
             for f in static_dir.iterdir():
                 if f.is_file() and f.name != "index.html":
-                    app.router.add_get(f"/deck/{f.name}", lambda req, fp=f: web.FileResponse(fp))
+                    app.router.add_get(
+                        f"/deck/{f.name}", lambda req, fp=f: web.FileResponse(fp)
+                    )
             # SPA catch-all — serve index.html for all /deck/* routes
             app.router.add_get("/deck/{path:.*}", handle_deck_index)
             app.router.add_get("/deck", handle_deck_index)
@@ -127,5 +133,6 @@ def register_deck_routes(
             logger.warning("Deck static dir not found — API only, no SPA")
 
         logger.info("Deck API routes registered at /api/deck/ (auth enabled)")
+
 
 __all__ = ["register_deck_routes"]

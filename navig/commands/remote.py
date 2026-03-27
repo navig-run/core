@@ -1,4 +1,5 @@
 """Remote Command Execution"""
+
 import base64
 import os
 import subprocess
@@ -19,10 +20,10 @@ def _check_powershell_quoting_issues(
     stdin: bool,
     file: Optional[Path],
     interactive: bool,
-    options: Dict[str, Any]
+    options: Dict[str, Any],
 ) -> None:
     """Detect PowerShell quoting problems and provide actionable guidance.
-    
+
     PowerShell parses parentheses, brackets, and special chars as syntax,
     breaking complex commands. This detects the issue and suggests stdin/file.
     """
@@ -36,16 +37,16 @@ def _check_powershell_quoting_issues(
 
     # Detect if we're running in PowerShell
     is_powershell = False
-    parent_process = os.environ.get('TERM_PROGRAM', '').lower()
-    shell_name = os.environ.get('SHELL', '').lower()
+    parent_process = os.environ.get("TERM_PROGRAM", "").lower()
+    shell_name = os.environ.get("SHELL", "").lower()
 
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         # On Windows, PowerShell is the default
         is_powershell = True
         # cmd.exe sets PROMPT, PowerShell doesn't
-        if os.environ.get('PROMPT'):
+        if os.environ.get("PROMPT"):
             is_powershell = False
-    elif 'powershell' in parent_process or 'pwsh' in shell_name:
+    elif "powershell" in parent_process or "pwsh" in shell_name:
         is_powershell = True
 
     if not is_powershell:
@@ -53,11 +54,11 @@ def _check_powershell_quoting_issues(
 
     # Check for PowerShell-problematic patterns
     powershell_problems = [
-        ('(', 'parentheses - PowerShell treats them as syntax'),
-        (')', 'parentheses - PowerShell treats them as syntax'),
-        ('{', 'curly braces - PowerShell treats them as script blocks'),
-        ('$', 'dollar signs - PowerShell treats them as variables'),
-        ('`', 'backticks - PowerShell treats them as escape characters'),
+        ("(", "parentheses - PowerShell treats them as syntax"),
+        (")", "parentheses - PowerShell treats them as syntax"),
+        ("{", "curly braces - PowerShell treats them as script blocks"),
+        ("$", "dollar signs - PowerShell treats them as variables"),
+        ("`", "backticks - PowerShell treats them as escape characters"),
     ]
 
     found_issues = []
@@ -66,10 +67,10 @@ def _check_powershell_quoting_issues(
             found_issues.append(reason)
 
     # Only warn if multiple problematic patterns found (avoid false positives)
-    if len(found_issues) >= 2 and not options.get('b64'):
+    if len(found_issues) >= 2 and not options.get("b64"):
         ch.warning(
             "PowerShell detected: This command has special characters that PowerShell may misinterpret.",
-            "Use one of these methods to avoid quoting issues:"
+            "Use one of these methods to avoid quoting issues:",
         )
         ch.console.print()
         ch.info("Method 1: Use stdin (recommended for one-liners)")
@@ -82,7 +83,7 @@ def _check_powershell_quoting_issues(
         ch.dim("  navig run --b64 --file cmd.txt")
         ch.console.print()
         ch.info("Method 3: Use stop-parsing token")
-        ch.dim(f"  navig run --b64 --% \"{command}\"")
+        ch.dim(f'  navig run --b64 --% "{command}"')
         ch.console.print()
         ch.dim("Issues detected: " + ", ".join(set(found_issues)))
         ch.console.print()
@@ -93,7 +94,7 @@ def run_remote_command(
     options: Dict[str, Any],
     stdin: bool = False,
     file: Optional[Path] = None,
-    interactive: bool = False
+    interactive: bool = False,
 ):
     """Execute arbitrary shell command on remote host.
 
@@ -113,7 +114,9 @@ def run_remote_command(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get('host') or options.get('app') or config_manager.get_active_host()
+    host_name = (
+        options.get("host") or options.get("app") or config_manager.get_active_host()
+    )
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
@@ -130,7 +133,7 @@ def run_remote_command(
     display_command = final_command
 
     # Apply Base64 encoding if requested
-    use_b64 = options.get('b64', False)
+    use_b64 = options.get("b64", False)
     if use_b64:
         # Check if input is already base64-encoded (auto-detection)
         decoded_cmd = _try_decode_b64(final_command)
@@ -145,38 +148,42 @@ def run_remote_command(
         if final_command is None:
             return  # Error already printed
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         # For multi-line commands, show preview
-        preview = final_command if len(final_command) < 200 else final_command[:200] + "..."
+        preview = (
+            final_command if len(final_command) < 200 else final_command[:200] + "..."
+        )
         ch.dim(f"Would execute: {preview}")
-        if '\n' in final_command:
+        if "\n" in final_command:
             ch.dim(f"(Multi-line command with {final_command.count(chr(10))+1} lines)")
         return
 
     # Check if command requires confirmation based on configured level
     command_type = ch.classify_command(display_command)
-    preview = display_command if len(display_command) < 80 else display_command[:80] + "..."
+    preview = (
+        display_command if len(display_command) < 80 else display_command[:80] + "..."
+    )
 
     if not ch.confirm_operation(
         operation_name=f"Run: {preview}",
         operation_type=command_type,
         host=host_name,
-        auto_confirm=options.get('yes', False),
-        force_confirm=options.get('confirm', False),
+        auto_confirm=options.get("yes", False),
+        force_confirm=options.get("confirm", False),
     ):
         ch.warning("Cancelled.")
         return
 
     # Add blank line before execution info for visual separation
-    if not options.get('json'):
+    if not options.get("json"):
         ch.console.print()
 
     # Show command info - use original command for display when b64 was used
-    if not options.get('json'):
-        if '\n' in display_command:
+    if not options.get("json"):
+        if "\n" in display_command:
             # Multi-line command - show first line and line count
-            first_line = display_command.split('\n')[0]
-            line_count = display_command.count('\n') + 1
+            first_line = display_command.split("\n")[0]
+            line_count = display_command.count("\n") + 1
             ch.info(f"Executing multi-line command ({line_count} lines):")
             ch.dim(f"  {first_line}...")
         elif len(display_command) > 100:
@@ -197,12 +204,15 @@ def run_remote_command(
             "Windows. Consider setting the host to an IP address instead.",
         )
 
-    if options.get('json'):
+    if options.get("json"):
         # JSON mode: capture output and emit a single JSON object.
         try:
-            result = remote_ops.execute_command(final_command, host_config, capture_output=True)
+            result = remote_ops.execute_command(
+                final_command, host_config, capture_output=True
+            )
         except RuntimeError as e:
             import json as _json
+
             ch.raw_print(_json.dumps({"error": str(e), "success": False}, indent=2))
             raise typer.Exit(1) from e
         import json as _json
@@ -229,7 +239,7 @@ def run_remote_command(
 
     # Check if output is piped (non-interactive) - skip progress indicator
     is_interactive = sys.stdout.isatty()
-    is_raw_mode = options.get('raw', False)
+    is_raw_mode = options.get("raw", False)
 
     try:
         if is_interactive and not is_raw_mode:
@@ -237,7 +247,9 @@ def run_remote_command(
             result = _execute_with_progress(remote_ops, final_command, host_config)
         else:
             # Direct execution for piped/raw output
-            result = remote_ops.execute_command(final_command, host_config, capture_output=False)
+            result = remote_ops.execute_command(
+                final_command, host_config, capture_output=False
+            )
     except RuntimeError as e:
         ch.error(str(e))
         raise typer.Exit(1) from e
@@ -261,23 +273,28 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
 
     # Resolve ssh binary — 32-bit Python on 64-bit Windows cannot find System32\OpenSSH via PATH
     def _find_ssh():
-        b = shutil.which('ssh') or shutil.which('ssh.exe')
-        if b: return b
-        _sr = os.environ.get('SystemRoot', 'C:/Windows')
-        for _c in [_pl.Path(_sr)/'SysNative'/'OpenSSH'/'ssh.exe', _pl.Path(_sr)/'System32'/'OpenSSH'/'ssh.exe']:
-            if _c.exists(): return str(_c)
-        raise FileNotFoundError('ssh.exe not found')
+        b = shutil.which("ssh") or shutil.which("ssh.exe")
+        if b:
+            return b
+        _sr = os.environ.get("SystemRoot", "C:/Windows")
+        for _c in [
+            _pl.Path(_sr) / "SysNative" / "OpenSSH" / "ssh.exe",
+            _pl.Path(_sr) / "System32" / "OpenSSH" / "ssh.exe",
+        ]:
+            if _c.exists():
+                return str(_c)
+        raise FileNotFoundError("ssh.exe not found")
 
     # Build SSH command (same logic as RemoteOperations.execute_command)
     ssh_args = [_find_ssh()]
-    ssh_args.extend(['-o', 'StrictHostKeyChecking=yes'])
-    ssh_args.extend(['-o', 'ConnectTimeout=10'])
+    ssh_args.extend(["-o", "StrictHostKeyChecking=yes"])
+    ssh_args.extend(["-o", "ConnectTimeout=10"])
 
-    if host_config.get('port', 22) != 22:
-        ssh_args.extend(['-p', str(host_config['port'])])
+    if host_config.get("port", 22) != 22:
+        ssh_args.extend(["-p", str(host_config["port"])])
 
-    if host_config.get('ssh_key'):
-        ssh_args.extend(['-i', host_config['ssh_key']])
+    if host_config.get("ssh_key"):
+        ssh_args.extend(["-i", host_config["ssh_key"]])
 
     ssh_args.append(f"{host_config['user']}@{host_config['host']}")
     ssh_args.append(command)
@@ -296,7 +313,7 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
             time.sleep(0.1)
 
         # Now show elapsed time updates
-        spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         spinner_idx = 0
 
         while not stop_event.is_set() and not output_started.is_set():
@@ -335,10 +352,7 @@ def _execute_with_progress(remote_ops, command: str, host_config: Dict[str, Any]
 
 
 def _resolve_command(
-    command: Optional[str],
-    stdin: bool,
-    file: Optional[Path],
-    interactive: bool = False
+    command: Optional[str], stdin: bool, file: Optional[Path], interactive: bool = False
 ) -> Optional[str]:
     """Resolve command from the appropriate source.
 
@@ -365,11 +379,9 @@ def _resolve_command(
     if interactive:
         return _read_from_editor()
 
-    sources_count = sum([
-        stdin,
-        file is not None,
-        command is not None and command.strip() != ""
-    ])
+    sources_count = sum(
+        [stdin, file is not None, command is not None and command.strip() != ""]
+    )
 
     if sources_count == 0:
         ch.error("No command specified.")
@@ -419,7 +431,7 @@ def _resolve_command(
             return None
 
         try:
-            cmd = file_path.read_text(encoding='utf-8')
+            cmd = file_path.read_text(encoding="utf-8")
             if not cmd.strip():
                 ch.error(f"Command file is empty: {file_path}")
                 return None
@@ -439,15 +451,15 @@ def _read_from_editor() -> Optional[str]:
     Uses $EDITOR environment variable, falls back to platform defaults.
     """
     # Determine editor
-    editor = os.environ.get('EDITOR')
+    editor = os.environ.get("EDITOR")
     if not editor:
-        if sys.platform == 'win32':
-            editor = 'notepad.exe'
+        if sys.platform == "win32":
+            editor = "notepad.exe"
         else:
             # Try common editors
-            for ed in ['nano', 'vim', 'vi']:
+            for ed in ["nano", "vim", "vi"]:
                 try:
-                    subprocess.run(['which', ed], capture_output=True, check=True)
+                    subprocess.run(["which", ed], capture_output=True, check=True)
                     editor = ed
                     break
                 except (subprocess.CalledProcessError, FileNotFoundError):
@@ -463,7 +475,9 @@ def _read_from_editor() -> Optional[str]:
 
     # Create temp file with helpful template
     try:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False, encoding='utf-8') as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".sh", delete=False, encoding="utf-8"
+        ) as f:
             f.write("# Enter your command below (this line will be removed)\n")
             f.write("# Save and close the editor to execute\n")
             f.write("\n")
@@ -479,14 +493,14 @@ def _read_from_editor() -> Optional[str]:
             return None
 
         # Read the edited content
-        content = Path(temp_path).read_text(encoding='utf-8')
+        content = Path(temp_path).read_text(encoding="utf-8")
 
         # Remove comment lines at the start
-        lines = content.split('\n')
-        while lines and lines[0].strip().startswith('#'):
+        lines = content.split("\n")
+        while lines and lines[0].strip().startswith("#"):
             lines.pop(0)
 
-        cmd = '\n'.join(lines).strip()
+        cmd = "\n".join(lines).strip()
 
         if not cmd:
             ch.warning("No command entered. Cancelled.")
@@ -501,7 +515,7 @@ def _read_from_editor() -> Optional[str]:
     finally:
         # Clean up temp file
         try:
-            if 'temp_path' in locals():
+            if "temp_path" in locals():
                 Path(temp_path).unlink(missing_ok=True)
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -518,7 +532,7 @@ def _encode_b64_command(command: str) -> str:
     """
     try:
         # Encode the command as Base64
-        encoded = base64.b64encode(command.encode('utf-8')).decode('ascii')
+        encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
 
         # Wrap in decode-and-execute shell command
         # Using single quotes around the Base64 string (safe - only alphanumeric + /+=)
@@ -534,23 +548,26 @@ def _encode_b64_command(command: str) -> str:
 
 def _try_decode_b64(text: str) -> Optional[str]:
     """Try to decode a string as Base64. Returns decoded string or None.
-    
+
     Used to detect if user already passed base64-encoded command.
     """
     text = text.strip()
 
     # Quick check: base64 strings are alphanumeric + /+= only
-    if not all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r' for c in text):
+    if not all(
+        c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r"
+        for c in text
+    ):
         return None
 
     # Try to decode
     try:
         decoded_bytes = base64.b64decode(text, validate=True)
-        decoded = decoded_bytes.decode('utf-8')
+        decoded = decoded_bytes.decode("utf-8")
 
         # Sanity check: decoded text should look like a shell command
         # (contains common shell characters, not just random bytes)
-        if len(decoded) > 0 and any(c in decoded for c in ' /.-;|&'):
+        if len(decoded) > 0 and any(c in decoded for c in " /.-;|&"):
             return decoded
         return None
     except Exception:
@@ -563,7 +580,9 @@ def install_remote_package(package: str, options: Dict[str, Any]):
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
-    host_name = options.get('host') or options.get('app') or config_manager.get_active_host()
+    host_name = (
+        options.get("host") or options.get("app") or config_manager.get_active_host()
+    )
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
@@ -575,22 +594,42 @@ def install_remote_package(package: str, options: Dict[str, Any]):
     ch.info(f"📦 Installing package: {package}")
 
     # Detect package manager based on OS metadata or by checking commands
-    os_type = server_config.get('metadata', {}).get('os', '').lower()
+    os_type = server_config.get("metadata", {}).get("os", "").lower()
 
     # Try to detect package manager
     package_managers = [
-        {'cmd': 'apt-get', 'install': f'apt-get install -y {package}', 'systems': ['ubuntu', 'debian']},
-        {'cmd': 'yum', 'install': f'yum install -y {package}', 'systems': ['centos', 'rhel', 'fedora', 'rocky', 'alma']},
-        {'cmd': 'dnf', 'install': f'dnf install -y {package}', 'systems': ['fedora', 'rhel 8', 'centos 8']},
-        {'cmd': 'pacman', 'install': f'pacman -S --noconfirm {package}', 'systems': ['arch', 'manjaro']},
-        {'cmd': 'zypper', 'install': f'zypper install -y {package}', 'systems': ['opensuse', 'suse']},
-        {'cmd': 'apk', 'install': f'apk add {package}', 'systems': ['alpine']},
+        {
+            "cmd": "apt-get",
+            "install": f"apt-get install -y {package}",
+            "systems": ["ubuntu", "debian"],
+        },
+        {
+            "cmd": "yum",
+            "install": f"yum install -y {package}",
+            "systems": ["centos", "rhel", "fedora", "rocky", "alma"],
+        },
+        {
+            "cmd": "dnf",
+            "install": f"dnf install -y {package}",
+            "systems": ["fedora", "rhel 8", "centos 8"],
+        },
+        {
+            "cmd": "pacman",
+            "install": f"pacman -S --noconfirm {package}",
+            "systems": ["arch", "manjaro"],
+        },
+        {
+            "cmd": "zypper",
+            "install": f"zypper install -y {package}",
+            "systems": ["opensuse", "suse"],
+        },
+        {"cmd": "apk", "install": f"apk add {package}", "systems": ["alpine"]},
     ]
 
     # First try OS-based detection
     detected_pm = None
     for pm in package_managers:
-        if any(sys in os_type for sys in pm['systems']):
+        if any(sys in os_type for sys in pm["systems"]):
             detected_pm = pm
             break
 
@@ -599,7 +638,7 @@ def install_remote_package(package: str, options: Dict[str, Any]):
         ch.info("   Auto-detecting package manager...")
         for pm in package_managers:
             result = remote_ops.execute_command(f"which {pm['cmd']}")
-            if result['success'] and result['exit_code'] == 0:
+            if result["success"] and result["exit_code"] == 0:
                 detected_pm = pm
                 ch.success(f"   ✓ Detected: {pm['cmd']}")
                 break
@@ -607,25 +646,23 @@ def install_remote_package(package: str, options: Dict[str, Any]):
     if not detected_pm:
         ch.error("Could not detect package manager.")
         ch.info("Supported: apt-get, yum, dnf, pacman, zypper, apk")
-        ch.info(f"Try manually: navig run \"<package-manager> install {package}\"")
+        ch.info(f'Try manually: navig run "<package-manager> install {package}"')
         return
 
     # Dry-run check
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.info(f"[DRY RUN] Would execute: {detected_pm['install']}")
         return
 
     # Execute installation
     ch.info(f"   Using: {detected_pm['cmd']}")
-    result = remote_ops.execute_command(detected_pm['install'])
+    result = remote_ops.execute_command(detected_pm["install"])
 
-    if result['success'] and result['exit_code'] == 0:
+    if result["success"] and result["exit_code"] == 0:
         ch.success(f"✅ Package installed: {package}")
-        if result['output']:
+        if result["output"]:
             ch.dim(f"\n{result['output']}")
     else:
         ch.error(f"❌ Installation failed: {package}")
-        if result.get('error'):
+        if result.get("error"):
             ch.error(f"Error: {result['error']}")
-
-

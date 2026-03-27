@@ -98,8 +98,12 @@ def process_current(
     no_llm: bool = typer.Option(False, "--no-llm", help="Use heuristic only (no LLM)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
-    no_move: bool = typer.Option(False, "--no-move", help="Don't move source after routing"),
-    backend: str = typer.Option("cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"),
+    no_move: bool = typer.Option(
+        False, "--no-move", help="Don't move source after routing"
+    ),
+    backend: str = typer.Option(
+        "cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"
+    ),
 ) -> None:
     """Process a single inbox file — classify, transform, and route."""
     from navig.agents.inbox_router import InboxRouterAgent, execute_plan
@@ -122,7 +126,9 @@ def process_current(
     _print_plan(plan)
 
     if not dry_run and not plan.get("error"):
-        result = execute_plan(project_root, plan, dry_run=False, move_source=not no_move)
+        result = execute_plan(
+            project_root, plan, dry_run=False, move_source=not no_move
+        )
         _print_execution_result(result)
     elif dry_run:
         result = execute_plan(project_root, plan, dry_run=True)
@@ -134,17 +140,27 @@ def process_all(
     no_llm: bool = typer.Option(False, "--no-llm", help="Use heuristic only (no LLM)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
-    no_move: bool = typer.Option(False, "--no-move", help="Don't move source after routing"),
-    backend: str = typer.Option("cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"),
+    no_move: bool = typer.Option(
+        False, "--no-move", help="Don't move source after routing"
+    ),
+    backend: str = typer.Option(
+        "cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"
+    ),
 ) -> None:
     """Process ALL .md files in .navig/plans/inbox/."""
-    from navig.agents.inbox_router import InboxRouterAgent, execute_plan, list_inbox_files
+    from navig.agents.inbox_router import (
+        InboxRouterAgent,
+        execute_plan,
+        list_inbox_files,
+    )
 
     project_root = _find_project_root()
     files = list_inbox_files(project_root)
 
     if not files:
-        typer.secho("No inbox files found in .navig/plans/inbox/", fg=typer.colors.YELLOW)
+        typer.secho(
+            "No inbox files found in .navig/plans/inbox/", fg=typer.colors.YELLOW
+        )
         raise typer.Exit(0)
 
     typer.echo(f"Found {len(files)} inbox file(s)\n")
@@ -160,7 +176,9 @@ def process_all(
     for plan in plans:
         _print_plan(plan)
         if not dry_run and not plan.get("error"):
-            result = execute_plan(project_root, plan, dry_run=False, move_source=not no_move)
+            result = execute_plan(
+                project_root, plan, dry_run=False, move_source=not no_move
+            )
         else:
             result = execute_plan(project_root, plan, dry_run=True)
         results.append(result)
@@ -177,16 +195,24 @@ def process_all(
 def dry_run(
     no_llm: bool = typer.Option(False, "--no-llm", help="Use heuristic only (no LLM)"),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
-    backend: str = typer.Option("cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"),
+    backend: str = typer.Option(
+        "cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"
+    ),
 ) -> None:
     """Preview routing for all inbox files (no files written or moved)."""
-    from navig.agents.inbox_router import InboxRouterAgent, execute_plan, list_inbox_files
+    from navig.agents.inbox_router import (
+        InboxRouterAgent,
+        execute_plan,
+        list_inbox_files,
+    )
 
     project_root = _find_project_root()
     files = list_inbox_files(project_root)
 
     if not files:
-        typer.secho("No inbox files found in .navig/plans/inbox/", fg=typer.colors.YELLOW)
+        typer.secho(
+            "No inbox files found in .navig/plans/inbox/", fg=typer.colors.YELLOW
+        )
         raise typer.Exit(0)
 
     typer.echo(f"Dry-run preview for {len(files)} inbox file(s)\n")
@@ -216,12 +242,20 @@ def dry_run(
 @inbox_app.command("filter")
 def filter_cmd(
     path: Optional[str] = typer.Option(
-        None, "--path", "-p",
+        None,
+        "--path",
+        "-p",
         help="Project root (default: auto-detected from cwd)",
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview only — no files written"),
-    watch: bool = typer.Option(False, "--watch", "-w", help="Keep running and re-filter on changes"),
-    interval: float = typer.Option(5.0, "--interval", "-i", help="Watch interval in seconds"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview only — no files written"
+    ),
+    watch: bool = typer.Option(
+        False, "--watch", "-w", help="Keep running and re-filter on changes"
+    ),
+    interval: float = typer.Option(
+        5.0, "--interval", "-i", help="Watch interval in seconds"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Filter and normalize all .navig/**/*.md files in-place.
@@ -261,7 +295,9 @@ def filter_cmd(
         return
 
     # Single-pass scan
-    typer.echo(f"Filtering .navig/ under {project_root} {'[dry-run]' if dry_run else ''}\n")
+    typer.echo(
+        f"Filtering .navig/ under {project_root} {'[dry-run]' if dry_run else ''}\n"
+    )
     results = engine.scan_and_filter(dry_run=dry_run)
 
     if json_output:
@@ -284,7 +320,9 @@ def filter_cmd(
         return
 
     if not results:
-        typer.secho("All files are already clean — nothing to do.", fg=typer.colors.GREEN)
+        typer.secho(
+            "All files are already clean — nothing to do.", fg=typer.colors.GREEN
+        )
         return
 
     changed = 0
@@ -297,10 +335,15 @@ def filter_cmd(
             typer.secho(f"  [ERROR] {name}: {r.error}", fg=typer.colors.RED)
             errors += 1
         elif r.changed:
-            typer.secho(f"  [UPDATED] {name}  rules={r.rules_applied}", fg=typer.colors.GREEN)
+            typer.secho(
+                f"  [UPDATED] {name}  rules={r.rules_applied}", fg=typer.colors.GREEN
+            )
             changed += 1
         elif r.would_change:
-            typer.secho(f"  [WOULD UPDATE] {name}  rules={r.rules_applied}", fg=typer.colors.YELLOW)
+            typer.secho(
+                f"  [WOULD UPDATE] {name}  rules={r.rules_applied}",
+                fg=typer.colors.YELLOW,
+            )
             would_change += 1
 
     if dry_run:
@@ -312,11 +355,17 @@ def filter_cmd(
 @inbox_app.command("watch")
 def watch_cmd(
     path: Optional[str] = typer.Option(
-        None, "--path", "-p",
+        None,
+        "--path",
+        "-p",
         help="Project root (default: auto-detected from cwd)",
     ),
-    interval: float = typer.Option(5.0, "--interval", "-i", help="Poll interval in seconds"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Detect and report changes only"),
+    interval: float = typer.Option(
+        5.0, "--interval", "-i", help="Poll interval in seconds"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Detect and report changes only"
+    ),
 ) -> None:
     """Watch .navig/**/*.md for changes and re-filter automatically.
 
@@ -385,7 +434,9 @@ def add_url_cmd(
     url: str = typer.Argument(..., help="URL to fetch, classify, and route"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
     no_llm: bool = typer.Option(False, "--no-llm", help="Use BM25 classifier only"),
-    mode: str = typer.Option("copy", "--mode", "-m", help="Route mode: copy | move | link"),
+    mode: str = typer.Option(
+        "copy", "--mode", "-m", help="Route mode: copy | move | link"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Fetch a URL, classify it, and route it into the wiki inbox.
@@ -432,13 +483,18 @@ def add_url_cmd(
     result = classifier.classify(text, filename=filename, extra_context=url)
 
     if json_output:
-        typer.echo(json.dumps({
-            "url": url,
-            "filename": filename,
-            "category": result.category,
-            "confidence": result.confidence,
-            "method": result.method,
-        }, indent=2))
+        typer.echo(
+            json.dumps(
+                {
+                    "url": url,
+                    "filename": filename,
+                    "category": result.category,
+                    "confidence": result.confidence,
+                    "method": result.method,
+                },
+                indent=2,
+            )
+        )
         if dry_run:
             return
 
@@ -460,16 +516,23 @@ def add_url_cmd(
 
     # Route
     project_root = _find_project_root()
-    router_mode = RouteMode(mode) if mode in ("copy", "move", "link") else RouteMode.COPY
+    router_mode = (
+        RouteMode(mode) if mode in ("copy", "move", "link") else RouteMode.COPY
+    )
     router = InboxRouter(project_root=project_root, mode=router_mode)
     route_result = router.route_url(url, md, filename, result, dry_run=dry_run)
 
     if json_output:
-        typer.echo(json.dumps({
-            "route_status": route_result.status,
-            "destination": route_result.destination,
-            "result_path": route_result.result_path,
-        }, indent=2))
+        typer.echo(
+            json.dumps(
+                {
+                    "route_status": route_result.status,
+                    "destination": route_result.destination,
+                    "result_path": route_result.result_path,
+                },
+                indent=2,
+            )
+        )
         return
 
     if route_result.status == "routed":
@@ -513,7 +576,9 @@ def ui_cmd(
         None, "--path", "-p", help="Project root (default: auto-detected)"
     ),
     no_llm: bool = typer.Option(False, "--no-llm", help="BM25 only, no LLM"),
-    mode: str = typer.Option("copy", "--mode", "-m", help="Route mode: copy | move | link"),
+    mode: str = typer.Option(
+        "copy", "--mode", "-m", help="Route mode: copy | move | link"
+    ),
 ) -> None:
     """Interactive TUI review panel — inspect inbox files and approve routing.
 
@@ -528,23 +593,32 @@ def ui_cmd(
     inbox_dir = project_root / ".navig" / "wiki" / "inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
 
-    files = [f for f in inbox_dir.iterdir() if f.is_file() and not f.name.startswith(".")]
+    files = [
+        f for f in inbox_dir.iterdir() if f.is_file() and not f.name.startswith(".")
+    ]
     if not files:
         # Also check global inbox
         try:
             from navig.platform.paths import navig_data_dir
+
             global_inbox = navig_data_dir() / "inbox"
         except Exception:
             global_inbox = Path.home() / ".navig" / "inbox"
         if global_inbox.is_dir():
-            files += [f for f in global_inbox.iterdir() if f.is_file() and not f.name.startswith(".")]
+            files += [
+                f
+                for f in global_inbox.iterdir()
+                if f.is_file() and not f.name.startswith(".")
+            ]
 
     if not files:
         typer.secho("No inbox files found.", fg=typer.colors.YELLOW)
         return
 
     classifier = Classifier(use_llm=not no_llm)
-    router_mode = RouteMode(mode) if mode in ("copy", "move", "link") else RouteMode.COPY
+    router_mode = (
+        RouteMode(mode) if mode in ("copy", "move", "link") else RouteMode.COPY
+    )
     router = InboxRouter(project_root=project_root, mode=router_mode)
     store = InboxStore()
 
@@ -589,6 +663,7 @@ def ui_cmd(
                 routed += 1
                 # Persist
                 import hashlib
+
                 event = InboxEvent(
                     source_path=str(f),
                     source_type="file",
@@ -610,7 +685,10 @@ def ui_cmd(
                 )
                 store.insert_decision(decision)
             else:
-                typer.secho(f"  ✗ {route_result.status}: {route_result.error}", fg=typer.colors.RED)
+                typer.secho(
+                    f"  ✗ {route_result.status}: {route_result.error}",
+                    fg=typer.colors.RED,
+                )
         else:
             typer.secho("  Kept in inbox.", fg=typer.colors.YELLOW)
             skipped += 1

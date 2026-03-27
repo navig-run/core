@@ -4,6 +4,7 @@ telegram/menus.py - InlineKeyboardMarkup builders for navig command results.
 Each build_<command>_menu function accepts the dict returned by the command
 handler and returns an InlineKeyboardMarkup (or None if no menu applies).
 """
+
 from __future__ import annotations
 
 from typing import Any

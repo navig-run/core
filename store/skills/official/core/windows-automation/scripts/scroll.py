@@ -4,8 +4,9 @@ Scroll - Scroll in direction
 Usage: py scroll.py up 5
        py scroll.py down 10
 """
-import pyautogui
 import sys
+
+import pyautogui
 
 if len(sys.argv) < 3:
     print("Usage: py scroll.py [up|down] amount")
@@ -22,7 +23,7 @@ try:
     else:
         print("Direction must be 'up' or 'down'")
         sys.exit(1)
-    
+
     print(f"Scrolled {direction} {amount} notches")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)

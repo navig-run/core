@@ -9,7 +9,14 @@ from navig.agent.ai_client import AIClient
 
 
 class _FakeResponse:
-    def __init__(self, status: int, *, text: str = "", json_data: dict | None = None, headers: dict | None = None):
+    def __init__(
+        self,
+        status: int,
+        *,
+        text: str = "",
+        json_data: dict | None = None,
+        headers: dict | None = None,
+    ):
         self.status = status
         self._text = text
         self._json = json_data or {}
@@ -55,10 +62,12 @@ def test_trim_messages_preserves_system_and_recent_history() -> None:
 @pytest.mark.asyncio
 async def test_chat_api_retries_once_on_rate_limit(monkeypatch) -> None:
     client = AIClient(api_key="test", model="test", provider="openrouter")
-    fake_session = _FakeSession([
-        _FakeResponse(429, text="rate limited", headers={"Retry-After": "1"}),
-        _FakeResponse(200, json_data={"choices": [{"message": {"content": "ok"}}]}),
-    ])
+    fake_session = _FakeSession(
+        [
+            _FakeResponse(429, text="rate limited", headers={"Retry-After": "1"}),
+            _FakeResponse(200, json_data={"choices": [{"message": {"content": "ok"}}]}),
+        ]
+    )
 
     async def fake_get_session():
         return fake_session
@@ -69,7 +78,11 @@ async def test_chat_api_retries_once_on_rate_limit(monkeypatch) -> None:
         sleep_calls.append(seconds)
 
     monkeypatch.setattr(client, "_get_session", fake_get_session)
-    monkeypatch.setattr(ai_client_module, "aiohttp", types.SimpleNamespace(ClientTimeout=lambda **kwargs: kwargs))
+    monkeypatch.setattr(
+        ai_client_module,
+        "aiohttp",
+        types.SimpleNamespace(ClientTimeout=lambda **kwargs: kwargs),
+    )
     monkeypatch.setattr(ai_client_module.asyncio, "sleep", fake_sleep)
 
     result = await client._chat_api(

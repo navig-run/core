@@ -94,6 +94,3 @@ navig db query "SELECT count(*) FROM users" -d myapp_db --plain
 1. **Always set context**: Run `navig host use` before any operation sequence.
 2. **Limit Output**: Use `--tail`, `--lines`, or `grep` to avoid overwhelming the context window.
 3. **Check First**: Use `navig host test` if a command fails to distinguish network issues from config errors.
-
-
-

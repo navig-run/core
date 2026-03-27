@@ -19,12 +19,15 @@ blackbox_app = typer.Typer(
     name="blackbox",
     help="Blackbox flight recorder — events, crash reports, and .navbox bundles",
 )
-bundle_cmd = typer.Typer(name="bundle", help="Create, inspect, and export .navbox bundles")
+bundle_cmd = typer.Typer(
+    name="bundle", help="Create, inspect, and export .navbox bundles"
+)
 blackbox_app.add_typer(bundle_cmd, name="bundle")
 
 
 def _recorder():
     from navig.blackbox.recorder import get_recorder
+
     return get_recorder()
 
 
@@ -42,6 +45,7 @@ def _parse_hours(since_str: str) -> float:
 
 # ── Status ────────────────────────────────────────────────────────────────────
 
+
 @blackbox_app.command("status")
 def blackbox_status():
     """Show blackbox recorder status and storage statistics."""
@@ -57,17 +61,20 @@ def blackbox_status():
     bdir = blackbox_dir()
 
     t = Table(expand=True, border_style="dim", show_header=False)
-    t.add_column("Field",  style="bold", width=22)
-    t.add_column("Value",  ratio=1)
+    t.add_column("Field", style="bold", width=22)
+    t.add_column("Value", ratio=1)
 
-    t.add_row("Status",        "[green]Enabled[/green]" if rec.is_enabled() else "[red]Disabled[/red]")
-    t.add_row("Directory",     str(bdir))
-    t.add_row("Event count",   str(rec.event_count()))
-    t.add_row("Log size",      f"{rec.file_size_mb():.2f} MB")
+    t.add_row(
+        "Status",
+        "[green]Enabled[/green]" if rec.is_enabled() else "[red]Disabled[/red]",
+    )
+    t.add_row("Directory", str(bdir))
+    t.add_row("Event count", str(rec.event_count()))
+    t.add_row("Log size", f"{rec.file_size_mb():.2f} MB")
 
     ts = rec.last_event_ts()
-    t.add_row("Last event",    ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "—")
-    t.add_row("Sealed",        "[yellow]Yes[/yellow]" if is_sealed() else "[dim]No[/dim]")
+    t.add_row("Last event", ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "—")
+    t.add_row("Sealed", "[yellow]Yes[/yellow]" if is_sealed() else "[dim]No[/dim]")
 
     # Count crash files
     crash_dir = bdir / "crashes"
@@ -78,6 +85,7 @@ def blackbox_status():
 
 
 # ── Enable / Disable ──────────────────────────────────────────────────────────
+
 
 @blackbox_app.command("enable")
 def blackbox_enable():
@@ -95,11 +103,18 @@ def blackbox_disable():
 
 # ── Record / Capture ──────────────────────────────────────────────────────────
 
+
 @blackbox_app.command("record")
 def blackbox_record(
-    event_type: str = typer.Argument(..., help="Event type: crash, error, warning, command, session, system, output"),
-    message: Optional[str] = typer.Option(None, "--message", "-m", help="Event message / payload text"),
-    tag: Optional[list[str]] = typer.Option(None, "--tag", "-t", help="Tags (repeatable)"),
+    event_type: str = typer.Argument(
+        ..., help="Event type: crash, error, warning, command, session, system, output"
+    ),
+    message: Optional[str] = typer.Option(
+        None, "--message", "-m", help="Event message / payload text"
+    ),
+    tag: Optional[list[str]] = typer.Option(
+        None, "--tag", "-t", help="Tags (repeatable)"
+    ),
     source: str = typer.Option("cli", "--source", help="Event source identifier"),
     stdin: bool = typer.Option(False, "--stdin", help="Read message from stdin"),
 ):
@@ -128,9 +143,13 @@ def blackbox_record(
 
 @blackbox_app.command("capture")
 def blackbox_capture(
-    last: str = typer.Option("30m", "--last", help="Capture events from last: 30m, 1h, 24h"),
+    last: str = typer.Option(
+        "30m", "--last", help="Capture events from last: 30m, 1h, 24h"
+    ),
     limit: int = typer.Option(200, "--limit", "-n", help="Maximum events to capture"),
-    output: Optional[str] = typer.Option(None, "-o", "--output", help="Output .navbox file path"),
+    output: Optional[str] = typer.Option(
+        None, "-o", "--output", help="Output .navbox file path"
+    ),
 ):
     """Capture a session snapshot to a .navbox bundle."""
     from navig.blackbox.bundle import create_bundle, write_bundle
@@ -151,11 +170,14 @@ def blackbox_capture(
 
 # ── Timeline ──────────────────────────────────────────────────────────────────
 
+
 @blackbox_app.command("timeline")
 def blackbox_timeline(
     limit: int = typer.Option(50, "--limit", "-n", help="Number of events to show"),
     since: Optional[str] = typer.Option(None, "--since", help="Since: 30m, 1h, 24h"),
-    event_type: Optional[str] = typer.Option(None, "--type", "-t", help="Filter by event type"),
+    event_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Filter by event type"
+    ),
 ):
     """Render a Rich timeline table of recorded events."""
     from navig.blackbox.recorder import get_recorder
@@ -173,9 +195,13 @@ def blackbox_timeline(
     since_dt: Optional[datetime] = None
     if since:
         hours = _parse_hours(since)
-        since_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
+        since_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+            hours=hours
+        )
 
-    events = get_recorder().read_events(since=since_dt, limit=limit, event_type=et_filter)
+    events = get_recorder().read_events(
+        since=since_dt, limit=limit, event_type=et_filter
+    )
     if not events:
         _ch.info("No events found.")
         return
@@ -185,9 +211,12 @@ def blackbox_timeline(
 
 # ── Seal ──────────────────────────────────────────────────────────────────────
 
+
 @blackbox_app.command("seal")
 def blackbox_seal(
-    unseal: bool = typer.Option(False, "--unseal", help="Remove seal instead of applying"),
+    unseal: bool = typer.Option(
+        False, "--unseal", help="Remove seal instead of applying"
+    ),
 ):
     """Seal the blackbox (prevents recording new events until unsealed)."""
     from navig.blackbox.bundle import create_bundle
@@ -213,11 +242,16 @@ def blackbox_seal(
 
 # ── Bundle sub-commands ────────────────────────────────────────────────────────
 
+
 @bundle_cmd.command("create")
 def bundle_create(
     since: str = typer.Option("24h", "--since", help="Events from last: 24h, 7d, …"),
-    output: Optional[str] = typer.Option(None, "-o", "--output", help="Output .navbox path"),
-    encrypted: bool = typer.Option(False, "--encrypted", help="Encrypt the bundle using the vault master key"),
+    output: Optional[str] = typer.Option(
+        None, "-o", "--output", help="Output .navbox path"
+    ),
+    encrypted: bool = typer.Option(
+        False, "--encrypted", help="Encrypt the bundle using the vault master key"
+    ),
 ):
     """Create a .navbox bundle from recent events and logs."""
     from navig.blackbox.bundle import create_bundle, write_bundle
@@ -262,27 +296,33 @@ def bundle_inspect(
     con = Console()
     bundle = inspect_bundle(path)
 
-    con.print(Panel(
-        f"[bold]ID:[/bold] {bundle.id}\n"
-        f"[bold]Created:[/bold] {bundle.created_at}\n"
-        f"[bold]NAVIG version:[/bold] {bundle.navig_version}\n"
-        f"[bold]Events:[/bold] {bundle.event_count()}\n"
-        f"[bold]Crashes:[/bold] {bundle.crash_count()}\n"
-        f"[bold]Log tails:[/bold] {len(bundle.log_tails)}\n"
-        f"[bold]Sealed:[/bold] {'Yes' if bundle.sealed else 'No'}\n"
-        f"[bold]Hash:[/bold] [dim]{bundle.manifest_hash or '—'}[/dim]",
-        title=f"Bundle: {path.name}",
-        border_style="dim",
-    ))
+    con.print(
+        Panel(
+            f"[bold]ID:[/bold] {bundle.id}\n"
+            f"[bold]Created:[/bold] {bundle.created_at}\n"
+            f"[bold]NAVIG version:[/bold] {bundle.navig_version}\n"
+            f"[bold]Events:[/bold] {bundle.event_count()}\n"
+            f"[bold]Crashes:[/bold] {bundle.crash_count()}\n"
+            f"[bold]Log tails:[/bold] {len(bundle.log_tails)}\n"
+            f"[bold]Sealed:[/bold] {'Yes' if bundle.sealed else 'No'}\n"
+            f"[bold]Hash:[/bold] [dim]{bundle.manifest_hash or '—'}[/dim]",
+            title=f"Bundle: {path.name}",
+            border_style="dim",
+        )
+    )
 
     if bundle.events:
         con.print("\n[bold]Events:[/bold]")
         render_timeline(bundle.events, limit=50, console=con)
 
     if bundle.crash_reports:
-        con.print(f"\n[bold red]{len(bundle.crash_reports)} crash report(s):[/bold red]")
+        con.print(
+            f"\n[bold red]{len(bundle.crash_reports)} crash report(s):[/bold red]"
+        )
         for cr in bundle.crash_reports:
-            con.print(f"  [dim]{cr.timestamp}[/dim]  {cr.exception_type}: {cr.exception_msg}")
+            con.print(
+                f"  [dim]{cr.timestamp}[/dim]  {cr.exception_type}: {cr.exception_msg}"
+            )
 
 
 @bundle_cmd.command("export")
@@ -309,9 +349,12 @@ def bundle_export(
 
 # ── Crashes ────────────────────────────────────────────────────────────────────
 
+
 @blackbox_app.command("crashes")
 def blackbox_crashes(
-    limit: int = typer.Option(10, "--limit", "-n", help="Number of crash reports to show"),
+    limit: int = typer.Option(
+        10, "--limit", "-n", help="Number of crash reports to show"
+    ),
 ):
     """List recent crash reports."""
     from rich.console import Console
@@ -338,9 +381,12 @@ def blackbox_crashes(
 
 # ── Tail ──────────────────────────────────────────────────────────────────────
 
+
 @blackbox_app.command("tail")
 def blackbox_tail(
-    limit: int = typer.Option(50, "--limit", "-n", help="Number of most-recent events to show"),
+    limit: int = typer.Option(
+        50, "--limit", "-n", help="Number of most-recent events to show"
+    ),
 ) -> None:
     """Show the most recent N events from the blackbox."""
     from navig.blackbox.timeline import render_timeline
@@ -354,12 +400,15 @@ def blackbox_tail(
 
 # ── Clear ─────────────────────────────────────────────────────────────────────
 
+
 @blackbox_app.command("clear")
 def blackbox_clear(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ) -> None:
     """Delete all recorded blackbox events (irreversible)."""
     if not force:
-        typer.confirm("This will permanently delete all blackbox events. Proceed?", abort=True)
+        typer.confirm(
+            "This will permanently delete all blackbox events. Proceed?", abort=True
+        )
     _recorder().clear()
     _ch.success("Blackbox cleared — all events deleted.")

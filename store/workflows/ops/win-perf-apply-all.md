@@ -7,11 +7,11 @@ os: windows
 
 # Workflow: win-perf-apply-all
 
-**ID:** `win-perf-apply-all`  
-**Version:** `0.1.0`  
-**OS:** Windows only  
-**Tool:** `win_perf_tuner`  
-**Skill:** `win-perf-tuner`  
+**ID:** `win-perf-apply-all`
+**Version:** `0.1.0`
+**OS:** Windows only
+**Tool:** `win_perf_tuner`
+**Skill:** `win-perf-tuner`
 **Admin required:** Yes (kernel + gpu targets)
 
 ---

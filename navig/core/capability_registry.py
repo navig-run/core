@@ -31,24 +31,28 @@ from typing import Optional
 # Tier definition
 # ---------------------------------------------------------------------------
 
+
 class CapabilityTier(str, Enum):
-    CORE     = "core"      # Always active
+    CORE = "core"  # Always active
     OPTIONAL = "optional"  # Gated by config key; ships disabled
-    LABS     = "labs"      # Not in default runtime; excluded from help
+    LABS = "labs"  # Not in default runtime; excluded from help
 
 
 # ---------------------------------------------------------------------------
 # Capability entry
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CapabilityEntry:
     tier: CapabilityTier
-    module: Optional[str] = None          # Python import path (None = external/scripts)
-    config_key: Optional[str] = None      # e.g. "mesh.enabled" — None = no gate needed
-    optional_dep: Optional[str] = None    # pyproject.toml optional group name, if any
-    cli_commands: list[str] = field(default_factory=list)  # navig subcommands for this cap
-    notes: str = ""                        # Human notes for diagnostics / docs
+    module: Optional[str] = None  # Python import path (None = external/scripts)
+    config_key: Optional[str] = None  # e.g. "mesh.enabled" — None = no gate needed
+    optional_dep: Optional[str] = None  # pyproject.toml optional group name, if any
+    cli_commands: list[str] = field(
+        default_factory=list
+    )  # navig subcommands for this cap
+    notes: str = ""  # Human notes for diagnostics / docs
 
 
 # ---------------------------------------------------------------------------
@@ -56,9 +60,7 @@ class CapabilityEntry:
 # ---------------------------------------------------------------------------
 
 REGISTRY: dict[str, CapabilityEntry] = {
-
     # ── CORE — always loaded, never gated ──────────────────────────────────
-
     "daemon": CapabilityEntry(
         tier=CapabilityTier.CORE,
         module="navig.daemon",
@@ -127,9 +129,7 @@ REGISTRY: dict[str, CapabilityEntry] = {
             "Same seed always produces the same entity: archetype, palette, 9x9 glyph sigil."
         ),
     ),
-
     # ── OPTIONAL — gated; ships disabled by default ────────────────────────
-
     "matrix": CapabilityEntry(
         tier=CapabilityTier.OPTIONAL,
         module="navig.gateway.channels.matrix",
@@ -211,9 +211,7 @@ REGISTRY: dict[str, CapabilityEntry] = {
             "Config default: proactive.enabled: false (providers off by default)."
         ),
     ),
-
     # ── LABS — not in default runtime; excluded from default help ──────────
-
     "formations": CapabilityEntry(
         tier=CapabilityTier.LABS,
         module="navig.formations",
@@ -253,6 +251,7 @@ REGISTRY: dict[str, CapabilityEntry] = {
 # ---------------------------------------------------------------------------
 # Helpers (read-only — no startup side effects)
 # ---------------------------------------------------------------------------
+
 
 def get_tier(capability: str) -> Optional[CapabilityTier]:
     """Return the tier of a capability, or None if unknown."""

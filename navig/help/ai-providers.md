@@ -57,7 +57,7 @@ navig ai airllm --test
 OAuth authentication requires provider-specific client registration. Currently, **no providers support OAuth** because:
 
 - **OpenAI**: OAuth only available to enterprise partners (use API keys)
-- **Anthropic**: Only supports API key authentication  
+- **Anthropic**: Only supports API key authentication
 - **Others**: Would require registering NAVIG as an OAuth application
 
 **Use API key authentication instead:**
@@ -130,5 +130,3 @@ navig ai providers
 navig ai providers --add openai
 navig ai providers --add anthropic
 ```
-
-
