@@ -246,10 +246,10 @@ Describe "Print-Header" {
         $src | Should -Match 'function Print-Header'
     }
 
-    It "contains canonical product description" {
+    It "contains a taglines array with multiple entries" {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Print-Header.*?\n\}')
-        $fn.Value | Should -Match 'quiet operator tooling'
+        $src | Should -Match '\$script:Taglines\s*=\s*@\('
+        $src | Should -Match 'NAVIG|servers|SSH|CLI'
     }
 
     It "contains unicode box-drawing characters or ASCII fallback" {
@@ -258,11 +258,11 @@ Describe "Print-Header" {
         $fn.Value | Should -Match '(tl|tr|bl|br|hz|sym)'
     }
 
-    It "does not contain a tagline array" {
+    It "uses Get-Random to select tagline dynamically" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Print-Header.*?\n\}')
-        $fn.Value | Should -Not -Match '\$taglines\s*='
-        $fn.Value | Should -Not -Match 'Get-Random'
+        $fn.Value | Should -Match 'Get-Random'
+        $fn.Value | Should -Match '\$script:Taglines'
     }
 }
 

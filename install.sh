@@ -107,6 +107,25 @@ _pad() {
     printf "%-${_LB}s" "$1"
 }
 
+# ── Taglines ──────────────────────────────────────────────────
+_TAGLINES=(
+    "Your servers are in good hands now."
+    "No admin visible in graveyard? Perfect."
+    "SSH tunnels, remote ops - all in one CLI."
+    "Because server management shouldn't feel like surgery."
+    "ctrl+c to exit. But why would you?"
+    "Keeping uptime personal since 2024."
+    "One CLI to rule them all."
+    "Servers don't sleep, and neither does NAVIG."
+    "Remote ops, local comfort."
+    "Born in the terminal. Lives in the cloud."
+    "Your devops sidekick. No cape required."
+    "Deploy, manage, survive. Repeat."
+    "Less SSH, more SHH - it just works."
+    "The quiet guardian of your infrastructure."
+    "Admin by day, daemon by night."
+)
+
 # ── Header ────────────────────────────────────────────────────
 print_header() {
     local lw=$((_LW + 2))
@@ -120,7 +139,8 @@ print_header() {
     printf "  %b%s%s%s%b\n" "$_GRY" "$tl" "$line" "$tr" "$_RST"
     printf "  %b%s%b\n"     "$_GRY" "$vt" "$_RST"
     printf "  %b%s%b   %bNAVIG%b\n" "$_GRY" "$vt" "$_RST" "$_CYN" "$_RST"
-    printf "  %b%s%b   %bquiet operator tooling for real systems%b\n" "$_GRY" "$vt" "$_RST" "$_GRY" "$_RST"
+    local _tagline="${_TAGLINES[RANDOM % ${#_TAGLINES[@]}]}"
+    printf "  %b%s%b   %b%s%b\n" "$_GRY" "$vt" "$_RST" "$_GRY" "$_tagline" "$_RST"
     printf "  %b%s%b\n"     "$_GRY" "$vt" "$_RST"
     printf "  %b%s%s%s%b\n" "$_GRY" "$bl" "$line" "$br" "$_RST"
     printf "\n"
