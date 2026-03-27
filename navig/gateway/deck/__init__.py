@@ -111,25 +111,22 @@ def register_deck_routes(
             # Serve assets (JS, CSS, etc.)
             app.router.add_static("/deck/assets", static_dir / "assets", show_index=False)
             # Serve other static files
-            _static_resolved = static_dir.resolve()
             for f in static_dir.iterdir():
-                # Plain filenames only — no path separators, no hidden files, not index.html
+                # Plain filenames only — no path separators, no hidden files, not index.html.
+                # Reject symlinks entirely: we serve only real files within the static dir.
+                # f comes from iterdir() over a trusted config path, not from user input —
+                # no resolve()/relative_to() needed; symlink exclusion prevents traversal.
                 if (
                     f.is_file()
+                    and not f.is_symlink()
                     and f.name != "index.html"
                     and "/" not in f.name
                     and "\\" not in f.name
                     and not f.name.startswith(".")
                 ):
-                    try:
-                        # Validate containment and rebuild from trusted root
-                        rel = f.resolve().relative_to(_static_resolved)
-                        safe_fp = _static_resolved / rel
-                        app.router.add_get(
-                            f"/deck/{f.name}", lambda req, fp=safe_fp: web.FileResponse(fp)
-                        )
-                    except ValueError:
-                        pass  # Skip files that resolve outside static_dir
+                    app.router.add_get(
+                        f"/deck/{f.name}", lambda req, fp=f: web.FileResponse(fp)
+                    )
             # SPA catch-all — serve index.html for all /deck/* routes
             app.router.add_get("/deck/{path:.*}", handle_deck_index)
             app.router.add_get("/deck", handle_deck_index)
