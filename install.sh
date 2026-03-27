@@ -1,913 +1,542 @@
 #!/usr/bin/env bash
-# ─────────────────────────────────────────────────────────────
 # NAVIG Installer - Linux / macOS / WSL
-# No Admin Visible In Graveyard · Keep your servers alive. Forever.
 #
 # Usage:
 #   curl -fsSL https://navig.run/install.sh | bash
-#   curl -fsSL https://navig.run/install.sh | bash -s -- --version <release>
-#   curl -fsSL https://navig.run/install.sh | bash -s -- --dev
+#   bash install.sh [OPTIONS]
 #
-# Environment variables:
-#   NAVIG_VERSION          Pin version (e.g. "2.4.14")
-#   NAVIG_INSTALL_METHOD   "pip" (default) or "git"
-#   NAVIG_NO_CONFIRM       "1" to skip prompts
-#   NAVIG_EXTRAS           Comma-separated extras (e.g. "voice,keyring")
-#   NAVIG_INSTALL_PROFILE  Install profile: node, operator, architect (default: operator)
-# ─────────────────────────────────────────────────────────────
+# Options:
+#   -v | --version <ver>   Pin version (e.g. 2.4.14)
+#   -a | --action <mode>   install (default) | uninstall | reinstall
+#   -y | --yes             Skip interactive prompts
+#        --verbose         Verbose output
+#        --dry-run         Preview only
+#   -h | --help
+#
+# Environment:
+#   NAVIG_VERSION    Pin version
+#   NAVIG_ACTION     install | uninstall | reinstall
+#   NO_COLOR         Disable color
+#   NAVIG_VERBOSE    Enable verbose (set to 1)
+
 set -euo pipefail
 
-# ── Terminal capability detection ────────────────────────────────────
-NAV_COLOR=0
-NAV_UNICODE=0
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
-    NAV_COLOR=1
-    case "${LANG:-}${LC_ALL:-}${LC_CTYPE:-}" in
-        *[Uu][Tt][Ff]8*|*[Uu][Tt][Ff]-8*) NAV_UNICODE=1 ;;
-    esac
-fi
+# ── Terminal capabilities ─────────────────────────────────────
+NAV_C=0  # color capable
+NAV_U=0  # unicode capable
 
-# Color variables (always defined; only applied when NAV_COLOR=1)
-if [ "$NAV_COLOR" = "1" ]; then
-    BOLD='\033[1m'
-    DIM='\033[2m'
-    ACCENT='\033[1;36m'
-    SUCCESS='\033[1;32m'
-    WARN='\033[1;33m'
-    ERROR='\033[1;31m'
-    INFO='\033[0;36m'
-    NC='\033[0m'
-else
-    BOLD='' DIM='' ACCENT='' SUCCESS='' WARN='' ERROR='' INFO='' NC=''
-fi
+_init_term() {
+    if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ] && [ "${TERM:-}" != "dumb" ]; then
+        NAV_C=1
+        # Check UTF-8 locale
+        if echo "${LANG:-}${LC_ALL:-}" | grep -qi "utf"; then
+            NAV_U=1
+        fi
+    fi
+}
 
-# ── Output helpers ──────────────────────────────────────────────────
-nav_sym() {
+# ── Colors ────────────────────────────────────────────────────
+_RST=""  _DIM=""  _WHT=""  _CYN=""  _GRN=""  _RED=""  _YLW=""  _GRY=""
+_init_colors() {
+    if [ "$NAV_C" = "1" ]; then
+        _RST="\033[0m"
+        _DIM="\033[2m"
+        _WHT="\033[97m"
+        _CYN="\033[96m"
+        _GRN="\033[92m"
+        _RED="\033[91m"
+        _YLW="\033[93m"
+        _GRY="\033[90m"
+    fi
+}
+
+_clr() {
+    local text="$1" color="${2:-}"
+    printf "%b%s%b" "$color" "$text" "$_RST"
+}
+
+# ── Symbols ───────────────────────────────────────────────────
+_sym() {
     local name="$1"
-    if [ "$NAV_UNICODE" = "1" ]; then
+    if [ "$NAV_U" = "1" ]; then
         case "$name" in
-            ok)   printf '✓' ;;
-            step) printf '›' ;;
-            err)  printf '×' ;;
-            warn) printf '!' ;;
-            *)    printf '?' ;;
+            ok)     printf "\xE2\x9C\x93" ;;   # ✓
+            step)   printf "\xE2\x80\xBA" ;;   # ›
+            err)    printf "\xC3\x97"     ;;   # ×
+            warn)   printf "!"            ;;
+            bullet) printf "\xC2\xB7"    ;;   # ·
+            tl)     printf "\xE2\x95\xAD" ;;  # ╭
+            tr)     printf "\xE2\x95\xAE" ;;  # ╮
+            bl)     printf "\xE2\x95\xB0" ;;  # ╰
+            br)     printf "\xE2\x95\xB1" ;;  # ╯
+            hz)     printf "\xE2\x94\x80" ;;  # ─
+            vt)     printf "\xE2\x94\x82" ;;  # │
         esac
     else
         case "$name" in
-            ok)   printf 'OK' ;;
-            step) printf ' >' ;;
-            err)  printf '!!' ;;
-            warn) printf ' !' ;;
-            *)    printf '?' ;;
+            ok)     printf "OK" ;;
+            step)   printf " >" ;;
+            err)    printf "!!" ;;
+            warn)   printf " !" ;;
+            bullet) printf "."  ;;
+            tl|tr|bl|br) printf "+" ;;
+            hz)     printf "-"  ;;
+            vt)     printf "|"  ;;
         esac
     fi
 }
 
-nav_phase() {
-    echo ""
-    if [ "$NAV_COLOR" = "1" ]; then
-        echo -e "${ACCENT}  ${1}${NC}"
-    else
-        echo "  ${1}"
-    fi
-}
+# ── Layout ────────────────────────────────────────────────────
+_LW=52   # box inner width
+_LB=12   # label column width
 
-nav_ok() {
-    local sym; sym="$(nav_sym ok)"
-    if [ "$NAV_COLOR" = "1" ]; then echo -e "${SUCCESS}  ${sym}${NC}  ${1}"
-    else echo "  ${sym}  ${1}"; fi
-}
-
-nav_step() {
-    local sym; sym="$(nav_sym step)"
-    if [ "$NAV_COLOR" = "1" ]; then echo -e "${ACCENT}  ${sym}${NC}  ${1}"
-    else echo "  ${sym}  ${1}"; fi
-}
-
-nav_err() {
-    local sym; sym="$(nav_sym err)"
-    if [ "$NAV_COLOR" = "1" ]; then echo -e "${ERROR}  ${sym}${NC}  ${1}"
-    else echo "  ${sym}  ${1}"; fi
-}
-
-nav_warn() {
-    local sym; sym="$(nav_sym warn)"
-    if [ "$NAV_COLOR" = "1" ]; then echo -e "${WARN}  ${sym}${NC}  ${1}"
-    else echo "  ${sym}  ${1}"; fi
-}
-
-nav_hint() { echo "      ${1}"; }
-
-nav_verbose() {
-    if [ "${VERBOSE:-0}" = "1" ]; then
-        if [ "$NAV_COLOR" = "1" ]; then echo -e "${DIM}      ${1}${NC}"
-        else echo "      ${1}"; fi
-    fi
-}
-
-# ── Temp cleanup ──────────────────────────────────────────────
-TMPFILES=()
-cleanup() { for f in "${TMPFILES[@]}"; do rm -f "$f" 2>/dev/null || true; done; }
-trap cleanup EXIT
-mktempfile() { local t; t="$(mktemp)"; TMPFILES+=("$t"); echo "$t"; }
-
-# ── Globals ───────────────────────────────────────────────────
-OS=""
-ARCH=""
-PYTHON_CMD=""
-PIP_CMD=()
-VERSION="${NAVIG_VERSION:-}"
-INSTALL_METHOD="${NAVIG_INSTALL_METHOD:-pip}"
-EXTRAS="${NAVIG_EXTRAS:-}"
-INSTALL_PROFILE="${NAVIG_INSTALL_PROFILE:-operator}"
-GIT_DIR="${HOME}/navig-core"
-GIT_UPDATE=1
-PRODUCTION=${PRODUCTION:-0}
-NO_CONFIRM="${NAVIG_NO_CONFIRM:-0}"
-DRY_RUN=0
-VERBOSE=0
-HELP=0
-export DEV_MODE=0   # reserved flag for future dev-mode paths; exported for child scripts
-MIN_PYTHON_MAJOR=3
-MIN_PYTHON_MINOR=10
-REPO_URL="https://github.com/navig-run/core.git"
-
-# ── Taglines ──────────────────────────────────────────────────
-TAGLINES=(
-    "Your servers are in good hands now."
-    "No admin visible in graveyard? Perfect."
-    "SSH tunnels, remote ops - all in one CLI."
-    "Because server management shouldn't feel like surgery."
-    "Keeping uptime personal since 2024."
-    "One CLI to rule them all."
-    "Servers don't sleep, and neither does NAVIG."
-    "Remote ops, local comfort."
-    "Born in the terminal. Lives in the cloud."
-    "Your devops sidekick. No cape required."
-    "Deploy, manage, survive. Repeat."
-    "Less SSH, more SHH - it just works."
-    "The quiet guardian of your infrastructure."
-    "Admin by day, daemon by night."
-)
-
-pick_tagline() {
-    echo "${TAGLINES[RANDOM % ${#TAGLINES[@]}]}"
-}
-
-# ── Banner ────────────────────────────────────────────────────
-print_banner() {
-    local v=""
-    if [ -n "$VERSION" ]; then
-        v="v$VERSION "
-    fi
-    echo ""
-    echo -e "${ACCENT}${BOLD}  NAVIG ${v}${NC}- ${DIM}$(pick_tagline)${NC}"
-    echo ""
-}
-
-# ── Usage ─────────────────────────────────────────────────────
-print_usage() {
-    echo "NAVIG Installer"
-    echo ""
-    echo "Usage:"
-    echo "  curl -fsSL https://navig.run/install.sh | bash"
-    echo "  curl -fsSL https://navig.run/install.sh | bash -s -- [ACTION] [OPTIONS]"
-    echo ""
-    echo "Actions:"
-    echo "  install           Install NAVIG (default)"
-    echo "  uninstall         Uninstall NAVIG"
-    echo "  reinstall         Uninstall (preserving data) and reinstall"
-
-    echo ""
-    echo "Options:"
-    echo "  --version <ver>   Install specific version (e.g. 2.4.14)"
-    echo "  --method <mode>   Install via pip or git (default: pip)"
-    echo "  --dev             Install from git source (dev mode)"
-    echo "  --git-dir <path>  Git checkout directory (default: ~/navig-core)"
-    echo "  --extras <list>   Comma-separated extras: voice,keyring,dev"
-    echo "  --profile <name>  Install profile: node, operator, architect (default: operator)"
-    echo "  --no-confirm      Skip interactive prompts"
-    echo "  --dry-run         Preview actions without executing"
-    echo "  --verbose         Show detailed output"
-    echo "  --help            Show this help"
-    echo ""
-    echo "Environment variables:"
-    echo "  NAVIG_VERSION          Pin version"
-    echo "  NAVIG_INSTALL_METHOD   pip (default) or git"
-    echo "  NAVIG_NO_CONFIRM       1 to skip prompts"
-    echo "  NAVIG_EXTRAS           Comma-separated extras"
-    echo "  NAVIG_INSTALL_PROFILE  Install profile (default: operator)"
-}
-
-ACTION="install"
-
-# ── Argument parsing ──────────────────────────────────────────
-parse_args() {
-    # Check positional action
-    if [[ $# -gt 0 && ! "$1" == --* ]]; then
-        case "$1" in
-            install|uninstall|reinstall)
-                ACTION="$1"
-                shift
-                ;;
-            *)
-                echo -e "${ERROR}Unknown action: $1${NC}"
-                print_usage
-                exit 1
-                ;;
-        esac
-    fi
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --uninstall)    ACTION="uninstall"; shift ;;
-            --reinstall)    ACTION="reinstall"; shift ;;
-            --version)      VERSION="$2"; shift 2 ;;
-            --method)       INSTALL_METHOD="$2"; shift 2 ;;
-            --dev)          INSTALL_METHOD="git"; export DEV_MODE=1; shift ;;
-            --git-dir)      GIT_DIR="$2"; shift 2 ;;
-            --extras)       EXTRAS="$2"; shift 2 ;;
-            --profile)      INSTALL_PROFILE="$2"; shift 2 ;;
-            --production)   PRODUCTION=1; shift ;;
-            --no-confirm)   NO_CONFIRM=1; shift ;;
-            --dry-run)      DRY_RUN=1; shift ;;
-            --verbose)      VERBOSE=1; shift ;;
-            --help|-h)      HELP=1; shift ;;
-            *)
-                echo -e "${ERROR}Unknown option: $1${NC}"
-                print_usage
-                exit 1
-                ;;
-        esac
+_hline() {
+    local w="${1:-$_LW}"
+    local line="" h
+    h=$(_sym hz)
+    local i=0
+    while [ $i -lt $w ]; do
+        line="${line}${h}"
+        i=$((i + 1))
     done
+    printf "%s" "$line"
 }
 
-configure_verbose() {
-    if [[ "$VERBOSE" == "1" ]]; then
-        # Note: set -x traces all commands including those that expand env vars.
-        # Avoid --verbose on systems where secrets (e.g. NAVIG_TELEGRAM_BOT_TOKEN)
-        # are in the environment — they will appear in output.
-        set -x
+_pad() {
+    # pad a string to $_LB chars
+    printf "%-${_LB}s" "$1"
+}
+
+# ── Header ────────────────────────────────────────────────────
+print_header() {
+    local lw=$((_LW + 2))
+    local line; line=$(_hline $lw)
+    local tl; tl=$(_sym tl)
+    local tr; tr=$(_sym tr)
+    local bl; bl=$(_sym bl)
+    local br; br=$(_sym br)
+    local vt; vt=$(_sym vt)
+    printf "\n"
+    printf "  %b%s%s%s%b\n" "$_GRY" "$tl" "$line" "$tr" "$_RST"
+    printf "  %b%s%b\n"     "$_GRY" "$vt" "$_RST"
+    printf "  %b%s%b   %bNAVIG%b\n" "$_GRY" "$vt" "$_RST" "$_CYN" "$_RST"
+    printf "  %b%s%b   %bquiet operator tooling for real systems%b\n" "$_GRY" "$vt" "$_RST" "$_GRY" "$_RST"
+    printf "  %b%s%b\n"     "$_GRY" "$vt" "$_RST"
+    printf "  %b%s%s%s%b\n" "$_GRY" "$bl" "$line" "$br" "$_RST"
+    printf "\n"
+}
+
+# ── Section ───────────────────────────────────────────────────
+print_section() {
+    printf "\n  %b%s%b\n" "$_CYN" "$1" "$_RST"
+}
+
+# ── Rows ──────────────────────────────────────────────────────
+_row() {
+    local sym_char="$1" sym_color="$2" label="$3" value="${4:-}" val_color="${5:-$_WHT}"
+    local lpad; lpad=$(_pad "$label")
+    printf "  %b%s%b  %s" "$sym_color" "$sym_char" "$_RST" "$lpad"
+    if [ -n "$value" ]; then
+        printf "%b%s%b" "$val_color" "$value" "$_RST"
+    fi
+    printf "\n"
+}
+
+row_ok()   { _row "$(_sym ok)"   "$_GRN" "$1" "${2:-}" "$_WHT" ; }
+row_step() { _row "$(_sym step)" "$_CYN" "$1" "${2:-}" "$_WHT" ; }
+row_err()  { _row "$(_sym err)"  "$_RED" "$1" "${2:-}" "$_WHT" ; }
+row_warn() { _row "$(_sym warn)" "$_YLW" "$1" "${2:-}" "$_WHT" ; }
+
+log_verbose() {
+    if [ "${NAVIG_VERBOSE:-0}" = "1" ] || [ "${NAV_VERBOSE:-0}" = "1" ]; then
+        printf "       %b%s%b\n" "$_GRY" "$1" "$_RST"
     fi
 }
+log_hint() { printf "       %b%s%b\n" "$_GRY" "$1" "$_RST" ; }
 
-# ── OS Detection ──────────────────────────────────────────────
+# ── Done block ────────────────────────────────────────────────
+print_done() {
+    local version="${1:-}"
+    local lw=$((_LW + 2))
+    local line; line=$(_hline $lw)
+    local tl; tl=$(_sym tl)
+    local tr; tr=$(_sym tr)
+    local bl; bl=$(_sym bl)
+    local br; br=$(_sym br)
+    local vt; vt=$(_sym vt)
+    local label="NAVIG"
+    [ -n "$version" ] && label="NAVIG $version"
+    printf "\n"
+    printf "  %b%s%s%s%b\n"  "$_GRN" "$tl" "$line" "$tr" "$_RST"
+    printf "  %b%s%b  %-${_LW}s  %b%s%b\n" "$_GRN" "$vt" "$_RST" "$label" "$_GRN" "$vt" "$_RST"
+    printf "  %b%s%s%s%b\n"  "$_GRN" "$bl" "$line" "$br" "$_RST"
+    printf "\n"
+    printf "     %bnavig --version%b   confirm install\n"  "$_YLW" "$_RST"
+    printf "     %bnavig --help%b      all commands\n"     "$_YLW" "$_RST"
+    printf "     %bnavig init%b        first-time setup\n" "$_YLW" "$_RST"
+    printf "\n"
+}
+
+# ── Failure block ─────────────────────────────────────────────
+print_failure() {
+    local title="${1:-Error}" problem="${2:-}" fix="${3:-}" cmd="${4:-}"
+    local lw=$((_LW + 2))
+    local line; line=$(_hline $lw)
+    local tl; tl=$(_sym tl)
+    local tr; tr=$(_sym tr)
+    local bl; bl=$(_sym bl)
+    local br; br=$(_sym br)
+    local vt; vt=$(_sym vt)
+    local err; err=$(_sym err)
+    printf "\n"
+    printf "  %b%s%s%s%b\n" "$_RED" "$tl" "$line" "$tr" "$_RST"
+    printf "  %b%s%b %b%s  %s%b\n" "$_RED" "$vt" "$_RST" "$_RED" "$err" "$title" "$_RST"
+    printf "  %b%s%s%s%b\n" "$_RED" "$bl" "$line" "$br" "$_RST"
+    printf "\n"
+    [ -n "$problem" ] && printf "  %bProblem%b  %s\n" "$_GRY" "$_RST" "$problem"
+    [ -n "$fix" ]     && printf "  %bFix%b      %s\n" "$_GRY" "$_RST" "$fix"
+    [ -n "$cmd" ]     && printf "  %bRun%b      %b%s%b\n" "$_GRY" "$_RST" "$_YLW" "$cmd" "$_RST"
+    printf "\n"
+}
+
+# ── OS detection ──────────────────────────────────────────────
 detect_os() {
-    case "$(uname -s)" in
-        Darwin*)     OS="macos" ;;
-        Linux*)
-            if grep -qiE "microsoft|wsl" /proc/version 2>/dev/null; then
-                OS="wsl"
+    unset OS_TYPE OS_VERSION OS_PKG
+    if [ -f /etc/os-release ]; then
+        OS_TYPE=$(. /etc/os-release && echo "${ID:-}")
+        OS_VERSION=$(. /etc/os-release && echo "${VERSION_ID:-}")
+    fi
+    if [ "$(uname)" = "Darwin" ]; then OS_TYPE="macos"; OS_VERSION=$(sw_vers -productVersion 2>/dev/null || echo ""); fi
+    OS_TYPE="${OS_TYPE:-linux}"
+    case "$OS_TYPE" in
+        ubuntu|debian|raspbian)    OS_PKG="apt"     ;;
+        fedora|centos|rhel|rocky)  OS_PKG="dnf"     ;;
+        arch|manjaro)              OS_PKG="pacman"   ;;
+        alpine)                    OS_PKG="apk"      ;;
+        macos)                     OS_PKG="brew"     ;;
+        *)                         OS_PKG="unknown"  ;;
+    esac
+}
+
+# ── Python detection ──────────────────────────────────────────
+MIN_PY_MAJOR=3
+MIN_PY_MINOR=10
+
+_py_meets_min() {
+    local exe="$1"
+    local out; out=$("$exe" --version 2>&1) || return 1
+    local maj min
+    maj=$(echo "$out" | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f1)
+    min=$(echo "$out" | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f2)
+    [ -z "$maj" ] && return 1
+    { [ "$maj" -gt "$MIN_PY_MAJOR" ] || { [ "$maj" -eq "$MIN_PY_MAJOR" ] && [ "$min" -ge "$MIN_PY_MINOR" ]; }; }
+}
+
+detect_python() {
+    unset PYTHON_EXE PYTHON_VERSION
+    for cand in python3 python python3.14 python3.13 python3.12 python3.11 python3.10; do
+        if command -v "$cand" > /dev/null 2>&1 && _py_meets_min "$cand"; then
+            PYTHON_EXE=$(command -v "$cand")
+            PYTHON_VERSION=$("$PYTHON_EXE" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ── pip detection ─────────────────────────────────────────────
+detect_pip() {
+    unset PIP_EXE
+    if [ -n "${PYTHON_EXE:-}" ] && "$PYTHON_EXE" -m pip --version > /dev/null 2>&1; then
+        PIP_EXE="$PYTHON_EXE -m pip"
+        return 0
+    fi
+    for cand in pip3 pip; do
+        if command -v "$cand" > /dev/null 2>&1; then PIP_EXE="$cand"; return 0; fi
+    done
+    return 1
+}
+
+# ── Homebrew ──────────────────────────────────────────────────
+install_homebrew() {
+    if command -v brew > /dev/null 2>&1; then return 0; fi
+    row_step "Homebrew" "installing..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    if command -v brew > /dev/null 2>&1; then
+        eval "$(brew shellenv 2>/dev/null)" || true
+        return 0
+    fi
+    return 1
+}
+
+# ── Python install ────────────────────────────────────────────
+install_python() {
+    row_step "Python" "not found — attempting system install..."
+    case "${OS_PKG:-}" in
+        apt)
+            if command -v sudo > /dev/null 2>&1; then
+                sudo apt-get update -qq && sudo apt-get install -y python3 python3-pip python3-venv
             else
-                OS="linux"
+                apt-get update -qq && apt-get install -y python3 python3-pip python3-venv
             fi
             ;;
-        MINGW*|MSYS*|CYGWIN*)
-            echo -e "${ERROR}Error: Windows detected. Use install.ps1 instead.${NC}"
-            echo "  & ([scriptblock]::Create((irm https://navig.run/install.ps1)))"
-            exit 1
+        dnf)
+            if command -v sudo > /dev/null 2>&1; then sudo dnf install -y python3 python3-pip
+            else dnf install -y python3 python3-pip; fi
+            ;;
+        pacman)
+            if command -v sudo > /dev/null 2>&1; then sudo pacman -Sy --noconfirm python python-pip
+            else pacman -Sy --noconfirm python python-pip; fi
+            ;;
+        apk)
+            if command -v sudo > /dev/null 2>&1; then sudo apk add --no-cache python3 py3-pip
+            else apk add --no-cache python3 py3-pip; fi
+            ;;
+        brew)
+            if ! command -v brew > /dev/null 2>&1; then install_homebrew || return 1; fi
+            brew install python
             ;;
         *)
-            echo -e "${ERROR}Error: Unsupported operating system: $(uname -s)${NC}"
-            exit 1
+            print_failure \
+                "Cannot install Python automatically" \
+                "Unsupported package manager on ${OS_TYPE:-unknown}." \
+                "Install Python $MIN_PY_MAJOR.$MIN_PY_MINOR+ manually." \
+                "https://www.python.org/downloads"
+            return 1
             ;;
     esac
-    ARCH="$(uname -m)"
-    echo -e "${SUCCESS}✓${NC} OS: ${INFO}${OS}${NC} (${ARCH})"
-    nav_ok "${OS} (${ARCH})"
+    detect_python && return 0 || return 1
 }
 
-# ── Privilege helpers ─────────────────────────────────────────
-is_root() { [[ "$(id -u)" -eq 0 ]]; }
-
-maybe_sudo() {
-    if is_root; then
-        [[ "${1:-}" == "-E" ]] && shift
-        "$@"
-    else
-        sudo "$@"
-    fi
-}
-
-require_sudo() {
-    [[ "$OS" == "macos" ]] && return 0
-    is_root && return 0
-    if command -v sudo &>/dev/null; then
-        return 0
-    fi
-    echo -e "${ERROR}Error: sudo is required for system installs on Linux${NC}"
-    echo "Install sudo or re-run as root."
-    exit 1
-}
-
-# ── Homebrew (macOS) ──────────────────────────────────────────
-install_homebrew() {
-    [[ "$OS" != "macos" ]] && return 0
-    if command -v brew &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} Homebrew already installed"
-        return 0
-    fi
-    echo -e "${WARN}→${NC} Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if [[ -f "/opt/homebrew/bin/brew" ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    elif [[ -f "/usr/local/bin/brew" ]]; then
-        eval "$(/usr/local/bin/brew shellenv)"
-    fi
-    echo -e "${SUCCESS}✓${NC} Homebrew installed"
-}
-
-# ── Python Detection & Installation ──────────────────────────
-detect_python() {
-    local candidates=("python3" "python" "python3.13" "python3.12" "python3.11" "python3.10")
-    for cmd in "${candidates[@]}"; do
-        if command -v "$cmd" &>/dev/null; then
-            local ver
-            # grep -oE is portable to both GNU grep and macOS/BSD grep
-            # grep -oP (Perl regex) is NOT available on macOS stock grep
-            ver="$("$cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)"
-            local major minor
-            major="$(echo "$ver" | cut -d. -f1)"
-            minor="$(echo "$ver" | cut -d. -f2)"
-            if [[ "$major" -ge "$MIN_PYTHON_MAJOR" && "$minor" -ge "$MIN_PYTHON_MINOR" ]]; then
-                PYTHON_CMD="$cmd"
-                echo -e "${SUCCESS}✓${NC} Python ${INFO}$("$cmd" --version 2>&1)${NC} found"
-                return 0
-            fi
-        fi
-    done
-    return 1
-}
-
-detect_pip() {
-    # Store PIP_CMD as an array to prevent word-splitting on "python3 -m pip"
-    if "$PYTHON_CMD" -m pip --version &>/dev/null; then
-        PIP_CMD=("$PYTHON_CMD" -m pip)
-        return 0
-    fi
-    # Try standalone pip3/pip
-    for cmd in pip3 pip; do
-        if command -v "$cmd" &>/dev/null; then
-            PIP_CMD=("$cmd")
-            return 0
-        fi
-    done
-    return 1
-}
-
-# ── Dedup apt-get update ─────────────────────────────────────
-_APT_UPDATED=0
-_apt_update() {
-    if [[ "$_APT_UPDATED" == "0" ]]; then
-        maybe_sudo apt-get update -y
-        _APT_UPDATED=1
-    fi
-}
-
-install_python() {
-    echo -e "${WARN}→${NC} Installing Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+..."
-    if [[ "$OS" == "macos" ]]; then
-        brew install python@3.12
-        brew link python@3.12 --overwrite --force 2>/dev/null || true
-    elif [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
-        require_sudo
-        if command -v apt-get &>/dev/null; then
-            _apt_update
-            maybe_sudo apt-get install -y python3 python3-pip python3-venv
-        elif command -v dnf &>/dev/null; then
-            maybe_sudo dnf install -y python3 python3-pip
-        elif command -v yum &>/dev/null; then
-            maybe_sudo yum install -y python3 python3-pip
-        elif command -v pacman &>/dev/null; then
-            maybe_sudo pacman -S --noconfirm python python-pip
-        elif command -v apk &>/dev/null; then
-            maybe_sudo apk add python3 py3-pip
-        else
-            echo -e "${ERROR}Error: Could not detect package manager${NC}"
-            echo "Please install Python 3.8+ manually: https://python.org"
-            exit 1
-        fi
-    fi
-    echo -e "${SUCCESS}✓${NC} Python installed"
-}
-
-# ── Git ───────────────────────────────────────────────────────
-check_git() {
-    if command -v git &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} Git already installed"
-        return 0
-    fi
-    return 1
-}
-
-install_git() {
-    echo -e "${WARN}→${NC} Installing Git..."
-    if [[ "$OS" == "macos" ]]; then
-        brew install git
-    elif [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
-        require_sudo
-        if command -v apt-get &>/dev/null; then
-            _apt_update
-            maybe_sudo apt-get install -y git
-        elif command -v dnf &>/dev/null; then
-            maybe_sudo dnf install -y git
-        elif command -v yum &>/dev/null; then
-            maybe_sudo yum install -y git
-        elif command -v pacman &>/dev/null; then
-            maybe_sudo pacman -S --noconfirm git
-        elif command -v apk &>/dev/null; then
-            maybe_sudo apk add git
-        fi
-    fi
-    echo -e "${SUCCESS}✓${NC} Git installed"
-}
-
-# ── SSH client check ──────────────────────────────────────────
-check_ssh() {
-    if command -v ssh &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} SSH client available"
-        return 0
-    fi
-    echo -e "${WARN}→${NC} Installing OpenSSH client..."
-    if [[ "$OS" == "macos" ]]; then
-        echo -e "${SUCCESS}✓${NC} SSH should be built-in on macOS"
-        return 0
-    elif [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
-        require_sudo
-        if command -v apt-get &>/dev/null; then
-            maybe_sudo apt-get install -y openssh-client
-        elif command -v dnf &>/dev/null; then
-            maybe_sudo dnf install -y openssh-clients
-        elif command -v yum &>/dev/null; then
-            maybe_sudo yum install -y openssh-clients
-        fi
-    fi
-    echo -e "${SUCCESS}✓${NC} SSH client installed"
-}
-
-# ── autossh (persistent SSH tunnels for Bridge) ────────────────
-check_autossh() {
-    if command -v autossh &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} autossh available"
-        return 0
-    fi
-    echo -e "${WARN}→${NC} Installing autossh (required for persistent Bridge tunnels)..."
-    if [[ "$OS" == "macos" ]]; then
-        if command -v brew &>/dev/null; then
-            brew install autossh
-        else
-            echo -e "${WARN}!${NC} Install autossh manually: brew install autossh"
-            return 0
-        fi
-    elif [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
-        require_sudo
-        if command -v apt-get &>/dev/null; then
-            maybe_sudo apt-get install -y autossh
-        elif command -v dnf &>/dev/null; then
-            maybe_sudo dnf install -y autossh
-        elif command -v yum &>/dev/null; then
-            maybe_sudo yum install -y autossh
-        elif command -v pacman &>/dev/null; then
-            maybe_sudo pacman -S --noconfirm autossh
-        elif command -v apk &>/dev/null; then
-            maybe_sudo apk add autossh
-        fi
-    fi
-    if command -v autossh &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} autossh installed"
-    else
-        echo -e "${WARN}!${NC} autossh install failed - Bridge tunnel auto-reconnect won't work"
-    fi
-}
-
-# ── pip install helpers ───────────────────────────────────────
-ensure_pip_user_bin_on_path() {
-    # Guard: function may be called standalone; PYTHON_CMD must be set
-    [[ -z "${PYTHON_CMD:-}" ]] && return 0
-    local user_base
-    user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
-    local bin_dir="${user_base}/bin"
-    mkdir -p "$bin_dir"
-    export PATH="$bin_dir:$PATH"
-
-    # shellcheck disable=SC2016
-    local path_line="export PATH=\"${bin_dir}:\$PATH\""
+# ── PATH management ───────────────────────────────────────────
+fix_path() {
+    local bin_dir="${1:-}"
+    [ -z "$bin_dir" ] && return
+    # Session
+    case ":$PATH:" in
+        *":$bin_dir:"*) ;;
+        *) export PATH="$bin_dir:$PATH" ;;
+    esac
+    # Persist
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
-        if [[ -f "$rc" ]] && ! grep -q "${bin_dir}" "$rc"; then
-            { echo "" && echo "# NAVIG CLI" && echo "$path_line"; } >> "$rc" || \
-                echo -e "${WARN}!${NC} Could not write to $rc (permission denied or disk full)" >&2
+        [ -f "$rc" ] || continue
+        if ! grep -qF "$bin_dir" "$rc" 2>/dev/null; then
+            printf '\nexport PATH="%s:$PATH"\n' "$bin_dir" >> "$rc"
+            log_verbose "Appended to $rc"
         fi
     done
 }
 
-# ── pipx detection & install ──────────────────────────────────
-check_install_pipx() {
-    # Guard: PIP_CMD must be populated before this is called
-    [[ ${#PIP_CMD[@]} -eq 0 ]] && return 0
-    if command -v pipx &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} pipx available"
-        return 0
-    fi
-    echo -e "${WARN}→${NC} Installing pipx (isolated installs)..."
-    if ! "${PIP_CMD[@]}" install --user pipx --quiet 2>/dev/null; then
-        echo -e "${WARN}!${NC} pipx install failed - using pip --user fallback"
-        return 0
-    fi
-    # Expose the freshly installed pipx in the current session
-    local user_base
-    user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
-    export PATH="${user_base}/bin:$PATH"
-    hash -r 2>/dev/null || true
-    if command -v pipx &>/dev/null; then
-        pipx ensurepath --quiet 2>/dev/null || true
-        echo -e "${SUCCESS}✓${NC} pipx installed and on PATH"
-    else
-        echo -e "${WARN}!${NC} pipx installed but not on PATH yet - restart shell or source ~/.bashrc"
-    fi
-}
-
-# ── Install via pip ───────────────────────────────────────────
+# ── pip install ───────────────────────────────────────────────
 install_navig_pip() {
-    local install_spec="navig"
-    if [[ -n "$VERSION" ]]; then
-        install_spec="navig==${VERSION}"
+    local spec="${1:-navig}"
+    local tmp; tmp=$(mktemp)
+    # shellcheck disable=SC2086
+    if $PIP_EXE install --quiet --upgrade --disable-pip-version-check "$spec" 2>"$tmp"; then
+        rm -f "$tmp"; return 0
     fi
-
-    # Add extras if specified
-    if [[ -n "$EXTRAS" ]]; then
-        install_spec="navig[${EXTRAS}]"
-        [[ -n "$VERSION" ]] && install_spec="navig[${EXTRAS}]==${VERSION}"
-    fi
-
-    echo -e "${WARN}→${NC} Installing NAVIG via pip: ${INFO}${install_spec}${NC}"
-
-    local pip_args=("install" "--upgrade")
-
-    # Use --user if not root and not in a venv
-    if ! is_root && [[ -z "${VIRTUAL_ENV:-}" ]]; then
-        pip_args+=("--user")
-    fi
-
-    pip_args+=("$install_spec")
-
-    if ! "${PIP_CMD[@]}" "${pip_args[@]}"; then
-        echo -e "${ERROR}Error: pip install failed${NC}"
-        echo -e "Try manually: ${INFO}pip install ${install_spec}${NC}"
-        exit 1
-    fi
-
-    echo -e "${SUCCESS}✓${NC} NAVIG installed via pip"
+    tail -8 "$tmp" | while IFS= read -r l; do log_hint "$l"; done
+    rm -f "$tmp"; return 1
 }
 
-# ── Install via git ───────────────────────────────────────────
-install_navig_git() {
-    local repo_dir="$GIT_DIR"
-
-    if [[ -d "$repo_dir/.git" ]]; then
-        echo -e "${WARN}→${NC} Updating existing NAVIG checkout: ${INFO}${repo_dir}${NC}"
-    else
-        echo -e "${WARN}→${NC} Installing NAVIG from source: ${INFO}${REPO_URL}${NC}"
+# ── Verify ────────────────────────────────────────────────────
+verify_navig() {
+    # Reload PATH with common user-bin dirs
+    local user_bin="$HOME/.local/bin"
+    case ":$PATH:" in
+        *":$user_bin:"*) ;;
+        *) export PATH="$user_bin:$PATH" ;;
+    esac
+    if command -v navig > /dev/null 2>&1; then
+        local v; v=$(navig --version 2>&1 | head -1) || true
+        printf "%s" "$v"
+        return 0
     fi
-
-    if ! check_git; then
-        install_git
-    fi
-
-    if [[ ! -d "$repo_dir" ]]; then
-        if ! git clone "$REPO_URL" "$repo_dir"; then
-            echo -e "${ERROR}Error: git clone failed for ${REPO_URL}${NC}" >&2
-            echo -e "  Check your network connection and repository access." >&2
-            exit 1
-        fi
-    elif [[ "$GIT_UPDATE" == "1" ]]; then
-        if [[ -z "$(git -C "$repo_dir" status --porcelain 2>/dev/null || true)" ]]; then
-            git -C "$repo_dir" pull --rebase || true
-        else
-            echo -e "${WARN}→${NC} Repo is dirty; skipping git pull"
-        fi
-    fi
-
-    local pip_args install_mode
-    if [[ "$PRODUCTION" == "1" ]]; then
-        install_mode="production (non-editable)"
-        pip_args=("install")
-    else
-        install_mode="development (editable)"
-        pip_args=("install" "-e")
-    fi
-    if [[ -n "$EXTRAS" ]]; then
-        pip_args+=("${repo_dir}[${EXTRAS}]")
-    else
-        pip_args+=("$repo_dir")
-    fi
-
-    echo -e "${WARN}→${NC} Installing NAVIG from source (${install_mode})..."
-    if ! "${PIP_CMD[@]}" "${pip_args[@]}"; then
-        echo -e "${ERROR}Error: pip install from source failed${NC}" >&2
-        exit 1
-    fi
-
-    echo -e "${SUCCESS}✓${NC} NAVIG installed from source (${install_mode})"
-    echo -e "${INFO}i${NC} Source directory: ${INFO}${repo_dir}${NC}"
-    echo -e "${INFO}i${NC} To update: ${INFO}cd ${repo_dir} && git pull && pip install -e .${NC}"
-}
-
-# ── Setup NAVIG config directory ──────────────────────────────
-setup_navig_config() {
-    local config_dir="$HOME/.navig"
-    mkdir -p "$config_dir"
-    mkdir -p "$config_dir/workspace"
-    mkdir -p "$config_dir/logs"
-    mkdir -p "$config_dir/cache"
-
-    echo -e "${SUCCESS}✓${NC} Config directory: ${INFO}${config_dir}${NC}"
-    nav_verbose "Config directory: ${config_dir}"
-}
-
-# ── Check existing installation ───────────────────────────────
-check_existing_navig() {
-    if command -v navig &>/dev/null; then
-        local current_ver
-        current_ver="$(navig --version 2>/dev/null | head -1 || echo "unknown")"
-        echo -e "${WARN}→${NC} Existing NAVIG installation detected: ${INFO}${current_ver}${NC}"
+    # Last-ditch: check user bin directly
+    if [ -x "$user_bin/navig" ]; then
+        local v; v=$("$user_bin/navig" --version 2>&1 | head -1) || true
+        printf "%s" "$v"
         return 0
     fi
     return 1
 }
 
-# ── Resolve installed version ─────────────────────────────────
-resolve_navig_version() {
-    if command -v navig &>/dev/null; then
-        navig --version 2>/dev/null | head -1 || echo ""
-    elif [[ ${#PIP_CMD[@]} -gt 0 ]]; then
-        "${PIP_CMD[@]}" show navig 2>/dev/null | grep -i "^version:" | awk '{print $2}' || echo ""
-    else
-        echo ""
-    fi
+# ── Setup config dirs ─────────────────────────────────────────
+setup_config() {
+    local base="$HOME/.navig"
+    for sub in "" workspace logs cache; do
+        local d
+        if [ -z "$sub" ]; then d="$base"; else d="$base/$sub"; fi
+        [ -d "$d" ] || mkdir -p "$d"
+    done
+    log_verbose "Config: $base/"
 }
 
-# ── Post-install verification ─────────────────────────────────
-verify_install() {
-    hash -r 2>/dev/null || true
-
-    if command -v navig &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} navig command available"
-        return 0
-    fi
-
-    # Check pip user bin
-    ensure_pip_user_bin_on_path
-    hash -r 2>/dev/null || true
-
-    if command -v navig &>/dev/null; then
-        echo -e "${SUCCESS}✓${NC} navig command available (in user bin)"
-        return 0
-    fi
-
-    echo -e "${WARN}→${NC} navig installed but not on PATH"
-    local user_base
-    user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
-    echo -e "  Add to your shell profile:"
-    echo -e "  ${INFO}export PATH=\"${user_base}/bin:\$PATH\"${NC}"
-    echo -e "  Then restart your terminal or run: ${INFO}source ~/.bashrc${NC}"
-    return 1
-}
-
-
-# ── Uninstall Logic ───────────────────────────────────────────
+# ── Uninstall ─────────────────────────────────────────────────
 uninstall_navig() {
     local preserve_data="${1:-0}"
-    echo -e "${WARN}→${NC} Uninstalling NAVIG..."
-
-    # Disable exit-on-error for the entire uninstall scope.
-    # Restore it reliably via a trap rather than inline set -e, so a
-    # premature return or subshell exit cannot leave set -e disabled.
-    local _prev_e=0
-    [[ $- == *e* ]] && _prev_e=1
-    set +e
-    # shellcheck disable=SC2064
-    trap "[[ \$_prev_e -eq 1 ]] && set -e; trap - RETURN" RETURN
-    local log_file="${HOME}/.navig/logs/uninstall-fail.log"
-    mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
-
-    _try() {
-        if ! "$@" >> "$log_file" 2>&1; then
-            echo -e "  ${WARN}!${NC} Failed: $* (see $log_file)"
-        fi
-    }
-
-    # Step A: Stop daemon
-    if command -v navig &>/dev/null; then
-        _try navig service stop
-        _try navig service uninstall
-    fi
-
-    # Step B: pip uninstall
-    local pip_cmd=""
-    command -v pip3 &>/dev/null && pip3 show navig &>/dev/null && pip_cmd="pip3"
-    command -v pip &>/dev/null && pip show navig &>/dev/null && pip_cmd="${pip_cmd:-pip}"
-    if [[ -n "$pip_cmd" ]]; then
-        _try "$pip_cmd" uninstall navig -y
-    fi
-
-    # Step C: Remove binary
-    local user_base
-    user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
-    local bin_dir="${user_base}/bin"
-    if [[ -f "${bin_dir}/navig" || -L "${bin_dir}/navig" ]]; then
-        _try rm -f "${bin_dir}/navig"
-    fi
-
-    # Step D: Remove git clone
-    if [[ "$INSTALL_METHOD" == "git" && -d "$GIT_DIR" ]]; then
-        _try rm -rf "$GIT_DIR"
-    fi
-
-    # Step E: Clean shell profiles (atomic: write to tmp first, then mv).
-    # Remove both the sentinel comment and the export PATH line that follows it.
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
-        if [[ -f "$rc" ]] && grep -q "# NAVIG CLI" "$rc" 2>/dev/null; then
-            local rctmp
-            rctmp="$(mktemp)"
-            # Use awk to delete the comment line and the export PATH line
-            # immediately after it (handles both as a unit).
-            if awk '
-                /# NAVIG CLI/ { skip=1; next }
-                skip && /export PATH=/ { skip=0; next }
-                { skip=0; print }
-            ' "$rc" > "$rctmp" 2>/dev/null; then
-                _try mv "$rctmp" "$rc"
-            else
-                rm -f "$rctmp"
-            fi
+    row_step "Uninstalling" "NAVIG..."
+    for pip_cmd in pip3 pip; do
+        if command -v "$pip_cmd" > /dev/null 2>&1; then
+            $pip_cmd uninstall navig -y > /dev/null 2>&1 || true
+            break
         fi
     done
-
-    # Step F: Remove ~/.navig config dir
-    local navig_dir="${HOME}/.navig"
-    if [[ -d "$navig_dir" ]]; then
-        if [[ "$preserve_data" == "1" ]]; then
-            echo -e "  ${INFO}✓${NC} Preserving user data in $navig_dir"
-            _try find "$navig_dir" -mindepth 1 -maxdepth 1 ! -name 'vault' ! -name 'logs' -exec rm -rf {} +
-        else
-            _try rm -rf "$navig_dir"
+    if [ "$preserve_data" != "1" ] && [ -d "$HOME/.navig" ]; then
+        rm -rf "$HOME/.navig" && log_verbose "Removed $HOME/.navig"
+    fi
+    # Remove PATH lines from rc files
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+        [ -f "$rc" ] || continue
+        if grep -q "navig\|\.local/bin" "$rc" 2>/dev/null; then
+            sed -i.bak '/navig\|\.local\/bin/d' "$rc" 2>/dev/null || true
+            log_verbose "Cleaned $rc"
         fi
-    fi
+    done
+    row_ok "Done" "NAVIG removed."
+}
 
-    # Step G: Remove cron jobs
-    local existing_cron
-    existing_cron="$(crontab -l 2>/dev/null || true)"
-    if [[ -n "$existing_cron" ]] && echo "$existing_cron" | grep -qi navig; then
-        echo "$existing_cron" | grep -iv navig | crontab - 2>/dev/null || true
-    fi
+# ── Argument defaults ─────────────────────────────────────────
+_VERSION="${NAVIG_VERSION:-}"
+_ACTION="${NAVIG_ACTION:-install}"
+_YES=0
+_DRY_RUN=0
+_HELP=0
+[ "${NAVIG_VERBOSE:-0}" = "1" ] && NAV_VERBOSE=1 || NAV_VERBOSE=0
 
-    echo -e "${SUCCESS}✓${NC} Uninstall complete."
+# ── Argument parsing ──────────────────────────────────────────
+_parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -v|--version)    shift; _VERSION="${1:-}"  ;;
+            -a|--action)     shift; _ACTION="${1:-}"   ;;
+            -y|--yes)        _YES=1                     ;;
+            --dry-run)       _DRY_RUN=1                 ;;
+            --verbose|-V)    NAV_VERBOSE=1              ;;
+            -h|--help)       _HELP=1                    ;;
+        esac
+        shift
+    done
+}
+
+show_usage() {
+    printf "NAVIG Installer\n\n"
+    printf "Usage:\n"
+    printf "  curl -fsSL https://navig.run/install.sh | bash\n"
+    printf "  bash install.sh [OPTIONS]\n\n"
+    printf "Options:\n"
+    printf "  -v <ver>    Pin version\n"
+    printf "  -a <mode>   install | uninstall | reinstall\n"
+    printf "  -y          Skip prompts\n"
+    printf "  --verbose   Verbose output\n"
+    printf "  --dry-run   Preview only\n"
+    printf "  -h          Show this help\n"
 }
 
 # ── Main ──────────────────────────────────────────────────────
 main() {
-    if [[ "$HELP" == "1" ]]; then
-        print_usage
-        return 0
+    [ "${NAVIG_INSTALL_SH_NO_RUN:-0}" = "1" ] && return
+
+    # Parse args if called as script (not piped)
+    if [ -n "${BASH_SOURCE[0]:-}" ]; then
+        _parse_args "$@"
     fi
 
-    # Root guard - running as root is risky; require explicit opt-in
-    if [[ "$(id -u)" -eq 0 ]] && [[ "${NAVIG_ALLOW_ROOT:-0}" != "1" ]]; then
-        echo -e "${ERROR}Error: do not run the installer as root.${NC}"
-        echo -e "  NAVIG installs per-user, not system-wide."
-        echo -e "  To override: ${INFO}NAVIG_ALLOW_ROOT=1 bash install.sh${NC}"
+    if [ "$_HELP" = "1" ]; then show_usage; return; fi
+    if [ "$_DRY_RUN" = "1" ]; then
+        printf "DRY RUN - no changes will be made\n"
+    fi
+    export NAVIG_VERBOSE="$NAV_VERBOSE"
+
+    _init_term
+    _init_colors
+    print_header
+
+    # ── Uninstall path ────────────────────────────────────────
+    if [ "$_ACTION" = "uninstall" ]; then
+        uninstall_navig
+        return
+    fi
+
+    # ── Environment ───────────────────────────────────────────
+    print_section "Environment"
+    detect_os
+    local arch; arch=$(uname -m)
+    row_ok "OS"    "${OS_TYPE:-$(uname)} $(_sym bullet) $arch"
+    row_ok "Shell" "${SHELL:-sh}"
+
+    # ── Requirements ──────────────────────────────────────────
+    print_section "Requirements"
+    row_step "Python" "detecting..."
+    if ! detect_python; then
+        install_python || {
+            print_failure \
+                "Python $MIN_PY_MAJOR.$MIN_PY_MINOR+ required" \
+                "No compatible Python found and automatic install failed." \
+                "Install Python $MIN_PY_MAJOR.$MIN_PY_MINOR+ for your platform." \
+                "https://www.python.org/downloads"
+            exit 1
+        }
+    fi
+    row_ok "Python" "${PYTHON_VERSION:-detected}"
+    log_verbose "$PYTHON_EXE"
+
+    if ! detect_pip; then
+        print_failure \
+            "pip not available" \
+            "Python found but pip is not available." \
+            "Ensure pip is installed: python3 -m ensurepip" \
+            "$PYTHON_EXE -m ensurepip --upgrade"
         exit 1
     fi
 
-    print_banner
-
-    if [[ "$DRY_RUN" == "1" ]]; then
-        echo -e "${INFO}Dry run mode - no changes will be made${NC}"
-        echo -e "  OS detection:     $(uname -s) / $(uname -m)"
-        echo -e "  Install method:   ${INSTALL_METHOD}"
-        echo -e "  Version:          ${VERSION:-latest}"
-        echo -e "  Extras:           ${EXTRAS:-none}"
-        echo -e "  Profile:          ${INSTALL_PROFILE}"
-        echo -e "  Git dir:          ${GIT_DIR}"
-        echo -e "${DIM}Dry run complete.${NC}"
-        return 0
+    # ── Install ───────────────────────────────────────────────
+    print_section "Install"
+    if [ "$_ACTION" = "reinstall" ]; then
+        row_step "navig" "removing old version..."
+        $PIP_EXE uninstall navig -y > /dev/null 2>&1 || true
     fi
-
-    # Step 0: Detect OS
-    nav_phase "Environment"
-    detect_os
-
-    # Handle state marker and prompt
-    local marker="${HOME}/.navig/.install_state"
-    if [[ -f "$marker" && "$ACTION" == "install" && "$NO_CONFIRM" == "0" ]]; then
-        local current_ver=""
-        command -v navig &>/dev/null && current_ver="$(navig --version 2>/dev/null | head -1 || true)"
-        local opt
-        opt="$(show_already_installed "$current_ver")"
-        case "$opt" in
-            1) ACTION="reinstall" ;;
-            2) ACTION="uninstall" ;;
-            *) echo "  Cancelled."; exit 0 ;;
-        esac
-    fi
-
-    if [[ "$ACTION" == "uninstall" ]]; then
-        detect_python
-        uninstall_navig 0
-        if [[ -f "$marker" ]]; then rm -f "$marker"; fi
-        return 0
-    elif [[ "$ACTION" == "reinstall" ]]; then
-        detect_python
-        uninstall_navig 1
-    fi
-
-    # Step 1: Check existing installation
-    nav_phase "Requirements"
-    local is_upgrade=false
-    if check_existing_navig; then
-        is_upgrade=true
-    fi
-
-    # Step 2: Homebrew (macOS only)
-    install_homebrew
-
-    # Step 3: Python
-    if ! detect_python; then
-        install_python
-        if ! detect_python; then
-            echo -e "${ERROR}Error: Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ is required but could not be found after install${NC}"
+    local spec="navig"
+    [ -n "$_VERSION" ] && spec="navig==$_VERSION"
+    row_step "navig" "pip install $spec ..."
+    if [ "$_DRY_RUN" != "1" ]; then
+        install_navig_pip "$spec" || {
+            print_failure \
+                "pip install failed" \
+                "pip exited with a non-zero code while installing navig." \
+                "Run manually to see the full output." \
+                "$PYTHON_EXE -m pip install --upgrade navig"
             exit 1
-        fi
-    fi
-
-    # Step 4: pip
-    if ! detect_pip; then
-        echo -e "${WARN}→${NC} Installing pip..."
-        "$PYTHON_CMD" -m ensurepip --upgrade 2>/dev/null || {
-            curl -fsSL https://bootstrap.pypa.io/get-pip.py | "$PYTHON_CMD"
         }
-        if ! detect_pip; then
-            echo -e "${ERROR}Error: pip is required but could not be installed${NC}"
+    fi
+    row_ok "navig" "installed"
+
+    # ── PATH ──────────────────────────────────────────────────
+    local user_bin="$HOME/.local/bin"
+    fix_path "$user_bin"
+    row_ok "PATH" "$(_sym bullet) $user_bin"
+    setup_config
+
+    # ── Verify ────────────────────────────────────────────────
+    print_section "Verify"
+    if [ "$_DRY_RUN" = "1" ]; then
+        row_ok "navig" "DRY RUN — skipped"
+    else
+        local nav_ver
+        if ! nav_ver=$(verify_navig); then
+            print_failure \
+                "navig not callable" \
+                "navig was installed but is not found on PATH in this session." \
+                "Source your shell profile and retry." \
+                "source ~/.bashrc && navig --version"
             exit 1
         fi
+        local clean_ver; clean_ver=$(echo "$nav_ver" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "$nav_ver")
+        row_ok "navig" "$clean_ver"
+
+        # ── Done ──────────────────────────────────────────────
+        print_done "$clean_ver"
     fi
-    echo -e "${SUCCESS}✓${NC} pip available"
-
-    # Step 5: SSH client
-    check_ssh
-
-    # Step 5.5: autossh (for persistent Bridge tunnels)
-    check_autossh
-
-    # Step 6: Install NAVIG
-    nav_phase "Install"
-    if [[ "$INSTALL_METHOD" == "git" ]]; then
-        if ! check_git; then
-            install_git
-        fi
-        install_navig_git
-    else
-        # Ensure pip user bin is on PATH for --user installs
-        ensure_pip_user_bin_on_path
-        # Step 5.6: Offer pipx for isolated installs (non-root, non-venv)
-        if ! is_root && [[ -z "${VIRTUAL_ENV:-}" ]]; then
-            check_install_pipx
-        fi
-        install_navig_pip
-    fi
-
-    # Step 7: Setup config directory
-    setup_navig_config
-
-    # Step 8: Verify installation
-    nav_phase "Verify"
-    local installed_version
-    verify_install || true
-    installed_version="$(resolve_navig_version)"
-
-
-    # Write install state marker
-    echo "installed" > "${HOME}/.navig/.install_state"
-
-    show_success "$installed_version"
 }
 
-# ── Entry point ───────────────────────────────────────────────
-if [[ "${NAVIG_INSTALL_SH_NO_RUN:-0}" != "1" ]]; then
-    parse_args "$@"
-    configure_verbose
-    # Tee all output to ~/.navig/logs/install.log.
-    # Process substitution ( >(tee ...) ) requires bash 4+.
-    # macOS ships with bash 3.2 — guard to avoid a syntax/runtime error.
-    mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
-    if (( BASH_VERSINFO[0] >= 4 )); then
-        # Attempt to tee all output to the install log; if it fails (permissions,
-        # quota, read-only fs) continue without logging rather than aborting.
-        if mkdir -p "${HOME}/.navig/logs" 2>/dev/null; then
-            exec > >(tee -a "${HOME}/.navig/logs/install.log") 2>&1 || true
-        else
-            echo -e "${WARN}!${NC} Could not create log directory; install will proceed without logging." >&2
-        fi
-    fi
-    main
-fi
+main "$@"
