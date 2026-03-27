@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 # tests/installer/install.Tests.ps1
 # Pester v5 unit tests for install.ps1
 # Run: pwsh -Command "Invoke-Pester tests/installer/install.Tests.ps1 -Output Detailed"

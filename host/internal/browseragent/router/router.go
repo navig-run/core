@@ -517,12 +517,10 @@ func (r *Router) ExecuteTask(ctx context.Context, req browser.TaskRunRequest, em
 	}
 
 	// 7. Save artifacts — real live page data
-	if len(screenshotPaths) == 0 {
-		// Final screenshot always captured
-		finalShot := filepath.Join(artDir, "final_screenshot.png")
-		_, _ = driver.Screenshot(browser.ScreenshotConfig{PageId: page.PageId, Path: finalShot})
-		screenshotPaths = append(screenshotPaths, finalShot)
-	}
+	// Always capture a final screenshot representing the terminal page state.
+	finalShot := filepath.Join(artDir, "final_screenshot.png")
+	_, _ = driver.Screenshot(browser.ScreenshotConfig{PageId: page.PageId, Path: finalShot})
+	screenshotPaths = append(screenshotPaths, finalShot)
 
 	// Fetch final page title + URL if not already set
 	if finalTitle == "" {
