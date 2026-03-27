@@ -96,7 +96,15 @@ print_usage() {
     echo ""
     echo "Usage:"
     echo "  curl -fsSL https://navig.run/install.sh | bash"
-    echo "  curl -fsSL https://navig.run/install.sh | bash -s -- [OPTIONS]"
+
+    echo "  curl -fsSL https://navig.run/install.sh | bash"
+    echo "  curl -fsSL https://navig.run/install.sh | bash -s -- [ACTION] [OPTIONS]"
+    echo ""
+    echo "Actions:"
+    echo "  install           Install NAVIG (default)"
+    echo "  uninstall         Uninstall NAVIG"
+    echo "  reinstall         Uninstall (preserving data) and reinstall"
+
     echo ""
     echo "Options:"
     echo "  --version <ver>   Install specific version (e.g. 2.4.14)"
@@ -118,11 +126,31 @@ print_usage() {
     echo "  NAVIG_INSTALL_PROFILE  Install profile (default: operator)"
 }
 
+ACTION="install"
+
 # ── Argument parsing ──────────────────────────────────────────
 parse_args() {
+    # Check positional action
+    if [[ $# -gt 0 && ! "$1" == --* ]]; then
+        case "$1" in
+            install|uninstall|reinstall)
+                ACTION="$1"
+                shift
+                ;;
+            *)
+                echo -e "${ERROR}Unknown action: $1${NC}"
+                print_usage
+                exit 1
+                ;;
+        esac
+    fi
+
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --uninstall)  ACTION="uninstall"; shift ;;
+            --reinstall)  ACTION="reinstall"; shift ;;
             --version)    VERSION="$2"; shift 2 ;;
+
             --method)     INSTALL_METHOD="$2"; shift 2 ;;
             --dev)        INSTALL_METHOD="git"; DEV_MODE=1; shift ;;
             --git-dir)    GIT_DIR="$2"; shift 2 ;;
@@ -548,6 +576,78 @@ verify_install() {
     return 1
 }
 
+
+# ── Uninstall Logic ───────────────────────────────────────────
+uninstall_navig() {
+    local preserve_data="${1:-0}"
+    echo -e "${WARN}→${NC} Uninstalling NAVIG..."
+    
+    # Non-blocking failure log for uninstall
+    set +e
+    local log_file="${HOME}/.navig/logs/uninstall-fail.log"
+    mkdir -p "${HOME}/.navig/logs" 2>/dev/null || true
+    
+    _try() {
+        if ! "$@" >> "$log_file" 2>&1; then
+            echo -e "  ${WARN}!${NC} Failed: $* (see $log_file)"
+        fi
+    }
+
+    # Step A: Stop daemon
+    if command -v navig &>/dev/null; then
+        _try navig service stop
+        _try navig service uninstall
+    fi
+    
+    # Step B: pip uninstall
+    local pip_cmd=""
+    command -v pip3 &>/dev/null && pip3 show navig &>/dev/null && pip_cmd="pip3"
+    command -v pip &>/dev/null && pip show navig &>/dev/null && pip_cmd="${pip_cmd:-pip}"
+    if [[ -n "$pip_cmd" ]]; then
+        _try "$pip_cmd" uninstall navig -y
+    fi
+    
+    # Step C: Remove binary
+    local user_base="$("$PYTHON_CMD" -m site --user-base 2>/dev/null || echo "$HOME/.local")"
+    local bin_dir="${user_base}/bin"
+    if [[ -f "${bin_dir}/navig" || -L "${bin_dir}/navig" ]]; then
+        _try rm -f "${bin_dir}/navig"
+    fi
+    
+    # Step D: Remove git clone
+    if [[ "$INSTALL_METHOD" == "git" && -d "$GIT_DIR" ]]; then
+        _try rm -rf "$GIT_DIR"
+    fi
+    
+    # Step E: Clean shell profiles
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+        if [[ -f "$rc" ]] && grep -q "# NAVIG CLI" "$rc" 2>/dev/null; then
+            _try grep -v "# NAVIG CLI" "$rc" > "${rc}.tmp" && _try mv "${rc}.tmp" "$rc"
+            # It's crude but cleans it up
+        fi
+    done
+    
+    # Step F: Remove ~/.navig config dir
+    local navig_dir="${HOME}/.navig"
+    if [[ -d "$navig_dir" ]]; then
+        if [[ "$preserve_data" == "1" ]]; then
+            echo -e "  ${INFO}✓${NC} Preserving user data in $navig_dir"
+            _try find "$navig_dir" -mindepth 1 -maxdepth 1 ! -name 'vault' ! -name 'logs' -exec rm -rf {} +
+        else
+            _try rm -rf "$navig_dir"
+        fi
+    fi
+    
+    # Step G: Remove cron jobs
+    local existing_cron="$(crontab -l 2>/dev/null || true)"
+    if [[ -n "$existing_cron" ]] && echo "$existing_cron" | grep -qi navig; then
+        echo "$existing_cron" | grep -iv navig | crontab - 2>/dev/null || true
+    fi
+
+    set -e
+    echo -e "${SUCCESS}✓${NC} Uninstall complete."
+}
+
 # ── Main ──────────────────────────────────────────────────────
 main() {
     if [[ "$HELP" == "1" ]]; then
@@ -579,6 +679,31 @@ main() {
 
     # Step 0: Detect OS
     detect_os
+    
+    # Handle state marker and prompt
+    local marker="${HOME}/.navig/.install_state"
+    if [[ -f "$marker" && "$ACTION" == "install" && "$NO_CONFIRM" == "0" ]]; then
+        echo -e "${INFO}NAVIG is already installed.${NC}"
+        echo "1) Repair / Reinstall (preserve data)"
+        echo "2) Uninstall"
+        echo "3) Cancel"
+        read -p "Select an option [1-3]: " opt
+        case "$opt" in
+            1) ACTION="reinstall" ;;
+            2) ACTION="uninstall" ;;
+            *) echo "Cancelled."; exit 0 ;;
+        esac
+    fi
+
+    if [[ "$ACTION" == "uninstall" ]]; then
+        detect_python
+        uninstall_navig 0
+        if [[ -f "$marker" ]]; then rm -f "$marker"; fi
+        return 0
+    elif [[ "$ACTION" == "reinstall" ]]; then
+        detect_python
+        uninstall_navig 1
+    fi
 
     # Step 1: Check existing installation
     local is_upgrade=false
@@ -641,6 +766,9 @@ main() {
     verify_install || true
     installed_version="$(resolve_navig_version)"
 
+
+    # Write install state marker
+    echo "installed" > "${HOME}/.navig/.install_state"
 
     # ── Success ───────────────────────────────────────────────
     echo ""
